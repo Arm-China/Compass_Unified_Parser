@@ -1,0 +1,6 @@
+*.pyc
+.vscode/
+.idea
+__pycache__
+.ipynb_checkpoints
+*.swp
