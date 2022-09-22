@@ -17,6 +17,7 @@
 //--------------------------------------------------------------------------------
 """
 import onnx
+import tensorflow.compat.v1 as tf
 from collections import OrderedDict
 from .common.utils import is_file, is_dir, multi_string_to_list, list_string_to_list
 from .common.errors import *
@@ -82,6 +83,9 @@ def univ_parser(params):
         if is_file(model_path) and is_dir(output_dir):
             graph = None
 
+            if int(tf.__version__.split('.')[0]) >= 2:
+                tf.disable_eager_execution()
+
             try:
                 '''The models under different frameworks are parsed and finally converted into representations under the onnx framework.'''
                 if params.get('model_type', '') == 'onnx':
@@ -115,7 +119,7 @@ def univ_parser(params):
                     if has_path_flag is False:
                         ERROR('[Parser]: Graph is not a connected one!')
 
-                '''Gives a "may be time consuming" hint for huge models.'''
+                '''Gives a 'may be time consuming' hint for huge models.'''
                 if len(graph) >= 2000:
                     WARN(
                         '[Parser]: Begin to process large model (number of nodes = %d) and maybe cost quite a lot of time!' % len(graph))
@@ -217,7 +221,7 @@ def main():
             common['model_type'] = model_type
 
             INFO('Begin to parse %s model %s...' %
-                 (model_type, common.get('model_name', "")))
+                 (model_type, common.get('model_name', '')))
 
             param = dict(common)
             meta_ret = univ_parser(param)
