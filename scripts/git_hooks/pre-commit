@@ -36,7 +36,7 @@ case "${1}" in
       if [[ ${lc_file} =~ .*\.(cpp|cc|h|hpp) ]]
       then
         format_file "${file}"
-      elif [[ ${lc_file} =~ .*\/parser\/.*\.py ]] || [[ ${lc_file} =~ .*\/optimizer\/.*\.py ]]
+      elif [[ ${lc_file} =~ .*\.py ]]
       then
         # Call format_pyfile to check format of Parser python code
         basedir=`dirname $0`

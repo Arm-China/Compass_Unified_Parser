@@ -1,7 +1,7 @@
 import sys
 import subprocess
 import numpy as np
-from AIPUBuilder.Parser.tool_utils.run import run_parser
+from utils.run import run_parser
 
 
 def create_pooling_model(model_path, prototxt_path):

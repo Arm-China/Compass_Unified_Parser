@@ -1,6 +1,6 @@
 import numpy as np
-from AIPUBuilder.Parser.plugin_op import ParserOp
-from AIPUBuilder.plugin_loader import register_plugin, PluginType
+from UnifiedParser.plugin_op import ParserOp
+from UnifiedParser.plugin_loader import register_plugin, PluginType
 
 
 @register_plugin(PluginType.Parser, '0.1')

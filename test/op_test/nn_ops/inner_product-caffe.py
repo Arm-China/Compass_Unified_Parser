@@ -1,8 +1,8 @@
 import sys
 import subprocess
 import numpy as np
-from AIPUBuilder.Parser.tool_utils.run import run_parser
-from AIPUBuilder.Parser.tool_utils.common import get_feed_dict
+from utils.run import run_parser
+from utils.common import get_feed_dict
 
 
 def create_inner_product_model(model_path, prototxt_path):

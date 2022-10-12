@@ -1,8 +1,8 @@
 import numpy as np
 import onnx
-# from AIPUBuilder.Parser.tool_utils.run import run_parser
-from AIPUBuilder.Parser.tool_utils.forward import onnx_forward
-from AIPUBuilder.Parser.tool_utils.compare import compare_data_dict
+# from utils.run import run_parser
+from utils.forward import onnx_forward
+from utils.compare import compare_data_dict
 from onnx import TensorProto, helper
 
 

@@ -1,7 +1,7 @@
 import os
 import numpy as np
 import onnx
-from AIPUBuilder.Parser.tool_utils.run import run_parser
+from utils.run import run_parser
 from onnx import TensorProto, helper
 
 

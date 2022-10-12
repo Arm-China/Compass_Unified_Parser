@@ -2,7 +2,7 @@ import numpy as np
 
 import tensorflow.compat.v1 as tf
 
-from AIPUBuilder.Parser.tool_utils.run import run_parser
+from utils.run import run_parser
 
 
 def create_switch_merge_model(pb_file_path, input_size):

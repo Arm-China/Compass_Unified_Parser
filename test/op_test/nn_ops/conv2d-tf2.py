@@ -4,7 +4,7 @@ import numpy as np
 import tensorflow as tf
 from tensorflow import keras
 
-from AIPUBuilder.Parser.tool_utils.run import run_parser
+from utils.run import run_parser
 
 
 def create_add_model(model_path, x_size):
