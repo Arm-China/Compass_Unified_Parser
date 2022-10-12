@@ -573,8 +573,8 @@ class PadOp(OpHasOneOutPort, OnnxOp):
                     ret = self.__dict__['_attr'][item].value
                 elif cur_ver >= 11:
                     inputs = self.get_input_tensors()
-                    ret = np.asscalar(inputs[2].flatten()) if len(
-                        inputs) == 3 else 0
+                    ret = 0 if len(inputs) <= 2 or (
+                        len(inputs) > 2 and inputs[2] is None) else np.asscalar(inputs[2].flatten())
         except:
             ret = None
         if ret is None:
@@ -594,8 +594,8 @@ class PadOp(OpHasOneOutPort, OnnxOp):
             const_value = self.value
         else:
             pads = inputs[1].flatten().tolist()
-            const_value = 0 if len(inputs) <= 2 else np.asscalar(
-                inputs[2].flatten())
+            const_value = 0 if len(inputs) <= 2 or (
+                len(inputs) > 2 and inputs[2] is None) else np.asscalar(inputs[2].flatten())
         if self.mode in ('reflect', 'symmetric'):
             pads = np.reshape(np.array(pads, np.int32), (2, -1))
             pads = np.transpose(pads)
@@ -634,7 +634,10 @@ class RangeOp(OpHasOneOutPort, ConstLikeOp, OnnxOp):
 
     def infer_shape(self):
         super(RangeOp, self).infer_shape()
-        out_tensor = np.arange(self.start, self.limit, self.delta)
+        if any(val is None for val in [self.start, self.limit, self.delta]):
+            out_tensor = None
+        else:
+            out_tensor = np.arange(self.start, self.limit, self.delta)
         self.set_out_tensor(out_tensor)
 
     def __getattr__(self, item):

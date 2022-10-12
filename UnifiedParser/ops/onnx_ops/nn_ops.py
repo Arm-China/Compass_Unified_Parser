@@ -144,7 +144,7 @@ class BatchNormalizationOp(LayoutConcernedOp, OpHasVariableOutPorts, OnnxOp):
                 ret = float(self.__dict__['_attr'][item].value)
             elif item == 'training_mode':
                 if self.cur_version <= 9:
-                    ret = False
+                    ret = (len(self.get_out_ports()) > 1)
                     self.__dict__['_attr'][item] = Attribute(
                         item, {'type': AttrType.INT, 'value': int(ret)})
                 else:
@@ -159,7 +159,8 @@ class BatchNormalizationOp(LayoutConcernedOp, OpHasVariableOutPorts, OnnxOp):
         super(BatchNormalizationOp, self).infer_shape()
         # X, scale, B, mean, var
         inputs = self.get_input_tensors()
-        if self.cur_version >= 14 and self.training_mode:
+        is_training = self.training_mode
+        if is_training:
             out_list = tf.compat.v1.nn.fused_batch_norm(
                 x=inputs[0],
                 scale=inputs[1],
@@ -168,7 +169,7 @@ class BatchNormalizationOp(LayoutConcernedOp, OpHasVariableOutPorts, OnnxOp):
                 variance=inputs[4],
                 epsilon=self.epsilon,
                 data_format=self.data_format,
-                is_training=bool(self.training_mode),
+                is_training=is_training,
                 exponential_avg_factor=1.0
             )
             out_tensor_list = [o.eval() for o in out_list]

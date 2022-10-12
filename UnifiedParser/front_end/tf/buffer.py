@@ -164,7 +164,8 @@ def get_node_content(node_proto):
     ret = {'name': node_proto.name,
            'type': node_proto.op,
            'input': list(map(parse_node_input, node_proto.input)),
-           'attr': parse_node_attr(node_proto.attr)
+           'attr': parse_node_attr(node_proto.attr),
+           'opcode_version': 1
            }
     return ret
 

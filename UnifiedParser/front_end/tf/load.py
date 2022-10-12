@@ -25,33 +25,42 @@ import itertools
 import multiprocessing as mp
 import threading
 from ...common.defs import Framework, get_opset_version, Tensor
-from ...common.utils import is_file, get_version, extend_lists
+from ...common.utils import is_dir, is_file, get_version, extend_lists
 from ...common.errors import *
 from ...graph.graph import Graph
 from ...graph.graph_algo import clear_redundant_nodes, all_simple_paths, has_path, get_valid_node_name
 from ...graph.node_wrap import NodeWrap
 from .buffer import *
+from .buffer_tf2 import parse_keras
+from .utils import trim_tensor_name
+
+
+tf_attr_names_map = {'keep_dims': 'keepdims',
+                     'ksize': 'kernel_shape',
+                     'padding': 'auto_pad',
+                     'reduction_indices': 'axes'
+                     }
 
 
 def convert_attr_to_onnx(attr_dict):
     new_attr = copy.deepcopy(attr_dict)
     for k, v in attr_dict.items():
         if k == 'keep_dims':
-            new_attr.update({'keepdims': int(v)})
+            new_attr.update({tf_attr_names_map.get(k, k): int(v)})
             new_attr.pop(k)
         elif k == 'ksize':
             ''' 1, 2, 4 -> 1, N or N+2. '''
             if isinstance(v, int):
                 v = [v]
-            new_attr.update({'kernel_shape': v[:]})
+            new_attr.update({tf_attr_names_map.get(k, k): v[:]})
             new_attr.pop(k)
         elif k == 'padding':
             if v == 'VALID':
-                new_attr.update({'auto_pad': 'VALID'})
+                new_attr.update({tf_attr_names_map.get(k, k): 'VALID'})
             elif v == 'SAME':
-                new_attr.update({'auto_pad': 'SAME_UPPER'})
+                new_attr.update({tf_attr_names_map.get(k, k): 'SAME_UPPER'})
             elif v == 'EXPLICIT':
-                new_attr.update({'auto_pad': 'NOTSET'})
+                new_attr.update({tf_attr_names_map.get(k, k): 'NOTSET'})
             else:
                 WARN(
                     '[Parser]: Unsupported TF padding type (%s) in convert_attr_to_onnx' % v)
@@ -60,7 +69,7 @@ def convert_attr_to_onnx(attr_dict):
             new_attr.update({k: int(v)})
         elif k == 'reduction_indices':
             v = list(v) if isinstance(v, Iterable) else [v]
-            new_attr.update({'axes': v})
+            new_attr.update({tf_attr_names_map.get(k, k): v})
             new_attr.pop(k)
         elif k in ('shape', 'element_shape'):
             new_attr.update({k: v['dim'].tolist()})
@@ -78,12 +87,6 @@ def convert_attr_to_onnx(attr_dict):
 def convert_tf_to_graph(model_path, params):
     '''Parse the tensorflow model into a graph structure.'''
 
-    def trim_tensor_name(tensor_name):
-        ''' The value of "input" and "output" could be node name or tensor name.
-        Convert tensor to node if tensor is provided.
-        '''
-        return tensor_name.rsplit(':', 1)[0] if ':' in tensor_name else tensor_name
-
     def remove_unneeded_nodes(graph, nodes):
         if not graph._attr['output_names']:
             return nodes
@@ -100,40 +103,10 @@ def convert_tf_to_graph(model_path, params):
         reduced_nodes = [n for n in nodes if n['name'] in simple_graph.nodes]
         return reduced_nodes
 
-    graph = Graph(name=params.get('model_name', ''))
-    graph._attr['framework'] = Framework.TENSORFLOW
-    graph._attr['output_tensor_names'] = params.get('output_tensor_names', [])
-
-    if params.get('output_names', []):
-        params['output_names'] = list(
-            map(trim_tensor_name, params['output_names']))
-
-    if params.get('input_names', []):
-        params['input_names'] = list(
-            map(trim_tensor_name, params['input_names']))
-        params['input_shapes'] = {trim_tensor_name(
-            k): v for k, v in params['input_shapes'].items()}
-
-    anchor_tensor = None
-    if params.get('anchor_tensor_name') is not None:
-        anchor_tensor = params['anchor_tensor_name'] if ':' in params['anchor_tensor_name'] else params['anchor_tensor_name'] + ':0'
-
-    consumer_ver = get_version(onnx)
-    if consumer_ver >= 1.04:
-        opset_version = get_opset_version(str(consumer_ver))
-        graph._attr['opset_version'] = opset_version
-        graph._attr['input_tensors'] = OrderedDict()
-        graph._attr['input_names'] = copy.deepcopy(
-            params.get('input_names', []))
-        graph._attr['output_names'] = copy.deepcopy(
-            params.get('output_names', []))
-
+    def parse_pb(model_path, params, anchor_tensor):
         if not is_file(model_path):
-            FATAL('[Parser]: Invalid pb file %s in convert_tf_to_graph!' %
+            FATAL('[Parser]: Invalid pb file %s in parse_pb!' %
                   model_path)
-
-        meta_ret = True
-
         try:
             with tf.gfile.GFile(model_path, 'rb') as f:
                 graph_def = tf.GraphDef()
@@ -227,14 +200,56 @@ def convert_tf_to_graph(model_path, params):
                         threads.append(t)
                     coord.join(threads)
                     np_tensors = {nt[0]: nt[1] for nt in np_tensors_list}
+        except Exception as e:
+            FATAL('[Parser]: Meet error in parse_pb: %s' % str(e))
+        return nodes, nodes_dict, tensors, np_tensors, input_shapes
 
-                if anchor_tensor and anchor_tensor in np_tensors:
-                    graph._attr['anchors'] = np_tensors[anchor_tensor]
+    graph = Graph(name=params.get('model_name', ''))
+    graph._attr['framework'] = Framework.TENSORFLOW
+    graph._attr['output_tensor_names'] = params.get('output_tensor_names', [])
 
+    if params.get('output_names', []):
+        params['output_names'] = list(
+            map(trim_tensor_name, params['output_names']))
+
+    if params.get('input_names', []):
+        params['input_names'] = list(
+            map(trim_tensor_name, params['input_names']))
+        params['input_shapes'] = {trim_tensor_name(
+            k): v for k, v in params['input_shapes'].items()}
+
+    anchor_tensor = None
+    if params.get('anchor_tensor_name') is not None:
+        anchor_tensor = params['anchor_tensor_name'] if ':' in params['anchor_tensor_name'] else params['anchor_tensor_name'] + ':0'
+
+    consumer_ver = get_version(onnx)
+    if consumer_ver >= 1.04:
+        opset_version = get_opset_version(consumer_ver)
+        graph._attr['opset_version'] = opset_version
+        graph._attr['input_tensors'] = OrderedDict()
+        graph._attr['input_names'] = copy.deepcopy(
+            params.get('input_names', []))
+        graph._attr['output_names'] = copy.deepcopy(
+            params.get('output_names', []))
+
+        meta_ret = True
+        is_keras_model = model_path.endswith('h5') or is_dir(model_path)
+
+        try:
+            if not is_keras_model:
+                nodes, nodes_dict, tensors, np_tensors, input_shapes = parse_pb(
+                    model_path, params, anchor_tensor)
+            else:
+                nodes, nodes_dict, tensors, np_tensors, input_shapes = parse_keras(
+                    model_path, params)
+            if anchor_tensor and anchor_tensor in np_tensors:
+                graph._attr['anchors'] = np_tensors[anchor_tensor]
             nodes_outputs = {n['name']: n['output'] for n in nodes}
             nodes_inputs = set()
             for n in nodes:
                 if n['name'] in graph._attr['input_names']:
+                    if n.get('input', []):
+                        nodes_inputs.update([src_name for src_name, _, _ in n['input']])
                     continue
                 try:
                     for in_port, (src_name, src_out_port, is_control) in enumerate(n.get('input', [])):
@@ -257,7 +272,7 @@ def convert_tf_to_graph(model_path, params):
                                     tensor_shape = tensor_value.shape if tensor_value is not None else list(
                                         tensor_shape)
                                     if tensor_value is None \
-                                            and ((t.op.type == 'Placeholder' and all([s is not None for s in tensor_shape[:]]))
+                                            and ((t.op.type in ('Placeholder', 'InputLayer') and all([s is not None for s in tensor_shape[:]]))
                                                  or trim_tensor_name(tensor_name) in params['input_shapes']):
                                         if trim_tensor_name(tensor_name) in params['input_shapes']:
                                             tensor_shape = params['input_shapes'][trim_tensor_name(
@@ -301,11 +316,11 @@ def convert_tf_to_graph(model_path, params):
                 unusual_placeholders, unusual_others = [], []
                 for n_name in nodes_dict:
                     if graph.has_node(n_name) \
-                            and nodes_dict[n_name]['type'] in ('Placeholder', ) \
+                            and nodes_dict[n_name]['type'] in ('Placeholder', 'InputLayer') \
                             and n_name not in graph._attr['input_tensors']:
                         unusual_placeholders.append(n_name)
                     if graph.has_node(n_name) \
-                            and nodes_dict[n_name]['type'] not in ('Placeholder', ) \
+                            and nodes_dict[n_name]['type'] not in ('Placeholder', 'InputLayer') \
                             and n_name in graph._attr['input_tensors']:
                         unusual_others.append(n_name)
                         nodes_dict[n_name]['type'] = 'Placeholder'
@@ -399,7 +414,8 @@ def convert_tf_to_graph(model_path, params):
                 for n in graph.nodes:
                     attr_dict = convert_attr_to_onnx(
                         nodes_dict[n].get('attr', {}))
-                    attr_dict.update({'name': n})
+                    attr_dict.update({'name': n,
+                                      'opcode_version': nodes_dict[n].get('opcode_version', 1)})
                     NodeWrap(graph, n).replace_obj(
                         'Tf' + nodes_dict[n]['type'], attr_dict)
 
@@ -431,8 +447,8 @@ def convert_tf_to_graph(model_path, params):
                             'Out', {'name': out_op_name})
 
         except Exception as e:
-            WARN('[Parser]: Reading pb file (%s) meets error (%s)!' %
-                 (os.path.basename(model_path), str(e)))
+            WARN('[Parser]: Reading pb/saved_model/h5 file (%s) meets error (%s)!' %
+                 (model_path, str(e)))
             meta_ret = False
 
     else:

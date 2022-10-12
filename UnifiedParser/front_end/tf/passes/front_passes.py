@@ -3161,12 +3161,11 @@ def convert_to_onnx(graph):
                         floor_attr = {'name': floor_name, 'opset_version': 13}
                         NodeWrap(graph, floor_name).replace_obj(
                             'Floor', floor_attr)
-
-                elif pure_type == 'FusedBatchNormV3':
+                elif pure_type in ('FusedBatchNorm', 'FusedBatchNormV3'):
                     if node_obj.is_training:
-                        if node_obj.exponential_avg_factor != 1.0:
+                        if not FLOAT_EQUAL(node_obj.exponential_avg_factor, 1.0):
                             WARN(
-                                '[Parser]: Invalid TF FusedBatchNormV3 Node(%s) to convert to Onnx!' % node_name)
+                                '[Parser]: Invalid TF FusedBatchNorm/FusedBatchNormV3 Node(%s) to convert to Onnx!' % node_name)
                             continue
                         new_node_attr.update({'training_mode': 1})
                 elif pure_type == 'InTopKV2':
@@ -3246,6 +3245,11 @@ def convert_to_onnx(graph):
                         continue
                 elif pure_type == 'RightShift':
                     new_node_attr.update({'direction': 'RIGHT'})
+                elif pure_type == 'ScatterNd':
+                    # TfScatterNd should be converted in convert_scatternd.
+                    # If not, then indices or shape is not constant.
+                    WARN('[Parser]: Expect indices and shape to be constant in TF ScatterNd Node(%s) to convert to Onnx!' % node_name)
+                    continue
                 elif pure_type == 'SegmentSum':
                     new_node_attr.update({'method': 'SUM'})
                 elif pure_type == 'Slice':

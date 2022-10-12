@@ -518,7 +518,8 @@ class TfFusedBatchNormOp(LayoutConcernedOp, OpHasVariableOutPorts, TfOp):
     @classmethod
     def attributes(cls):
         return {1: {'epsilon': {'type': AttrType.FLOAT, 'default': 1e-4},
-                    'is_training': {'type': AttrType.INT, 'default': 1}
+                    'is_training': {'type': AttrType.INT, 'default': 1},
+                    'exponential_avg_factor': {'type': AttrType.FLOAT, 'default': 1}
                     }
                 }
 
@@ -539,7 +540,7 @@ class TfFusedBatchNormOp(LayoutConcernedOp, OpHasVariableOutPorts, TfOp):
 
     @property
     def correspond_onnx_op(self):
-        return {'type': 'BatchNormalization', 'version': 9}
+        return {'type': 'BatchNormalization', 'version': 15}
 
 
 class TfFusedBatchNormV3Op(LayoutConcernedOp, OpHasVariableOutPorts, TfOp):
@@ -547,7 +548,7 @@ class TfFusedBatchNormV3Op(LayoutConcernedOp, OpHasVariableOutPorts, TfOp):
     def attributes(cls):
         return {1: {'epsilon': {'type': AttrType.FLOAT, 'default': 1e-4},
                     'is_training': {'type': AttrType.INT, 'default': 1},
-                    'exponential_avg_factor': {'type': AttrType.INT, 'default': 1}
+                    'exponential_avg_factor': {'type': AttrType.FLOAT, 'default': 1}
                     }
                 }
 

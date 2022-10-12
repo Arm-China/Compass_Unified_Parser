@@ -34,7 +34,8 @@ from ....ops.release_ops import ArmCastOp, ArmConvolutionOp, ArmConvolution3DOp,
     ArmDepthwiseConvOp, ArmConvTransposeOp, ArmConvTranspose3DOp, ArmActivationOp
 from ....ops.common_ops import PluginOp
 from .rename_ops import simple_rename
-from .common_passes import remove_node_safely, insert_cast, insert_tile, insert_reshape, insert_reshape_after, insert_constant, \
+from .common_passes import remove_node_safely, insert_cast, insert_cast_after, insert_tile, \
+    insert_reshape, insert_reshape_after, insert_constant, \
     insert_slice, insert_transpose, remove_redundant_bn, remove_redundant_reshape, remove_redundant_transpose, \
     remove_redundant_transpose_pro, remove_useless_op, fuse_const,  insert_gather, remove_redundant_cast
 from ....plugin_loader import PARSER_OP_DICT
@@ -1796,14 +1797,19 @@ def merge_hw_maxunpool(graph):
 
 
 def rename_activations(graph):
-    activations = ['Clip', 'Celu', 'Elu', 'HardSwish', 'HardSigmoid', 'Mish', 'LeakyRelu', 'PRelu', 'Relu',
-                   'Sigmoid', 'Tanh', 'Softsign', 'Softplus', 'Selu', 'ThresholdedRelu', 'Shrink', 'Silu', 'Gelu']
+    activations = ['Celu', 'Clip', 'Elu', 'Gelu', 'HardSigmoid', 'HardSwish',
+                   'LeakyRelu', 'Mish',  'PRelu', 'Relu',
+                   'Selu', 'Shrink', 'Sigmoid', 'Silu', 'Softplus', 'Softsign',
+                   'Tanh', 'ThresholdedRelu', ]
     matches = [single_node_matcher(graph, act_type)
                for act_type in activations]
     matches = extend_lists(matches)
     for m in matches:
         act = m['target']
         act_obj = NodeWrap(graph, act)['object']
+        if act_obj is None:
+            WARN('[Parser]: Meets invalid node(%s) in rename_activations!' % act)
+            continue
         act_attr = act_obj.copied_attr()
         if act_obj.type == 'Sigmoid':
             method = 'SIGMOID'
@@ -1811,19 +1817,9 @@ def rename_activations(graph):
                 out_edges = graph.sorted_out_edges(act, data=True)
                 if len(out_edges) >= 1 and out_edges[0] is not None and not out_edges[0][2]['tensor'].min_max:
                     out_edges[0][2]['tensor'].min_max = (0, 1)
-        elif act_obj.type == 'Softsign':
-            method = 'SOFTSIGN'
-        elif act_obj.type == 'Softplus':
-            method = 'SOFTPLUS'
-        elif act_obj.type == 'HardSwish':
-            method = 'HARDSWISH'
         elif act_obj.type == 'HardSigmoid':
             method = 'HARDSIGMOID'
             act_attr.update({'alpha': act_obj.alpha, 'beta': act_obj.beta})
-        elif act_obj.type == 'Mish':
-            method = 'MISH'
-        elif act_obj.type == 'Relu':
-            method = 'RELU'
         elif act_obj.type == 'Celu':
             method = 'CELU'
             act_attr.update({'alpha': act_obj.alpha})
@@ -1857,8 +1853,6 @@ def rename_activations(graph):
                 method = 'CLIP'
                 act_attr.update(
                     {'clip_min': act_obj.min, 'clip_max': act_obj.max})
-        elif act_obj.type == 'Tanh':
-            method = 'TANH'
         elif act_obj.type == 'Selu':
             method = 'SELU'
             act_attr.update({'alpha': act_obj.alpha, 'gamma': act_obj.gamma})
@@ -1871,14 +1865,24 @@ def rename_activations(graph):
         elif act_obj.type == 'Shrink':
             method = 'SHRINK'
             act_attr.update({'bias': act_obj.bias, 'lambd': act_obj.lambd})
-        elif act_obj.type == 'Silu':
-            method = 'SILU'
         else:
-            method = act_obj.type
-            WARN('[Parser]: Activation type %s is not implemented in rename_activations!' %
-                 act_obj.type)
+            method = str(act_obj.type).upper()
         act_attr.update({'method': method})
         NodeWrap(graph, act).replace_obj('ArmActivation', act_attr)
+
+        if act_obj.type in ['Clip', 'Relu', 'Shrink'] \
+                and len(act_obj.get_input_tensors()) >= 1 \
+                and act_obj.get_input_tensors()[0] is not None \
+                and np.issubdtype(act_obj.get_input_tensors()[0].dtype, np.integer):
+            in_edges = graph.sorted_in_edges(act, keys=True, data=True)
+            src, _, k, in_attr = in_edges[0]
+            insert_cast(graph, src, act, 'float32',
+                        in_attr=in_attr, key=k, type='ArmCast')
+            post_cast = insert_cast_after(
+                graph, act, 'float32', 'int32', type='ArmCast')
+            if act in graph._attr['output_names']:
+                index = graph._attr['output_names'].index(act)
+                graph._attr['output_names'][index] = post_cast
 
 
 def rename_argminmax(graph):
@@ -3551,7 +3555,7 @@ def remove_const(graph):
                 const_child = const_out_edges[0][1]
                 const_child_obj = NodeWrap(graph, const_child)['object']
                 if const_child_obj is not None:
-                    if isinstance(const_child_obj, (ArmOp, PluginOp)):
+                    if isinstance(const_child_obj, (ArmOp, )):
                         in_port = const_out_edges[0][2]['dst_in_port']
                         op_in_ports_num = type(const_child_obj).num_in_ports()
                         if op_in_ports_num < 0 or (op_in_ports_num >= 0 and in_port < op_in_ports_num):
@@ -4027,14 +4031,14 @@ def sink_transpose_through_special_reshape(graph, max_branches=6):
             trans_out_names = [m['trans_out_%s' % str(i+1)] for i in range(b)]
             if any([not graph.has_node(name) for name in [trans] + trans_out_names]):
                 WARN(
-                    '[Parser]: Meets invalid name(%s) that does not exist in graph in sink_transpose_through_special_reshape!' % (name))
+                    '[Parser]: Meets invalid name that does not exist in graph in sink_transpose_through_special_reshape!')
                 continue
             trans_obj = NodeWrap(graph, trans)['object']
             trans_out_objs = [NodeWrap(graph, name)['object']
                               for name in trans_out_names]
             if trans_obj is None or any([out_obj is None for out_obj in trans_out_objs]):
                 WARN(
-                    '[Parser]: Meets invalid Node(%s) object in sink_transpose_through_special_reshape!' % (trans))
+                    '[Parser]: Meets invalid Node(%s) object in sink_transpose_through_special_reshape!' % trans)
                 continue
             out_reshape_objs = {
                 out_obj.name: out_obj for out_obj in trans_out_objs if out_obj.type == 'ArmReshape'}

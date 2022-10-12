@@ -24,7 +24,7 @@ from ....plugin_loader import PARSER_OP_DICT
 
 from ....common.defs import Tensor, Framework, FLOAT_EQUAL
 from ....common.errors import *
-from ....common.utils import extend_lists
+from ....common.utils import extend_lists, get_converted_dtype
 from ....ops.op import Op, OpHasWeights, OpHasBiases, OpHasOneOutPort, ConstLikeOp
 from ....ops.onnx_ops.array_ops import CastOp
 from ....ops.release_ops import ArmCastOp, ArmTransposeOp
@@ -102,20 +102,13 @@ def remove_useless_op(graph, op_type_list):
                 if node_obj.to not in ArmCastOp.attributes()['to_dtype']['options']:
                     if node_obj.to == 'bool':
                         continue
-                    input_shapes = node_obj.get_input_shapes()
-                    in_edges = graph.sorted_in_edges(node_name)
-                    if len(input_shapes) == 1 and len(in_edges) == 1 and len(graph.succ[in_edges[0][0]]) == 1:
-                        for inp_name, in_tensor in graph._attr['input_tensors'].items():
-                            if str(in_tensor.value.dtype) != node_obj.to \
-                                    and len(graph.succ[inp_name]) == 1 \
-                                    and len(list(all_simple_paths(graph, inp_name, node_name))) == 1:
-                                new_tensor = copy.deepcopy(in_tensor)
-                                new_tensor.value = in_tensor.value.astype(
-                                    np.dtype(node_obj.to))
-                                graph._attr['input_tensors'][inp_name] = new_tensor
-                                break
-                    removing_nodes.append(node_name)
-                elif len(in_tensors) > 0 \
+                    new_dtype = get_converted_dtype(
+                        node_obj.to, return_type_string=True)
+                    if new_dtype:
+                        WARN('[Parser]: Change unsupported dtype (%s) in Cast op (%s) to %s!' %
+                             (node_obj.to, node_name, new_dtype))
+                        node_obj.to = new_dtype
+                if len(in_tensors) > 0 \
                         and in_tensors[0] is not None \
                         and str(in_tensors[0].dtype) == node_obj.to:
                     removing_nodes.append(node_name)
@@ -386,7 +379,7 @@ def remove_redundant_cast(graph):
             cast1, cast2 = m['begin'], m['end']
             cast1_obj = NodeWrap(graph, cast1)['object']
             cast2_obj = NodeWrap(graph, cast2)['object']
-            if cast1_obj is not None and cast1_obj is not None:
+            if cast1_obj is not None and cast2_obj is not None:
                 cast1_out_edges = graph.sorted_out_edges(cast1)
                 if len(cast1_out_edges) == 1:
                     remove_node_safely(graph, cast1)
@@ -427,6 +420,44 @@ def insert_cast(graph, src, dst, dst_type, in_attr=None, key=None, type='Cast'):
         ret = cast
     else:
         WARN('[Parser]: Invalid params for insert_cast!')
+    return ret
+
+
+def insert_cast_after(graph, src, from_dtype, to_dtype, out_port=0, type='Cast'):
+    ret = None
+    if graph.has_node(src) \
+            and to_dtype in ArmCastOp.attributes()['to_dtype']['options'] \
+            and type in ('Cast', 'ArmCast') \
+            and NodeWrap(graph, src)['object'] is not None \
+            and out_port in NodeWrap(graph, src)['object'].get_out_ports():
+        if out_port == 0:
+            cast = src + '_post_cast'
+        else:
+            cast = src + '_post_cast_' + str(out_port)
+        cast = get_valid_node_name(graph, cast)
+        cast_in_tensor_value = None
+        for _, dst, k, out_attr in graph.sorted_out_edges(src, keys=True, data=True):
+            if out_attr['src_out_port'] == out_port:
+                new_out_attr = copy.deepcopy(out_attr)
+                new_out_attr['src_out_port'] = 0
+                if new_out_attr['tensor'] is not None \
+                        and new_out_attr['tensor'].value is not None:
+                    new_out_attr['tensor'].value = new_out_attr['tensor'].value.astype(
+                        np.dtype(to_dtype))
+                    cast_in_tensor_value = new_out_attr['tensor'].value.astype(
+                        np.dtype(from_dtype))
+                graph.remove_edge(src, dst, k)
+                graph.add_edge(cast, dst, **new_out_attr)
+        graph.add_edge(src, cast, **{'src_out_port': out_port,
+                       'dst_in_port': 0, 'tensor': Tensor(value=cast_in_tensor_value)})
+        if type == 'Cast':
+            cast_attr = {'name': cast, 'opset_version': 1, 'to': to_dtype}
+        else:
+            cast_attr = {'name': cast, 'to_dtype': to_dtype}
+        NodeWrap(graph, cast).replace_obj(type, cast_attr)
+        ret = cast
+    else:
+        WARN('[Parser]: Invalid params for insert_cast_after!')
     return ret
 
 
@@ -622,6 +653,50 @@ def insert_slice(graph, src, dst, in_attr, begin, size, key=None, type='Slice', 
     return ret
 
 
+def insert_slice_after(graph, src, begin, size, out_port=0, type='Slice', data_format='NHWC'):
+    ret = None
+    if not (graph.has_node(src) and begin and size and type in ('Slice', 'ArmSlice')):
+        WARN('[Parser]: Invalid params for insert_slice_after!')
+        return ret
+    if out_port == 0:
+        name = src + '_post_slice'
+    else:
+        name = src + '_post_slice_' + str(out_port)
+    slice_name = get_valid_node_name(graph, name)
+    graph.add_node(slice_name)
+    slice_attr = {'name': slice_name}
+
+    starts = np.array(begin, np.int32)
+    size = np.array(size, np.int32)
+    ends = starts + size
+
+    if type == 'Slice':
+        slice_attr.update({'opset_version': 10})
+        insert_constant(graph, slice_name + '_starts', starts,
+                        slice_name, in_port=1, data_format=data_format)
+        insert_constant(graph, slice_name + '_ends', ends,
+                        slice_name, in_port=2, data_format=data_format)
+    else:
+        slice_attr.update({'starts': starts.tolist(),
+                           'ends': ends.tolist(),
+                           'steps': [1] * starts.size
+                           })
+    NodeWrap(graph, slice_name).replace_obj(type, slice_attr)
+
+    src_out_attr = {'src_out_port': out_port, 'dst_in_port': 0}
+    out_edges = graph.sorted_out_edges(src, data=True)
+    for _, dst, out_attr in out_edges:
+        if out_attr.get('src_out_port', 0) != out_port:
+            continue
+        graph.remove_edge(src, dst)
+        new_out_attr = copy.deepcopy(out_attr)
+        new_out_attr['src_out_port'] = 0
+        graph.add_edge(slice_name, dst, **new_out_attr)
+    graph.add_edge(src, slice_name, **src_out_attr)
+    ret = slice_name
+    return ret
+
+
 def insert_tile(graph, src, dst, in_attr, reps, key=None, type='Tile', data_format='NHWC'):
     ret = None
     if graph.has_node(src) \
@@ -753,26 +828,122 @@ def apply_subgraph_plugin(graph):
         apply_pattern_subgraph_plugin(graph)
     except Exception as e:
         import traceback
-        WARN("Applying Subgraph plugin Failed. %s" % (str(e)))
+        WARN('Applying Subgraph plugin Failed. %s' % (str(e)))
         print(traceback.format_exc())
+
+
+def merge_pattern_to_plugin(graph, plugin_node_optype, innodes, outnodes, match=None):
+    assert len(
+        outnodes) > 0, '[Parser]: Meet invalid outnodes in merge_pattern_to_plugin!'
+    plugin_node = get_valid_node_name(graph, outnodes[0] + '_plugin')
+
+    def add_plugin_in_edge(src, in_attr, in_port):
+        new_in_attr = copy.deepcopy(in_attr)
+        new_in_attr.update({'dst_in_port': in_port})
+        graph.remove_edge(src, innode)
+        graph.add_edge(src, plugin_node, **new_in_attr)
+
+    all_nodes = set()
+    for src in innodes:
+        for dst in outnodes:
+            if src == dst:
+                all_nodes.add(src)
+                continue
+            for path in all_simple_paths(graph, src, dst):
+                all_nodes.update(path)
+
+    in_port = 0
+    input_index_map = []
+    for innode in innodes:
+        input_map = []
+        innode_in_edges = graph.sorted_in_edges(innode, data=True)
+        graph.remove_edges_from(innode_in_edges)
+        for src, _, in_attr in innode_in_edges:
+            add_plugin_in_edge(src, in_attr, in_port)
+            input_map.append(in_port)
+            in_port += 1
+        input_index_map.append(input_map)
+
+    out_port = 0
+    for outnode in outnodes:
+        input_map = []
+        outnode_in_edges = graph.sorted_in_edges(outnode, data=True)
+        graph.remove_edges_from(outnode_in_edges)
+        for src, _, in_attr in outnode_in_edges:
+            if any((node == src or has_path(graph, node, src)) for node in innodes):
+                continue
+            add_plugin_in_edge(src, in_attr, in_port)
+            input_map.append(in_port)
+            in_port += 1
+        input_index_map.append(input_map)
+        outnode_out_edges = graph.sorted_out_edges(outnode, data=True)
+        graph.remove_edges_from(outnode_out_edges)
+        for _, dst, out_attr in outnode_out_edges:
+            new_out_attr = copy.deepcopy(out_attr)
+            new_out_attr.update({'src_out_port': out_port})
+            graph.remove_edge(outnode, dst)
+            graph.add_edge(plugin_node, dst, **new_out_attr)
+            out_port += 1
+
+    # get attributes before remove it
+    attr_names_map = {}
+    if graph._attr['framework'].name == 'TENSORFLOW':
+        from ...tf.load import tf_attr_names_map
+        attr_names_map.update({v: k for k, v in tf_attr_names_map.items()})
+
+    attrs = {}
+    for name in all_nodes:
+        attrs[name] = {}
+        for k, v in getattr(NodeWrap(graph, name)['object'],
+                            '_attr',
+                            {}).items():
+            if k == 'keepdims':
+                v.value = bool(v.value)
+            attrs[name].update({k: v.value})
+            if k in attr_names_map:
+                attrs[name].update({attr_names_map[k]: v.value})
+
+    if match:
+        inverse_match = {v: k for k, v in match.items()}
+        attrs = {inverse_match[k]: v for k, v in attrs.items()}
+
+    new_attrs = NodeWrap(graph, outnodes[0])['object'].copied_attr()
+    new_attrs.update(attrs)
+    new_attrs.update({'name': plugin_node, '_nest_inputs': input_index_map})
+    NodeWrap(graph, plugin_node).replace_obj(plugin_node_optype, new_attrs)
+
+    for node in all_nodes:
+        if node in graph._attr['output_names']:
+            index = graph._attr['output_names'].index(node)
+            if plugin_node not in graph._attr['output_names']:
+                graph._attr['output_names'][index] = plugin_node
+            else:
+                graph._attr['output_names'].remove(index)
+        remove_node_safely(graph, node)
 
 
 def apply_pattern_subgraph_plugin(graph):
     pattern_subgraph = set()
     for name, plugin in PARSER_OP_DICT.items():
-        if hasattr(plugin, "_subgraph_type") and plugin._subgraph_type == "pattern_subgraph":
+        if hasattr(plugin, '_subgraph_type') and plugin._subgraph_type == 'pattern_subgraph':
             pattern_subgraph.add(plugin)
+    if not pattern_subgraph:
+        return
+
     pattern_subgraph = list(pattern_subgraph)
     pattern_subgraph.sort(key=lambda x: x.priority, reverse=True)
-    optype_prefix = {
-        Framework.TFLITE: lambda x: "Lite"+x,
-        Framework.CAFFE: lambda x: "Caffe"+x.upper(),
-        Framework.TENSORFLOW: lambda x: "Tf"+x,
-    }
-    def prefix(x): return x
-    framework = graph._attr.get('framework', Framework.NONE)
-    if framework in optype_prefix:
-        prefix = optype_prefix[framework]
+
+    def get_op_name(optype):
+        optype_prefix = {
+            Framework.TFLITE: lambda x: 'Lite'+x,
+            Framework.CAFFE: lambda x: 'Caffe'+x.upper(),
+            Framework.TENSORFLOW: lambda x: 'Tf'+x,
+        }
+
+        framework = graph._attr.get('framework', Framework.NONE)
+        op_name = optype_prefix[framework](optype) if \
+            framework in optype_prefix else optype
+        return op_name
 
     def get_io_nodes(nodes, edges):
         has_successors = set()
@@ -788,155 +959,40 @@ def apply_pattern_subgraph_plugin(graph):
             if node[0] not in has_successors:
                 outputs.append(node[0])
         return inputs, outputs
+
     for plugin in pattern_subgraph:
         innodes, outnodes = get_io_nodes(
             plugin.pattern_nodes, plugin.pattern_edges)
 
-        nodes = [(name, {'op': prefix(optype)})
+        nodes = [(name, {'op': get_op_name(optype)})
                  for name, optype in plugin.pattern_nodes]
         matches = matched_patterns(graph,
                                    nodes=nodes,
                                    edges=plugin.pattern_edges)
         for m in matches:
-            in_port = 0
-            out_port = 0
-            # use first out node as plugin node
-            plugin_node = m[outnodes[0]]
             innodes = [m[i] for i in innodes]
             outnodes = [m[i] for i in outnodes]
-            input_index_map = []
-            for innode in innodes:
-                input_map = []
-                for src, _, in_attr in graph.sorted_in_edges(innode, data=True):
-                    new_in_attr = copy.deepcopy(in_attr)
-                    new_in_attr.update({'dst_in_port': in_port})
-                    graph.remove_edge(src, innode)
-                    graph.add_edge(src, plugin_node, **new_in_attr)
-                    input_map.append(in_port)
-                    in_port += 1
-                input_index_map.append(input_map)
-            for outnode in outnodes:
-                for _, dst, out_attr in graph.sorted_out_edges(outnode, data=True):
-                    new_out_attr = copy.deepcopy(out_attr)
-                    new_out_attr.update({'src_out_port': out_port})
-                    graph.remove_edge(outnode, dst)
-                    graph.add_edge(outnode, dst, **new_out_attr)
-                    out_port += 1
-            # get attributes before remove it
-            attrs = {name:
-                     getattr(NodeWrap(graph, m[name])[
-                         'object'], '_attr', {})
-                     for name in m}
-            attrs = {
-                name: {
-                    k: v.value for k, v in attrs[name].items()
-                }
-                for name in attrs
-            }
-            new_attrs = NodeWrap(graph, plugin_node)['object'].copied_attr()
-            new_attrs.update(attrs)
-            new_attrs.update({"_nest_inputs": input_index_map})
-            for n in m:
-                if m[n] != plugin_node:
-                    for a, b in graph.sorted_in_edges(m[n]):
-                        graph.remove_edge(a, b)
-                    for a, b in graph.sorted_out_edges(m[n]):
-                        graph.remove_edge(a, b)
-                    remove_node_safely(graph, m[n])
-            NodeWrap(graph, plugin_node).replace_obj(plugin.op_type, new_attrs)
-            DEBUG("[Parser] pattern based subgraph plugin applied: {[%s]->[%s]} merged to %s" %
-                  (",".join([str(n) for n in innodes]), ",".join([str(n) for n in outnodes]), plugin.op_type))
+            merge_pattern_to_plugin(
+                graph, plugin.op_type, innodes, outnodes, m)
+            DEBUG('[Parser]: pattern based subgraph plugin applied: {[%s]->[%s]} merged to %s' %
+                  (','.join([str(n) for n in innodes]), ','.join([str(n) for n in outnodes]), plugin.op_type))
 
 
 def apply_named_subgraph_plugin(graph):
     named_subgraph = set()
-    for name, plugin in PARSER_OP_DICT.items():
-        if hasattr(plugin, "_subgraph_type") and plugin._subgraph_type == "named_subgraph":
+    for _, plugin in PARSER_OP_DICT.items():
+        if hasattr(plugin, '_subgraph_type') and plugin._subgraph_type == 'named_subgraph':
             named_subgraph.add(plugin)
     named_subgraph = list(named_subgraph)
     named_subgraph.sort(key=lambda x: x.priority, reverse=True)
     for plugin in named_subgraph:
-        nodes = set()
-        # check the plugin
-        if not all([graph.has_node(n) for n in plugin.start_nodes+plugin.end_nodes]):
+        if not all(graph.has_node(n) for n in plugin.start_nodes+plugin.end_nodes):
             continue
 
-        for src in plugin.start_nodes:
-            for dst in plugin.end_nodes:
-                if src == dst:
-                    nodes.add(src)
-                    continue
-                for path in all_simple_paths(graph, src, dst):
-                    nodes.update(path)
-
-        def get_io_nodes(graph, nodes):
-            inputs = []
-            outputs = []
-            if len(nodes) == 1:
-                return list(nodes), list(nodes)
-            for node in nodes:
-                for src, _ in graph.sorted_in_edges(node):
-                    if src in nodes and node not in outputs:
-                        outputs.append(node)
-                for _, dst in graph.sorted_out_edges(node):
-                    if dst in nodes and node not in inputs:
-                        inputs.append(node)
-
-            return inputs, outputs
-        input_nodes, outnodes = get_io_nodes(graph, nodes)
-        # complete the
-        innodes = []+plugin.start_nodes
-        for node in input_nodes:
-            if node not in innodes:
-                innodes.append(node)
-        plugin.start_nodes = innodes
-        DEBUG("[Parser] name_based subgraph plugin applied: {[%s]->[%s]} merged to %s" % (
-            ",".join(plugin.start_nodes), ",".join(plugin.end_nodes), plugin.op_type))
-        in_port = 0
-        out_port = 0
-        # # use first out node as plugin node
-        plugin_node = outnodes[0]
-        input_index_map = []
-        for innode in innodes:
-            input_map = []
-            for src, _, in_attr in graph.sorted_in_edges(innode, data=True):
-                new_in_attr = copy.deepcopy(in_attr)
-                new_in_attr.update({'dst_in_port': in_port})
-                graph.remove_edge(src, innode)
-                graph.add_edge(src, plugin_node, **new_in_attr)
-                input_map.append(in_port)
-                in_port += 1
-            input_index_map.append(input_map)
-        for outnode in outnodes:
-            for _, dst, out_attr in graph.sorted_out_edges(outnode, data=True):
-                new_out_attr = copy.deepcopy(out_attr)
-                new_out_attr.update({'src_out_port': out_port})
-                graph.remove_edge(outnode, dst)
-                graph.add_edge(outnode, dst, **new_out_attr)
-                out_port += 1
-        # get attributes before remove it
-        attrs = {name:
-                 getattr(NodeWrap(graph, name)[
-                     'object'], '_attr', {})
-                 for name in nodes}
-        attrs = {
-            name: {
-                k: v.value for k, v in attrs[name].items() if hasattr(v, 'value')
-            }
-            for name in attrs
-        }
-        new_attrs = NodeWrap(graph, plugin_node)['object'].copied_attr()
-        new_attrs.update(attrs)
-        new_attrs.update({"_nest_inputs": input_index_map})
-        for n in nodes:
-            if n != plugin_node:
-                for a, b in graph.sorted_in_edges(n):
-                    graph.remove_edge(a, b)
-                for a, b in graph.sorted_out_edges(n):
-                    graph.remove_edge(a, b)
-                remove_node_safely(graph, n)
-        NodeWrap(graph, plugin_node).replace_obj(
-            ".named_subgraph."+plugin.op_type, new_attrs)
+        merge_pattern_to_plugin(
+            graph, '.named_subgraph.'+plugin.op_type, plugin.start_nodes, plugin.end_nodes)
+        DEBUG('[Parser]: name_based subgraph plugin applied: {[%s]->[%s]} merged to %s' % (
+            ','.join(plugin.start_nodes), ','.join(plugin.end_nodes), plugin.op_type))
 
 
 def record_output_tensors(graph):

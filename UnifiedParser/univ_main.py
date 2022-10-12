@@ -80,7 +80,7 @@ def univ_parser(params):
 
         params['output_tensor_names'] = params['output_names'][:]
 
-        if is_file(model_path) and is_dir(output_dir):
+        if (is_file(model_path) or is_dir(model_path)) and is_dir(output_dir):
             graph = None
 
             if int(tf.__version__.split('.')[0]) >= 2:

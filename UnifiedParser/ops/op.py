@@ -220,7 +220,7 @@ class Op(abc.ABC):
         else:
             if isinstance(self, supported_ops):
                 cls_attrs = copy.deepcopy(cls.attributes())
-                if isinstance(self, TfliteOp):
+                if isinstance(self, (TfliteOp, TfOp)):
                     self._attr['cur_version'].value = self._attr['opcode_version'].value
                     if self._attr['cur_version'].value not in cls.attributes().keys():
                         keys = sorted(list(cls.attributes().keys()))
@@ -228,7 +228,7 @@ class Op(abc.ABC):
                             cls_attrs[keys[-1]]) if keys else {}
                         cls_attrs.update(
                             {self._attr['cur_version'].value: updates})
-                elif isinstance(self, (CaffeOp, TfOp)):
+                elif isinstance(self, (CaffeOp, )):
                     self._attr['cur_version'].value = 1
                 assert 'cur_version' in self._attr and self._attr['cur_version'].value in cls_attrs.keys(), \
                     ('[Parser]: Please check attributes of %s Node (%s)!' %
@@ -2106,7 +2106,8 @@ class TfOp(Op):
                          'default': 'int32',
                          'options': ['int8', 'int16', 'int32', 'int64',
                                      'uint16', 'uint32',
-                                     'bfloat16', 'half', 'float32', 'float64', 'float', 'double']}
+                                     'bfloat16', 'half', 'float32', 'float64', 'float', 'double']},
+                'opcode_version': {'type': AttrType.INT, 'required': False, 'default': 1},
                 }
 
     def __init__(self, graph, attr_dict=None):

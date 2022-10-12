@@ -909,6 +909,8 @@ class ArmConvTransposeOp(BaseActivationOp, BaseConvOp, ArmOp):
     def write_attrs(self, txt_file):
         ret = super(ArmConvTransposeOp, self).write_attrs(txt_file)
         if ret:
+            # TODO: Remove output_padding_x and output_padding_y
+            assert(all(p == 0 for p in self.output_padding)), 'Meet non-zero output_padding in ArmConvTransposeOp!'
             txt_file.write('output_padding_x=%d\n' % self.output_padding[1])
             txt_file.write('output_padding_y=%d\n' % self.output_padding[0])
         return ret

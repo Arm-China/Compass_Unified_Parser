@@ -199,6 +199,40 @@ class LiteABSOp(OpHasOneOutPort, TfliteOp):
         return {'type': 'Abs', 'version': 13}
 
 
+class LiteBATCH_MATMULOp(OpHasOneOutPort, TfliteOp):
+    @classmethod
+    def attributes(cls):
+        return {1: {'adj_x': {'type': AttrType.STRING, 'default': False},
+                    'adj_y': {'type': AttrType.STRING, 'default': False}
+                    },
+                2: {'adj_x': {'type': AttrType.STRING, 'default': False},
+                    'adj_y': {'type': AttrType.STRING, 'default': False}
+                    },
+                3: {'adj_x': {'type': AttrType.STRING, 'default': False},
+                    'adj_y': {'type': AttrType.STRING, 'default': False}
+                    },
+                4: {'adj_x': {'type': AttrType.STRING, 'default': False},
+                    'adj_y': {'type': AttrType.STRING, 'default': False}
+                    },
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(LiteBATCH_MATMULOp, self).__init__(graph, attr_dict)
+        self.update_attributes(LiteBATCH_MATMULOp, attr_dict)
+        assert self.check_required(), 'LiteBATCH_MATMULOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(LiteBATCH_MATMULOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = tf.raw_ops.BatchMatMulV2(
+            x=inputs[0], y=inputs[1], adj_x=self.adj_x, adj_y=self.adj_y).eval()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'MatMul', 'version': 9}
+
+
 class LiteBATCH_TO_SPACE_NDOp(OpHasOneOutPort, TfliteOp):
     @classmethod
     def attributes(cls):
@@ -317,7 +351,7 @@ class LiteCONCATENATIONOp(OpHasAxis, BaseActivationOp, TfliteOp):
 class LiteCONV_2DOp(BaseActivationOp, BaseConvOp, TfliteOp):
     @classmethod
     def attributes(cls):
-        return {1: {}, 2: {}, 3: {}}
+        return {1: {}, 2: {}, 3: {}, 4: {}, 5: {}}
 
     @classmethod
     def perm_lite_to_onnx(cls):
@@ -764,6 +798,18 @@ class LiteEXPOp(OpHasOneOutPort, TfliteOp):
         return {'type': 'Exp', 'version': 13}
 
 
+class LiteEXPAND_DIMSOp(OpHasAxis, OpHasOneOutPort, TfliteOp):
+    @classmethod
+    def attributes(cls):
+        return {1: {}, 2: {}}
+
+    def infer_shape(self):
+        super(LiteEXPAND_DIMSOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = tf.expand_dims(*inputs).eval()
+        self.set_out_tensor(out_tensor)
+
+
 class LiteFILLOp(OpHasOneOutPort, TfliteOp):
     @classmethod
     def attributes(cls):
@@ -833,6 +879,9 @@ class LiteFULLY_CONNECTEDOp(BaseActivationOp, BaseLinearOp, TfliteOp):
                 3: {'weights_format': {'type': AttrType.INT, 'default': 0}},
                 4: {'weights_format': {'type': AttrType.INT, 'default': 0}},
                 5: {'weights_format': {'type': AttrType.INT, 'default': 0},
+                    'keepdims': {'type': AttrType.INT, 'default': 0, 'options': [0, 1]},
+                    },
+                9: {'weights_format': {'type': AttrType.INT, 'default': 0},
                     'keepdims': {'type': AttrType.INT, 'default': 0, 'options': [0, 1]},
                     }
                 }
@@ -1647,6 +1696,27 @@ class LiteQUANTIZEOp(OpHasOneOutPort, TfliteOp):
         return {'type': 'Identity', 'version': 1}
 
 
+class LiteRANGEOp(OpHasOneOutPort, TfliteOp):
+    @classmethod
+    def attributes(cls):
+        return {1: {}}
+
+    def __init__(self, graph, attr_dict=None):
+        super(LiteRANGEOp, self).__init__(graph, attr_dict)
+        self.update_attributes(LiteRANGEOp, attr_dict)
+        assert self.check_required(), 'LiteRANGEOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(LiteRANGEOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = tf.range(*inputs).eval()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'Range', 'version': 11}
+
+
 class LiteREDUCE_ALLOp(TfliteReduceOp):
     @classmethod
     def ufunc(cls):
@@ -2099,6 +2169,31 @@ class LiteSELECT_V2Op(OpHasOneOutPort, TfliteOp):
     @property
     def correspond_onnx_op(self):
         return {'type': 'Where', 'version': 9}
+
+
+class LiteSHAPEOp(OpHasOneOutPort, ConstLikeOp, TfliteOp):
+    @classmethod
+    def attributes(cls):
+        return {1: {'out_type': {'type': AttrType.STRING, 'default': 'int32', 'options': ['int32', 'int64']}}
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(LiteSHAPEOp, self).__init__(graph, attr_dict)
+        self.update_attributes(LiteSHAPEOp, attr_dict)
+        assert self.check_required(), 'LiteSHAPEOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(LiteSHAPEOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        if inputs and inputs[0] is not None:
+            out_tensor = np.array(inputs[0].shape, np.dtype(self.out_type))
+        else:
+            out_tensor = None
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'Shape', 'version': 13}
 
 
 class LiteSINOp(OpHasOneOutPort, TfliteOp):

@@ -32,7 +32,7 @@ from ....ops.op import Op, BaseLinearOp, BaseConvOp, BaseOnnxPoolOp, OpHasOneOut
     OnnxOp, CommonOp, OpNeedBroadcast, OpNeedUniBroadcast
 from ....ops.onnx_ops.array_ops import ReshapeOp
 from .common_passes import fuse_const, remove_useless_op, remove_node_safely, insert_reshape, insert_reshape_after, \
-    insert_cast, insert_constant, insert_slice, insert_tile, insert_transpose, insert_transpose_after, \
+    insert_cast, insert_constant, insert_slice, insert_slice_after, insert_tile, insert_transpose, insert_transpose_after, \
     remove_redundant_reshape, remove_redundant_transpose
 
 
@@ -207,28 +207,36 @@ def convert_bn_train(graph):
                 continue
             inputs = fusebnv3_obj.get_input_tensors()
             x = inputs[0]
-            scale = inputs[1]
-            offset = inputs[2]
-            eps = fusebnv3_obj.epsilon
-            inp_shape = x.shape
-            inp_rank = len(inp_shape) if inp_shape is not None else None
-            if inp_shape is None:
+            if x.shape is None:
                 continue
             matched = True
-            dims = [0] + list(range(2, inp_rank))
+            inp_rank = len(x.shape)
+            eps = fusebnv3_obj.epsilon
+            if fusebnv3_obj.data_format == 'NCHW':
+                dims = [0] + list(range(2, inp_rank))
+                reshape_dim = [-1] + [1] * (inp_rank-2)
+            else:
+                dims = list(range(0, inp_rank-1))
+                reshape_dim = [1] * (inp_rank-2) + [-1]
+            # run_mean_value -> onnx input_mean; run_var_value -> onnx input_var
             inp_shape = np.array(x.shape, np.dtype(np.int32))
             reduce_dims = np.take(inp_shape, np.array(dims, np.int32), axis=0)
             cnt_float = np.prod(reduce_dims, axis=tuple(
                 [0]), keepdims=False).astype(np.float32)
-            run_mean = np.mean(x, axis=tuple(dims), keepdims=True)
-            sub = np.subtract(x, run_mean)
-            var_squeezed = np.sum(
-                np.square(sub), axis=tuple(dims), keepdims=False)
-            run_var = np.true_divide(var_squeezed, cnt_float)
-            run_var_eps = np.add(run_var, eps)
-            sqrt_run_var_e = np.sqrt(run_var_eps)
-            weights = np.true_divide(1, sqrt_run_var_e)
-            reshape_dim = [weights.shape[0]] + [1] * (len(x.shape)-2)
+            run_mean_value = np.mean(x, axis=tuple(dims), keepdims=True)
+            sub_value = np.subtract(x, run_mean_value)
+            var_squeezed_value = np.sum(
+                np.square(sub_value), axis=tuple(dims), keepdims=False)
+            run_var_value = np.true_divide(var_squeezed_value, cnt_float)
+            # weights_value -> onnx 1/sqrt(input_var+eps)=(input_var+eps)^(-0.5)
+            run_var_eps_value = np.add(run_var_value, eps)
+            sqrt_value = np.sqrt(run_var_eps_value)
+            weights_value = np.true_divide(1, sqrt_value)
+            reshaped_weights_value = np.reshape(weights_value, reshape_dim)
+            # y = reshaped_weights_value * (x - input_mean) * scale + B
+            #   = reshaped_weights_value * sub_value * scale + offset
+            #   = reshaped_weights_value * sub_value * inputs[1] + inputs[2]
+            mul_sub_value = reshaped_weights_value * sub_value
 
             run_mean = get_valid_node_name(graph, fusebnv3 + '_run_mean')
             sub = get_valid_node_name(graph, fusebnv3 + '_sub')
@@ -236,61 +244,52 @@ def convert_bn_train(graph):
                 graph, fusebnv3 + '_var_squeeze')
             run_var = get_valid_node_name(graph, fusebnv3 + '_run_var')
             run_var_eps = get_valid_node_name(graph, fusebnv3 + '_run_var_eps')
-            sqrt_run_var_e = get_valid_node_name(
-                graph, fusebnv3 + '_sqrt_run_var_e')
             weights = get_valid_node_name(graph, fusebnv3 + '_weights')
-            mid_bias = get_valid_node_name(
-                graph, fusebnv3 + '_mid_bias')
-            mid_bias_reshape = get_valid_node_name(
-                graph, fusebnv3 + '_mid_bias_reshape')
-            weights_reshape = get_valid_node_name(
-                graph, fusebnv3 + '_weights_reshape')
-            biases = get_valid_node_name(graph, fusebnv3 + '_biases')
-            y_mul = get_valid_node_name(graph, fusebnv3 + '_y_mul')
-            y = get_valid_node_name(graph, fusebnv3 + '_y')
+            mul_sub = get_valid_node_name(
+                graph, fusebnv3 + '_mul_sub')
+            mul_scale = get_valid_node_name(
+                graph, fusebnv3 + '_mul_scale')
+            y = get_valid_node_name(graph, fusebnv3 + '_add_bias')
 
             graph.remove_edges_from(fusebnv3_in_edges)
-            x_src, _, _ = fusebnv3_in_edges[0]
+            x_src, _, x_out_attr = fusebnv3_in_edges[0]
+            scale, _, scale_out_attr = fusebnv3_in_edges[1]
+            offset, _, offset_out_attr = fusebnv3_in_edges[2]
 
-            graph.add_edge(x_src, run_mean)
-            graph.add_edge(x_src, sub, **{'src_out_port': 0, 'dst_in_port': 0})
+            graph.add_edge(x_src, run_mean, **x_out_attr)
+            graph.add_edge(x_src, sub, **x_out_attr)
             graph.add_edge(run_mean, sub, **
-                           {'src_out_port': 1, 'dst_in_port': 0})
-            graph.add_edge(sub, var_squeezed)
+                           {'src_out_port': 0, 'dst_in_port': 1, 'tensor': Tensor(value=run_mean_value)})
+            graph.add_edge(sub, var_squeezed, **{'tensor': Tensor(value=sub_value)})
             graph.add_edge(var_squeezed, run_var, **
+                           {'src_out_port': 0, 'dst_in_port': 0, 'tensor': Tensor(value=var_squeezed_value)})
+            graph.add_edge(run_var, run_var_eps, **{'tensor': Tensor(value=run_var_value)})
+            graph.add_edge(run_var_eps, weights, **{'tensor': Tensor(value=run_var_eps_value)})
+
+            # reshaped_weights_value * sub
+            graph.add_edge(sub, mul_sub, **
                            {'src_out_port': 0, 'dst_in_port': 0})
-            graph.add_edge(run_var, run_var_eps)
-            graph.add_edge(run_var, mid_bias)
-            graph.add_edge(run_var_eps, sqrt_run_var_e)
-            graph.add_edge(sqrt_run_var_e, weights, **
-                           {'src_out_port': 0, 'dst_in_port': 1})
-            graph.add_edge(mid_bias, mid_bias_reshape)
-            graph.add_edge(weights, weights_reshape)
-            graph.add_edge(run_mean, biases, **
-                           {'src_out_port': 0, 'dst_in_port': 0})
-            graph.add_edge(mid_bias_reshape, biases, **
-                           {'src_out_port': 0, 'dst_in_port': 1})
-            graph.add_edge(x_src, y_mul, **
-                           {'src_out_port': 0, 'dst_in_port': 0})
-            graph.add_edge(weights_reshape, y_mul,  **
-                           {'src_out_port': 0, 'dst_in_port': 1})
-            graph.add_edge(y_mul, y, **
-                           {'src_out_port': 0, 'dst_in_port': 0})
-            graph.add_edge(biases, y, **
-                           {'src_out_port': 0, 'dst_in_port': 1})
+            graph.add_edge(weights, mul_sub,  **
+                           {'src_out_port': 0, 'dst_in_port': 1, 'tensor': Tensor(value=weights_value)})
+            # reshaped_weights_value * sub * scale
+            graph.add_edge(mul_sub, mul_scale, **
+                           {'src_out_port': 0, 'dst_in_port': 0, 'tensor': Tensor(value=mul_sub_value)})
+            graph.add_edge(scale, mul_scale, **scale_out_attr)
+            # reshaped_weights_value * sub * scale + offset
+            offset_out_attr = copy.deepcopy(offset_out_attr)
+            offset_out_attr.update({'dst_in_port': 1})
+            graph.add_edge(mul_scale, y, **
+                           {'src_out_port': 0, 'dst_in_port': 0, 'tensor': Tensor(value=mul_sub_value)})
+            graph.add_edge(offset, y, **offset_out_attr)
 
             for _, dst, out_attr in fusebnv3_out_edges:
                 graph.remove_edge(fusebnv3, dst)
                 graph.add_edge(y, dst, **out_attr)
 
-            insert_constant(graph, run_var_eps + '_add', np.array(eps).astype(np.int32),
+            insert_constant(graph, run_var_eps + '_add', np.array(eps).astype(np.float32),
                             run_var_eps, in_port=1, data_format='NHWC')
-            insert_constant(graph, sqrt_run_var_e + '_pow', np.array(0.5).astype(np.int32),
-                            sqrt_run_var_e, in_port=1, data_format='NHWC')
-            insert_constant(graph, mid_bias + '_pow', np.array(0.5).astype(np.int32),
-                            mid_bias, in_port=1, data_format='NHWC')
-            insert_constant(graph, weights + '_div', np.array(1.0).astype(np.int32),
-                            weights, in_port=0, data_format='NHWC')
+            insert_constant(graph, weights + '_pow', np.array(-0.5).astype(np.float32),
+                            weights, in_port=1, data_format='NHWC')
             insert_constant(graph, run_var + '_cnt_float', np.array(cnt_float),
                             run_var, in_port=1, data_format='NHWC')
 
@@ -298,28 +297,27 @@ def convert_bn_train(graph):
                 'name': run_mean, 'axes': dims, 'keepdims': True, 'opset_version': 11})
             NodeWrap(graph, sub).replace_obj('Sub',  {
                 'name': sub, 'opset_version': 14})
-            NodeWrap(graph, var_squeezed).replace_obj('ReduceL2',  {
+            NodeWrap(graph, var_squeezed).replace_obj('ReduceSumSquare',  {
                 'name': var_squeezed, 'axes': dims, 'keepdims': False, 'opset_version': 13})
             NodeWrap(graph, run_var).replace_obj('Div', {
                 'name': run_var, 'opset_version': 7})
             NodeWrap(graph, run_var_eps).replace_obj('Add', {
                 'name': run_var_eps, 'opset_version': 7})
-            NodeWrap(graph, sqrt_run_var_e).replace_obj('Pow',  {
-                'name': sqrt_run_var_e, 'opset_version': 7})
-            NodeWrap(graph, mid_bias).replace_obj('Pow',  {
-                'name': mid_bias, 'opset_version': 7})
-            NodeWrap(graph, weights).replace_obj('Div',  {
+            NodeWrap(graph, weights).replace_obj('Pow',  {
                 'name': weights, 'opset_version': 7})
-            NodeWrap(graph, mid_bias_reshape).replace_obj('Reshape',  {
-                'name': mid_bias_reshape, 'opset_version': 1, 'shape': np.array(reshape_dim)})
-            NodeWrap(graph, weights_reshape).replace_obj('Reshape',  {
-                'name': weights_reshape, 'opset_version': 1, 'shape': np.array(reshape_dim)})
-            NodeWrap(graph, biases).replace_obj('Div',  {
-                'name': biases, 'opset_version': 7})
-            NodeWrap(graph, y_mul).replace_obj('Mul',  {
-                'name': y_mul, 'opset_version': 7})
-            NodeWrap(graph, y).replace_obj('Sub',  {
-                'name': y, 'opset_version': 14})
+            NodeWrap(graph, mul_sub).replace_obj('Mul',  {
+                'name': mul_sub, 'opset_version': 7})
+            NodeWrap(graph, mul_scale).replace_obj('Mul',  {
+                'name': mul_scale, 'opset_version': 7})
+            NodeWrap(graph, y).replace_obj('Add',  {
+                'name': y, 'opset_version': 7})
+
+            # Reshape is needed when data format is NCHW
+            if fusebnv3_obj.data_format == 'NCHW':
+                mul_sub_in_attr = {'src_out_port': 0, 'dst_in_port': 0, 'tensor': Tensor(value=weights_value)}
+                insert_reshape(graph, weights, mul_sub, mul_sub_in_attr, reshape_dim)
+                insert_reshape(graph, scale, mul_scale, scale_out_attr, reshape_dim)
+                insert_reshape(graph, offset, y, offset_out_attr, reshape_dim)
 
             if fusebnv3 in graph._attr['output_names']:
                 index = graph._attr['output_names'].index(fusebnv3)
@@ -341,8 +339,17 @@ def convert_nms(graph):
         if nms_obj is not None:
             in_edges = graph.sorted_in_edges(nms, data=True)
             if len(in_edges) == 5:
+
+                # Calculate the required variables
+
+                # Variables before NMS
                 box_shape = nms_obj.get_input_shapes()[0]
                 score_shape = nms_obj.get_input_shapes()[1]
+                if box_shape is not None and score_shape is not None and len(box_shape) <= 2 or len(score_shape) <= 1:
+                    WARN(
+                        '[Parser]: box_shape or score_shape is None.')
+                    continue
+
                 onnx_batch = box_shape[0]
                 box_num = box_shape[1]
                 class_num = score_shape[1]
@@ -360,13 +367,47 @@ def convert_nms(graph):
                 score_reshape_dim = [score_shape[0],
                                      score_shape[1]*score_shape[2]]
                 tile_dim = [1, class_num, 1]
+                add_num = np.array(
+                    onnx_batch*[[-0.5]*box_num+[-0.5]*box_num+[0.5]*box_num+[0.5]*box_num])
+                reshape_box_1_dim = [onnx_batch, box_num]
+                reshapedim2 = [onnx_batch, box_shape[2], box_num]
+
+                # Variables after NMS
+                box_num = min(box_shape[1], max_output_boxes_per_class)
+                out_edges = graph.sorted_out_edges(nms, data=True)
+
+                post_slice_start = np.array([0, 0]).astype(np.int32).tolist()
+                post_slice_end_num = box_num*class_num if onnx_batch*box_num * \
+                    class_num < max_output_boxes_per_class else max_output_boxes_per_class//onnx_batch
+                post_slice_end = np.array(
+                    [onnx_batch, int(post_slice_end_num)]).tolist()
+                post_slice_step = np.array([1, 1]).tolist()
+
+                onnx_res_first_row = [box_num*class_num*[i]
+                                      for i in range(onnx_batch)]
+                onnx_res_second_row = [box_num*[j]
+                                       for i in range(onnx_batch) for j in range(class_num)]
+                class_num_list = np.array(onnx_res_second_row)  # class_num
+                class_num_list = np.reshape(class_num_list, (-1, 1))
+                class_num_list = class_num_list[:max_output_boxes_per_class, :]
+                batch_list = np.array(onnx_res_first_row)  # batch
+                batch_list = np.reshape(batch_list, (-1, 1))
+                batch_list = batch_list[:max_output_boxes_per_class, :]
+                need_insert_num1 = max_output_boxes_per_class-box_num*class_num*onnx_batch
+                need_insert_num2 = max_output_boxes_per_class*onnx_batch*class_num-box_num
+                complete_res = None
+                if need_insert_num1 > 0 or need_insert_num2 > 0:
+                    need_insert_num = min(need_insert_num1, need_insert_num2) if need_insert_num1 > 0 and need_insert_num2 > 0 else max(
+                        need_insert_num1, need_insert_num2)
+                    complete_res = np.zeros(need_insert_num)
+                    complete_res = np.reshape(complete_res, (-1, 1))
+                    batch_list = np.concatenate(
+                        [batch_list, complete_res], axis=0)
+                    class_num_list = np.concatenate(
+                        [class_num_list, complete_res], axis=0)
+
+                # Manipulate edges and nodes
                 if center_box is True:
-
-                    add_num = np.array(
-                        onnx_batch*[[-0.5]*box_num+[-0.5]*box_num+[0.5]*box_num+[0.5]*box_num])
-                    reshape_box_1_dim = [onnx_batch, box_num]
-                    reshapedim2 = [onnx_batch, box_shape[2], box_num]
-
                     split = get_valid_node_name(graph, nms + '_split')
                     xcenter_reshape = get_valid_node_name(
                         graph, nms + '_reshape1')
@@ -376,10 +417,8 @@ def convert_nms(graph):
                         graph, nms + '_reshape3')
                     height_reshape = get_valid_node_name(
                         graph, nms + '_reshape4')
-
                     xyc_concat1 = get_valid_node_name(graph, nms + '_concat1')
                     hw_concat2 = get_valid_node_name(graph, nms + '_concat2')
-
                     mul_num = get_valid_node_name(graph, nms + '_mul')
                     xy_add = get_valid_node_name(graph, nms + '_add')
                     c_reshape = get_valid_node_name(graph, nms + '_reshape')
@@ -400,7 +439,6 @@ def convert_nms(graph):
                                    {'src_out_port': 2, 'dst_in_port': 0})
                     graph.add_edge(split, height_reshape, **
                                    {'src_out_port': 3, 'dst_in_port': 0})
-
                     graph.add_edge(ycenter_reshape, xyc_concat1, **
                                    {'src_out_port': 0, 'dst_in_port': 0})
                     graph.add_edge(xcenter_reshape, xyc_concat1, **
@@ -409,7 +447,6 @@ def convert_nms(graph):
                                    {'src_out_port': 0, 'dst_in_port': 2})
                     graph.add_edge(xcenter_reshape, xyc_concat1, **
                                    {'src_out_port': 0, 'dst_in_port': 3})
-
                     graph.add_edge(height_reshape, hw_concat2, **
                                    {'src_out_port': 0, 'dst_in_port': 0})
                     graph.add_edge(width_reshape, hw_concat2, **
@@ -418,7 +455,6 @@ def convert_nms(graph):
                                    {'src_out_port': 0, 'dst_in_port': 2})
                     graph.add_edge(width_reshape, hw_concat2, **
                                    {'src_out_port': 0, 'dst_in_port': 3})
-
                     graph.add_edge(hw_concat2, mul_num)
                     graph.add_edge(xyc_concat1, xy_add)
                     graph.add_edge(mul_num, xy_add, **
@@ -430,7 +466,6 @@ def convert_nms(graph):
                                    {'src_out_port': 0, 'dst_in_port': 0})
                     graph.add_edge(score_src, nms, **
                                    {'src_out_port': 0, 'dst_in_port': 3})
-
                     insert_reshape(
                         graph, score_src, nms, in_attr, score_reshape_dim, data_format='NCHW')
                     insert_constant(graph, xcenter_reshape + '_indices', np.array(
@@ -443,7 +478,6 @@ def convert_nms(graph):
                         reshape_box_1_dim).astype(np.int32), height_reshape, in_port=1, data_format='NHWC')
                     insert_constant(graph, box_tile + '_indices', np.array(tile_dim),
                                     box_tile, in_port=1, data_format='NHWC')
-
                     insert_constant(graph, mul_num + '_add_num',
                                     add_num, mul_num, in_port=1, data_format='NHWC')
 
@@ -457,27 +491,23 @@ def convert_nms(graph):
                         'name': width_reshape, 'shape': reshape_box_1_dim})
                     NodeWrap(graph, height_reshape).replace_obj('Reshape',  {
                         'name': height_reshape, 'shape': reshape_box_1_dim})
-
                     NodeWrap(graph, xyc_concat1).replace_obj(
                         'Concat',  {'name': xyc_concat1, 'opset_version': 11, 'axis': 1})
                     NodeWrap(graph, hw_concat2).replace_obj(
                         'Concat',  {'name': hw_concat2, 'opset_version': 11, 'axis': 1})
-
                     NodeWrap(graph, mul_num).replace_obj(
                         'Mul', {'name': mul_num, 'opset_version': 7})
                     NodeWrap(graph, xy_add).replace_obj(
                         'Add', {'name': xy_add, 'opset_version': 7})
-
                     NodeWrap(graph, c_reshape).replace_obj('Reshape',  {
                         'name': c_reshape, 'shape': reshapedim2, 'opset_version': 1})
-
                     NodeWrap(graph, box_trans).replace_obj('Transpose',  {
                         'name': box_trans, 'opset_version': 13, 'perm': [0, 2, 1]})
-
                     NodeWrap(graph, box_tile).replace_obj('Tile',  {
                         'name': box_tile, 'opset_version': 6})
                 else:
                     box_tile = get_valid_node_name(graph, nms + '_tile')
+
                     graph.remove_edges_from(in_edges)
                     box_src, _, _ = in_edges[0]
                     score_src, _, in_attr = in_edges[1]
@@ -490,91 +520,21 @@ def convert_nms(graph):
                                    {'src_out_port': 0, 'dst_in_port': 0})
                     insert_reshape(
                         graph, score_src, nms, in_attr, score_reshape_dim, data_format='NCHW')
-
                     insert_constant(graph, box_tile + '_indices', np.array(tile_dim),
                                     box_tile, in_port=1, data_format='NHWC')
 
                     NodeWrap(graph, box_tile).replace_obj('Tile',  {
                         'name': box_tile, 'opset_version': 6})
 
-                insert_constant(graph, nms + '_per_class_boxes_num', np.array(
-                    per_class_boxes_num).astype(np.int32), nms, in_port=1, data_format='NHWC')
-                insert_constant(graph, nms + '_total_class', np.array(
-                    total_class).astype(np.int32), nms, in_port=2, data_format='NHWC')
-
-                NodeWrap(graph, nms).replace_obj('ArmNMS',  {'name': nms,
-                                                             'iou_threshold': nms_obj.iou_threshold,
-                                                             'max_box_num': max_output_size,
-                                                             'score_threshold': nms_obj.score_threshold,
-                                                             'center_point_box': 0,
-                                                             'max_output_boxes_per_class': nms_obj.max_output_boxes_per_class
-
-                                                             })
-
-                # convert NMS IR output to onnx output:
-                # only support onnx output box >= min(batch(inp1.shape[0])*box_num(inp1.shape[1])*class_num(inp2.shape[1]),max_output_boxes_per_class)
-                # If the condition is not met, parser will raise warning
-                # May have sim issue if :
-                # onnx output box < batch(inp1.shape[0])*box_num(inp1.shape[1])*class_num(inp2.shape[1])
-                # for example:
-                # onnx only have 2 boxes for result. but opt have 6 boxes.
-                # so can not convert opt result to onnx result,because we don't know which box should be remained.
-
-                # This code: The result of box_num=min(max_output_boxes_per_class,inp1.shape)
-                # The result of onnx is included in the result of IR(the output of this pass).
-
-                box_num = min(box_shape[1], max_output_boxes_per_class)
-                out_edges = graph.sorted_out_edges(nms, data=True)
-
-                start = np.array([0, 0]).astype(np.int32).tolist()
-                end_num = box_num*class_num if onnx_batch*box_num * \
-                    class_num < max_output_boxes_per_class else max_output_boxes_per_class//onnx_batch
-                end = np.array([onnx_batch, int(end_num)]).tolist()
-                step = np.array([1, 1]).tolist()
-
-                list_a = [box_num*class_num*[i] for i in range(onnx_batch)]
-
-                list_b = [box_num*[j]
-                          for i in range(onnx_batch) for j in range(class_num)]
-
-                class_num_list = np.array(list_b)  # class_num
-                class_num_list = np.reshape(class_num_list, (-1, 1))
-                class_num_list = class_num_list[:max_output_boxes_per_class, :]
-
-                batch_list = np.array(list_a)  # batch
-                batch_list = np.reshape(batch_list, (-1, 1))
-                batch_list = batch_list[:max_output_boxes_per_class, :]
-                need_insert_num1 = max_output_boxes_per_class-box_num*class_num*onnx_batch
-                need_insert_num2 = max_output_boxes_per_class*onnx_batch*class_num-box_num
-
-                if need_insert_num1 > 0 or need_insert_num2 > 0:
-                    need_insert_num = min(need_insert_num1, need_insert_num2) if need_insert_num1 > 0 and need_insert_num2 > 0 else max(
-                        need_insert_num1, need_insert_num2)
-                    constant_num = np.zeros(need_insert_num)
-                    constant_num = np.reshape(constant_num, (-1, 1))
-                    batch_list = np.concatenate(
-                        [batch_list, constant_num], axis=0)
-                    class_num_list = np.concatenate(
-                        [class_num_list, constant_num], axis=0)
-
-                # insert slice and reshape for output 4
-                graph.remove_edges_from(out_edges)
                 post_slice = get_valid_node_name(graph, nms + '_slice')
+                post_concatenate = get_valid_node_name(graph, nms + '_concat')
                 post_reshape = get_valid_node_name(graph, nms + '_reshape')
+
+                graph.remove_edges_from(out_edges)
                 graph.add_edge(nms, post_slice, **
                                {'src_out_port': 3, 'dst_in_port': 0})
                 graph.add_edge(post_slice, post_reshape, **
                                {'src_out_port': 0, 'dst_in_port': 0})
-
-                NodeWrap(graph, post_slice).replace_obj('Slice',
-                                                        {'name': post_slice, 'opset_version': 1, 'starts': start, 'ends': end, 'steps': step})
-
-                NodeWrap(graph, post_reshape).replace_obj(
-                    'Reshape', {'name': post_reshape, 'opset_version': 1, 'shape': [-1, 1]})
-
-                # calculate constant a and b
-                # concatenate a b output_keep
-                post_concatenate = get_valid_node_name(graph, nms + '_concat')
                 graph.add_edge(post_reshape, post_concatenate, **
                                {'src_out_port': 0, 'dst_in_port': 2})
                 insert_constant(graph, nms + '_outa', np.array(batch_list),
@@ -586,28 +546,40 @@ def convert_nms(graph):
                     new_out_attr.update({'src_out_port': 0})
                     graph.add_edge(post_concatenate, dst, **new_out_attr)
 
-                NodeWrap(graph, post_concatenate).replace_obj(
-                    'Concat',  {'name': post_concatenate, 'opset_version': 11, 'axis': 1})
+                insert_constant(graph, nms + '_per_class_boxes_num', np.array(
+                    per_class_boxes_num).astype(np.int32), nms, in_port=1, data_format='NHWC')
+                insert_constant(graph, nms + '_total_class', np.array(
+                    total_class).astype(np.int32), nms, in_port=2, data_format='NHWC')
 
                 if need_insert_num1 > 0 or need_insert_num2 > 0:
-                    need_insert_num = min(need_insert_num1, need_insert_num2) if need_insert_num1 > 0 and need_insert_num2 > 0 else max(
-                        need_insert_num1, need_insert_num2)
-                    constant_num = np.zeros(need_insert_num)
-                    constant_num = np.reshape(constant_num, (-1, 1))
                     post_concatenate_0 = get_valid_node_name(
                         graph, nms + '_concat_0')
 
                     graph.add_edge(post_reshape, post_concatenate_0, **
                                    {'src_out_port': 0, 'dst_in_port': 1})
-                    insert_constant(graph, nms + '_out0', np.array(constant_num),
-                                    post_concatenate_0, in_port=0)
-
                     graph.add_edge(post_concatenate_0, post_concatenate, **
                                    {'src_out_port': 0, 'dst_in_port': 0})
                     graph.remove_edge(post_reshape, post_concatenate)
+                    insert_constant(graph, nms + '_out0', np.array(complete_res),
+                                    post_concatenate_0, in_port=0)
 
                     NodeWrap(graph, post_concatenate_0).replace_obj(
                         'Concat',  {'name': post_concatenate_0, 'opset_version': 11, 'axis': 0})
+
+                NodeWrap(graph, nms).replace_obj(
+                    'ArmNMS',  {'name': nms,
+                                'iou_threshold': nms_obj.iou_threshold,
+                                'max_box_num': max_output_size,
+                                'score_threshold': nms_obj.score_threshold,
+                                'center_point_box': 0,
+                                'max_output_boxes_per_class': nms_obj.max_output_boxes_per_class
+                                })
+                NodeWrap(graph, post_slice).replace_obj(
+                    'Slice', {'name': post_slice, 'opset_version': 1, 'starts': post_slice_start, 'ends': post_slice_end, 'steps': post_slice_step})
+                NodeWrap(graph, post_reshape).replace_obj(
+                    'Reshape', {'name': post_reshape, 'opset_version': 1, 'shape': [-1, 1]})
+                NodeWrap(graph, post_concatenate).replace_obj(
+                    'Concat',  {'name': post_concatenate, 'opset_version': 11, 'axis': 1})
 
                 if nms in graph._attr['output_names']:
                     index = graph._attr['output_names'].index(nms)
@@ -1443,7 +1415,7 @@ def fuse_mul_add_or_sub(graph):
 def fuse_pad(graph):
     pad_op_list = ['Pad']
     op_has_padding_list = list(set(OpHasPaddingStrides.get_concrete_subclass_names(
-    )).intersection(OnnxOp.get_concrete_subclass_names()))
+    )).difference(['ConvTranspose']).intersection(OnnxOp.get_concrete_subclass_names()))
     pad_fusing_combinations = itertools.product(
         pad_op_list, op_has_padding_list)
     for pad_op, op_has_padding in pad_fusing_combinations:
@@ -4920,6 +4892,115 @@ def merge_gn(graph):
         clear_redundant_nodes(graph)
 
 
+def merge_gn2(graph):
+    matched = False
+    gn_matches = matched_patterns(graph,
+                                  nodes=[
+                                      ('reshape_1', {'op': 'Reshape'}),
+                                      ('mean_1', {'op': 'ReduceMean'}),
+                                      ('sub_1', {'op': 'Sub'}),
+                                      ('pow', {'op': 'Pow'}),
+                                      ('pow_y', {'op': 'Constant'}),
+                                      ('mean_2', {'op': 'ReduceMean'}),
+                                      ('add_1', {'op': 'Add'}),
+                                      ('epsilon', {'op': 'Constant'}),
+                                      ('sqrt', {'op': 'Sqrt'}),
+                                      ('recip', {'op': 'Reciprocal'}),
+                                      ('gamma', {'op': 'Constant'}),
+                                      ('mul_gamma', {'op': 'Mul'}),
+                                      ('mul_1', {'op': 'Mul'}),
+                                      ('mul_2', {'op': 'Mul'}),
+                                      ('sub_2', {'op': 'Sub'}),
+                                      ('beta', {'op': 'Constant'}),
+                                      ('add_2', {'op': 'Add'}),
+                                      ('reshape_2', {'op': 'Reshape'}),
+                                  ],
+                                  edges=[
+                                      ('reshape_1', 'mean_1'),
+                                      ('reshape_1', 'mul_1'),
+                                      ('reshape_1', 'sub_1'),
+                                      ('mean_1', 'sub_1', {'dst_in_port': 1}),
+                                      ('sub_1', 'pow'),
+                                      ('pow_y', 'pow', {'dst_in_port': 1}),
+                                      ('pow', 'mean_2'),
+                                      ('mean_2', 'add_1'),
+                                      ('epsilon', 'add_1'),
+                                      ('add_1', 'sqrt'),
+                                      ('sqrt', 'recip'),
+                                      ('recip', 'mul_gamma'),
+                                      ('gamma', 'mul_gamma'),
+                                      ('mul_gamma', 'mul_1'),
+                                      ('mean_1', 'mul_2'),
+                                      ('mul_gamma', 'mul_2'),
+                                      ('beta', 'sub_2'),
+                                      ('mul_2', 'sub_2', {'dst_in_port': 1}),
+                                      ('mul_1', 'add_2'),
+                                      ('sub_2', 'add_2'),
+                                      ('add_2', 'reshape_2'),
+                                  ])
+    for m in gn_matches:
+        key_names = ['reshape_1', 'mean_1', 'mean_2',
+                     'pow_y', 'epsilon', 'gamma', 'beta', 'reshape_2']
+        reshape_1, mean_1, mean_2, pow_y, epsilon, gamma, beta, reshape_2 = [
+            m[name] for name in key_names]
+        objs_dict = {m[name]: NodeWrap(graph, m[name])[
+            'object'] for name in key_names}
+        if any(obj is None for obj in objs_dict.values()):
+            WARN('[Parser]: Meets invalid nodes in merge_gn2!')
+            continue
+        if objs_dict[epsilon].value.size > 1 and \
+                not FLOAT_EQUAL(objs_dict[epsilon].value, objs_dict[epsilon].value.item(0)):
+            continue
+        input_shapes = objs_dict[reshape_1].get_input_shapes()
+        expanded_shape = objs_dict[reshape_1].shape
+        output_shapes = objs_dict[reshape_2].get_output_shapes()
+        reshape_1_in_edges = graph.sorted_in_edges(reshape_1, data=True)
+        if len(input_shapes) < 1 \
+                or input_shapes[0] is None \
+                or expanded_shape is None \
+                or len(output_shapes) < 1 \
+                or output_shapes[0] is None \
+                or input_shapes[0] != output_shapes[0] \
+                or len(reshape_1_in_edges) < 1:
+            continue
+        if not FLOAT_EQUAL(objs_dict[pow_y].value, 2.) \
+                or objs_dict[mean_1].axes != objs_dict[mean_2].axes:
+            continue
+        axes = sorted(OpHasAxis.make_axes_non_negative(
+            objs_dict[mean_1].axes, len(expanded_shape)))
+        non_axes = [num for num in range(
+            len(expanded_shape)) if num not in axes]
+        if len(non_axes) != 2 \
+                or non_axes[0] != 0 \
+                or non_axes[1] >= len(expanded_shape)-1:
+            continue
+        channels_axis = non_axes[1]
+        axes_after_reshape = [channels_axis, channels_axis+1]
+        exp_shape = [expanded_shape[axis] for axis in axes_after_reshape]
+        biases = OpHasAxis.align_axes(
+            objs_dict[beta].value, axes_after_reshape, exp_shape)
+        weights = OpHasAxis.align_axes(
+            objs_dict[gamma].value, axes_after_reshape, exp_shape)
+        if biases is None or weights is None:
+            continue
+        matched = True
+        eps = float(objs_dict[epsilon].value.item(0))
+        biases = np.reshape(biases, [-1])
+        weights = np.reshape(weights, [-1])
+        inp, _, inp_out_attr = reshape_1_in_edges[0]
+        reshape_2_in_edges = graph.sorted_in_edges(reshape_2)
+        graph.remove_edges_from(reshape_2_in_edges)
+        graph.add_edge(inp, reshape_2, **inp_out_attr)
+        gn_attr = objs_dict[reshape_2].copied_attr()
+        gn_attr.update(
+            {'epsilon': eps, 'weights': weights, 'biases': biases,
+             'group': expanded_shape[channels_axis], 'axes': None,
+             'axis': channels_axis})
+        NodeWrap(graph, reshape_2).replace_obj('ArmGroupNorm', gn_attr)
+    if matched:
+        clear_redundant_nodes(graph)
+
+
 def merge_in(graph):
     matched = False
     matches = matched_patterns(graph,
@@ -5535,6 +5616,7 @@ def rename_single_mul_or_add_or_sub(graph):
                 and len(in_consts) == 1 \
                 and ((in_shapes[0] is not None and len(in_shapes[0]) in (0, 1, 2, 3, 4, 5) and in_consts[0][1] == 1)
                      or (in_shapes[1] is not None and len(in_shapes[1]) in (0, 1, 2, 3, 4, 5) and in_consts[0][1] == 0)) \
+                and in_consts[0][2] is not None \
                 and np.ndim(in_consts[0][2]) in (0, 1):
             const_in_port = in_consts[0][1]
             main_input_port = 1 - const_in_port
@@ -5588,6 +5670,7 @@ def rename_single_mul_or_add_or_sub(graph):
 
                 tiled_const_value = np.tile(
                     in_consts[0][2], num_output) if in_consts[0][2].size == 1 else in_consts[0][2]
+                tiled_const_value = tiled_const_value.astype(np.float32)
                 if tiled_const_value.shape[-1] > num_output:
                     num_output = tiled_const_value.shape[-1]
                     src, _, _, in_attr = in_edges[main_input_port]
@@ -5816,6 +5899,11 @@ def split_special_bn(graph):
                 input_value = bn_in_edges[0][2]['tensor'].value
                 weights = gamma / np.sqrt(var + bn_obj.epsilon)
                 biases = beta - gamma * mean / np.sqrt(var + bn_obj.epsilon)
+                if bn_obj.data_format.startswith('NC') \
+                        and bn_obj.spatial:
+                    reshape_dims = [-1] + (len(input_value) - 2) * [1]
+                    weights = np.reshape(weights, reshape_dims)
+                    biases = np.reshape(biases, reshape_dims)
                 mul_tensor = input_value * weights
 
                 bn_weight_mul = get_valid_node_name(graph, bn + '_weight_mul')
@@ -5912,6 +6000,66 @@ def split_group_conv(graph):
                                        'group': 1})
                 NodeWrap(graph, meta_conv).replace_obj('Conv', meta_conv_attr)
             graph.remove_node(conv)
+
+
+def split_conv_transpose(graph):
+    matches = single_node_matcher(graph, 'ConvTranspose')
+    for m in matches:
+        conv_trans = m['target']
+        conv_trans_obj = NodeWrap(graph, conv_trans)['object']
+        in_edges = graph.sorted_in_edges(conv_trans, data=True)
+        out_edges = graph.sorted_out_edges(conv_trans, data=True)
+        if conv_trans_obj is None \
+                or len(in_edges) < 1 \
+                or len(out_edges) < 1 \
+                or len(conv_trans_obj.get_output_shapes()) < 1 \
+                or conv_trans_obj.get_output_shapes()[0] is None:
+            WARN(
+                '[Parser]: Meets invalid ConvTranspose (%s) in split_conv_transpose!' % conv_trans)
+            continue
+        if all(p == 0 for p in conv_trans_obj.output_padding):
+            continue
+        spatial_rank = len(conv_trans_obj.output_padding)
+        ori_output_shape = conv_trans_obj.get_output_shapes()[0]
+        data_format = conv_trans_obj.data_format
+        if data_format == 'NCHW':
+            ori_spatial_output_shape = ori_output_shape[2:]
+            # xi_begins(i=0,1,2,3,...) + x0_end + x1_end + xi_ends(i=2,3,...)
+            full_pads = [0] * (2 + spatial_rank + 2) + \
+                conv_trans_obj.output_padding
+        else:
+            ori_spatial_output_shape = ori_output_shape[1:-1]
+            full_pads = [0] * (2 + spatial_rank + 1) + \
+                conv_trans_obj.output_padding + [0]
+        new_spatial_output_shape = (np.array(ori_spatial_output_shape) + np.multiply(
+            np.array(conv_trans_obj.strides) - 1, conv_trans_obj.output_padding)).tolist()
+        # new_output_shape = ori_output_shape[:2] + new_spatial_output_shape
+
+        src, _, in_attr = in_edges[0]
+        graph.remove_edges_from(in_edges)
+        pre_pad = get_valid_node_name(graph, conv_trans + '_pre_pad')
+        graph.add_edge(src, pre_pad, **in_attr)
+        graph.add_edge(pre_pad, conv_trans)
+        pad_attr = {'name': pre_pad,
+                    'opset_version': 2,
+                    'pads': full_pads,
+                    'data_format': data_format}
+        NodeWrap(graph, pre_pad).replace_obj('Pad', pad_attr)
+
+        begin = [0] * (2 + spatial_rank)
+        size = ori_output_shape
+        post_slice = insert_slice_after(
+            graph, conv_trans, begin, size, data_format=data_format)
+
+        if conv_trans_obj.output_shape:
+            assert(len(conv_trans_obj.output_shape) == spatial_rank), \
+                '[Parser]: Meets invalid output_shape of ConvTranspose (%s) in split_conv_transpose!' % conv_trans
+            conv_trans_obj.output_shape = new_spatial_output_shape
+        conv_trans_obj.output_padding = [0] * spatial_rank
+
+        if conv_trans in graph._attr['output_names']:
+            index = graph._attr['output_names'].index(conv_trans)
+            graph._attr['output_names'][index] = post_slice
 
 
 def split_negative_pads(graph):
@@ -6504,6 +6652,7 @@ def middle_passes(graph, params):
     convert_fill(graph)
     convert_dequantizelinear(graph)
     convert_quantizelinear(graph)
+    convert_bn_train(graph)
     clear_useless_concat_input(graph)
 
     remove_redundant_transpose(graph)
@@ -6516,6 +6665,7 @@ def middle_passes(graph, params):
     rename_reshape_like(graph)
 
     split_negative_pads(graph)
+    split_conv_transpose(graph)
     convert_to_const(graph, ['Concat', 'Mul', 'Shape',
                      'Slice', 'Tile', 'Unsqueeze'])
     merge_gelu_1(graph)
@@ -6562,6 +6712,7 @@ def middle_passes(graph, params):
     merge_mvn2(graph)
     merge_mvn3(graph)
     merge_gn(graph)
+    merge_gn2(graph)
     merge_in(graph)
     broadcast_ln_weights_biases(graph)
     merge_norm(graph)
@@ -6574,7 +6725,6 @@ def middle_passes(graph, params):
 
     convert_gemm_to_fc(graph)
     convert_special_matmul_to_fc(graph)
-    convert_bn_train(graph)
     fuse_mul_add_or_sub(graph)
     fuse_gather_const_mul(graph)
     rearrange_matmul_reshape_bias(graph)

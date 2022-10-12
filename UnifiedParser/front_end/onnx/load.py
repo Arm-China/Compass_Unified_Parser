@@ -172,7 +172,7 @@ def convert_onnx_to_graph(model_path, params):
                 opset_ver = model_attr['opset_import'][0]['version']
             except:
                 WARN('[Parser]: Meets empty opset_import in convert_onnx_to_graph! Please check model file.')
-                opset_ver = get_opset_version(str(consumer_ver))
+                opset_ver = get_opset_version(consumer_ver)
                 WARN('[Parser]: Try to use suggested opset version(%s) for current Onnx!' % opset_ver)
             graph._attr['opset_version'] = opset_ver
             g = model.graph

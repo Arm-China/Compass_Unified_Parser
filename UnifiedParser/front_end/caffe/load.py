@@ -136,7 +136,7 @@ def convert_caffe_to_graph(model_path, params):
 
     consumer_ver = get_version(onnx)
     if consumer_ver >= 1.04:
-        opset_version = get_opset_version(str(consumer_ver))
+        opset_version = get_opset_version(consumer_ver)
         graph._attr['opset_version'] = opset_version
 
         prototxt_path = params.get('caffe_prototxt', '')

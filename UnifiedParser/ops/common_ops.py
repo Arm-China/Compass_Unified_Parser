@@ -440,7 +440,7 @@ class PluginOp(OpHasVariableOutPorts, CommonOp):
             if self._plugin is not None:
                 for k, v in getattr(self._plugin, 'params', {}).items():
                     if isinstance(v, np.ndarray):
-                        v = list(v)
+                        v = v.tolist()
                     if isinstance(v, (list,)):
                         try:
                             v = str(v).replace(' ', '')

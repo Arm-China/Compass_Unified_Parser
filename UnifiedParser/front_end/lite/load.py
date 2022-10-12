@@ -47,6 +47,12 @@ def convert_attr_to_onnx(attr_dict):
         elif k == 'Axis':
             new_attr.update({'axis': v})
             new_attr.pop(k)
+        elif k == 'AdjX':
+            new_attr.update({'adj_x': v})
+            new_attr.pop(k)
+        elif k == 'AdjY':
+            new_attr.update({'adj_y': v})
+            new_attr.pop(k)
         elif k == 'BeginMask':
             new_attr.update({'begin_mask': v})
             new_attr.pop(k)
@@ -196,7 +202,7 @@ def convert_tflite_to_graph(model_path, params):
         if ret:
             consumer_ver = get_version(onnx)
             if consumer_ver >= 1.04:
-                opset_version = get_opset_version(str(consumer_ver))
+                opset_version = get_opset_version(consumer_ver)
                 graph._attr['opset_version'] = opset_version
                 sub_graph = model.Subgraphs(0)
                 net_inputs = sub_graph.InputsAsNumpy().tolist()

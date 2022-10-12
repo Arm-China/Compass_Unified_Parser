@@ -35,6 +35,7 @@ from .tflite.AddNOptions import AddNOptions
 from .tflite.AddOptions import AddOptions
 from .tflite.ArgMaxOptions import ArgMaxOptions
 from .tflite.ArgMinOptions import ArgMinOptions
+from .tflite.BatchMatMulOptions import BatchMatMulOptions
 from .tflite.BatchToSpaceNDOptions import BatchToSpaceNDOptions
 from .tflite.BidirectionalSequenceLSTMOptions import BidirectionalSequenceLSTMOptions
 from .tflite.BidirectionalSequenceRNNOptions import BidirectionalSequenceRNNOptions

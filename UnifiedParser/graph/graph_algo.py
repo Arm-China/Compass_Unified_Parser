@@ -140,20 +140,19 @@ def all_simple_paths(graph, source, target):
         return []
 
     def _all_simple_paths_multigraph(G, source, target):
-        visited = [source]
-        stack = [(k for k in G._adj_dict[source].keys())]
-        while stack:
-            children = stack[-1]
-            child = next(children, None)
-            if child is None:
-                stack.pop()
-                visited.pop()
-            else:
-                if child == target:
-                    yield visited + [target]
-                elif child not in visited:
-                    visited.append(child)
-                    stack.append((k for k in G._adj_dict[child].keys()))
+        queue = []
+        queue.append(source)
+        seen = []
+        seen.append(source)
+        while(len(queue) > 0):
+            vertex = queue.pop(0)
+            nodes = G._adj_dict[vertex].keys()
+            for w in nodes:
+                if w == target:
+                    yield seen+[target]
+                elif w not in seen:
+                    queue.append(w)
+                    seen.append(w)
     return _all_simple_paths_multigraph(graph, source, target)
 
 

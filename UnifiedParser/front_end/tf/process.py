@@ -20,7 +20,8 @@
 from .load import convert_tf_to_graph
 from ...graph.graph_algo import infer, clear_redundant_nodes
 from ..onnx.passes.front_passes import fuse_weights_const
-from ..onnx.passes.common_passes import remove_useless_op, fuse_const, record_output_tensors
+from ..onnx.passes.common_passes import remove_useless_op, fuse_const, record_output_tensors, \
+    apply_subgraph_plugin
 from .passes.front_passes import merge_gru, merge_keras_gru, merge_keras_lstm, merge_zero_fraction, \
     remove_switch, remove_merge, \
     convert_to_onnx, split_b2s, split_s2b, split_special_floormod, \
@@ -39,6 +40,7 @@ def process_tf(model_path, params):
         from ..lite.passes.front_passes import convert_scatternd, split_rsqrt, convert_strided_slice, \
             convert_square, convert_square_diff, split_not_equal, convert_reverse_sequence, convert_unpack
 
+        apply_subgraph_plugin(graph)
         remove_useless_op(
             graph, ['TfAssert', 'TfEnter', 'TfIdentity', 'TfStopGradient'])
         remove_identity_n(graph)

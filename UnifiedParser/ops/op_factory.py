@@ -32,6 +32,7 @@ from .tf_ops.bitwise_ops import *
 from .tf_ops.control_flow_ops import *
 from .tf_ops.data_flow_ops import *
 from .tf_ops.image_ops import *
+from .tf_ops.keras_ops import *
 from .tf_ops.linalg_ops import *
 from .tf_ops.math_ops import *
 from .tf_ops.nn_ops import *

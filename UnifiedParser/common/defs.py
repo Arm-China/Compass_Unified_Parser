@@ -35,8 +35,18 @@ def FLOAT_EQUAL(x, y): return np.all(
     (np.abs(x - y)) < (np.finfo(np.float32).resolution))
 
 
-def TYPE_MIN(x): return np.finfo(np.float32).min.astype(x)
-def TYPE_MAX(x): return np.finfo(np.float32).max.astype(x)
+def TYPE_MIN(x):
+    if np.issubdtype(x, np.integer):
+        return np.iinfo(x).min
+    else:
+        return np.finfo(x).min.astype(x)
+
+
+def TYPE_MAX(x):
+    if np.issubdtype(x, np.integer):
+        return np.iinfo(x).max
+    else:
+        return np.finfo(x).max.astype(x)
 
 
 @unique
@@ -52,7 +62,7 @@ class Framework(Enum):
     TORCH = 8
 
 
-def get_opset_version(version_str):
+def get_opset_version(version_number):
     ONNX_VERSION_OPSET_MAP = {
         '1.03': 8,
         '1.04': 9,
@@ -63,7 +73,9 @@ def get_opset_version(version_str):
         '1.09': 14,
         '1.10': 15,
         '1.11': 16,
+        '1.12': 17
     }
+    version_str = '%1.2f' % float(version_number)
     versions = sorted(
         [k for k in ONNX_VERSION_OPSET_MAP.keys()], key=lambda x: float(x))
     if versions:

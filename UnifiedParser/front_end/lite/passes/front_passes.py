@@ -632,7 +632,7 @@ def convert_special_uni_seq_lstm(graph):
 
 def convert_strided_slice(graph, op_type='TfStridedSlice'):
     if op_type not in ('TfStridedSlice', 'LiteSTRIDED_SLICE'):
-        WARN('[Parser]: Meets invalid Op type (%s) in convert_scatternd!' % op_type)
+        WARN('[Parser]: Meets invalid Op type (%s) in convert_strided_slice!' % op_type)
         return
     matches = single_node_matcher(graph, op_type)
     for m in matches:
