@@ -42,7 +42,6 @@ for idx, cond_shape in enumerate(cond_shapes):
 
     feed_dict['X1'] = np.random.randint(0, 2, cond_shape).astype(bool)
     # Run tests with parser and compare result with runtime
-    # FIXME: Has issue in similarity. Enable verify after fixing.
     exit_status = run_parser(
-        model_path, feed_dict, save_output=True, verify=False)
+        model_path, feed_dict, save_output=True, verify=True)
     assert exit_status

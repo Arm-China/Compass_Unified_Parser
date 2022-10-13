@@ -30,9 +30,7 @@ then
 fi
 
 # 3 If you change files inside this folder
-# FIXME: Enable after fixing test issues.
-# filelist="`git diff-tree --no-commit-id --diff-filter=ACM --name-only -r HEAD ./ | grep .py | grep -vw 'plugins' | egrep 'op_test|pass_test|plugin_test'`" || true
-filelist=""
+filelist="`git diff-tree --no-commit-id --diff-filter=ACM --name-only -r HEAD ./ | grep .py | grep -vw 'plugins' | egrep 'op_test|pass_test|plugin_test'`" || true
 if [[ -n $filelist ]]
 then
     for f in $filelist

@@ -216,17 +216,16 @@ def opt_forward(txt_path, bin_path, feed_dict, output_names=None, save_output=Tr
         out_match = re.search(r'output_tensors=\[(\S+)\]', txt_content)
     if in_match and in_match.group(0) and in_match.group(1):
         input_names = in_match.group(1).rsplit(',')
-    if len(input_names) != len(feed_dict.keys()):
-        new_feed_dict = {}
-        for name in input_names:
-            if name in feed_dict.keys():
-                new_feed_dict.update({name: feed_dict[name]})
-            elif (name + ':0') in feed_dict.keys():
-                tensor_name = name + ':0'
-                new_feed_dict.update({tensor_name: feed_dict[tensor_name]})
-            else:
-                ERROR('Cannot find input name (%s) from feed_dict!' % name)
-        feed_dict = new_feed_dict
+    # The order of inputs matters for opt forward. Update feed_dict to match input order in IR.
+    ordered_feed_dict = {}
+    for name in input_names:
+        if name in feed_dict.keys():
+            ordered_feed_dict.update({name: feed_dict[name]})
+        elif (name + ':0') in feed_dict.keys():
+            tensor_name = name + ':0'
+            ordered_feed_dict.update({tensor_name: feed_dict[tensor_name]})
+        else:
+            ERROR('Cannot find input name (%s) from feed_dict!' % name)
 
     # Get default output names from txt_path if it's not set
     if output_names is None:
@@ -236,7 +235,7 @@ def opt_forward(txt_path, bin_path, feed_dict, output_names=None, save_output=Tr
         else:
             ERROR('Cannot find output names from IR!')
 
-    outputs = run_ir_forward(txt_path, bin_path, feed_dict)
+    outputs = run_ir_forward(txt_path, bin_path, ordered_feed_dict)
 
     if len(output_names) != len(outputs):
         WARN('Outputs name len != outputs data len. Will save parts of outputs.')

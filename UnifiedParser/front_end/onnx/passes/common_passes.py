@@ -380,6 +380,12 @@ def remove_redundant_cast(graph):
             cast1_obj = NodeWrap(graph, cast1)['object']
             cast2_obj = NodeWrap(graph, cast2)['object']
             if cast1_obj is not None and cast2_obj is not None:
+                cast1_dst_type = cast1_obj.to if cast1_type == 'Cast' else cast1_obj.to_dtype
+                cast2_dst_type = cast2_obj.to if cast2_type == 'Cast' else cast2_obj.to_dtype
+                if 'int' in cast1_dst_type and 'float' in cast2_dst_type:
+                    # int+float is not same as float. For example, if input is 1.5, int+float
+                    # will get 1.0, while float will get 1.5.
+                    continue
                 cast1_out_edges = graph.sorted_out_edges(cast1)
                 if len(cast1_out_edges) == 1:
                     remove_node_safely(graph, cast1)

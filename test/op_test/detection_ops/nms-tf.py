@@ -54,7 +54,9 @@ TEST_NAME = 'nms'
 # so we are not able to keep output shapes from tf and opt same.
 input_shape = [3, 4]
 feed_dict = dict()
-feed_dict['X:0'] = np.array([[0.1, 0.1, 0.1, 0.1], [0.2, 0.2, 0.2, 0.2], [0.3, 0.3, 0.3, 0.3]]).astype(np.float32)
+feed_dict['X:0'] = np.array([[26.219383, 28.419462, 14.341243, -5.540409],
+                             [47.862896, 6.328754, -2.2302818, 26.386961],
+                             [46.344173, 42.946133, 10.519033, 0.6209858]]).astype(np.float32)
 scores = np.array([1.0, 2.0, 3.0]).astype(np.float32)
 max_output_size = 3
 iou_threshold = 0.5
