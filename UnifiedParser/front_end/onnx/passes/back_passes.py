@@ -1,21 +1,6 @@
-"""
-//-------------------------------------------------------------------------------
-// This file is CONFIDENTIAL and any use by you is subject to the terms of the
-// agreement between you and Arm China or the terms of the agreement between you
-// and the party authorised by Arm China to disclose this file to you.
-// The confidential and proprietary information contained in this file may only
-// be used by a person authorised under and to the extent permitted by a
-// subsisting licensing agreement from Arm China.
-//
-//        (C) Copyright 2022 Arm Technology (China) Co. Ltd.
-//                    All rights reserved.
-//
-// This entire notice must be reproduced on all copies of this file and copies of
-// this file may only be made by a person if such person is permitted to do so
-// under the terms of a subsisting license agreement from Arm China.
-//
-//--------------------------------------------------------------------------------
-"""
+# Copyright © 2022 Arm China Co. Ltd. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 
 import numpy as np
 import itertools
@@ -413,7 +398,7 @@ def convert_bi_gru(graph):
                     insert_constant(graph,
                                     fw_reshape + '_shape',
                                     np.array([batch_size, time_steps,
-                                             1, hidden_size], np.int64),
+                                              1, hidden_size], np.int64),
                                     fw_reshape,
                                     in_port=1)
 
@@ -422,7 +407,7 @@ def convert_bi_gru(graph):
                     insert_constant(graph,
                                     bw_reshape + '_shape',
                                     np.array([batch_size, time_steps,
-                                             1, hidden_size], np.int64),
+                                              1, hidden_size], np.int64),
                                     bw_reshape,
                                     in_port=1)
 
@@ -1037,7 +1022,7 @@ def merge_b2s(graph):
 
                 b2s_attr = d2s_obj.copied_attr()
                 b2s_attr.update({'block_size_x': block_size, 'block_size_y': block_size,
-                                'crops': crops_starts[1:3] + crops_ends[1:3]})
+                                 'crops': crops_starts[1:3] + crops_ends[1:3]})
                 NodeWrap(graph, d2s).replace_obj('ArmBatchToSpace', b2s_attr)
     if matched:
         clear_redundant_nodes(graph)
@@ -1441,7 +1426,7 @@ def merge_group_conv(graph, max_groups=16):
 
                 g_conv_attr = conv_objs[0].copied_attr()
                 g_conv_attr.update({'name': group_conv, 'weights': weights,
-                                   'biases': biases, 'num_output': num_output, 'group': group})
+                                    'biases': biases, 'num_output': num_output, 'group': group})
                 NodeWrap(graph, group_conv).replace_obj(
                     'ArmConvolution', g_conv_attr)
 
@@ -1888,7 +1873,7 @@ def rename_activations(graph):
 def rename_argminmax(graph):
     arg_types = ['ArgMin', 'ArgMax']
     matches = extend_lists([single_node_matcher(graph, op)
-                           for op in arg_types])
+                            for op in arg_types])
     for m in matches:
         arg = m['target']
         arg_obj = NodeWrap(graph, arg)['object']
@@ -2157,7 +2142,7 @@ def rename_logical(graph):
                    'Or': 'OR',
                    'Xor': 'XOR'}
     matches = extend_lists([single_node_matcher(graph, op)
-                           for op in logical_map.keys()])
+                            for op in logical_map.keys()])
     for m in matches:
         logical = m['target']
         logical_obj = NodeWrap(graph, logical)['object']
@@ -2750,7 +2735,7 @@ def split_crd_d2s(graph):
                 _, _, in_attr2 = in_edges[0]
                 insert_transpose(graph, reshape, d2s, in_attr2, perm)
                 insert_constant(graph, d2s + '_shape', np.array(out_dim,
-                                np.int64), d2s, in_port=1, data_format='NHWC')
+                                                                np.int64), d2s, in_port=1, data_format='NHWC')
                 out_reshape_attr = d2s_obj.copied_attr()
                 out_reshape_attr.update({'name': d2s, 'opset_version': 5})
                 NodeWrap(graph, d2s).replace_obj('Reshape', out_reshape_attr)
@@ -3641,7 +3626,7 @@ def insert_preprocess(graph):
     if PARSER_OP_DICT and 'Preprocess' in PARSER_OP_DICT:
         ds = determined_sort(graph, graph._attr['output_names'])
         matches = extend_lists([single_node_matcher(graph, op)
-                               for op in ('Input', 'ArmInput')])
+                                for op in ('Input', 'ArmInput')])
         input_names = [m['target'] for m in matches]
         if ds and input_names:
             input_names = sorted(input_names, key=lambda x: ds.index(x))

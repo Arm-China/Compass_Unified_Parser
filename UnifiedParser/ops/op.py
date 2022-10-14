@@ -1,21 +1,6 @@
-"""
-//-------------------------------------------------------------------------------
-// This file is CONFIDENTIAL and any use by you is subject to the terms of the
-// agreement between you and Arm China or the terms of the agreement between you
-// and the party authorised by Arm China to disclose this file to you.
-// The confidential and proprietary information contained in this file may only
-// be used by a person authorised under and to the extent permitted by a
-// subsisting licensing agreement from Arm China.
-//
-//        (C) Copyright 2022 Arm Technology (China) Co. Ltd.
-//                    All rights reserved.
-//
-// This entire notice must be reproduced on all copies of this file and copies of
-// this file may only be made by a person if such person is permitted to do so
-// under the terms of a subsisting license agreement from Arm China.
-//
-//--------------------------------------------------------------------------------
-"""
+# Copyright © 2022 Arm China Co. Ltd. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 
 import abc
 import inspect
@@ -406,7 +391,7 @@ class Op(abc.ABC):
                     pred_node_obj, OpHasOneOutPort) else '_' + str(d['src_out_port'])
                 if d['tensor'].value is not None:
                     ret.append((u + pre_name_suffix, re.sub(r' ', '',
-                               str(list(d['tensor'].value.shape))), str(d['tensor'].value.dtype)))
+                                                            str(list(d['tensor'].value.shape))), str(d['tensor'].value.dtype)))
         if ret:
             ret = list(zip(*ret))
         return ret
@@ -1433,7 +1418,7 @@ class BaseActivationOp(OpHasOneOutPort):
             if weights is None:
                 weights = self.negative_slope
             ret = (torch.clip(torch_tensor, min=0) + torch.clip(torch_tensor,
-                   max=0) * torch.from_numpy(weights)).numpy()
+                                                                max=0) * torch.from_numpy(weights)).numpy()
         elif act == 'CLIP':
             ret = torch.clamp(torch_tensor, min=self.clip_min,
                               max=self.clip_max).numpy()
@@ -1442,7 +1427,7 @@ class BaseActivationOp(OpHasOneOutPort):
             x = torch_tensor
             x_0 = torch.tensor(0)
             ret = (torch.maximum(x_0, x) + torch.minimum(x_0,
-                   a * (torch.exp(x / a) - 1.0))).numpy()
+                                                         a * (torch.exp(x / a) - 1.0))).numpy()
         else:
             ret = tensor
         return ret

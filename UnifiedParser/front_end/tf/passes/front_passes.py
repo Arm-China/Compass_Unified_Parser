@@ -1,21 +1,7 @@
-"""
-//-------------------------------------------------------------------------------
-// This file is CONFIDENTIAL and any use by you is subject to the terms of the
-// agreement between you and Arm China or the terms of the agreement between you
-// and the party authorised by Arm China to disclose this file to you.
-// The confidential and proprietary information contained in this file may only
-// be used by a person authorised under and to the extent permitted by a
-// subsisting licensing agreement from Arm China.
-//
-//        (C) Copyright 2022 Arm Technology (China) Co. Ltd.
-//                    All rights reserved.
-//
-// This entire notice must be reproduced on all copies of this file and copies of
-// this file may only be made by a person if such person is permitted to do so
-// under the terms of a subsisting license agreement from Arm China.
-//
-//--------------------------------------------------------------------------------
-"""
+# Copyright © 2022 Arm China Co. Ltd. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+
 import math
 import numpy as np
 import re
@@ -146,7 +132,7 @@ def convert_maxpoolwithargmax(graph):
             # Convert output indices from NHWC to HWC
             sub = get_valid_node_name(graph, argmaxpool + '_indices_sub')
             graph.add_edge(argmaxpool, sub, **{'src_out_port': 1,
-                           'dst_in_port': 0, 'tensor': out_edges[0][3]['tensor']})
+                                               'dst_in_port': 0, 'tensor': out_edges[0][3]['tensor']})
             cast_to_int = get_valid_node_name(
                 graph, argmaxpool + '_indices_to_int')
             graph.add_edge(sub, cast_to_int)
@@ -319,7 +305,7 @@ def convert_nms(graph, params):
 
 def convert_resize_bilinear_nearest(graph):
     matches = extend_lists([single_node_matcher(graph, op_type)
-                           for op_type in ['TfResizeBilinear', 'TfResizeNearestNeighbor']])
+                            for op_type in ['TfResizeBilinear', 'TfResizeNearestNeighbor']])
     for m in matches:
         resize_bili_near = m['target']
         resize_bili_near_obj = NodeWrap(graph, resize_bili_near)['object']
@@ -703,11 +689,11 @@ def split_s2b(graph):
                     NodeWrap(graph, pad).replace_obj('Pad', pad_attr)
                 NodeWrap(graph, reshape1).replace_obj('Reshape', reshape1_attr)
                 insert_constant(graph, reshape1 + '_shape', np.array(dim1,
-                                np.int64), reshape1, in_port=1, data_format='NHWC')
+                                                                     np.int64), reshape1, in_port=1, data_format='NHWC')
                 NodeWrap(graph, s2b).replace_obj('Transpose', transpose_attr)
                 NodeWrap(graph, reshape2).replace_obj('Reshape', reshape2_attr)
                 insert_constant(graph, reshape2 + '_shape', np.array(dim2,
-                                np.int64), reshape2, in_port=1, data_format='NHWC')
+                                                                     np.int64), reshape2, in_port=1, data_format='NHWC')
                 last_name = reshape2
 
             if s2b in graph._attr['output_names']:
@@ -833,13 +819,13 @@ def split_b2s(graph):
                     NodeWrap(graph, reshape1).replace_obj(
                         'Reshape', reshape1_attr)
                     insert_constant(graph, reshape1 + '_shape', np.array(dim1,
-                                    np.int64), reshape1, in_port=1, data_format='NHWC')
+                                                                         np.int64), reshape1, in_port=1, data_format='NHWC')
                     NodeWrap(graph, b2s).replace_obj(
                         'Transpose', transpose_attr)
                     NodeWrap(graph, reshape2).replace_obj(
                         'Reshape', reshape2_attr)
                     insert_constant(graph, reshape2 + '_shape', np.array(dim2,
-                                    np.int64), reshape2, in_port=1, data_format='NHWC')
+                                                                         np.int64), reshape2, in_port=1, data_format='NHWC')
                     if need_slice:
                         NodeWrap(graph, slice).replace_obj('Slice', slice_attr)
 
@@ -2397,7 +2383,7 @@ def merge_keras_maskrcnn(graph, params):
 
         anchors = np.concatenate(anchors, axis=0)
         scale = np.array([img_height - 1, img_width - 1,
-                         img_height - 1, img_width - 1])
+                          img_height - 1, img_width - 1])
         shift = np.array([0, 0, 1, 1])
         anchors = np.divide((anchors - shift), scale).astype(np.float32)
         return anchors
@@ -2993,7 +2979,7 @@ def convert_to_onnx(graph):
     '''Convert the model to the onnx version.'''
     tf_ops = TfOp.get_concrete_subclass_names()
     matches = extend_lists([single_node_matcher(graph, op_type)
-                           for op_type in tf_ops])
+                            for op_type in tf_ops])
     for m in matches:
         node_name = m['target']
         node_obj = NodeWrap(graph, node_name)['object']

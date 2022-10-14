@@ -1,21 +1,6 @@
-"""
-//-------------------------------------------------------------------------------
-// This file is CONFIDENTIAL and any use by you is subject to the terms of the
-// agreement between you and Arm China or the terms of the agreement between you
-// and the party authorised by Arm China to disclose this file to you.
-// The confidential and proprietary information contained in this file may only
-// be used by a person authorised under and to the extent permitted by a
-// subsisting licensing agreement from Arm China.
-//
-//        (C) Copyright 2022 Arm Technology (China) Co. Ltd.
-//                    All rights reserved.
-//
-// This entire notice must be reproduced on all copies of this file and copies of
-// this file may only be made by a person if such person is permitted to do so
-// under the terms of a subsisting license agreement from Arm China.
-//
-//--------------------------------------------------------------------------------
-"""
+# Copyright © 2022 Arm China Co. Ltd. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 
 import tensorflow.compat.v1 as tf
 import numpy as np
@@ -100,7 +85,7 @@ def insert_transpose_for_layoutconcern(graph):
     )).intersection(current_op_types))
     layout_types = sorted(layout_types)
     matches = extend_lists([single_node_matcher(graph, type_name)
-                           for type_name in layout_types])
+                            for type_name in layout_types])
     for m in matches:
         node = m['target']
         node_obj = NodeWrap(graph, node)['object']

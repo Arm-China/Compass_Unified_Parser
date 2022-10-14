@@ -1,21 +1,6 @@
-"""
-//-------------------------------------------------------------------------------
-// This file is CONFIDENTIAL and any use by you is subject to the terms of the
-// agreement between you and Arm China or the terms of the agreement between you
-// and the party authorised by Arm China to disclose this file to you.
-// The confidential and proprietary information contained in this file may only
-// be used by a person authorised under and to the extent permitted by a
-// subsisting licensing agreement from Arm China.
-//
-//        (C) Copyright 2022 Arm Technology (China) Co. Ltd.
-//                    All rights reserved.
-//
-// This entire notice must be reproduced on all copies of this file and copies of
-// this file may only be made by a person if such person is permitted to do so
-// under the terms of a subsisting license agreement from Arm China.
-//
-//--------------------------------------------------------------------------------
-"""
+# Copyright © 2022 Arm China Co. Ltd. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 
 import torch
 import tensorflow.compat.v1 as tf
@@ -723,7 +708,7 @@ class GRUOp(BaseRnnOp, OpHasBiases, OpHasWeights, OnnxOp):
             combined_input2 = tf.concat(
                 [tf.expand_dims(x, axis=0), fc1_reset * initial_state], axis=1)
             fc2 = tf.tanh(tf.matmul(combined_input2,
-                          candidate_kernel, transpose_b=True) + candidate_bias)
+                                    candidate_kernel, transpose_b=True) + candidate_bias)
             ret = fc1_update * initial_state + (1 - fc1_update) * fc2
             ret = tf.squeeze(ret, axis=0)
         else:
@@ -743,7 +728,7 @@ class GRUOp(BaseRnnOp, OpHasBiases, OpHasWeights, OnnxOp):
             rt = tf.sigmoid(x @ tf.transpose(Wr) +
                             initial_state @ tf.transpose(Rr) + biases_r)
             ht = tf.tanh(x @ tf.transpose(Wh) + rt * (initial_state @
-                         tf.transpose(Rh) + recurrence_biases_h) + parameter_biases_h)
+                                                      tf.transpose(Rh) + recurrence_biases_h) + parameter_biases_h)
             Ht = (1 - zt) * ht + zt * initial_state
             ret = tf.squeeze(Ht, 0)
         return ret

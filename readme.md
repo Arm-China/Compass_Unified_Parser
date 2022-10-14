@@ -108,7 +108,7 @@ All options are under a `Common` section:
 
     the output(s) node(s)' name of the model. If you have several outputs, use `,` to separate each one.
 
-### example
+### Example
 ```ini
 [Common]
 input_shape = [1,224,224,3]
@@ -121,3 +121,10 @@ output = resnet_v1_50/predictions/Reshape
 ```
 
 For more examples, please refer to [examples](examples).
+
+### [Contribution guide](doc/Contributing.md)
+
+# Copyright © 2022 Arm China Co. Ltd. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# SPDX-License-Identifier: Apache-2.0

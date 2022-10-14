@@ -1,21 +1,6 @@
-"""
-//-------------------------------------------------------------------------------
-// This file is CONFIDENTIAL and any use by you is subject to the terms of the
-// agreement between you and Arm China or the terms of the agreement between you
-// and the party authorised by Arm China to disclose this file to you.
-// The confidential and proprietary information contained in this file may only
-// be used by a person authorised under and to the extent permitted by a
-// subsisting licensing agreement from Arm China.
-//
-//        (C) Copyright 2022 Arm Technology (China) Co. Ltd.
-//                    All rights reserved.
-//
-// This entire notice must be reproduced on all copies of this file and copies of
-// this file may only be made by a person if such person is permitted to do so
-// under the terms of a subsisting license agreement from Arm China.
-//
-//--------------------------------------------------------------------------------
-"""
+# Copyright © 2022 Arm China Co. Ltd. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 
 import numpy as np
 import itertools
@@ -182,7 +167,7 @@ def convert_1d_pooling(graph):
                     NodeWrap(graph, post_reshape).replace_obj(
                         'Reshape', {'name': post_reshape, 'opset_version': 5})
                     insert_constant(graph, post_reshape + '_shape', np.array(post_reshape_dim,
-                                    np.int64), post_reshape, in_port=1, data_format=pool_obj.data_format)
+                                                                             np.int64), post_reshape, in_port=1, data_format=pool_obj.data_format)
 
                     if pool in graph._attr['output_names']:
                         index = graph._attr['output_names'].index(pool)
@@ -1887,11 +1872,11 @@ def merge_batchnorm(graph):
         mean = get_valid_node_name(graph, begin + '_mean')
         var = get_valid_node_name(graph, begin + '_var')
         graph.add_edge(gamma, begin, **{'src_out_port': 0,
-                       'dst_in_port': 1, 'tensor': Tensor(value=gamma_value)})
+                                        'dst_in_port': 1, 'tensor': Tensor(value=gamma_value)})
         graph.add_edge(beta, begin, **{'src_out_port': 0,
-                       'dst_in_port': 2, 'tensor': Tensor(value=beta_value)})
+                                       'dst_in_port': 2, 'tensor': Tensor(value=beta_value)})
         graph.add_edge(mean, begin, **{'src_out_port': 0,
-                       'dst_in_port': 3, 'tensor': Tensor(value=mean_value)})
+                                       'dst_in_port': 3, 'tensor': Tensor(value=mean_value)})
         graph.add_edge(
             var, begin, **{'src_out_port': 0, 'dst_in_port': 4, 'tensor': Tensor(value=variance_value)})
 
@@ -3817,7 +3802,7 @@ def merge_ln(graph):
             graph.add_edge(m['inp'], m['add_2'], **in_attr)
             ln_attr = node_objs['add_2'].copied_attr()
             ln_attr.update({'epsilon': epsilon, 'weights': gamma,
-                           'biases': beta, 'axes': [-1]})
+                            'biases': beta, 'axes': [-1]})
             NodeWrap(graph, m['add_2']).replace_obj('LayerNorm', ln_attr)
     if matched:
         clear_redundant_nodes(graph)
@@ -4092,7 +4077,7 @@ def merge_ln3(graph):
                 graph.add_edge(inp, add_1, **inp_out_attr)
                 ln_attr = objs_dict[add_1].copied_attr()
                 ln_attr.update({'axes': axes, 'epsilon': eps,
-                               'weights': gamma, 'biases': beta})
+                                'weights': gamma, 'biases': beta})
                 NodeWrap(graph, add_1).replace_obj('LayerNorm', ln_attr)
         else:
             WARN('[Parser]: Meets invalid nodes in merge_ln3!')
@@ -4199,7 +4184,7 @@ def merge_ln4(graph):
             graph.add_edge(inp, m['add_2'], **in_attr)
             ln_attr = node_objs['add_2'].copied_attr()
             ln_attr.update({'epsilon': eps, 'weights': weight,
-                           'biases': bias, 'axes': node_objs['mean_2'].axes})
+                            'biases': bias, 'axes': node_objs['mean_2'].axes})
             NodeWrap(graph, m['add_2']).replace_obj('LayerNorm', ln_attr)
         else:
             WARN('[Parser]: Meets invalid nodes in merge_ln4!')
@@ -5471,7 +5456,7 @@ def rearrange_pack_concat(graph):
                 const_1 = get_valid_node_name(graph, reshape_1 + '_shape')
                 graph.add_node(const_1)
                 dim = np.array([concat_out_shape[0], concat_out_shape[1]
-                               * concat_out_shape[2], *concat_out_shape[3:]], np.int64)
+                                * concat_out_shape[2], *concat_out_shape[3:]], np.int64)
                 const_1_node = NodeWrap(graph, const_1)
                 const_1_attr = {'name': const_1, 'value': dim,
                                 'data_format': 'NHWC', 'opset_version': opset_version}
@@ -6645,7 +6630,7 @@ def middle_passes(graph, params):
     '''
 
     convert_to_const(graph, ['Shape', 'ConstantOfShape',
-                     'Range', 'NonZero', 'EyeLike'])
+                             'Range', 'NonZero', 'EyeLike'])
 
     fuse_const(graph)
     convert_abnormal_reshape(graph)
@@ -6659,7 +6644,7 @@ def middle_passes(graph, params):
     merge_dilated_conv_group(graph)
     merge_dilated_conv(graph)
     remove_useless_op(graph, ['Concat',
-                      'Dropout', 'Expand', 'Reshape', 'Slice', 'Transpose'])
+                              'Dropout', 'Expand', 'Reshape', 'Slice', 'Transpose'])
 
     decompose_const_if(graph, params)
     rename_reshape_like(graph)
@@ -6667,7 +6652,7 @@ def middle_passes(graph, params):
     split_negative_pads(graph)
     split_conv_transpose(graph)
     convert_to_const(graph, ['Concat', 'Mul', 'Shape',
-                     'Slice', 'Tile', 'Unsqueeze'])
+                             'Slice', 'Tile', 'Unsqueeze'])
     merge_gelu_1(graph)
     merge_gelu_2(graph)
     merge_gelu_3(graph)
@@ -6684,7 +6669,7 @@ def middle_passes(graph, params):
     convert_special_clip_to_relu(graph)
     convert_sigmoid_mul_to_silu(graph)
     remove_useless_op(graph, ['Cast', 'Concat', 'Identity', 'Pad', 'Slice',
-                      'Transpose', 'Reshape', 'AveragePool', 'MaxPool', 'Resize'])
+                              'Transpose', 'Reshape', 'AveragePool', 'MaxPool', 'Resize'])
     remove_sub_add_pair(graph)
     merge_leaky_relu(graph)
     merge_prelu(graph)

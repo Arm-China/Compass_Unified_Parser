@@ -1,21 +1,6 @@
-"""
-//-------------------------------------------------------------------------------
-// This file is CONFIDENTIAL and any use by you is subject to the terms of the
-// agreement between you and Arm China or the terms of the agreement between you
-// and the party authorised by Arm China to disclose this file to you.
-// The confidential and proprietary information contained in this file may only
-// be used by a person authorised under and to the extent permitted by a
-// subsisting licensing agreement from Arm China.
-//
-//        (C) Copyright 2022 Arm Technology (China) Co. Ltd.
-//                    All rights reserved.
-//
-// This entire notice must be reproduced on all copies of this file and copies of
-// this file may only be made by a person if such person is permitted to do so
-// under the terms of a subsisting license agreement from Arm China.
-//
-//--------------------------------------------------------------------------------
-"""
+# Copyright © 2022 Arm China Co. Ltd. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 
 from ..op import *
 import numpy as np
@@ -78,7 +63,7 @@ class DequantizeLinearOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
             x_scale_shape = [self.x_scale.size] + [1] * expand_dims
             x_zero_point_shape = [self.x_zero_point.size] + [1] * expand_dims
             out_tensor = ((inputs[0] - np.reshape(self.x_zero_point,
-                          x_zero_point_shape)) * np.reshape(self.x_scale, x_scale_shape)).astype(np.float32)
+                                                  x_zero_point_shape)) * np.reshape(self.x_scale, x_scale_shape)).astype(np.float32)
         self.set_out_tensor(out_tensor)
 
     def convert_version(self):

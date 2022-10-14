@@ -1,21 +1,6 @@
-"""
-//-------------------------------------------------------------------------------
-// This file is CONFIDENTIAL and any use by you is subject to the terms of the
-// agreement between you and Arm China or the terms of the agreement between you
-// and the party authorised by Arm China to disclose this file to you.
-// The confidential and proprietary information contained in this file may only
-// be used by a person authorised under and to the extent permitted by a
-// subsisting licensing agreement from Arm China.
-//
-//        (C) Copyright 2022 Arm Technology (China) Co. Ltd.
-//                    All rights reserved.
-//
-// This entire notice must be reproduced on all copies of this file and copies of
-// this file may only be made by a person if such person is permitted to do so
-// under the terms of a subsisting license agreement from Arm China.
-//
-//--------------------------------------------------------------------------------
-"""
+# Copyright © 2022 Arm China Co. Ltd. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 
 import torch
 import tensorflow.compat.v1 as tf
@@ -671,7 +656,7 @@ class CaffeFILTEROp(OpHasMultipleOutPorts, CaffeOp):
         super(CaffeFILTEROp, self).infer_shape()
         inputs = self.get_input_tensors()
         assert all([inp.shape[0] == inputs[-1].shape[0]
-                   for inp in inputs[:-1]]), 'input shape is invalid in CaffeFILTEROp.'
+                    for inp in inputs[:-1]]), 'input shape is invalid in CaffeFILTEROp.'
         mask = inputs[-1].astype(np.bool)
         mask = np.squeeze(mask, axis=tuple(range(1, len(inputs[0].shape))))
         out_tensors = [np.array(inp)[mask] for inp in inputs[:-1]]
@@ -1319,7 +1304,7 @@ class CaffePROPOSALOp(OpHasMultipleOutPorts, CaffeOp):
         base_anchor = np.array([1, 1, base_size, base_size]) - 1
         ratio_anchors = _ratio_enum(base_anchor, ratios)
         anchors = np.vstack([_scale_enum(ratio_anchors[i, :], anchor_scales)
-                            for i in range(ratio_anchors.shape[0])])
+                             for i in range(ratio_anchors.shape[0])])
         return anchors.astype(np.float32)
 
     def __init__(self, graph, attr_dict=None):

@@ -1,21 +1,6 @@
-"""
-//-------------------------------------------------------------------------------
-// This file is CONFIDENTIAL and any use by you is subject to the terms of the
-// agreement between you and Arm China or the terms of the agreement between you
-// and the party authorised by Arm China to disclose this file to you.
-// The confidential and proprietary information contained in this file may only
-// be used by a person authorised under and to the extent permitted by a
-// subsisting licensing agreement from Arm China.
-//
-//        (C) Copyright 2022 Arm Technology (China) Co. Ltd.
-//                    All rights reserved.
-//
-// This entire notice must be reproduced on all copies of this file and copies of
-// this file may only be made by a person if such person is permitted to do so
-// under the terms of a subsisting license agreement from Arm China.
-//
-//--------------------------------------------------------------------------------
-"""
+# Copyright © 2022 Arm China Co. Ltd. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 
 import numpy as np
 import copy
@@ -455,7 +440,7 @@ def insert_cast_after(graph, src, from_dtype, to_dtype, out_port=0, type='Cast')
                 graph.remove_edge(src, dst, k)
                 graph.add_edge(cast, dst, **new_out_attr)
         graph.add_edge(src, cast, **{'src_out_port': out_port,
-                       'dst_in_port': 0, 'tensor': Tensor(value=cast_in_tensor_value)})
+                                     'dst_in_port': 0, 'tensor': Tensor(value=cast_in_tensor_value)})
         if type == 'Cast':
             cast_attr = {'name': cast, 'opset_version': 1, 'to': to_dtype}
         else:
