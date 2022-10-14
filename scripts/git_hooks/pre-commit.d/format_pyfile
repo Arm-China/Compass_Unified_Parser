@@ -13,10 +13,6 @@
 #   1 means error exit, which requires checking input file(s);
 #   2 means differences exist and file(s) has/have been reformatted.
 
-# autopep8 is a tool used to automatically formats Python code.
-# It's under path /arm/tools/python/python/3.6.5/rhe7-x86_64/bin/
-autopep8="/arm/tools/python/python/3.6.5/rhe7-x86_64/bin/autopep8"
-
 usage="Usage:\n  $0 file-to-check [file-to-check]\n\n"
 current_workspace=`pwd`
 failed_checking=0
@@ -42,7 +38,7 @@ do
   # Options of autopep8:
   #  --in-place: make changes to files in place
   #  --exit-code: return 2 if differences exist
-  autopep8_output=`${autopep8} --verbose --in-place --exit-code --max-line-length=120 ${file} 2>&1`
+  autopep8_output=`autopep8 --verbose --in-place --exit-code --max-line-length=120 ${file} 2>&1`
   exit_code=$?
   if [[ ${exit_code} = 2 ]]
   then

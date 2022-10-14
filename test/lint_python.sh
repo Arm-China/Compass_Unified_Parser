@@ -4,6 +4,7 @@ source /arm/tools/setup/init/bash
 module load swdev git/git/2.17.1
 module load swdev gnu/cmake/3.14.3
 module load swdev gnu/gcc/7.3.0
+module load swdev python/python/3.8.5
 
 cd ../
 
