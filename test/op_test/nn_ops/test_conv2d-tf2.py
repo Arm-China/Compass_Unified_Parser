@@ -7,7 +7,7 @@ from tensorflow import keras
 from utils.run import run_parser
 
 
-def create_add_model(model_path, x_size):
+def create_conv2d_model(model_path, x_size):
     ''' Create tensorflow model for conv2d op.
     '''
     if os.path.exists(model_path):
@@ -36,7 +36,7 @@ feed_dict['X:0'] = np.random.ranf(input_shape).astype(np.float32)
 
 model_path = TEST_NAME + '.h5'
 # Create model
-create_add_model(model_path, input_shape)
+create_conv2d_model(model_path, input_shape)
 
 # Run tests with parser and compare result with runtime
 exit_status = run_parser(

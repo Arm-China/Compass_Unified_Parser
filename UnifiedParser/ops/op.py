@@ -2210,6 +2210,48 @@ class TfHasPaddingStrides(OpHasPaddingStrides, TfOp):
                         '[Parser]: Meets invalid kernel_shape for Node(%s) in infer_shape!' % self.name)
 
 
+class TfRecurrent(OpHasVariableOutPorts, TfOp):
+    '''
+    Class TfRecurrent inherited from OpHasVariableOutPorts, TfOp class.
+    All recurrent ops(GRU, LSTM and etc) under the tf framework must inherit TfRecurrent.
+    '''
+    @classmethod
+    def attributes(cls):
+        '''return attributes of TfRecurrent class.'''
+        return {'units': {'type': AttrType.INT, 'required': True},
+                'activation': {'type': AttrType.STRING, 'required': False, 'default': 'tanh',
+                               'options': ['elu', 'exponential', 'gelu', 'hard_sigmoid',
+                                           'linear', 'relu', 'selu', 'sigmoid', 'softmax',
+                                           'softplus', 'softsign', 'swish', 'tanh']},
+                'recurrent_activation': {'type': AttrType.STRING, 'required': False, 'default': 'sigmoid',
+                                         'options': ['elu', 'exponential', 'gelu', 'hard_sigmoid',
+                                                     'linear', 'relu', 'selu', 'sigmoid', 'softmax',
+                                                     'softplus', 'softsign', 'swish', 'tanh']},
+                'use_bias': {'type': AttrType.INT, 'required': False, 'default': 1, 'options': [0, 1]},
+                'return_sequences': {'type': AttrType.INT, 'required': False, 'default': 0, 'options': [0, 1]},
+                'return_state': {'type': AttrType.INT, 'required': False, 'default': 0, 'options': [0, 1]},
+                'go_backwards': {'type': AttrType.INT, 'required': False, 'default': 0, 'options': [0, 1]},
+                'time_major': {'type': AttrType.INT, 'required': False, 'default': 0, 'options': [0, 1]},
+                'weights_list': {'type': AttrType.TENSORS, 'default': []}
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfRecurrent, self).__init__(graph, attr_dict)
+        self.update_attributes(TfRecurrent, attr_dict)
+        assert self.check_required(), 'TfRecurrent is missing a required parameter.'
+
+    def __getattr__(self, item):
+        ret = None
+        try:
+            if item in ('use_bias', 'return_sequences', 'return_state', 'go_backwards', 'time_major', ):
+                ret = bool(self.__dict__['_attr'][item].value)
+        except:
+            ret = None
+        if ret is None:
+            ret = super(TfRecurrent, self).__getattr__(item)
+        return ret
+
+
 class ArmOp(Op):
     '''
     Class ArmOp inherited from Op class.

@@ -565,10 +565,10 @@ def insert_reshape_after(graph, src, new_dim, old_dim=list(), out_port=0, type='
         NodeWrap(graph, reshape).replace_obj(type, reshape_attr)
 
         src_out_attr = {'src_out_port': out_port, 'dst_in_port': 0}
-        out_edges = graph.sorted_out_edges(src, data=True)
-        for _, dst, out_attr in out_edges:
+        out_edges = graph.sorted_out_edges(src, keys=True, data=True)
+        for _, dst, key, out_attr in out_edges:
             if out_attr.get('src_out_port', 0) == out_port:
-                graph.remove_edge(src, dst)
+                graph.remove_edge(src, dst, key)
                 new_out_attr = copy.deepcopy(out_attr)
                 new_out_attr['src_out_port'] = 0
                 graph.add_edge(reshape, dst, **new_out_attr)
