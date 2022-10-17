@@ -224,8 +224,6 @@ def read_tflite_model(model_path, save_cfg=False):
 def read_model(model_path, save_cfg=False, model_type=None, proto_path=None):
     ''' Read model and save it to log file.
     Basing on the suffix of model path, decide model type if it's not set.
-    For tensorflow model, if save_cfg is True, model_type could be set to
-    tf or tensorflow to specify using unified parser or tf parser.
     '''
     if not os.path.exists(model_path):
         ERROR('File %s does not exist!' % model_path)

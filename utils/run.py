@@ -12,6 +12,23 @@ from .forward import opt_forward, rt_forward
 from .model import read_model
 
 
+def generate_ir(cfg_path):
+    '''Call Parser to generate float IR'''
+    entry_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'main.py')
+    DEBUG('Trigger script: %s' % entry_path)
+    run_process = subprocess.Popen(['python3', entry_path, '-c', cfg_path],
+                                   stdout=subprocess.PIPE,
+                                   stderr=subprocess.STDOUT)
+    log_file = cfg_path + '.log'
+    tee = subprocess.Popen(['tee', log_file], stdin=run_process.stdout)
+    run_process.stdout.close()
+    tee.communicate()
+    # TODO: Currently exit code of parser is not accurate
+    with open(log_file, 'r') as f:
+        run_pass = 'Parser done' in f.read()
+    return run_pass
+
+
 def run_parser(model_path, feed_dict, output_names=None, model_type=None, save_output=True,
                proto_path=None, verify=True, expected_keywords=[], unexpected_keywords=[]):
     ''' Generate config file for parser and call parser to run tests. Return True if
@@ -29,18 +46,7 @@ def run_parser(model_path, feed_dict, output_names=None, model_type=None, save_o
     INFO('Config file %s is generated' % cfg_path)
 
     # Run parser to get float IR
-    entry_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'main.py')
-    DEBUG('Trigger script: %s' % entry_path)
-    run_process = subprocess.Popen(['python3', entry_path, '-c', cfg_path],
-                                   stdout=subprocess.PIPE,
-                                   stderr=subprocess.STDOUT)
-    log_file = cfg_path + '.log'
-    tee = subprocess.Popen(['tee', log_file], stdin=run_process.stdout)
-    run_process.stdout.close()
-    tee.communicate()
-    # TODO: Currently exit code of parser is not accurate
-    with open(log_file, 'r') as f:
-        run_pass = 'Parser done' in f.read()
+    run_pass = generate_ir(cfg_path)
 
     if not run_pass:
         WARN('Fail in running parser!')
