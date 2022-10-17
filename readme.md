@@ -81,6 +81,14 @@ All options are under a `Common` section:
 
     the name for the input model
 
+* `model_type` [__optional__]
+
+    the framework of the input model, default is tensorflow. Current support:
+    * `tensorflow`
+    * `tflite`
+    * `onnx`
+    * `caffe`
+
 * `model_domain`  [__required__]
 
     the domain of the model, for example:
@@ -108,7 +116,7 @@ All options are under a `Common` section:
 
     the output(s) node(s)' name of the model. If you have several outputs, use `,` to separate each one.
 
-### Example
+### Config sample
 ```ini
 [Common]
 input_shape = [1,224,224,3]
@@ -122,4 +130,33 @@ output = resnet_v1_50/predictions/Reshape
 
 For more examples, please refer to [examples](examples).
 
+### Run Example
+First, you should download the model via download_model.sh in model_framework folder in [examples](examples)
+```bash
+sh examples/tensorflow/download_model.sh
+```
+
+Then, config the input/output tensor infomation in example.cfg
+```ini
+[Common]
+model_type = tensorflow
+model_name = gru_l
+model_domain = image_classification
+input_model = ./GRU_L.pb
+input = Mfcc:0
+input_shape = [1, 49, 10]
+output = labels_softmax:0
+output_dir = ./
+```
+
+Run run_example.py
+* `--framework` [__optional__]
+
+    specify example to run, default is tensorflow.
+* `--input_data` [__optional__]
+
+    specify input data to feed, random data used if not present.
+```bash
+python3 run_example.py --framework [specify example] --input_data [specify feed data]
+```
 ### [Contribution guide](doc/Contributing.md)
