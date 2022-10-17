@@ -123,8 +123,3 @@ output = resnet_v1_50/predictions/Reshape
 For more examples, please refer to [examples](examples).
 
 ### [Contribution guide](doc/Contributing.md)
-
-# Copyright © 2022 Arm China Co. Ltd. All rights reserved.
-# SPDX-License-Identifier: Apache-2.0
-
-# SPDX-License-Identifier: Apache-2.0
