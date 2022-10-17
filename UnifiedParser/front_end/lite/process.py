@@ -6,7 +6,7 @@ from .load import convert_tflite_to_graph
 from .passes.front_passes import split_op_has_activation, split_fc, split_s2b, split_b2s, split_greater_or_less_equal, \
     split_not_equal, split_rsqrt, remove_detection_postprocess, convert_to_onnx, convert_onehot, convert_reverse_sequence, convert_square, \
     convert_unpack, convert_negative_pool_pad, convert_scatternd, convert_special_uni_seq_lstm, convert_strided_slice, convert_square_diff, \
-    convert_broadcast_to, remove_redundant_broadcast_to, remove_sub_equal_select
+    convert_broadcast_to, remove_redundant_broadcast_to, remove_sub_equal_select, remove_dequantize
 from ..onnx.passes.front_passes import fuse_weights_const
 from ..onnx.passes.common_passes import apply_subgraph_plugin, record_output_tensors
 from ...graph.graph_algo import infer, clear_redundant_nodes
@@ -33,6 +33,7 @@ def process_tflite(model_path, params):
         from ..tf.passes.front_passes import split_special_floormod
         split_special_floormod(graph, 'LiteFLOOR_MOD')
 
+        remove_dequantize(graph)
         remove_detection_postprocess(graph)
         convert_onehot(graph)
 

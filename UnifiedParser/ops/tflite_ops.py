@@ -788,11 +788,31 @@ class LiteEXPAND_DIMSOp(OpHasAxis, OpHasOneOutPort, TfliteOp):
     def attributes(cls):
         return {1: {}, 2: {}}
 
+    def __getattr__(self, item):
+        ret = None
+        try:
+            if item == 'axis':
+                inputs = self.get_input_tensors()
+                if len(inputs) >= 2 \
+                        and inputs[1] is not None \
+                        and inputs[1].size == 1:
+                    ret = int(inputs[1].item(0))
+                    self.__dict__['_attr'][item].value = ret
+        except:
+            ret = None
+        if ret is None:
+            ret = super(LiteEXPAND_DIMSOp, self).__getattr__(item)
+        return ret
+
     def infer_shape(self):
         super(LiteEXPAND_DIMSOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor = tf.expand_dims(*inputs).eval()
         self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'Reshape', 'version': 13}
 
 
 class LiteFILLOp(OpHasOneOutPort, TfliteOp):

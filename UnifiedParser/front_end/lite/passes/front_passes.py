@@ -735,6 +735,31 @@ def convert_strided_slice(graph, op_type='TfStridedSlice'):
                  strided_slice)
 
 
+def remove_dequantize(graph):
+    matches = single_node_matcher(graph, 'LiteDEQUANTIZE')
+    for m in matches:
+        dequant = m['target']
+        dequant_obj = NodeWrap(graph, dequant)['object']
+        in_edges = graph.sorted_in_edges(dequant, data=True)
+        if dequant_obj is None or len(in_edges) < 1:
+            WARN('[Parser]: Meets invalid LiteDEQUANTIZE Op (%s) in convert_dequantize!' % dequant)
+            continue
+        if len(in_edges) != 1 \
+                or in_edges[0][2]['tensor'].value is None \
+                or 'float' not in in_edges[0][2]['tensor'].value.dtype.name:
+            continue
+        src, _, in_attr = in_edges[0]
+        out_edges = graph.sorted_out_edges(dequant, data=True)
+        for _, dst, out_attr in out_edges:
+            graph.remove_edge(dequant, dst)
+            new_in_attr = copy.deepcopy(in_attr)
+            new_in_attr.update({'dst_in_port': out_attr['dst_in_port']})
+            graph.add_edge(src, dst, **new_in_attr)
+        if dequant in graph._attr['output_names']:
+            index = graph._attr['output_names'].index(dequant)
+            graph._attr['output_names'][index] = src
+
+
 def remove_sub_equal_select(graph):
     matched = False
     matches = matched_patterns(graph,
@@ -1399,6 +1424,24 @@ def convert_to_onnx(graph):
 
                 if pure_type == 'ELU':
                     new_node_attr.update({'alpha': 1.})
+                elif pure_type == 'EXPAND_DIMS':
+                    in_edges = graph.sorted_in_edges(node_name)
+                    if len(in_edges) < 1 \
+                            or len(node_obj.get_input_tensors()) < 1 \
+                            or node_obj.get_input_tensors()[0] is None:
+                        WARN(
+                            '[Parser]: Invalid TFlite ExpandDims Node(%s) to convert to Onnx!' % node_name)
+                        continue
+                    axis = node_obj.axis
+                    out_tensor = np.expand_dims(
+                        node_obj.get_input_tensors()[0], axis)
+                    graph.remove_edges_from(in_edges[1:])
+                    insert_constant(graph,
+                                    node_name + '_shape',
+                                    np.array(out_tensor.shape, np.int32),
+                                    node_name,
+                                    in_port=1,
+                                    data_format='NHWC')
                 elif pure_type == 'FLOOR_MOD':
                     new_node_attr.update({'fmod': 0})
                 elif pure_type == 'L2_NORMALIZATION':
