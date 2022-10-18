@@ -4,3 +4,10 @@
 __pycache__
 .ipynb_checkpoints
 *.swp
+*.pb
+*.npy
+*.onnx
+*.tflite
+*.h5
+*.caffemodel
+

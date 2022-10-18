@@ -1,1 +1,6 @@
 temp*
+*.log
+*.prototxt
+output_dir
+*.cfg
+.pytest_cache
