@@ -102,7 +102,10 @@ class Op(abc.ABC):
     def attributes(cls):
         '''return attributes of OP class.'''
         return {'name': {'type': AttrType.STRING, 'default': '', 'required': True},
-                'data_format': {'type': AttrType.STRING, 'default': 'NHWC', 'options': ['NHWC', 'NCHW'], 'required': True},
+                'data_format': {'type': AttrType.STRING,
+                                'default': 'NHWC',
+                                'options': ['NWC', 'NCW', 'NHWC', 'NCHW', 'NDHWC', 'NCDHW'],
+                                'required': True},
                 'cur_version': {'type': AttrType.INT, 'default': 0, 'required': False},
                 }
 
@@ -2085,7 +2088,7 @@ class TfOp(Op):
     @classmethod
     def attributes(cls):
         '''return attributes of TfOp class.'''
-        return {'data_format': {'default': 'NHWC', 'options': ['NWC', 'NCW', 'NHWC', 'NCHW', 'NDHWC', 'NCDHW']},
+        return {'data_format': {'default': 'NHWC'},
                 'dtype': {'type': AttrType.STRING, 'required': False, 'default': 'float32'},
                 'Tidx': {'type': AttrType.STRING,
                          'default': 'int32',

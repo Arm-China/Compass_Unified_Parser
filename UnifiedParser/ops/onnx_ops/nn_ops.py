@@ -159,7 +159,7 @@ class BatchNormalizationOp(LayoutConcernedOp, OpHasVariableOutPorts, OnnxOp):
             )
             out_tensor_list = [o.eval() for o in out_list]
         else:
-            if self.data_format == 'NHWC':
+            if self.data_format[0] == 'N' and self.data_format[-1] == 'C':
                 out_tensor = tf.nn.batch_normalization(inputs[0],
                                                        inputs[3],
                                                        inputs[4],
