@@ -6,7 +6,7 @@ import onnx
 import tensorflow.compat.v1 as tf
 from collections import OrderedDict
 from .common.utils import is_file, is_dir, multi_string_to_list, list_string_to_list
-from .common.errors import *
+from .logger import *
 from .front_end.onnx.process import process_onnx
 from .front_end.onnx.passes.middle_passes import middle_passes, convert_onnx_version
 from .front_end.onnx.passes.back_passes import back_passes, trim_weights
@@ -185,8 +185,18 @@ def main():
     args = argparse.ArgumentParser()
     args.add_argument('-c', '--cfg', metavar='<net.cfg>',
                       type=str, required=True, help='graph configure file.')
+    args.add_argument('-l', '--log', metavar='<net.log>',
+                      type=str, required=False, default=None, help='redirect parser output to log file.')
+    args.add_argument('-v', '--verbose',
+                      required=False, default=False, action='store_true', help='verbose output.')
 
     options = args.parse_args(sys.argv[1:])
+    logfile = options.log
+    verbose = options.verbose
+    init_logging(verbose, logfile)
+
+    exit_code = 0
+
     if options.cfg and len(options.cfg) != 0:
         config = configparser.ConfigParser()
         try:
@@ -212,12 +222,16 @@ def main():
             param = dict(common)
             meta_ret = univ_parser(param)
             if not meta_ret:
+                exit_code = -1
                 ERROR('Universal parser meets error!')
+
             if get_error_count() > 0:
+                exit_code = -1
                 WARN('Parser Failed!')
             else:
                 INFO('Parser done!')
         else:
+            exit_code = -1
             WARN('Common section is required in config file.')
 
-    return 0
+    return exit_code
