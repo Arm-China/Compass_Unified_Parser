@@ -8,7 +8,7 @@ import copy
 from ....graph.graph import Graph
 from ....ops.op import Op, LayoutConcernedOp, LayoutUnawareOp, OnnxOp, CommonOp
 from ....ops.common_ops import PluginOp
-from ....common.errors import *
+from ....logger import INFO, DEBUG, WARN, ERROR, FATAL
 from ....common.utils import extend_lists
 from ....graph.node_wrap import NodeWrap
 from ....graph.graph_algo import *

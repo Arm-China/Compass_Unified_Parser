@@ -12,7 +12,7 @@ from collections.abc import Iterable
 import numpy as np
 import torch
 from ..common.defs import TensorType, Tensor, AttrType, Attribute, Framework, FLOAT_EQUAL
-from ..common.errors import *
+from ..logger import INFO, DEBUG, WARN, ERROR, FATAL
 from ..common.utils import num_list_to_string, string_list_to_string, extend_lists
 
 

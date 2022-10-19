@@ -6,7 +6,7 @@ import numpy as np
 from ....ops.op import OpHasWeights, OpHasBiases
 from ....graph.node_wrap import NodeWrap
 from ....graph.pattern_match import matched_patterns, single_node_matcher, two_nodes_matcher
-from ....common.errors import *
+from ....logger import INFO, DEBUG, WARN, ERROR, FATAL
 from .common_passes import clear_redundant_nodes
 
 

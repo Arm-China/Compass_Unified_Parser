@@ -4,7 +4,7 @@
 
 import tensorflow as tf
 from ..op import *
-from ...common.errors import *
+from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
 class TfGRUOp(TfRecurrent):

@@ -10,7 +10,7 @@ import numpy as np
 from .op import *
 from ..common.defs import FLOAT_EQUAL
 from ..common.utils import list_list_to_string, get_random_array
-from ..common.errors import *
+from ..logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
 class ArmAbsOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):

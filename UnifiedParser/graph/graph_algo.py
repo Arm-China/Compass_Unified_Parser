@@ -14,7 +14,7 @@ from .graph import Graph, SubGraph
 from .pattern_match import single_node_matcher
 from ..ops.op import InputLikeOp
 from ..common.defs import Tensor
-from ..common.errors import *
+from ..logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
 def _shortest_path_length(g, source, target):

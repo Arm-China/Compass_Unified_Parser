@@ -10,7 +10,7 @@ from .passes.front_passes import split_op_has_activation, split_fc, split_s2b, s
 from ..onnx.passes.front_passes import fuse_weights_const
 from ..onnx.passes.common_passes import apply_subgraph_plugin, record_output_tensors
 from ...graph.graph_algo import infer, clear_redundant_nodes
-from ...common.errors import *
+from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
 def process_tflite(model_path, params):

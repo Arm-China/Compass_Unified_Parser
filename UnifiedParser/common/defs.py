@@ -6,7 +6,7 @@ import sys
 from enum import Enum, unique
 import numpy as np
 import copy
-from .errors import WARN, ERROR
+from ..logger import WARN, ERROR
 
 
 FLOAT_MIN = np.finfo(np.float32).min

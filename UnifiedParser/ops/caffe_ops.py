@@ -6,7 +6,7 @@ import torch
 import tensorflow.compat.v1 as tf
 from .op import *
 from ..common.defs import FLOAT_EQUAL
-from ..common.errors import *
+from ..logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
 class CaffeABSVALOp(OpHasOneOutPort, CaffeOp):

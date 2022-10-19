@@ -14,7 +14,7 @@ from ...onnx.passes.common_passes import insert_constant, insert_reshape, insert
     insert_transpose, remove_node_safely, insert_cast, place_reshape
 from ....common.defs import Tensor, FLOAT_EQUAL, INT_MAX
 from ....common.utils import extend_lists
-from ....common.errors import *
+from ....logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
 def convert_conv_backpropinput(graph):

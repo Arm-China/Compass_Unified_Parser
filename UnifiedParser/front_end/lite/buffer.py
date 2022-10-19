@@ -7,7 +7,7 @@ import numpy as np
 import re
 from collections import OrderedDict
 from ...common.utils import is_file
-from ...common.errors import *
+from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 from .tflite.Model import Model
 from .tflite.Operator import Operator
 from .tflite.BuiltinOptions import BuiltinOptions

@@ -7,7 +7,7 @@ from ...graph.graph_algo import infer, clear_redundant_nodes
 from ..onnx.passes.front_passes import fuse_weights_const
 from ..onnx.passes.common_passes import remove_useless_op, remove_redundant_reshape, apply_subgraph_plugin, record_output_tensors
 from .passes.front_passes import *
-from ...common.errors import *
+from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
 def process_caffe(model_path, params):

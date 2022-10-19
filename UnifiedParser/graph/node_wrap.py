@@ -4,7 +4,7 @@
 
 from ..ops.op import Op
 from ..ops.op_factory import op_factory
-from ..common.errors import *
+from ..logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
 class NodeWrap(object):

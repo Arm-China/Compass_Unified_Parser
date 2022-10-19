@@ -13,7 +13,7 @@ from ...graph.node_wrap import NodeWrap
 from ...graph.graph_algo import get_valid_node_name, clear_redundant_nodes
 from ...common.defs import Framework, get_opset_version, Tensor
 from ...common.utils import get_version, extend_lists
-from ...common.errors import *
+from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 from .buffer import read_tflite_model, parse_operator, parse_tensor, get_act_info_from_tensor
 
 

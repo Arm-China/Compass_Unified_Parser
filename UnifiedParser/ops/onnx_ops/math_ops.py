@@ -7,7 +7,7 @@ import tensorflow.compat.v1 as tf
 import numpy as np
 from ..op import *
 from ...common.defs import FLOAT_MIN, FLOAT_MAX, FLOAT_EQUAL, TYPE_MIN, TYPE_MAX
-from ...common.errors import *
+from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
 class AbsOp(LayoutUnawareOp, OpHasOneOutPort, OnnxOp):

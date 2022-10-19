@@ -6,7 +6,7 @@ from .load import convert_onnx_to_graph
 from ...graph.graph_algo import infer
 from .passes.front_passes import fuse_weights_const, convert_special_prelu
 from .passes.common_passes import remove_useless_op, apply_subgraph_plugin, record_output_tensors
-from ...common.errors import *
+from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
 def process_onnx(model_path, params):

@@ -8,7 +8,7 @@ import itertools
 from ....plugin_loader import PARSER_OP_DICT
 
 from ....common.defs import Tensor, Framework, FLOAT_EQUAL
-from ....common.errors import *
+from ....logger import INFO, DEBUG, WARN, ERROR, FATAL
 from ....common.utils import extend_lists, get_converted_dtype
 from ....ops.op import Op, OpHasWeights, OpHasBiases, OpHasOneOutPort, ConstLikeOp
 from ....ops.onnx_ops.array_ops import CastOp

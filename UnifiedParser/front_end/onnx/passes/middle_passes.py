@@ -8,7 +8,7 @@ import copy
 from functools import reduce
 from collections import OrderedDict
 from ....common.defs import Tensor, FLOAT_EQUAL, TYPE_MAX
-from ....common.errors import *
+from ....logger import INFO, DEBUG, WARN, ERROR, FATAL
 from ....common.utils import extend_lists, get_converted_dtype
 from ....graph.node_wrap import NodeWrap
 from ....graph.pattern_match import matched_patterns, single_node_matcher, two_nodes_matcher

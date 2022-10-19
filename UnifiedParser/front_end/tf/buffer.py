@@ -6,7 +6,7 @@ import numpy as np
 import re
 import copy
 import tensorflow.compat.v1 as tf
-from ...common.errors import *
+from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
 tf_types_convert_mapping = [

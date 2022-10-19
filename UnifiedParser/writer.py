@@ -10,7 +10,7 @@ from .ops.op import ArmOp, OpHasWeights, OpHasBiases, BaseActivationOp
 from .ops.release_ops import ArmActivationOp
 from .ops.common_ops import PluginOp
 from .common.utils import is_dir, list_list_to_string, string_list_to_string
-from .common.errors import *
+from .logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
 def write_net_attrs(txt_file, attr):

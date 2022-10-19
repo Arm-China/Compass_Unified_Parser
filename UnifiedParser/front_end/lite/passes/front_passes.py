@@ -14,7 +14,7 @@ from ...onnx.passes.common_passes import insert_constant, remove_node_safely, in
     insert_gather, insert_reshape_after, insert_tile
 from ....common.defs import Tensor, FLOAT_EQUAL
 from ....common.utils import extend_lists
-from ....common.errors import *
+from ....logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
 def convert_broadcast_to(graph):

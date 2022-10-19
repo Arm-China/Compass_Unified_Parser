@@ -11,7 +11,7 @@ import multiprocessing as mp
 import threading
 from ...common.defs import Framework, get_opset_version, Tensor
 from ...common.utils import is_dir, is_file, get_version, extend_lists
-from ...common.errors import *
+from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 from ...graph.graph import Graph
 from ...graph.graph_algo import clear_redundant_nodes, all_simple_paths, has_path, get_valid_node_name
 from ...graph.node_wrap import NodeWrap

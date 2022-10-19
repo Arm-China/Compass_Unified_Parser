@@ -6,7 +6,7 @@ import os
 import re
 import numpy as np
 from functools import reduce
-from .errors import *
+from ..logger import ERROR
 
 
 def is_file(file_path):

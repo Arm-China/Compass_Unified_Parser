@@ -27,7 +27,7 @@ from .tflite_ops import *
 from .caffe_ops import *
 from .common_ops import *
 from .release_ops import *
-from ..common.errors import *
+from ..logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
 def op_factory(graph, op_type, node_attr=None):

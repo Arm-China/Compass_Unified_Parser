@@ -14,7 +14,7 @@ try:
 except TypeError:
     from caffe.proto.caffe_pb2 import *
 from ...common.utils import is_file
-from ...common.errors import *
+from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
 def replace_caffe_pb(file_path):

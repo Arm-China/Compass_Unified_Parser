@@ -12,7 +12,7 @@ from ...graph.node_wrap import NodeWrap
 from ...graph.graph_algo import get_valid_node_name, clear_redundant_nodes
 from ...common.defs import Framework, Tensor, get_opset_version
 from ...common.utils import is_file, get_version, multi_string_to_list
-from ...common.errors import *
+from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
 onnx_source_map = {

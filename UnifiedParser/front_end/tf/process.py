@@ -14,7 +14,7 @@ from .passes.front_passes import merge_gru, merge_keras_gru, merge_keras_lstm, m
     convert_special_fakequantminmaxvars, convert_maxpoolwithargmax, convert_nms, convert_fusebatchnormv3, \
     convert_matmul, remove_isfinite_select, merge_fasterrcnn, merge_keras_maskrcnn, \
     convert_gru_lstm
-from ...common.errors import *
+from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
 def process_tf(model_path, params):

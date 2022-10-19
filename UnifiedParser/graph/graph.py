@@ -6,7 +6,7 @@ import copy
 from collections import OrderedDict, defaultdict
 from .view import NodeView
 from ..common.defs import Tensor
-from ..common.errors import *
+from ..logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
 class Node(object):

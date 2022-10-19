@@ -15,7 +15,7 @@ from .buffer import read_caffe_model
 from ...ops.op import OpHasWeights, OpHasBiases
 from ..onnx.passes.common_passes import insert_constant
 from ...common.defs import Attribute, Framework, Tensor, get_opset_version
-from ...common.errors import *
+from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 from ...common.utils import get_version, string_list_to_string
 
 

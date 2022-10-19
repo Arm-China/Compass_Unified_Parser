@@ -8,7 +8,7 @@ import tensorflow as tf
 from tensorflow.keras import backend as K
 from collections import OrderedDict
 from .utils import trim_tensor_name
-from ...common.errors import *
+from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
 def get_nodes_input_and_attr(configs):

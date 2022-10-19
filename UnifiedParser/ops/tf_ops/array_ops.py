@@ -5,7 +5,7 @@
 import tensorflow.compat.v1 as tf
 import math
 from ..op import *
-from ...common.errors import *
+from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 from ...common.defs import TYPE_MIN, TYPE_MAX, INT_MIN, INT_MAX
 
 

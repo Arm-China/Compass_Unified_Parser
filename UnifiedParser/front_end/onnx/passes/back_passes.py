@@ -7,7 +7,7 @@ import itertools
 from functools import reduce
 import copy
 from ....common.defs import Tensor, FLOAT_EQUAL, Framework
-from ....common.errors import *
+from ....logger import INFO, DEBUG, WARN, ERROR, FATAL
 from ....common.utils import extend_lists, list_string_to_list, float_string_to_list, get_converted_dtype
 from ....graph.node_wrap import NodeWrap
 from ....graph.graph_algo import determined_sort, get_valid_node_name, clear_redundant_nodes, has_path, infer

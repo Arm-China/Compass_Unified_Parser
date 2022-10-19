@@ -7,7 +7,7 @@ import tensorflow.compat.v1 as tf
 import sys
 from ..op import *
 from ...front_end.onnx.buffer import onnx_tensor_np_mapping
-from ...common.errors import *
+from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 from ...common.defs import TYPE_MIN, TYPE_MAX, INT_MIN
 
 

@@ -13,7 +13,7 @@ from ....graph.pattern_match import matched_patterns, single_node_matcher, two_n
 from ...onnx.passes.common_passes import insert_constant, insert_reshape, insert_tile, insert_transpose, remove_node_safely, insert_reshape_after
 from ....common.defs import Tensor, FLOAT_EQUAL
 from ....common.utils import extend_lists
-from ....common.errors import *
+from ....logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
 def adjust_filter(graph):
