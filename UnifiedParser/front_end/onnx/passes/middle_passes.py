@@ -4405,7 +4405,8 @@ def merge_ln_reshape(graph):
         if len(reshape1_in_edges) < 1 \
                 or len(reshape1_in_shapes) < 1 \
                 or reshape1_in_shapes[0] is None \
-                or reshape2_shape != reshape1_in_shapes[0]:
+                or reshape2_shape != reshape1_in_shapes[0] \
+                or len(reshape1_in_shapes[0]) < 3:
             continue
         ln_axes = np.sort(OpHasAxis.make_axes_non_negative(
             obj_dict['ln'].axes, ln_in_shape))
