@@ -15,6 +15,7 @@ from .front_end.lite.process import process_tflite
 from .front_end.caffe.process import process_caffe
 from .front_end.onnx.passes.common_passes import remove_useless_op
 from .front_end.tf.process import process_tf
+from .front_end.torch.process import convert_torch_to_onnx
 from .graph.graph_algo import infer, has_path
 from .graph.pattern_match import matched_patterns, single_node_matcher
 from .writer import serialize
@@ -28,7 +29,8 @@ def univ_parser(params):
     if params:
         '''Set the necessary parameters.'''
         model_path = params.get('input_model', '')
-        output_dir = params.get('output_dir', '')
+        output_dir = params.get('output_dir', './')
+        model_type = params.get('model_type', '')
         if 'input_names' not in params and 'input' in params:
             params['input_names'] = params['input']
             params.pop('input')
@@ -48,6 +50,20 @@ def univ_parser(params):
         params['output_names'] = list(out_names_dict.keys())
         params['input_shapes'] = list_string_to_list(
             params['input_shapes']) if 'input_shapes' in params else []
+
+        if model_type == 'torch':
+            # For torch, input_names and output_names are useless because it's not allowed to change
+            # input nodes or output nodes for TorchScript. They are just names assigned to the input
+            # and output nodes of the graph in order. So, only providing input_shapes is allowed.
+            # If input_names is not set, set it to ['x0', 'x1', ...].
+            if not params['input_shapes']:
+                FATAL('[Parser]: input_shapes must be provided in config file for torch model!')
+            if params['input_names'] or params['output_names']:
+                INFO('[Parser]: input_names and output_names in config file won\'t change input '
+                     'and output nodes for torch model!')
+            if not params['input_names']:
+                params['input_names'] = [('x' + str(idx)) for idx in range(len(params['input_shapes']))]
+
         if len(params['input_names']) == len(params['input_shapes']):
             params['input_shapes'] = {
                 params['input_names'][i]: v for i, v in enumerate(params['input_shapes'])}
@@ -61,9 +77,7 @@ def univ_parser(params):
                 '[Parser]: batch_size in config file will be deprecated and has no effect!')
         if 'input_data_format' in params:
             WARN('[Parser]: input_data_format in config file will be deprecated!')
-        params['input_data_format'] = 'NCHW' if params.get(
-            'model_type', '') in ('onnx', 'caffe') else 'NHWC'
-
+        params['input_data_format'] = 'NCHW' if model_type in ('onnx', 'caffe', 'torch') else 'NHWC'
         params['output_tensor_names'] = params['output_names'][:]
 
         if (is_file(model_path) or is_dir(model_path)) and is_dir(output_dir):
@@ -73,14 +87,19 @@ def univ_parser(params):
                 tf.disable_eager_execution()
 
             try:
+                # Convert torch model to onnx before processing
+                if model_type == 'torch':
+                    model_path, params = convert_torch_to_onnx(model_path, params)
+                    model_type = 'onnx'
+
                 '''The models under different frameworks are parsed and finally converted into representations under the onnx framework.'''
-                if params.get('model_type', '') == 'onnx':
+                if model_type == 'onnx':
                     graph = process_onnx(model_path, params)
-                elif params.get('model_type', '') == 'tflite':
+                elif model_type == 'tflite':
                     graph = process_tflite(model_path, params)
-                elif params.get('model_type', '') == 'caffe':
+                elif model_type == 'caffe':
                     graph = process_caffe(model_path, params)
-                elif params.get('model_type', '').lower() in ['tf', 'tensorflow']:
+                elif model_type in ('tf', 'tensorflow'):
                     graph = process_tf(model_path, params)
                 else:
                     ERROR('[Parser]: Framework %s is not supported!' %
@@ -209,7 +228,7 @@ def main():
             model_type = 'tensorflow'
             if 'model_type' in common:
                 model_type = common['model_type']
-                if model_type.upper() not in ('ONNX', 'TFLITE', 'CAFFE', 'TENSORFLOW', 'TF'):
+                if model_type.upper() not in ('ONNX', 'TFLITE', 'CAFFE', 'TENSORFLOW', 'TF', 'TORCH'):
                     WARN('Unsupport model type!')
                     return -1
 
