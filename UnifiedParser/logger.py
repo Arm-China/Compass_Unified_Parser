@@ -48,7 +48,7 @@ class CUPLogger():
 
     def apply_header(self, msg):
         if not msg.startswith(self.header):
-            msg = '[Parser]: ' + msg
+            msg = self.header + msg
         return msg
 
     def info(self, msg, *args, **kwargs):
@@ -75,6 +75,7 @@ class CUPLogger():
 
 
 LOGGER = CUPLogger()
+logging.basicConfig(level=logging.INFO, format='%(message)s')
 
 
 def INFO(msg, *args, **kwargs):

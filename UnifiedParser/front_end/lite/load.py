@@ -320,6 +320,12 @@ def convert_tflite_to_graph(model_path, params):
                         net_in_tensor = parsed_tensors_table[net_in]['data']
                         shape = list(
                             net_in_tensor.shape) if net_in_tensor.shape else []
+                        if net_in_name in params['input_shapes'] \
+                                and shape != params['input_shapes'][net_in_name]:
+                            new_shape = params['input_shapes'][net_in_name]
+                            WARN('Original model expects input shape of input %s to be %s. '
+                                 'Now reset it to %s basing on config file!' % (net_in_name, str(shape), str(new_shape)))
+                            shape = new_shape
                         if str(net_in_tensor.dtype).find('int') != -1:
                             net_in_tensor = np.zeros(
                                 shape, net_in_tensor.dtype)

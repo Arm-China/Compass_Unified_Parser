@@ -6,7 +6,7 @@ from utils.run import run_parser
 
 
 def create_batchmatmul_model(tflite_file_path, input_size1, input_size2):
-    ''' Create tensorflow model for batchmatmul op.
+    ''' Create tflite model for batchmatmul op.
     '''
     with tf.Session(graph=tf.Graph()) as sess:
         x1 = tf.placeholder(tf.float32, shape=input_size1, name='X1')
