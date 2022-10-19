@@ -7,7 +7,7 @@ import os
 import onnx
 import torch
 import torch.onnx.symbolic_helper as helper
-from ...common.errors import *
+from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 from ...common.utils import get_version
 
 
