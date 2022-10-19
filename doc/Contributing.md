@@ -23,6 +23,11 @@ CUP uses [pytest](https://docs.pytest.org) as a test driver. To run tests, you'l
 ```
 pip install pytest nbval
 ```
+Also test depends on onnx runtime:
+```
+# for onnx runtime
+pip install onnxruntime==1.12
+```
 
 Some tests also depends AIPUBuilder for IR inference, so you need to install AIPUBuilder:
 ```
