@@ -7,7 +7,6 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.keras import backend as K
 from collections import OrderedDict
-from .utils import trim_tensor_name
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
@@ -210,7 +209,7 @@ def parse_keras(model_path, params):
 
     nodes = get_nodes_content(model.layers, model.get_config())
     model_inputs = model.inputs
-    model_inputs_names = [trim_tensor_name(inp_name) for inp_name in model.input_names]
+    model_inputs_names = model.input_names
 
     for n in nodes:
         if n['name'] in model_inputs_names and n['name'] not in input_shapes:
