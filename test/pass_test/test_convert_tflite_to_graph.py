@@ -57,7 +57,7 @@ with open(cfg_path, 'w') as txt_file:
     txt_file.write(cfg_content)
 
 # Run tests with parser and compare result with runtime
-exit_status = generate_ir(cfg_path)
+exit_status = generate_ir(cfg_path, verbose=True)
 assert exit_status
 
 # opt forward

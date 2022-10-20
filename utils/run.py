@@ -12,11 +12,11 @@ from .forward import opt_forward, rt_forward
 from .model import read_model
 
 
-def generate_ir(cfg_path):
+def generate_ir(cfg_path, verbose=False):
     '''Call Parser to generate float IR'''
     entry_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'main.py')
     DEBUG('Trigger script: %s' % entry_path)
-    run_process = subprocess.Popen(['python3', entry_path, '-c', cfg_path],
+    run_process = subprocess.Popen(['python3', entry_path, '-c', cfg_path] + (['-v'] if verbose else []),
                                    stdout=subprocess.PIPE,
                                    stderr=subprocess.STDOUT)
     log_file = cfg_path + '.log'

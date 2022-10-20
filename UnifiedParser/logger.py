@@ -112,8 +112,8 @@ def init_logging(verbose, logfile=None):
         logging_level = logging.INFO
     log_format = '%(message)s'
     if logfile is not None:
-        logging.basicConfig(filename=logfile, level=logging_level, format=log_format)
+        logging.basicConfig(filename=logfile, level=logging_level, format=log_format, force=True)
         LOGGER.set_color(False)
     else:
-        logging.basicConfig(level=logging_level, format=log_format)
+        logging.basicConfig(level=logging_level, format=log_format, force=True)
         LOGGER.set_color(True)
