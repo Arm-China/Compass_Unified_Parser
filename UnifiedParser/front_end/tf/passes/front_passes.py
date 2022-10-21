@@ -1,4 +1,4 @@
-# Copyright © 2022 Arm China Co. Ltd. All rights reserved.
+# Copyright © 2022 Arm Technology (China) Co. Ltd. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 
@@ -180,7 +180,7 @@ def convert_gru_lstm(graph):
             dst_onnx_type = 'GRU'
         else:
             rnn_attr.update({'activations': [rnn_obj.recurrent_activation.upper(),
-                            rnn_obj.activation.upper(), rnn_obj.activation.upper()]})
+                                             rnn_obj.activation.upper(), rnn_obj.activation.upper()]})
             dst_onnx_type = 'LSTM'
         NodeWrap(graph, rnn).replace_obj(dst_onnx_type, rnn_attr)
 

@@ -1,4 +1,4 @@
-# Copyright © 2022 Arm China Co. Ltd. All rights reserved.
+# Copyright © 2022 Arm Technology (China) Co. Ltd. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 from utils.compare import compare_data_dict
 from utils.run_ir_forward import run_ir_forward

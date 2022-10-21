@@ -1,3 +1,6 @@
+# Copyright © 2022 Arm Technology (China) Co. Ltd. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 from UnifiedParser.plugin_op import ParserOp
 from UnifiedParser.plugin_loader import register_plugin, PluginType
 

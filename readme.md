@@ -1,10 +1,10 @@
-# Compass Unified Parser(CUP)
+# Compass Unified Parser
 
 Compass Unified Parser is designed for converting mutil-framework models to a float Intermediate Representation (IR), which aligns with the standard IR definition of Arm China Zhouyi AIPU Neural Network (NN) compiler.
 
 
-## CUP process flow and design philosophy
-The main objective of CUP is to convert a trained model to a float IR feeding to OPT(optimizer). Below is the process flow of the parser.
+## Parser process flow and design philosophy
+The main objective of Parser is to convert a trained model to a float IR feeding to OPT(optimizer). Below is the process flow of the parser.
 
 1. A model will be feeded in by an unified configuration file.
 2. The entry point: Configuration reader will parse the config file, and dispatch the job to a supported reader.
@@ -26,7 +26,7 @@ The main objective of CUP is to convert a trained model to a float IR feeding to
 
 8. Serialize to file.
 
-![](../images/parser_arch.svg)
+![](doc/images/parser_arch.svg)
 
 ### `Graph` and `Node` design
 
@@ -37,9 +37,9 @@ The `Graph` only keeps all nodes, and the topology info will be stored in `Node`
 `Node` represents the IR's layer, which can be serialized simply by `serialize` method.
 
 
-### More About the design of CUP
+### More About the design of Parser
 
-* CUP only supports fixed shape graph i.e. static graph, and it will do multi times shape inference.
+* Parser only supports fixed shape graph i.e. static graph, and it will do multi times shape inference.
 * After each graph operation, such as merge, convert, eliminate, a shape inference is preferred, except you are sure that the shape is correct.
     * This is because any graph operation may change the topology of the graph, and the shape may be changed as well.
     * If some parameters can be only known after known shape, then put the parameters process in shape inference stage.
@@ -50,9 +50,9 @@ The `Graph` only keeps all nodes, and the topology info will be stored in `Node`
 
 ### Installation instructions
 
-The CUP parser is a part of Compass Build Tool. You can follow the instruments of Compass Build Tool to install the buildtool, and the CUP will be available.
+The Parser is a part of Compass Build Tool. You can follow the instruments of Compass Build Tool to install the buildtool, and the Parser will be available.
 
-Beside, the CUP can also run independently. Before running the `main.py`, please make sure the following requirements are installed.
+Beside, the Parser can also run independently. Before running the `main.py`, please make sure the following requirements are installed.
 
 ### Requirements
 * python (3.8 or higher)
@@ -63,9 +63,9 @@ Beside, the CUP can also run independently. Before running the `main.py`, please
 * tensorflow (> 1.13, 2.6 is preferred)
 * torch
 
-### Run the CUP
+### Run the Parser
 
-CUP uses a config file(.ini) as input. You can directly run the `main.py` with your configure file as below:
+Parser uses a config file(.ini) as input. You can directly run the `main.py` with your configure file as below:
 ```bash
 python3 main.py -c my_config.ini
 ```
