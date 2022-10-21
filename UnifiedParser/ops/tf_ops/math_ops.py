@@ -326,6 +326,10 @@ class TfBatchMatMulV2Op(OpHasOneOutPort, TfOp):
         return {'type': 'MatMul', 'version': 9}
 
 
+class TfBatchMatMulOp(TfBatchMatMulV2Op):
+    pass
+
+
 class TfCeilOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfCeilOp, self).infer_shape()

@@ -5,14 +5,14 @@ import tensorflow.compat.v1 as tf
 from utils.run import run_parser
 
 
-def create_add_model(pb_file_path, x1_size, x2_size):
-    ''' Create tensorflow model for add op.
+def create_batchmatmul_model(pb_file_path, x1_size, x2_size):
+    ''' Create tensorflow model for BatchMatMul op.
     '''
     with tf.Session(graph=tf.Graph()) as sess:
         x1 = tf.placeholder(tf.float32, shape=x1_size, name='X1')
         x2 = tf.placeholder(tf.float32, shape=x2_size, name='X2')
-        op1 = tf.math.add(x1, x2, name='add')
-        y = tf.add(op1, 10.0, name='Y')
+        op1 = tf.raw_ops.BatchMatMul(x=x1, y=x2, name='BatchMatMul')
+        y = tf.math.add(op1, 10.0, name='Y')
 
         sess.run(tf.global_variables_initializer())
         constant_graph = tf.graph_util.convert_variables_to_constants(
@@ -23,9 +23,9 @@ def create_add_model(pb_file_path, x1_size, x2_size):
             f.write(constant_graph.SerializeToString())
 
 
-TEST_NAME = 'add'
-input_shape1 = [2, 1, 1, 1, 2]
-input_shape2 = [2, 1, 2]
+TEST_NAME = 'BatchMatMul'
+input_shape1 = [2, 3, 4, 5]
+input_shape2 = [2, 3, 5, 4]
 
 # Generate input data
 feed_dict = dict()
@@ -34,7 +34,7 @@ feed_dict['X2:0'] = np.random.ranf(input_shape2).astype(np.float32)
 
 model_path = TEST_NAME + '.pb'
 # Create model
-create_add_model(
+create_batchmatmul_model(
     model_path, input_shape1, input_shape2)
 
 # Run tests with parser and compare result with runtime
