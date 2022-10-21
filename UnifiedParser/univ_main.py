@@ -3,6 +3,7 @@
 
 
 import onnx
+import torch
 import tensorflow.compat.v1 as tf
 from collections import OrderedDict
 from .common.utils import is_file, is_dir, multi_string_to_list, list_string_to_list
