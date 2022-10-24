@@ -569,7 +569,11 @@ class ReadOnlyGraph(object):
 
 
 class SubGraph(ReadOnlyGraph, Graph):
-    def __init__(self, graph, filter_node=list(), filter_edge=list()):
+    def __init__(self, graph, filter_node=None, filter_edge=None):
+        if filter_node is None:
+            filter_node = list()
+        if filter_edge is None:
+            filter_edge = list()
         self._root = graph
         self._filter_node = filter_node
         self._filter_edge = filter_edge

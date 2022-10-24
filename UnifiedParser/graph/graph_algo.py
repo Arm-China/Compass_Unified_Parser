@@ -197,7 +197,9 @@ def clear_redundant_nodes(g, outputs=None):
         WARN('[Parser]: Can not proceed without output names in clear_redundant_nodes!')
 
 
-def infer(graph, partial=False, chosen_list=list()):
+def infer(graph, partial=False, chosen_list=None):
+    if chosen_list is None:
+        chosen_list = list()
     ''' Infer all nodes of the graph.   '''
 
     _input_cast_map = {

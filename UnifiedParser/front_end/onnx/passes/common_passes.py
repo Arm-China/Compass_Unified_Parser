@@ -468,8 +468,10 @@ def insert_constant(graph, name, value, dst, in_port=0, data_format='NCHW', cons
         WARN('[Parser]: Invalid params for insert_constant (%s)!' % name)
 
 
-def insert_gather(graph, src, dst, indices, axis=0, edge_attr=dict(), key=None, type='Gather'):
+def insert_gather(graph, src, dst, indices, axis=0, edge_attr=None, key=None, type='Gather'):
     ret = None
+    if edge_attr is None:
+        edge_attr = dict()
     assert type in (
         'Gather', 'ArmGather'), 'The type of node is invalid in insert_gather.'
     if graph.has_node(src) and graph.has_node(dst) and indices is not None:
@@ -540,8 +542,10 @@ def insert_reshape(graph, src, dst, in_attr, dim, key=None, type='Reshape', data
     return ret
 
 
-def insert_reshape_after(graph, src, new_dim, old_dim=list(), out_port=0, type='Reshape'):
+def insert_reshape_after(graph, src, new_dim, old_dim=None, out_port=0, type='Reshape'):
     ret = None
+    if old_dim is None:
+        old_dim = list()
     if graph.has_node(src) and type in ('Reshape', 'ArmReshape'):
         if out_port == 0:
             reshape_name = src + '_post_reshape'

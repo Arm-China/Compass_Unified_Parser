@@ -447,7 +447,7 @@ class PluginOp(OpHasVariableOutPorts, CommonOp):
                             continue
                     txt_file.write('%s=%s\n' % (k, v))
             else:
-                WARN('[Parser]: Invalid Plugin op for write_attrs!' % self.name)
+                WARN('[Parser]: Invalid Plugin op(%s) for write_attrs!' % self.name)
                 ret = False
         return ret
 
