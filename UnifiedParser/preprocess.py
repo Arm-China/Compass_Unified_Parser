@@ -8,7 +8,7 @@ import re
 import copy
 from .common.defs import Tensor
 from .common.utils import list_string_to_list
-from .logger import ERROR, WARN, DEBUG
+from .logger import ERROR, WARN, DEBUG, INFO
 from .graph.node_wrap import NodeWrap
 from .graph.graph_algo import get_valid_node_name
 from .graph.pattern_match import single_node_matcher
@@ -30,39 +30,69 @@ coefficient_default_map = {
 }
 
 
-def gen_gamut_params(preprocess):
+def gen_gamut_params(params):
     ret = dict()
-    if preprocess is None:
-        return ret
-    if preprocess['preprocess'].upper() in ['RGBTOYUV', 'YUVTORGB']:
-        if preprocess['preprocess'].upper() == 'RGBTOYUV':
+    preprocess = params['gamut_preprocess']
+    if preprocess.upper() in ['RGBTOYUV', 'YUVTORGB']:
+        # get preprocess type and rgb_shape
+        if preprocess.upper() == 'RGBTOYUV':
             preprocess_type = 'RgbToYuv'
-            ret['shape'] = preprocess['shape']
+            shape = params.get('rgb_shape', None)
+            if shape is None:
+                WARN('RgbToYuv must provide origin RGB shape. Ingore gamut_preprocess!')
+                return ret
+            ret['shape'] = shape
         else:
             preprocess_type = 'YuvToRgb'
-        bits = preprocess['bits']
-        conversion = preprocess['conversion'].upper()
-        if conversion.upper() == 'SELF':
-            coefficient = '[' + preprocess['coefficient'] + ']'
-            coefficient_shift = preprocess['coefficient_shift']
-            coefficient_dtype = preprocess['coefficient_dtype']
-        elif conversion in coefficient_default_map:
+        # get format
+        gamut_format = params.get('gamut_format', None)
+        if gamut_format is None:
+            INFO('gamut_format is not set. Set to default value I420!')
+            gamut_format = 'I420'
+        # get bits
+        bits = params.get('gamut_bits', None)
+        if bits is None:
+            INFO('gamut_bits is not set. Set to default value 8!')
+            bits = 8
+        # get conversion, coefficient_dtype and coefficient_shift
+        conversion = params.get('gamut_conversion', None)
+        if conversion is None:
+            INFO('gamut_conversion is not set. Set to default value BT709!')
+            conversion = 'BT709'
+        else:
+            conversion = conversion.upper()
+        if conversion == 'SELF':
+            coefficient = params.get('coefficient', None)
+            coefficient_dtype = params.get('coefficient_dtype', None)
+            coefficient_shift = params.get('coefficient_shift', None)
+            if coefficient is None or coefficient_dtype is None or coefficient_shift is None:
+                WARN('gamut conversion is SELF defined, but coefficient/coefficient_dtype/'
+                     'coefficient_shift is not set. Set to default value BT709!')
+                conversion = 'BT709'
+            else:
+                try:
+                    coefficient = list(map(float,
+                                           coefficient.lstrip('[').rstrip(']').split(',')))
+                except Exception as e:
+                    WARN('Unsupported coefficient format: %s. Set conversion to default value BT709!' % str(e))
+                    conversion = 'BT709'
+        elif conversion not in coefficient_default_map:
+            WARN(
+                'Currently conversion %s is not supported. Use BT709 instead!' % conversion)
+            conversion = 'BT709'
+        if conversion in coefficient_default_map:
             coefficient = coefficient_default_map[conversion][preprocess_type]
             coefficient_shift = 0
             coefficient_dtype = 'float32'
-        else:
-            WARN(
-                '[Parser] currently not supported convertion %s, uing BT709 instead' % conversion)
-            coefficient = coefficient_default_map['BT709'][preprocess_type]
-            coefficient_shift = 0
-            coefficient_dtype = 'float32'
         ret['type'] = preprocess_type
-        ret['format'] = preprocess['format']
+        ret['format'] = gamut_format
         ret['bits'] = bits
         ret['conversion'] = conversion
         ret['coefficient'] = coefficient
         ret['coefficient_dtype'] = coefficient_dtype
         ret['coefficient_shift'] = coefficient_shift
+    else:
+        WARN('Meet unsupported preprocess type (%s). Ingore it!' % preprocess)
     return ret
 
 
@@ -74,13 +104,13 @@ def gamut_preprocess(graph, params):
         if node_obj.type == 'ArmInput':
             inputs.append(n)
 
-    preprocess = params.get('preprocess', None)
-    if preprocess:
-        gamut = gen_gamut_params(preprocess)
+    preprocess = params.get('gamut_preprocess', None)
+    if preprocess is not None:
+        gamut = gen_gamut_params(params)
         if gamut:
             if len(inputs) != 1:
                 ERROR(
-                    '[Parser] currently not support more than 1 inputs graph if add preprocess RgbToYuv')
+                    'Currently for RgbToYuv, graph with more than 1 inputs is not supported!')
                 return
             ori_inp = inputs[0]
             input_out_edges = graph.sorted_out_edges(inputs[0], data=True)
@@ -97,21 +127,22 @@ def gamut_preprocess(graph, params):
                     graph.add_edge(raw_input, d, **attr)
 
             if gamut['type'] == 'RgbToYuv':
-                shape = preprocess['shape']
+                shape = gamut['shape']
                 shape = re.findall('\[[\s*\d+,]*\d+\]|\[\s*\]', shape)[0]
                 shape = [int(i) for i in re.findall('\d+', shape)]
                 n, h, w, c = shape
                 if c != 3:
-                    ERROR('[Parser] For RgbToYuv the rgb shape must be [n,h,w,3] but got %s, the channel is wrong.' % (
-                        str(shape)))
+                    ERROR('For RgbToYuv the rgb shape must be [n,h,w,3] but got %s, '
+                          'the channel is wrong.' % (str(shape)))
                     return
                 if len(inp_shape) != 2:
-                    ERROR('[Parser] For RgbToYuv, the original model input must has a 2 dimensions input, but got a shape: %s ' % (
-                        str(inp_shape)))
+                    ERROR('For RgbToYuv, the original model input must has a 2 '
+                          'dimensions input, but got a shape: %s ' % (str(inp_shape)))
                     return
                 if int(h*w*1.5) != inp_shape[1]:
-                    ERROR("[Parser] For RgbToYuv the input size is mismatch with rgb_shape. we expect h*w*3/2 == input's_size, but we got h*w*3/2=%d , and input size=%d" %
-                          (int(h*w*1.5), inp_shape[1]))
+                    ERROR('For RgbToYuv the input size mismatches with rgb_shape. '
+                          'Expect h*w*3/2 == input\'s_size, but got h*w*3/2=%d, and '
+                          'input size=%d' % (int(h*w*1.5), inp_shape[1]))
                     return
                 replace_input()
                 t = Tensor(value=np.random.randn(
@@ -123,8 +154,8 @@ def gamut_preprocess(graph, params):
                 NodeWrap(graph, raw_input).replace_obj('ArmRgbToYuv', gamut)
             else:
                 if len(inp_shape) != 4:
-                    ERROR('[Parser] to insert YUV2RGB layer, the input must be 4 dimensions, but got a shape %s' % (
-                        str(inp_shape)))
+                    ERROR('To insert YUV2RGB layer, the input must be 4 dimensions, '
+                          'but got a shape %s!' % (str(inp_shape)))
                     return
                 need_insert_transpose = False
                 n, h, w, c = inp_shape
@@ -132,8 +163,8 @@ def gamut_preprocess(graph, params):
                     need_insert_transpose = True
                     _, c, h, w = inp_shape
                 if c != 3:
-                    ERROR(
-                        '[Parser] to insert YUV2RGB layer, the input channel must be 3, but got  %d' % (c))
+                    ERROR('To insert YUV2RGB layer, the input channel must be 3, '
+                          'but got %d!' % (c))
                     return
                 replace_input()
                 shape = [n, int(h * w * 1.5)]
