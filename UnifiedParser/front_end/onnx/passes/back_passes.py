@@ -1870,6 +1870,28 @@ def rename_activations(graph):
                 graph._attr['output_names'][index] = post_cast
 
 
+def rename_bitwise(graph):
+    bitwises = ['BitwiseAnd', 'BitwiseOr', 'BitwiseXor']
+    matches = [single_node_matcher(graph, bit_type)
+               for bit_type in bitwises]
+    matches = extend_lists(matches)
+    for m in matches:
+        bit = m['target']
+        bit_obj = NodeWrap(graph, bit)['object']
+        if bit_obj is None:
+            WARN('[Parser]: Meets invalid node(%s) in rename_bitwises!' % bit)
+            continue
+        bit_attr = bit_obj.copied_attr()
+        if bit_obj.type == 'BitwiseAnd':
+            method = 'AND'
+        elif bit_obj.type == 'BitwiseOr':
+            method = 'OR'
+        elif bit_obj.type == 'BitwiseXor':
+            method = 'XOR'
+        bit_attr.update({'method': method})
+        NodeWrap(graph, bit).replace_obj('ArmBitwise', bit_attr)
+
+
 def rename_argminmax(graph):
     arg_types = ['ArgMin', 'ArgMax']
     matches = extend_lists([single_node_matcher(graph, op)
@@ -4243,6 +4265,7 @@ def back_passes(graph, params):
     split_expand(graph)
 
     rename_argminmax(graph)
+    rename_bitwise(graph)
     rename_bn(graph)
     rename_cast(graph)
     rename_compress(graph)
@@ -4327,6 +4350,7 @@ def back_passes(graph, params):
 
     fuse_relu(graph)
     rename_activations(graph)
+
     merge_group_conv(graph)
 
     detection_post_process(graph, params)

@@ -529,6 +529,34 @@ class ArmBitShiftOp(OpHasOneOutPort, ArmOp):
         return ret
 
 
+class ArmBitwiseOp(OpHasOneOutPort, OpHasMethod, ArmOp):
+    FUNC_MAP = {'AND': tf.bitwise.bitwise_and,
+                'OR': tf.bitwise.bitwise_or,
+                'XOR': tf.bitwise.bitwise_xor
+                }
+
+    @classmethod
+    def cast_in_ports(cls):
+        return {0: ['uint32', 'uint8', 'int16', 'uint16', 'int8', 'int32'], 1: ['uint32', 'uint8', 'uint16', 'int16', 'int8', 'int32']}
+
+    @classmethod
+    def attributes(cls):
+        return {'method': {'options': ['ADD', 'OR', 'XOR']},
+                }
+
+    def infer_shape(self):
+        super(ArmBitwiseOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        if len(inputs) != 2 \
+                or any([inp is None for inp in inputs]) is None:
+            WARN(
+                '[Parser]: Meets invalid inputs of Bitwise Op(%s) in infer_shape!' % self.name)
+
+        bitwise_func = ArmBitwiseOp.FUNC_MAP[self.method]
+        out_tensor = bitwise_func(*inputs).eval()
+        self.set_out_tensor(out_tensor)
+
+
 class ArmBNLLOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
@@ -895,7 +923,8 @@ class ArmConvTransposeOp(BaseActivationOp, BaseConvOp, ArmOp):
         ret = super(ArmConvTransposeOp, self).write_attrs(txt_file)
         if ret:
             # TODO: Remove output_padding_x and output_padding_y
-            assert(all(p == 0 for p in self.output_padding)), 'Meet non-zero output_padding in ArmConvTransposeOp!'
+            assert(all(p == 0 for p in self.output_padding)
+                   ), 'Meet non-zero output_padding in ArmConvTransposeOp!'
             txt_file.write('output_padding_x=%d\n' % self.output_padding[1])
             txt_file.write('output_padding_y=%d\n' % self.output_padding[0])
         return ret

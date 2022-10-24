@@ -227,6 +227,57 @@ class AtanOp(LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
         self.set_out_tensor(out_tensor)
 
 
+class BitwiseAndOp(OpHasOneOutPort, OnnxOp):
+    @classmethod
+    def attributes(cls):
+        return {18: {}}
+
+    def __init__(self, graph, attr_dict=None):
+        super(BitwiseAndOp, self).__init__(graph, attr_dict)
+        self.update_attributes(BitwiseAndOp, attr_dict)
+        assert self.check_required(), 'BitwiseAndOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(BitwiseAndOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = tf.bitwise.bitwise_and(*inputs).eval()
+        self.set_out_tensor(out_tensor)
+
+
+class BitwiseOrOp(OpHasOneOutPort, OnnxOp):
+    @classmethod
+    def attributes(cls):
+        return {18: {}}
+
+    def __init__(self, graph, attr_dict=None):
+        super(BitwiseOrOp, self).__init__(graph, attr_dict)
+        self.update_attributes(BitwiseOrOp, attr_dict)
+        assert self.check_required(), 'BitwiseOrOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(BitwiseOrOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = tf.bitwise.bitwise_or(*inputs).eval()
+        self.set_out_tensor(out_tensor)
+
+
+class BitwiseXorOp(OpHasOneOutPort, OnnxOp):
+    @classmethod
+    def attributes(cls):
+        return {18: {}}
+
+    def __init__(self, graph, attr_dict=None):
+        super(BitwiseXorOp, self).__init__(graph, attr_dict)
+        self.update_attributes(BitwiseXorOp, attr_dict)
+        assert self.check_required(), 'BitwiseXorOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(BitwiseXorOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = tf.bitwise.bitwise_xor(*inputs).eval()
+        self.set_out_tensor(out_tensor)
+
+
 class CeilOp(LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
     @classmethod
     def attributes(cls):

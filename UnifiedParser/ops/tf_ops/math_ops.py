@@ -342,6 +342,45 @@ class TfCeilOp(OpHasOneOutPort, TfOp):
         return {'type': 'Ceil', 'version': 13}
 
 
+class TfBitwiseAndOp(OpHasOneOutPort, TfOp):
+
+    def infer_shape(self):
+        super(TfBitwiseAndOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = tf.bitwise.bitwise_and(*inputs).eval()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'BitwiseAnd', 'version': 18}
+
+
+class TfBitwiseOrOp(OpHasOneOutPort, TfOp):
+
+    def infer_shape(self):
+        super(TfBitwiseOrOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = tf.bitwise.bitwise_or(*inputs).eval()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'BitwiseOr', 'version': 18}
+
+
+class TfBitwiseXorOp(OpHasOneOutPort, TfOp):
+
+    def infer_shape(self):
+        super(TfBitwiseXorOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = tf.bitwise.bitwise_xor(*inputs).eval()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'BitwiseXor', 'version': 18}
+
+
 class TfCosOp(LayoutUnawareOp, OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfCosOp, self).infer_shape()
@@ -352,6 +391,48 @@ class TfCosOp(LayoutUnawareOp, OpHasOneOutPort, TfOp):
     @property
     def correspond_onnx_op(self):
         return {'type': 'Cos', 'version': 7}
+
+
+class TfCumprodOp(OpHasOneOutPort, OpHasAxis, TfOp):
+    @classmethod
+    def attributes(cls):
+        return {1: {'exclusive': {'type': AttrType.INT, 'default': 0, 'options': [0, 1]},
+                    'reverse': {'type': AttrType.INT, 'default': 0, 'options': [0, 1]}
+                    }
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfCumprodOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfCumprodOp, attr_dict)
+        assert self.check_required(), 'TfCumprodOp is missing a required parameter.'
+
+    def __getattr__(self, item):
+        ret = None
+        try:
+            if item in ('exclusive', 'reverse'):
+                ret = bool(self.__dict__['_attr'][item].value)
+        except:
+            ret = None
+        if ret is None:
+            ret = super(TfCumprodOp, self).__getattr__(item)
+        return ret
+
+    def __setattr__(self, item, value):
+        if item in ('exclusive', 'reverse'):
+            self.__dict__['_attr'][item].value = int(value)
+        else:
+            super(TfCumprodOp, self).__setattr__(item, value)
+
+    def infer_shape(self):
+        super(TfCumprodOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = tf.math.cumprod(inputs[0], axis=self.axis, exclusive=bool(
+            self.exclusive), reverse=bool(self.reverse)).eval()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'Cumprod', 'version': 1}
 
 
 class TfCoshOp(LayoutUnawareOp, OpHasOneOutPort, TfOp):
