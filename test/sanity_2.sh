@@ -12,6 +12,7 @@ git log -n 1 > temp.log
 failed_op_tests=""
 failed_pass_tests=""
 failed_change_tests=""
+failed_specfied_tests=""
 
 # 1 If you commit like: [Parser_op] ...
 if grep -i Parser_op temp.log
@@ -60,6 +61,36 @@ then
     done
 fi
 
+# 4 If you provide keyword in commit like: [tf2] ...
+keyword="`git log --oneline -n 1 --format=%s | grep -o '\[.*\]'`"
+if [[ -n $keyword ]]
+then
+    keyword=${keyword:1:-1} # Remove '[' and ']'
+    echo "Find keyword ${keyword} in commit message!"
+    lc_keyword=${keyword,,}
+    if [[ $lc_keyword != 'parser_op' && $lc_keyword != 'parser_pass' ]]
+    then
+        filelist=`find ./*_test -iname "*${keyword}*" -type f | grep -vw plugins`
+        if [[ -n $filelist ]]
+        then
+            for file in $filelist
+            do
+                if [[ $file != *".py" ]]
+                then
+                    continue
+                fi
+                echo "SANITY TESTING: "$file
+                python3 $file
+                exit_code=$?
+                if [[ $exit_code != 0 ]]
+                then
+                    failed_specfied_tests=$failed_specfied_tests" "$file
+                fi
+            done
+        fi
+    fi
+fi
+
 all_passed=1
 if [[ -n $failed_op_tests ]]
 then
@@ -76,6 +107,12 @@ fi
 if [[ -n $failed_change_tests ]]
 then
     echo "Failed added/modified tests:$failed_change_tests"
+    all_passed=0
+fi
+
+if [[ -n $failed_specfied_tests ]]
+then
+    echo "Failed specfied tests:$failed_specfied_tests"
     all_passed=0
 fi
 
