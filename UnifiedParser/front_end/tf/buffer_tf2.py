@@ -96,12 +96,14 @@ def get_node_attr(layer):
             if eval('callable(layer.' + key + ')'):
                 continue
             value = eval('layer.' + key)
-            if key == 'weights':
+            if key == 'weights' and isinstance(value, list):
                 weights_list = []
                 for variable in value:
                     weights_list.append(variable.numpy())
                 key = 'weights_list'
                 ret.update({key: weights_list})
+            elif 'numpy' in dir(value):
+                ret.update({key: value.numpy()})
             else:
                 ret.update({key: copy.deepcopy(value)})
         except Exception as e:
@@ -112,6 +114,12 @@ def get_node_attr(layer):
 
 
 def get_node_type(layer):
+    def make_first_letter_upper(letters):
+        if not letters:
+            return letters
+        new_letters = letters[0].upper() + letters[1:]
+        return new_letters
+
     layer_type = type(layer).__name__
     if layer_type == 'TFOpLambda':
         node_type = layer.get_config().get('function', layer_type)
@@ -122,7 +130,7 @@ def get_node_type(layer):
     node_type = node_type.split('.')[-1]
     # Also convert snake case like 'compute_accidental_hits' to camel case 'ComputeAccidentalHits'
     node_type = node_type.split('_')
-    node_type = node_type[0].title() + ''.join(subs.title() for subs in node_type[1:])
+    node_type = ''.join(make_first_letter_upper(subs) for subs in node_type)
 
     # Convert type like 'Conv2d' to 'Conv2D' to match with type in raw ops
     if node_type.endswith('2d') or node_type.endswith('3d'):

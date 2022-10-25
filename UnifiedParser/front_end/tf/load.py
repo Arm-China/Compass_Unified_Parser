@@ -281,7 +281,7 @@ def convert_tf_to_graph(model_path, params):
                                                 tensor_shape = params['input_shapes'][tensor_name]
                                                 params['input_shapes'][src_name] = \
                                                     params['input_shapes'].pop(tensor_name)
-                                            elif t.op.type != 'InputLayer':
+                                            elif t.op.type not in ('InputLayer', 'Placeholder'):
                                                 is_valid_shape = False
                                         else:
                                             if trim_tensor_name(tensor_name) in params['input_shapes']:

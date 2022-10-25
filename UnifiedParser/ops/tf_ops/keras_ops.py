@@ -7,6 +7,11 @@ from ..op import *
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
+class TfConv2DTransposeOp(TfHasPaddingStrides, OpHasWeights, OpHasOneOutPort):
+    # WIP
+    pass
+
+
 class TfGRUOp(TfRecurrent):
     @classmethod
     def attributes(cls):
