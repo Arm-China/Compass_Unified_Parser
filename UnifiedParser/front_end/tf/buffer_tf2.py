@@ -120,7 +120,9 @@ def get_node_type(layer):
 
     # Convert type like 'math.add' to 'Add', 'cast' to 'Cast'(similar to type of raw ops)
     node_type = node_type.split('.')[-1]
-    node_type = node_type[0].upper() + node_type[1:]
+    # Also convert snake case like 'compute_accidental_hits' to camel case 'ComputeAccidentalHits'
+    node_type = node_type.split('_')
+    node_type = node_type[0].title() + ''.join(subs.title() for subs in node_type[1:])
 
     # Convert type like 'Conv2d' to 'Conv2D' to match with type in raw ops
     if node_type.endswith('2d') or node_type.endswith('3d'):
@@ -161,7 +163,7 @@ def get_const_node_content(layer, const_input_name):
 
 
 def get_node_content(layer):
-    layer_outputs = layer.output if isinstance(layer.output, list) else [layer.output]
+    layer_outputs = layer.output if isinstance(layer.output, (list, tuple)) else [layer.output]
     output_name_shape = [(out.name, out.shape.as_list() if out.shape is not None else [])
                          for out in layer_outputs]
     ret = {'name': layer.name,
@@ -245,7 +247,7 @@ def parse_keras(model_path, params):
     for layer in model.layers:
         if layer.name in input_shapes.keys():
             continue
-        if isinstance(layer.output, list):
+        if isinstance(layer.output, (list, tuple)):
             outputs.extend(layer.output)
         else:
             outputs.append(layer.output)
