@@ -19,7 +19,6 @@ from .buffer import *
 from .buffer_tf2 import parse_keras
 from .utils import trim_tensor_name
 
-
 tf_attr_names_map = {'keep_dims': 'keepdims',
                      'ksize': 'kernel_shape',
                      'padding': 'auto_pad',
@@ -167,7 +166,7 @@ def convert_tf_to_graph(model_path, params):
 
                     tensors_list = [(k, v) for k, v in tensors.items()]
                     tensors_num = len(tensors_list)
-                    threads_num = max(1, mp.cpu_count()-1)
+                    threads_num = max(1, mp.cpu_count() - 1)
                     tensor_num_per_thread = tensors_num // threads_num \
                         if tensors_num % threads_num == 0 \
                         else int(np.ceil(tensors_num / threads_num))
@@ -177,7 +176,7 @@ def convert_tf_to_graph(model_path, params):
                     threads = []
                     for thread_idx in range(threads_num):
                         cur_range = slice(thread_idx * tensor_num_per_thread,
-                                          min((thread_idx+1) * tensor_num_per_thread, tensors_num))
+                                          min((thread_idx + 1) * tensor_num_per_thread, tensors_num))
                         args = (tensors_list[cur_range],
                                 sess, feed_dict, np_tensors_list)
                         t = threading.Thread(target=_run_tensor, args=args)
@@ -189,7 +188,8 @@ def convert_tf_to_graph(model_path, params):
             FATAL('[Parser]: Meet error in parse_pb: %s' % str(e))
         return nodes, nodes_dict, tensors, np_tensors, input_shapes
 
-    is_keras_model = model_path.endswith('h5') or is_dir(model_path)
+    is_keras_model = model_path.endswith('.h5') or model_path.endswith('.hdf5') or model_path.endswith(
+        '.keras') or is_dir(model_path)
 
     graph = Graph(name=params.get('model_name', ''))
     graph._attr['framework'] = Framework.TENSORFLOW
@@ -208,7 +208,8 @@ def convert_tf_to_graph(model_path, params):
 
     anchor_tensor = None
     if params.get('anchor_tensor_name') is not None:
-        anchor_tensor = params['anchor_tensor_name'] if ':' in params['anchor_tensor_name'] else params['anchor_tensor_name'] + ':0'
+        anchor_tensor = params['anchor_tensor_name'] if ':' in params['anchor_tensor_name'] else params[
+            'anchor_tensor_name'] + ':0'
 
     consumer_ver = get_version(onnx)
     if consumer_ver >= 1.04:
@@ -290,14 +291,16 @@ def convert_tf_to_graph(model_path, params):
                                                 is_valid_shape = False
                                         if all([s is not None for s in tensor_shape[:]]) and is_valid_shape:
                                             tensor_type = t.dtype.name
-                                            tensor_value = np.random.randint(0, 1, size=tensor_shape, dtype=np.dtype(tensor_type)) \
+                                            tensor_value = np.random.randint(0, 1, size=tensor_shape,
+                                                                             dtype=np.dtype(tensor_type)) \
                                                 if re.search(r'int', str(tensor_type)) \
                                                 else np.random.ranf(tensor_shape).astype(np.dtype(tensor_type))
                             edge_tensor = Tensor(
                                 name=tensor_name, shape=tensor_shape, value=tensor_value)
                             graph.add_edge(src_name,
                                            n['name'],
-                                           **{'src_out_port': src_out_port, 'dst_in_port': in_port, 'tensor': edge_tensor}
+                                           **{'src_out_port': src_out_port, 'dst_in_port': in_port,
+                                              'tensor': edge_tensor}
                                            )
                             if src_name in params['input_shapes']:
                                 graph._attr['input_tensors'].update(
@@ -307,7 +310,8 @@ def convert_tf_to_graph(model_path, params):
                                 '[Parser]: Meets control edge from Node(%s) in convert_tf_to_graph!' % src_name)
                 except Exception as e:
                     ERROR(
-                        '[Parser]: Meets error (%s) in reading TF nodes (%s) in convert_tf_to_graph!', (str(e), n['name']))
+                        '[Parser]: Meets error (%s) in reading TF nodes (%s) in convert_tf_to_graph!',
+                        (str(e), n['name']))
 
             if not graph._attr['output_names']:
                 # Try to find out output nodes
