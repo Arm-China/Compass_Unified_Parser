@@ -43,7 +43,7 @@ def fast_parser_test(ref_ir, ref_w, cfg=None, log=None, bk_ref_ir=None):
         sys.exit(-1)
     wok = compare(out_w, ref_w)
     ok = compare(out_ir, ref_ir)
-    if not ok and bk_ref_ir is not None:
+    if not ok and bk_ref_ir is not None and os.path.exists(bk_ref_ir):
         print("%s using backup ref!" % name)
         ok = compare(out_ir, bk_ref_ir)
     if not ok:
