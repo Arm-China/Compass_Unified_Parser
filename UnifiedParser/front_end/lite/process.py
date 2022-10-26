@@ -57,6 +57,11 @@ def process_tflite(model_path, params):
         convert_nms(graph, params)
 
         convert_to_onnx(graph)
+
+        # To support flex op in tflite model, need convert tf op to onnx as well.
+        # FIXME: Other passes in tf front passes may be needed as well.
+        from ..tf.passes.front_passes import convert_to_onnx as convert_tf_op_to_onnx
+        convert_tf_op_to_onnx(graph)
     else:
         WARN('[Parser]: Got empty graph in process_tflite!')
     return graph

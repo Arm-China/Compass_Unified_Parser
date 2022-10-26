@@ -237,8 +237,13 @@ def convert_tflite_to_graph(model_path, params):
                     for o in op_info.get('outputs', []):
                         out_tensor_op_name_map.update(
                             {parsed_tensors_table[o]['name']: node_name})
-                    op_type = op_info['type'] if op_info['type'] == 'Input' else (
-                        'Lite' + op_info['type'])
+                    if op_info['type'] == 'Input':
+                        op_type = op_info['type']
+                        for out in op_info['outputs']:
+                            if out not in net_inputs:
+                                net_inputs.append(out)
+                    else:
+                        op_type = ('Tf' if op_info['is_tf_op'] else 'Lite') + op_info['type']
                     attr_dict = copy.deepcopy(op_info['attr'])
                     attr_dict.update(
                         {'name': node_name, 'data_format': 'NHWC'})

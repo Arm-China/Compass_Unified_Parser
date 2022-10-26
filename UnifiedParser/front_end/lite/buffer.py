@@ -183,6 +183,7 @@ def get_valid_option_attribute(option_obj):
 
 
 def parse_operator(operator, tflite_model, buffer):
+    ret = {}
     linear_ops = ('CONV_2D', 'CONV_3D', 'CONV_3D_TRANSPOSE', 'DEPTHWISE_CONV_2D',
                   'FULLY_CONNECTED', 'TRANSPOSE_CONV')
     opcode_index = operator.OpcodeIndex()
@@ -198,6 +199,8 @@ def parse_operator(operator, tflite_model, buffer):
     builtin_op_type = get_class_variables_map(BuiltinOperator)[builtin_op_code]
     builtin_op_version = opcode.Version()
 
+    is_tf_op = False
+    op_attr = {}
     if builtin_op_type != 'CUSTOM':
         option_type_code = operator.BuiltinOptionsType()
         option_type = get_class_variables_map(BuiltinOptions)[option_type_code]
@@ -209,21 +212,50 @@ def parse_operator(operator, tflite_model, buffer):
                 op_attr = get_valid_option_attribute(option)
             except Exception as e:
                 WARN(str(e) + ' in parse_operator!')
-                op_attr = {}
-        else:
-            op_attr = {}
     else:
         custum_op_code = opcode.CustomCode()
-        op_attr = {'method': custum_op_code.decode('utf-8')}
+        try:
+            custum_op_code = custum_op_code.decode('utf-8')
+        except Exception as e:
+            WARN('Cannot decode custom op: %s' % str(e))
+            return ret
+
+        if custum_op_code.startswith('Flex'):
+            try:
+                import flatbuffers.flexbuffers as fbs
+            except Exception as e:
+                ERROR('Require flexbuffers version >= 2.0.0. Cannot parse Flex op in tflite model: %s' % str(e))
+                return ret
+            try:
+                raw_data = fbs.Loads(operator.CustomOptionsAsNumpy().tobytes())
+                assert isinstance(raw_data, list), 'Expect data of Flex ops to be saved in a list!'
+                from tensorflow.core.framework import node_def_pb2
+                tf_op = raw_data[0]
+                tf_node_def = node_def_pb2.NodeDef()
+                tf_node_def.ParseFromString(raw_data[1].encode("utf-8"))
+                from ..tf.buffer import get_node_content
+                node_content = get_node_content(tf_node_def)
+                op_attr = node_content.get('attr', {})
+                builtin_op_type = node_content.get('type', tf_op)
+                is_tf_op = True
+            except Exception as e:
+                if custum_op_code == 'FlexPlaceholder':
+                    builtin_op_type = 'Input'
+                else:
+                    ERROR('Fail to parse flex op: %s' % str(e))
+                    return ret
+        else:
+            op_attr = {'method': custum_op_code}
 
     inputs = operator.InputsAsNumpy().tolist() if operator.InputsLength() != 0 else []
     outputs = operator.OutputsAsNumpy().tolist(
     ) if operator.OutputsLength() != 0 else []
 
-    ret = {'type': builtin_op_type, 'opcode_version': builtin_op_version,
-           'attr': op_attr, 'inputs': inputs, 'outputs': outputs}
-    ret.update({'linear_weights': (
-        {inputs[1]: builtin_op_type} if builtin_op_type in linear_ops else {})})
+    ret.update({'type': builtin_op_type, 'opcode_version': builtin_op_version,
+                'attr': op_attr, 'inputs': inputs, 'outputs': outputs,
+                'is_tf_op': is_tf_op,
+                'linear_weights': ({inputs[1]: builtin_op_type} if
+                                   builtin_op_type in linear_ops else {})})
     return ret
 
 
