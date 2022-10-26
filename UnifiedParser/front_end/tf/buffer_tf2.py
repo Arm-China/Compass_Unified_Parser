@@ -136,6 +136,11 @@ def get_node_type(layer):
     possible_node_types = [ops for ops in dir(tf.raw_ops) if ops.lower() == node_type.lower()]
     if len(possible_node_types) == 1:
         node_type = possible_node_types[0]
+
+    # Rename type like 'Add' to 'AddN' because their arguments and behavior are same.
+    tf2op_rawop_map = {'Add': 'AddN'}
+    if node_type in tf2op_rawop_map.keys():
+        node_type = tf2op_rawop_map[node_type]
     return node_type
 
 
