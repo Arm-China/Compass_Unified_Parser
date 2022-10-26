@@ -1892,6 +1892,28 @@ def rename_bitwise(graph):
         NodeWrap(graph, bit).replace_obj('ArmBitwise', bit_attr)
 
 
+def rename_cum(graph):
+    cumlative = ['CumProd', 'CumSum']
+    matches = [single_node_matcher(graph, cum_type)
+               for cum_type in cumlative]
+    matches = extend_lists(matches)
+    for m in matches:
+        cum = m['target']
+        cum_obj = NodeWrap(graph, cum)['object']
+        if cum_obj is None:
+            WARN('[Parser]: Meets invalid node(%s) in rename_cum!' % bit)
+            continue
+        cum_attr = cum_obj.copied_attr()
+        if cum_obj.type == 'CumProd':
+            method = 'PROD'
+        elif cum_obj.type == 'CumSum':
+            method = 'SUM'
+            in_edges = graph.sorted_in_edges(cum, data=True)
+            cum_attr.update({'axis': in_edges[1][2]['tensor'].value})
+        cum_attr.update({'method': method})
+        NodeWrap(graph, cum).replace_obj('ArmCumulate', cum_attr)
+
+
 def rename_argminmax(graph):
     arg_types = ['ArgMin', 'ArgMax']
     matches = extend_lists([single_node_matcher(graph, op)
@@ -4266,6 +4288,7 @@ def back_passes(graph, params):
 
     rename_argminmax(graph)
     rename_bitwise(graph)
+    rename_cum(graph)
     rename_bn(graph)
     rename_cast(graph)
     rename_compress(graph)
@@ -4310,6 +4333,7 @@ def back_passes(graph, params):
     simple_rename(graph, 'Cos', 'ArmCosine')
     simple_rename(graph, 'Cosh', 'ArmCosh')
     simple_rename(graph, 'CropAndResize', 'ArmCropAndResize')
+    #simple_rename(graph, 'Cumprod', 'ArmCumprod')
     simple_rename(graph, 'CTCGreedyDecoder', 'ArmCTCGreedyDecoder')
     simple_rename(graph, 'DepthToSpace', 'ArmDepthToSpace')
     simple_rename(graph, 'Div', 'ArmDiv')

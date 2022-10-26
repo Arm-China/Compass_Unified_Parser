@@ -1121,6 +1121,43 @@ class ArmCTCGreedyDecoderOp(OpHasOneOutPort, ArmOp):
         return ret
 
 
+class ArmCumulateOp(OpHasOneOutPort, OpHasMethod, OpHasAxis, ArmOp):
+    FUNC_MAP = {'PROD': tf.math.cumprod,
+                'SUM': tf.math.cumsum
+                }
+
+    @classmethod
+    def cast_in_ports(cls):
+        return {0: ['uint32', 'uint8', 'int16', 'uint16', 'int8', 'int32', 'float32']}
+
+    @classmethod
+    def attributes(cls):
+        return {'method': {'options': ['PROD', 'SUM']},
+                'exclusive': {'type': AttrType.INT, 'default': 0, 'options': [0, 1]},
+                'reverse': {'type': AttrType.INT, 'default': 0, 'options': [0, 1]}
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(ArmCumulateOp, self).__init__(graph, attr_dict)
+        self.update_attributes(ArmCumulateOp, attr_dict)
+        assert self.check_required(), 'Cumulative is missing a required parameter.'
+
+    def infer_shape(self):
+        super(ArmCumulateOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        cum_func = ArmCumulateOp.FUNC_MAP[self.method]
+        out_tensor = cum_func(inputs[0], axis=self.axis, exclusive=bool(
+            self.exclusive), reverse=bool(self.reverse)).eval()
+        self.set_out_tensor(out_tensor)
+
+    def write_attrs(self, txt_file):
+        ret = super(ArmCumulateOp, self).write_attrs(txt_file)
+        if ret:
+            txt_file.write('exclusive=%s\n' % str(bool(self.exclusive)).lower())
+            txt_file.write('reverse=%s\n' % str(bool(self.reverse)).lower())
+        return ret
+
+
 class ArmDecodeBoxOp(OpHasWeights, OpHasMultipleOutPorts, ArmOp):
     @staticmethod
     def convert_to_center_coordinate(anchors):

@@ -412,6 +412,45 @@ class CoshOp(LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
         self.set_out_tensor(out_tensor)
 
 
+class CumSumOp(OpHasOneOutPort, OpHasAxis, OnnxOp):
+    @classmethod
+    def attributes(cls):
+        return {11: {'exclusive': {'type': AttrType.INT, 'default': 0, 'options': [0, 1]},
+                'reverse': {'type': AttrType.INT, 'default': 0, 'options': [0, 1]}},
+                14: {'exclusive': {'type': AttrType.INT, 'default': 0, 'options': [0, 1]},
+                'reverse': {'type': AttrType.INT, 'default': 0, 'options': [0, 1]}},
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(CumSumOp, self).__init__(graph, attr_dict)
+        self.update_attributes(CumSumOp, attr_dict)
+        assert self.check_required(), 'CumsumOp is missing a required parameter.'
+
+    def __getattr__(self, item):
+        ret = None
+        try:
+            if item in ('exclusive', 'reverse'):
+                ret = bool(self.__dict__['_attr'][item].value)
+        except:
+            ret = None
+        if ret is None:
+            ret = super(CumSumOp, self).__getattr__(item)
+        return ret
+
+    def __setattr__(self, item, value):
+        if item in ('exclusive', 'reverse'):
+            self.__dict__['_attr'][item].value = int(value)
+        else:
+            super(CumSumOp, self).__setattr__(item, value)
+
+    def infer_shape(self):
+        super(CumSumOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = tf.math.cumsum(
+            inputs[0], axis=inputs[1], exclusive=self.exclusive, reverse=self.reverse).eval()
+        self.set_out_tensor(out_tensor)
+
+
 class DivOp(OpNeedBroadcast, OpHasOneOutPort, OnnxOp):
     @classmethod
     def attributes(cls):

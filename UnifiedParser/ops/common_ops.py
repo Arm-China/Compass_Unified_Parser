@@ -67,6 +67,43 @@ class BNLLOp(OpHasOneOutPort, CommonOp):
         self.set_out_tensor(out_tensor)
 
 
+class CumProdOp(OpHasOneOutPort, OpHasAxis, CommonOp):
+    @classmethod
+    def attributes(cls):
+        return {'exclusive': {'type': AttrType.INT, 'default': 0, 'options': [0, 1]},
+                'reverse': {'type': AttrType.INT, 'default': 0, 'options': [0, 1]}
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(CumProdOp, self).__init__(graph, attr_dict)
+        self.update_attributes(CumProdOp, attr_dict)
+        assert self.check_required(), 'CumprodOp is missing a required parameter.'
+
+    def __getattr__(self, item):
+        ret = None
+        try:
+            if item in ('exclusive', 'reverse'):
+                ret = bool(self.__dict__['_attr'][item].value)
+        except:
+            ret = None
+        if ret is None:
+            ret = super(CumProdOp, self).__getattr__(item)
+        return ret
+
+    def __setattr__(self, item, value):
+        if item in ('exclusive', 'reverse'):
+            self.__dict__['_attr'][item].value = int(value)
+        else:
+            super(CumProdOp, self).__setattr__(item, value)
+
+    def infer_shape(self):
+        super(CumProdOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = tf.math.cumprod(
+            inputs[0], axis=self.axis, exclusive=self.exclusive, reverse=self.reverse).eval()
+        self.set_out_tensor(out_tensor)
+
+
 class CropAndResizeOp(OpHasMethod, LayoutConcernedOp, OpHasOneOutPort, CommonOp):
     @classmethod
     def attributes(cls):
@@ -447,7 +484,8 @@ class PluginOp(OpHasVariableOutPorts, CommonOp):
                             continue
                     txt_file.write('%s=%s\n' % (k, v))
             else:
-                WARN('[Parser]: Invalid Plugin op(%s) for write_attrs!' % self.name)
+                WARN('[Parser]: Invalid Plugin op(%s) for write_attrs!' %
+                     self.name)
                 ret = False
         return ret
 

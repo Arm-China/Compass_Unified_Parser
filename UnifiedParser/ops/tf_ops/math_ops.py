@@ -397,7 +397,8 @@ class TfCumprodOp(OpHasOneOutPort, OpHasAxis, TfOp):
     @classmethod
     def attributes(cls):
         return {1: {'exclusive': {'type': AttrType.INT, 'default': 0, 'options': [0, 1]},
-                    'reverse': {'type': AttrType.INT, 'default': 0, 'options': [0, 1]}
+                    'reverse': {'type': AttrType.INT, 'default': 0, 'options': [0, 1],
+                                'axis': {'default': 0}}
                     }
                 }
 
@@ -432,7 +433,49 @@ class TfCumprodOp(OpHasOneOutPort, OpHasAxis, TfOp):
 
     @property
     def correspond_onnx_op(self):
-        return {'type': 'Cumprod', 'version': 1}
+        return {'type': 'CumProd', 'version': 1}
+
+
+class TfCumsumOp(OpHasOneOutPort, OpHasAxis, TfOp):
+    @classmethod
+    def attributes(cls):
+        return {1: {'exclusive': {'type': AttrType.INT, 'default': 0, 'options': [0, 1]},
+                    'reverse': {'type': AttrType.INT, 'default': 0, 'options': [0, 1]},
+                    'axis': {'default': 0}}
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfCumsumOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfCumsumOp, attr_dict)
+        assert self.check_required(), 'TfCumsumOp is missing a required parameter.'
+
+    def __getattr__(self, item):
+        ret = None
+        try:
+            if item in ('exclusive', 'reverse'):
+                ret = bool(self.__dict__['_attr'][item].value)
+        except:
+            ret = None
+        if ret is None:
+            ret = super(TfCumsumOp, self).__getattr__(item)
+        return ret
+
+    def __setattr__(self, item, value):
+        if item in ('exclusive', 'reverse'):
+            self.__dict__['_attr'][item].value = int(value)
+        else:
+            super(TfCumsumOp, self).__setattr__(item, value)
+
+    def infer_shape(self):
+        super(TfCumsumOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = tf.math.cumsum(inputs[0], axis=self.axis, exclusive=bool(
+            self.exclusive), reverse=bool(self.reverse)).eval()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'CumSum', 'version': 14}
 
 
 class TfCoshOp(LayoutUnawareOp, OpHasOneOutPort, TfOp):
