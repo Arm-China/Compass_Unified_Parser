@@ -132,9 +132,10 @@ def get_node_type(layer):
     node_type = node_type.split('_')
     node_type = ''.join(make_first_letter_upper(subs) for subs in node_type)
 
-    # Convert type like 'Conv2d' to 'Conv2D' to match with type in raw ops
-    if node_type.endswith('2d') or node_type.endswith('3d'):
-        node_type = node_type[:-1] + 'D'
+    # Convert type like 'Conv2d' to 'Conv2D', 'argmax' to 'ArgMax' to match with type in raw ops
+    possible_node_types = [ops for ops in dir(tf.raw_ops) if ops.lower() == node_type.lower()]
+    if len(possible_node_types) == 1:
+        node_type = possible_node_types[0]
     return node_type
 
 
@@ -174,6 +175,7 @@ def get_node_content(layer):
     layer_outputs = layer.output if isinstance(layer.output, (list, tuple)) else [layer.output]
     output_name_shape = [(out.name, out.shape.as_list() if out.shape is not None else [])
                          for out in layer_outputs]
+    DEBUG('layer: %s, output: %s' % (layer.name, str(output_name_shape)))
     ret = {'name': layer.name,
            'type': get_node_type(layer),
            'output': output_name_shape,
