@@ -224,7 +224,7 @@ def parse_operator(operator, tflite_model, buffer):
             try:
                 import flatbuffers.flexbuffers as fbs
             except Exception as e:
-                ERROR('Require flexbuffers version >= 2.0.0. Cannot parse Flex op in tflite model: %s' % str(e))
+                ERROR('Require flatbuffers version >= 2.0.0. Cannot parse Flex op in tflite model: %s' % str(e))
                 return ret
             try:
                 raw_data = fbs.Loads(operator.CustomOptionsAsNumpy().tobytes())
