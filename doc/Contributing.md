@@ -3,49 +3,47 @@
 
 # Before Coding
 
-The script folder has a `install_git_hook.sh` script, you need run it first to install the git hooks.
+The script folder has a `install_git_hook.sh` script. You need run it first to install the git hooks.
 
-Currently, the git hooks will do automatically the code format checking. Please make sure you have install autopep8 and the cmd autopep8 is available in your environment.
+Currently, the git hooks will automatically perform the code format checking. Please make sure you have installed autopep8 and the cmd autopep8 is available in your environment.
 
-# Code style
+# Code Style
 
 We use autopep8 for checking code format.
 
-Beside that, we also follow the code format:
+In addition, we also follow the code format:
 
-  * By default, we use `'` single quotes for string not `"` double quotes in python files.
+  * By default, we use `'` single quotes for string instead of `"` double quotes in Python files.
 
 
 # Testing
 
-CUP uses [pytest](https://docs.pytest.org) as a test driver. To run tests, you'll first need to install pytest:
+The Parser uses [pytest](https://docs.pytest.org) as a test driver. To run tests, you'll first need to install pytest:
 
 ```
 pip install pytest nbval
 ```
-Also test depends on onnx runtime:
+Also tests depend on onnx runtime:
 ```
 # for onnx runtime
 pip install onnxruntime==1.12
 ```
 
-Some tests also depends AIPUBuilder for IR inference, so you need to install AIPUBuilder:
+Some tests also depend AIPUBuilder for IR inference, so you need to install AIPUBuilder:
 ```
 pip install AIPUBuilder-xx-xxx.whl
 ```
 
-After installing pytest and AIPUBuilder, run from the `test` folder of the repo:
+After installing pytest and AIPUBuilder, run from the `test` folder of the repo the tests:
 
 ```
 cd test
 pytest
 ```
 
-to begin the tests.
+For any new features, including new op support or new pass, relative test cases are required in the same commits.
 
-For any new features, including new op support or new pass, relative test cases are required in same commits.
+# Small Incremental Changes
 
-# Small incremental changes
-
-The project prefers  using small incremental changes. These changes can be small bug fixes or minor changes or some small steps for a large features. Commits should be relative small and well documented in commit message or pull&request message.
+The project prefers  using small incremental changes. These changes can be small bug fixes, minor changes or some small steps for a large feature. Commits should be relatively small and well documented in commit messages or pull&request messages.
 
