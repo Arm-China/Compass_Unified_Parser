@@ -180,12 +180,104 @@ class CTCGreedyDecoderOp(OpHasOneOutPort, CommonOp):
         self.set_out_tensor(out_tensor)
 
 
+class DilationOp(OpHasPaddingStrides, OpHasWeights, OpHasOneOutPort, LayoutConcernedOp, CommonOp):
+    @classmethod
+    def attributes(cls):
+        return {'dilations': {'default': [1, 1, 1, 1]}
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(DilationOp, self).__init__(graph, attr_dict)
+        self.update_attributes(DilationOp, attr_dict)
+        assert self.check_required(), 'DilationOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(DilationOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+
+        if self.auto_pad == 'VALID':
+            padding = 'VALID'
+        elif self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
+            padding = 'SAME'
+        inp = np.transpose(inputs[0], [0, 2, 3, 1]
+                           ) if self.data_format == 'NCHW' else inputs[0]
+        out_tensor = tf.nn.dilation2d(inp,
+                                      np.transpose(self.weights, [2, 1, 0]),
+                                      strides=[1]+self.strides+[1],
+                                      padding=padding,
+                                      dilations=[1]+self.dilations+[1]).numpy()
+
+        if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
+            self.pads = OpHasPaddingStrides.cal_pads(
+                inputs[0].shape[1:3],
+                out_tensor.shape[1:3],
+                self.strides,
+                self.kernel_shape,
+                self.auto_pad,
+                dilations=self.dilations,
+                is_transpose=False,
+                zero_minimum=True,
+
+            )
+            self.auto_pad = 'NOTSET'
+
+        if self.data_format == 'NCHW':
+            out_tensor = np.transpose(out_tensor, [0, 3, 1, 2])
+        self.set_out_tensor(out_tensor)
+
+
 class DummyOp(OpHasOneOutPort, ConstLikeOp, CommonOp):
     def __init__(self, graph, attr_dict=None):
         super(DummyOp, self).__init__(graph, attr_dict)
 
     def infer_shape(self):
         super(DummyOp, self).infer_shape()
+
+
+class ErosionOp(OpHasPaddingStrides, OpHasWeights, OpHasOneOutPort, LayoutConcernedOp, CommonOp):
+    @classmethod
+    def attributes(cls):
+        return {'dilations': {'default': [1, 1, 1, 1]},
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(ErosionOp, self).__init__(graph, attr_dict)
+        self.update_attributes(ErosionOp, attr_dict)
+        assert self.check_required(), 'ErosionOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(ErosionOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+
+        if self.auto_pad == 'VALID':
+            padding = 'VALID'
+        elif self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
+            padding = 'SAME'
+        inp = np.transpose(inputs[0], [0, 2, 3, 1]
+                           ) if self.data_format == 'NCHW' else inputs[0]
+        out_tensor = tf.compat.v1.nn.erosion2d(inp,
+                                               np.transpose(self.weights, [2, 1, 0]),
+                                               strides=[1]+self.strides+[1],
+                                               rates=[1]+self.dilations+[1],
+                                               padding='VALID' if self.auto_pad == 'NOTSET' else 'SAME').numpy()
+
+        if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
+            self.pads = OpHasPaddingStrides.cal_pads(
+                inputs[0].shape[1:3],
+                out_tensor.shape[1:3],
+                self.strides,
+                self.kernel_shape,
+                self.auto_pad,
+                dilations=self.dilations,
+                is_transpose=False,
+                zero_minimum=True,
+
+            )
+            self.auto_pad = 'NOTSET'
+
+        if self.data_format == 'NCHW':
+            out_tensor = np.transpose(out_tensor, [0, 3, 1, 2])
+        self.set_out_tensor(out_tensor)
 
 
 class FillOp(OpHasOneOutPort, CommonOp):

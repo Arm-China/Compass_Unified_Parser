@@ -1451,6 +1451,33 @@ class ArmDepthwiseConvOp(BaseActivationOp, BaseConvOp, ArmOp):
         return ret
 
 
+class ArmDilationOp(OpHasPaddingStrides, OpHasWeights, OpHasOneOutPort, LayoutConcernedOp, ArmOp):
+    @classmethod
+    def attributes(cls):
+        return {'dilations': {'default': [1, 1, 1, 1]}
+                }
+
+    @classmethod
+    def cast_in_ports(cls):
+        return {0: 'float32'}
+
+    def __init__(self, graph, attr_dict=None):
+        super(ArmDilationOp, self).__init__(graph, attr_dict)
+        self.update_attributes(ArmDilationOp, attr_dict)
+        assert self.check_required(), 'ArmDilationOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(ArmDilationOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        inp = tf.pad(inputs[0], self.tf_pads) if self.auto_pad == 'NOTSET' else inputs[0]
+        out_tensor = tf.nn.dilation2d(inp,
+                                      np.transpose(self.weights, [2, 1, 0]),
+                                      strides=[1]+self.strides+[1],
+                                      padding='VALID',
+                                      dilations=[1]+self.dilations+[1]).numpy()
+        self.set_out_tensor(out_tensor)
+
+
 class ArmDetectionOutputOp(OpHasMultipleOutPorts, ArmOp):
     @classmethod
     def num_in_ports(cls):
@@ -1569,6 +1596,35 @@ class ArmErfOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
         super(ArmErfOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor = torch.erf(torch.from_numpy(inputs[0])).numpy()
+        self.set_out_tensor(out_tensor)
+
+
+class ArmErosionOp(OpHasPaddingStrides, OpHasWeights, OpHasOneOutPort, ArmOp):
+    @classmethod
+    def attributes(cls):
+        return {'dilations': {'default': [1, 1, 1, 1]},
+                }
+
+    @classmethod
+    def cast_in_ports(cls):
+        return {0: 'float32'}
+
+    def __init__(self, graph, attr_dict=None):
+        super(ArmErosionOp, self).__init__(graph, attr_dict)
+        self.update_attributes(ArmErosionOp, attr_dict)
+        assert self.check_required(), 'ArmErosionOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(ArmErosionOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        inp = tf.pad(inputs[0], self.tf_pads) if self.auto_pad == 'NOTSET' else inputs[0]
+
+        out_tensor = tf.compat.v1.nn.erosion2d(inp,
+                                               np.transpose(self.weights, [2, 1, 0]),
+                                               strides=[1]+self.strides+[1],
+                                               rates=[1]+self.dilations+[1],
+                                               padding='VALID').numpy()
+
         self.set_out_tensor(out_tensor)
 
 

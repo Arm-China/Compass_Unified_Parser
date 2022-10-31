@@ -4282,6 +4282,7 @@ def back_passes(graph, params):
     merge_s2b_nd(graph)
     merge_rsqrt(graph)
     merge_not_equal(graph)
+
     merge_greater_less_equal_or(graph)
     split_crd_d2s(graph)
     split_expand(graph)
@@ -4339,6 +4340,8 @@ def back_passes(graph, params):
     simple_rename(graph, 'Div', 'ArmDiv')
     simple_rename(graph, 'Erf', 'ArmErf')
     simple_rename(graph, 'Exp', 'ArmExp')
+    simple_rename(graph, 'Erosion', 'ArmErosion')
+    simple_rename(graph, 'Dilation', 'ArmDilation')
     simple_rename(graph, 'Filter', 'ArmFilter')
     simple_rename(graph, 'Floor', 'ArmFloor')
     simple_rename(graph, 'FullyConnected', 'ArmFullyConnected')

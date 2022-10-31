@@ -3663,6 +3663,33 @@ def merge_moments(graph):
         clear_redundant_nodes(graph)
 
 
+def merge_erosion(graph):
+    matched = False
+    matches = matched_patterns(graph,
+                               nodes=[('neg', {'op': 'Neg'}),
+                                      ('dilation', {'op': 'Dilation'}),
+                                      ],
+                               edges=[('neg', 'dilation'),
+                                      ])
+    for m in matches:
+        names = ['neg', 'dilation']
+        obj_dict = {n: NodeWrap(graph, m[n])['object'] for n in names}
+        if all([obj is not None for obj in obj_dict.values()]):
+            matched = True
+            neg_in_edges = graph.sorted_in_edges(m['neg'], data=True)
+            neg_out_edges = graph.sorted_out_edges(m['neg'], data=True)
+            act_attr = obj_dict['dilation'].copied_attr()
+            graph.remove_edge(m['neg'], m['dilation'])
+            src, dst, in_attr = neg_in_edges[0]
+            graph.remove_edge(src, m['neg'])
+            graph.add_edge(src, m['dilation'], **in_attr)
+            NodeWrap(graph, m['dilation']).replace_obj('Erosion', act_attr)
+        else:
+            WARN('[Parser]: Invalid node in merge_erosion!')
+    if matched:
+        clear_redundant_nodes(graph)
+
+
 def merge_l2norm(graph):
     matched = False
     matches = matched_patterns(graph,
@@ -6685,6 +6712,7 @@ def middle_passes(graph, params):
     reshape_prelu_slope(graph)
 
     merge_logical_xor(graph)
+    merge_erosion(graph)
     merge_l2norm(graph)
     merge_hardswish(graph)
     merge_hardswish2(graph)
