@@ -2570,7 +2570,7 @@ class LiteSUBOp(BaseActivationOp, TfliteOp):
         return {'type': 'Sub', 'version': 7}
 
 
-class LiteTANHOp(BaseActivationOp, TfliteOp):
+class LiteTANHOp(ActivationOnlyOp, TfliteOp):
     @classmethod
     def attributes(cls):
         return {1: {}, 2: {}}

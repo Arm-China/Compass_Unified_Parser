@@ -6,7 +6,7 @@ import numpy as np
 import re
 import copy
 import torch
-from ....ops.op import BaseActivationOp, BaseReluOp, OpHasWeights, TfliteOp, OpHasPaddingStrides, OpNeedBroadcast
+from ....ops.op import ActivationOnlyOp, BaseActivationOp, OpHasWeights, TfOp, TfliteOp, OpHasPaddingStrides, OpNeedBroadcast
 from ....graph.node_wrap import NodeWrap
 from ....graph.graph_algo import get_valid_node_name, clear_redundant_nodes
 from ....graph.pattern_match import matched_patterns, single_node_matcher, two_nodes_matcher
@@ -94,10 +94,10 @@ def convert_negative_pool_pad(graph):
             pad = pool_obj.pads
             if (np.array(pad) < 0).any():
                 if pad[0] < 0:
-                    pad[2] = pad[0]+pad[2]
+                    pad[2] = pad[0] + pad[2]
                     pad[0] = 0
                 if pad[1] < 0:
-                    pad[3] = pad[1]+pad[3]
+                    pad[3] = pad[1] + pad[3]
                     pad[1] = 0
                 new_node_attr.update({'pads': pad, 'auto_pad': 'NOTSET'})
                 new_node_attr.update(
@@ -282,15 +282,15 @@ def convert_scatternd(graph, op_type='TfScatterNd'):
                                 out_edge[0][1], in_port=0, data_format='NHWC')
 
                 NodeWrap(graph, updates_reshape).replace_obj(
-                    'Reshape',  {'name': updates_reshape, 'shape': np.array(updates_reshape_dim)})
+                    'Reshape', {'name': updates_reshape, 'shape': np.array(updates_reshape_dim)})
                 NodeWrap(graph, concat).replace_obj(
                     'Concat', {'name': concat, 'opset_version': 11, 'axis': 0})
                 NodeWrap(graph, post_segmentsum).replace_obj(
                     'SegmentReduce', {'name': post_segmentsum, 'method': 'SUM'})
                 NodeWrap(graph, update_gather).replace_obj(
-                    'Gather',  {'name': update_gather})
+                    'Gather', {'name': update_gather})
                 NodeWrap(graph, post_reshape).replace_obj(
-                    'Reshape',  {'name': post_reshape, 'shape': out_shape})
+                    'Reshape', {'name': post_reshape, 'shape': out_shape})
 
                 if scatter_nd in graph._attr['output_names']:
                     index = graph._attr['output_names'].index(scatter_nd)
@@ -348,9 +348,9 @@ def convert_reverse_sequence(graph, op_type='TfReverseSequence'):
             shape_num = len(reverse_sequence_in_attr['tensor'].value.shape)
             perm_shape = np.arange(shape_num)
             if batch_axis < 0:
-                batch_axis = shape_num+batch_axis
+                batch_axis = shape_num + batch_axis
             if time_axis < 0:
-                time_axis = shape_num+time_axis
+                time_axis = shape_num + time_axis
             if batch_axis > 1:
                 if time_axis == 0:
                     transed_axis = 1
@@ -484,7 +484,7 @@ def convert_special_uni_seq_lstm(graph):
                     batch_size, time_steps, input_size = inp.shape[0:3]
             else:
                 batch_size, time_steps = inp.shape[0], 1
-                reshape_dim = [inp.shape[0],  1,
+                reshape_dim = [inp.shape[0], 1,
                                int(np.prod(inp.shape)) // inp.shape[0]]
                 input_size = reshape_dim[-1]
                 src, _, k, in_attr = in_edges[0]
@@ -696,11 +696,11 @@ def convert_strided_slice(graph, op_type='TfStridedSlice'):
 
             axes = np.array(range(len(axes_shape)), np.int32)
             if len(input_shape) != len(begin) or len(input_shape) != len(end):
-                length = len(input_shape)-len(begin)
-                begin = np.array(list(begin)+[0]*length)
+                length = len(input_shape) - len(begin)
+                begin = np.array(list(begin) + [0] * length)
                 end = np.array(
-                    list(end)+input_shape[len(input_shape)-length:])
-                strides = np.array(list(strides)+[1]*length)
+                    list(end) + input_shape[len(input_shape) - length:])
+                strides = np.array(list(strides) + [1] * length)
 
             graph.remove_edges_from(in_edges[1:])
 
@@ -796,7 +796,7 @@ def remove_sub_equal_select(graph):
                 or not FLOAT_EQUAL(obj_dict['equal_to'].value, 0.):
             continue
         sub_src, _, k1, in_attr1 = sub_in_edges[0]
-        zeros_like_src,  _, k2, in_attr2 = zeros_like_in_edges[0]
+        zeros_like_src, _, k2, in_attr2 = zeros_like_in_edges[0]
         select_src, _, k3, in_attr3 = select_in_edges[1]
         if sub_src != zeros_like_src \
                 or sub_src != select_src \
@@ -823,11 +823,23 @@ def remove_sub_equal_select(graph):
         clear_redundant_nodes(graph)
 
 
-def split_op_has_activation(graph):
+def split_op_has_activation(graph, is_tf_op=False):
+    op_subclass_names = TfOp.get_concrete_subclass_names() if is_tf_op else TfliteOp.get_concrete_subclass_names()
     op_has_activations = list(set(BaseActivationOp.get_concrete_subclass_names(
-    )).intersection(TfliteOp.get_concrete_subclass_names()))
-    relu_types = BaseReluOp.get_concrete_subclass_names()
-    op_has_activations = list(set(op_has_activations).difference(relu_types))
+    )).intersection(op_subclass_names))
+    activation_types = ActivationOnlyOp.get_concrete_subclass_names()
+    op_has_activations = list(set(op_has_activations).difference(activation_types))
+
+    activations_optype_map = {
+        # activations: (onnx op type, onnx opset version)
+        'LEAKYRELU': ('LeakyRelu', 6),
+        'RELU': ('Relu', 6),
+        'RELU6': ('Clip', 6),
+        'RELU_N1_TO_1': ('Clip', 6),
+        'SIGMOID': ('Sigmoid', 6),
+        'TANH': ('Tanh', 6),
+    }
+
     matches = [single_node_matcher(graph, op_type)
                for op_type in op_has_activations]
     matches = extend_lists(matches)
@@ -837,26 +849,25 @@ def split_op_has_activation(graph):
         node_obj = node['object']
         if node_obj.activations == 'NONE':
             continue
+        # TODO: Add other activations to activations_optype_map
+        if node_obj.activations not in activations_optype_map:
+            ERROR('[Parser]: Activation type %s not implemented in split_op_has_activation!' %
+                  node_obj.activations)
         activation_name = get_valid_node_name(
             graph, node_name + '_' + node_obj.activations)
         assert not graph.has_node(
-            activation_name), 'The activation op is already in the graph ,no need to add in split_op_has_activation.'
+            activation_name), 'The activation op is already in the graph, no need to add in split_op_has_activation.'
         graph.add_node(activation_name)
         activation_node = NodeWrap(graph, activation_name)
         activation_attr = {'name': activation_name,
                            'activations': node_obj.activations}
-        if node_obj.activations == 'RELU':
-            activation_attr.update({'opset_version': 6})
-            activation_node.replace_obj('Relu', activation_attr)
-        elif node_obj.activations == 'RELU6':
-            activation_attr.update({'opset_version': 6, 'min': 0., 'max': 6.})
-            activation_node.replace_obj('Clip', activation_attr)
+        onnx_op_type, opset_version = activations_optype_map[node_obj.activations]
+        activation_attr.update({'opset_version': opset_version})
+        if node_obj.activations == 'RELU6':
+            activation_attr.update({'min': 0., 'max': 6.})
         elif node_obj.activations == 'RELU_N1_TO_1':
-            activation_attr.update({'opset_version': 6, 'min': -1., 'max': 1.})
-            activation_node.replace_obj('Clip', activation_attr)
-        else:
-            ERROR('[Parser]: Activation type %s not implemented in split_op_has_activation!' %
-                  node_obj.activations)
+            activation_attr.update({'min': -1., 'max': 1.})
+        activation_node.replace_obj(onnx_op_type, activation_attr)
         node_out_edges = graph.sorted_out_edges(node_name, data=True)
         for _, out, out_attr in node_out_edges:
             graph.remove_edge(node_name, out)
@@ -1136,9 +1147,9 @@ def split_b2s(graph):
                     crops[1, 1] = - output_shapes[0][2]
                 block_size_y, block_size_x = block_shape.tolist()
                 in_shape = b2s_obj.get_input_shapes()[0]
-                dim1 = [in_shape[0]//block_size_x//block_size_y,
+                dim1 = [in_shape[0] // block_size_x // block_size_y,
                         block_size_y, block_size_x] + list(in_shape[1:])
-                dim2 = [in_shape[0]//block_size_x//block_size_y, in_shape[1]
+                dim2 = [in_shape[0] // block_size_x // block_size_y, in_shape[1]
                         * block_size_y, in_shape[2] * block_size_x, in_shape[-1]]
                 if block_shape[0] == block_shape[1]:
                     block_size = block_shape[0]
@@ -1159,7 +1170,7 @@ def split_b2s(graph):
                     #[batch / prod(block_shape), input_shape[1] * block_shape[0] - crops[0,0] - crops[0,1], ..., input_shape[M] * block_shape[M-1] - crops[M-1,0] - crops[M-1,1], input_shape[M+1], ..., input_shape[N-1]]
                     for index, value in enumerate(end_dim):
                         if value == 0:
-                            end_dim[index] = dim2[index+1]
+                            end_dim[index] = dim2[index + 1]
                     trans1_attr = {
                         'name': trans1, 'opset_version': transpose_version, 'perm': [3, 1, 2, 0]}
                     d2s_attr = {
@@ -1214,7 +1225,7 @@ def split_b2s(graph):
                     #[batch / prod(block_shape), input_shape[1] * block_shape[0] - crops[0,0] - crops[0,1], ..., input_shape[M] * block_shape[M-1] - crops[M-1,0] - crops[M-1,1], input_shape[M+1], ..., input_shape[N-1]]
                     for index, value in enumerate(end_dim):
                         if value == 0:
-                            end_dim[index] = dim2[index+1]
+                            end_dim[index] = dim2[index + 1]
                     slice_attr = {'name': slice,
                                   'opset_version': slice_version,
                                   'axes': [1, 2],
@@ -1567,7 +1578,7 @@ def convert_to_onnx(graph):
                     for _, _, e in graph.sorted_out_edges(node_name, data=True):
                         out_port = e['src_out_port']
                         if out_port >= len(split):
-                            split += [0]*(out_port - len(split) + 1)
+                            split += [0] * (out_port - len(split) + 1)
                         split[out_port] = e['tensor'].shape[node_obj.axis]
                     if not(node_obj.num_splits and (len(split) == node_obj.num_splits)):
                         WARN('[Parser]: Invalid split nums of node %s in convert_to_onnx!' %

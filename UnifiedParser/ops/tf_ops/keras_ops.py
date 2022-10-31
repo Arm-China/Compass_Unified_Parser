@@ -2,17 +2,112 @@
 # SPDX-License-Identifier: Apache-2.0
 
 
+import numpy as np
 import tensorflow as tf
 from ..op import *
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
-class TfConv2DTransposeOp(TfHasPaddingStrides, OpHasWeights, OpHasOneOutPort):
-    # WIP
-    pass
+class TfKerasAddOp(OpHasOneOutPort, TfOp):
+    @classmethod
+    def attributes(cls):
+        return {2: {}}
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfKerasAddOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfKerasAddOp, attr_dict)
+        assert self.check_required(), 'TfKerasAddOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(TfKerasAddOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = tf.keras.layers.Add()([*inputs]).numpy()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'Sum', 'version': 6}
 
 
-class TfGRUOp(TfRecurrent):
+class TfKerasConv2DTransposeOp(KerasBaseConvOp):
+    @classmethod
+    def attributes(cls):
+        return {2: {'filters': {'type': AttrType.INT, 'required': True},
+                    'output_padding': {'type': AttrType.INTS, 'required': False, 'default': None}
+                    },
+                }
+
+    @classmethod
+    def perm_tf_to_onnx(cls):
+        return [3, 2, 0, 1]
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfKerasConv2DTransposeOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfKerasConv2DTransposeOp, attr_dict)
+        assert self.check_required(), 'TfKerasConv2DTransposeOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(TfKerasConv2DTransposeOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        if not self.use_bias:
+            self.biases = None
+        self.num_output = self.filters
+        conv2d = tf.keras.layers.Conv2DTranspose(
+            filters=self.filters,
+            kernel_size=self.kernel_shape,
+            strides=self.strides,
+            padding='valid' if self.auto_pad == 'VALID' else 'same',
+            output_padding=self.output_padding,
+            data_format='channels_last' if self.data_format.endswith('C') else 'channels_first',
+            dilation_rate=self.dilations)
+        output_tensor = conv2d(inputs[0]).numpy()
+        self.set_out_tensor(output_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'ConvTranspose', 'version': 11}
+
+
+class TfKerasConv3DTransposeOp(KerasBaseConvOp):
+    @classmethod
+    def attributes(cls):
+        return {2: {'filters': {'type': AttrType.INT, 'required': True},
+                    'output_padding': {'type': AttrType.INTS, 'required': False, 'default': None}
+                    },
+                }
+
+    @classmethod
+    def perm_tf_to_onnx(cls):
+        return [4, 3, 0, 1, 2]
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfKerasConv3DTransposeOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfKerasConv3DTransposeOp, attr_dict)
+        assert self.check_required(), 'TfKerasConv3DTransposeOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(TfKerasConv3DTransposeOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        if not self.use_bias:
+            self.biases = None
+        self.num_output = self.filters
+        conv3d = tf.keras.layers.Conv3DTranspose(
+            filters=self.filters,
+            kernel_size=self.kernel_shape,
+            strides=self.strides,
+            padding='valid' if self.auto_pad == 'VALID' else 'same',
+            output_padding=self.output_padding,
+            data_format='channels_last' if self.data_format.endswith('C') else 'channels_first',
+            dilation_rate=self.dilations)
+        output_tensor = conv3d(inputs[0]).numpy()
+        self.set_out_tensor(output_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'ConvTranspose', 'version': 11}
+
+
+class TfKerasGRUOp(KerasRecurrent):
     @classmethod
     def attributes(cls):
         return {2: {'reset_after': {'type': AttrType.INT, 'required': False, 'default': 1, 'options': [0, 1]},
@@ -20,9 +115,9 @@ class TfGRUOp(TfRecurrent):
                 }
 
     def __init__(self, graph, attr_dict=None):
-        super(TfGRUOp, self).__init__(graph, attr_dict)
-        self.update_attributes(TfGRUOp, attr_dict)
-        assert self.check_required(), 'TfGRUOp is missing a required parameter.'
+        super(TfKerasGRUOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfKerasGRUOp, attr_dict)
+        assert self.check_required(), 'TfKerasGRUOp is missing a required parameter.'
 
     def __getattr__(self, item):
         ret = None
@@ -32,14 +127,15 @@ class TfGRUOp(TfRecurrent):
         except:
             ret = None
         if ret is None:
-            ret = super(TfGRUOp, self).__getattr__(item)
+            ret = super(TfKerasGRUOp, self).__getattr__(item)
         return ret
 
     def infer_shape(self):
-        super(TfGRUOp, self).infer_shape()
+        super(TfKerasGRUOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        assert len(inputs) >= 1, 'The length of inputs is invalid in TfGRUOp infer shape.'
-        assert inputs[0] is not None and len(inputs[0].shape) == 3, 'The first input is invalid in TfGRUOp infer shape.'
+        assert len(inputs) >= 1, 'The length of inputs is invalid in TfKerasGRUOp infer shape.'
+        assert inputs[0] is not None and len(
+            inputs[0].shape) == 3, 'The first input is invalid in TfKerasGRUOp infer shape.'
         hidden_size = self.units
         if not self.time_major:
             batch, timesteps, feature = inputs[0].shape
@@ -60,7 +156,7 @@ class TfGRUOp(TfRecurrent):
             self.set_out_tensor([whole_or_state_out])
 
 
-class TfInputLayerOp(OpHasOneOutPort, InputLikeOp, TfOp):
+class TfKerasInputLayerOp(OpHasOneOutPort, InputLikeOp, TfOp):
     @classmethod
     def attributes(cls):
         return {2: {'input_shape': {'type': AttrType.INTS, 'required': False, 'default': None},
@@ -70,12 +166,12 @@ class TfInputLayerOp(OpHasOneOutPort, InputLikeOp, TfOp):
                 }
 
     def __init__(self, graph, attr_dict=None):
-        super(TfInputLayerOp, self).__init__(graph, attr_dict)
-        self.update_attributes(TfInputLayerOp, attr_dict)
-        assert self.check_required(), 'TfInputLayerOp is missing a required parameter.'
+        super(TfKerasInputLayerOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfKerasInputLayerOp, attr_dict)
+        assert self.check_required(), 'TfKerasInputLayerOp is missing a required parameter.'
 
     def infer_shape(self, input_tensor=None):
-        super(TfInputLayerOp, self).infer_shape()
+        super(TfKerasInputLayerOp, self).infer_shape()
         out_tensor = input_tensor
         if out_tensor is None:
             try:
@@ -94,22 +190,23 @@ class TfInputLayerOp(OpHasOneOutPort, InputLikeOp, TfOp):
         return {'type': 'Input', 'version': None}
 
 
-class TfLSTMOp(TfRecurrent):
+class TfKerasLSTMOp(KerasRecurrent):
     @classmethod
     def attributes(cls):
         return {2: {},
                 }
 
     def __init__(self, graph, attr_dict=None):
-        super(TfLSTMOp, self).__init__(graph, attr_dict)
-        self.update_attributes(TfLSTMOp, attr_dict)
-        assert self.check_required(), 'TfLSTMOp is missing a required parameter.'
+        super(TfKerasLSTMOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfKerasLSTMOp, attr_dict)
+        assert self.check_required(), 'TfKerasLSTMOp is missing a required parameter.'
 
     def infer_shape(self):
-        super(TfLSTMOp, self).infer_shape()
+        super(TfKerasLSTMOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        assert len(inputs) >= 1, 'The length of inputs is invalid in TfGRUOp infer shape.'
-        assert inputs[0] is not None and len(inputs[0].shape) == 3, 'The first input is invalid in TfGRUOp infer shape.'
+        assert len(inputs) >= 1, 'The length of inputs is invalid in TfKerasLSTMOp infer shape.'
+        assert inputs[0] is not None and len(
+            inputs[0].shape) == 3, 'The first input is invalid in TfKerasLSTMOp infer shape.'
         hidden_size = self.units
         if not self.time_major:
             batch, timesteps, feature = inputs[0].shape

@@ -756,7 +756,7 @@ class OpHasAxis(Op):
             elif self.axes is not None and any([int(x) < 0 for x in self.axes]):
                 if self.type == 'Unsqueeze':
                     self.axes = OpHasAxis.make_axes_non_negative(
-                        self.axes, len(self.get_input_shapes()[0])+len(self.axes))
+                        self.axes, len(self.get_input_shapes()[0]) + len(self.axes))
                 else:
                     self.axes = OpHasAxis.make_axes_non_negative(
                         self.axes, len(self.get_input_shapes()[0]), need_extend)
@@ -888,8 +888,8 @@ class OpHasPaddingStrides(LayoutConcernedOp):
             pads) % 2 == 0, 'The length of pads is invalid in OpHasPaddingStrides onnx_to_tf.'
         np_pads = np.transpose(np.reshape(np.array(pads, np.int64), (2, -1)))
         space_dims = len(pads) // 2
-        ret = np.zeros((space_dims+2, 2), np.int64)
-        ret[1:1+space_dims, :] = np_pads
+        ret = np.zeros((space_dims + 2, 2), np.int64)
+        ret[1:1 + space_dims, :] = np_pads
         return ret
 
     @staticmethod
@@ -1275,7 +1275,7 @@ class BaseActivationOp(OpHasOneOutPort):
                                 'required': True
                                 },
                 'negative_slope': {'type': AttrType.TENSOR},
-                'negative_slope_offset':  {'type': AttrType.INT, 'default': -1},
+                'negative_slope_offset': {'type': AttrType.INT, 'default': -1},
                 'clip_min': {'type': AttrType.FLOAT, 'default': None},
                 'clip_max': {'type': AttrType.FLOAT, 'default': None}
                 }
@@ -1448,7 +1448,17 @@ class BaseActivationOp(OpHasOneOutPort):
                 self.clip_max = attr_dict['clip_max']
 
 
-class BaseReluOp(BaseActivationOp):
+class ActivationOnlyOp(BaseActivationOp):
+    '''
+    Class ActivationOnlyOp inherited from BaseActivationOp class.
+    OPs that represent activation itself must inherit ActivationOnlyOp.
+    The difference between BaseActivationOp and ActivationOnlyOp is that
+    ActivationOnlyOp only includes one activation(not other operations).
+    '''
+    pass
+
+
+class BaseReluOp(ActivationOnlyOp):
     '''
     Class BaseReluOp inherited from BaseActivationOp class.
     All OPs of type relu must inherit BaseReluOp.
@@ -1529,11 +1539,11 @@ class OpNeedBroadcast(Op):
             else:
                 max_dims = []
             new_dims_dict = {}
-            for r in range(max_rank-1, 0, -1):
+            for r in range(max_rank - 1, 0, -1):
                 for idx, s in enumerate(input_shapes):
                     if len(s) == r and len(s) < len(max_dims):
                         dim_diff = len(max_dims) - len(s)
-                        range_list = list(range(0, dim_diff+1)) if match_from_left \
+                        range_list = list(range(0, dim_diff + 1)) if match_from_left \
                             else list(range(dim_diff, -1, -1))
                         offset = -1
                         for o in range_list:
@@ -1699,7 +1709,7 @@ class OpNeedUniBroadcast(Op):
                         value = np.reshape(value, params['reshape'])
                     if params.get('tile', None) is not None:
                         value = np.tile(value, params['tile'])
-                    ret[i+1] = value
+                    ret[i + 1] = value
             else:
                 WARN(
                     '[Parser]: Number of broadcast params shoud be equal to number of inputs!')
@@ -2210,14 +2220,14 @@ class TfHasPaddingStrides(OpHasPaddingStrides, TfOp):
                         '[Parser]: Meets invalid kernel_shape for Node(%s) in infer_shape!' % self.name)
 
 
-class TfRecurrent(OpHasVariableOutPorts, TfOp):
+class KerasRecurrent(OpHasVariableOutPorts, TfOp):
     '''
-    Class TfRecurrent inherited from OpHasVariableOutPorts, TfOp class.
-    All recurrent ops(GRU, LSTM and etc) under the tf framework must inherit TfRecurrent.
+    Class KerasRecurrent inherited from OpHasVariableOutPorts, TfOp class.
+    All recurrent ops(GRU, LSTM and etc) under the tf framework must inherit KerasRecurrent.
     '''
     @classmethod
     def attributes(cls):
-        '''return attributes of TfRecurrent class.'''
+        '''return attributes of KerasRecurrent class.'''
         return {'units': {'type': AttrType.INT, 'required': True},
                 'activation': {'type': AttrType.STRING, 'required': False, 'default': 'tanh',
                                'options': ['elu', 'exponential', 'gelu', 'hard_sigmoid',
@@ -2236,9 +2246,9 @@ class TfRecurrent(OpHasVariableOutPorts, TfOp):
                 }
 
     def __init__(self, graph, attr_dict=None):
-        super(TfRecurrent, self).__init__(graph, attr_dict)
-        self.update_attributes(TfRecurrent, attr_dict)
-        assert self.check_required(), 'TfRecurrent is missing a required parameter.'
+        super(KerasRecurrent, self).__init__(graph, attr_dict)
+        self.update_attributes(KerasRecurrent, attr_dict)
+        assert self.check_required(), 'KerasRecurrent is missing a required parameter.'
 
     def __getattr__(self, item):
         ret = None
@@ -2248,7 +2258,34 @@ class TfRecurrent(OpHasVariableOutPorts, TfOp):
         except:
             ret = None
         if ret is None:
-            ret = super(TfRecurrent, self).__getattr__(item)
+            ret = super(KerasRecurrent, self).__getattr__(item)
+        return ret
+
+
+class KerasBaseConvOp(BaseConvOp, BaseActivationOp, TfOp):
+    '''
+    Class KerasBaseConvOp inherited from BaseConvOp, BaseActivationOp and TfOp.
+    Tf Keras conv OPs must inherit this class, such as Conv2D, Conv3D etc.
+    '''
+    @classmethod
+    def attributes(cls):
+        return {'use_bias': {'type': AttrType.INT, 'default': 1, 'options': [0, 1]}
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(KerasBaseConvOp, self).__init__(graph, attr_dict)
+        self.update_attributes(KerasBaseConvOp, attr_dict)
+        assert self.check_required(), 'KerasBaseConvOp is missing a required parameter.'
+
+    def __getattr__(self, item):
+        ret = None
+        try:
+            if item == 'use_bias':
+                ret = bool(self.__dict__['_attr'][item].value)
+        except:
+            ret = None
+        if ret is None:
+            ret = super(KerasBaseConvOp, self).__getattr__(item)
         return ret
 
 

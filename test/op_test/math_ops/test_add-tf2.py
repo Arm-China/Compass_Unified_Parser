@@ -10,14 +10,12 @@ from utils.run import run_parser
 def create_add_model(model_path, x1_size, x2_size):
     ''' Create tensorflow model for add op.
     '''
-    if os.path.exists(model_path):
-        print('Model %s already exists! Reuse it!' % model_path)
-        return
-
     x1 = keras.Input(shape=x1_size[1:], batch_size=x1_size[0], name='X1')
     x2 = keras.Input(shape=x2_size[1:], batch_size=x2_size[0], name='X2')
-    add = tf.math.add(x1, x2, name='add')
-    y = tf.math.add(add, 10.0, name='Y')
+    add1 = tf.add(x1, x2)
+    add2 = tf.keras.layers.Add()([add1, x1])
+    add3 = tf.keras.layers.add([add1, add2])
+    y = tf.math.add(add3, 10.0, name='Y')
 
     model = keras.models.Model([x1, x2], y)
     # model.summary()

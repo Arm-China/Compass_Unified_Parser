@@ -7,6 +7,7 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.keras import backend as K
 from collections import OrderedDict
+from ...common.defs import FLOAT_EQUAL
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
@@ -82,26 +83,41 @@ def get_node_attr(layer):
         if key.startswith('_'):
             # Ignore internal attributes
             continue
-        if key in ('activity_regularizer', 'built', 'compute_dtype',
-                   'dynamic', 'dtype_policy',
+        if key in ('activity_regularizer', 'build', 'built', 'call', 'compute_dtype', 'count_params',
+                   'dynamic', 'dtype_policy', 'finalize_state',
                    'inbound_nodes', 'input', 'input_mask', 'input_spec',
-                   'losses', 'metric', 'metrics', 'non_trainable_variables', 'non_trainable_weights',
+                   'losses', 'metric', 'metrics', 'name_scope', 'non_trainable_variables', 'non_trainable_weights',
                    'outbound_nodes', 'output', 'output_mask', 'OVERLOADABLE_OPERATORS',
                    'symbol', 'stateful', 'states', 'state_spec', 'submodules', 'supports_masking',
                    'trainable_weights', 'trainable_variables',
-                   'updates', 'variables', 'variable_dtype'):
+                   'updates', 'variables', 'variable_dtype', 'with_name_scope'):
             # Ignore inputs/outputs and other attributes that are not used
             continue
         try:
-            if eval('callable(layer.' + key + ')'):
-                continue
             value = eval('layer.' + key)
-            if key == 'weights' and isinstance(value, list):
+            if eval('callable(layer.' + key + ')'):
+                if any(key.startswith(func) for func in ('add_', 'apply', 'compute_', 'from_', 'get_', 'reset_', 'set_')) \
+                        or any(key.endswith(func) for func in ('_initializer', '_constraint')) \
+                        or '__name__' not in dir(value):
+                    # Ignore functions that are not used
+                    continue
+                func_name = value.__name__
+                ret.update({key: func_name})
+            elif key == 'weights' and isinstance(value, list):
                 weights_list = []
                 for variable in value:
                     weights_list.append(variable.numpy())
                 key = 'weights_list'
                 ret.update({key: weights_list})
+                if len(value) == 2:
+                    try:
+                        biases = layer.bias.numpy()
+                    except:
+                        biases = None
+                    if biases is not None and FLOAT_EQUAL(weights_list[1], biases):
+                        ret.update({'weights': weights_list[0]})
+                elif len(value) == 1:
+                    ret.update({'weights': weights_list[0]})
             elif 'numpy' in dir(value):
                 ret.update({key: value.numpy()})
             else:
@@ -126,6 +142,12 @@ def get_node_type(layer):
     else:
         node_type = layer_type
 
+    # Add prefix 'Keras' for keras op type to distiguish from raw ops
+    if node_type in dir(tf.keras.layers):
+        node_type = 'Keras' + node_type
+        return node_type
+
+    # Try to convert to raw ops for non-keras op
     # Convert type like 'math.add' to 'Add', 'cast' to 'Cast'(similar to type of raw ops)
     node_type = node_type.split('.')[-1]
     # Also convert snake case like 'compute_accidental_hits' to camel case 'ComputeAccidentalHits'
@@ -137,10 +159,6 @@ def get_node_type(layer):
     if len(possible_node_types) == 1:
         node_type = possible_node_types[0]
 
-    # Rename type like 'Add' to 'AddN' because their arguments and behavior are same.
-    tf2op_rawop_map = {'Add': 'AddN'}
-    if node_type in tf2op_rawop_map.keys():
-        node_type = tf2op_rawop_map[node_type]
     return node_type
 
 

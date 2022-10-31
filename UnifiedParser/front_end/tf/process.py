@@ -7,13 +7,13 @@ from ...graph.graph_algo import infer, clear_redundant_nodes
 from ..onnx.passes.front_passes import fuse_weights_const
 from ..onnx.passes.common_passes import remove_useless_op, fuse_const, record_output_tensors, \
     apply_subgraph_plugin
-from .passes.front_passes import merge_gru, merge_keras_gru, merge_keras_lstm, merge_zero_fraction, \
+from .passes.front_passes import merge_gru, merge_gru2, merge_lstm, merge_zero_fraction, \
     remove_switch, remove_merge, \
     convert_to_onnx, split_b2s, split_s2b, split_special_floormod, \
     convert_resize_bilinear_nearest, remove_identity_n, convert_conv_backpropinput, \
     convert_special_fakequantminmaxvars, convert_maxpoolwithargmax, convert_nms, convert_fusebatchnormv3, \
-    convert_matmul, remove_isfinite_select, merge_fasterrcnn, merge_keras_maskrcnn, \
-    convert_gru_lstm
+    convert_matmul, remove_isfinite_select, merge_fasterrcnn, merge_keras_maskrcnn
+from .passes.keras_front_passes import process_keras_op
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
@@ -34,13 +34,14 @@ def process_tf(model_path, params):
         fuse_const(graph)
         fuse_weights_const(graph)
 
+        process_keras_op(graph)
+
         merge_fasterrcnn(graph)
         merge_keras_maskrcnn(graph, params)
         merge_gru(graph)
-        merge_keras_gru(graph)
-        merge_keras_lstm(graph)
+        merge_gru2(graph)
+        merge_lstm(graph)
         merge_zero_fraction(graph)
-        convert_gru_lstm(graph)
         convert_reverse_sequence(graph, op_type='TfReverseSequence')
         convert_scatternd(graph, op_type='TfScatterNd')
         split_b2s(graph)

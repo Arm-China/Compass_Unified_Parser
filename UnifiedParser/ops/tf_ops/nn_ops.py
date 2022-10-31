@@ -533,7 +533,7 @@ class TfDepthwiseConv2dNativeOp(TfHasPaddingStrides, OpHasWeights, OpHasOneOutPo
         return {'type': 'Conv', 'version': 1}
 
 
-class TfEluOp(LayoutUnawareOp, BaseActivationOp, TfOp):
+class TfEluOp(LayoutUnawareOp, ActivationOnlyOp, TfOp):
     def infer_shape(self):
         super(TfEluOp, self).infer_shape()
         inputs = self.get_input_tensors()
@@ -794,7 +794,7 @@ class TfMaxPoolWithArgmaxOp(TfHasPaddingStrides, OpHasMultipleOutPorts):
             self.auto_pad = 'NOTSET'
 
 
-class TfReluOp(BaseActivationOp, TfOp):
+class TfReluOp(BaseReluOp, TfOp):
     @classmethod
     def attributes(cls):
         return {1: {}}
@@ -838,7 +838,7 @@ class TfRelu6Op(BaseReluOp, TfOp):
         return {'type': 'Clip', 'version': 6}
 
 
-class TfSeluOp(LayoutUnawareOp, BaseActivationOp, TfOp):
+class TfSeluOp(LayoutUnawareOp, ActivationOnlyOp, TfOp):
     @classmethod
     def attributes(cls):
         return {1: {'features': {'type': AttrType.FLOAT},

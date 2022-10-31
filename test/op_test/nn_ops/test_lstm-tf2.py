@@ -10,15 +10,12 @@ from utils.run import run_parser
 def create_lstm_model(model_path, x1_size, time_major, return_sequences):
     ''' Create tensorflow model for lstm op.
     '''
-    if os.path.exists(model_path):
-        print('Model %s already exists! Reuse it!' % model_path)
-        return
-
     x1 = keras.Input(shape=x1_size[1:], batch_size=x1_size[0], name='X1')
     lstm_layer = keras.layers.LSTM(4, bias_initializer='glorot_uniform', time_major=time_major,
+                                   activation='sigmoid', recurrent_activation='tanh',
                                    return_sequences=return_sequences, return_state=True)
     lstm_y, lstm_h, lstm_c = lstm_layer(x1, training=False)
-    out1 = tf.add(lstm_y, 10)
+    out1 = tf.add(lstm_y, 10.0)
     out2 = tf.add(lstm_h, lstm_c)
 
     model = keras.models.Model(x1, [out1, out2])

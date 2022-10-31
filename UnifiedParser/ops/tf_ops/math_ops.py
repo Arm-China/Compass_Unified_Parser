@@ -342,6 +342,19 @@ class TfCeilOp(OpHasOneOutPort, TfOp):
         return {'type': 'Ceil', 'version': 13}
 
 
+class TfClipByValueOp(ActivationOnlyOp, TfOp):
+    def infer_shape(self):
+        super(TfClipByValueOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        assert len(inputs) == 3, 'TfClipByValueOp expects 3 inputs, but got %d.' % len(inputs)
+        out_tensor = np.clip(inputs[0], inputs[1], inputs[2])
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'Clip', 'version': 12}
+
+
 class TfBitwiseAndOp(OpHasOneOutPort, TfOp):
 
     def infer_shape(self):
@@ -1072,7 +1085,7 @@ class TfSignOp(LayoutUnawareOp, OpHasOneOutPort, TfOp):
         return {'type': 'Sign', 'version': 9}
 
 
-class TfSigmoidOp(OpHasOneOutPort, TfOp):
+class TfSigmoidOp(ActivationOnlyOp, TfOp):
     def infer_shape(self):
         super(TfSigmoidOp, self).infer_shape()
         inputs = self.get_input_tensors()
@@ -1108,7 +1121,7 @@ class TfSinhOp(LayoutUnawareOp, OpHasOneOutPort, TfOp):
         return {'type': 'Sinh', 'version': 9}
 
 
-class TfSoftsignOp(LayoutUnawareOp, BaseActivationOp, TfOp):
+class TfSoftsignOp(LayoutUnawareOp, ActivationOnlyOp, TfOp):
     def infer_shape(self):
         super(TfSoftsignOp, self).infer_shape()
         inputs = self.get_input_tensors()
@@ -1227,7 +1240,7 @@ class TfTanOp(LayoutUnawareOp, OpHasOneOutPort, TfOp):
         return {'type': 'Tan', 'version': 7}
 
 
-class TfTanhOp(OpHasOneOutPort, TfOp):
+class TfTanhOp(ActivationOnlyOp, TfOp):
     def infer_shape(self):
         super(TfTanhOp, self).infer_shape()
         inputs = self.get_input_tensors()

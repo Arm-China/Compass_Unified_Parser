@@ -11,7 +11,7 @@ def create_gru_model(model_path, x1_size, initial_state, time_major, reset_after
     ''' Create tensorflow model for gru op.
     '''
     x1 = keras.Input(shape=x1_size[1:], batch_size=x1_size[0], name='X1')
-    gru_layer = keras.layers.GRU(4, bias_initializer='glorot_uniform', time_major=time_major,
+    gru_layer = keras.layers.GRU(4, bias_initializer='glorot_uniform', time_major=time_major, activation='sigmoid',
                                  reset_after=reset_after, return_sequences=True, return_state=False)
     #initial_state = tf.constant(initial_state)
     gru_y = gru_layer(x1, initial_state=initial_state, training=False)

@@ -19,7 +19,12 @@ from .buffer import *
 from .buffer_tf2 import parse_keras
 from .utils import trim_tensor_name
 
-tf_attr_names_map = {'keep_dims': 'keepdims',
+tf_attr_names_map = {'activation': 'activations',
+                     'bias': 'biases',
+                     'dilation_rate': 'dilations',
+                     'groups': 'group',
+                     'keep_dims': 'keepdims',
+                     'kernel_size': 'kernel_shape',
                      'ksize': 'kernel_shape',
                      'padding': 'auto_pad',
                      'reduction_indices': 'axes'
@@ -29,16 +34,33 @@ tf_attr_names_map = {'keep_dims': 'keepdims',
 def convert_attr_to_onnx(attr_dict):
     new_attr = copy.deepcopy(attr_dict)
     for k, v in attr_dict.items():
-        if k == 'keep_dims':
+        if k == 'activation' and 'recurrent_activation' not in attr_dict:
+            v = 'NONE' if v is None or v == 'linear' else v.upper()
+            new_attr.update({tf_attr_names_map.get(k, k): v})
+            new_attr.pop(k)
+        elif k in ('bias', 'groups'):
+            ''' Rename attr '''
+            new_attr.update({tf_attr_names_map.get(k, k): v})
+            new_attr.pop(k)
+        elif k == 'data_format':
+            if v == 'channels_first':
+                data_format = 'NCDHW' if len(attr_dict.get('input_shape', [])) == 5 else 'NCHW'
+            elif v == 'channels_last':
+                data_format = 'NDHWC' if len(attr_dict.get('input_shape', [])) == 5 else 'NHWC'
+            else:
+                data_format = v
+            new_attr.update({k: data_format})
+        elif k in ('dilation_rate', 'kernel_size', 'ksize', 'strides'):
+            v = [v] if isinstance(v, int) else list(v[:])
+            new_k = tf_attr_names_map.get(k, k)
+            new_attr.update({new_k: v})
+            if k != new_k:
+                new_attr.pop(k)
+        elif k == 'keep_dims':
             new_attr.update({tf_attr_names_map.get(k, k): int(v)})
             new_attr.pop(k)
-        elif k == 'ksize':
-            ''' 1, 2, 4 -> 1, N or N+2. '''
-            if isinstance(v, int):
-                v = [v]
-            new_attr.update({tf_attr_names_map.get(k, k): v[:]})
-            new_attr.pop(k)
         elif k == 'padding':
+            v = v.upper()
             if v == 'VALID':
                 new_attr.update({tf_attr_names_map.get(k, k): 'VALID'})
             elif v == 'SAME':
@@ -57,11 +79,6 @@ def convert_attr_to_onnx(attr_dict):
             new_attr.pop(k)
         elif k in ('shape', 'element_shape'):
             new_attr.update({k: v['dim'].tolist()})
-        elif k == 'strides':
-            ''' 1, 2, 4 -> 1, N or N+2. '''
-            if isinstance(v, int):
-                v = [v]
-            new_attr.update({k: v[:]})
         elif k == 'T' and 'dtype' not in attr_dict:
             new_attr.update({'dtype': v})
             new_attr.pop(k)
@@ -201,6 +218,7 @@ def convert_tf_to_graph(model_path, params):
     graph = Graph(name=params.get('model_name', ''))
     graph._attr['framework'] = Framework.TENSORFLOW
     graph._attr['output_tensor_names'] = params.get('output_tensor_names', [])
+    graph._attr['is_keras_model'] = is_keras_model
 
     if not is_keras_model:
         if params.get('output_names', []):
@@ -289,7 +307,7 @@ def convert_tf_to_graph(model_path, params):
                                                 tensor_shape = params['input_shapes'][tensor_name]
                                                 params['input_shapes'][src_name] = \
                                                     params['input_shapes'].pop(tensor_name)
-                                            elif t.op.type not in ('InputLayer', 'Placeholder'):
+                                            elif t.op.type not in ('KerasInputLayer', 'Placeholder'):
                                                 is_valid_shape = False
                                         else:
                                             if trim_tensor_name(tensor_name) in params['input_shapes']:
@@ -339,11 +357,11 @@ def convert_tf_to_graph(model_path, params):
                 unusual_placeholders, unusual_others = [], []
                 for n_name in nodes_dict:
                     if graph.has_node(n_name) \
-                            and nodes_dict[n_name]['type'] in ('Placeholder', 'InputLayer') \
+                            and nodes_dict[n_name]['type'] in ('Placeholder', 'KerasInputLayer') \
                             and n_name not in graph._attr['input_tensors']:
                         unusual_placeholders.append(n_name)
                     if graph.has_node(n_name) \
-                            and nodes_dict[n_name]['type'] not in ('Placeholder', 'InputLayer') \
+                            and nodes_dict[n_name]['type'] not in ('Placeholder', 'KerasInputLayer') \
                             and n_name in graph._attr['input_tensors']:
                         unusual_others.append(n_name)
                         nodes_dict[n_name]['type'] = 'Placeholder'
