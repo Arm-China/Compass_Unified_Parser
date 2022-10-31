@@ -240,7 +240,7 @@ class BitwiseAndOp(OpHasOneOutPort, OnnxOp):
     def infer_shape(self):
         super(BitwiseAndOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.bitwise.bitwise_and(*inputs).eval()
+        out_tensor = tf.bitwise.bitwise_and(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
 
@@ -257,7 +257,7 @@ class BitwiseOrOp(OpHasOneOutPort, OnnxOp):
     def infer_shape(self):
         super(BitwiseOrOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.bitwise.bitwise_or(*inputs).eval()
+        out_tensor = tf.bitwise.bitwise_or(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
 
@@ -274,7 +274,7 @@ class BitwiseXorOp(OpHasOneOutPort, OnnxOp):
     def infer_shape(self):
         super(BitwiseXorOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.bitwise.bitwise_xor(*inputs).eval()
+        out_tensor = tf.bitwise.bitwise_xor(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
 
@@ -447,7 +447,7 @@ class CumSumOp(OpHasOneOutPort, OpHasAxis, OnnxOp):
         super(CumSumOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor = tf.math.cumsum(
-            inputs[0], axis=inputs[1], exclusive=self.exclusive, reverse=self.reverse).eval()
+            inputs[0], axis=inputs[1], exclusive=self.exclusive, reverse=self.reverse).numpy()
         self.set_out_tensor(out_tensor)
 
 
@@ -712,7 +712,7 @@ class HardmaxOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
                                     pre_reshape_dim[1],
                                     on_value=np.array(1, inputs[0].dtype),
                                     off_value=np.array(0, inputs[0].dtype),
-                                    axis=-1).eval()
+                                    axis=-1).numpy()
             out_tensor = out_tensor.reshape(input_shape)
         else:
             indices = np.argmax(inputs[0], axis=self.axis)
@@ -720,7 +720,7 @@ class HardmaxOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
                                     input_shape[self.axis],
                                     on_value=np.array(1, inputs[0].dtype),
                                     off_value=np.array(0, inputs[0].dtype),
-                                    axis=self.axis).eval()
+                                    axis=self.axis).numpy()
         self.set_out_tensor(out_tensor)
 
     def convert_version(self):
@@ -1345,7 +1345,7 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
                 scale_inp, _, in_attr = in_edges[1]
                 self._graph.remove_edges_from(in_edges[1:])
                 insert_constant(self._graph, self.name + '_roi',
-                                np.array([], np.float32),  self.name, in_port=1)
+                                np.array([], np.float32), self.name, in_port=1)
                 new_in_attr = copy.deepcopy(in_attr)
                 new_in_attr['dst_in_port'] = 2
                 self._graph.add_edge(scale_inp, self.name, **new_in_attr)
@@ -1474,7 +1474,7 @@ class SigmoidOp(LayoutUnawareOp, BaseActivationOp, OnnxOp):
     def infer_shape(self):
         super(SigmoidOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.sigmoid(inputs[0]).eval()
+        out_tensor = tf.sigmoid(inputs[0]).numpy()
         self.set_out_tensor(out_tensor)
 
 
@@ -1508,7 +1508,7 @@ class SinOp(LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
     def infer_shape(self):
         super(SinOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.sin(inputs[0]).eval()
+        out_tensor = tf.sin(inputs[0]).numpy()
         self.set_out_tensor(out_tensor)
 
 
@@ -1525,7 +1525,7 @@ class SinhOp(LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
     def infer_shape(self):
         super(SinhOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.sinh(inputs[0]).eval()
+        out_tensor = tf.sinh(inputs[0]).numpy()
         self.set_out_tensor(out_tensor)
 
 
@@ -1564,7 +1564,7 @@ class SoftplusOp(LayoutUnawareOp, BaseActivationOp, OnnxOp):
         super(SoftplusOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor = np.array(inputs[0])
-        out_tensor = tf.log(1 + tf.exp(out_tensor)).eval()
+        out_tensor = tf.log(1 + tf.exp(out_tensor)).numpy()
         self.set_out_tensor(out_tensor)
 
 
@@ -1582,8 +1582,8 @@ class SoftsignOp(LayoutUnawareOp, BaseActivationOp, OnnxOp):
         super(SoftsignOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor = np.array(inputs[0])
-        out_tensor = out_tensor/(1 + tf.abs(out_tensor))
-        self.set_out_tensor(out_tensor.eval())
+        out_tensor = out_tensor / (1 + tf.abs(out_tensor))
+        self.set_out_tensor(out_tensor.numpy())
 
 
 class SqrtOp(LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
@@ -1691,7 +1691,7 @@ class TanhOp(LayoutUnawareOp, BaseActivationOp, OnnxOp):
     def infer_shape(self):
         super(TanhOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.tanh(inputs[0]).eval()
+        out_tensor = tf.tanh(inputs[0]).numpy()
         self.set_out_tensor(out_tensor)
 
 
@@ -1708,7 +1708,7 @@ class TanOp(LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
     def infer_shape(self):
         super(TanOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.tan(inputs[0]).eval()
+        out_tensor = tf.tan(inputs[0]).numpy()
         self.set_out_tensor(out_tensor)
 
 

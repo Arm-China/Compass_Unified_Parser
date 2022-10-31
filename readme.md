@@ -61,7 +61,7 @@ Besides, the Parser can also run independently. Before running the `main.py`, pl
 * onnx (> 12)
 * protobuf
 * flatbuffers
-* tensorflow (> 1.13, 2.6 is preferred)
+* tensorflow (== 2.6)
 * torch
 
 ### Run the Parser

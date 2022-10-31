@@ -93,11 +93,11 @@ class TfSwitchOp(OpHasVariableOutPorts, TfOp):
         from tensorflow.python.ops import control_flow_ops
         output_false, output_true = control_flow_ops.switch(inputs[0], inputs[1], dtype=self.dtype)
         try:
-            output_false = output_false.eval()
+            output_false = output_false.numpy()
         except:
             output_false = np.empty(0, dtype=self.dtype) if pred else inputs[0].astype(self.dtype)
         try:
-            output_true = output_true.eval()
+            output_true = output_true.numpy()
         except:
             output_true = inputs[0].astype(self.dtype) if pred else np.empty(0, dtype=self.dtype)
         self.set_out_tensor([output_false, output_true])

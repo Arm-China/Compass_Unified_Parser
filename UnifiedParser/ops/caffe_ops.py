@@ -140,7 +140,7 @@ class CaffeBATCHNORMOp(BaseLinearOp, CaffeOp):
         self.weights = 1 / (np.sqrt(var + self.epsilon))
         self.biases = - mean / (np.sqrt(var + self.epsilon))
         if self.data_format == 'NCHW':
-            shape = [1]*len(inputs[0].shape)
+            shape = [1] * len(inputs[0].shape)
             shape[1] = -1
             w = np.reshape(self.weights, shape)
             b = np.reshape(self.biases, shape)
@@ -216,7 +216,7 @@ class CaffeBIASOp(OpHasAxis, OpHasOneOutPort, CaffeOp):
 class CaffeBNOp(OpHasBiases, OpHasWeights, OpHasMultipleOutPorts, CaffeOp):
     @classmethod
     def attributes(cls):
-        return {1: {'bn_mode':  {'type': AttrType.STRING, 'options': ['LEARN', 'INFERENCE'], 'default': 'INFERENCE'},
+        return {1: {'bn_mode': {'type': AttrType.STRING, 'options': ['LEARN', 'INFERENCE'], 'default': 'INFERENCE'},
                     'epsilon': {'type': AttrType.FLOAT, 'default': 1e-9}
                     }
                 }
@@ -235,8 +235,8 @@ class CaffeBNOp(OpHasBiases, OpHasWeights, OpHasMultipleOutPorts, CaffeOp):
         if np.ndim(self.biases) == 0:
             self.biases = np.array([self.biases])
         inputs = self.get_input_tensors()
-        out_tensor = inputs[0] * np.reshape(self.weights, list(self.weights.shape)+[1, 1]) \
-            + np.reshape(self.biases, list(self.biases.shape)+[1, 1])
+        out_tensor = inputs[0] * np.reshape(self.weights, list(self.weights.shape) + [1, 1]) \
+            + np.reshape(self.biases, list(self.biases.shape) + [1, 1])
         self.set_out_tensor([out_tensor])
 
     @property
@@ -268,7 +268,7 @@ class CaffeBNLLOp(OpHasOneOutPort, CaffeOp):
 class CaffeCLIPOp(OpHasOneOutPort, CaffeOp):
     @classmethod
     def attributes(cls):
-        return {1: {'min':  {'type': AttrType.FLOAT, 'required': True, 'default': 0.},
+        return {1: {'min': {'type': AttrType.FLOAT, 'required': True, 'default': 0.},
                     'max': {'type': AttrType.FLOAT, 'required': True, 'default': 6.}}
                 }
 
@@ -414,12 +414,12 @@ class CaffeCROPOp(OpHasAxis, OpHasOneOutPort, CaffeOp):
                 if len(self.offset) == 1:
                     offset[i] = self.offset[0]
                 else:
-                    offset[i] = self.offset[i-self.axis]
+                    offset[i] = self.offset[i - self.axis]
         self.offset = offset
         self.size = list(inputs[0].shape[:self.axis]) + \
             list(inputs[1].shape[self.axis:])
         out_tensor = tf.slice(inputs[0], np.array(
-            self.offset, np.int64), np.array(self.size, np.int64)).eval()
+            self.offset, np.int64), np.array(self.size, np.int64)).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -502,7 +502,7 @@ class CaffeDROPOUTOp(OpHasOneOutPort, CaffeOp):
     def infer_shape(self):
         super(CaffeDROPOUTOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.identity(inputs[0]).eval()
+        out_tensor = tf.identity(inputs[0]).numpy()
         self.set_out_tensor(out_tensor)
 
 
@@ -676,7 +676,7 @@ class CaffeFLATTENOp(OpHasAxis, OpHasOneOutPort, CaffeOp):
             for i in range(len(input_shape)):
                 if i < axis:
                     ret.append(input_shape[i])
-            ret.append(int(np.prod(input_shape[axis: end_axis+1])))
+            ret.append(int(np.prod(input_shape[axis: end_axis + 1])))
             for i in range(len(input_shape)):
                 if i > end_axis:
                     ret.append(input_shape[i])
@@ -787,7 +787,7 @@ class CaffeINTERPOp(OpHasOneOutPort, CaffeOp):
             height_out, width_out = height_in, width_in
         self.height, self.width = height_out, width_out
         out_tensor = tf.image.resize_bilinear(np.transpose(inputs[0], axes=(
-            0, 2, 3, 1)), size=np.array([height_out, width_out], np.int32)).eval()
+            0, 2, 3, 1)), size=np.array([height_out, width_out], np.int32)).numpy()
         out_tensor = np.transpose(out_tensor, (0, 3, 1, 2))
         self.set_out_tensor(out_tensor)
 
@@ -1173,7 +1173,7 @@ class CaffePRIORBOXOp(OpHasOneOutPort, CaffeOp):
         for i, ar in enumerate(self.aspect_ratio):
             already_exist = False
             for j, tr in enumerate(tmp_aspect_ratios):
-                if FLOAT_EQUAL(ar-tr, 1e-6):
+                if FLOAT_EQUAL(ar - tr, 1e-6):
                     already_exist = True
                     break
             if not already_exist:
@@ -1210,9 +1210,9 @@ class CaffePRIORBOXOp(OpHasOneOutPort, CaffeOp):
                 np_center = np.array([center_x, center_y], np.float32)
                 for min_s in self.min_size:
                     box_width, box_height = int(min_s), int(min_s)
-                    out_tensor[0, 0, meta_idx: meta_idx+2] = (
+                    out_tensor[0, 0, meta_idx: meta_idx + 2] = (
                         np_center - np.array([box_width, box_height]) / 2.0) / np_img_size
-                    out_tensor[0, 0, meta_idx+2: meta_idx+4] = (
+                    out_tensor[0, 0, meta_idx + 2: meta_idx + 4] = (
                         np_center + np.array([box_width, box_height]) / 2.0) / np_img_size
                     meta_idx += 4
                     for max_s in self.max_size:
@@ -1773,7 +1773,7 @@ class CaffeSPPOp(OpHasOneOutPort, OpHasMethod, CaffeOp):
         channel = inputs[0].shape[1]
         k = 0
         for i in range(self.pyramid_height):
-            k += 2**(2*i)
+            k += 2**(2 * i)
         out_shape = [inputs[0].shape[0], channel * k]
         out_tensor = np.random.ranf(size=out_shape).astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)

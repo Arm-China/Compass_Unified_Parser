@@ -216,7 +216,6 @@ def parse_keras(model_path, params):
     nodes_dict, tensors, np_tensors = OrderedDict(), OrderedDict(), OrderedDict()
     input_shapes = params['input_shapes'].copy()
     try:
-        tf.compat.v1.enable_eager_execution()
         load_options = tf.saved_model.LoadOptions(allow_partial_checkpoint=True)
         model = tf.keras.models.load_model(model_path, compile=False, options=load_options)
     except Exception as e:
@@ -271,7 +270,5 @@ def parse_keras(model_path, params):
     for out, out_value in zip(outputs, outputs_value):
         tensors.update({out.name: out})
         np_tensors.update({out.name: out_value})
-
-    tf.compat.v1.disable_eager_execution()
 
     return nodes, nodes_dict, tensors, np_tensors, input_shapes

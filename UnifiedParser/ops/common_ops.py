@@ -55,7 +55,7 @@ class BatchGatherOp(OpHasAxis, OpHasOneOutPort, CommonOp):
         out_tensor = tf.gather(inputs[0],
                                indices,
                                axis=self.axis,
-                               batch_dims=self.batch_dims).eval()
+                               batch_dims=self.batch_dims).numpy()
         self.set_out_tensor(out_tensor)
 
 
@@ -100,7 +100,7 @@ class CumProdOp(OpHasOneOutPort, OpHasAxis, CommonOp):
         super(CumProdOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor = tf.math.cumprod(
-            inputs[0], axis=self.axis, exclusive=self.exclusive, reverse=self.reverse).eval()
+            inputs[0], axis=self.axis, exclusive=self.exclusive, reverse=self.reverse).numpy()
         self.set_out_tensor(out_tensor)
 
 
@@ -125,7 +125,7 @@ class CropAndResizeOp(OpHasMethod, LayoutConcernedOp, OpHasOneOutPort, CommonOp)
                                               box_indices=inputs[2],
                                               crop_size=self.crop_size,
                                               method=self.method.lower(),
-                                              extrapolation_value=self.extrapolation_value).eval()
+                                              extrapolation_value=self.extrapolation_value).numpy()
         self.set_out_tensor(out_tensor)
 
 
@@ -192,7 +192,7 @@ class FillOp(OpHasOneOutPort, CommonOp):
     def infer_shape(self):
         super(FillOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.fill(*inputs).eval()
+        out_tensor = tf.fill(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
 
@@ -229,7 +229,7 @@ class FullyConnectedOp(BaseLinearOp, CommonOp):
         inputs = self.get_input_tensors()
         out_tensor = (tf.matmul(inputs[0], np.transpose(self.weights, axes=type(self).perm_onnx_to_tf()))
                       + self.biases
-                      ).eval()
+                      ).numpy()
         self.set_out_tensor(out_tensor)
 
 
@@ -249,13 +249,13 @@ class GeluOp(BaseActivationOp, CommonOp):
         super(GeluOp, self).infer_shape()
         inputs = self.get_input_tensors()
         if self.approximate == 'tanh':
-            out = 0.5*(inputs[0])*(1.0+tf.math.tanh(inputs[0]
-                                                    * 0.7978845608*(1.0+0.044715*inputs[0]*inputs[0])))
-            out_tensor = out.eval().astype(np.float32)
+            out = 0.5 * (inputs[0]) * (1.0 + tf.math.tanh(inputs[0]
+                                                          * 0.7978845608 * (1.0 + 0.044715 * inputs[0] * inputs[0])))
+            out_tensor = out.numpy().astype(np.float32)
         else:
             out_tensor = 0.5 * \
-                (inputs[0])*(1.0+(inputs[0]*0.7978845608 *
-                                  (1.0+0.044715*inputs[0]*inputs[0])))
+                (inputs[0]) * (1.0 + (inputs[0] * 0.7978845608 *
+                                      (1.0 + 0.044715 * inputs[0] * inputs[0])))
         self.set_out_tensor(out_tensor)
 
 
@@ -303,7 +303,7 @@ class HardSwishOp(LayoutUnawareOp, OpHasOneOutPort, CommonOp):
     def infer_shape(self):
         super(HardSwishOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = (inputs[0] * tf.nn.relu6(inputs[0] + 3) / 6).eval()
+        out_tensor = (inputs[0] * tf.nn.relu6(inputs[0] + 3) / 6).numpy()
         self.set_out_tensor(out_tensor)
 
 
@@ -331,7 +331,7 @@ class InTopKOp(LayoutUnawareOp, OpHasOneOutPort, CommonOp):
         assert len(
             inputs) == 2, 'InTopKOp expects two inputs, but got %d.' % len(inputs)
         out_tensor = tf.raw_ops.InTopK(
-            predictions=inputs[0], targets=inputs[1], k=self.k).eval()
+            predictions=inputs[0], targets=inputs[1], k=self.k).numpy()
         self.set_out_tensor(out_tensor)
 
 
@@ -374,7 +374,7 @@ class MeshgridOp(OpHasMultipleOutPorts, CommonOp):
         super(MeshgridOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensors = tf.meshgrid(*inputs, indexing=self.indexing)
-        out_tensors = [t.eval() for t in out_tensors]
+        out_tensors = [t.numpy() for t in out_tensors]
         self.set_out_tensor(out_tensors)
 
 
@@ -392,7 +392,7 @@ class MomentsOp(OpHasMultipleOutPorts, OpHasAxis, CommonOp):
         inputs = self.get_input_tensors()
         out_tensors = tf.nn.moments(
             inputs[0], self.axes, keepdims=self.keepdims)
-        out_tensors = [out_tensor.eval() for out_tensor in out_tensors]
+        out_tensors = [out_tensor.numpy() for out_tensor in out_tensors]
         self.set_out_tensor(out_tensors)
 
 
@@ -506,7 +506,7 @@ class ReduceAllOp(OpHasAxis, OpHasOneOutPort, CommonOp):
         if self.axes is None:
             self.axes = list(range(len(inputs[0].shape)))
         out_tensor = tf.reduce_all(inputs[0], axis=tuple(
-            self.axes), keepdims=self.keepdims).eval()
+            self.axes), keepdims=self.keepdims).numpy()
         self.set_out_tensor(out_tensor)
 
 
@@ -526,7 +526,7 @@ class ReduceAnyOp(OpHasAxis, OpHasOneOutPort, CommonOp):
         if self.axes is None:
             self.axes = list(range(len(inputs[0].shape)))
         out_tensor = tf.reduce_any(inputs[0], axis=tuple(
-            self.axes), keepdims=self.keepdims).eval()
+            self.axes), keepdims=self.keepdims).numpy()
         self.set_out_tensor(out_tensor)
 
 
@@ -570,7 +570,7 @@ class RollOp(OpHasOneOutPort, CommonOp):
     def infer_shape(self):
         super(RollOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.roll(*inputs).eval()
+        out_tensor = tf.roll(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
 
@@ -594,7 +594,7 @@ class SegmentReduceOp(OpHasMethod, OpHasOneOutPort, CommonOp):
     def infer_shape(self):
         super(SegmentReduceOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = SegmentReduceOp.FUNC_MAP[self.method](*inputs).eval()
+        out_tensor = SegmentReduceOp.FUNC_MAP[self.method](*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
 
@@ -641,5 +641,5 @@ class ZeroFractionOp(OpHasOneOutPort, CommonOp):
     def infer_shape(self):
         super(ZeroFractionOp, self).infer_shape()
         input_tensor = self.get_input_tensors()[0]
-        out_tensor = np.array(tf.math.zero_fraction(input_tensor).eval())
+        out_tensor = np.array(tf.math.zero_fraction(input_tensor).numpy())
         self.set_out_tensor(out_tensor)

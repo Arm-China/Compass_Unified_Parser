@@ -84,8 +84,8 @@ def univ_parser(params):
         if (is_file(model_path) or is_dir(model_path)) and is_dir(output_dir):
             graph = None
 
-            if int(tf.__version__.split('.')[0]) >= 2:
-                tf.disable_eager_execution()
+            if int(tf.__version__.split('.')[0]) < 2:
+                WARN('Require tensorflow version==2.6 but now is in version %s!' % str(tf.__version__))
 
             try:
                 # Convert torch model to onnx before processing

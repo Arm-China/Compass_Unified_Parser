@@ -11,7 +11,7 @@ class TfLeftShiftOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfLeftShiftOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.bitwise.left_shift(*inputs).eval()
+        out_tensor = tf.bitwise.left_shift(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -23,7 +23,7 @@ class TfRightShiftOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfRightShiftOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.bitwise.right_shift(*inputs).eval()
+        out_tensor = tf.bitwise.right_shift(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
     @property

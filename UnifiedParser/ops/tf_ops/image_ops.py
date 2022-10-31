@@ -24,7 +24,7 @@ class TfCropAndResizeOp(OpHasOneOutPort, TfOp):
         super(TfCropAndResizeOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor = tf.image.crop_and_resize(*inputs, method=self.method,
-                                              extrapolation_value=self.extrapolation_value).eval()
+                                              extrapolation_value=self.extrapolation_value).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -68,7 +68,7 @@ class TfNonMaxSuppressionV2Op(OpHasOneOutPort, TfOp):
         out_tensor = tf.raw_ops.NonMaxSuppressionV2(boxes=inputs[0],
                                                     scores=inputs[1],
                                                     max_output_size=self.max_output_size,
-                                                    iou_threshold=self.iou_threshold).eval()
+                                                    iou_threshold=self.iou_threshold).numpy()
         self.set_out_tensor(out_tensor)
 
 
@@ -96,7 +96,7 @@ class TfNonMaxSuppressionV3Op(OpHasOneOutPort, TfOp):
         # Do not use tf.image.non_max_suppression because the actual output shape is different
         # with the inferred output shape.
         out_tensors = tf.image.non_max_suppression_padded(*inputs, pad_to_max_output_size=True)
-        out_tensor = out_tensors[0].eval()
+        out_tensor = out_tensors[0].numpy()
         self.set_out_tensor(out_tensor)
 
 
@@ -131,7 +131,7 @@ class TfNonMaxSuppressionV4Op(OpHasMultipleOutPorts, TfOp):
             iou_threshold=self.iou_threshold,
             score_threshold=self.score_threshold,
             pad_to_max_output_size=True)
-        out_tensors = [t.eval() for t in out_tensors]
+        out_tensors = [t.numpy() for t in out_tensors]
         self.set_out_tensor(out_tensors)
 
 
@@ -168,7 +168,7 @@ class TfNonMaxSuppressionV5Op(OpHasMultipleOutPorts, TfOp):
             score_threshold=self.score_threshold,
             soft_nms_sigma=self.soft_nms_sigma,
             pad_to_max_output_size=True)
-        out_tensors = [t.eval() for t in out_tensors]
+        out_tensors = [t.numpy() for t in out_tensors]
         self.set_out_tensor(out_tensors)
 
 
@@ -189,7 +189,7 @@ class TfResizeBilinearOp(OpHasOneOutPort, TfOp):
         super(TfResizeBilinearOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor = tf.image.resize_bilinear(
-            *inputs, align_corners=self.align_corners, half_pixel_centers=self.half_pixel_centers).eval()
+            *inputs, align_corners=self.align_corners, half_pixel_centers=self.half_pixel_centers).numpy()
         self.set_out_tensor(out_tensor)
 
 
@@ -210,5 +210,5 @@ class TfResizeNearestNeighborOp(OpHasOneOutPort, TfOp):
         super(TfResizeNearestNeighborOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor = tf.image.resize_nearest_neighbor(
-            *inputs, align_corners=self.align_corners, half_pixel_centers=self.half_pixel_centers).eval()
+            *inputs, align_corners=self.align_corners, half_pixel_centers=self.half_pixel_centers).numpy()
         self.set_out_tensor(out_tensor)

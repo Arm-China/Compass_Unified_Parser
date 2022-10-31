@@ -20,7 +20,7 @@ class TfAbsOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfAbsOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.math.abs(*inputs).eval()
+        out_tensor = tf.math.abs(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -83,7 +83,7 @@ class TfAllOp(OpHasAxis, OpHasOneOutPort, TfOp):
         super(TfAllOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor = tf.raw_ops.All(
-            input=inputs[0], axis=self.axes, keep_dims=bool(self.keepdims)).eval()
+            input=inputs[0], axis=self.axes, keep_dims=bool(self.keepdims)).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -122,7 +122,7 @@ class TfAnyOp(OpHasAxis, OpHasOneOutPort, TfOp):
         super(TfAnyOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor = tf.raw_ops.Any(
-            input=inputs[0], axis=self.axes, keep_dims=bool(self.keepdims)).eval()
+            input=inputs[0], axis=self.axes, keep_dims=bool(self.keepdims)).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -167,7 +167,7 @@ class TfAddOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfAddOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.add(*inputs).eval()
+        out_tensor = tf.add(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -188,7 +188,7 @@ class TfAddNOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfAddNOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.math.add_n([*inputs]).eval()
+        out_tensor = tf.math.add_n([*inputs]).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -236,7 +236,7 @@ class TfArgMaxOp(OpHasAxis, OpHasOneOutPort, TfOp):
                                axis=self.axis,
                                output_type=tf.int32
                                if self.output_type == 'int32'
-                               else tf.int64).eval()
+                               else tf.int64).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -280,7 +280,7 @@ class TfArgMinOp(OpHasAxis, OpHasOneOutPort, TfOp):
                                axis=self.axis,
                                output_type=tf.int32
                                if self.output_type == 'int32'
-                               else tf.int64).eval()
+                               else tf.int64).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -318,7 +318,7 @@ class TfBatchMatMulV2Op(OpHasOneOutPort, TfOp):
         out_tensor = tf.raw_ops.BatchMatMulV2(x=inputs[0],
                                               y=inputs[1],
                                               adj_x=self.adj_x,
-                                              adj_y=self.adj_y).eval()
+                                              adj_y=self.adj_y).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -347,7 +347,7 @@ class TfBitwiseAndOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfBitwiseAndOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.bitwise.bitwise_and(*inputs).eval()
+        out_tensor = tf.bitwise.bitwise_and(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -360,7 +360,7 @@ class TfBitwiseOrOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfBitwiseOrOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.bitwise.bitwise_or(*inputs).eval()
+        out_tensor = tf.bitwise.bitwise_or(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -373,7 +373,7 @@ class TfBitwiseXorOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfBitwiseXorOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.bitwise.bitwise_xor(*inputs).eval()
+        out_tensor = tf.bitwise.bitwise_xor(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -428,7 +428,7 @@ class TfCumprodOp(OpHasOneOutPort, OpHasAxis, TfOp):
         super(TfCumprodOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor = tf.math.cumprod(inputs[0], axis=self.axis, exclusive=bool(
-            self.exclusive), reverse=bool(self.reverse)).eval()
+            self.exclusive), reverse=bool(self.reverse)).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -470,7 +470,7 @@ class TfCumsumOp(OpHasOneOutPort, OpHasAxis, TfOp):
         super(TfCumsumOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor = tf.math.cumsum(inputs[0], axis=self.axis, exclusive=bool(
-            self.exclusive), reverse=bool(self.reverse)).eval()
+            self.exclusive), reverse=bool(self.reverse)).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -494,7 +494,7 @@ class TfEqualOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfEqualOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.math.equal(*inputs).eval()
+        out_tensor = tf.math.equal(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -506,7 +506,7 @@ class TfErfOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfErfOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.math.erf(*inputs).eval()
+        out_tensor = tf.math.erf(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -518,7 +518,7 @@ class TfExpOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfExpOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.math.exp(*inputs).eval()
+        out_tensor = tf.math.exp(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -542,7 +542,7 @@ class TfFloorDivOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfFloorDivOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.math.floordiv(*inputs).eval()
+        out_tensor = tf.math.floordiv(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -554,7 +554,7 @@ class TfFloorModOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfFloorModOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.math.floormod(*inputs).eval()
+        out_tensor = tf.math.floormod(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -566,7 +566,7 @@ class TfGreaterOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfGreaterOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.math.greater(*inputs).eval()
+        out_tensor = tf.math.greater(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -578,7 +578,7 @@ class TfGreaterEqualOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfGreaterEqualOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.math.greater_equal(*inputs).eval()
+        out_tensor = tf.math.greater_equal(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -603,7 +603,7 @@ class TfInTopKOp(OpHasOneOutPort, TfOp):
         assert len(
             inputs) == 2, 'TfInTopKOp expects 2 inputs, but got %d.' % len(inputs)
         out_tensor = tf.raw_ops.InTopK(
-            predictions=inputs[0], targets=inputs[1], k=self.k).eval()
+            predictions=inputs[0], targets=inputs[1], k=self.k).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -643,7 +643,7 @@ class TfInTopKV2Op(OpHasOneOutPort, TfOp):
         assert len(
             inputs) == 3, 'TfInTopKV2Op expects 3 inputs, but got %d.' % len(inputs)
         out_tensor = tf.raw_ops.InTopKV2(
-            predictions=inputs[0], targets=inputs[1], k=self.k).eval()
+            predictions=inputs[0], targets=inputs[1], k=self.k).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -655,7 +655,7 @@ class TfIsFiniteOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfIsFiniteOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.math.is_finite(inputs[0]).eval()
+        out_tensor = tf.math.is_finite(inputs[0]).numpy()
         self.set_out_tensor(out_tensor)
 
 
@@ -663,7 +663,7 @@ class TfLessOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfLessOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.math.less(*inputs).eval()
+        out_tensor = tf.math.less(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -675,7 +675,7 @@ class TfLessEqualOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfLessEqualOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.math.less_equal(*inputs).eval()
+        out_tensor = tf.math.less_equal(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -699,7 +699,7 @@ class TfLogicalAndOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfLogicalAndOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.math.logical_and(*inputs).eval()
+        out_tensor = tf.math.logical_and(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -711,7 +711,7 @@ class TfLogicalNotOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfLogicalNotOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.math.logical_not(inputs[0]).eval()
+        out_tensor = tf.math.logical_not(inputs[0]).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -723,7 +723,7 @@ class TfLogicalOrOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfLogicalOrOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.math.logical_or(*inputs).eval()
+        out_tensor = tf.math.logical_or(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -748,7 +748,7 @@ class TfMatMulOp(OpHasOneOutPort, TfOp):
         super(TfMatMulOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor = tf.linalg.matmul(
-            *(inputs[0:2]), transpose_a=self.transpose_a, transpose_b=self.transpose_b).eval()
+            *(inputs[0:2]), transpose_a=self.transpose_a, transpose_b=self.transpose_b).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -787,7 +787,7 @@ class TfMaxOp(OpHasAxis, OpHasOneOutPort, TfOp):
         super(TfMaxOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor = tf.raw_ops.Max(
-            input=inputs[0], axis=self.axes, keep_dims=bool(self.keepdims)).eval()
+            input=inputs[0], axis=self.axes, keep_dims=bool(self.keepdims)).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -799,7 +799,7 @@ class TfMaximumOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfMaximumOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.math.maximum(*inputs).eval()
+        out_tensor = tf.math.maximum(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -829,7 +829,7 @@ class TfMeanOp(OpHasAxis, OpHasOneOutPort, TfOp):
         if not self.axes:
             self.axes = list(range(len(inputs[0])))
         out_tensor = tf.math.reduce_mean(
-            inputs[0], axis=self.axes, keepdims=self.keepdims).eval()
+            inputs[0], axis=self.axes, keepdims=self.keepdims).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -868,7 +868,7 @@ class TfMinOp(OpHasAxis, OpHasOneOutPort, TfOp):
         super(TfMinOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor = tf.raw_ops.Min(
-            input=inputs[0], axis=self.axes, keep_dims=bool(self.keepdims)).eval()
+            input=inputs[0], axis=self.axes, keep_dims=bool(self.keepdims)).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -880,7 +880,7 @@ class TfMinimumOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfMinimumOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.math.minimum(*inputs).eval()
+        out_tensor = tf.math.minimum(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -892,7 +892,7 @@ class TfMulOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfMulOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.math.multiply(*inputs).eval()
+        out_tensor = tf.math.multiply(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -920,7 +920,7 @@ class TfNotEqualOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfNotEqualOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.math.not_equal(*inputs).eval()
+        out_tensor = tf.math.not_equal(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
 
@@ -937,7 +937,7 @@ class TfPowOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfPowOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.math.pow(*inputs).eval()
+        out_tensor = tf.math.pow(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -979,7 +979,7 @@ class TfProdOp(OpHasAxis, OpHasOneOutPort, TfOp):
         super(TfProdOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor = tf.math.reduce_prod(
-            inputs[0], self.axes, keepdims=bool(self.keepdims)).eval()
+            inputs[0], self.axes, keepdims=bool(self.keepdims)).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -1000,7 +1000,7 @@ class TfRangeOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfRangeOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.range(*inputs).eval()
+        out_tensor = tf.range(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
 
@@ -1008,7 +1008,7 @@ class TfRealDivOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfRealDivOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.realdiv(*inputs).eval()
+        out_tensor = tf.realdiv(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -1032,7 +1032,7 @@ class TfRoundOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfRoundOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.math.round(inputs[0]).eval()
+        out_tensor = tf.math.round(inputs[0]).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -1044,7 +1044,7 @@ class TfRsqrtOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfRsqrtOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.math.rsqrt(*inputs).eval()
+        out_tensor = tf.math.rsqrt(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
 
@@ -1052,7 +1052,7 @@ class TfSegmentSumOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfSegmentSumOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.math.segment_sum(*inputs).eval()
+        out_tensor = tf.math.segment_sum(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -1076,7 +1076,7 @@ class TfSigmoidOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfSigmoidOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.math.sigmoid(inputs[0]).eval()
+        out_tensor = tf.math.sigmoid(inputs[0]).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -1088,7 +1088,7 @@ class TfSinOp(LayoutUnawareOp, OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfSinOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.sin(inputs[0]).eval()
+        out_tensor = tf.sin(inputs[0]).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -1100,7 +1100,7 @@ class TfSinhOp(LayoutUnawareOp, OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfSinhOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.sinh(inputs[0]).eval()
+        out_tensor = tf.sinh(inputs[0]).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -1113,8 +1113,8 @@ class TfSoftsignOp(LayoutUnawareOp, BaseActivationOp, TfOp):
         super(TfSoftsignOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor = np.array(inputs[0])
-        out_tensor = out_tensor/(1 + tf.abs(out_tensor))
-        self.set_out_tensor(out_tensor.eval())
+        out_tensor = out_tensor / (1 + tf.abs(out_tensor))
+        self.set_out_tensor(out_tensor.numpy())
 
     @property
     def correspond_onnx_op(self):
@@ -1125,7 +1125,7 @@ class TfSoftplusOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfSoftplusOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.math.softplus(inputs[0]).eval()
+        out_tensor = tf.math.softplus(inputs[0]).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -1137,7 +1137,7 @@ class TfSqrtOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfSqrtOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.math.sqrt(inputs[0]).eval()
+        out_tensor = tf.math.sqrt(inputs[0]).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -1149,7 +1149,7 @@ class TfSquareOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfSquareOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.math.square(inputs[0]).eval()
+        out_tensor = tf.math.square(inputs[0]).numpy()
         self.set_out_tensor(out_tensor)
 
 
@@ -1157,7 +1157,7 @@ class TfSquaredDifferenceOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfSquaredDifferenceOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.math.squared_difference(*inputs).eval()
+        out_tensor = tf.math.squared_difference(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
 
@@ -1165,7 +1165,7 @@ class TfSubOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfSubOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.math.subtract(*inputs).eval()
+        out_tensor = tf.math.subtract(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -1207,7 +1207,7 @@ class TfSumOp(OpHasAxis, OpHasOneOutPort, TfOp):
         super(TfSumOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor = tf.raw_ops.Sum(
-            input=inputs[0], axis=self.axes, keep_dims=self.keepdims).eval()
+            input=inputs[0], axis=self.axes, keep_dims=self.keepdims).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -1219,7 +1219,7 @@ class TfTanOp(LayoutUnawareOp, OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfTanOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.tan(inputs[0]).eval()
+        out_tensor = tf.tan(inputs[0]).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -1231,7 +1231,7 @@ class TfTanhOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfTanhOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.math.tanh(inputs[0]).eval()
+        out_tensor = tf.math.tanh(inputs[0]).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -1257,11 +1257,11 @@ class TfTopKV2Op(OpHasVariableOutPorts, TfOp):
         values, indices = tf.math.top_k(*inputs, sorted=bool(self.sorted))
         out_ports = self.get_out_ports()
         if out_ports == [0]:
-            out_tensors = [values.eval()]
+            out_tensors = [values.numpy()]
         elif out_ports == [1]:
-            out_tensors = [indices.eval()]
+            out_tensors = [indices.numpy()]
         elif out_ports == [0, 1]:
-            out_tensors = [values.eval(), indices.eval()]
+            out_tensors = [values.numpy(), indices.numpy()]
         else:
             WARN('[Parser]: Meets invalid out_ports of TfTopKV2Op(%s)!' % self.name)
             out_tensors = []
@@ -1291,11 +1291,11 @@ class TfUniqueOp(OpHasVariableOutPorts, TfOp):
             inputs[0], out_idx=tf.dtypes.astype(self.out_idx))
         out_ports = self.get_out_ports()
         if out_ports == [0]:
-            out_tensors = [x.eval()]
+            out_tensors = [x.numpy()]
         elif out_ports == [1]:
-            out_tensors = [out_idx.eval()]
+            out_tensors = [out_idx.numpy()]
         elif out_ports == [0, 1]:
-            out_tensors = [x.eval(), out_idx.eval()]
+            out_tensors = [x.numpy(), out_idx.numpy()]
         else:
             WARN('[Parser]: Meets invalid out_ports of TfUniqueOp(%s)!' % self.name)
             out_tensors = []

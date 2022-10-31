@@ -157,7 +157,7 @@ class BatchNormalizationOp(LayoutConcernedOp, OpHasVariableOutPorts, OnnxOp):
                 is_training=is_training,
                 exponential_avg_factor=1.0
             )
-            out_tensor_list = [o.eval() for o in out_list]
+            out_tensor_list = [o.numpy() for o in out_list]
         else:
             if self.data_format[0] == 'N' and self.data_format[-1] == 'C':
                 out_tensor = tf.nn.batch_normalization(inputs[0],
@@ -165,7 +165,7 @@ class BatchNormalizationOp(LayoutConcernedOp, OpHasVariableOutPorts, OnnxOp):
                                                        inputs[4],
                                                        inputs[1],
                                                        inputs[2],
-                                                       variance_epsilon=self.epsilon).eval()
+                                                       variance_epsilon=self.epsilon).numpy()
                 out_tensor_list = [out_tensor]
             else:
                 gamma = inputs[1]
@@ -176,7 +176,7 @@ class BatchNormalizationOp(LayoutConcernedOp, OpHasVariableOutPorts, OnnxOp):
                 biases = beta - gamma * mean / np.sqrt(var + self.epsilon)
                 if len(weights.shape) == 1:
                     reshape_dim = [weights.shape[0]] + \
-                        [1] * (len(inputs[0].shape)-2)
+                        [1] * (len(inputs[0].shape) - 2)
                     weights = np.reshape(weights, reshape_dim)
                     biases = np.reshape(biases, reshape_dim)
                 out_tensor = inputs[0] * weights + biases
@@ -256,7 +256,7 @@ class ConvOp(BaseConvOp, OnnxOp):
             #                                      data_format='NHWC')
             #             meta_conv_list.append(meta_conv)
             #         conv = tf.concat(meta_conv_list, axis=3)
-            # out_tensor = tf.nn.bias_add(conv, self.biases, data_format=self.data_format).eval()
+            # out_tensor = tf.nn.bias_add(conv, self.biases, data_format=self.data_format).numpy()
 
             out_shape = BaseConvOp.cal_out_shape(inputs[0].shape[1:-1],
                                                  self.pads,
@@ -425,7 +425,7 @@ class ConvTransposeOp(BaseConvOp, OnnxOp):
             if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
                 self.pads = OpHasPaddingStrides.cal_pads(
                     input_shape,
-                    (np.array(input_shape)*np.array(self.strides)).tolist(),
+                    (np.array(input_shape) * np.array(self.strides)).tolist(),
                     self.strides,
                     self.kernel_shape,
                     self.auto_pad,
@@ -565,7 +565,7 @@ class GlobalAveragePoolOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
         super(GlobalAveragePoolOp, self).infer_shape()
         inputs = self.get_input_tensors()
         if self.data_format == 'NHWC':
-            axes = list(range(1, len(inputs[0].shape)-1))
+            axes = list(range(1, len(inputs[0].shape) - 1))
         else:
             axes = list(range(2, len(inputs[0].shape)))
         out_tensor = np.mean(inputs[0], axis=tuple(axes), keepdims=True)
@@ -591,10 +591,10 @@ class GlobalLpPoolOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
         input_shape = inputs[0].shape
         if self.data_format == 'NHWC':
             out_shape = [input_shape[0]] + \
-                np.tile([1], len(input_shape)-2).tolist() + [input_shape[-1]]
+                np.tile([1], len(input_shape) - 2).tolist() + [input_shape[-1]]
         else:
             out_shape = list(input_shape[:2]) + \
-                np.tile([1], len(input_shape)-2).tolist()
+                np.tile([1], len(input_shape) - 2).tolist()
         out_tensor = np.random.ranf(out_shape).astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
@@ -613,7 +613,7 @@ class GlobalMaxPoolOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
         super(GlobalMaxPoolOp, self).infer_shape()
         inputs = self.get_input_tensors()
         if self.data_format == 'NHWC':
-            axes = list(range(1, len(inputs[0].shape)-1))
+            axes = list(range(1, len(inputs[0].shape) - 1))
         else:
             axes = list(range(2, len(inputs[0].shape)))
         out_tensor = np.max(inputs[0], axis=tuple(axes), keepdims=True)
@@ -674,7 +674,7 @@ class GRUOp(BaseRnnOp, OpHasBiases, OpHasWeights, OnnxOp):
                 candidate_weights = np.concatenate(
                     (hidden_w, hidden_r), axis=1)
                 gate_biases = np.concatenate(
-                    (reset_wb+reset_rb, update_wb+update_rb))
+                    (reset_wb + reset_rb, update_wb + update_rb))
                 candidate_biases = hidden_wb + hidden_rb
                 ret.append({'gate_weights': gate_weights,
                             'gate_biases': gate_biases,
@@ -877,11 +877,11 @@ class GRUOp(BaseRnnOp, OpHasBiases, OpHasWeights, OnnxOp):
         Y = tf.stack(Y, axis=0)
         if self.layout:
             ''' [batch_size, seq_length, num_directions, hidden_size]'''
-            Y = tf.transpose(Y, perm=[0, 2, 1, 3]).eval()
+            Y = tf.transpose(Y, perm=[0, 2, 1, 3]).numpy()
             Y_h = Y[:, -1, :, :]
         else:
             ''' [seq_length, num_directions, batch_size, hidden_size]'''
-            Y = tf.transpose(Y, perm=[2, 1, 0, 3]).eval()
+            Y = tf.transpose(Y, perm=[2, 1, 0, 3]).numpy()
             Y_h = Y[-1, :, :, :]
 
         if not self.linear_before_reset:
@@ -1081,9 +1081,9 @@ class LRNOp(OpHasMethod, LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
         input_dim = len(inputs[0].shape)
         if self.data_format == 'NHWC':
             input_tensor = np.transpose(
-                inputs[0], [0, input_dim-1] + list(range(1, input_dim-1)))
+                inputs[0], [0, input_dim - 1] + list(range(1, input_dim - 1)))
             '''
-            out_tensor = tf.nn.local_response_normalization(inputs[0], (self.size - 1) // 2, self.bias, self.alpha / self.size, self.beta).eval()
+            out_tensor = tf.nn.local_response_normalization(inputs[0], (self.size - 1) // 2, self.bias, self.alpha / self.size, self.beta).numpy()
             '''
         else:
             input_tensor = inputs[0]
@@ -1526,7 +1526,7 @@ class MaxUnpoolOp(OpHasPaddingStrides, OpHasOneOutPort, OnnxOp):
         in_edges = self._graph.sorted_in_edges(self.name)
         if len(in_edges) == 2:
             insert_constant(self._graph,
-                            self.name+'_output_shape',
+                            self.name + '_output_shape',
                             np.array(self.output_shape, np.int32),
                             self.name,
                             in_port=2)

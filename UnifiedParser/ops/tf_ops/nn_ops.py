@@ -27,7 +27,7 @@ class TfAvgPoolOp(TfHasPaddingStrides, OpHasOneOutPort):
                                     strides=[1] + self.strides + [1],
                                     padding='VALID' if self.auto_pad in (
                                         'VALID', 'NOTSET') else 'SAME',
-                                    data_format='NHWC').eval()
+                                    data_format='NHWC').numpy()
         if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
             self.pads = OpHasPaddingStrides.cal_pads(
                 inputs[0].shape[1:-1],
@@ -68,10 +68,10 @@ class TfAvgPool3DOp(TfHasPaddingStrides, OpHasOneOutPort):
         out_tensor = tf.nn.avg_pool3d(
             inp,
             ksize=self.kernel_shape,
-            strides=[1]+self.strides+[1],
+            strides=[1] + self.strides + [1],
             padding='SAME' if self.auto_pad in (
                 'SAME_UPPER', 'SAME_LOWER') else 'VALID',
-            data_format='NDHWC').eval()
+            data_format='NDHWC').numpy()
         if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
             self.pads = OpHasPaddingStrides.cal_pads(
                 inp.shape[1:-1],
@@ -105,7 +105,7 @@ class TfBiasAddOp(LayoutConcernedOp, OpHasOneOutPort, TfOp):
         super(TfBiasAddOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor = tf.nn.bias_add(
-            *inputs, data_format=self.data_format).eval()
+            *inputs, data_format=self.data_format).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -134,7 +134,7 @@ class TfComputeAccidentalHitsOp(OpHasMultipleOutPorts, TfOp):
                                                        num_true=self.num_true,
                                                        seed=self.seed,
                                                        seed2=self.seed2)
-        self.set_out_tensor([out_tensor.eval() for out_tensor in out_tensors])
+        self.set_out_tensor([out_tensor.numpy() for out_tensor in out_tensors])
 
     @property
     def correspond_onnx_op(self):
@@ -180,7 +180,7 @@ class TfConv2DOp(TfHasPaddingStrides, OpHasWeights, OpHasOneOutPort):
                                   strides=self.strides,
                                   padding=padding,
                                   dilations=self.dilations,
-                                  data_format='NHWC').eval()
+                                  data_format='NHWC').numpy()
         if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
             self.pads = OpHasPaddingStrides.cal_pads(
                 inp.shape[1:3],
@@ -214,7 +214,7 @@ class TfConv2DBackpropInputOp(TfHasPaddingStrides, OpHasWeights, OpHasOneOutPort
     @classmethod
     def attributes(cls):
         return {1: {'dilations': {'default': [1, 1, 1, 1]},
-                    'explicit_paddings':  {'type': AttrType.INTS, 'default': [0] * 8},
+                    'explicit_paddings': {'type': AttrType.INTS, 'default': [0] * 8},
                     'use_cudnn_on_gpu': {'type': AttrType.INT, 'default': 1},
                     }
                 }
@@ -246,14 +246,14 @@ class TfConv2DBackpropInputOp(TfHasPaddingStrides, OpHasWeights, OpHasOneOutPort
             input_sizes=inputs[0],
             filter=self.weights,
             out_backprop=inputs[1],
-            strides=([1]+self.strides+[1]
-                     ) if self.data_format == 'NHWC' else ([1, 1]+self.strides),
+            strides=([1] + self.strides + [1]
+                     ) if self.data_format == 'NHWC' else ([1, 1] + self.strides),
             padding=padding,
             use_cudnn_on_gpu=bool(self.use_cudnn_on_gpu),
             data_format=self.data_format,
-            dilations=([1]+self.dilations+[1]
-                       ) if self.data_format == 'NHWC' else ([1, 1]+self.dilations)
-        ).eval()
+            dilations=([1] + self.dilations + [1]
+                       ) if self.data_format == 'NHWC' else ([1, 1] + self.dilations)
+        ).numpy()
         self.set_out_tensor(out_tensor)
         if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
             shape_slice = slice(
@@ -301,11 +301,11 @@ class TfConv3DOp(TfHasPaddingStrides, OpHasWeights, OpHasOneOutPort):
         out_tensor = tf.nn.conv3d(
             inp,
             self.weights,
-            [1]+self.strides+[1],
+            [1] + self.strides + [1],
             'SAME' if self.auto_pad in (
                 'SAME_UPPER', 'SAME_LOWER') else 'VALID',
             data_format='NDHWC',
-            dilations=[1]+self.dilations+[1]).eval()
+            dilations=[1] + self.dilations + [1]).numpy()
         if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
             self.pads = OpHasPaddingStrides.cal_pads(
                 inp.shape[1:-1],
@@ -357,12 +357,12 @@ class TfConv3DBackpropInputV2Op(TfHasPaddingStrides, OpHasWeights, OpHasOneOutPo
             input_sizes=input_sizes,
             filter=self.weights,
             out_backprop=inp,
-            strides=([1]+self.strides+[1]),
+            strides=([1] + self.strides + [1]),
             padding='SAME' if self.auto_pad in (
                 'SAME_UPPER', 'SAME_LOWER') else 'VALID',
             data_format='NDHWC',
-            dilations=([1]+self.dilations+[1])
-        ).eval()
+            dilations=([1] + self.dilations + [1])
+        ).numpy()
         if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
             self.pads = OpHasPaddingStrides.cal_pads(
                 inp.shape[1:-1],
@@ -397,7 +397,7 @@ class TfCTCGreedyDecoderOp(OpHasVariableOutPorts, TfOp):
             inputs=inputs[0],
             sequence_length=inputs[1],
             merge_repeated=bool(self.merge_repeated))
-        out_tensor_list = [o.eval() for o in out_list]
+        out_tensor_list = [o.numpy() for o in out_list]
         self.set_out_tensor(out_tensor_list)
 
     @property
@@ -422,7 +422,7 @@ class TfDepthToSpaceOp(LayoutConcernedOp, OpHasOneOutPort, TfOp):
         inp = np.transpose(inputs[0], [0, 2, 3, 1]
                            ) if self.data_format == 'NCHW' else inputs[0]
         out_tensor = tf.nn.depth_to_space(
-            inp, self.block_size, data_format='NHWC').eval()
+            inp, self.block_size, data_format='NHWC').numpy()
         if self.data_format == 'NCHW':
             out_tensor = np.transpose(out_tensor, [0, 3, 1, 2])
         self.set_out_tensor(out_tensor)
@@ -460,12 +460,12 @@ class TfDepthwiseConv2dNativeOp(TfHasPaddingStrides, OpHasWeights, OpHasOneOutPo
         out_tensor = tf.nn.depthwise_conv2d_native(inp,
                                                    self.weights,
                                                    strides=[1] +
-                                                   self.strides+[1],
+                                                   self.strides + [1],
                                                    padding='VALID' if self.auto_pad in (
                                                        'VALID', 'NOTSET') else 'SAME',
                                                    dilations=[
                                                        1] + self.dilations + [1],
-                                                   data_format='NHWC').eval()
+                                                   data_format='NHWC').numpy()
         if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
             self.pads = OpHasPaddingStrides.cal_pads(
                 inp.shape[1:3],
@@ -491,7 +491,7 @@ class TfEluOp(LayoutUnawareOp, BaseActivationOp, TfOp):
     def infer_shape(self):
         super(TfEluOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.nn.elu(*inputs).eval()
+        out_tensor = tf.nn.elu(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -520,7 +520,7 @@ class TfFusedBatchNormOp(LayoutConcernedOp, OpHasVariableOutPorts, TfOp):
                                           epsilon=self.epsilon,
                                           data_format=self.data_format,
                                           is_training=self.is_training)
-        out_tensor_list = [o.eval() for o in out_list]
+        out_tensor_list = [o.numpy() for o in out_list]
         self.set_out_tensor(out_tensor_list)
 
     @property
@@ -549,7 +549,7 @@ class TfFusedBatchNormV3Op(LayoutConcernedOp, OpHasVariableOutPorts, TfOp):
                                           epsilon=self.epsilon,
                                           data_format=self.data_format,
                                           is_training=self.is_training)
-        out_tensor_list = [o.eval() for o in out_list]
+        out_tensor_list = [o.numpy() for o in out_list]
         self.set_out_tensor(out_tensor_list)
 
     @property
@@ -585,7 +585,7 @@ class TfLogSoftmaxOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfLogSoftmaxOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.nn.log_softmax(*inputs).eval()
+        out_tensor = tf.nn.log_softmax(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -614,7 +614,7 @@ class TfLRNOp(OpHasOneOutPort, TfOp):
                                     depth_radius=self.depth_radius,
                                     bias=self.bias,
                                     alpha=self.alpha,
-                                    beta=self.beta).eval()
+                                    beta=self.beta).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -642,10 +642,10 @@ class TfMaxPoolOp(TfHasPaddingStrides, OpHasOneOutPort):
                            ) if self.data_format == 'NCHW' else inputs[0]
         out_tensor = tf.nn.max_pool(inp,
                                     ksize=self.kernel_shape,
-                                    strides=[1]+self.strides+[1],
+                                    strides=[1] + self.strides + [1],
                                     padding='VALID' if self.auto_pad in (
                                         'VALID', 'NOTSET') else 'SAME',
-                                    data_format='NHWC').eval()
+                                    data_format='NHWC').numpy()
         if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
             self.pads = OpHasPaddingStrides.cal_pads(
                 inp.shape[1:3],
@@ -687,10 +687,10 @@ class TfMaxPool3DOp(TfHasPaddingStrides, OpHasOneOutPort):
         out_tensor = tf.nn.max_pool3d(
             inp,
             ksize=self.kernel_shape,
-            strides=[1]+self.strides+[1],
+            strides=[1] + self.strides + [1],
             padding='SAME' if self.auto_pad in (
                 'SAME_UPPER', 'SAME_LOWER') else 'VALID',
-            data_format='NDHWC').eval()
+            data_format='NDHWC').numpy()
         if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
             self.pads = OpHasPaddingStrides.cal_pads(
                 inp.shape[1:-1],
@@ -735,7 +735,7 @@ class TfMaxPoolWithArgmaxOp(TfHasPaddingStrides, OpHasMultipleOutPorts):
                                                      'VALID', 'NOTSET') else 'SAME',
                                                  data_format='NHWC',
                                                  include_batch_in_index=self.include_batch_in_index)
-        out_tensors = [t.eval() for t in out_tensors]
+        out_tensors = [t.numpy() for t in out_tensors]
         self.set_out_tensor(out_tensors)
         if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
             self.pads = OpHasPaddingStrides.cal_pads(inputs[0].shape[1:3],
@@ -784,7 +784,7 @@ class TfRelu6Op(BaseReluOp, TfOp):
     def infer_shape(self):
         super(TfRelu6Op, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.nn.relu6(inputs[0]).eval()
+        out_tensor = tf.nn.relu6(inputs[0]).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -828,7 +828,7 @@ class TfSoftmaxOp(OpHasAxis, OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfSoftmaxOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.nn.softmax(inputs[0], axis=self.axis).eval()
+        out_tensor = tf.nn.softmax(inputs[0], axis=self.axis).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -853,7 +853,7 @@ class TfSpaceToDepthOp(LayoutConcernedOp, OpHasOneOutPort, TfOp):
         inp = np.transpose(inputs[0], [0, 2, 3, 1]
                            ) if self.data_format == 'NCHW' else inputs[0]
         out_tensor = tf.nn.space_to_depth(
-            inp, self.block_size, data_format='NHWC').eval()
+            inp, self.block_size, data_format='NHWC').numpy()
         if self.data_format == 'NCHW':
             out_tensor = np.transpose(out_tensor, [0, 3, 1, 2])
         self.set_out_tensor(out_tensor)
@@ -876,7 +876,7 @@ class Tfswish_f32Op(LayoutUnawareOp, OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(Tfswish_f32Op, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.keras.activations.swish(inputs[0]).eval()
+        out_tensor = tf.keras.activations.swish(inputs[0]).numpy()
         self.set_out_tensor(out_tensor)
 
     @property

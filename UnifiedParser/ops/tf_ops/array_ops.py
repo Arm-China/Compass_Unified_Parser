@@ -22,7 +22,7 @@ class TfBatchToSpaceNDOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfBatchToSpaceNDOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.batch_to_space_nd(*inputs).eval()
+        out_tensor = tf.batch_to_space_nd(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
 
@@ -67,7 +67,7 @@ class TfConcatV2Op(OpHasAxis, OpHasOneOutPort, TfHasN):
         if len(inputs) != self.N + 1:
             raise Exception(
                 'TfConcat Op (%s) inputs number does not equal to N + 1!' % self.name)
-        out_tensor = tf.concat(inputs[:-1], axis=self.axis).eval()
+        out_tensor = tf.concat(inputs[:-1], axis=self.axis).numpy()
         self.set_out_tensor(out_tensor)
 
     def __getattr__(self, item):
@@ -95,7 +95,7 @@ class TfConcatV2Op(OpHasAxis, OpHasOneOutPort, TfHasN):
 class TfConstOp(OpHasOneOutPort, ConstLikeOp, TfOp):
     @classmethod
     def attributes(cls):
-        return {1: {'value':  {'type': AttrType.TENSOR, 'required': True, 'default': None},
+        return {1: {'value': {'type': AttrType.TENSOR, 'required': True, 'default': None},
                     'dtype': {'type': AttrType.STRING, 'required': True},
                     },
                 }
@@ -145,7 +145,7 @@ class TfExpandDimsOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfExpandDimsOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.expand_dims(inputs[0], self.axis).eval()
+        out_tensor = tf.expand_dims(inputs[0], self.axis).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -216,7 +216,7 @@ class TfFillOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfFillOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.fill(*inputs).eval()
+        out_tensor = tf.fill(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -227,7 +227,7 @@ class TfFillOp(OpHasOneOutPort, TfOp):
 class TfGatherOp(OpHasOneOutPort, TfOp):
     @classmethod
     def attributes(cls):
-        return {1: {'validate_indices':  {'type': AttrType.INT, 'default': 1}}}
+        return {1: {'validate_indices': {'type': AttrType.INT, 'default': 1}}}
 
     def __init__(self, graph, attr_dict=None):
         super(TfGatherOp, self).__init__(graph, attr_dict)
@@ -241,7 +241,7 @@ class TfGatherOp(OpHasOneOutPort, TfOp):
                                        indices=inputs[1],
                                        validate_indices=bool(
                                            self.validate_indices)
-                                       ).eval()
+                                       ).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -283,7 +283,7 @@ class TfGatherV2Op(OpHasAxis, OpHasOneOutPort, TfOp):
         out_tensor = tf.raw_ops.GatherV2(params=inputs[0],
                                          indices=inputs[1],
                                          axis=self.axis,
-                                         batch_dims=self.batch_dims).eval()
+                                         batch_dims=self.batch_dims).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -308,7 +308,7 @@ class TfGatherNdOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfGatherNdOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.gather_nd(*inputs, batch_dims=self.batch_dims).eval()
+        out_tensor = tf.gather_nd(*inputs, batch_dims=self.batch_dims).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -371,7 +371,7 @@ class TfMirrorPadOp(OpHasOneOutPort, TfOp):
         inputs = self.get_input_tensors()
         out_tensor = tf.raw_ops.MirrorPad(input=inputs[0],
                                           paddings=inputs[1],
-                                          mode=self.mode).eval()
+                                          mode=self.mode).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -400,7 +400,7 @@ class TfOneHotOp(OpHasAxis, OpHasOneOutPort, TfOp):
                                 inputs[1],
                                 on_value=inputs[2],
                                 off_value=inputs[3],
-                                axis=self.axis).eval()
+                                axis=self.axis).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -422,7 +422,7 @@ class TfPadOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfPadOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.pad(*inputs).eval()
+        out_tensor = tf.pad(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -436,7 +436,7 @@ class TfPadV2Op(OpHasOneOutPort, TfOp):
         inputs = self.get_input_tensors()
         out_tensor = tf.raw_ops.PadV2(input=inputs[0],
                                       paddings=inputs[1],
-                                      constant_values=inputs[2]).eval()
+                                      constant_values=inputs[2]).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -495,7 +495,7 @@ class TfPackOp(OpHasAxis, OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfPackOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.stack(inputs, axis=self.axis).eval()
+        out_tensor = tf.stack(inputs, axis=self.axis).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -519,7 +519,7 @@ class TfReverseV2Op(OpHasAxis, OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfReverseV2Op, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.reverse(inputs[0], axis=np.array([self.axis])).eval()
+        out_tensor = tf.reverse(inputs[0], axis=np.array([self.axis])).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -541,7 +541,7 @@ class TfReshapeOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfReshapeOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.reshape(*inputs).eval()
+        out_tensor = tf.reshape(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -567,7 +567,7 @@ class TfReverseSequenceOp(OpHasOneOutPort, TfOp):
         inputs = self.get_input_tensors()
         out_tensor = tf.reverse_sequence(*inputs,
                                          seq_axis=self.seq_dim,
-                                         batch_axis=self.batch_dim).eval()
+                                         batch_axis=self.batch_dim).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -588,7 +588,7 @@ class TfScatterNdOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfScatterNdOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.scatter_nd(*inputs).eval()
+        out_tensor = tf.scatter_nd(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -603,7 +603,7 @@ class TfSelectOp(OpHasOneOutPort, TfOp):
         out_tensor = tf.raw_ops.Select(condition=inputs[0],
                                        x=inputs[1],
                                        y=inputs[2]
-                                       ).eval()
+                                       ).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -618,7 +618,7 @@ class TfSelectV2Op(OpHasOneOutPort, TfOp):
         assert len(inputs) == 3 or (len(inputs) == 1 and self._graph.sorted_in_edges(self._attr['name'].value, data=True)[
             0][2]['tensor'].is_const), 'TfSelectV2Op expects 3 inputs, but got %d.' % len(inputs)
         out_tensor = tf.raw_ops.SelectV2(
-            condition=inputs[0], t=inputs[1], e=inputs[2]).eval()
+            condition=inputs[0], t=inputs[1], e=inputs[2]).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -651,7 +651,7 @@ class TfSliceOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfSliceOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.slice(*inputs).eval()
+        out_tensor = tf.slice(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -674,7 +674,7 @@ class TfSpaceToBatchNDOp(OpHasOneOutPort, TfOp):
         inputs = self.get_input_tensors()
         assert len(inputs) == 3 and len(inputs[0].shape) in (
             3, 4), 'The length of inputs and the shape of inputs are invalid in TfSpaceToBatchNDOp.'
-        out_tensor = tf.space_to_batch_nd(*inputs).eval()
+        out_tensor = tf.space_to_batch_nd(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
 
@@ -701,7 +701,7 @@ class TfSplitOp(OpHasAxis, OpHasMultipleOutPorts, TfOp):
         else:
             self.split = np.array(self.num_split, np.int64)
         out_tensors = tf.split(inputs[1], self.split, axis=self.axis)
-        out_tensors = [t.eval() for t in out_tensors]
+        out_tensors = [t.numpy() for t in out_tensors]
         self.set_out_tensor(out_tensors)
 
     @property
@@ -732,7 +732,7 @@ class TfSplitVOp(OpHasAxis, OpHasMultipleOutPorts, TfOp):
             index = self.split.index(-1)
             self.split[index] = inputs[0].shape[self.axis] - non_neg_sum
         out_tensors = tf.split(inputs[0], self.split, axis=self.axis)
-        out_tensors = [t.eval() for t in out_tensors]
+        out_tensors = [t.numpy() for t in out_tensors]
         self.set_out_tensor(out_tensors)
 
     @property
@@ -758,7 +758,7 @@ class TfSqueezeOp(OpHasAxis, OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfSqueezeOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.squeeze(inputs[0], axis=self.axes).eval()
+        out_tensor = tf.squeeze(inputs[0], axis=self.axes).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -790,8 +790,8 @@ class TfStridedSliceOp(OpHasOneOutPort, TfOp):
         split_axis = []
         reshape_dim2 = None
         shrink_seen = False
-        begin_mask = (~begin_mask) & ((1 << len(begin))-1)
-        end_mask = (~end_mask) & ((1 << len(begin))-1)
+        begin_mask = (~begin_mask) & ((1 << len(begin)) - 1)
+        end_mask = (~end_mask) & ((1 << len(begin)) - 1)
         convert_negative_indices(begin, shape)
         convert_negative_indices(end, shape)
         if new_axis_mask != 0:
@@ -851,16 +851,16 @@ class TfStridedSliceOp(OpHasOneOutPort, TfOp):
                     continue
 
             step = strides[idx] if idx < strides_size else 1
-            def_beg = 0 if step > 0 else (shape[shape_idx]-1)
+            def_beg = 0 if step > 0 else (shape[shape_idx] - 1)
             def_end = shape[shape_idx] if step > 0 else -1
             left = begin[idx] if idx < strides_size and (begin_mask >> idx) & 1 and begin[idx] in range(
-                0, shape[shape_idx]+1) else def_beg
+                0, shape[shape_idx] + 1) else def_beg
             right = end[idx] if idx < strides_size and (end_mask >> idx) & 1 and end[idx] in range(
-                -1, shape[shape_idx]+1) else def_end
+                -1, shape[shape_idx] + 1) else def_end
             shape_idx = shape_idx + 1
             if step < 0 and right < 0:
                 right = INT_MIN
-            if (right-left)/step < 0:
+            if (right - left) / step < 0:
                 step = -step
             begin_id_tmp.append(left)
             end_id_tmp.append(right)
@@ -869,7 +869,7 @@ class TfStridedSliceOp(OpHasOneOutPort, TfOp):
             if (right - left) % step == 0:
                 out_shape.append(out_num)
             else:
-                out_shape.append(out_num+1)
+                out_shape.append(out_num + 1)
         begin = begin_id_tmp
         end = end_id_tmp
         strides = stride_tmp
@@ -889,9 +889,9 @@ class TfStridedSliceOp(OpHasOneOutPort, TfOp):
             for axis in remove_axises:
                 splits_len = out_shape[axis]
                 if splits_len != 1:
-                    splits_dim = [1, splits_len-1]
+                    splits_dim = [1, splits_len - 1]
                     split_axis = axis
-                reshape_dim2 = out_shape[:axis] + out_shape[axis+1:]
+                reshape_dim2 = out_shape[:axis] + out_shape[axis + 1:]
                 out_shape = reshape_dim2
         return np.array(begin), np.array(end), np.array(strides), out_shape, reshape_dim1, split_axis, splits_dim, reshape_dim2
 
@@ -908,7 +908,7 @@ class TfStridedSliceOp(OpHasOneOutPort, TfOp):
                                       end_mask=self.end_mask,
                                       ellipsis_mask=self.ellipsis_mask,
                                       new_axis_mask=self.new_axis_mask,
-                                      shrink_axis_mask=self.shrink_axis_mask).eval()
+                                      shrink_axis_mask=self.shrink_axis_mask).numpy()
         self.set_out_tensor(out_tensor)
 
 
@@ -916,7 +916,7 @@ class TfStopGradientOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfStopGradientOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.raw_ops.StopGradient(input=inputs[0]).eval()
+        out_tensor = tf.raw_ops.StopGradient(input=inputs[0]).numpy()
         self.set_out_tensor(out_tensor)
 
 
@@ -934,7 +934,7 @@ class TfTensorScatterAddOp(OpHasOneOutPort, TfOp):
         super(TfTensorScatterAddOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor = tf.raw_ops.TensorScatterAdd(
-            tensor=inputs[0], indices=inputs[1], updates=inputs[2]).eval()
+            tensor=inputs[0], indices=inputs[1], updates=inputs[2]).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -956,7 +956,7 @@ class TfTensorScatterUpdateOp(OpHasOneOutPort, TfOp):
         super(TfTensorScatterUpdateOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor = tf.raw_ops.TensorScatterUpdate(
-            tensor=inputs[0], indices=inputs[1], updates=inputs[2]).eval()
+            tensor=inputs[0], indices=inputs[1], updates=inputs[2]).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -979,7 +979,7 @@ class TfTileOp(OpHasOneOutPort, TfOp):
         inputs = self.get_input_tensors()
         assert len(
             inputs) == 2, 'TfTileOp expects two inputs, but got %d.' % len(inputs)
-        out_tensor = tf.tile(*inputs).eval()
+        out_tensor = tf.tile(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -1000,7 +1000,7 @@ class TfTransposeOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfTransposeOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.transpose(*inputs).eval()
+        out_tensor = tf.transpose(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -1024,7 +1024,7 @@ class TfUnpackOp(OpHasAxis, OpHasMultipleOutPorts, TfOp):
     def infer_shape(self):
         super(TfUnpackOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensors = [t.eval() for t in tf.unstack(
+        out_tensors = [t.numpy() for t in tf.unstack(
             inputs[0], num=self.num, axis=self.axis)]
         self.set_out_tensor(out_tensors)
 
@@ -1033,7 +1033,7 @@ class TfWhereOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfWhereOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.where(*inputs).eval()
+        out_tensor = tf.where(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -1067,5 +1067,5 @@ class TfZerosLikeOp(ConstLikeOp, OpHasOneOutPort, TfOp):
         super(TfZerosLikeOp, self).infer_shape()
         inputs = self.get_input_tensors()
         dtype = tf.dtypes.as_dtype(self.dtype) if self.dtype else None
-        out_tensor = tf.zeros_like(inputs[0], dtype=dtype).eval()
+        out_tensor = tf.zeros_like(inputs[0], dtype=dtype).numpy()
         self.set_out_tensor(out_tensor)

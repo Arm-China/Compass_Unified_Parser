@@ -14,5 +14,5 @@ class TfMatrixBandPartOp(OpHasOneOutPort, TfOp):
         out_tensor = tf.raw_ops.MatrixBandPart(input=inputs[0],
                                                num_lower=inputs[1],
                                                num_upper=inputs[2]
-                                               ).eval()
+                                               ).numpy()
         self.set_out_tensor(out_tensor)

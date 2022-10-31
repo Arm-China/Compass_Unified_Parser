@@ -22,7 +22,7 @@ class LiteADDOp(BaseActivationOp, TfliteOp):
         inputs = self.get_input_tensors()
         assert len(
             inputs) == 2, 'The input length is invalid in LiteADDOp infer shape.'
-        out_tensor = tf.add(*inputs).eval()
+        out_tensor = tf.add(*inputs).numpy()
         out_tensor = self.cal_activation(out_tensor)
         self.set_out_tensor(out_tensor)
 
@@ -138,11 +138,11 @@ class LiteAVERAGE_POOL_2DOp(BaseActivationOp, OpHasPaddingStrides, TfliteOp):
         super(LiteAVERAGE_POOL_2DOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor = tf.nn.avg_pool(inputs[0],
-                                    ksize=[1]+self.kernel_shape+[1],
-                                    strides=[1]+self.strides+[1],
+                                    ksize=[1] + self.kernel_shape + [1],
+                                    strides=[1] + self.strides + [1],
                                     padding='VALID' if self.auto_pad in (
                                         'VALID', 'NOTSET') else 'SAME',
-                                    data_format='NHWC').eval()
+                                    data_format='NHWC').numpy()
         out_tensor = self.cal_activation(out_tensor)
         self.set_out_tensor(out_tensor)
         if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
@@ -210,7 +210,7 @@ class LiteBATCH_MATMULOp(OpHasOneOutPort, TfliteOp):
         super(LiteBATCH_MATMULOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor = tf.raw_ops.BatchMatMulV2(
-            x=inputs[0], y=inputs[1], adj_x=self.adj_x, adj_y=self.adj_y).eval()
+            x=inputs[0], y=inputs[1], adj_x=self.adj_x, adj_y=self.adj_y).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -231,7 +231,7 @@ class LiteBATCH_TO_SPACE_NDOp(OpHasOneOutPort, TfliteOp):
     def infer_shape(self):
         super(LiteBATCH_TO_SPACE_NDOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.batch_to_space_nd(*inputs).eval()
+        out_tensor = tf.batch_to_space_nd(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
 
@@ -248,7 +248,7 @@ class LiteBROADCAST_TOOp(OpHasOneOutPort, TfliteOp):
     def infer_shape(self):
         super(LiteBROADCAST_TOOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.broadcast_to(*inputs).eval()
+        out_tensor = tf.broadcast_to(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
 
@@ -361,13 +361,13 @@ class LiteCONV_2DOp(BaseActivationOp, BaseConvOp, TfliteOp):
         out_tensor = tf.nn.conv2d(inputs[0],
                                   np.transpose(self.weights, axes=type(
                                       self).perm_lite_to_tf()),
-                                  strides=[1]+self.strides+[1],
+                                  strides=[1] + self.strides + [1],
                                   padding='VALID' if self.auto_pad in (
                                       'VALID', 'NOTSET') else 'SAME',
-                                  dilations=[1]+self.dilations+[1],
+                                  dilations=[1] + self.dilations + [1],
                                   data_format='NHWC')
         out_tensor = tf.nn.bias_add(
-            out_tensor, self.biases, data_format='NHWC').eval()
+            out_tensor, self.biases, data_format='NHWC').numpy()
         out_tensor = self.cal_activation(out_tensor)
         self.set_out_tensor(out_tensor)
         if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
@@ -435,13 +435,13 @@ class LiteCONV_3DOp(BaseActivationOp, BaseConvOp, TfliteOp):
         out_tensor = tf.nn.conv3d(inputs[0],
                                   np.transpose(self.weights, axes=type(
                                       self).perm_lite_to_tf()),
-                                  strides=[1]+self.strides+[1],
+                                  strides=[1] + self.strides + [1],
                                   padding='VALID' if self.auto_pad in (
                                       'VALID', 'NOTSET') else 'SAME',
-                                  dilations=[1]+self.dilations+[1],
+                                  dilations=[1] + self.dilations + [1],
                                   data_format='NDHWC')
         out_tensor = tf.nn.bias_add(
-            out_tensor, self.biases, data_format='NHWC').eval()
+            out_tensor, self.biases, data_format='NHWC').numpy()
         out_tensor = self.cal_activation(out_tensor)
         self.set_out_tensor(out_tensor)
         if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
@@ -513,10 +513,10 @@ class LiteCONV_3D_TRANSPOSEOp(BaseActivationOp, BaseConvOp, TfliteOp):
                                             np.transpose(self.weights, axes=type(
                                                 self).perm_lite_to_tf()),
                                             inputs[0],
-                                            strides=[1]+self.strides+[1],
+                                            strides=[1] + self.strides + [1],
                                             padding='VALID' if self.auto_pad in ('VALID', 'NOTSET') else 'SAME')
         out_tensor = tf.nn.bias_add(
-            out_tensor, self.biases, data_format='NHWC').eval()
+            out_tensor, self.biases, data_format='NHWC').numpy()
         self.set_out_tensor(out_tensor)
         self.output_shape = inputs[0].tolist()[1:-1]
         if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
@@ -563,7 +563,7 @@ class LiteCOSOp(OpHasOneOutPort, TfliteOp):
     def infer_shape(self):
         super(LiteCOSOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.math.cos(inputs[0]).eval()
+        out_tensor = tf.math.cos(inputs[0]).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -586,7 +586,7 @@ class LiteDEPTH_TO_SPACEOp(OpHasOneOutPort, TfliteOp):
     def infer_shape(self):
         super(LiteDEPTH_TO_SPACEOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.nn.depth_to_space(inputs[0], self.blocksize).eval()
+        out_tensor = tf.nn.depth_to_space(inputs[0], self.blocksize).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -631,7 +631,7 @@ class LiteDEPTHWISE_CONV_2DOp(BaseActivationOp, BaseConvOp, TfliteOp):
         #                                     padding='VALID' if self.auto_pad in ('VALID', 'NOTSET') else 'SAME',
         #                                     data_format='NHWC',
         #                                     rate=self.dilations)
-        # out_tensor = tf.nn.bias_add(out_tensor, self.biases, data_format='NHWC').eval()
+        # out_tensor = tf.nn.bias_add(out_tensor, self.biases, data_format='NHWC').numpy()
         # out_tensor = self.cal_activation(out_tensor)
         '''
 
@@ -724,7 +724,7 @@ class LiteDIVOp(BaseActivationOp, TfliteOp):
     def infer_shape(self):
         super(LiteDIVOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.math.truediv(*inputs).eval()
+        out_tensor = tf.math.truediv(*inputs).numpy()
         out_tensor = self.cal_activation(out_tensor)
         self.set_out_tensor(out_tensor)
 
@@ -741,7 +741,7 @@ class LiteEQUALOp(OpHasOneOutPort, TfliteOp):
     def infer_shape(self):
         super(LiteEQUALOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.equal(*inputs).eval()
+        out_tensor = tf.equal(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -807,7 +807,7 @@ class LiteEXPAND_DIMSOp(OpHasAxis, OpHasOneOutPort, TfliteOp):
     def infer_shape(self):
         super(LiteEXPAND_DIMSOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.expand_dims(*inputs).eval()
+        out_tensor = tf.expand_dims(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -917,7 +917,7 @@ class LiteFULLY_CONNECTEDOp(BaseActivationOp, BaseLinearOp, TfliteOp):
         inputs = self.get_input_tensors()
         if self.weights is not None:
             last_out_dim = self.weights.shape[-2]
-            inp = np.reshape(inputs[0], (-1,  self.weights.shape[-1]))
+            inp = np.reshape(inputs[0], (-1, self.weights.shape[-1]))
             out_tensor = np.matmul(inp, np.transpose(
                 self.weights, axes=type(self).perm_lite_to_tf()))
         else:
@@ -952,7 +952,7 @@ class LiteGATHEROp(OpHasAxis, OpHasOneOutPort, TfliteOp):
         super(LiteGATHEROp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor = tf.gather(*inputs, axis=self.axis,
-                               batch_dims=self.batch_dims).eval()
+                               batch_dims=self.batch_dims).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -976,7 +976,7 @@ class LiteGATHER_NDOp(OpHasOneOutPort, TfliteOp):
     def infer_shape(self):
         super(LiteGATHER_NDOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.gather_nd(*inputs, batch_dims=0).eval()
+        out_tensor = tf.gather_nd(*inputs, batch_dims=0).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -1035,7 +1035,7 @@ class LiteHARD_SWISHOp(OpHasOneOutPort, TfliteOp):
     def infer_shape(self):
         super(LiteHARD_SWISHOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = (inputs[0] * tf.nn.relu6(inputs[0] + 3) / 6).eval()
+        out_tensor = (inputs[0] * tf.nn.relu6(inputs[0] + 3) / 6).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -1056,7 +1056,7 @@ class LiteL2_NORMALIZATIONOp(BaseActivationOp, TfliteOp):
     def infer_shape(self):
         super(LiteL2_NORMALIZATIONOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.math.l2_normalize(inputs[0]).eval()
+        out_tensor = tf.math.l2_normalize(inputs[0]).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -1149,7 +1149,7 @@ class LiteLOCAL_RESPONSE_NORMALIZATIONOp(OpHasOneOutPort, TfliteOp):
         super(LiteLOCAL_RESPONSE_NORMALIZATIONOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor = tf.nn.local_response_normalization(
-            inputs[0], self.radius, self.bias, self.alpha, self.beta).eval()
+            inputs[0], self.radius, self.bias, self.alpha, self.beta).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -1170,7 +1170,7 @@ class LiteLOGICAL_ANDOp(OpHasOneOutPort, TfliteOp):
     def infer_shape(self):
         super(LiteLOGICAL_ANDOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.logical_and(*inputs).eval()
+        out_tensor = tf.logical_and(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -1191,7 +1191,7 @@ class LiteLOGICAL_NOTOp(OpHasOneOutPort, TfliteOp):
     def infer_shape(self):
         super(LiteLOGICAL_NOTOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.logical_not(inputs[0]).eval()
+        out_tensor = tf.logical_not(inputs[0]).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -1212,7 +1212,7 @@ class LiteLOGICAL_OROp(OpHasOneOutPort, TfliteOp):
     def infer_shape(self):
         super(LiteLOGICAL_OROp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.logical_or(*inputs).eval()
+        out_tensor = tf.logical_or(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -1233,7 +1233,7 @@ class LiteLOGISTICOp(OpHasOneOutPort, TfliteOp):
     def infer_shape(self):
         super(LiteLOGISTICOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.sigmoid(inputs[0]).eval()
+        out_tensor = tf.sigmoid(inputs[0]).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -1278,7 +1278,7 @@ class LiteMAXIMUMOp(OpHasOneOutPort, TfliteOp):
     def infer_shape(self):
         super(LiteMAXIMUMOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.maximum(*inputs).eval()
+        out_tensor = tf.maximum(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -1300,11 +1300,11 @@ class LiteMAX_POOL_2DOp(BaseActivationOp, OpHasPaddingStrides, TfliteOp):
         super(LiteMAX_POOL_2DOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor = tf.nn.max_pool(inputs[0],
-                                    ksize=[1]+self.kernel_shape+[1],
-                                    strides=[1]+self.strides+[1],
+                                    ksize=[1] + self.kernel_shape + [1],
+                                    strides=[1] + self.strides + [1],
                                     padding='VALID' if self.auto_pad in (
                                         'VALID', 'NOTSET') else 'SAME',
-                                    data_format='NHWC').eval()
+                                    data_format='NHWC').numpy()
         out_tensor = self.cal_activation(out_tensor)
         self.set_out_tensor(out_tensor)
         if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
@@ -1339,7 +1339,7 @@ class LiteMEANOp(OpHasAxis, OpHasOneOutPort, TfliteOp):
         super(LiteMEANOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor = tf.reduce_mean(
-            inputs[0], axis=inputs[1], keepdims=bool(self.keepdims)).eval()
+            inputs[0], axis=inputs[1], keepdims=bool(self.keepdims)).numpy()
         self.axes = inputs[1].tolist() if np.ndim(
             inputs[1]) != 0 else [int(inputs[1])]
         self.axes = OpHasAxis.make_axes_non_negative(
@@ -1364,7 +1364,7 @@ class LiteMINIMUMOp(OpHasOneOutPort, TfliteOp):
     def infer_shape(self):
         super(LiteMINIMUMOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.minimum(*inputs).eval()
+        out_tensor = tf.minimum(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -1386,7 +1386,7 @@ class LiteMIRROR_PADOp(OpHasOneOutPort, TfliteOp):
     def infer_shape(self):
         super(LiteMIRROR_PADOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.pad(*inputs, mode=self.mode).eval()
+        out_tensor = tf.pad(*inputs, mode=self.mode).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -1428,7 +1428,7 @@ class LiteMULOp(BaseActivationOp, OpHasOneOutPort, TfliteOp):
     def infer_shape(self):
         super(LiteMULOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.multiply(*inputs).eval()
+        out_tensor = tf.multiply(*inputs).numpy()
         out_tensor = self.cal_activation(out_tensor)
         self.set_out_tensor(out_tensor)
 
@@ -1501,7 +1501,7 @@ class LiteNON_MAX_SUPPRESSION_V4Op(OpHasMultipleOutPorts, TfliteOp):
             iou_threshold=self.iou_threshold,
             score_threshold=self.score_threshold,
             pad_to_max_output_size=True)
-        out_tensors = [t.eval() for t in out_tensors]
+        out_tensors = [t.numpy() for t in out_tensors]
         self.set_out_tensor(out_tensors)
 
 
@@ -1530,7 +1530,7 @@ class LiteNON_MAX_SUPPRESSION_V5Op(LiteNON_MAX_SUPPRESSION_V4Op):
             score_threshold=self.score_threshold,
             soft_nms_sigma=self.soft_nms_sigma,
             pad_to_max_output_size=True)
-        out_tensors = [t.eval() for t in out_tensors]
+        out_tensors = [t.numpy() for t in out_tensors]
         self.set_out_tensor(out_tensors)
 
 
@@ -1542,7 +1542,7 @@ class LiteNOT_EQUALOp(OpHasOneOutPort, TfliteOp):
     def infer_shape(self):
         super(LiteNOT_EQUALOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.not_equal(*inputs).eval()
+        out_tensor = tf.not_equal(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
 
@@ -1592,7 +1592,7 @@ class LitePACKOp(OpHasAxis, OpHasOneOutPort, TfliteOp):
     def infer_shape(self):
         super(LitePACKOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.stack(inputs, axis=self.axis).eval()
+        out_tensor = tf.stack(inputs, axis=self.axis).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -1613,7 +1613,7 @@ class LitePADOp(OpHasOneOutPort, TfliteOp):
     def infer_shape(self):
         super(LitePADOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.pad(*inputs).eval()
+        out_tensor = tf.pad(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -1634,7 +1634,7 @@ class LitePADV2Op(OpHasOneOutPort, TfliteOp):
     def infer_shape(self):
         super(LitePADV2Op, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.pad(*inputs[0:2], constant_values=inputs[2]).eval()
+        out_tensor = tf.pad(*inputs[0:2], constant_values=inputs[2]).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -1656,7 +1656,7 @@ class LitePRELUOp(OpHasOneOutPort, TfliteOp):
         super(LitePRELUOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor = (tf.nn.relu(
-            inputs[0]) + (inputs[0] - tf.abs(inputs[0])) * inputs[1]).eval()
+            inputs[0]) + (inputs[0] - tf.abs(inputs[0])) * inputs[1]).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -1714,7 +1714,7 @@ class LiteRANGEOp(OpHasOneOutPort, TfliteOp):
     def infer_shape(self):
         super(LiteRANGEOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.range(*inputs).eval()
+        out_tensor = tf.range(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -1801,7 +1801,7 @@ class LiteRELUOp(BaseReluOp, TfliteOp):
     def infer_shape(self):
         super(LiteRELUOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.nn.relu(inputs[0]).eval()
+        out_tensor = tf.nn.relu(inputs[0]).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -1823,7 +1823,7 @@ class LiteRELU6Op(BaseReluOp, TfliteOp):
     def infer_shape(self):
         super(LiteRELU6Op, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.nn.relu6(inputs[0]).eval()
+        out_tensor = tf.nn.relu6(inputs[0]).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -1845,7 +1845,7 @@ class LiteRELU_N1_TO_1Op(BaseReluOp, TfliteOp):
     def infer_shape(self):
         super(LiteRELU_N1_TO_1Op, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.clip_by_value(inputs[0], -1.0, 1.0).eval()
+        out_tensor = tf.clip_by_value(inputs[0], -1.0, 1.0).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -1948,7 +1948,7 @@ class LiteRESIZE_BILINEAROp(OpHasOneOutPort, TfliteOp):
                 and (np.array(inputs[1], np.int64) // np.array(inputs[0].shape[1:3], np.int64)).tolist() == [2, 2]:
             self.half_pixel = False
         out_tensor = tf.image.resize_bilinear(
-            *inputs, align_corners=self.align_corners, half_pixel_centers=self.half_pixel).eval()
+            *inputs, align_corners=self.align_corners, half_pixel_centers=self.half_pixel).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -1994,7 +1994,7 @@ class LiteRESIZE_NEAREST_NEIGHBOROp(OpHasOneOutPort, TfliteOp):
         super(LiteRESIZE_NEAREST_NEIGHBOROp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor = tf.image.resize_nearest_neighbor(
-            *inputs, align_corners=self.align_corners).eval()
+            *inputs, align_corners=self.align_corners).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -2040,7 +2040,7 @@ class LiteREVERSE_V2Op(OpHasAxis, OpHasOneOutPort, TfliteOp):
     def infer_shape(self):
         super(LiteREVERSE_V2Op, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.reverse(*inputs).eval()
+        out_tensor = tf.reverse(*inputs).numpy()
         self.set_out_tensor(out_tensor)
         self.axis = int(inputs[1])
 
@@ -2062,7 +2062,7 @@ class LiteROUNDOp(OpHasOneOutPort, TfliteOp):
     def infer_shape(self):
         super(LiteROUNDOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.math.round(inputs[0]).eval()
+        out_tensor = tf.math.round(inputs[0]).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -2101,7 +2101,7 @@ class LiteSCATTER_NDOp(OpHasOneOutPort, TfliteOp):
         super(LiteSCATTER_NDOp, self).infer_shape()
         inputs = self.get_input_tensors()
         indices, updates, shape = inputs
-        out_tensor = tf.scatter_nd(indices, updates, shape).eval()
+        out_tensor = tf.scatter_nd(indices, updates, shape).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -2122,7 +2122,7 @@ class LiteSEGMENT_SUMOp(OpHasOneOutPort, TfliteOp):
     def infer_shape(self):
         super(LiteSEGMENT_SUMOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.math.segment_sum(*inputs).eval()
+        out_tensor = tf.math.segment_sum(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -2144,7 +2144,7 @@ class LiteSELECTOp(OpHasOneOutPort, TfliteOp):
         super(LiteSELECTOp, self).infer_shape()
         inputs = self.get_input_tensors()
         # tf 1.x only,  tf.where in 2.0 has the same broadcast rule as np.where
-        out_tensor = tf.where(*inputs).eval()
+        out_tensor = tf.where(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -2168,7 +2168,7 @@ class LiteSELECT_V2Op(OpHasOneOutPort, TfliteOp):
         assert len(
             inputs) == 3, 'LiteSELECT_V2Op expects 3 inputs, but got %d.' % len(inputs)
         out_tensor = tf.raw_ops.SelectV2(
-            condition=inputs[0], t=inputs[1], e=inputs[2]).eval()
+            condition=inputs[0], t=inputs[1], e=inputs[2]).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -2214,7 +2214,7 @@ class LiteSINOp(OpHasOneOutPort, TfliteOp):
     def infer_shape(self):
         super(LiteSINOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.math.sin(inputs[0]).eval()
+        out_tensor = tf.math.sin(inputs[0]).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -2267,7 +2267,7 @@ class LiteSLICEOp(OpHasOneOutPort, TfliteOp):
         if mask.any():
             self.size[mask] = (
                 np.array(inputs[0].shape, np.int64) - np.array(self.begin, np.int64))[mask]
-        out_tensor = tf.slice(inputs[0], self.begin, self.size).eval()
+        out_tensor = tf.slice(inputs[0], self.begin, self.size).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -2296,7 +2296,7 @@ class LiteSOFTMAXOp(OpHasAxis, OpHasOneOutPort, TfliteOp):
         inputs = self.get_input_tensors()
         self.axis = OpHasAxis.make_axes_non_negative(
             self.axis, len(inputs[0].shape))
-        out_tensor = tf.nn.softmax(inputs[0], axis=self.axis).eval()
+        out_tensor = tf.nn.softmax(inputs[0], axis=self.axis).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -2319,7 +2319,7 @@ class LiteSPACE_TO_BATCH_NDOp(OpHasOneOutPort, TfliteOp):
         inputs = self.get_input_tensors()
         assert len(inputs) == 3 and len(inputs[0].shape) in (
             3, 4), 'input shape is invalid in LiteSPACE_TO_BATCH_NDOp infer shape.'
-        out_tensor = tf.space_to_batch_nd(*inputs).eval()
+        out_tensor = tf.space_to_batch_nd(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
 
@@ -2338,7 +2338,7 @@ class LiteSPACE_TO_DEPTHOp(OpHasOneOutPort, TfliteOp):
     def infer_shape(self):
         super(LiteSPACE_TO_DEPTHOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.nn.space_to_depth(inputs[0], self.blocksize).eval()
+        out_tensor = tf.nn.space_to_depth(inputs[0], self.blocksize).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -2363,7 +2363,7 @@ class LiteSPLITOp(OpHasAxis, OpHasMultipleOutPorts, TfliteOp):
         super(LiteSPLITOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor_list = tf.split(inputs[1], self.num_splits, axis=inputs[0])
-        out_tensor_list = [ot.eval() for ot in out_tensor_list]
+        out_tensor_list = [ot.numpy() for ot in out_tensor_list]
         self.set_out_tensor(out_tensor_list)
         self.axis = int(inputs[0])
 
@@ -2413,7 +2413,7 @@ class LiteSPLIT_VOp(OpHasAxis, OpHasMultipleOutPorts, TfliteOp):
         super(LiteSPLIT_VOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor_list = tf.split(*inputs)
-        out_tensor_list = [ot.eval() for ot in out_tensor_list]
+        out_tensor_list = [ot.numpy() for ot in out_tensor_list]
         self.set_out_tensor(out_tensor_list)
         self.axis = int(inputs[2])
 
@@ -2480,7 +2480,7 @@ class LiteSQUEEZEOp(OpHasAxis, OpHasOneOutPort, TfliteOp):
     def infer_shape(self):
         super(LiteSQUEEZEOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.squeeze(inputs[0], axis=self.axes).eval()
+        out_tensor = tf.squeeze(inputs[0], axis=self.axes).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -2518,7 +2518,7 @@ class LiteSTRIDED_SLICEOp(OpHasOneOutPort, TfliteOp):
                                       self.end_mask,
                                       self.ellipsis_mask,
                                       self.new_axis_mask,
-                                      self.shrink_axis_mask).eval()
+                                      self.shrink_axis_mask).numpy()
         self.set_out_tensor(out_tensor)
 
 
@@ -2561,7 +2561,7 @@ class LiteSUBOp(BaseActivationOp, TfliteOp):
         inputs = self.get_input_tensors()
         assert len(
             inputs) == 2, 'The length of input is invalid in LiteSUBOp infer shape .'
-        out_tensor = tf.subtract(*inputs).eval()
+        out_tensor = tf.subtract(*inputs).numpy()
         out_tensor = self.cal_activation(out_tensor)
         self.set_out_tensor(out_tensor)
 
@@ -2583,7 +2583,7 @@ class LiteTANHOp(BaseActivationOp, TfliteOp):
     def infer_shape(self):
         super(LiteTANHOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.tanh(inputs[0]).eval()
+        out_tensor = tf.tanh(inputs[0]).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -2604,7 +2604,7 @@ class LiteTILEOp(OpHasOneOutPort, TfliteOp):
     def infer_shape(self):
         super(LiteTILEOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.tile(*inputs).eval()
+        out_tensor = tf.tile(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -2626,7 +2626,7 @@ class LiteTOPK_V2Op(OpHasMultipleOutPorts, TfliteOp):
         super(LiteTOPK_V2Op, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor_list = tf.math.top_k(*inputs)
-        out_tensor_list = [ot.eval() for ot in out_tensor_list]
+        out_tensor_list = [ot.numpy() for ot in out_tensor_list]
         self.set_out_tensor(out_tensor_list)
 
     @property
@@ -2648,7 +2648,7 @@ class LiteTRANSPOSEOp(OpHasOneOutPort, TfliteOp):
     def infer_shape(self):
         super(LiteTRANSPOSEOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.transpose(*inputs).eval()
+        out_tensor = tf.transpose(*inputs).numpy()
         self.set_out_tensor(out_tensor)
         self.perm = inputs[1].tolist()
 
@@ -2699,10 +2699,10 @@ class LiteTRANSPOSE_CONVOp(BaseConvOp, TfliteOp):
                                             np.transpose(self.weights, axes=type(
                                                 self).perm_lite_to_tf()),
                                             inputs[0],
-                                            strides=[1]+self.strides+[1],
+                                            strides=[1] + self.strides + [1],
                                             padding='VALID' if self.auto_pad in ('VALID', 'NOTSET') else 'SAME')
         out_tensor = tf.nn.bias_add(
-            out_tensor, self.biases, data_format='NHWC').eval()
+            out_tensor, self.biases, data_format='NHWC').numpy()
         self.set_out_tensor(out_tensor)
         self.output_shape = inputs[0].tolist()[1:3]
         if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
@@ -2796,7 +2796,7 @@ class LiteUNIDIRECTIONAL_SEQUENCE_LSTMOp(OpHasOneOutPort, TfliteOp):
             return
 
         inp = inputs[0]
-        input_to_input_weights,  input_to_forget_weights, input_to_cell_weights, input_to_output_weights = inputs[
+        input_to_input_weights, input_to_forget_weights, input_to_cell_weights, input_to_output_weights = inputs[
             1:5]
         recurrent_to_input_weights, recurrent_to_forget_weights, recurrent_to_cell_weights, recurrent_to_output_weights = inputs[
             5:9]
@@ -2891,7 +2891,7 @@ class LiteUNPACKOp(OpHasAxis, OpHasMultipleOutPorts, TfliteOp):
     def infer_shape(self):
         super(LiteUNPACKOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensors = [t.eval() for t in tf.unstack(
+        out_tensors = [t.numpy() for t in tf.unstack(
             inputs[0], num=self.num, axis=self.axis)]
         self.set_out_tensor(out_tensors)
 
@@ -2926,5 +2926,5 @@ class LiteZEROS_LIKEOp(ConstLikeOp, OpHasOneOutPort, TfliteOp):
     def infer_shape(self):
         super(LiteZEROS_LIKEOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.zeros_like(inputs[0]).eval()
+        out_tensor = tf.zeros_like(inputs[0]).numpy()
         self.set_out_tensor(out_tensor)

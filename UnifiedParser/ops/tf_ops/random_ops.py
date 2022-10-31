@@ -29,5 +29,5 @@ class TfRandomUniformOp(OpHasOneOutPort, TfOp):
         out_tensor = tf.raw_ops.RandomUniform(shape=inputs[0],
                                               dtype=self.dtype,
                                               seed=self.seed,
-                                              seed2=self.seed2).eval()
+                                              seed2=self.seed2).numpy()
         self.set_out_tensor(out_tensor)

@@ -10,7 +10,7 @@ from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 class TfDenseToDenseSetOperationOp(OpHasMultipleOutPorts, TfOp):
     @classmethod
     def attributes(cls):
-        return {1: {'validate_indices':  {'type': AttrType.INT, 'default': 1},
+        return {1: {'validate_indices': {'type': AttrType.INT, 'default': 1},
                     'set_operation': {'type': AttrType.STRING, 'required': True}
                     }
                 }
@@ -38,8 +38,8 @@ class TfDenseToDenseSetOperationOp(OpHasMultipleOutPorts, TfOp):
                                                                      set2=inputs[1],
                                                                      set_operation=self.set_operation,
                                                                      validate_indices=self.validate_indices
-                                                                     ).eval()
-        out_tensors = [indices.eval(), values.eval(), shape.eval()]
+                                                                     ).numpy()
+        out_tensors = [indices.numpy(), values.numpy(), shape.numpy()]
         self.set_out_tensor(out_tensors)
 
 
@@ -73,5 +73,5 @@ class TfSparseToDenseOp(OpHasOneOutPort, TfOp):
                                               output_shape=inputs[1],
                                               sparse_values=inputs[2],
                                               default_value=inputs[3],
-                                              validate_indices=self.validate_indices).eval()
+                                              validate_indices=self.validate_indices).numpy()
         self.set_out_tensor(out_tensor)

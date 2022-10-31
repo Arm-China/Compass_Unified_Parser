@@ -386,7 +386,7 @@ class GatherElementsOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
     def make_indices_non_negative(indices, ref_shape):
         '''If indice is negative, return non-negative indices.'''
         mask = indices < 0
-        indices[mask] = (indices+ref_shape)[mask]
+        indices[mask] = (indices + ref_shape)[mask]
         return indices
 
     def __init__(self, graph, attr_dict=None):
@@ -907,7 +907,7 @@ class ShapeOp(OpHasOneOutPort, ConstLikeOp, OnnxOp):
                     true_start = (
                         self.start + rank) if self.start < 0 else self.start
                     true_start = 0 if true_start < 0 else (
-                        rank-1 if true_start >= rank else true_start)
+                        rank - 1 if true_start >= rank else true_start)
                     need_slicing = True
                 if need_slicing:
                     shape = shape[true_start: true_end] if (
@@ -1108,7 +1108,7 @@ class SliceOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
         if cur_ver < max_ver:
             if cur_ver == 1:
                 insert_constant(self._graph, self.name + '_starts',
-                                np.array(self.starts, np.int32),  self.name, in_port=1)
+                                np.array(self.starts, np.int32), self.name, in_port=1)
                 insert_constant(self._graph, self.name + '_ends',
                                 np.array(self.ends, np.int32), self.name, in_port=2)
             self.cur_version = max_ver
@@ -1173,7 +1173,7 @@ class SpaceToDepthOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
         super(SpaceToDepthOp, self).infer_shape()
         inputs = self.get_input_tensors()
         if self.data_format == 'NHWC':
-            out_tensor = tf.nn.space_to_depth(inputs[0], self.blocksize).eval()
+            out_tensor = tf.nn.space_to_depth(inputs[0], self.blocksize).numpy()
         else:
             torch_input = torch.from_numpy(inputs[0])
             n, c, h, w = torch_input.size()
@@ -1247,7 +1247,7 @@ class SplitOp(OpHasAxis, OpHasMultipleOutPorts, OnnxOp):
         out_tensors = tf.split(inputs[0],
                                np.array(self.split, np.int64),
                                axis=self.axis)
-        self.set_out_tensor([o.eval() for o in out_tensors])
+        self.set_out_tensor([o.numpy() for o in out_tensors])
 
 
 class SqueezeOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
@@ -1476,5 +1476,5 @@ class WhereOp(OpNeedBroadcast, OpHasOneOutPort, OnnxOp):
         inputs = self.get_input_tensors()
         if len(inputs) == len(self.broad_casted):
             inputs = self.broad_casted
-        out_tensor = tf.where(*inputs).eval()   # tf 1.x only
+        out_tensor = tf.where(*inputs).numpy()   # tf 1.x only
         self.set_out_tensor(out_tensor)
