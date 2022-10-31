@@ -1,9 +1,5 @@
 # Copyright © 2022 Arm Technology (China) Co. Ltd. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
-from utils.compare import compare_data_dict
-from utils.run_ir_forward import run_ir_forward
-from utils.forward import rt_forward
-from utils.run import generate_ir
 import configparser
 import sys
 import os
@@ -11,11 +7,17 @@ import re
 import argparse
 import numpy as np
 
+sys.path.append("..")
+from utils.compare import compare_data_dict
+from utils.run_ir_forward import run_ir_forward
+from utils.forward import rt_forward
+from utils.run import generate_ir
+
 
 def list_string_to_list(list_string):
     ret = []
     if list_string:
-        items = re.findall('(\[.*?\])', list_string)
+        items = re.findall('(\\[.*?\\])', list_string)
         for meta_item in items:
             inner_str = meta_item.lstrip('[').rstrip(']')
             if inner_str:
