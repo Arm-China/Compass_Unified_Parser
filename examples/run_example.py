@@ -7,7 +7,7 @@ import re
 import argparse
 import numpy as np
 
-sys.path.append("..")
+sys.path.append("..")  # noqa: E402
 from utils.compare import compare_data_dict
 from utils.run_ir_forward import run_ir_forward
 from utils.forward import rt_forward
