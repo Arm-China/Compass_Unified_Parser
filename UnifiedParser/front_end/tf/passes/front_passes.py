@@ -98,12 +98,14 @@ def convert_gru_lstm(graph):
         if rnn_obj.time_major:
             seq_length, batch_size, _ = input_shape
             seq_output_shape = [seq_length, batch_size, hidden_size]
-            seq_output_shape_with_dir = [seq_length, 1, batch_size, hidden_size]
+            seq_output_shape_with_dir = [
+                seq_length, 1, batch_size, hidden_size]
             state_output_shape_with_dir = [1, batch_size, hidden_size]
         else:
             batch_size, seq_length, _ = input_shape
             seq_output_shape = [batch_size, seq_length, hidden_size]
-            seq_output_shape_with_dir = [batch_size, seq_length, 1, hidden_size]
+            seq_output_shape_with_dir = [
+                batch_size, seq_length, 1, hidden_size]
             state_output_shape_with_dir = [batch_size, 1, hidden_size]
         state_output_shape = [batch_size, hidden_size]
         # weights and biases
@@ -123,14 +125,17 @@ def convert_gru_lstm(graph):
         else:
             # Note that tf kernel_w and bias are in format ifco, while onnx is iofc.
             input_w, forget_w, cell_w, output_w = np.split(kernel, 4, axis=1)
-            input_r, forget_r, cell_r, output_r = np.split(recurrent_kernel, 4, axis=1)
+            input_r, forget_r, cell_r, output_r = np.split(
+                recurrent_kernel, 4, axis=1)
             W_value = np.stack([np.transpose(np.concatenate(
                 [input_w, output_w, forget_w, cell_w], axis=1))])
             R_value = np.stack([np.transpose(np.concatenate(
                 [input_r, output_r, forget_r, cell_r], axis=1))])
             if bias is not None:
-                input_wb, forget_wb, cell_wb, output_wb = np.split(bias, 4, axis=0)
-                bias_w = np.concatenate([input_wb, output_wb, forget_wb, cell_wb])
+                input_wb, forget_wb, cell_wb, output_wb = np.split(
+                    bias, 4, axis=0)
+                bias_w = np.concatenate(
+                    [input_wb, output_wb, forget_wb, cell_wb])
                 bias_r = np.zeros_like(bias_w)
                 B_value = np.stack([np.concatenate([bias_w, bias_r])])
 
@@ -149,7 +154,8 @@ def convert_gru_lstm(graph):
                     new_out_attr = copy.deepcopy(out_attr)
                     new_out_attr.update({'src_out_port': 1})
                     graph.add_edge(rnn, dst, **new_out_attr)
-        Y_reshape_after = insert_reshape_after(graph, rnn, seq_output_shape, seq_output_shape_with_dir, out_port=0)
+        Y_reshape_after = insert_reshape_after(
+            graph, rnn, seq_output_shape, seq_output_shape_with_dir, out_port=0)
         Y_h_reshape_after = insert_reshape_after(graph, rnn, state_output_shape,
                                                  state_output_shape_with_dir, out_port=1)
         if rnn_type == 'TfLSTM':
@@ -161,11 +167,13 @@ def convert_gru_lstm(graph):
                 graph._attr['output_names'][index] = Y_reshape_after
                 graph._attr['output_names'].insert(index, Y_h_reshape_after)
                 if rnn_type == 'TfLSTM':
-                    graph._attr['output_names'].insert(index+1, Y_c_reshape_after)
+                    graph._attr['output_names'].insert(
+                        index + 1, Y_c_reshape_after)
             elif not rnn_obj.return_sequences:
                 graph._attr['output_names'][index] = Y_h_reshape_after
                 if rnn_type == 'TfLSTM' and rnn_obj.return_state:
-                    graph._attr['output_names'].insert(index, Y_c_reshape_after)
+                    graph._attr['output_names'].insert(
+                        index, Y_c_reshape_after)
             else:
                 graph._attr['output_names'][index] = Y_reshape_after
 
@@ -214,12 +222,12 @@ def convert_matmul(graph):
         transpose_b = matmul_obj.transpose_b if matmul_obj.type == 'TfMatMul' else matmul_obj.adj_y
         if transpose_a:
             in_dim1 = len(input_shapes[0])
-            perm1 = list(range(in_dim1-2)) + [in_dim1-1, in_dim1-2]
+            perm1 = list(range(in_dim1 - 2)) + [in_dim1 - 1, in_dim1 - 2]
             src1, _, k1, in_attr1 = in_edges[0]
             insert_transpose(graph, src1, matmul, in_attr1, perm1, key=k1)
         if transpose_b:
             in_dim2 = len(input_shapes[1])
-            perm2 = list(range(in_dim2-2)) + [in_dim2-1, in_dim2-2]
+            perm2 = list(range(in_dim2 - 2)) + [in_dim2 - 1, in_dim2 - 2]
             src2, _, k2, in_attr2 = in_edges[1]
             insert_transpose(graph, src2, matmul, in_attr2, perm2, key=k2)
         matmul_attr = matmul_obj.copied_attr()
@@ -605,7 +613,7 @@ def remove_isfinite_select(graph):
                 or len(select_in_edges) != 3:
             continue
         is_finite_src, _, k1, in_attr1 = is_finite_in_edges[0]
-        zeros_like_src,  _, k2, in_attr2 = zeros_like_in_edges[0]
+        zeros_like_src, _, k2, in_attr2 = zeros_like_in_edges[0]
         select_src, _, k3, in_attr3 = select_in_edges[1]
         if is_finite_src != zeros_like_src \
                 or is_finite_src != select_src \
@@ -862,7 +870,7 @@ def split_b2s(graph):
                     # [batch / prod(block_shape), input_shape[1] * block_shape[0] - crops[0,0] - crops[0,1], ..., input_shape[M] * block_shape[M-1] - crops[M-1,0] - crops[M-1,1], input_shape[M+1], ..., input_shape[N-1]]
                     for index, value in enumerate(end_dim):
                         if value == 0:
-                            end_dim[index] = dim2[index+1]
+                            end_dim[index] = dim2[index + 1]
                     trans1_attr = {
                         'name': trans1, 'opset_version': transpose_version, 'perm': [3, 1, 2, 0]}
                     d2s_attr = {
@@ -919,7 +927,7 @@ def split_b2s(graph):
                     # [batch / prod(block_shape), input_shape[1] * block_shape[0] - crops[0,0] - crops[0,1], ..., input_shape[M] * block_shape[M-1] - crops[M-1,0] - crops[M-1,1], input_shape[M+1], ..., input_shape[N-1]]
                     for index, value in enumerate(end_dim):
                         if value == 0:
-                            end_dim[index] = dim2[index+1]
+                            end_dim[index] = dim2[index + 1]
                     slice_attr = {'name': slice,
                                   'opset_version': slice_version,
                                   'axes': [1, 2],
@@ -2583,10 +2591,10 @@ def merge_keras_maskrcnn(graph, params):
         graph, topk + '_indices_reshape')  # [-1]
 
     # rpn_class/concat_proposal_nms1_gather_bbox
-    box_gather = get_valid_node_name(graph, rpn_boxes+'_gather')  # axis=1
+    box_gather = get_valid_node_name(graph, rpn_boxes + '_gather')  # axis=1
     anchor_value = _generate_keras_maskrcnn_anchors()  # Constant
     # rpn_class/concat_proposal_nms1_gather_anchor, axis=0
-    anchor_gather = get_valid_node_name(graph, model_name+'_anchor_gather')
+    anchor_gather = get_valid_node_name(graph, model_name + '_anchor_gather')
 
     # rpn_class/concat_proposal
     bounding_box = get_valid_node_name(graph, rpn_probs + '_proposal')
@@ -2608,7 +2616,7 @@ def merge_keras_maskrcnn(graph, params):
     class_gather_reshape = get_valid_node_name(
         graph, class_gather + '_reshape')  # [1,6000]
     pyramid_roi_proposal = get_valid_node_name(
-        graph, model_name+'_pyramid_roi_proposal')
+        graph, model_name + '_pyramid_roi_proposal')
     # mrcnn_detecion/reshape_deltas,   # [1000,81,4]
     deltas_reshape = get_valid_node_name(
         graph, mrcnn_box_reshape + '_deltas')
@@ -2656,9 +2664,15 @@ def merge_keras_maskrcnn(graph, params):
     # mrcnn_detecion/compare
     greater_equal = get_valid_node_name(graph, model_name + '_compare')
 
+    greater_equal_cast = get_valid_node_name(
+        graph, greater_equal + '_cast')
+
     # mrcnn_detecion/score_out_to_two_dim, [1000,1]
     greater_equal_reshape = get_valid_node_name(
         graph, greater_equal + '_reshape')
+
+    greater_equal_reshape_cast = get_valid_node_name(
+        graph, greater_equal_reshape + '_cast')
 
     # mrcnn_detecion/score_out1
     score_mul = get_valid_node_name(graph, model_name + '_score_mul')   # Mul
@@ -2689,11 +2703,11 @@ def merge_keras_maskrcnn(graph, params):
     # mrcnn_detecion/reverse, batch_axis=0, time_axis=1
     reverse_seq = get_valid_node_name(graph, model_name + '_reverse')
     # mrcnn_detecion/reverse_len
-    reverse_seq_len_value = np.array([class_num-1], dtype=np.int32)
+    reverse_seq_len_value = np.array([class_num - 1], dtype=np.int32)
     # mrcnn_detecion/nms,  image_height = 600, image_width = 600,iou_threshold = 0.7
     nms2 = get_valid_node_name(graph, model_name + '_nms')
     # mrcnn_detecion/class_count
-    nms2_class_cout_value = np.array([[class_num-1]], dtype=np.int32)
+    nms2_class_cout_value = np.array([[class_num - 1]], dtype=np.int32)
     nms2_3_out = get_valid_node_name(graph, nms2 + '_3_out')  # Out
 
     # mrcnn_detecion/gather_sorted_score, axis=0
@@ -2713,12 +2727,12 @@ def merge_keras_maskrcnn(graph, params):
     nms2_1_reshape = get_valid_node_name(graph, nms2 + '_1_reshape')
     # PyramidRoi_mask
     pyramid_roi_mask = get_valid_node_name(
-        graph, model_name+'_pyramid_roi_mask')
+        graph, model_name + '_pyramid_roi_mask')
     # mrcnn_detecion/repeat, axis=1
     repeat = get_valid_node_name(graph, model_name + '_repeat')
     repeat_const_value = np.array(
-        list(range(class_num-1, 0, -1)), dtype=np.int32)  # [1, 80]
-    repeat_const_value = np.reshape(repeat_const_value, [1, class_num-1])
+        list(range(class_num - 1, 0, -1)), dtype=np.int32)  # [1, 80]
+    repeat_const_value = np.reshape(repeat_const_value, [1, class_num - 1])
     # mrcnn_detecion/gather_output_classid, axis=1
     gather4 = get_valid_node_name(graph, model_name + '_gather_output_classid')
     gather4_out = get_valid_node_name(graph, gather4 + '_out')
@@ -2739,7 +2753,7 @@ def merge_keras_maskrcnn(graph, params):
 
     graph.add_edge(topk, anchor_gather, **
                    {'src_out_port': 1, 'dst_in_port': 1})
-    insert_constant(graph, model_name+'_anchor', anchor_value,
+    insert_constant(graph, model_name + '_anchor', anchor_value,
                     anchor_gather, data_format='NHWC')
 
     graph.add_edge(anchor_gather, bounding_box)
@@ -2778,7 +2792,7 @@ def merge_keras_maskrcnn(graph, params):
     graph.add_edge(post_nms1, post_nms1_1_out, **{'src_out_port': 1})
     for i, conv in enumerate(special_out_convs):
         graph.add_edge(conv, pyramid_roi_proposal, **
-                       {'dst_in_port': i+1, 'tensor': out_tensors[(conv, 0)]})
+                       {'dst_in_port': i + 1, 'tensor': out_tensors[(conv, 0)]})
 
     graph.add_edge(pyramid_roi_proposal,
                    special_in_convs[0],
@@ -2824,10 +2838,12 @@ def merge_keras_maskrcnn(graph, params):
                                                       'data_format': 'NHWC'
                                                       })
     graph.add_edge(greater_equal, greater_equal_reshape)
-    graph.add_edge(greater_equal, score_mul)
+    graph.add_edge(greater_equal_reshape, greater_equal_reshape_cast)
+    graph.add_edge(greater_equal, greater_equal_cast)
+    graph.add_edge(greater_equal_cast, score_mul)
     graph.add_edge(score_mul, gather2)
 
-    graph.add_edge(greater_equal_reshape, id_mul)
+    graph.add_edge(greater_equal_reshape_cast, id_mul)
     graph.add_edge(argmax_reshape_cast, id_mul, **{'dst_in_port': 1})
     graph.add_edge(id_mul, id_mul_reshape)
     graph.add_edge(id_mul_reshape, topk_sort)
@@ -2872,7 +2888,7 @@ def merge_keras_maskrcnn(graph, params):
     graph.add_edge(gather3, pyramid_roi_mask)
     for i, conv in enumerate(special_out_convs):
         graph.add_edge(conv, pyramid_roi_mask, **
-                       {'dst_in_port': i+1, 'tensor': out_tensors[(conv, 0)]})
+                       {'dst_in_port': i + 1, 'tensor': out_tensors[(conv, 0)]})
     graph.add_edge(pyramid_roi_mask,
                    special_in_convs[1],
                    **{'tensor': in_tensors[(special_in_convs[1], 0)]})
@@ -2993,7 +3009,17 @@ def merge_keras_maskrcnn(graph, params):
                                                {'name': greater_equal,
                                                 'opset_version': 12
                                                 })
+    NodeWrap(graph, greater_equal_cast).replace_obj('Cast',
+                                                    {'name': greater_equal_cast,
+                                                     'opset_version': 1,
+                                                     'to': 'float32'
+                                                     })
     place_reshape(graph, greater_equal_reshape, [N, 1])
+    NodeWrap(graph, greater_equal_reshape_cast).replace_obj('Cast',
+                                                            {'name': greater_equal_reshape_cast,
+                                                             'opset_version': 1,
+                                                             'to': 'float32'
+                                                             })
     NodeWrap(graph, score_mul).replace_obj('Mul',
                                            {'name': score_mul,
                                             'opset_version': 7
@@ -3024,8 +3050,8 @@ def merge_keras_maskrcnn(graph, params):
                                        {'name': count,
                                         'discrete': True,
                                         'min': 1,
-                                        'max': class_num-1,
-                                        'nbins': class_num-1
+                                        'max': class_num - 1,
+                                        'nbins': class_num - 1
                                         })
     NodeWrap(graph, reverse_seq).replace_obj('ReverseSequence',
                                              {'name': reverse_seq,
@@ -3064,7 +3090,7 @@ def merge_keras_maskrcnn(graph, params):
                                           'opset_version': 11,
                                           'axis': 1}
                                          )
-    place_reshape(graph, nms2_1_reshape, [class_num-1])
+    place_reshape(graph, nms2_1_reshape, [class_num - 1])
     NodeWrap(graph, pyramid_roi_mask).replace_obj('ArmPyramidROIAlign',
                                                   {'name': pyramid_roi_mask,
                                                    'resize_width': 14,
@@ -3136,7 +3162,7 @@ def convert_to_onnx(graph):
                         if len(data1.shape) == 1 \
                                 and node_obj.get_input_shapes()[0][1] == data1.shape[0]:
                             src, _, in_attr = in_edges[1]
-                            reshape_dim = [-1]+[1] * \
+                            reshape_dim = [-1] + [1] * \
                                 len(node_obj.get_input_shapes()[0][2:])
                             insert_reshape(graph, src, node_name,
                                            in_attr, reshape_dim)
@@ -3252,7 +3278,8 @@ def convert_to_onnx(graph):
                                     node_name)
                                 graph._attr['output_names'][index] = floor_name
                         div_out_attr = copy.deepcopy(out_edges[0][3])
-                        div_out_attr['tensor'].value = div_out_attr['tensor'].value.astype(np.float32)
+                        div_out_attr['tensor'].value = div_out_attr['tensor'].value.astype(
+                            np.float32)
                         div_out_attr['dst_in_port'] = 0
                         graph.add_edge(node_name, floor_name, **div_out_attr)
                         floor_attr = {'name': floor_name, 'opset_version': 13}
@@ -3328,7 +3355,7 @@ def convert_to_onnx(graph):
                             and all([d is not None for d in node_obj.get_input_shapes()[0]]):
                         time_axis = node_obj.axis
                         seq_length = node_obj.get_input_shapes()[0][time_axis]
-                        batch = node_obj.get_input_shapes()[0][1-time_axis]
+                        batch = node_obj.get_input_shapes()[0][1 - time_axis]
                         seq_len = np.array([seq_length] * batch, np.int32)
                         graph.remove_edges_from(in_edges[1:])
                         insert_constant(graph, node_name + '_seq_len',
@@ -3345,7 +3372,8 @@ def convert_to_onnx(graph):
                 elif pure_type == 'ScatterNd':
                     # TfScatterNd should be converted in convert_scatternd.
                     # If not, then indices or shape is not constant.
-                    WARN('[Parser]: Expect indices and shape to be constant in TF ScatterNd Node(%s) to convert to Onnx!' % node_name)
+                    WARN(
+                        '[Parser]: Expect indices and shape to be constant in TF ScatterNd Node(%s) to convert to Onnx!' % node_name)
                     continue
                 elif pure_type == 'SegmentSum':
                     new_node_attr.update({'method': 'SUM'})
