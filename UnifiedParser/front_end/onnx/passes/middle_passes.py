@@ -4253,7 +4253,8 @@ def merge_ln5(graph):
             WARN('[Parser]: Meets invalid nodes in merge_ln5!')
             continue
         inp = m['inp']
-        inp_out_port = mean_in_edges[0][2]['src_out_port']
+        inp_out_attr = mean_in_edges[0][2]
+        inp_out_port = inp_out_attr['src_out_port']
         found_invalid_port = False
         for src, _, in_attr in square_diff_in_edges:
             if src == inp and in_attr['src_out_port'] != inp_out_port:
@@ -4269,33 +4270,40 @@ def merge_ln5(graph):
         if not FLOAT_EQUAL(obj_dict['exponent_1'].value, 2) \
                 or not FLOAT_EQUAL(obj_dict['exponent_2'].value, 0.5):
             continue
-        axes1 = obj_dict['mean'].axes
-        axes2 = obj_dict['mean_1'].axes
+        if inp_out_attr['tensor'].value is None:
+            continue
+        input_shape = inp_out_attr['tensor'].value.shape
+        axes1 = sorted(OpHasAxis.make_axes_non_negative(obj_dict['mean'].axes, len(input_shape)))
+        axes2 = sorted(OpHasAxis.make_axes_non_negative(obj_dict['mean_1'].axes, len(input_shape)))
         if axes1 != axes2:
             continue
+        matched = True
         gamma = obj_dict['gamma'].value
         beta = obj_dict['beta'].value
-        if np.ndim(gamma) > 1 or np.ndim(beta) > 1:
-            continue
-        matched = True
-        add_1_in_edges = graph.sorted_in_edges(m['add_1'], data=True)
+        weights = OpHasAxis.align_axes(
+            gamma, axes1, [input_shape[axis] for axis in axes1])
+        biases = OpHasAxis.align_axes(
+            beta, axes1, [input_shape[axis] for axis in axes1])
+        if weights is None or biases is None:
+            last_node = m['div']
+            new_op_type = 'MeanVarianceNormalization'
+            node_attr = obj_dict['div'].copied_attr()
+            node_attr.update({'opset_version': 13})
+        else:
+            last_node = m['add_1']
+            new_op_type = 'LayerNorm'
+            node_attr = obj_dict['add_1'].copied_attr()
+            node_attr.update({'weights': weights, 'biases': biases})
+        last_node_in_edges = graph.sorted_in_edges(last_node)
         graph.remove_edges_from(square_diff_in_edges +
-                                mean_in_edges + sub_1_in_edges + add_1_in_edges)
-        graph.add_edge(inp, m['add_1'], **
-                       {'src_out_port': inp_out_port, 'dst_in_port': 0})
-        if np.ndim(gamma) == 0:
-            gamma = np.reshape(gamma, [1])
-        if np.ndim(beta) == 0:
-            beta = np.reshape(beta, [1])
-        gamma = gamma.astype(np.float32)
-        beta = beta.astype(np.float32)
+                                mean_in_edges + sub_1_in_edges + last_node_in_edges)
+        new_edge_attr = copy.deepcopy(inp_out_attr)
+        new_edge_attr.update({'src_out_port': inp_out_port, 'dst_in_port': 0})
+        graph.add_edge(inp, last_node, **new_edge_attr)
         eps = float(obj_dict['eps'].value)
-        ln_attr = obj_dict['add_1'].copied_attr()
-        ln_attr.update({'epsilon': eps,
-                        'weights': gamma,
-                        'biases': beta,
-                        'axes': axes1})
-        NodeWrap(graph, m['add_1']).replace_obj('LayerNorm', ln_attr)
+        node_attr.update({'epsilon': eps,
+                          'axes': axes1})
+        NodeWrap(graph, last_node).replace_obj(new_op_type, node_attr)
     if matched:
         clear_redundant_nodes(graph)
 
