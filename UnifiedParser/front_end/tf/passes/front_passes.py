@@ -3120,13 +3120,8 @@ def convert_to_onnx(graph):
                 elif pure_type in ('ArgMax', 'ArgMin'):
                     new_node_attr.update(
                         {'axis': node_obj.axis, 'keepdims': 0})
-                elif pure_type in ('AvgPool3D', 'Conv3D', 'MaxPool3D'):
-                    data_format = 'NHWC' if node_obj.data_format == 'NDHWC' else 'NCHW'
-                    new_node_attr.update({'data_format': data_format})
                 elif pure_type == 'BiasAdd':
-                    if (node_obj.data_format == 'NCHW'
-                        or node_obj.data_format == 'NCW'
-                        or node_obj.data_format == 'NCDHW')\
+                    if node_data_format == 'NCHW' \
                             and len(node_obj.get_input_tensors()) > 1:
                         data1 = node_obj.get_input_tensors()[1]
                         if len(data1.shape) == 1 \

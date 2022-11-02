@@ -15,6 +15,7 @@ from .passes.front_passes import merge_gru, merge_gru2, merge_lstm, merge_zero_f
     convert_matmul, convert_invert_permutation, convert_reverse, \
     remove_isfinite_select, merge_fasterrcnn, merge_keras_maskrcnn
 from .passes.keras_front_passes import process_keras_op
+from .passes.keras_front_passes import convert_to_onnx as convert_keras_op_to_onnx
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
@@ -71,6 +72,7 @@ def process_tf(model_path, params):
         convert_invert_permutation(graph)
         convert_reverse(graph)
 
+        convert_keras_op_to_onnx(graph)
         convert_to_onnx(graph)
 
     else:

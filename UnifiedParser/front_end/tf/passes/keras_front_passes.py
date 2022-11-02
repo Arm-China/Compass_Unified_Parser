@@ -192,5 +192,3 @@ def process_keras_op(graph):
     from ...lite.passes.front_passes import split_op_has_activation
     convert_gru_lstm(graph)
     split_op_has_activation(graph, is_tf_op=True)
-
-    convert_to_onnx(graph)

@@ -8,6 +8,93 @@ from ..op import *
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
+class TfKerasAveragePooling2DOp(TfHasPaddingStrides, OpHasOneOutPort, KerasOp):
+    @classmethod
+    def attributes(cls):
+        return {2: {'pool_size': {'type': AttrType.INTS, 'required': False, 'default': [2, 2]},
+                    },
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfKerasAveragePooling2DOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfKerasAveragePooling2DOp, attr_dict)
+        assert self.check_required(), 'TfKerasAveragePooling2DOp is missing a required parameter.'
+        self.kernel_shape = [self.pool_size] * 2 if isinstance(self.pool_size, int) else list(self.pool_size[:])
+        if not self.strides:
+            self.strides = self.kernel_shape
+
+    def infer_shape(self):
+        super(TfKerasAveragePooling2DOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        inp = np.transpose(inputs[0], [0, 2, 3, 1]
+                           ) if self.data_format == 'NCHW' else inputs[0]
+        avg_pool = tf.keras.layers.AveragePooling2D(self.kernel_shape,
+                                                    strides=self.strides,
+                                                    padding='valid' if self.auto_pad == 'VALID' else 'same',
+                                                    data_format='channels_last')
+        out_tensor = avg_pool(inp).numpy()
+        if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
+            self.pads = OpHasPaddingStrides.cal_pads(
+                inp.shape[1:-1],
+                out_tensor.shape[1:-1],
+                self.strides,
+                self.kernel_shape,
+                self.auto_pad,
+                zero_minimum=True
+            )
+            self.auto_pad = 'NOTSET'
+        if self.data_format == 'NCHW':
+            out_tensor = np.transpose(out_tensor, [0, 3, 1, 2])
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'AveragePool', 'version': 10}
+
+
+class TfKerasAveragePooling3DOp(TfHasPaddingStrides, OpHasOneOutPort, KerasOp):
+    @classmethod
+    def attributes(cls):
+        return {2: {'pool_size': {'type': AttrType.INTS, 'required': False, 'default': [2, 2, 2]},
+                    },
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfKerasAveragePooling3DOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfKerasAveragePooling3DOp, attr_dict)
+        assert self.check_required(), 'TfKerasAveragePooling3DOp is missing a required parameter.'
+        self.kernel_shape = list(self.pool_size[:])
+        if not self.strides:
+            self.strides = self.kernel_shape
+
+    def infer_shape(self):
+        super(TfKerasAveragePooling3DOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        inp = np.transpose(inputs[0], [0, 2, 3, 4, 1]) if self.data_format == 'NCDHW' else inputs[0]
+        avg_pool_3d = tf.keras.layers.AveragePooling3D(self.kernel_shape,
+                                                       strides=self.strides,
+                                                       padding='valid' if self.auto_pad == 'VALID' else 'same',
+                                                       data_format='channels_last')
+        out_tensor = avg_pool_3d(inp).numpy()
+        if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
+            self.pads = OpHasPaddingStrides.cal_pads(
+                inp.shape[1:-1],
+                out_tensor.shape[1:-1],
+                self.strides,
+                self.kernel_shape,
+                self.auto_pad,
+                zero_minimum=True
+            )
+            self.auto_pad = 'NOTSET'
+        if self.data_format == 'NCDHW':
+            out_tensor = np.transpose(out_tensor, [0, 4, 1, 2, 3])
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'AveragePool', 'version': 10}
+
+
 class TfKerasAddOp(OpHasOneOutPort, KerasOp):
     @classmethod
     def attributes(cls):
