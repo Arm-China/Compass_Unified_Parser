@@ -38,7 +38,7 @@ do
   # Options of autopep8:
   #  --in-place: make changes to files in place
   #  --exit-code: return 2 if differences exist
-  autopep8_output=`autopep8 --verbose --in-place --exit-code --ignore E402 --max-line-length=120 ${file} 2>&1`
+  autopep8_output=`autopep8 --verbose --in-place --exit-code --max-line-length=120 ${file} 2>&1`
   exit_code=$?
   if [[ ${exit_code} = 2 ]]
   then
