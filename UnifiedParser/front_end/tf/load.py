@@ -103,6 +103,11 @@ def convert_tf_to_graph(model_path, params):
                 default_graph = tf.get_default_graph()
                 nodes = list(parse_proto(
                     default_graph.get_operations(), get_op_content))
+                for func in graph_def.library.function:
+                    func_name = func.signature.name
+                    if any((node['type'] == func_name) for node in nodes):
+                        nodes = get_function_node_content(func, nodes)
+
                 if anchor_tensor is not None:
                     anchor_node = [n for n in nodes if n['name']
                                    == trim_tensor_name(anchor_tensor)]
@@ -144,6 +149,8 @@ def convert_tf_to_graph(model_path, params):
                         if n.get('type', '') in ('FusedBatchNorm', 'FusedBatchNormV3') and i > 0:
                             continue
                         elif n.get('type', '') in ('Enter', 'Merge', 'TensorArrayReadV3',):
+                            continue
+                        elif n.get('from_function', False):
                             continue
                         tensors.update(
                             {out[0]: default_graph.get_tensor_by_name(out[0])})

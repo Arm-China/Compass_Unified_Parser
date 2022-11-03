@@ -165,3 +165,54 @@ def get_op_content(operation):
 
 def get_out_tensors(nodes):
     return [(out[0], tf.get_tensor_by_name(out[0])) for out in nodes['output']]
+
+
+def get_function_node_content(function, nodes):
+    '''Update nodes by replacing the original function node(for example swish_f32) with actual nodes.
+    There are 4 main operations:
+    1) Use function_def_to_graph to get graph of the function;
+    2) Replace 'Placeholder' in function graph with 'Identity' and its input is the original input of
+       function node;
+    3) Change op type of function node to Identity and change its input to the output of function graph;
+    4) Rename node name and tensor name in function graph because the function can be called multiple
+       times.
+    '''
+    from tensorflow.python.framework.function_def_to_graph import function_def_to_graph
+    func_name = function.signature.name
+    func_inputs = [inp.name for inp in function.signature.input_arg]
+    func_graph = function_def_to_graph(function)
+    func_graph_outputs = list(map(parse_node_input, [out.name for out in func_graph.outputs]))
+    if len(func_inputs) != 1 or len(func_graph_outputs) != 1:
+        WARN('[Parser]: Meet tf function (%s) with more than 1 input/output, which is not yet supported!' % func_name)
+    func_nodes = list(parse_proto(func_graph.get_operations(), get_op_content))
+    nodes_to_add = []
+    for idx, original_node in enumerate(nodes):
+        if original_node['type'] != func_name:
+            continue
+        # Update op type of original node to 'Identity'
+        nodes[idx]['type'] = 'Identity'
+        # Update 'from_function' to True to note that its tensor may not exist in original model
+        nodes[idx]['from_function'] = True
+        original_node_outputs = original_node['output']
+        original_node_inputs = original_node['input']
+        name_prefix = original_node['name'] + '_'
+        for fn in func_nodes:
+            func_node = copy.deepcopy(fn)
+            func_node['name'] = name_prefix + fn['name']
+            if func_node['type'] == 'Placeholder':
+                func_node['type'] = 'Identity'
+                # Update input of Placeholder to the input of original node
+                func_node['input'] = original_node_inputs
+            else:
+                func_node['input'] = [(name_prefix + name, in_port, is_control)
+                                      for name, in_port, is_control in fn['input']]
+            # rename node name and tensor name to avoid duplicate when the function is called multiple times
+            if fn['name'] == func_graph_outputs[0][0]:
+                # original function node becomes the last node in function graph
+                nodes[idx]['input'] = [(func_node['name'], func_graph_outputs[0][1], func_graph_outputs[0][2])]
+            else:
+                func_node['output'] = [(name_prefix + name, shape) for name, shape in fn['output']]
+            func_node['from_function'] = True
+            nodes_to_add.append(func_node)
+    nodes.extend(nodes_to_add)
+    return nodes

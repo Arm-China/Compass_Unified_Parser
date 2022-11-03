@@ -907,24 +907,3 @@ class TfSpaceToDepthOp(LayoutConcernedOp, OpHasOneOutPort, TfOp):
     @property
     def correspond_onnx_op(self):
         return {'type': 'SpaceToDepth', 'version': 1}
-
-
-class Tfswish_f32Op(LayoutUnawareOp, OpHasOneOutPort, TfOp):
-    @classmethod
-    def attributes(cls):
-        return {1: {}}
-
-    def __init__(self, graph, attr_dict=None):
-        super(Tfswish_f32Op, self).__init__(graph, attr_dict)
-        self.update_attributes(Tfswish_f32Op, attr_dict)
-        assert self.check_required(), 'Tfswish_f32Op is missing a required parameter.'
-
-    def infer_shape(self):
-        super(Tfswish_f32Op, self).infer_shape()
-        inputs = self.get_input_tensors()
-        out_tensor = tf.keras.activations.swish(inputs[0]).numpy()
-        self.set_out_tensor(out_tensor)
-
-    @property
-    def correspond_onnx_op(self):
-        return {'type': 'HardSwish', 'version': 1}
