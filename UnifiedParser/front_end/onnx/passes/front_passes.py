@@ -11,7 +11,7 @@ from .common_passes import clear_redundant_nodes
 
 
 def fuse_weights_const(graph):
-    def get_src_data(src_name, edge_attr):
+    def _get_src_data(src_name, edge_attr):
         src_obj = NodeWrap(graph, src_name)['object']
         if src_obj.type in ('Constant', 'TfConst'):
             data = src_obj.value
@@ -28,9 +28,14 @@ def fuse_weights_const(graph):
         if isinstance(node_obj, OpHasWeights) and isinstance(node_obj, OpHasBiases):
             if node_obj.type in ('GRU', 'LSTM'):
                 continue
+            if node_obj.type == 'LiteTRANSPOSE_CONV' \
+                    or node_obj.type == 'LiteCONV_3D_TRANSPOSE':
+                biases_in_port = 3
+            else:
+                biases_in_port = 2
             for i, edge_info in enumerate(in_edges):
                 src_name, _, k, edge_attr = edge_info
-                data = get_src_data(src_name, edge_attr)
+                data = _get_src_data(src_name, edge_attr)
                 try:
                     if i == 1 and isinstance(data, np.ndarray):
                         node_obj.weights = data
@@ -40,7 +45,7 @@ def fuse_weights_const(graph):
                                 edge_attr['tensor'].min_max)
                         matched = True
                         graph.remove_edge(src_name, node_name, key=k)
-                    elif i == 2 and isinstance(data, np.ndarray):
+                    elif i == biases_in_port and isinstance(data, np.ndarray):
                         node_obj.biases = data
                         matched = True
                         graph.remove_edge(src_name, node_name, key=k)
@@ -50,7 +55,7 @@ def fuse_weights_const(graph):
         elif isinstance(node_obj, OpHasWeights):
             for i, edge_info in enumerate(in_edges):
                 src_name, _, k, edge_attr = edge_info
-                data = get_src_data(src_name, edge_attr)
+                data = _get_src_data(src_name, edge_attr)
                 if i == 1 and isinstance(data, np.ndarray):
                     node_obj.weights = data
                     if edge_attr.get('tensor', None) is not None \
