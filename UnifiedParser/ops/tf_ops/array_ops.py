@@ -462,6 +462,8 @@ class TfPlaceholderOp(OpHasOneOutPort, InputLikeOp, TfOp):
         try:
             out_tensor = self._graph._attr['input_tensors'][self.name].value
         except:
+            out_tensor = None
+        if out_tensor is None:
             try:
                 out_tensor = ((np.random.ranf(self.shape) - 0.5)
                               * 100).astype(np.dtype(self.dtype))

@@ -136,10 +136,15 @@ def convert_tf_to_graph(model_path, params):
                 input_shapes = params['input_shapes'].copy()
                 for n in nodes:
                     nodes_dict.update({n['name']: n})
-                    if n['type'] == 'Placeholder' and n['name'] not in input_shapes:
+                    if n['type'] == 'Placeholder':
                         tensor_shape = n['output'][0][1]
                         if all([d is not None for d in tensor_shape]):
-                            input_shapes.update({n['name']: tensor_shape})
+                            if n['name'] not in input_shapes:
+                                input_shapes.update({n['name']: tensor_shape})
+                            elif input_shapes[n['name']] != tensor_shape:
+                                WARN('[Parser]: Original model expects input shape of input %s to be %s. '
+                                     'Now reset it to %s basing on config file!' % (
+                                         n['name'], str(tensor_shape), str(input_shapes[n['name']])))
 
                 tensors, feed_dict = OrderedDict(), OrderedDict()
                 for k, v in input_shapes.items():
