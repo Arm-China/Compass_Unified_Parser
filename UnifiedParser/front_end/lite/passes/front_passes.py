@@ -670,29 +670,29 @@ def convert_strided_slice(graph, op_type='TfStridedSlice'):
                     src, dst, k, p_in_attr = in_edges[0]
                     insert_reshape(
                         graph, src, strided_slice, p_in_attr, reshape_dim1, key=k)
-                if reshape_dim2 != None:
-                    post_reshape = get_valid_node_name(
-                        graph, strided_slice + '_post_reshape')
-                    for _, dst, out_attr in graph.sorted_out_edges(strided_slice, data=True):
-                        graph.remove_edge(strided_slice, dst)
-                        graph.add_edge(
-                            post_reshape, dst, **out_attr)
-
-                    graph.add_edge(strided_slice, post_reshape)
-                    NodeWrap(graph, post_reshape).replace_obj(
-                        'Reshape', {'name': post_reshape, 'opset_version': 1, 'shape': reshape_dim2})
-                    last_name = post_reshape
                 if splits_dim != None:
                     post_split = get_valid_node_name(
                         graph, strided_slice + '_post_split')
+                    for _, dst, out_attr in graph.sorted_out_edges(strided_slice, data=True):
+                        graph.remove_edge(strided_slice, dst)
+                        graph.add_edge(post_split, dst, **out_attr)
                     graph.add_edge(strided_slice, post_split)
-                    graph.add_edge(post_split, post_reshape)
-                    graph.remove_edge(strided_slice, post_reshape)
                     NodeWrap(graph, post_split).replace_obj(
                         'Split', {'name': post_split, 'opset_version': 11, 'axis': split_axis, 'split': splits_dim})
+                    last_name = post_split
 
-                if len(out_shape) > len(input_shape):
-                    axes_shape = out_shape
+                    if reshape_dim2 != None:
+                        post_reshape = get_valid_node_name(
+                            graph, strided_slice + '_post_reshape')
+                        for _, dst, out_attr in graph.sorted_out_edges(post_split, data=True):
+                            if out_attr['src_out_port'] == 0:
+                                graph.remove_edge(post_split, dst)
+                                graph.add_edge(
+                                    post_reshape, dst, **out_attr)
+                        graph.add_edge(post_split, post_reshape)
+                        NodeWrap(graph, post_reshape).replace_obj(
+                            'Reshape', {'name': post_reshape, 'opset_version': 1, 'shape': reshape_dim2})
+                        last_name = post_reshape
 
             axes = np.array(range(len(axes_shape)), np.int32)
             if len(input_shape) != len(begin) or len(input_shape) != len(end):
