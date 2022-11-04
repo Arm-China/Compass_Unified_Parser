@@ -269,6 +269,6 @@ def parse_keras(model_path, params):
     outputs_value = functors(feed_model_inputs)
     for out, out_value in zip(outputs, outputs_value):
         tensors.update({out.name: out})
-        np_tensors.update({out.name: out_value})
+        np_tensors.update({out.name: np.array(out_value)})
 
     return nodes, nodes_dict, tensors, np_tensors, input_shapes
