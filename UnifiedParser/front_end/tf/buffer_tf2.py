@@ -283,10 +283,16 @@ def parse_keras(model_path, params):
             outputs.extend(layer.output)
         else:
             outputs.append(layer.output)
-    functors = K.function([model.input], outputs)
-    outputs_value = functors(feed_model_inputs)
+    try:
+        functors = K.function([model.input], outputs)
+        outputs_value = functors(feed_model_inputs)
+    except Exception as e:
+        outputs_value = [None] * len(outputs)
+        DEBUG('Fail to get outputs of tensors: %s' % str(e))
     for out, out_value in zip(outputs, outputs_value):
         tensors.update({out.name: out})
+        if out_value is None:
+            out_value = np.random.ranf(out.shape.as_list()).astype(out.dtype.name)
         np_tensors.update({out.name: np.array(out_value)})
 
     return nodes, nodes_dict, tensors, np_tensors, input_shapes

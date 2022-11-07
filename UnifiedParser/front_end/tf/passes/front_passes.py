@@ -3320,7 +3320,8 @@ def convert_to_onnx(graph):
                     graph.remove_edges_from(in_edges[1:])
 
                 new_node_attr.update(
-                    {'opset_version': node_obj.correspond_onnx_op['version']})
+                    {'opset_version': node_obj.correspond_onnx_op['version'],
+                     'data_format': 'NCHW' if node_obj.data_format.startswith('NC') else 'NHWC'})
                 NodeWrap(graph, node_name).replace_obj(
                     node_obj.correspond_onnx_op['type'], new_node_attr)
         else:

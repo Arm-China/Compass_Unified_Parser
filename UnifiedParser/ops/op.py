@@ -2276,6 +2276,8 @@ class KerasBaseConvOp(BaseConvOp, BaseActivationOp, TfOp):
         super(KerasBaseConvOp, self).__init__(graph, attr_dict)
         self.update_attributes(KerasBaseConvOp, attr_dict)
         assert self.check_required(), 'KerasBaseConvOp is missing a required parameter.'
+        if not self.use_bias:
+            self.biases = None
 
     def __getattr__(self, item):
         ret = None

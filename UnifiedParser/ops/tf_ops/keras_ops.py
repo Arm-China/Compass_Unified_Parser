@@ -29,6 +29,57 @@ class TfKerasAddOp(OpHasOneOutPort, TfOp):
         return {'type': 'Sum', 'version': 6}
 
 
+class TfKerasConv2DOp(KerasBaseConvOp):
+    @classmethod
+    def attributes(cls):
+        return {2: {'filters': {'type': AttrType.INT, 'required': True}}
+                }
+
+    @classmethod
+    def perm_tf_to_onnx(cls):
+        return [3, 2, 0, 1]
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfKerasConv2DOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfKerasConv2DOp, attr_dict)
+        assert self.check_required(), 'TfKerasConv2DOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(TfKerasConv2DOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        inp = np.transpose(inputs[0], [0, 2, 3, 1]
+                           ) if self.data_format == 'NCHW' else inputs[0]
+        self.num_output = self.filters
+        conv2d = tf.keras.layers.Conv2D(
+            filters=self.filters,
+            kernel_size=self.kernel_shape,
+            strides=self.strides,
+            padding='valid' if self.auto_pad == 'VALID' else 'same',
+            data_format='channels_last',
+            dilation_rate=self.dilations,
+            groups=self.group)
+        out_tensor = conv2d(inp).numpy()
+        if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
+            self.pads = OpHasPaddingStrides.cal_pads(
+                inp.shape[1:3],
+                out_tensor.shape[1:3],
+                self.strides,
+                self.kernel_shape,
+                self.auto_pad,
+                dilations=self.dilations,
+                is_transpose=False,
+                zero_minimum=True,
+            )
+            self.auto_pad = 'NOTSET'
+        if self.data_format == 'NCHW':
+            out_tensor = np.transpose(out_tensor, [0, 3, 1, 2])
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'Conv', 'version': 1}
+
+
 class TfKerasConv2DTransposeOp(KerasBaseConvOp):
     @classmethod
     def attributes(cls):
@@ -49,8 +100,8 @@ class TfKerasConv2DTransposeOp(KerasBaseConvOp):
     def infer_shape(self):
         super(TfKerasConv2DTransposeOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        if not self.use_bias:
-            self.biases = None
+        inp = np.transpose(inputs[0], [0, 2, 3, 1]
+                           ) if self.data_format == 'NCHW' else inputs[0]
         self.num_output = self.filters
         conv2d = tf.keras.layers.Conv2DTranspose(
             filters=self.filters,
@@ -58,14 +109,67 @@ class TfKerasConv2DTransposeOp(KerasBaseConvOp):
             strides=self.strides,
             padding='valid' if self.auto_pad == 'VALID' else 'same',
             output_padding=self.output_padding,
-            data_format='channels_last' if self.data_format.endswith('C') else 'channels_first',
+            data_format='channels_last',
             dilation_rate=self.dilations)
-        output_tensor = conv2d(inputs[0]).numpy()
+        output_tensor = conv2d(inp).numpy()
+        if self.data_format == 'NCHW':
+            out_tensor = np.transpose(out_tensor, [0, 3, 1, 2])
         self.set_out_tensor(output_tensor)
 
     @property
     def correspond_onnx_op(self):
         return {'type': 'ConvTranspose', 'version': 11}
+
+
+class TfKerasConv3DOp(KerasBaseConvOp):
+    @classmethod
+    def attributes(cls):
+        return {2: {'filters': {'type': AttrType.INT, 'required': True}}
+                }
+
+    @classmethod
+    def perm_tf_to_onnx(cls):
+        return [4, 3, 0, 1, 2]
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfKerasConv3DOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfKerasConv3DOp, attr_dict)
+        assert self.check_required(), 'TfKerasConv3DOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(TfKerasConv3DOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        inp = np.transpose(inputs[0], [0, 2, 3, 4, 1]
+                           ) if self.data_format == 'NCDHW' else inputs[0]
+        self.num_output = self.filters
+        conv3d = tf.keras.layers.Conv3D(
+            filters=self.filters,
+            kernel_size=self.kernel_shape,
+            strides=self.strides,
+            padding='valid' if self.auto_pad == 'VALID' else 'same',
+            data_format='channels_last',
+            dilation_rate=self.dilations,
+            groups=self.group)
+        out_tensor = conv3d(inp).numpy()
+        if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
+            self.pads = OpHasPaddingStrides.cal_pads(
+                inp.shape[1:4],
+                out_tensor.shape[1:4],
+                self.strides,
+                self.kernel_shape,
+                self.auto_pad,
+                dilations=self.dilations,
+                is_transpose=False,
+                zero_minimum=True,
+            )
+            self.auto_pad = 'NOTSET'
+        if self.data_format == 'NCDHW':
+            out_tensor = np.transpose(out_tensor, [0, 4, 1, 2, 3])
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'Conv', 'version': 1}
 
 
 class TfKerasConv3DTransposeOp(KerasBaseConvOp):
@@ -88,8 +192,8 @@ class TfKerasConv3DTransposeOp(KerasBaseConvOp):
     def infer_shape(self):
         super(TfKerasConv3DTransposeOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        if not self.use_bias:
-            self.biases = None
+        inp = np.transpose(inputs[0], [0, 2, 3, 4, 1]
+                           ) if self.data_format == 'NCDHW' else inputs[0]
         self.num_output = self.filters
         conv3d = tf.keras.layers.Conv3DTranspose(
             filters=self.filters,
@@ -97,10 +201,12 @@ class TfKerasConv3DTransposeOp(KerasBaseConvOp):
             strides=self.strides,
             padding='valid' if self.auto_pad == 'VALID' else 'same',
             output_padding=self.output_padding,
-            data_format='channels_last' if self.data_format.endswith('C') else 'channels_first',
+            data_format='channels_last',
             dilation_rate=self.dilations)
-        output_tensor = conv3d(inputs[0]).numpy()
-        self.set_out_tensor(output_tensor)
+        out_tensor = conv3d(inp).numpy()
+        if self.data_format == 'NCDHW':
+            out_tensor = np.transpose(out_tensor, [0, 4, 1, 2, 3])
+        self.set_out_tensor(out_tensor)
 
     @property
     def correspond_onnx_op(self):
