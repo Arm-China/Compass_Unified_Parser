@@ -208,7 +208,7 @@ class DilationOp(OpHasPaddingStrides, OpHasWeights, OpHasOneOutPort, LayoutConce
                                       dilations=[1] + self.dilations + [1]).numpy()
 
         if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
-            self.pads = OpHasPaddingStrides.cal_pads(
+            self.pads, _ = OpHasPaddingStrides.cal_pads(
                 inputs[0].shape[1:3],
                 out_tensor.shape[1:3],
                 self.strides,
@@ -262,7 +262,7 @@ class ErosionOp(OpHasPaddingStrides, OpHasWeights, OpHasOneOutPort, LayoutConcer
                                                padding='VALID' if self.auto_pad == 'NOTSET' else 'SAME').numpy()
 
         if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
-            self.pads = OpHasPaddingStrides.cal_pads(
+            self.pads, _ = OpHasPaddingStrides.cal_pads(
                 inputs[0].shape[1:3],
                 out_tensor.shape[1:3],
                 self.strides,

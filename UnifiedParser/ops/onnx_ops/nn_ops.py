@@ -65,7 +65,7 @@ class AveragePoolOp(BaseOnnxPoolOp, OpHasOneOutPort):
         out_tensor = np.random.ranf(out_tensor_shape).astype(inputs[0].dtype)
         if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
             # re-calculate pads
-            self.pads = OpHasPaddingStrides.cal_pads(
+            self.pads, _ = OpHasPaddingStrides.cal_pads(
                 in_shape,
                 out_shape,
                 self.strides,
@@ -280,7 +280,7 @@ class ConvOp(BaseConvOp, OnnxOp):
             out_tensor = np.random.ranf(size=out_shape).astype(np.float32)
 
         if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
-            self.pads = OpHasPaddingStrides.cal_pads(
+            self.pads, _ = OpHasPaddingStrides.cal_pads(
                 inputs[0].shape[1:-
                                 1] if self.data_format == 'NHWC' else inputs[0].shape[2:],
                 out_tensor.shape[1:-
@@ -409,7 +409,7 @@ class ConvTransposeOp(BaseConvOp, OnnxOp):
     def update_pads(self, input_shape):
         assert input_shape, 'input_shape does not exist in ConvTransposeOp update_pads.'
         if self.output_shape:
-            self.pads = OpHasPaddingStrides.cal_pads(
+            self.pads, self.output_padding = OpHasPaddingStrides.cal_pads(
                 input_shape,
                 self.output_shape,
                 self.strides,
@@ -423,7 +423,7 @@ class ConvTransposeOp(BaseConvOp, OnnxOp):
             self.auto_pad = 'NOTSET'
         else:
             if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
-                self.pads = OpHasPaddingStrides.cal_pads(
+                self.pads, _ = OpHasPaddingStrides.cal_pads(
                     input_shape,
                     (np.array(input_shape) * np.array(self.strides)).tolist(),
                     self.strides,
@@ -434,13 +434,9 @@ class ConvTransposeOp(BaseConvOp, OnnxOp):
                     zero_minimum=True,
                     out_padding=self.output_padding
                 )
-            pads_half = len(self.pads) // 2
-            output_shape = np.array(self.strides, np.int64) * (np.array(input_shape, np.int64) - 1) \
-                + np.array(self.output_padding, np.int64) \
-                + ((np.array(self.kernel_shape, np.int64) - 1) * np.array(self.dilations, np.int64) + 1) \
-                - np.array(self.pads[0:pads_half], np.int64) \
-                - np.array(self.pads[pads_half:], np.int64)
-            self.output_shape = output_shape.tolist()
+            self.output_shape = BaseConvOp.cal_deconv_out_shape(input_shape, self.pads,
+                                                                self.strides, self.kernel_shape,
+                                                                self.output_padding, self.dilations)
             self.auto_pad = 'NOTSET'
 
 
@@ -1046,7 +1042,7 @@ class LpPoolOp(BaseOnnxPoolOp, OpHasOneOutPort):
         out_tensor = np.random.ranf(out_tensor_shape).astype(inputs[0].dtype)
         if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
             # re-calculate pads
-            self.pads = OpHasPaddingStrides.cal_pads(
+            self.pads, _ = OpHasPaddingStrides.cal_pads(
                 in_shape,
                 out_shape,
                 self.strides,
@@ -1415,7 +1411,7 @@ class MaxPoolOp(BaseOnnxPoolOp, OpHasVariableOutPorts):
         out_tensor = np.random.ranf(out_tensor_shape).astype(inputs[0].dtype)
         if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
             # re-calculate pads
-            self.pads = OpHasPaddingStrides.cal_pads(
+            self.pads, _ = OpHasPaddingStrides.cal_pads(
                 in_shape,
                 out_shape,
                 self.strides,

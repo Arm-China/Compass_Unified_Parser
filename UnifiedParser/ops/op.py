@@ -844,7 +844,8 @@ class OpHasPaddingStrides(LayoutConcernedOp):
 
     @staticmethod
     def cal_pads(in_shape, out_shape, strides, kernel_shape, auto_pad, dilations=None, is_transpose=False, zero_minimum=False, out_padding=None):
-        '''Calculate the pad parameters of the OP according to parameters such as in_shape, out_shape, strides, kernel_shape, etc.'''
+        '''Calculate the pad and output padding parameters of the OP according to parameters
+        such as in_shape, out_shape, strides, kernel_shape, etc.'''
         if not dilations:
             dilations = [1] * len(in_shape)
         if not out_padding:
@@ -860,7 +861,11 @@ class OpHasPaddingStrides(LayoutConcernedOp):
         pads = (out_shape - 1) * strides + out_padding + \
             (kernel_shape - 1) * dilations + 1 - in_shape
 
+        new_out_padding = out_padding
         if zero_minimum:
+            for idx, (pad, out_pad) in enumerate(zip(pads, out_padding)):
+                new_out_pad = (-pad + out_pad) if pad < 0 else out_pad
+                new_out_padding[idx] = new_out_pad
             pads = np.maximum(pads, 0)
 
         if auto_pad == 'SAME_UPPER':
@@ -869,7 +874,7 @@ class OpHasPaddingStrides(LayoutConcernedOp):
         else:
             pad_tail = (np.abs(pads) // 2) * np.sign(pads)
             pad_head = pads - pad_tail
-        return [*pad_head.tolist(), *pad_tail.tolist()]
+        return [*pad_head.tolist(), *pad_tail.tolist()], new_out_padding.tolist()
 
     @staticmethod
     def onnx_to_torch(pads):
@@ -1237,6 +1242,20 @@ class BaseConvOp(OpHasPaddingStrides, BaseLinearOp, LayoutConcernedOp):
             WARN('[Parser]: Invalid pads len %s in cal_out_shape!' % (str(pads)))
             ret = []
         return ret
+
+    @staticmethod
+    def cal_deconv_out_shape(in_shape, pads, strides, kernel_shape, output_padding=None, dilations=None):
+        if not output_padding:
+            output_padding = [0] * len(kernel_shape)
+        if not dilations:
+            dilations = [0] * len(dilations)
+        pads_half = len(pads) // 2
+        out_shape = np.array(strides, np.int64) * (np.array(in_shape, np.int64) - 1) \
+            + np.array(output_padding, np.int64) \
+            + ((np.array(kernel_shape, np.int64) - 1) * np.array(dilations, np.int64) + 1) \
+            - np.array(pads[0:pads_half], np.int64) \
+            - np.array(pads[pads_half:], np.int64)
+        return out_shape.tolist()
 
     @classmethod
     def attributes(cls):
@@ -2310,6 +2329,40 @@ class KerasBaseConvOp(BaseConvOp, BaseActivationOp, KerasOp):
         if ret is None:
             ret = super(KerasBaseConvOp, self).__getattr__(item)
         return ret
+
+
+class KerasBaseDeconvOp(KerasBaseConvOp):
+    '''
+    Class KerasBaseDeconvOp inherited from KerasBaseConvOp.
+    Tf Keras deconv OPs must inherit this class, such as Conv2DTranspose, Conv3DTranspose etc.
+    '''
+    @classmethod
+    def attributes(cls):
+        return {'output_padding': {'type': AttrType.INTS, 'required': False, 'default': None}
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(KerasBaseDeconvOp, self).__init__(graph, attr_dict)
+        self.update_attributes(KerasBaseDeconvOp, attr_dict)
+        assert self.check_required(), 'KerasBaseDeconvOp is missing a required parameter.'
+
+    def update_pads(self, input_size, output_size):
+        if self.auto_pad not in ('SAME_UPPER', 'SAME_LOWER', 'VALID'):
+            return
+        new_pads, self.output_padding = OpHasPaddingStrides.cal_pads(
+            input_size,
+            output_size,
+            self.strides,
+            self.kernel_shape,
+            self.auto_pad,
+            dilations=self.dilations,
+            is_transpose=True,
+            zero_minimum=True,
+            out_padding=self.output_padding
+        )
+        if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
+            self.pads = new_pads
+        self.auto_pad = 'NOTSET'
 
 
 class ArmOp(Op):

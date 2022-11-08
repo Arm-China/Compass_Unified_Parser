@@ -146,7 +146,7 @@ class LiteAVERAGE_POOL_2DOp(BaseActivationOp, OpHasPaddingStrides, TfliteOp):
         out_tensor = self.cal_activation(out_tensor)
         self.set_out_tensor(out_tensor)
         if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
-            self.pads = OpHasPaddingStrides.cal_pads(
+            self.pads, _ = OpHasPaddingStrides.cal_pads(
                 inputs[0].shape[1:3],
                 out_tensor.shape[1:3],
                 self.strides,
@@ -371,7 +371,7 @@ class LiteCONV_2DOp(BaseActivationOp, BaseConvOp, TfliteOp):
         out_tensor = self.cal_activation(out_tensor)
         self.set_out_tensor(out_tensor)
         if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
-            self.pads = OpHasPaddingStrides.cal_pads(
+            self.pads, _ = OpHasPaddingStrides.cal_pads(
                 inputs[0].shape[1:3],
                 out_tensor.shape[1:3],
                 self.strides,
@@ -445,7 +445,7 @@ class LiteCONV_3DOp(BaseActivationOp, BaseConvOp, TfliteOp):
         out_tensor = self.cal_activation(out_tensor)
         self.set_out_tensor(out_tensor)
         if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
-            self.pads = OpHasPaddingStrides.cal_pads(
+            self.pads, _ = OpHasPaddingStrides.cal_pads(
                 inputs[0].shape[1:-1],
                 out_tensor.shape[1:-1],
                 self.strides,
@@ -520,7 +520,7 @@ class LiteCONV_3D_TRANSPOSEOp(BaseActivationOp, BaseConvOp, TfliteOp):
         self.set_out_tensor(out_tensor)
         self.output_shape = inputs[0].tolist()[1:-1]
         if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
-            self.pads = OpHasPaddingStrides.cal_pads(
+            self.pads, _ = OpHasPaddingStrides.cal_pads(
                 inputs[1].shape[1:-1],
                 out_tensor.shape[1:-1],
                 self.strides,
@@ -647,7 +647,7 @@ class LiteDEPTHWISE_CONV_2DOp(BaseActivationOp, BaseConvOp, TfliteOp):
         self.set_out_tensor(out_tensor)
 
         if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
-            self.pads = OpHasPaddingStrides.cal_pads(
+            self.pads, _ = OpHasPaddingStrides.cal_pads(
                 inputs[0].shape[1:3],
                 out_tensor.shape[1:3],
                 self.strides,
@@ -1308,7 +1308,7 @@ class LiteMAX_POOL_2DOp(BaseActivationOp, OpHasPaddingStrides, TfliteOp):
         out_tensor = self.cal_activation(out_tensor)
         self.set_out_tensor(out_tensor)
         if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
-            self.pads = OpHasPaddingStrides.cal_pads(
+            self.pads, _ = OpHasPaddingStrides.cal_pads(
                 inputs[0].shape[1:3],
                 out_tensor.shape[1:3],
                 self.strides,
@@ -2706,7 +2706,7 @@ class LiteTRANSPOSE_CONVOp(BaseConvOp, TfliteOp):
         self.set_out_tensor(out_tensor)
         self.output_shape = inputs[0].tolist()[1:3]
         if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
-            self.pads = OpHasPaddingStrides.cal_pads(
+            self.pads, _ = OpHasPaddingStrides.cal_pads(
                 inputs[1].shape[1:3],
                 out_tensor.shape[1:3],
                 self.strides,

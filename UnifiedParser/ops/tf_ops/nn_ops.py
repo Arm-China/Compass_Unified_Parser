@@ -29,7 +29,7 @@ class TfAvgPoolOp(TfHasPaddingStrides, OpHasOneOutPort):
                                         'VALID', 'NOTSET') else 'SAME',
                                     data_format='NHWC').numpy()
         if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
-            self.pads = OpHasPaddingStrides.cal_pads(
+            self.pads, _ = OpHasPaddingStrides.cal_pads(
                 inp.shape[1:-1],
                 out_tensor.shape[1:-1],
                 self.strides,
@@ -73,7 +73,7 @@ class TfAvgPool3DOp(TfHasPaddingStrides, OpHasOneOutPort):
                 'SAME_UPPER', 'SAME_LOWER') else 'VALID',
             data_format='NDHWC').numpy()
         if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
-            self.pads = OpHasPaddingStrides.cal_pads(
+            self.pads, _ = OpHasPaddingStrides.cal_pads(
                 inp.shape[1:-1],
                 out_tensor.shape[1:-1],
                 self.strides,
@@ -227,7 +227,7 @@ class TfConv2DOp(TfHasPaddingStrides, OpHasWeights, OpHasOneOutPort):
                                   dilations=self.dilations,
                                   data_format='NHWC').numpy()
         if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
-            self.pads = OpHasPaddingStrides.cal_pads(
+            self.pads, _ = OpHasPaddingStrides.cal_pads(
                 inp.shape[1:3],
                 out_tensor.shape[1:3],
                 self.strides,
@@ -260,6 +260,7 @@ class TfConv2DBackpropInputOp(TfHasPaddingStrides, OpHasWeights, OpHasOneOutPort
     def attributes(cls):
         return {1: {'dilations': {'default': [1, 1, 1, 1]},
                     'use_cudnn_on_gpu': {'type': AttrType.INT, 'default': 1},
+                    'output_padding': {'type': AttrType.INTS, 'required': False, 'default': None}
                     }
                 }
 
@@ -302,7 +303,7 @@ class TfConv2DBackpropInputOp(TfHasPaddingStrides, OpHasWeights, OpHasOneOutPort
         if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
             shape_slice = slice(
                 1, 3) if self.data_format == 'NHWC' else slice(2, 4)
-            self.pads = OpHasPaddingStrides.cal_pads(
+            self.pads, self.output_padding = OpHasPaddingStrides.cal_pads(
                 inputs[1].shape[shape_slice],
                 out_tensor.shape[shape_slice],
                 self.strides,
@@ -351,7 +352,7 @@ class TfConv3DOp(TfHasPaddingStrides, OpHasWeights, OpHasOneOutPort):
             data_format='NDHWC',
             dilations=[1] + self.dilations + [1]).numpy()
         if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
-            self.pads = OpHasPaddingStrides.cal_pads(
+            self.pads, _ = OpHasPaddingStrides.cal_pads(
                 inp.shape[1:-1],
                 out_tensor.shape[1:-1],
                 self.strides,
@@ -376,6 +377,7 @@ class TfConv3DBackpropInputV2Op(TfHasPaddingStrides, OpHasWeights, OpHasOneOutPo
     def attributes(cls):
         return {1: {'dilations': {'default': [1, 1, 1, 1, 1]},
                     'data_format': {'default': 'NDHWC', 'options': ['NDHWC', 'NCDHW']},
+                    'output_padding': {'type': AttrType.INTS, 'required': False, 'default': None}
                     }
                 }
 
@@ -408,7 +410,7 @@ class TfConv3DBackpropInputV2Op(TfHasPaddingStrides, OpHasWeights, OpHasOneOutPo
             dilations=([1] + self.dilations + [1])
         ).numpy()
         if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
-            self.pads = OpHasPaddingStrides.cal_pads(
+            self.pads, self.output_padding = OpHasPaddingStrides.cal_pads(
                 inp.shape[1:-1],
                 out_tensor.shape[1:-1],
                 self.strides,
@@ -511,7 +513,7 @@ class TfDepthwiseConv2dNativeOp(TfHasPaddingStrides, OpHasWeights, OpHasOneOutPo
                                                        1] + self.dilations + [1],
                                                    data_format='NHWC').numpy()
         if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
-            self.pads = OpHasPaddingStrides.cal_pads(
+            self.pads, _ = OpHasPaddingStrides.cal_pads(
                 inp.shape[1:3],
                 out_tensor.shape[1:3],
                 self.strides,
@@ -699,7 +701,7 @@ class TfMaxPoolOp(TfHasPaddingStrides, OpHasOneOutPort):
                                     padding=padding,
                                     data_format='NHWC').numpy()
         if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
-            self.pads = OpHasPaddingStrides.cal_pads(
+            self.pads, _ = OpHasPaddingStrides.cal_pads(
                 inp.shape[1:3],
                 out_tensor.shape[1:3],
                 self.strides,
@@ -751,7 +753,7 @@ class TfMaxPool3DOp(TfHasPaddingStrides, OpHasOneOutPort):
                 'SAME_UPPER', 'SAME_LOWER') else 'VALID',
             data_format='NDHWC').numpy()
         if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
-            self.pads = OpHasPaddingStrides.cal_pads(
+            self.pads, _ = OpHasPaddingStrides.cal_pads(
                 inp.shape[1:-1],
                 out_tensor.shape[1:-1],
                 self.strides,
@@ -797,13 +799,13 @@ class TfMaxPoolWithArgmaxOp(TfHasPaddingStrides, OpHasMultipleOutPorts):
         out_tensors = [t.numpy() for t in out_tensors]
         self.set_out_tensor(out_tensors)
         if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
-            self.pads = OpHasPaddingStrides.cal_pads(inputs[0].shape[1:3],
-                                                     out_tensors[0].shape[1:3],
-                                                     self.strides,
-                                                     self.kernel_shape,
-                                                     self.auto_pad,
-                                                     zero_minimum=True
-                                                     )
+            self.pads, _ = OpHasPaddingStrides.cal_pads(inputs[0].shape[1:3],
+                                                        out_tensors[0].shape[1:3],
+                                                        self.strides,
+                                                        self.kernel_shape,
+                                                        self.auto_pad,
+                                                        zero_minimum=True
+                                                        )
             self.auto_pad = 'NOTSET'
 
 

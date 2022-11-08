@@ -34,7 +34,7 @@ class TfKerasAveragePooling2DOp(TfHasPaddingStrides, OpHasOneOutPort, KerasOp):
                                                     data_format='channels_last')
         out_tensor = avg_pool(inp).numpy()
         if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
-            self.pads = OpHasPaddingStrides.cal_pads(
+            self.pads, _ = OpHasPaddingStrides.cal_pads(
                 inp.shape[1:-1],
                 out_tensor.shape[1:-1],
                 self.strides,
@@ -77,7 +77,7 @@ class TfKerasAveragePooling3DOp(TfHasPaddingStrides, OpHasOneOutPort, KerasOp):
                                                        data_format='channels_last')
         out_tensor = avg_pool_3d(inp).numpy()
         if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
-            self.pads = OpHasPaddingStrides.cal_pads(
+            self.pads, _ = OpHasPaddingStrides.cal_pads(
                 inp.shape[1:-1],
                 out_tensor.shape[1:-1],
                 self.strides,
@@ -170,7 +170,7 @@ class TfKerasConv2DOp(KerasBaseConvOp):
             groups=self.group)
         out_tensor = conv2d(inp).numpy()
         if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
-            self.pads = OpHasPaddingStrides.cal_pads(
+            self.pads, _ = OpHasPaddingStrides.cal_pads(
                 inp.shape[1:3],
                 out_tensor.shape[1:3],
                 self.strides,
@@ -190,11 +190,10 @@ class TfKerasConv2DOp(KerasBaseConvOp):
         return {'type': 'Conv', 'version': 1}
 
 
-class TfKerasConv2DTransposeOp(KerasBaseConvOp):
+class TfKerasConv2DTransposeOp(KerasBaseDeconvOp):
     @classmethod
     def attributes(cls):
         return {2: {'filters': {'type': AttrType.INT, 'required': True},
-                    'output_padding': {'type': AttrType.INTS, 'required': False, 'default': None}
                     },
                 }
 
@@ -222,6 +221,7 @@ class TfKerasConv2DTransposeOp(KerasBaseConvOp):
             data_format='channels_last',
             dilation_rate=self.dilations)
         out_tensor = conv2d(inp).numpy()
+        self.update_pads(list(inp.shape[1:3]), list(out_tensor.shape[1:3]))
         if self.data_format == 'NCHW':
             out_tensor = np.transpose(out_tensor, [0, 3, 1, 2])
         self.set_out_tensor(out_tensor)
@@ -262,7 +262,7 @@ class TfKerasConv3DOp(KerasBaseConvOp):
             groups=self.group)
         out_tensor = conv3d(inp).numpy()
         if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
-            self.pads = OpHasPaddingStrides.cal_pads(
+            self.pads, _ = OpHasPaddingStrides.cal_pads(
                 inp.shape[1:4],
                 out_tensor.shape[1:4],
                 self.strides,
@@ -282,11 +282,10 @@ class TfKerasConv3DOp(KerasBaseConvOp):
         return {'type': 'Conv', 'version': 1}
 
 
-class TfKerasConv3DTransposeOp(KerasBaseConvOp):
+class TfKerasConv3DTransposeOp(KerasBaseDeconvOp):
     @classmethod
     def attributes(cls):
         return {2: {'filters': {'type': AttrType.INT, 'required': True},
-                    'output_padding': {'type': AttrType.INTS, 'required': False, 'default': None}
                     },
                 }
 
@@ -314,6 +313,7 @@ class TfKerasConv3DTransposeOp(KerasBaseConvOp):
             data_format='channels_last',
             dilation_rate=self.dilations)
         out_tensor = conv3d(inp).numpy()
+        self.update_pads(list(inp.shape[1:4]), list(out_tensor.shape[1:4]))
         if self.data_format == 'NCDHW':
             out_tensor = np.transpose(out_tensor, [0, 4, 1, 2, 3])
         self.set_out_tensor(out_tensor)
