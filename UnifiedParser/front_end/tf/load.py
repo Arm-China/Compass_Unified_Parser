@@ -44,9 +44,19 @@ def convert_attr_to_onnx(attr_dict):
             new_attr.pop(k)
         elif k == 'data_format':
             if v == 'channels_first':
-                data_format = 'NCDHW' if len(attr_dict.get('input_shape', [])) == 5 else 'NCHW'
+                if 'input_shape' in attr_dict \
+                        and isinstance(attr_dict['input_shape'], (list, tuple)) \
+                        and len(attr_dict['input_shape']) == 5:
+                    data_format = 'NCDHW'
+                else:
+                    data_format = 'NCHW'
             elif v == 'channels_last':
-                data_format = 'NDHWC' if len(attr_dict.get('input_shape', [])) == 5 else 'NHWC'
+                if 'input_shape' in attr_dict \
+                        and isinstance(attr_dict['input_shape'], (list, tuple)) \
+                        and len(attr_dict['input_shape']) == 5:
+                    data_format = 'NDHWC'
+                else:
+                    data_format = 'NHWC'
             else:
                 data_format = v
             new_attr.update({k: data_format})

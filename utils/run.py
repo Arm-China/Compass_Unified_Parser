@@ -46,7 +46,7 @@ def run_parser(model_path, feed_dict, output_names=None, model_type=None, save_o
     INFO('Config file %s is generated' % cfg_path)
 
     # Run parser to get float IR
-    run_pass = generate_ir(cfg_path)
+    run_pass = generate_ir(cfg_path, verbose=True)
 
     if not run_pass:
         WARN('Fail in running parser!')

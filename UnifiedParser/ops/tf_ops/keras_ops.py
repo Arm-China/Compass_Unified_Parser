@@ -236,6 +236,20 @@ class TfKerasConv3DTransposeOp(KerasBaseConvOp):
         return {'type': 'ConvTranspose', 'version': 11}
 
 
+class TfKerasFlattenOp(OpHasOneOutPort, LayoutConcernedOp, TfOp):
+    def infer_shape(self):
+        super(TfKerasFlattenOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        data_format = 'channels_first' if self.data_format.startswith('NC') else 'channels_last'
+        flatten = tf.keras.layers.Flatten(data_format)
+        out_tensor = flatten(inputs[0]).numpy()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'Reshape', 'version': 1}
+
+
 class TfKerasGRUOp(KerasRecurrent):
     @classmethod
     def attributes(cls):
