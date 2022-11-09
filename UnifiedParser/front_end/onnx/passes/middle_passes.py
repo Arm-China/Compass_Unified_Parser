@@ -6541,7 +6541,8 @@ def adjust_3d_to_4d(graph):
                     if op_type == 'InstanceNormalization':
                         node_obj.non_channel_axes = [2, 3]
                     elif op_type == 'Moments':
-                        node_obj.axes = [(axis + 1) for axis in node_obj.axes]
+                        moments_axes = OpHasAxis.make_axes_non_negative(node_obj.axes, len(in_shapes[0]))
+                        node_obj.axes = [(axis + 1) for axis in moments_axes]
                     elif op_type == 'Resize':
                         in_edges = graph.sorted_in_edges(
                             node_name, keys=True, data=True)
