@@ -100,4 +100,10 @@ class TfSwitchOp(OpHasVariableOutPorts, TfOp):
             output_true = output_true.numpy()
         except:
             output_true = inputs[0].astype(self.dtype) if pred else np.empty(0, dtype=self.dtype)
-        self.set_out_tensor([output_false, output_true])
+        out_ports = self.get_out_ports()
+        if out_ports == [0]:
+            self.set_out_tensor([output_false])
+        elif out_ports == [1]:
+            self.set_out_tensor([output_true])
+        else:
+            self.set_out_tensor([output_false, output_true])

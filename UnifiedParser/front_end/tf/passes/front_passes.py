@@ -3173,6 +3173,12 @@ def convert_to_onnx(graph):
                                 '[Parser]: Invalid TF FusedBatchNorm/FusedBatchNormV3 Node(%s) to convert to Onnx!' % node_name)
                             continue
                         new_node_attr.update({'training_mode': 1})
+                    else:
+                        out_edges = graph.sorted_out_edges(
+                            node_name, keys=True, data=True)
+                        for _, dst, k, out_attr in out_edges:
+                            if out_attr['src_out_port'] > 0:
+                                graph.remove_edge(node_name, dst, key=k)
                 elif pure_type == 'InTopKV2':
                     graph.remove_edges_from(in_edges[2:])
                 elif pure_type == 'LeftShift':
