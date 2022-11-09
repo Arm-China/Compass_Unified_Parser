@@ -664,6 +664,20 @@ class TfInTopKV2Op(OpHasOneOutPort, TfOp):
         return {'type': 'InTopK', 'version': 1}
 
 
+class TfInvertPermutationOp(OpHasOneOutPort, TfOp):
+    def infer_shape(self):
+        super(TfInvertPermutationOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        assert len(
+            inputs) == 1, 'TfInvertPermutationOp expects 1 inputs, but got %d.' % len(inputs)
+        try:
+            # This function will raise exception if input is duplicated or larger than input size.
+            out_tensor = tf.math.invert_permutation(inputs[0]).numpy()
+        except:
+            out_tensor = inputs[0]
+        self.set_out_tensor(out_tensor)
+
+
 class TfIsFiniteOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfIsFiniteOp, self).infer_shape()

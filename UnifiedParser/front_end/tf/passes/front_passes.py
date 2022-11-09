@@ -6,12 +6,12 @@ import math
 import numpy as np
 import re
 import copy
-from ....ops.op import TfOp, OpHasWeights, OpHasPaddingStrides
+from ....ops.op import TfOp, Op, OpHasWeights, OpHasPaddingStrides
 from ....graph.node_wrap import NodeWrap
 from ....graph.graph_algo import get_valid_node_name, clear_redundant_nodes, cal_path_length, has_path
 from ....graph.pattern_match import matched_patterns, single_node_matcher, two_nodes_matcher
 from ...onnx.passes.common_passes import insert_constant, insert_reshape, insert_reshape_after, \
-    insert_transpose, remove_node_safely, insert_cast, place_reshape
+    insert_transpose, insert_transpose_after, remove_node_safely, insert_cast, place_reshape
 from ....common.defs import Tensor, FLOAT_EQUAL, INT_MAX
 from ....common.utils import extend_lists
 from ....logger import INFO, DEBUG, WARN, ERROR, FATAL
@@ -72,6 +72,45 @@ def convert_conv_backpropinput(graph):
                 '[Parser]: Meets invalid Conv2DBackpropInput/Conv3DBackpropInputV2 Op (%s) in convert_conv_backpropinput!' % conv_back)
     if matched:
         clear_redundant_nodes(graph)
+
+
+def convert_invert_permutation(graph):
+    matches = single_node_matcher(graph, 'TfInvertPermutation')
+    for m in matches:
+        invperm = m['target']
+        invperm_obj = NodeWrap(graph, invperm)['object']
+        in_edges = graph.sorted_in_edges(invperm, data=True)
+        out_edges = graph.sorted_out_edges(invperm, data=True)
+        if invperm_obj is None or len(in_edges) != 1 or len(out_edges) < 1:
+            WARN(
+                '[Parser]: Meets invalid Node(%s) in convert_invert_permutation!' % invperm)
+            continue
+        input_shapes = invperm_obj.get_input_shapes()
+        if len(input_shapes) < 1 or input_shapes[0] is None or len(input_shapes[0]) != 1:
+            continue
+        input_num = input_shapes[0][0]
+        src, _, in_attr = in_edges[0]
+        neg = get_valid_node_name(graph, invperm + '_neg')
+        graph.remove_edges_from(in_edges)
+        graph.add_edge(src, neg, **in_attr)
+        topk_in_attr = copy.deepcopy(in_attr)
+        topk_in_attr.update({'src_out_port': 0})
+        graph.add_edge(neg, invperm, **topk_in_attr)
+
+        topk_out_val = get_valid_node_name(graph, invperm + '_topk_out_val')
+        graph.add_edge(invperm, topk_out_val, **{'src_out_port': 0, 'dst_in_port': 0})
+        for _, dst, out_attr in out_edges:
+            graph.remove_edge(invperm, dst)
+            new_out_attr = copy.deepcopy(out_attr)
+            new_out_attr.update({'src_out_port': 1})
+            graph.add_edge(invperm, dst, **new_out_attr)
+
+        neg_attr = {'name': neg, 'opset_version': 13}
+        NodeWrap(graph, neg).replace_obj('Neg', neg_attr)
+        topk_attr = invperm_obj.copied_attr()
+        topk_attr.update({'k': input_num, 'opset_version': 1})
+        NodeWrap(graph, invperm).replace_obj('TopK', topk_attr)
+        NodeWrap(graph, topk_out_val).replace_obj('Out', {'name': topk_out_val})
 
 
 def convert_matmul(graph):
@@ -352,6 +391,55 @@ def convert_resize_bilinear_nearest(graph):
         else:
             WARN(
                 '[Parser]: Meets invalid Op (%s) in convert_resize_bilinear_nearest!' % resize_bili_near)
+
+
+def convert_reverse(graph):
+    matches = single_node_matcher(graph, 'TfReverseV2')
+    for m in matches:
+        rev = m['target']
+        rev_obj = NodeWrap(graph, rev)['object']
+        in_edges = graph.sorted_in_edges(rev, data=True)
+        if rev_obj is None or len(in_edges) < 1 \
+                or len(rev_obj.get_input_shapes()) < 1:
+            WARN(
+                '[Parser]: Meets invalid TfReverseV2 (%s) in convert_reverse!' % rev)
+            continue
+        input_shape = rev_obj.get_input_shapes()[0]
+        if input_shape is None \
+                or any(d is None for d in input_shape) \
+                or len(rev_obj.axes) != 1:
+            continue
+        out_node = rev
+        src, _, in_attr = in_edges[0]
+        rev_axis = (rev_obj.axes[0] + len(input_shape)) if rev_obj.axes[0] < 0 else rev_obj.axes[0]
+        if len(input_shape) < 2:
+            insert_reshape(graph, src, rev, in_attr, [-1, 1])
+            out_node = insert_reshape_after(graph, rev, input_shape, input_shape + [1])
+            time_axis = 0
+            batch = 1
+            seq_length = input_shape[0]
+        elif rev_axis in (0, 1):
+            time_axis = rev_axis
+            batch = input_shape[1 - time_axis]
+            seq_length = input_shape[time_axis]
+        else:
+            pre_perm = [rev_axis] + [idx for idx in range(len(input_shape)) if idx != rev_axis]
+            insert_transpose(graph, src, rev, in_attr, pre_perm)
+            post_perm = Op.cal_inverse_perm(pre_perm)
+            out_node = insert_transpose_after(graph, rev, post_perm)
+            time_axis = 0
+            batch = input_shape[1]
+            seq_length = input_shape[rev_axis]
+        seq_len = np.array([seq_length] * batch, np.int32)
+        graph.remove_edges_from(in_edges[1:])
+        insert_constant(graph, rev + '_seq_len', seq_len, rev, in_port=1)
+        rev_seq_attr = rev_obj.copied_attr()
+        rev_seq_attr.update({'time_axis': time_axis, 'batch_axis': 1 - time_axis,
+                             'opset_version': 10})
+        NodeWrap(graph, rev).replace_obj('ReverseSequence', rev_seq_attr)
+        if rev in graph._attr['output_names'] and out_node != rev:
+            index = graph._attr['output_names'].index(rev)
+            graph._attr['output_names'][index] = out_node
 
 
 def remove_identity_n(graph):
@@ -3247,26 +3335,6 @@ def convert_to_onnx(graph):
                         continue
                 elif pure_type == 'Relu6':
                     new_node_attr.update({'min': 0., 'max': 6.})
-                elif pure_type == 'ReverseV2':
-                    if node_obj.axis in (0, 1) \
-                            and len(node_obj.get_input_shapes()) >= 1 \
-                            and node_obj.get_input_shapes()[0] is not None \
-                            and len(node_obj.get_input_shapes()[0]) >= 2 \
-                            and all([d is not None for d in node_obj.get_input_shapes()[0]]):
-                        time_axis = node_obj.axis
-                        seq_length = node_obj.get_input_shapes()[0][time_axis]
-                        batch = node_obj.get_input_shapes()[0][1 - time_axis]
-                        seq_len = np.array([seq_length] * batch, np.int32)
-                        graph.remove_edges_from(in_edges[1:])
-                        insert_constant(graph, node_name + '_seq_len',
-                                        seq_len, node_name, in_port=1)
-
-                        new_node_attr.update({'time_axis': time_axis,
-                                              'batch_axis': 1 - time_axis})
-                    else:
-                        WARN(
-                            '[Parser]: Invalid TF ReverseV2 Node(%s) to convert to Onnx!' % node_name)
-                        continue
                 elif pure_type == 'RightShift':
                     new_node_attr.update({'direction': 'RIGHT'})
                 elif pure_type == 'ScatterNd':

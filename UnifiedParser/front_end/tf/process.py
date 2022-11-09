@@ -12,7 +12,8 @@ from .passes.front_passes import merge_gru, merge_gru2, merge_lstm, merge_zero_f
     convert_to_onnx, split_b2s, split_s2b, split_special_floormod, \
     convert_resize_bilinear_nearest, remove_identity_n, convert_conv_backpropinput, \
     convert_special_fakequantminmaxvars, convert_maxpoolwithargmax, convert_nms, convert_fusebatchnormv3, \
-    convert_matmul, remove_isfinite_select, merge_fasterrcnn, merge_keras_maskrcnn
+    convert_matmul, convert_invert_permutation, convert_reverse, \
+    remove_isfinite_select, merge_fasterrcnn, merge_keras_maskrcnn
 from .passes.keras_front_passes import process_keras_op
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 
@@ -67,6 +68,8 @@ def process_tf(model_path, params):
         convert_maxpoolwithargmax(graph)
         convert_special_fakequantminmaxvars(graph)
         convert_nms(graph, params)
+        convert_invert_permutation(graph)
+        convert_reverse(graph)
 
         convert_to_onnx(graph)
 

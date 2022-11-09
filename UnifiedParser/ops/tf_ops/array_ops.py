@@ -509,8 +509,8 @@ class TfReverseV2Op(OpHasAxis, OpHasOneOutPort, TfOp):
     def __getattr__(self, item):
         ret = None
         try:
-            if item == 'axis':
-                ret = int(self.get_input_tensors()[1])
+            if item == 'axes':
+                ret = self.get_input_tensors()[1].tolist()
                 self.__dict__['_attr'][item].value = ret
         except:
             ret = None
@@ -521,7 +521,8 @@ class TfReverseV2Op(OpHasAxis, OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfReverseV2Op, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.reverse(inputs[0], axis=np.array([self.axis])).numpy()
+        assert inputs[1].size == 1, 'TfReverseV2Op only supports 1 axis for now, but got %d' % inputs[1].size
+        out_tensor = tf.reverse(inputs[0], axis=inputs[1]).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -644,6 +645,27 @@ class TfShapeOp(OpHasOneOutPort, ConstLikeOp, TfOp):
         inputs = self.get_input_tensors()
         if inputs and inputs[0] is not None:
             out_tensor = np.array(inputs[0].shape, np.dtype(self.out_type))
+        else:
+            out_tensor = None
+        self.set_out_tensor(out_tensor)
+
+
+class TfSizeOp(OpHasOneOutPort, ConstLikeOp, TfOp):
+    @classmethod
+    def attributes(cls):
+        return {1: {'out_type': {'type': AttrType.STRING, 'default': 'int32'}}
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfSizeOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfSizeOp, attr_dict)
+        assert self.check_required(), 'TfSizeOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(TfSizeOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        if inputs and inputs[0] is not None:
+            out_tensor = np.array(inputs[0].size, np.dtype(self.out_type))
         else:
             out_tensor = None
         self.set_out_tensor(out_tensor)
