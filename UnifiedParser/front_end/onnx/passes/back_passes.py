@@ -1784,7 +1784,7 @@ def merge_hw_maxunpool(graph):
 def rename_activations(graph):
     activations = ['Celu', 'Clip', 'Elu', 'Gelu', 'HardSigmoid', 'HardSwish',
                    'LeakyRelu', 'Mish',  'PRelu', 'Relu',
-                   'Selu', 'Shrink', 'Sigmoid', 'Silu', 'Softplus', 'Softsign',
+                   'Selu', 'Shrink', 'Sigmoid', 'Silu', 'Softplus', 'Softsign', 'Swish',
                    'Tanh', 'ThresholdedRelu', ]
     matches = [single_node_matcher(graph, act_type)
                for act_type in activations]
@@ -1841,6 +1841,9 @@ def rename_activations(graph):
         elif act_obj.type == 'Selu':
             method = 'SELU'
             act_attr.update({'alpha': act_obj.alpha, 'gamma': act_obj.gamma})
+        elif act_obj.type == 'Swish':
+            method = 'SWISH'
+            act_attr.update({'alpha': act_obj.alpha})
         elif act_obj.type == 'Gelu':
             method = 'GELU'
             act_attr.update({'approximate': act_obj.approximate})

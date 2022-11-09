@@ -6670,6 +6670,7 @@ def middle_passes(graph, params):
                              'Range', 'NonZero', 'EyeLike'])
 
     fuse_const(graph)
+
     convert_abnormal_reshape(graph)
     convert_fill(graph)
     convert_dequantizelinear(graph)

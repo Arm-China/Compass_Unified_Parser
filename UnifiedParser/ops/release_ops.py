@@ -80,7 +80,7 @@ class ArmActivationOp(LayoutUnawareOp, OpHasMethod, OpHasOneOutPort, ArmOp):
 
     @classmethod
     def attributes(cls):
-        return {'method': {'options': ['CELU', 'CLIP', 'ELU', 'GELU', 'HARDSIGMOID', 'HARDSWISH', 'LEAKYRELU', 'MISH', 'PRELU', 'RELU', 'RELU6', 'SELU', 'SHRINK', 'SIGMOID', 'SILU', 'SOFTPLUS', 'SOFTSIGN', 'TANH', 'TANH_ABS', 'THRESHOLDEDRELU']},
+        return {'method': {'options': ['CELU', 'CLIP', 'ELU', 'GELU', 'HARDSIGMOID', 'HARDSWISH', 'LEAKYRELU', 'MISH', 'PRELU', 'RELU', 'RELU6', 'SELU', 'SHRINK', 'SIGMOID', 'SILU', 'SOFTPLUS', 'SOFTSIGN', 'SWISH', 'TANH', 'TANH_ABS', 'THRESHOLDEDRELU']},
                 'clip_min': {'type': AttrType.FLOAT, 'default': None},
                 'clip_max': {'type': AttrType.FLOAT, 'default': None},
                 'alpha': {'type': AttrType.FLOAT, 'default': None},
@@ -110,6 +110,7 @@ class ArmActivationOp(LayoutUnawareOp, OpHasMethod, OpHasOneOutPort, ArmOp):
               'SILU': lambda x: (x) * tf.sigmoid(x),
               'SOFTPLUS': lambda x: tf.log(tf.exp(x) + 1),
               'SOFTSIGN': lambda x: x / (1 + tf.abs(x)),
+              'SWISH': lambda x, alpha: (x) * tf.sigmoid(alpha*x),
               'TANH': tf.tanh,
               'TANH_ABS': lambda x: tf.abs(tf.tanh(x)),
               'THRESHOLDEDRELU': lambda x: (x),
@@ -145,6 +146,8 @@ class ArmActivationOp(LayoutUnawareOp, OpHasMethod, OpHasOneOutPort, ArmOp):
             out_tensor = self.shrink()
         elif self.method == 'SILU':
             out_tensor = self.silu()
+        elif self.method == 'SWISH':
+            out_tensor = func(inputs[0], self.alpha).numpy()
         elif self.method == 'THRESHOLDEDRELU':
             out_tensor = self.thresholded_relu()
         else:
@@ -232,6 +235,8 @@ class ArmActivationOp(LayoutUnawareOp, OpHasMethod, OpHasOneOutPort, ArmOp):
             elif self.method == 'SELU':
                 txt_file.write('alpha=%1.6f\n' % float(self.alpha))
                 txt_file.write('gamma=%1.6f\n' % float(self.gamma))
+            elif self.method == 'SWISH':
+                txt_file.write('alpha=%1.6f\n' % float(self.alpha))
             elif self.method == 'SHRINK':
                 txt_file.write('bias=%1.6f\n' % float(self.bias))
                 txt_file.write('lambd=%1.6f\n' % float(self.lambd))

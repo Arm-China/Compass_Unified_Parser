@@ -655,6 +655,24 @@ class ReduceVarianceOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
         self.set_out_tensor(out_tensor)
 
 
+class SwishOp(OpHasOneOutPort, CommonOp):
+    @classmethod
+    def attributes(cls):
+        return {'alpha': {'type': AttrType.FLOAT, 'default': 1}
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(SwishOp, self).__init__(graph, attr_dict)
+        self.update_attributes(SwishOp, attr_dict)
+        assert self.check_required(), 'SwishOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(SwishOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = (inputs[0]) * tf.sigmoid(self.alpha*inputs[0]).numpy()
+        self.set_out_tensor(out_tensor)
+
+
 class RollOp(OpHasOneOutPort, CommonOp):
     def __init__(self, graph, attr_dict=None):
         super(RollOp, self).__init__(graph, attr_dict)
