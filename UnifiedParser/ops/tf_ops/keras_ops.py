@@ -236,6 +236,30 @@ class TfKerasConv3DTransposeOp(KerasBaseConvOp):
         return {'type': 'ConvTranspose', 'version': 11}
 
 
+class TfKerasELUOp(OpHasOneOutPort, TfOp):
+    @classmethod
+    def attributes(cls):
+        return {1: {'alpha': {'type': AttrType.FLOAT, 'default': 1.}}
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfKerasELUOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfKerasELUOp, attr_dict)
+        assert self.check_required(), 'TfKerasELUOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(TfKerasELUOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = np.array(inputs[0])
+        mask = out_tensor <= 0
+        out_tensor[mask] = self.alpha * (np.exp(out_tensor[mask]) - 1)
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'Elu', 'version': 6}
+
+
 class TfKerasFlattenOp(OpHasOneOutPort, LayoutConcernedOp, TfOp):
     def infer_shape(self):
         super(TfKerasFlattenOp, self).infer_shape()
