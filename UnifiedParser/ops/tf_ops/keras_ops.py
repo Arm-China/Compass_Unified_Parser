@@ -29,6 +29,29 @@ class TfKerasAddOp(OpHasOneOutPort, TfOp):
         return {'type': 'Sum', 'version': 6}
 
 
+class TfKerasConcatenateOp(OpHasAxis, OpHasOneOutPort, TfOp):
+    @classmethod
+    def attributes(cls):
+        return {2: {'axis': {'type': AttrType.INT, 'required': False, 'default': -1}}
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfKerasConcatenateOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfKerasConcatenateOp, attr_dict)
+        assert self.check_required(), 'TfKerasConcatenateOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(TfKerasConcatenateOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        concat = tf.keras.layers.Concatenate(axis=self.axis)
+        out_tensor = concat([*inputs]).numpy()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'Concat', 'version': 4}
+
+
 class TfKerasConv2DOp(KerasBaseConvOp):
     @classmethod
     def attributes(cls):
