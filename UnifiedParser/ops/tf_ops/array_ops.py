@@ -685,6 +685,9 @@ class TfSplitOp(OpHasAxis, OpHasMultipleOutPorts, TfOp):
     def attributes(cls):
         return {1: {'num_split': {'type': AttrType.INT, 'required': True},
                     'axis': {'default': 0}
+                    },
+                2: {'num_or_size_splits': {'required': True},
+                    'axis': {'default': 0}
                     }
                 }
 
@@ -696,13 +699,20 @@ class TfSplitOp(OpHasAxis, OpHasMultipleOutPorts, TfOp):
     def infer_shape(self):
         super(TfSplitOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        self.axis = int(inputs[0])
-        if np.ndim(self.num_split) == 0:
-            self.split = np.array(
-                [inputs[1].shape[self.axis] // int(self.num_split)] * int(self.num_split), np.int64)
+        if self.opcode_version == 1:
+            assert len(inputs) >= 2, 'TfSplitOp expects 2 inputs, but got %d.' % len(inputs)
+            self.axis = int(inputs[0])
+            input_data = inputs[1]
+            num_split = self.num_split
         else:
-            self.split = np.array(self.num_split, np.int64)
-        out_tensors = tf.split(inputs[1], self.split, axis=self.axis)
+            input_data = inputs[0]
+            num_split = self.num_or_size_splits
+        if np.ndim(num_split) == 0:
+            self.split = np.array(
+                [input_data.shape[self.axis] // int(num_split)] * int(num_split), np.int64)
+        else:
+            self.split = np.array(num_split, np.int64)
+        out_tensors = tf.split(input_data, self.split, axis=self.axis)
         out_tensors = [t.numpy() for t in out_tensors]
         self.set_out_tensor(out_tensors)
 

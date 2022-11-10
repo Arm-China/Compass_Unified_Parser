@@ -3289,12 +3289,16 @@ def convert_to_onnx(graph):
                     new_node_attr.update(
                         {'blocksize': new_node_attr['block_size']})
                 elif pure_type == 'Split':
-                    if len(in_edges) == 2:
+                    if node_obj.opcode_version == 1 and len(in_edges) == 2:
                         graph.remove_edges_from(in_edges)
                         src, _, in_attr = in_edges[1]
                         new_in_attr = copy.deepcopy(in_attr)
                         new_in_attr['dst_in_port'] = 0
                         graph.add_edge(src, node_name, **new_in_attr)
+                        new_node_attr.update(
+                            {'split': node_obj.split.tolist()})
+                    elif node_obj.opcode_version == 2 and len(in_edges) > 1:
+                        graph.remove_edges_from(in_edges[1:])
                         new_node_attr.update(
                             {'split': node_obj.split.tolist()})
                     else:
