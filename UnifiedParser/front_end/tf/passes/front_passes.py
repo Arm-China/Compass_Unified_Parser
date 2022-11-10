@@ -78,7 +78,7 @@ def convert_matmul(graph):
     matches = matched_patterns(graph,
                                nodes=[
                                    ('matmul', {
-                                    'op': ['TfMatMul', 'TfBatchMatMulV2']}),
+                                    'op': ['TfMatMul', 'TfBatchMatMulV2', 'TfBatchMatMul']}),
                                ],
                                edges=[])
     for m in matches:
