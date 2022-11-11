@@ -30,7 +30,7 @@ class TfAvgPoolOp(TfHasPaddingStrides, OpHasOneOutPort):
                                     data_format='NHWC').numpy()
         if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
             self.pads = OpHasPaddingStrides.cal_pads(
-                inputs[0].shape[1:-1],
+                inp.shape[1:-1],
                 out_tensor.shape[1:-1],
                 self.strides,
                 self.kernel_shape,
