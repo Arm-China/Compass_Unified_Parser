@@ -3270,18 +3270,6 @@ def convert_to_onnx(graph):
                                 graph.remove_edge(node_name, dst, key=k)
                 elif pure_type == 'InTopKV2':
                     graph.remove_edges_from(in_edges[2:])
-                elif pure_type == 'KerasFlatten':
-                    if node_data_format == 'NCHW':
-                        input_shapes = node_obj.get_input_shapes()
-                        if len(in_edges) < 1 \
-                                or len(input_shapes) < 1 \
-                                or input_shapes[0] is None:
-                            WARN('[Parser]: Invalid TF KerasFlatten Node(%s) to convert to Onnx!' % node_name)
-                            continue
-                        perm = [idx for idx in range(len(input_shapes[0])) if idx != 1] + [1]
-                        src, _, in_attr = in_edges[0]
-                        insert_transpose(graph, src, node_name, in_attr, perm)
-                    new_node_attr.update({'shape': [0, -1], 'data_format': 'NHWC'})
                 elif pure_type == 'LeftShift':
                     new_node_attr.update({'direction': 'LEFT'})
                 elif pure_type == 'LRN':

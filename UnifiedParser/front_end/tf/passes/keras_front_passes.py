@@ -3,11 +3,13 @@
 
 
 import numpy as np
+import re
 import copy
+from ....ops.op import KerasOp, OpHasWeights
 from ....graph.node_wrap import NodeWrap
 from ....graph.graph_algo import get_valid_node_name, clear_redundant_nodes
 from ....graph.pattern_match import matched_patterns, single_node_matcher
-from ...onnx.passes.common_passes import insert_constant, insert_reshape_after
+from ...onnx.passes.common_passes import insert_constant, insert_reshape_after, insert_transpose
 from ....common.utils import extend_lists
 from ....logger import INFO, DEBUG, WARN, ERROR, FATAL
 
@@ -131,6 +133,57 @@ def convert_gru_lstm(graph):
         NodeWrap(graph, rnn).replace_obj(dst_onnx_type, rnn_attr)
 
 
+def convert_to_onnx(graph):
+    '''Convert keras op to the onnx version.'''
+    def warn_invalid_node(op_type, node_name):
+        WARN('[Parser]: Meets invalid Keras op(%s) for Node(%s) in convert_to_onnx!' %
+             (str(op_type), str(node_name)))
+
+    keras_ops = KerasOp.get_concrete_subclass_names()
+    matches = extend_lists([single_node_matcher(graph, op_type)
+                            for op_type in keras_ops])
+    for m in matches:
+        node_name = m['target']
+        node_obj = NodeWrap(graph, node_name)['object']
+        if node_obj is None:
+            warn_invalid_node(None, node_name)
+            continue
+
+        in_edges = graph.sorted_in_edges(node_name, data=True)
+        new_node_attr = node_obj.copied_attr()
+        node_data_format = 'NCHW' if node_obj.data_format.startswith('NC') else 'NHWC'
+        pure_type = re.sub(r'^TfKeras', '', node_obj.type)
+        if getattr(node_obj, 'correspond_onnx_op', None) is None:
+            continue
+        if isinstance(node_obj, OpHasWeights):
+            if node_obj.weights is None:
+                WARN('[Parser]: Node(%s) does not contain weights!' % node_name)
+                continue
+            new_weights = np.transpose(
+                node_obj.weights, axes=type(node_obj).perm_tf_to_onnx())
+            new_node_attr.update({'weights': new_weights})
+
+        if pure_type == 'Flatten':
+            if node_data_format == 'NCHW':
+                input_shapes = node_obj.get_input_shapes()
+                if len(in_edges) < 1 \
+                        or len(input_shapes) < 1 \
+                        or input_shapes[0] is None:
+                    warn_invalid_node(pure_type, node_name)
+                    continue
+                perm = [idx for idx in range(len(input_shapes[0])) if idx != 1] + [1]
+                src, _, in_attr = in_edges[0]
+                insert_transpose(graph, src, node_name, in_attr, perm)
+                node_data_format = 'NHWC'
+            new_node_attr.update({'shape': [0, -1]})
+
+        new_node_attr.update(
+            {'opset_version': node_obj.correspond_onnx_op['version'],
+             'data_format': node_data_format})
+        NodeWrap(graph, node_name).replace_obj(
+            node_obj.correspond_onnx_op['type'], new_node_attr)
+
+
 def process_keras_op(graph):
     if not graph._attr['is_keras_model']:
         return
@@ -138,3 +191,5 @@ def process_keras_op(graph):
     from ...lite.passes.front_passes import split_op_has_activation
     convert_gru_lstm(graph)
     split_op_has_activation(graph, is_tf_op=True)
+
+    convert_to_onnx(graph)

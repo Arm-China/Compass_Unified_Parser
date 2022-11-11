@@ -2220,14 +2220,22 @@ class TfHasPaddingStrides(OpHasPaddingStrides, TfOp):
                         '[Parser]: Meets invalid kernel_shape for Node(%s) in infer_shape!' % self.name)
 
 
-class KerasRecurrent(OpHasVariableOutPorts, TfOp):
+class KerasOp(TfOp):
     '''
-    Class KerasRecurrent inherited from OpHasVariableOutPorts, TfOp class.
-    All recurrent ops(GRU, LSTM and etc) under the tf framework must inherit KerasRecurrent.
+    Class KerasOp inherited from TfOp class.
+    All ops under tf.keras.layers must inherit KerasOp.
+    '''
+    pass
+
+
+class KerasRecurrentOp(OpHasVariableOutPorts, KerasOp):
+    '''
+    Class KerasRecurrentOp inherited from OpHasVariableOutPorts, KerasOp class.
+    All recurrent ops(GRU, LSTM and etc) under the tf framework must inherit KerasRecurrentOp.
     '''
     @classmethod
     def attributes(cls):
-        '''return attributes of KerasRecurrent class.'''
+        '''return attributes of KerasRecurrentOp class.'''
         return {'units': {'type': AttrType.INT, 'required': True},
                 'activation': {'type': AttrType.STRING, 'required': False, 'default': 'tanh',
                                'options': ['elu', 'exponential', 'gelu', 'hard_sigmoid',
@@ -2246,9 +2254,9 @@ class KerasRecurrent(OpHasVariableOutPorts, TfOp):
                 }
 
     def __init__(self, graph, attr_dict=None):
-        super(KerasRecurrent, self).__init__(graph, attr_dict)
-        self.update_attributes(KerasRecurrent, attr_dict)
-        assert self.check_required(), 'KerasRecurrent is missing a required parameter.'
+        super(KerasRecurrentOp, self).__init__(graph, attr_dict)
+        self.update_attributes(KerasRecurrentOp, attr_dict)
+        assert self.check_required(), 'KerasRecurrentOp is missing a required parameter.'
 
     def __getattr__(self, item):
         ret = None
@@ -2258,13 +2266,13 @@ class KerasRecurrent(OpHasVariableOutPorts, TfOp):
         except:
             ret = None
         if ret is None:
-            ret = super(KerasRecurrent, self).__getattr__(item)
+            ret = super(KerasRecurrentOp, self).__getattr__(item)
         return ret
 
 
-class KerasBaseConvOp(BaseConvOp, BaseActivationOp, TfOp):
+class KerasBaseConvOp(BaseConvOp, BaseActivationOp, KerasOp):
     '''
-    Class KerasBaseConvOp inherited from BaseConvOp, BaseActivationOp and TfOp.
+    Class KerasBaseConvOp inherited from BaseConvOp, BaseActivationOp and KerasOp.
     Tf Keras conv OPs must inherit this class, such as Conv2D, Conv3D etc.
     '''
     @classmethod

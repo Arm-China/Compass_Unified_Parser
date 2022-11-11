@@ -8,7 +8,7 @@ from ..op import *
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
-class TfKerasAddOp(OpHasOneOutPort, TfOp):
+class TfKerasAddOp(OpHasOneOutPort, KerasOp):
     @classmethod
     def attributes(cls):
         return {2: {}}
@@ -29,7 +29,7 @@ class TfKerasAddOp(OpHasOneOutPort, TfOp):
         return {'type': 'Sum', 'version': 6}
 
 
-class TfKerasConcatenateOp(OpHasAxis, OpHasOneOutPort, TfOp):
+class TfKerasConcatenateOp(OpHasAxis, OpHasOneOutPort, KerasOp):
     @classmethod
     def attributes(cls):
         return {2: {'axis': {'type': AttrType.INT, 'required': False, 'default': -1}}
@@ -134,10 +134,10 @@ class TfKerasConv2DTransposeOp(KerasBaseConvOp):
             output_padding=self.output_padding,
             data_format='channels_last',
             dilation_rate=self.dilations)
-        output_tensor = conv2d(inp).numpy()
+        out_tensor = conv2d(inp).numpy()
         if self.data_format == 'NCHW':
             out_tensor = np.transpose(out_tensor, [0, 3, 1, 2])
-        self.set_out_tensor(output_tensor)
+        self.set_out_tensor(out_tensor)
 
     @property
     def correspond_onnx_op(self):
@@ -236,7 +236,7 @@ class TfKerasConv3DTransposeOp(KerasBaseConvOp):
         return {'type': 'ConvTranspose', 'version': 11}
 
 
-class TfKerasELUOp(OpHasOneOutPort, TfOp):
+class TfKerasELUOp(OpHasOneOutPort, KerasOp):
     @classmethod
     def attributes(cls):
         return {1: {'alpha': {'type': AttrType.FLOAT, 'default': 1.}}
@@ -260,7 +260,7 @@ class TfKerasELUOp(OpHasOneOutPort, TfOp):
         return {'type': 'Elu', 'version': 6}
 
 
-class TfKerasFlattenOp(OpHasOneOutPort, LayoutConcernedOp, TfOp):
+class TfKerasFlattenOp(OpHasOneOutPort, LayoutConcernedOp, KerasOp):
     def infer_shape(self):
         super(TfKerasFlattenOp, self).infer_shape()
         inputs = self.get_input_tensors()
@@ -274,7 +274,7 @@ class TfKerasFlattenOp(OpHasOneOutPort, LayoutConcernedOp, TfOp):
         return {'type': 'Reshape', 'version': 1}
 
 
-class TfKerasGRUOp(KerasRecurrent):
+class TfKerasGRUOp(KerasRecurrentOp):
     @classmethod
     def attributes(cls):
         return {2: {'reset_after': {'type': AttrType.INT, 'required': False, 'default': 1, 'options': [0, 1]},
@@ -323,7 +323,7 @@ class TfKerasGRUOp(KerasRecurrent):
             self.set_out_tensor([whole_or_state_out])
 
 
-class TfKerasInputLayerOp(OpHasOneOutPort, InputLikeOp, TfOp):
+class TfKerasInputLayerOp(OpHasOneOutPort, InputLikeOp, KerasOp):
     @classmethod
     def attributes(cls):
         return {2: {'input_shape': {'type': AttrType.INTS, 'required': False, 'default': None},
@@ -357,7 +357,7 @@ class TfKerasInputLayerOp(OpHasOneOutPort, InputLikeOp, TfOp):
         return {'type': 'Input', 'version': None}
 
 
-class TfKerasLSTMOp(KerasRecurrent):
+class TfKerasLSTMOp(KerasRecurrentOp):
     @classmethod
     def attributes(cls):
         return {2: {},
