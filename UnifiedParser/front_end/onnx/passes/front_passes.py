@@ -3,7 +3,7 @@
 
 
 import numpy as np
-from ....ops.op import OpHasWeights, OpHasBiases
+from ....ops.op import OpHasWeights, OpHasBiases, KerasOp
 from ....graph.node_wrap import NodeWrap
 from ....graph.pattern_match import matched_patterns, single_node_matcher, two_nodes_matcher
 from ....logger import INFO, DEBUG, WARN, ERROR, FATAL
@@ -25,6 +25,8 @@ def fuse_weights_const(graph):
     for node_name in graph.nodes:
         node_obj = NodeWrap(graph, node_name)['object']
         in_edges = graph.sorted_in_edges(node_name, keys=True, data=True)
+        if isinstance(node_obj, KerasOp):
+            continue
         if isinstance(node_obj, OpHasWeights) and isinstance(node_obj, OpHasBiases):
             if node_obj.type in ('GRU', 'LSTM'):
                 continue

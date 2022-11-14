@@ -5,13 +5,60 @@
 import numpy as np
 import re
 import copy
-from ....ops.op import KerasOp, OpHasWeights
+from ....ops.op import Op, KerasOp, OpHasWeights
 from ....graph.node_wrap import NodeWrap
 from ....graph.graph_algo import get_valid_node_name, clear_redundant_nodes
 from ....graph.pattern_match import matched_patterns, single_node_matcher
-from ...onnx.passes.common_passes import insert_constant, insert_reshape_after, insert_transpose
+from ...onnx.passes.common_passes import insert_constant, insert_reshape_after, \
+    insert_transpose, insert_transpose_after
 from ....common.utils import extend_lists
 from ....logger import INFO, DEBUG, WARN, ERROR, FATAL
+
+
+def convert_batchnorm(graph):
+    matches = single_node_matcher(graph, 'TfKerasBatchNormalization')
+    for m in matches:
+        batchnorm = m['target']
+        batchnorm_obj = NodeWrap(graph, batchnorm)['object']
+        if batchnorm_obj is None:
+            WARN(
+                '[Parser]: Meets TfKerasBatchNormalization Op (%s) in convert_batchnorm!' % batchnorm)
+            continue
+        input_shapes = batchnorm_obj.get_input_shapes()
+        in_edges = graph.sorted_in_edges(batchnorm, data=True)
+        if len(in_edges) < 1 \
+                or len(input_shapes) < 1 \
+                or input_shapes[0] is None \
+                or None in input_shapes[0]:
+            continue
+        if len(batchnorm_obj.weights_list) >= 4:
+            mean_value = batchnorm_obj.weights_list[2]
+            var_value = batchnorm_obj.weights_list[3]
+        else:
+            num_output = input_shapes[0][-1]
+            mean_value = np.zeros(num_output, np.float32)
+            var_value = np.ones(num_output, np.float32)
+        graph.remove_edges_from(in_edges[1:])
+        insert_constant(graph, batchnorm + '_scale',
+                        batchnorm_obj.weights, batchnorm, in_port=1, data_format='NHWC')
+        insert_constant(graph, batchnorm + '_bias',
+                        batchnorm_obj.biases, batchnorm, in_port=2, data_format='NHWC')
+        insert_constant(graph, batchnorm + '_mean',
+                        mean_value, batchnorm, in_port=3, data_format='NHWC')
+        insert_constant(graph, batchnorm + '_var',
+                        var_value, batchnorm, in_port=4, data_format='NHWC')
+        if batchnorm_obj.axis != len(input_shapes[0]) - 1:
+            src, _, in_attr = in_edges[0]
+            pre_perm = [idx for idx in range(len(input_shapes[0])) if idx != batchnorm_obj.axis] + [batchnorm_obj.axis]
+            insert_transpose(graph, src, batchnorm, in_attr, pre_perm)
+            post_perm = Op.cal_inverse_perm(pre_perm)
+            post_trans = insert_transpose_after(graph, batchnorm, post_perm)
+            if batchnorm in graph._attr['output_names']:
+                index = graph._attr['output_names'].index(batchnorm)
+                graph._attr['output_names'][index] = post_trans
+        node_attr = batchnorm_obj.copied_attr()
+        node_attr.update({'opset_version': 14, 'data_format': 'NHWC'})
+        NodeWrap(graph, batchnorm).replace_obj('BatchNormalization', node_attr)
 
 
 def convert_gru_lstm(graph):
@@ -139,6 +186,15 @@ def convert_to_onnx(graph):
         WARN('[Parser]: Meets invalid Keras op(%s) for Node(%s) in convert_to_onnx!' %
              (str(op_type), str(node_name)))
 
+    def is_first_input_valid(in_edges, in_shapes):
+        if len(in_edges) < 1 \
+                or len(input_shapes) < 1 \
+                or input_shapes[0] is None \
+                or None in input_shapes[0]:
+            warn_invalid_node(pure_type, node_name)
+            return False
+        return True
+
     keras_ops = KerasOp.get_concrete_subclass_names()
     matches = extend_lists([single_node_matcher(graph, op_type)
                             for op_type in keras_ops])
@@ -150,12 +206,13 @@ def convert_to_onnx(graph):
             continue
 
         in_edges = graph.sorted_in_edges(node_name, data=True)
+        input_shapes = node_obj.get_input_shapes()
         new_node_attr = node_obj.copied_attr()
         node_data_format = 'NCHW' if node_obj.data_format.startswith('NC') else 'NHWC'
         pure_type = re.sub(r'^TfKeras', '', node_obj.type)
         if getattr(node_obj, 'correspond_onnx_op', None) is None:
             continue
-        if isinstance(node_obj, OpHasWeights):
+        if isinstance(node_obj, OpHasWeights) and type(node_obj).perm_tf_to_onnx():
             if node_obj.weights is None:
                 WARN('[Parser]: Node(%s) does not contain weights!' % node_name)
                 continue
@@ -166,10 +223,7 @@ def convert_to_onnx(graph):
         if pure_type == 'Flatten':
             if node_data_format == 'NCHW':
                 input_shapes = node_obj.get_input_shapes()
-                if len(in_edges) < 1 \
-                        or len(input_shapes) < 1 \
-                        or input_shapes[0] is None:
-                    warn_invalid_node(pure_type, node_name)
+                if not is_first_input_valid(in_edges, input_shapes):
                     continue
                 if len(input_shapes[0]) > 2:
                     perm = [idx for idx in range(len(input_shapes[0])) if idx != 1] + [1]
@@ -185,10 +239,19 @@ def convert_to_onnx(graph):
             node_obj.correspond_onnx_op['type'], new_node_attr)
 
 
-def process_keras_op(graph):
+def process_keras_op_before_infer(graph):
     if not graph._attr['is_keras_model']:
         return
 
     from ...lite.passes.front_passes import split_op_has_activation
     convert_gru_lstm(graph)
     split_op_has_activation(graph, is_tf_op=True)
+
+
+def process_keras_op_after_infer(graph):
+    if not graph._attr['is_keras_model']:
+        return
+
+    convert_batchnorm(graph)
+
+    convert_to_onnx(graph)

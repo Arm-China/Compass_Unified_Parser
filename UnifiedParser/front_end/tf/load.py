@@ -38,6 +38,8 @@ def convert_attr_to_onnx(attr_dict):
             v = 'NONE' if v is None or v == 'linear' else v.upper()
             new_attr.update({tf_attr_names_map.get(k, k): v})
             new_attr.pop(k)
+        elif k == 'axis' and isinstance(v, (list, tuple)):
+            new_attr.update({k: None, 'axes': list(v[:])})
         elif k in ('bias', 'groups'):
             ''' Rename attr '''
             new_attr.update({tf_attr_names_map.get(k, k): v})

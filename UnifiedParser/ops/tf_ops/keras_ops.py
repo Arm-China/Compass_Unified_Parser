@@ -116,6 +116,45 @@ class TfKerasAddOp(OpHasOneOutPort, KerasOp):
         return {'type': 'Sum', 'version': 6}
 
 
+class TfKerasBatchNormalizationOp(KerasNormalizationOp):
+    @classmethod
+    def attributes(cls):
+        return {2: {'training_mode': {'type': AttrType.INT, 'default': 0}
+                    },
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfKerasBatchNormalizationOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfKerasBatchNormalizationOp, attr_dict)
+        assert self.check_required(), 'TfKerasBatchNormalizationOp is missing a required parameter.'
+
+    def __getattr__(self, item):
+        ret = None
+        try:
+            if item == 'training_mode':
+                ret = bool(self.__dict__['_attr'][item].value)
+        except:
+            ret = None
+        if ret is None:
+            ret = super(TfKerasBatchNormalizationOp, self).__getattr__(item)
+        return ret
+
+    def infer_shape(self):
+        super(TfKerasBatchNormalizationOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        assert len(inputs) >= 1, 'TfKerasBatchNormalizationOp expects at least 1 input, but got %d.' % len(inputs)
+        if len(inputs) >= 2 and inputs[1].size == 1:
+            self.training_mode = int(inputs[1].item())
+        if self.axes is not None and len(self.axes) == 1:
+            self.axis = self.axes[0]
+        batchnorm = tf.keras.layers.BatchNormalization(self.axis,
+                                                       epsilon=self.epsilon,
+                                                       center=self.center,
+                                                       scale=self.scale)
+        out_tensor = batchnorm(inputs[0], training=self.training_mode).numpy()
+        self.set_out_tensor(out_tensor)
+
+
 class TfKerasConcatenateOp(OpHasAxis, OpHasOneOutPort, KerasOp):
     @classmethod
     def attributes(cls):
@@ -442,6 +481,23 @@ class TfKerasInputLayerOp(OpHasOneOutPort, InputLikeOp, KerasOp):
     @property
     def correspond_onnx_op(self):
         return {'type': 'Input', 'version': None}
+
+
+class TfKerasLayerNormalizationOp(KerasNormalizationOp):
+    def infer_shape(self):
+        super(TfKerasLayerNormalizationOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        assert len(inputs) >= 1, 'TfKerasLayerNormalizationOp expects at least 1 input, but got %d.' % len(inputs)
+        layernorm = tf.keras.layers.LayerNormalization(self.axes,
+                                                       epsilon=self.epsilon,
+                                                       center=self.center,
+                                                       scale=self.scale)
+        out_tensor = layernorm(inputs[0]).numpy()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'LayerNorm', 'version': None}
 
 
 class TfKerasLSTMOp(KerasRecurrentOp):

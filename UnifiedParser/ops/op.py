@@ -2365,6 +2365,62 @@ class KerasBaseDeconvOp(KerasBaseConvOp):
         self.auto_pad = 'NOTSET'
 
 
+class KerasNormalizationOp(OpHasAxis, OpHasBiases, OpHasWeights, OpHasOneOutPort, KerasOp):
+    '''
+    Class KerasNormalizationOp inherited from OpHasAxis, OpHasBiases, OpHasWeights,
+    OpHasOneOutPort and KerasOp.
+    Tf Keras Normalization OPs must inherit this class, such as LayerNormalization,
+    BatchNormalization and etc.
+    '''
+    @classmethod
+    def attributes(cls):
+        return {'center': {'type': AttrType.INT, 'default': 1, 'options': [0, 1]},
+                'scale': {'type': AttrType.INT, 'default': 1, 'options': [0, 1]},
+                'epsilon': {'type': AttrType.FLOAT, 'default': 0.001},
+                'axis': {'default': -1},
+                'weights_list': {'type': AttrType.TENSORS, 'default': []}
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(KerasNormalizationOp, self).__init__(graph, attr_dict)
+        self.update_attributes(KerasNormalizationOp, attr_dict)
+        assert self.check_required(), 'KerasNormalizationOp is missing a required parameter.'
+
+    def __getattr__(self, item):
+        ret = None
+        try:
+            if item in ('center', 'scale'):
+                ret = bool(self.__dict__['_attr'][item].value)
+        except:
+            ret = None
+        if ret is None:
+            ret = super(KerasNormalizationOp, self).__getattr__(item)
+        return ret
+
+    @abc.abstractmethod
+    def infer_shape(self):
+        super(KerasNormalizationOp, self).infer_shape()
+        if len(self.weights_list) >= 2:
+            self.weights = self.weights_list[0]
+            self.biases = self.weights_list[1]
+        if self.center and self.scale:
+            return
+        inputs = self.get_input_tensors()
+        if len(inputs) < 1 \
+                or len(self.get_input_shapes()) < 1 \
+                or self.get_input_shapes()[0] is None \
+                or None in self.get_input_shapes()[0]:
+            return
+        input_shape = self.get_input_shapes()[0]
+        axes = self.axes if self.axes is not None else [self.axis]
+        axes.sort()
+        weights_biases_shape = [input_shape[axis] for axis in axes]
+        if not self.scale:
+            self.weights = np.ones(weights_biases_shape, dtype=inputs[0].dtype)
+        if not self.center:
+            self.biases = np.zeros(weights_biases_shape, dtype=inputs[0].dtype)
+
+
 class ArmOp(Op):
     '''
     Class ArmOp inherited from Op class.
