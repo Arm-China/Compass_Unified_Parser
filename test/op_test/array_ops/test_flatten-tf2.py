@@ -26,8 +26,8 @@ def create_flatten_model(model_path, x1_size, x2_size):
 
 
 TEST_NAME = 'flatten'
-input_shape1 = [2, 3, 1, 2]
-input_shape2 = [2, 2, 1, 3]
+input_shape1 = [2, 1, 3]
+input_shape2 = [2, 3]
 
 # Generate input data
 feed_dict = {}

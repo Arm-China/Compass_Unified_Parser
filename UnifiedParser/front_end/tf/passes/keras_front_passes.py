@@ -171,10 +171,11 @@ def convert_to_onnx(graph):
                         or input_shapes[0] is None:
                     warn_invalid_node(pure_type, node_name)
                     continue
-                perm = [idx for idx in range(len(input_shapes[0])) if idx != 1] + [1]
-                src, _, in_attr = in_edges[0]
-                insert_transpose(graph, src, node_name, in_attr, perm)
-                node_data_format = 'NHWC'
+                if len(input_shapes[0]) > 2:
+                    perm = [idx for idx in range(len(input_shapes[0])) if idx != 1] + [1]
+                    src, _, in_attr = in_edges[0]
+                    insert_transpose(graph, src, node_name, in_attr, perm)
+                    node_data_format = 'NHWC'
             new_node_attr.update({'shape': [0, -1]})
 
         new_node_attr.update(
