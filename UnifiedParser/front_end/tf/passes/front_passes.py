@@ -3180,6 +3180,13 @@ def convert_to_onnx(graph):
                         WARN(
                             '[Parser]: Invalid TF CTCGreedyDecoder Node(%s) to convert to Onnx!' % node_name)
                         continue
+
+                elif pure_type == 'Cumprod':
+                    if len(in_edges) > 1 and in_edges[1][2]['tensor'].is_const:
+                        axis_value = int(in_edges[1][2]['tensor'].value)
+                        new_node_attr.update({'axis': axis_value})
+                        graph.remove_edges_from(in_edges[1:])
+
                 elif pure_type == 'DepthToSpace':
                     new_node_attr.update(
                         {'blocksize': node_obj.block_size, 'mode': 'DCR'})

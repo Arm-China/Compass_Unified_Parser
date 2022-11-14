@@ -410,8 +410,7 @@ class TfCumprodOp(OpHasOneOutPort, OpHasAxis, TfOp):
     @classmethod
     def attributes(cls):
         return {1: {'exclusive': {'type': AttrType.INT, 'default': 0, 'options': [0, 1]},
-                    'reverse': {'type': AttrType.INT, 'default': 0, 'options': [0, 1],
-                                'axis': {'default': 0}}
+                    'reverse': {'type': AttrType.INT, 'default': 0, 'options': [0, 1]},
                     }
                 }
 
@@ -425,6 +424,9 @@ class TfCumprodOp(OpHasOneOutPort, OpHasAxis, TfOp):
         try:
             if item in ('exclusive', 'reverse'):
                 ret = bool(self.__dict__['_attr'][item].value)
+            elif item in ('axis',):
+                inputs = self.get_input_tensors()
+                ret = int(inputs[1])
         except:
             ret = None
         if ret is None:
@@ -453,8 +455,7 @@ class TfCumsumOp(OpHasOneOutPort, OpHasAxis, TfOp):
     @classmethod
     def attributes(cls):
         return {1: {'exclusive': {'type': AttrType.INT, 'default': 0, 'options': [0, 1]},
-                    'reverse': {'type': AttrType.INT, 'default': 0, 'options': [0, 1]},
-                    'axis': {'default': 0}}
+                    'reverse': {'type': AttrType.INT, 'default': 0, 'options': [0, 1]}, }
                 }
 
     def __init__(self, graph, attr_dict=None):
@@ -467,6 +468,9 @@ class TfCumsumOp(OpHasOneOutPort, OpHasAxis, TfOp):
         try:
             if item in ('exclusive', 'reverse'):
                 ret = bool(self.__dict__['_attr'][item].value)
+            elif item in ('axis',):
+                inputs = self.get_input_tensors()
+                ret = int(inputs[1])
         except:
             ret = None
         if ret is None:
