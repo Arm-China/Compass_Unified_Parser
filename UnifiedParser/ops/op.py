@@ -2140,6 +2140,14 @@ class TfHasN(TfOp):
 
 
 class TfHasPaddingStrides(OpHasPaddingStrides, TfOp):
+    @classmethod
+    def attributes(cls):
+        return {'explicit_paddings': {'type': AttrType.INTS, 'default': [0] * 8}}
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfHasPaddingStrides, self).__init__(graph, attr_dict)
+        self.update_attributes(TfHasPaddingStrides, attr_dict)
+        assert self.check_required(), 'TfHasPaddingStrides is missing a required parameter.'
 
     @abc.abstractmethod
     def infer_shape(self):
@@ -2154,10 +2162,15 @@ class TfHasPaddingStrides(OpHasPaddingStrides, TfOp):
                     and inputs[1] is not None
                     and len(inputs[1].shape) in (4, 5)):
             if self.type in ('TfConv2DBackpropInput', 'TfConv3DBackpropInputV2'):
-                spatial_len = len(inputs[1].shape) - 2
+                input_shape = list(inputs[1].shape)
             else:
-                spatial_len = len(inputs[0].shape) - 2
+                input_shape = list(inputs[0].shape)
 
+            if len(self.explicit_paddings) != len(input_shape) * 2 \
+                    and all(p == 0 for p in self.explicit_paddings):
+                self.explicit_paddings = [0] * (len(input_shape) * 2)
+
+            spatial_len = len(input_shape) - 2
             if len(self.strides) in (1, spatial_len, spatial_len + 2):
                 if len(self.strides) == 1:
                     self.strides = self.strides * spatial_len

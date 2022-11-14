@@ -174,9 +174,9 @@ class TfDilation2DOp(TfHasPaddingStrides, OpHasWeights, OpHasOneOutPort, TfOp):
 
         out_tensor = tf.nn.dilation2d(inp,
                                       self.weights,
-                                      strides=[1]+self.strides+[1],
+                                      strides=[1] + self.strides + [1],
                                       padding=padding,
-                                      dilations=[1]+self.dilations+[1]).numpy()
+                                      dilations=[1] + self.dilations + [1]).numpy()
 
         if self.data_format == 'NCHW':
             out_tensor = np.transpose(out_tensor, [0, 3, 1, 2])
@@ -190,8 +190,7 @@ class TfDilation2DOp(TfHasPaddingStrides, OpHasWeights, OpHasOneOutPort, TfOp):
 class TfConv2DOp(TfHasPaddingStrides, OpHasWeights, OpHasOneOutPort):
     @classmethod
     def attributes(cls):
-        return {1: {'dilations': {'default': [1, 1, 1, 1]},
-                    'explicit_paddings': {'type': AttrType.INTS, 'default': [0] * 8}}
+        return {1: {'dilations': {'default': [1, 1, 1, 1]}}
                 }
 
     @classmethod
@@ -251,7 +250,7 @@ class TfConv2DOp(TfHasPaddingStrides, OpHasWeights, OpHasOneOutPort):
             out_tensor = np.transpose(out_tensor, [0, 3, 1, 2])
         self.set_out_tensor(out_tensor)
 
-    @property
+    @ property
     def correspond_onnx_op(self):
         return {'type': 'Conv', 'version': 1}
 
@@ -260,7 +259,6 @@ class TfConv2DBackpropInputOp(TfHasPaddingStrides, OpHasWeights, OpHasOneOutPort
     @classmethod
     def attributes(cls):
         return {1: {'dilations': {'default': [1, 1, 1, 1]},
-                    'explicit_paddings': {'type': AttrType.INTS, 'default': [0] * 8},
                     'use_cudnn_on_gpu': {'type': AttrType.INT, 'default': 1},
                     }
                 }
@@ -368,7 +366,7 @@ class TfConv3DOp(TfHasPaddingStrides, OpHasWeights, OpHasOneOutPort):
             out_tensor = np.transpose(out_tensor, [0, 4, 1, 2, 3])
         self.set_out_tensor(out_tensor)
 
-    @property
+    @ property
     def correspond_onnx_op(self):
         return {'type': 'Conv', 'version': 1}
 
@@ -446,7 +444,7 @@ class TfCTCGreedyDecoderOp(OpHasVariableOutPorts, TfOp):
         out_tensor_list = [o.numpy() for o in out_list]
         self.set_out_tensor(out_tensor_list)
 
-    @property
+    @ property
     def correspond_onnx_op(self):
         return {'type': 'CTCGreedyDecoder', 'version': 1}
 
@@ -473,7 +471,7 @@ class TfDepthToSpaceOp(LayoutConcernedOp, OpHasOneOutPort, TfOp):
             out_tensor = np.transpose(out_tensor, [0, 3, 1, 2])
         self.set_out_tensor(out_tensor)
 
-    @property
+    @ property
     def correspond_onnx_op(self):
         return {'type': 'DepthToSpace', 'version': 13}
 
@@ -528,7 +526,7 @@ class TfDepthwiseConv2dNativeOp(TfHasPaddingStrides, OpHasWeights, OpHasOneOutPo
             out_tensor = np.transpose(out_tensor, [0, 3, 1, 2])
         self.set_out_tensor(out_tensor)
 
-    @property
+    @ property
     def correspond_onnx_op(self):
         return {'type': 'Conv', 'version': 1}
 
@@ -540,7 +538,7 @@ class TfEluOp(LayoutUnawareOp, ActivationOnlyOp, TfOp):
         out_tensor = tf.nn.elu(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
-    @property
+    @ property
     def correspond_onnx_op(self):
         return {'type': 'Elu', 'version': 6}
 
@@ -569,7 +567,7 @@ class TfFusedBatchNormOp(LayoutConcernedOp, OpHasVariableOutPorts, TfOp):
         out_tensor_list = [o.numpy() for o in out_list]
         self.set_out_tensor(out_tensor_list)
 
-    @property
+    @ property
     def correspond_onnx_op(self):
         return {'type': 'BatchNormalization', 'version': 15}
 
@@ -598,7 +596,7 @@ class TfFusedBatchNormV3Op(LayoutConcernedOp, OpHasVariableOutPorts, TfOp):
         out_tensor_list = [o.numpy() for o in out_list]
         self.set_out_tensor(out_tensor_list)
 
-    @property
+    @ property
     def correspond_onnx_op(self):
         return {'type': 'BatchNormalization', 'version': 15}
 
@@ -622,7 +620,7 @@ class TfLeakyReluOp(BaseReluOp, TfOp):
         out_tensor = self.cal_activation(inputs[0])
         self.set_out_tensor(out_tensor)
 
-    @property
+    @ property
     def correspond_onnx_op(self):
         return {'type': 'LeakyRelu', 'version': 6}
 
@@ -634,7 +632,7 @@ class TfLogSoftmaxOp(OpHasOneOutPort, TfOp):
         out_tensor = tf.nn.log_softmax(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
-    @property
+    @ property
     def correspond_onnx_op(self):
         return {'type': 'LogSoftmax', 'version': 13}
 
@@ -663,7 +661,7 @@ class TfLRNOp(OpHasOneOutPort, TfOp):
                                     beta=self.beta).numpy()
         self.set_out_tensor(out_tensor)
 
-    @property
+    @ property
     def correspond_onnx_op(self):
         return {'type': 'LRN', 'version': 1}
 
@@ -684,13 +682,21 @@ class TfMaxPoolOp(TfHasPaddingStrides, OpHasOneOutPort):
     def infer_shape(self):
         super(TfMaxPoolOp, self).infer_shape()
         inputs = self.get_input_tensors()
+        if self.auto_pad == 'VALID':
+            padding = 'VALID'
+        elif self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
+            padding = 'SAME'
+        else:
+            padding = np.reshape(
+                np.array(self.explicit_paddings), (4, 2)).tolist()
+            if self.data_format == 'NCHW':
+                padding = padding[0:1] + padding[2:4] + padding[1:2]
         inp = np.transpose(inputs[0], [0, 2, 3, 1]
                            ) if self.data_format == 'NCHW' else inputs[0]
         out_tensor = tf.nn.max_pool(inp,
                                     ksize=self.kernel_shape,
                                     strides=[1] + self.strides + [1],
-                                    padding='VALID' if self.auto_pad in (
-                                        'VALID', 'NOTSET') else 'SAME',
+                                    padding=padding,
                                     data_format='NHWC').numpy()
         if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
             self.pads = OpHasPaddingStrides.cal_pads(
@@ -704,11 +710,18 @@ class TfMaxPoolOp(TfHasPaddingStrides, OpHasOneOutPort):
                 zero_minimum=True
             )
             self.auto_pad = 'NOTSET'
+        elif self.auto_pad == 'NOTSET':
+            pad_slice = slice(
+                1, 3) if self.data_format == 'NHWC' else slice(2, 4)
+            self.pads = np.transpose(
+                np.reshape(np.array(self.explicit_paddings), (4, 2))[
+                    pad_slice, :]
+            ).flatten().tolist()
         if self.data_format == 'NCHW':
             out_tensor = np.transpose(out_tensor, [0, 3, 1, 2])
         self.set_out_tensor(out_tensor)
 
-    @property
+    @ property
     def correspond_onnx_op(self):
         return {'type': 'MaxPool', 'version': 10}
 
@@ -751,7 +764,7 @@ class TfMaxPool3DOp(TfHasPaddingStrides, OpHasOneOutPort):
             out_tensor = np.transpose(out_tensor, [0, 4, 1, 2, 3])
         self.set_out_tensor(out_tensor)
 
-    @property
+    @ property
     def correspond_onnx_op(self):
         return {'type': 'MaxPool', 'version': 12}
 
@@ -811,7 +824,7 @@ class TfReluOp(BaseReluOp, TfOp):
         out_tensor = self.cal_activation(inputs[0])
         self.set_out_tensor(out_tensor)
 
-    @property
+    @ property
     def correspond_onnx_op(self):
         return {'type': 'Relu', 'version': 6}
 
@@ -833,7 +846,7 @@ class TfRelu6Op(BaseReluOp, TfOp):
         out_tensor = tf.nn.relu6(inputs[0]).numpy()
         self.set_out_tensor(out_tensor)
 
-    @property
+    @ property
     def correspond_onnx_op(self):
         return {'type': 'Clip', 'version': 6}
 
@@ -856,7 +869,7 @@ class TfSeluOp(LayoutUnawareOp, ActivationOnlyOp, TfOp):
         out_tensor = tf.nn.selu(*inputs)
         self.set_out_tensor(out_tensor)
 
-    @property
+    @ property
     def correspond_onnx_op(self):
         return {'type': 'Selu', 'version': 6}
 
@@ -877,7 +890,7 @@ class TfSoftmaxOp(OpHasAxis, OpHasOneOutPort, TfOp):
         out_tensor = tf.nn.softmax(inputs[0], axis=self.axis).numpy()
         self.set_out_tensor(out_tensor)
 
-    @property
+    @ property
     def correspond_onnx_op(self):
         return {'type': 'Softmax', 'version': 11}
 
@@ -904,6 +917,6 @@ class TfSpaceToDepthOp(LayoutConcernedOp, OpHasOneOutPort, TfOp):
             out_tensor = np.transpose(out_tensor, [0, 3, 1, 2])
         self.set_out_tensor(out_tensor)
 
-    @property
+    @ property
     def correspond_onnx_op(self):
         return {'type': 'SpaceToDepth', 'version': 1}
