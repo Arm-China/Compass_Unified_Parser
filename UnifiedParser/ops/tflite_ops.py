@@ -536,6 +536,49 @@ class LiteCONV_3D_TRANSPOSEOp(BaseActivationOp, BaseConvOp, TfliteOp):
         return {'type': 'ConvTranspose', 'version': 1}
 
 
+class LiteCUMSUMOp(OpHasOneOutPort, OpHasAxis, TfliteOp):
+    @classmethod
+    def attributes(cls):
+        return {1: {'exclusive': {'type': AttrType.INT, 'default': 0, 'options': [0, 1]},
+                    'reverse': {'type': AttrType.INT, 'default': 0, 'options': [0, 1]}, }
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(LiteCUMSUMOp, self).__init__(graph, attr_dict)
+        self.update_attributes(LiteCUMSUMOp, attr_dict)
+        assert self.check_required(), 'LiteCUMSUMOp is missing a required parameter.'
+
+    def __getattr__(self, item):
+        ret = None
+        try:
+            if item in ('exclusive', 'reverse'):
+                ret = bool(self.__dict__['_attr'][item].value)
+            elif item in ('axis',):
+                inputs = self.get_input_tensors()
+                ret = int(inputs[1])
+        except:
+            ret = None
+        if ret is None:
+            ret = super(LiteCUMSUMOp, self).__getattr__(item)
+        return ret
+
+    def __setattr__(self, item, value):
+        if item in ('exclusive', 'reverse'):
+            self.__dict__['_attr'][item].value = int(value)
+        else:
+            super(LiteCUMSUMOp, self).__setattr__(item, value)
+
+    def infer_shape(self):
+        super(LiteCUMSUMOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = tf.math.cumsum(inputs[0], axis=self.axis, exclusive=self.exclusive, reverse=self.reverse).numpy()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'CumSum', 'version': 14}
+
+
 class LiteCUSTOMOp(OpHasMethod, OpHasVariableOutPorts, TfliteOp):
     @classmethod
     def attributes(cls):

@@ -1904,15 +1904,21 @@ def rename_cum(graph):
         cum = m['target']
         cum_obj = NodeWrap(graph, cum)['object']
         if cum_obj is None:
-            WARN('[Parser]: Meets invalid node(%s) in rename_cum!' % bit)
+            WARN('[Parser]: Meets invalid node(%s) in rename_cum!' % cum)
             continue
+        in_edges = graph.sorted_in_edges(cum, data=True)
+        if cum_obj.type == 'CumSum' \
+                and len(in_edges) < 2 \
+                and not in_edges[1][2]['tensor'].is_const:
+            WARN('[Parser]: Meets invalid in_edge for cumlative Op(%s)' % cum)
+            continue
+
         cum_attr = cum_obj.copied_attr()
         if cum_obj.type == 'CumProd':
             method = 'PROD'
         elif cum_obj.type == 'CumSum':
             method = 'SUM'
-            in_edges = graph.sorted_in_edges(cum, data=True)
-            cum_attr.update({'axis': in_edges[1][2]['tensor'].value})
+            cum_attr.update({'axis': cum_obj.axis})
         cum_attr.update({'method': method})
         NodeWrap(graph, cum).replace_obj('ArmCumulate', cum_attr)
 

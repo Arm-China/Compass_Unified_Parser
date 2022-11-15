@@ -31,6 +31,7 @@ from .tflite.ConcatenationOptions import ConcatenationOptions
 from .tflite.Conv2DOptions import Conv2DOptions
 from .tflite.Conv3DOptions import Conv3DOptions
 from .tflite.CosOptions import CosOptions
+from .tflite.CumsumOptions import CumsumOptions
 from .tflite.DensifyOptions import DensifyOptions
 from .tflite.DepthToSpaceOptions import DepthToSpaceOptions
 from .tflite.DepthwiseConv2DOptions import DepthwiseConv2DOptions

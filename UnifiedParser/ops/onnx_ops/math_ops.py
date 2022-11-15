@@ -431,6 +431,11 @@ class CumSumOp(OpHasOneOutPort, OpHasAxis, OnnxOp):
         try:
             if item in ('exclusive', 'reverse'):
                 ret = bool(self.__dict__['_attr'][item].value)
+            elif item in ('axis',):
+                inputs = self.get_input_tensors()
+                ret = int(inputs[1])
+                self.__dict__['_attr'][item] = Attribute(
+                    item, {'type': AttrType.INT, 'value': ret})
         except:
             ret = None
         if ret is None:

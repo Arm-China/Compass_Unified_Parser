@@ -82,6 +82,9 @@ def convert_attr_to_onnx(attr_dict):
         elif k == 'EndMask':
             new_attr.update({'end_mask': v})
             new_attr.pop(k)
+        elif k == 'Exclusive':
+            new_attr.update({'exclusive': int(v)})
+            new_attr.pop(k)
         elif k == 'FilterHeight':
             new_attr.update(
                 {'kernel_shape': [v, new_attr.get('kernel_shape', [1, 1])[1]]})
@@ -129,6 +132,9 @@ def convert_attr_to_onnx(attr_dict):
             new_attr.pop(k)
         elif k == 'Radius':
             new_attr.update({'radius': v})
+            new_attr.pop(k)
+        elif k == 'Reverse':
+            new_attr.update({'reverse': int(v)})
             new_attr.pop(k)
         elif k == 'ShrinkAxisMask':
             new_attr.update({'shrink_axis_mask': v})
