@@ -250,7 +250,7 @@ class TfConv2DOp(TfHasPaddingStrides, OpHasWeights, OpHasOneOutPort):
             out_tensor = np.transpose(out_tensor, [0, 3, 1, 2])
         self.set_out_tensor(out_tensor)
 
-    @ property
+    @property
     def correspond_onnx_op(self):
         return {'type': 'Conv', 'version': 1}
 
@@ -366,7 +366,7 @@ class TfConv3DOp(TfHasPaddingStrides, OpHasWeights, OpHasOneOutPort):
             out_tensor = np.transpose(out_tensor, [0, 4, 1, 2, 3])
         self.set_out_tensor(out_tensor)
 
-    @ property
+    @property
     def correspond_onnx_op(self):
         return {'type': 'Conv', 'version': 1}
 
@@ -444,7 +444,7 @@ class TfCTCGreedyDecoderOp(OpHasVariableOutPorts, TfOp):
         out_tensor_list = [o.numpy() for o in out_list]
         self.set_out_tensor(out_tensor_list)
 
-    @ property
+    @property
     def correspond_onnx_op(self):
         return {'type': 'CTCGreedyDecoder', 'version': 1}
 
@@ -471,7 +471,7 @@ class TfDepthToSpaceOp(LayoutConcernedOp, OpHasOneOutPort, TfOp):
             out_tensor = np.transpose(out_tensor, [0, 3, 1, 2])
         self.set_out_tensor(out_tensor)
 
-    @ property
+    @property
     def correspond_onnx_op(self):
         return {'type': 'DepthToSpace', 'version': 13}
 
@@ -526,7 +526,7 @@ class TfDepthwiseConv2dNativeOp(TfHasPaddingStrides, OpHasWeights, OpHasOneOutPo
             out_tensor = np.transpose(out_tensor, [0, 3, 1, 2])
         self.set_out_tensor(out_tensor)
 
-    @ property
+    @property
     def correspond_onnx_op(self):
         return {'type': 'Conv', 'version': 1}
 
@@ -538,7 +538,7 @@ class TfEluOp(LayoutUnawareOp, ActivationOnlyOp, TfOp):
         out_tensor = tf.nn.elu(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
-    @ property
+    @property
     def correspond_onnx_op(self):
         return {'type': 'Elu', 'version': 6}
 
@@ -567,7 +567,7 @@ class TfFusedBatchNormOp(LayoutConcernedOp, OpHasVariableOutPorts, TfOp):
         out_tensor_list = [o.numpy() for o in out_list]
         self.set_out_tensor(out_tensor_list)
 
-    @ property
+    @property
     def correspond_onnx_op(self):
         return {'type': 'BatchNormalization', 'version': 15}
 
@@ -596,7 +596,7 @@ class TfFusedBatchNormV3Op(LayoutConcernedOp, OpHasVariableOutPorts, TfOp):
         out_tensor_list = [o.numpy() for o in out_list]
         self.set_out_tensor(out_tensor_list)
 
-    @ property
+    @property
     def correspond_onnx_op(self):
         return {'type': 'BatchNormalization', 'version': 15}
 
@@ -620,7 +620,7 @@ class TfLeakyReluOp(BaseReluOp, TfOp):
         out_tensor = self.cal_activation(inputs[0])
         self.set_out_tensor(out_tensor)
 
-    @ property
+    @property
     def correspond_onnx_op(self):
         return {'type': 'LeakyRelu', 'version': 6}
 
@@ -632,7 +632,7 @@ class TfLogSoftmaxOp(OpHasOneOutPort, TfOp):
         out_tensor = tf.nn.log_softmax(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
-    @ property
+    @property
     def correspond_onnx_op(self):
         return {'type': 'LogSoftmax', 'version': 13}
 
@@ -661,7 +661,7 @@ class TfLRNOp(OpHasOneOutPort, TfOp):
                                     beta=self.beta).numpy()
         self.set_out_tensor(out_tensor)
 
-    @ property
+    @property
     def correspond_onnx_op(self):
         return {'type': 'LRN', 'version': 1}
 
@@ -721,7 +721,7 @@ class TfMaxPoolOp(TfHasPaddingStrides, OpHasOneOutPort):
             out_tensor = np.transpose(out_tensor, [0, 3, 1, 2])
         self.set_out_tensor(out_tensor)
 
-    @ property
+    @property
     def correspond_onnx_op(self):
         return {'type': 'MaxPool', 'version': 10}
 
@@ -764,7 +764,7 @@ class TfMaxPool3DOp(TfHasPaddingStrides, OpHasOneOutPort):
             out_tensor = np.transpose(out_tensor, [0, 4, 1, 2, 3])
         self.set_out_tensor(out_tensor)
 
-    @ property
+    @property
     def correspond_onnx_op(self):
         return {'type': 'MaxPool', 'version': 12}
 
@@ -824,7 +824,7 @@ class TfReluOp(BaseReluOp, TfOp):
         out_tensor = self.cal_activation(inputs[0])
         self.set_out_tensor(out_tensor)
 
-    @ property
+    @property
     def correspond_onnx_op(self):
         return {'type': 'Relu', 'version': 6}
 
@@ -846,7 +846,7 @@ class TfRelu6Op(BaseReluOp, TfOp):
         out_tensor = tf.nn.relu6(inputs[0]).numpy()
         self.set_out_tensor(out_tensor)
 
-    @ property
+    @property
     def correspond_onnx_op(self):
         return {'type': 'Clip', 'version': 6}
 
@@ -869,9 +869,34 @@ class TfSeluOp(LayoutUnawareOp, ActivationOnlyOp, TfOp):
         out_tensor = tf.nn.selu(*inputs)
         self.set_out_tensor(out_tensor)
 
-    @ property
+    @property
     def correspond_onnx_op(self):
         return {'type': 'Selu', 'version': 6}
+
+
+class TfSiluOp(LayoutUnawareOp, ActivationOnlyOp, TfOp):
+    @classmethod
+    def attributes(cls):
+        return {2: {'beta': {'type': AttrType.FLOAT, 'default': 1.0}}
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfSiluOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfSiluOp, attr_dict)
+        assert self.check_required(), 'TfSiluOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(TfSiluOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = tf.nn.silu(inputs[0]).numpy()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        if FLOAT_EQUAL(self.beta, 1):
+            return {'type': 'Silu', 'version': 1}
+        else:
+            return {'type': 'Swish', 'version': 1}
 
 
 class TfSoftmaxOp(OpHasAxis, OpHasOneOutPort, TfOp):
@@ -890,7 +915,7 @@ class TfSoftmaxOp(OpHasAxis, OpHasOneOutPort, TfOp):
         out_tensor = tf.nn.softmax(inputs[0], axis=self.axis).numpy()
         self.set_out_tensor(out_tensor)
 
-    @ property
+    @property
     def correspond_onnx_op(self):
         return {'type': 'Softmax', 'version': 11}
 
@@ -917,6 +942,6 @@ class TfSpaceToDepthOp(LayoutConcernedOp, OpHasOneOutPort, TfOp):
             out_tensor = np.transpose(out_tensor, [0, 3, 1, 2])
         self.set_out_tensor(out_tensor)
 
-    @ property
+    @property
     def correspond_onnx_op(self):
         return {'type': 'SpaceToDepth', 'version': 1}

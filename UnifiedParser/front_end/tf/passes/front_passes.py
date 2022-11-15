@@ -3335,6 +3335,8 @@ def convert_to_onnx(graph):
                     continue
                 elif pure_type == 'SegmentSum':
                     new_node_attr.update({'method': 'SUM'})
+                elif pure_type == 'Silu':
+                    new_node_attr.update({'alpha': node_obj.beta})
                 elif pure_type == 'Slice':
                     if len(in_edges) == 3 \
                             and node_obj.get_input_tensors()[1] is not None \

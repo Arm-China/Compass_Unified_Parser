@@ -22,7 +22,7 @@ from .rename_ops import simple_rename
 from .common_passes import remove_node_safely, insert_cast, insert_cast_after, insert_tile, \
     insert_reshape, insert_reshape_after, insert_constant, \
     insert_slice, insert_transpose, remove_redundant_bn, remove_redundant_reshape, remove_redundant_transpose, \
-    remove_redundant_transpose_pro, remove_useless_op, fuse_const,  insert_gather, remove_redundant_cast
+    remove_redundant_transpose_pro, remove_useless_op, fuse_const, insert_gather, remove_redundant_cast
 from ....plugin_loader import PARSER_OP_DICT
 
 
@@ -116,7 +116,7 @@ def convert_uni_gru(graph):
                                    ('init_h', 'gru', {'dst_in_port': 5}),
                                ])
     for m in matches:
-        gru, inp, init_h = m['gru'],  m['inp'], m['init_h']
+        gru, inp, init_h = m['gru'], m['inp'], m['init_h']
         gru_obj = NodeWrap(graph, gru)['object']
         in_edges = graph.sorted_in_edges(gru, data=True)
         out_edges = graph.sorted_out_edges(gru, data=True)
@@ -584,7 +584,7 @@ def convert_uni_lstm(graph):
                                      init_c_in_attr, [1, 0, 2], key=k2)
                     in_edges = graph.sorted_in_edges(
                         lstm, keys=True, data=True)
-                init_h, _, k1,  init_h_in_attr = in_edges[1]
+                init_h, _, k1, init_h_in_attr = in_edges[1]
                 init_c, _, k2, init_c_in_attr = in_edges[2]
                 insert_reshape(graph, init_h, lstm, init_h_in_attr, [
                                batch_size, hidden_size], key=k1)
@@ -986,7 +986,7 @@ def merge_b2s(graph):
             NodeWrap(graph, name)['object'] for name in [transpose1, d2s, transpose2, out]]
         transpose_perm = np.arange(0, len(transpose2_obj.perm))
         transpose_perm[0], transpose_perm[len(
-            transpose2_obj.perm)-1] = transpose_perm[len(transpose2_obj.perm)-1], transpose_perm[0]
+            transpose2_obj.perm) - 1] = transpose_perm[len(transpose2_obj.perm) - 1], transpose_perm[0]
         if transpose2_obj.perm == transpose_perm.tolist() and transpose1_obj.perm == transpose_perm.tolist():
             transpose_2_out_shapes = transpose2_obj.get_output_shapes()
             if transpose_2_out_shapes and all([shape for shape in transpose_2_out_shapes]):
@@ -1220,7 +1220,7 @@ def merge_s2b(graph):
             if len(input_shapes) == 1 and input_shapes[0] and len(input_shapes[0]) >= 3:
                 input_rank = len(input_shapes[0])
                 if transpose1_obj.perm == transpose2_obj.perm \
-                        and transpose1_obj.perm == [input_rank-1] + list(range(1, input_rank-1)) + [0]:
+                        and transpose1_obj.perm == [input_rank - 1] + list(range(1, input_rank - 1)) + [0]:
                     inp_in_edges = graph.sorted_in_edges(inp)
                     inp_out_edges = graph.sorted_out_edges(inp)
                     if inp_obj.type == 'Pad' and len(inp_out_edges) == 1:
@@ -1301,8 +1301,8 @@ def merge_s2b_nd(graph):
                     and len(transpose_obj.get_input_shapes()[0]) == 6 \
                     and len(reshape2_obj.get_output_shapes()[0]) == 4 \
                     and transpose_obj.perm == [2, 4, 0, 1, 3, 5] \
-                    and trans_in_shapes[0][2]*trans_in_shapes[0][1] == reshape1_in_shapes[0][1] \
-                    and trans_in_shapes[0][4]*trans_in_shapes[0][3] == reshape1_in_shapes[0][2]:
+                    and trans_in_shapes[0][2] * trans_in_shapes[0][1] == reshape1_in_shapes[0][1] \
+                    and trans_in_shapes[0][4] * trans_in_shapes[0][3] == reshape1_in_shapes[0][2]:
                 matched = True
                 block_y, block_x = trans_in_shapes[0][2], trans_in_shapes[0][4]
                 if inp_obj.type == 'Pad':
@@ -1386,15 +1386,15 @@ def merge_s2b_pool_b2s(graph):
 def merge_group_conv(graph, max_groups=16):
     for group in list(range(2, max_groups)):
         matched = False
-        nodes = [('split', {'op': 'ArmSplit'})] + [('conv_%s' % str(i+1), {'op': 'ArmConvolution'})
+        nodes = [('split', {'op': 'ArmSplit'})] + [('conv_%s' % str(i + 1), {'op': 'ArmConvolution'})
                                                    for i in range(group)] + [('concat', {'op': 'ArmConcat'})]
-        edges = [('split', 'conv_%s' % str(i+1), {'src_out_port': i, 'dst_in_port': 0}) for i in range(group)] \
+        edges = [('split', 'conv_%s' % str(i + 1), {'src_out_port': i, 'dst_in_port': 0}) for i in range(group)] \
             + [('conv_%s' % str(i + 1), 'concat',
                 {'src_out_port': 0, 'dst_in_port': i}) for i in range(group)]
         matches = matched_patterns(graph, nodes, edges)
         for m in matches:
             split, concat = m['split'], m['concat']
-            conv_names = [m['conv_%s' % str(i+1)] for i in range(group)]
+            conv_names = [m['conv_%s' % str(i + 1)] for i in range(group)]
             split_obj, concat_obj = [
                 NodeWrap(graph, name)['object'] for name in [split, concat]]
             conv_objs = [NodeWrap(graph, name)['object']
@@ -1521,7 +1521,7 @@ def merge_nhwc_maxpoolargmax(graph):
                                nodes=[('argmaxpool', {'op': 'ArmMaxPoolingWithArgMax'}),
                                       ('cast1', {'op': 'ArmCast'}),
                                       ('sub', {'op': 'ArmEltwise'}),
-                                      ('div',  {'op': 'ArmDiv'}),
+                                      ('div', {'op': 'ArmDiv'}),
                                       ('add', {'op': 'ArmEltwise'}),
                                       ('cast2', {'op': 'ArmCast'}),
                                       ('const1', {'op': 'Constant'}),
@@ -1783,7 +1783,7 @@ def merge_hw_maxunpool(graph):
 
 def rename_activations(graph):
     activations = ['Celu', 'Clip', 'Elu', 'Gelu', 'HardSigmoid', 'HardSwish',
-                   'LeakyRelu', 'Mish',  'PRelu', 'Relu',
+                   'LeakyRelu', 'Mish', 'PRelu', 'Relu',
                    'Selu', 'Shrink', 'Sigmoid', 'Silu', 'Softplus', 'Softsign', 'Swish',
                    'Tanh', 'ThresholdedRelu', ]
     matches = [single_node_matcher(graph, act_type)
@@ -2026,7 +2026,7 @@ def rename_compress(graph):
             if NodeWrap(graph, in_edges[1][0])['object'].type not in ('Constant', 'ArmConstant'):
                 need_clear = True
                 graph.remove_edges_from(in_edges[1:])
-                insert_constant(graph, compress+'_condition', condition,
+                insert_constant(graph, compress + '_condition', condition,
                                 compress, in_port=1, data_format='NHWC')
             elif extend_size != 0:
                 if NodeWrap(graph, in_edges[1][0])['object'].type == 'Constant':
@@ -2526,7 +2526,7 @@ def rename_resize(graph):
                 WARN(
                     '[Parser]: Can only support Resize Op (%s) with 4D/5D inputs in rename_resize!' % resize)
                 continue
-            if np.any(resize_obj.scales[np.array([True] + [False]*(resize_obj.scales.size-2) + [True])] != 1):
+            if np.any(resize_obj.scales[np.array([True] + [False] * (resize_obj.scales.size - 2) + [True])] != 1):
                 WARN(
                     '[Parser]: Can not support Resize Op (%s) with none-1 scales in batch or channel dimension in rename_resize!' % resize)
                 continue
@@ -2822,7 +2822,7 @@ def split_expand(graph):
                 elif shape_value.size < len(input_shape):
                     diff_size = len(input_shape) - shape_value.size
                     shape_value = np.concatenate(
-                        [np.array([1]*diff_size, np.int32), shape_value], axis=0)
+                        [np.array([1] * diff_size, np.int32), shape_value], axis=0)
                 input_shape = np.array(input_shape, np.int32)
                 ones_mask = shape_value == 1
                 shape_value[ones_mask] = input_shape[ones_mask]
@@ -3300,8 +3300,8 @@ def detection_post_process(graph, params):
                     anchors = [[2.53125, 2.5625, 4.21875, 5.28125, 11.65625, 9.96875], [
                         0.625, 0.875, 1.4375, 1.6875, 2.3125, 3.625]]
                 else:
-                    anchors = (np.array([[116, 90, 156, 198, 373, 326], [30, 61, 62, 45, 59, 119],  [
-                               10, 13, 16, 30,  33, 23]]) / np.array([[32.0], [16.0], [8.0]])).tolist()
+                    anchors = (np.array([[116, 90, 156, 198, 373, 326], [30, 61, 62, 45, 59, 119], [
+                               10, 13, 16, 30, 33, 23]]) / np.array([[32.0], [16.0], [8.0]])).tolist()
 
                 region_fuse = get_valid_node_name(
                     graph, params['model_name'] + '_region_fuse')
@@ -3321,7 +3321,7 @@ def detection_post_process(graph, params):
                             reshape_out_edges = graph.sorted_out_edges(
                                 reshape, data=True)
                             region = get_valid_node_name(
-                                graph, params['model_name'] + '_region_' + str(n+1))
+                                graph, params['model_name'] + '_region_' + str(n + 1))
                             region_list.append(region)
                             for _, dst, out_attr in reshape_out_edges:
                                 graph.remove_edge(reshape, dst)
@@ -3981,14 +3981,14 @@ def sink_transpose_with_const(graph):
 
 def sink_transpose_through_concat(graph, max_branches=8):
     for b in range(max_branches, 1, -1):
-        nodes = [('in_trans_%s' % str(i+1), {'op': 'ArmTranspose'})
+        nodes = [('in_trans_%s' % str(i + 1), {'op': 'ArmTranspose'})
                  for i in range(b)] + [('concat', {'op': 'ArmConcat'})]
-        edges = [('in_trans_%s' % str(i+1),  'concat',
+        edges = [('in_trans_%s' % str(i + 1), 'concat',
                   {'dst_in_port': i}) for i in range(b)]
         matches = matched_patterns(graph, nodes, edges)
         for m in matches:
             concat = m['concat']
-            in_trans_names = [m['in_trans_%s' % str(i+1)] for i in range(b)]
+            in_trans_names = [m['in_trans_%s' % str(i + 1)] for i in range(b)]
             if any([not graph.has_node(name) for name in [concat] + in_trans_names]):
                 WARN(
                     '[Parser]: Meets invalid name that does not exist in graph in sink_transpose_through_concat!')
@@ -4055,12 +4055,12 @@ def sink_transpose_through_special_reshape(graph, max_branches=6):
     for b in range(max_branches, 0, -1):
         matched = False
         nodes = [('trans', {'op': 'ArmTranspose'})] + \
-            [('trans_out_%s' % str(i+1), {}) for i in range(b)]
-        edges = [('trans', 'trans_out_%s' % str(i+1)) for i in range(b)]
+            [('trans_out_%s' % str(i + 1), {}) for i in range(b)]
+        edges = [('trans', 'trans_out_%s' % str(i + 1)) for i in range(b)]
         matches = matched_patterns(graph, nodes, edges)
         for m in matches:
             trans = m['trans']
-            trans_out_names = [m['trans_out_%s' % str(i+1)] for i in range(b)]
+            trans_out_names = [m['trans_out_%s' % str(i + 1)] for i in range(b)]
             if any([not graph.has_node(name) for name in [trans] + trans_out_names]):
                 WARN(
                     '[Parser]: Meets invalid name that does not exist in graph in sink_transpose_through_special_reshape!')
@@ -4337,14 +4337,13 @@ def back_passes(graph, params):
     simple_rename(graph, 'Cos', 'ArmCosine')
     simple_rename(graph, 'Cosh', 'ArmCosh')
     simple_rename(graph, 'CropAndResize', 'ArmCropAndResize')
-    #simple_rename(graph, 'Cumprod', 'ArmCumprod')
     simple_rename(graph, 'CTCGreedyDecoder', 'ArmCTCGreedyDecoder')
     simple_rename(graph, 'DepthToSpace', 'ArmDepthToSpace')
+    simple_rename(graph, 'Dilation', 'ArmDilation')
     simple_rename(graph, 'Div', 'ArmDiv')
     simple_rename(graph, 'Erf', 'ArmErf')
     simple_rename(graph, 'Exp', 'ArmExp')
     simple_rename(graph, 'Erosion', 'ArmErosion')
-    simple_rename(graph, 'Dilation', 'ArmDilation')
     simple_rename(graph, 'Filter', 'ArmFilter')
     simple_rename(graph, 'Floor', 'ArmFloor')
     simple_rename(graph, 'FullyConnected', 'ArmFullyConnected')

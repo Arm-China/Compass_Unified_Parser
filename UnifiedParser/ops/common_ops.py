@@ -203,9 +203,9 @@ class DilationOp(OpHasPaddingStrides, OpHasWeights, OpHasOneOutPort, LayoutConce
                            ) if self.data_format == 'NCHW' else inputs[0]
         out_tensor = tf.nn.dilation2d(inp,
                                       np.transpose(self.weights, [2, 1, 0]),
-                                      strides=[1]+self.strides+[1],
+                                      strides=[1] + self.strides + [1],
                                       padding=padding,
-                                      dilations=[1]+self.dilations+[1]).numpy()
+                                      dilations=[1] + self.dilations + [1]).numpy()
 
         if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
             self.pads = OpHasPaddingStrides.cal_pads(
@@ -257,8 +257,8 @@ class ErosionOp(OpHasPaddingStrides, OpHasWeights, OpHasOneOutPort, LayoutConcer
                            ) if self.data_format == 'NCHW' else inputs[0]
         out_tensor = tf.compat.v1.nn.erosion2d(inp,
                                                np.transpose(self.weights, [2, 1, 0]),
-                                               strides=[1]+self.strides+[1],
-                                               rates=[1]+self.dilations+[1],
+                                               strides=[1] + self.strides + [1],
+                                               rates=[1] + self.dilations + [1],
                                                padding='VALID' if self.auto_pad == 'NOTSET' else 'SAME').numpy()
 
         if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
@@ -669,7 +669,7 @@ class SwishOp(OpHasOneOutPort, CommonOp):
     def infer_shape(self):
         super(SwishOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = (inputs[0]) * tf.sigmoid(self.alpha*inputs[0]).numpy()
+        out_tensor = (inputs[0]) * tf.sigmoid(self.alpha * inputs[0]).numpy()
         self.set_out_tensor(out_tensor)
 
 
@@ -709,10 +709,6 @@ class SegmentReduceOp(OpHasMethod, OpHasOneOutPort, CommonOp):
 
 
 class SiluOp(OpHasOneOutPort, CommonOp):
-    def __init__(self, graph, attr_dict=None):
-        super(SiluOp, self).__init__(graph, attr_dict)
-        self.update_attributes(SiluOp, attr_dict)
-        assert self.check_required(), 'SiluOp is missing a required parameter.'
 
     def infer_shape(self):
         super(SiluOp, self).infer_shape()
