@@ -549,6 +549,37 @@ class OverlapAddOp(OpHasOneOutPort, CommonOp):
         self.set_out_tensor(out_tensor)
 
 
+class RepeatOp(OpHasAxis, OpHasOneOutPort, CommonOp):
+    @classmethod
+    def attributes(cls):
+        return {'max_dim': {'type': AttrType.INT, 'default': None}}
+
+    def __init__(self, graph, attr_dict=None):
+        super(RepeatOp, self).__init__(graph, attr_dict)
+        self.update_attributes(RepeatOp, attr_dict)
+        assert self.check_required(), 'RepeatOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(RepeatOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        assert len(inputs) == 2, 'RepeatOp expects 2 inputs, but got %d' % len(inputs)
+        out_tensor = np.repeat(inputs[0], inputs[1].tolist(), self.axis)
+        if self.axis is not None:
+            out_shape = list(out_tensor.shape)
+            if self.max_dim is None:
+                self.max_dim = out_tensor.shape[self.axis]
+            elif out_shape[self.axis] > self.max_dim:
+                obj = tuple(slice(0, e if i != self.axis else self.max_dim)
+                            for (i, e) in enumerate(out_shape))
+                out_tensor = out_tensor[obj]
+            elif out_shape[self.axis] < self.max_dim:
+                zeros_shape = copy.deepcopy(out_shape)
+                zeros_shape[self.axis] = self.max_dim - out_shape[self.axis]
+                zeros = np.zeros(zeros_shape, inputs[0].dtype)
+                out_tensor = np.concatenate([out_tensor, zeros], axis=self.axis)
+        self.set_out_tensor(out_tensor)
+
+
 class PluginOp(OpHasVariableOutPorts, CommonOp):
     @classmethod
     def num_in_ports(cls):

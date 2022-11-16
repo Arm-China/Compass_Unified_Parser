@@ -285,6 +285,38 @@ class Tfone_hotOp(OpHasAxis, OpHasOneOutPort, Tf2Op):
         self.set_out_tensor(out_tensor)
 
 
+class TfrepeatOp(OpHasAxis, OpHasOneOutPort, Tf2Op):
+    def __getattr__(self, item):
+        ret = None
+        try:
+            input_args = ['input', 'repeats', 'axis']
+            if item in input_args[1:]:
+                item_idx = input_args.index(item)
+                inputs = self.get_input_tensors()
+                if len(inputs) > item_idx:
+                    item_value = inputs[item_idx]
+                    if item == 'repeats':
+                        ret = item_value.tolist()
+                    elif item == 'axis':
+                        ret = item_value.item(0)
+        except:
+            ret = None
+        if ret is None:
+            ret = super(TfrepeatOp, self).__getattr__(item)
+        return ret
+
+    def infer_shape(self):
+        super(TfrepeatOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        assert len(inputs) >= 2, 'TfrepeatOp expects at least 2 inputs, but got %d' % len(inputs)
+        out_tensor = tf.repeat(inputs[0], self.repeats, axis=self.axis).numpy()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'Repeat', 'version': 1}
+
+
 class Tfspace_to_batch_ndOp(TfSpaceToBatchNDOp, Tf2Op):
     pass
 

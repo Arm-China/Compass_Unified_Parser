@@ -3584,8 +3584,10 @@ def merge_keras_maskrcnn(graph, params):
                                                    'resize_width': 14,
                                                    'resize_height': 14
                                                    })
-    NodeWrap(graph, repeat).replace_obj('ArmRepeat',
+    NodeWrap(graph, repeat).replace_obj('Repeat',
                                         {'name': repeat,
+                                         'opset_version': 1,
+                                         'max_dim': 1000,
                                          'axis': 1
                                          })
     NodeWrap(graph, gather4).replace_obj('Gather',

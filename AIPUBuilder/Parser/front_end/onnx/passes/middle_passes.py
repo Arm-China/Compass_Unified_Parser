@@ -18,7 +18,8 @@ from ....ops.op import Op, BaseLinearOp, BaseConvOp, BaseDeconvOp, BaseOnnxPoolO
 from ....ops.onnx_ops.array_ops import ReshapeOp
 from .common_passes import fuse_const, remove_useless_op, remove_node_safely, insert_reshape, insert_reshape_after, \
     insert_cast, insert_constant, insert_slice, insert_slice_after, insert_tile, insert_transpose, insert_transpose_after, \
-    remove_redundant_reshape, remove_redundant_transpose, insert_cast_sub_mul_for_quant, insert_mul_add_cast_after_for_dequant
+    remove_redundant_reshape, remove_redundant_transpose, insert_cast_sub_mul_for_quant, insert_mul_add_cast_after_for_dequant, \
+    insert_repeat
 
 
 def clear_useless_concat_input(graph):
@@ -6811,6 +6812,77 @@ def split_special_bn(graph):
         clear_redundant_nodes(graph)
 
 
+def split_special_gn(graph):
+    '''Split GroupNormalization into GroupNormalization+Mul+Add if any one of scale and bias is not constant.
+    '''
+    matches = single_node_matcher(graph, 'GroupNormalization')
+    for m in matches:
+        gn = m['target']
+        gn_obj = NodeWrap(graph, gn)['object']
+        gn_in_edges = graph.sorted_in_edges(gn, data=True)
+        gn_out_edges = graph.sorted_out_edges(gn, data=True)
+        if gn_obj is None or len(gn_in_edges) < 3 or len(gn_out_edges) < 1:
+            ERROR('[Parser]: Meets invalid GroupNormalization Node(%s) in split_special_gn!' % gn)
+            continue
+        scale, _, scale_in_attr = gn_in_edges[1]
+        bias, _, bias_in_attr = gn_in_edges[2]
+        if scale_in_attr['tensor'] is not None and scale_in_attr['tensor'].is_const \
+                and bias_in_attr['tensor'] is not None and bias_in_attr['tensor'].is_const:
+            continue
+        gn_input_shapes = gn_obj.get_input_shapes()
+        if len(gn_input_shapes) < 1 or gn_input_shapes[0] is None or None in gn_input_shapes[0]:
+            ERROR('[Parser]: Meets invalid input shape of GroupNormalization Node(%s) in split_special_gn!' % gn)
+            continue
+        graph.remove_edges_from(gn_out_edges + gn_in_edges[1:])
+        num_groups = gn_obj.num_groups
+        scale_value = np.ones([num_groups], np.float32)
+        bias_value = np.zeros_like(scale_value)
+        insert_constant(graph, scale + '_const', scale_value, gn, in_port=1)
+        insert_constant(graph, bias + '_const', bias_value, gn, in_port=2)
+
+        mul_node = get_valid_node_name(graph, gn + '_mul')
+        graph.add_edge(gn, mul_node)
+        graph.add_edge(scale, mul_node, **scale_in_attr)
+        mul_attr = {'name': mul_node, 'opset_version': 13}
+        NodeWrap(graph, mul_node).replace_obj('Mul', mul_attr)
+
+        add_node = get_valid_node_name(graph, gn + '_add')
+        graph.add_edge(mul_node, add_node)
+        bias_in_attr.update({'dst_in_port': 1})
+        graph.add_edge(bias, add_node, **bias_in_attr)
+        add_attr = {'name': add_node, 'opset_version': 13}
+        NodeWrap(graph, add_node).replace_obj('Add', add_attr)
+
+        shape = None
+        is_channels_last = (gn_obj.data_format[-1] == 'C')
+        if not is_channels_last:
+            shape = [1, -1] + [1] * (len(gn_input_shapes[0]) - 2)
+            post_scale = insert_reshape(graph, scale, mul_node, scale_in_attr, shape)
+            post_bias = insert_reshape(graph, bias, add_node, bias_in_attr, shape)
+        else:
+            post_scale = scale
+            post_bias = bias
+
+        channels = gn_input_shapes[0][-1] if is_channels_last else gn_input_shapes[0][1]
+        if num_groups != channels:
+            reps = [int(channels/num_groups)] * num_groups
+            axis = (len(gn_input_shapes[0]) - 1) if is_channels_last else 1
+            post_scale_out_attr = copy.deepcopy(scale_in_attr)
+            if shape is not None and scale_in_attr['tensor'] is not None and scale_in_attr['tensor'].value is not None:
+                post_scale_out_attr['tensor'].value = np.reshape(scale_in_attr['tensor'].value, shape)
+            insert_repeat(graph, post_scale, mul_node, post_scale_out_attr, reps, axis)
+            post_bias_out_attr = copy.deepcopy(bias_in_attr)
+            if shape is not None and bias_in_attr['tensor'] is not None and bias_in_attr['tensor'].value is not None:
+                post_bias_out_attr['tensor'].value = np.reshape(bias_in_attr['tensor'].value, shape)
+            insert_repeat(graph, post_bias, add_node, post_bias_out_attr, reps, axis)
+
+        for _, dst, out_attr in gn_out_edges:
+            graph.add_edge(add_node, dst, **out_attr)
+        if gn in graph._attr['output_names']:
+            index = graph._attr['output_names'].index(gn)
+            graph._attr['output_names'][index] = add_node
+
+
 def split_special_ln(graph):
     '''Split LayerNormalization into MVN+Mul+Add if any one of scale and bias is not constant.
     '''
@@ -7729,6 +7801,7 @@ def middle_passes(graph, params):
     merge_gelu_3(graph)
 
     split_special_bn(graph)
+    split_special_gn(graph)
     split_special_ln(graph)
     split_hardmax(graph)
     split_reduce_logsumexp(graph)

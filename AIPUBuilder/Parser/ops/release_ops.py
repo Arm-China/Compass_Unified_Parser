@@ -3777,6 +3777,10 @@ class ArmRegionFuseOp(OpHasMultipleOutPorts, ArmOp):
 
 class ArmRepeatOp(OpHasAxis, OpHasOneOutPort, ArmOp):
     @classmethod
+    def num_in_ports(cls):
+        return 2
+
+    @classmethod
     def attributes(cls):
         return {'max_dim': {'type': AttrType.INT, 'default': 1000}}
 
@@ -3790,11 +3794,11 @@ class ArmRepeatOp(OpHasAxis, OpHasOneOutPort, ArmOp):
         inputs = self.get_input_tensors()
         out_tensor = np.repeat(*inputs, axis=self.axis)
         out_shape = list(out_tensor.shape)
-        if out_shape[self.axis] > self.max_dim:
+        if self.axis is not None and out_shape[self.axis] > self.max_dim:
             obj = tuple(slice(0, e if i != self.axis else self.max_dim)
                         for (i, e) in enumerate(out_shape))
             out_tensor = out_tensor[obj]
-        elif out_shape[self.axis] < self.max_dim:
+        elif self.axis is not None and out_shape[self.axis] < self.max_dim:
             shape_diff = self.max_dim - out_shape[self.axis]
             zeros_shape = copy.deepcopy(out_shape)
             zeros_shape[self.axis] = shape_diff

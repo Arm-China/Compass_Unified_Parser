@@ -616,6 +616,47 @@ class GridSampleOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
         self.set_out_tensor(out_tensor)
 
 
+class GroupNormalizationOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
+    @classmethod
+    def attributes(cls):
+        return {18: {'epsilon': {'type': AttrType.FLOAT, 'default': 1e-5},
+                     'num_groups': {'type': AttrType.INTS, 'required': True},
+                     },
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(GroupNormalizationOp, self).__init__(graph, attr_dict)
+        self.update_attributes(GroupNormalizationOp, attr_dict)
+        assert self.check_required(), 'GroupNormalizationOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(GroupNormalizationOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        assert len(inputs) == 3, 'GroupNormalizationOp expects 3 inputs, but got %d' % len(inputs)
+        input_dim = len(inputs[0].shape)
+        pre_perm = None
+        if self.data_format.startswith('NC'):
+            input_tensor = inputs[0]
+            channel_axis = 1
+        else:
+            pre_perm = [0, input_dim - 1] + list(range(1, input_dim - 1))
+            input_tensor = np.transpose(inputs[0], pre_perm)
+            channel_axis = -1
+        channels = inputs[0].shape[channel_axis]
+        channel_num_per_group = channels / self.num_groups
+        scale = np.repeat(inputs[1], channel_num_per_group, axis=0)
+        bias = np.repeat(inputs[2], channel_num_per_group, axis=0)
+        weight_bias_shape = [-1] + [1] * (input_dim - 2)
+        weights = np.reshape(scale, weight_bias_shape)
+        biases = np.reshape(bias, weight_bias_shape)
+
+        groupnorm = torch.nn.GroupNorm(self.num_groups, channels, self.epsilon)
+        out_tensor = groupnorm(torch.from_numpy(input_tensor)).detach().numpy() * weights + biases
+        if pre_perm is not None:
+            out_tensor = np.transpose(out_tensor, Op.cal_inverse_perm(pre_perm))
+        self.set_out_tensor(out_tensor)
+
+
 class GRUOp(BaseRnnOp, OpHasBiases, OpHasWeights, OnnxOp):
     @staticmethod
     def extract_weights(W, B, R, hidden_size, num_directions, linear_before_reset=False):

@@ -405,6 +405,9 @@ def convert_to_onnx(graph):
             elif pure_type == 'relu6':
                 new_node_attr.update({'min': 0., 'max': 6.})
                 graph.remove_edges_from(in_edges[1:])
+            elif pure_type == 'repeat':
+                new_node_attr.update({'axis': node_obj.axis})
+                _remove_edges_if_const(node_name, in_edges[2:])
             elif pure_type == 'segment_sum':
                 new_node_attr.update({'method': 'SUM'})
                 graph.remove_edges_from(in_edges[-1:])

@@ -649,6 +649,46 @@ def insert_gather(graph, src, dst, indices, axis=0, edge_attr=None, key=None, ty
     return ret
 
 
+def insert_repeat(graph, src, dst, in_attr, reps, axis=None, key=None, type='Repeat', data_format='NHWC'):
+    ret = None
+    if graph.has_node(src) \
+            and graph.has_node(dst) \
+            and has_path(graph, src, dst) \
+            and reps is not None \
+            and ((isinstance(reps, (list, tuple)) and len(reps) > 0) or (isinstance(reps, np.ndarray) and reps.size > 0)) \
+            and type in ('Repeat', 'ArmRepeat'):
+        if isinstance(reps, (list, tuple)):
+            reps = np.array(reps, np.int32)
+        graph.remove_edge(src, dst, key=key)
+        repeat = get_valid_node_name(graph, dst + '_pre_repeat')
+        graph.add_node(repeat)
+
+        repeat_in_attr = copy.deepcopy(in_attr)
+        repeat_in_attr.update({'dst_in_port': 0})
+        graph.add_edge(src, repeat, **repeat_in_attr)
+        dst_in_attr = copy.deepcopy(in_attr)
+        if dst_in_attr['tensor'] is not None:
+            if dst_in_attr['tensor'].value is not None:
+                tensor = Tensor(min_max=in_attr['tensor'].min_max,
+                                value=np.repeat(dst_in_attr['tensor'].value, reps.tolist()))
+            if dst_in_attr['tensor'].dtype is not None:
+                tensor.dtype = dst_in_attr['tensor'].dtype
+                tensor.scale_zp = dst_in_attr['tensor'].scale_zp
+        else:
+            tensor = Tensor(min_max=in_attr['tensor'].min_max)
+        dst_in_attr.update({'src_out_port': 0, 'tensor': tensor})
+        graph.add_edge(repeat, dst, **dst_in_attr)
+        insert_constant(graph, repeat + '_reps', reps, repeat, in_port=1, data_format=data_format)
+        repeat_attr = {'name': repeat, 'axis': axis}
+        if type == 'Repeat':
+            repeat_attr.update({'opset_version': 1})
+        NodeWrap(graph, repeat).replace_obj(type, repeat_attr)
+        ret = repeat
+    else:
+        ERROR('[Parser]: Invalid params for insert_repeat!')
+    return ret
+
+
 def insert_reshape(graph, src, dst, in_attr, dim, key=None, type='Reshape', data_format='NHWC'):
     ret = None
     if graph.has_node(src) and graph.has_node(dst) and dim:

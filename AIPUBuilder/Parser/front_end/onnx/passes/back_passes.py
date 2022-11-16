@@ -2315,6 +2315,54 @@ def rename_layernorm(graph):
         clear_redundant_nodes(graph)
 
 
+def rename_groupnorm(graph):
+    matched = False
+    matches = single_node_matcher(graph, 'GroupNormalization')
+    for m in matches:
+        groupnorm = m['target']
+        groupnorm_obj = NodeWrap(graph, groupnorm)['object']
+        in_edges = graph.sorted_in_edges(groupnorm, data=True)
+        if groupnorm_obj is None or len(in_edges) < 3:
+            ERROR('[Parser]: Meet invalid GroupNormalization Node(%s) in rename_groupnorm!' % groupnorm)
+            continue
+        input_shapes = groupnorm_obj.get_input_shapes()
+        if len(input_shapes) < 1 or input_shapes[0] is None or None in input_shapes[0]:
+            ERROR('[Parser]: Meet invalid input shape of GroupNormalization Node(%s) in rename_groupnorm!' % groupnorm)
+            continue
+        scale_in_attr = in_edges[1][2]
+        bias_in_attr = in_edges[2][2]
+        if scale_in_attr['tensor'] is None or not scale_in_attr['tensor'].is_const \
+                or bias_in_attr['tensor'] is None or not bias_in_attr['tensor'].is_const:
+            WARN('[Parser]: Meets unsupported non-constant scale and bias of GroupNormalization Node(%s) in rename_groupnorm!' % layernorm)
+            continue
+        num_groups = groupnorm_obj.num_groups
+        scale = scale_in_attr['tensor'].value
+        bias = bias_in_attr['tensor'].value
+        if list(scale.shape) != [num_groups] \
+                or list(bias.shape) != [num_groups]:
+            ERROR('[Parser]: Meet invalid weights/biases of GroupNormalization Node(%s) in rename_groupnorm!' % groupnorm)
+            continue
+        matched = True
+        channels = input_shapes[0][-1]
+        channel_num_per_group = channels // num_groups
+        weights = np.repeat(scale, channel_num_per_group, axis=0)
+        biases = np.repeat(bias, channel_num_per_group, axis=0)
+        node_attr = groupnorm_obj.copied_attr()
+        if num_groups == 1:
+            tile_reps = input_shapes[0][1:-1] + [1]
+            weights = np.tile(weights, tile_reps)
+            biases = np.tile(biases, tile_reps)
+            node_attr.update({'axis': None, 'axes': list(range(1, len(input_shapes[0]))),
+                              'weights': weights, 'biases': biases})
+            NodeWrap(graph, groupnorm).replace_obj('ArmLayerNorm', node_attr)
+        elif num_groups == channels:
+            node_attr.update({'non_channel_axes': None, 'weights': weights, 'biases': biases})
+            NodeWrap(graph, groupnorm).replace_obj('ArmInstanceNorm', node_attr)
+        else:
+            node_attr.update({'group': num_groups, 'axis': -1, 'axes': None, 'weights': weights, 'biases': biases})
+            NodeWrap(graph, groupnorm).replace_obj('ArmGroupNorm', node_attr)
+
+
 def rename_logical(graph):
     logical_map = {'And': 'AND',
                    'Equal': 'EQUAL',
@@ -4635,6 +4683,7 @@ def back_passes(graph, params):
     rename_generate_proposals(graph)
     rename_gridsample(graph)
     rename_layernorm(graph)
+    rename_groupnorm(graph)
     rename_logical(graph)
     rename_matmulinteger(graph)
     rename_maxunpool(graph)
@@ -4700,8 +4749,9 @@ def back_passes(graph, params):
     simple_rename(graph, 'NormalizedMoments', 'ArmNormalizedMoments')
     simple_rename(graph, 'OverlapAdd', 'ArmOverlapAdd')
     simple_rename(graph, 'Pow', 'ArmPow')
-    simple_rename(graph, 'ReverseSequence', 'ArmReverseSequence')
     simple_rename(graph, 'Reciprocal', 'ArmReciprocal')
+    simple_rename(graph, 'Repeat', 'ArmRepeat')
+    simple_rename(graph, 'ReverseSequence', 'ArmReverseSequence')
     simple_rename(graph, 'Round', 'ArmRound')
     simple_rename(graph, 'SegmentReduce', 'ArmSegmentReduce')
     simple_rename(graph, 'Sign', 'ArmSign')
