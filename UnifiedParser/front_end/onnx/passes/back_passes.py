@@ -658,6 +658,29 @@ def convert_uni_lstm(graph):
         clear_redundant_nodes(graph)
 
 
+def rename_dilation_erosion(graph):
+    ero_dila = ['Erosion', 'Dilation']
+    matches = [single_node_matcher(graph, ero_dila_type)
+               for ero_dila_type in ero_dila]
+    matches = extend_lists(matches)
+    for m in matches:
+        ero_dila = m['target']
+        ero_dila_obj = NodeWrap(graph, ero_dila)['object']
+        if ero_dila_obj is None:
+            WARN('[Parser]: Meets invalid node(%s) in convert_ero_dila_weights!' % ero_dila)
+            continue
+        ero_dila_attr = ero_dila_obj.copied_attr()
+        if len(ero_dila_obj.weights.shape) == 3:
+            new_weights = np.reshape(ero_dila_obj.weights, list(ero_dila_obj.weights.shape)+[1])
+            ero_dila_attr.update({'weights': new_weights})
+            if ero_dila_obj.type == 'Erosion':
+                NodeWrap(graph, ero_dila).replace_obj('ArmErosion', ero_dila_attr)
+            elif ero_dila_obj.type == 'Dilation':
+                NodeWrap(graph, ero_dila).replace_obj('ArmDilation', ero_dila_attr)
+        else:
+            WARN('[Parser]: Meets invalid weights(%s) in convert_ero_dila_weights!' % ero_dila)
+
+
 def convert_bi_lstm(graph):
     matches = single_node_matcher(graph, 'LSTM')
     matched = False
@@ -4303,6 +4326,7 @@ def back_passes(graph, params):
     rename_cast(graph)
     rename_compress(graph)
     rename_conv(graph)
+    rename_dilation_erosion(graph)
     rename_gemm(graph)
     rename_generate_proposals(graph)
     rename_gridsample(graph)
@@ -4345,11 +4369,9 @@ def back_passes(graph, params):
     simple_rename(graph, 'CropAndResize', 'ArmCropAndResize')
     simple_rename(graph, 'CTCGreedyDecoder', 'ArmCTCGreedyDecoder')
     simple_rename(graph, 'DepthToSpace', 'ArmDepthToSpace')
-    simple_rename(graph, 'Dilation', 'ArmDilation')
     simple_rename(graph, 'Div', 'ArmDiv')
     simple_rename(graph, 'Erf', 'ArmErf')
     simple_rename(graph, 'Exp', 'ArmExp')
-    simple_rename(graph, 'Erosion', 'ArmErosion')
     simple_rename(graph, 'Filter', 'ArmFilter')
     simple_rename(graph, 'Floor', 'ArmFloor')
     simple_rename(graph, 'FullyConnected', 'ArmFullyConnected')

@@ -202,7 +202,7 @@ class DilationOp(OpHasPaddingStrides, OpHasWeights, OpHasOneOutPort, LayoutConce
         inp = np.transpose(inputs[0], [0, 2, 3, 1]
                            ) if self.data_format == 'NCHW' else inputs[0]
         out_tensor = tf.nn.dilation2d(inp,
-                                      np.transpose(self.weights, [2, 1, 0]),
+                                      np.transpose(self.weights, [1, 2, 0]),
                                       strides=[1] + self.strides + [1],
                                       padding=padding,
                                       dilations=[1] + self.dilations + [1]).numpy()
@@ -256,9 +256,9 @@ class ErosionOp(OpHasPaddingStrides, OpHasWeights, OpHasOneOutPort, LayoutConcer
         inp = np.transpose(inputs[0], [0, 2, 3, 1]
                            ) if self.data_format == 'NCHW' else inputs[0]
         out_tensor = tf.compat.v1.nn.erosion2d(inp,
-                                               np.transpose(self.weights, [2, 1, 0]),
-                                               strides=[1] + self.strides + [1],
-                                               rates=[1] + self.dilations + [1],
+                                               np.transpose(self.weights, [1, 2, 0]),
+                                               strides=[1]+self.strides+[1],
+                                               rates=[1]+self.dilations+[1],
                                                padding='VALID' if self.auto_pad == 'NOTSET' else 'SAME').numpy()
 
         if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):

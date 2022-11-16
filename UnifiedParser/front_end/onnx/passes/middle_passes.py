@@ -3666,24 +3666,38 @@ def merge_moments(graph):
 def merge_erosion(graph):
     matched = False
     matches = matched_patterns(graph,
-                               nodes=[('neg', {'op': 'Neg'}),
+                               nodes=[('neg1', {'op': 'Neg'}),
                                       ('dilation', {'op': 'Dilation'}),
+                                      ('neg2', {'op': 'Neg'}),
                                       ],
-                               edges=[('neg', 'dilation'),
+                               edges=[('neg1', 'dilation'),
+                                      ('dilation', 'neg2'),
                                       ])
     for m in matches:
-        names = ['neg', 'dilation']
+        names = ['neg1', 'dilation', 'neg2']
         obj_dict = {n: NodeWrap(graph, m[n])['object'] for n in names}
         if all([obj is not None for obj in obj_dict.values()]):
-            matched = True
-            neg_in_edges = graph.sorted_in_edges(m['neg'], data=True)
-            neg_out_edges = graph.sorted_out_edges(m['neg'], data=True)
-            act_attr = obj_dict['dilation'].copied_attr()
-            graph.remove_edge(m['neg'], m['dilation'])
-            src, dst, in_attr = neg_in_edges[0]
-            graph.remove_edge(src, m['neg'])
-            graph.add_edge(src, m['dilation'], **in_attr)
-            NodeWrap(graph, m['dilation']).replace_obj('Erosion', act_attr)
+            neg1_in_edges = graph.sorted_in_edges(m['neg1'], data=True)
+            neg2_out_edges = graph.sorted_out_edges(m['neg2'], data=True)
+            dilation_out_edges = graph.sorted_out_edges(m['dilation'], data=True)
+            if len(neg1_in_edges) == 1 \
+                    and len(dilation_out_edges) == 1:
+                matched = True
+                src1, dst1, in_attr = neg1_in_edges[0]
+                act_attr = obj_dict['dilation'].copied_attr()
+                graph.remove_edge(src1, m['neg1'])
+                graph.remove_edge(m['neg1'], m['dilation'])
+                graph.remove_edge(m['dilation'], m['neg2'])
+                for src2, dst2, out_attr in neg2_out_edges:
+                    graph.remove_edge(m['neg2'], dst2)
+                    graph.add_edge(m['dilation'], dst2, **out_attr)
+                graph.add_edge(src1, m['dilation'], **in_attr)
+
+                NodeWrap(graph, m['dilation']).replace_obj('Erosion', act_attr)
+
+                if m['neg2'] in graph._attr['output_names']:
+                    index = graph._attr['output_names'].index(m['neg2'])
+                    graph._attr['output_names'][index] = m['dilation']
         else:
             WARN('[Parser]: Invalid node in merge_erosion!')
     if matched:
