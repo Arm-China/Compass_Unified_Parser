@@ -31,7 +31,7 @@ def create_reverse_model(pb_file_path, input_size, axis, is_const_input=False):
 
 TEST_NAME = 'reverse'
 input_shapes = [[10], [4, 5], [4, 2, 3, 5]]
-axes = [[0], [-1], [3]]  # TODO: Consider multiple axis, like [1, 3]
+axes = [[0], [-1], [3, 1]]  # TODO: Consider multiple axis, like [1, 3]
 
 # Generate input data
 feed_dict = dict()
@@ -43,7 +43,9 @@ for input_shape, axis in zip(input_shapes, axes):
         # Create model
         create_reverse_model(model_path, input_shape, axis, is_const_input)
 
+        # FIXME: Enable verify after multiple axes in Reverse op is supported.
+        verify = False if len(axis) > 1 and not is_const_input else True
         # Run tests with parser and compare result with runtime
         exit_status = run_parser(
-            model_path, feed_dict, model_type='tf', verify=True)
+            model_path, feed_dict, model_type='tf', verify=verify)
         assert exit_status
