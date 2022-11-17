@@ -24,57 +24,45 @@ def get_nodes_input_and_attr(configs):
             yield mixed_nested_list
 
     input_nodes_dict = {}
-    const_inputs_dict = {}
-    nodes_attr_dict = {}
     if not configs or 'layers' not in configs.keys():
-        return input_nodes_dict, attr_dict
+        return input_nodes_dict
+
     for layer_configs in configs['layers']:
         inbound_nodes = layer_configs.get('inbound_nodes', [])
         node_name = layer_configs.get('name', '')
         if not inbound_nodes or not node_name:
             continue
-        class_name = layer_configs.get('class_name', '')
-        function = layer_configs.get('config', {}).get('function', '')
-        input_nodes_info = []
-        node_attr_dict = {}
-        const_inputs_name = []
+        # input_info_dict is a dict, whose key is kwarg name or index, and value is a tuple with 5 items:
+        # input node name, dst out port, whether is control edge, whether is constant, value(None if not constant)
+        input_info_dict = {}
         flatten_inbound_nodes = list(flatten(inbound_nodes))
         nodes_iter = iter(flatten_inbound_nodes)
         for node in nodes_iter:
             if isinstance(node, str):
-                node_index = next(nodes_iter)
+                next(nodes_iter)
                 if node == '_CONSTANT_VALUE':
                     const_value = next(nodes_iter)
                     const_node_name = node_name + '/' + node
-                    input_node_info = (const_node_name, 0, False)
-                    input_nodes_info.append(input_node_info)
-                    const_inputs_name.append(const_node_name)
+                    input_node_info = (const_node_name, 0, False, True, const_value)
+                    input_info_dict.update({node: input_node_info})
                     continue
                 tensor_index = next(nodes_iter)
                 # TODO: Consider control edge(the third arg means is_control)
-                input_node_info = (node, tensor_index, False)
-                input_nodes_info.append(input_node_info)
+                input_node_info = (node, tensor_index, False, False, None)
+                input_info_dict.update({node: input_node_info})
             elif isinstance(node, dict):
                 for key, value in node.items():
                     if key == 'name':
                         continue
-                    if key == 'dtype' and class_name == 'TFOpLambda' and function == 'cast':
-                        node_attr_dict.update({'DstT': value})
-                    elif isinstance(value, list) and len(value) == 3 and isinstance(value[0], str):
-                        input_node_info = (value[0], value[2], False)  # node name and its parent's out port
-                        input_nodes_info.append(input_node_info)
-                    elif value is not None:
-                        # Some inputs in tf2 are attributes for raw ops, so save them to both
-                        # inputs and attributes.
-                        const_node_name = node_name + '/' + key
-                        input_node_info = (const_node_name, 0, False)
-                        input_nodes_info.append(input_node_info)
-                        node_attr_dict.update({key: value})
-                        const_inputs_name.append(const_node_name)
-        input_nodes_dict.update({node_name: input_nodes_info})
-        const_inputs_dict.update({node_name: const_inputs_name})
-        nodes_attr_dict.update({node_name: node_attr_dict})
-    return input_nodes_dict, const_inputs_dict, nodes_attr_dict
+                    if isinstance(value, list) and len(value) == 3 and isinstance(value[0], str):
+                        # node name and its parent's out port
+                        input_node_info = (value[0], value[2], False, False, None)
+                        input_info_dict.update({key: input_node_info})
+                    else:
+                        input_node_info = (node_name + '/' + key, 0, False, True, value)
+                        input_info_dict.update({key: input_node_info})
+        input_nodes_dict.update({node_name: input_info_dict})
+    return input_nodes_dict
 
 
 def get_node_attr(layer):
@@ -162,35 +150,76 @@ def get_node_type(layer):
     return node_type
 
 
-def get_const_node_content(layer, const_input_name):
-    '''Create Const node for inputs that are not shown as model layer. Note that some inputs are also
-    attributes because we cannot recognize whether they are taken as input or attribute.
+def get_node_input(layer, attr_names, input_info_dict):
+    assert isinstance(input_info_dict, dict), 'Expect input_info_dict to be a dict!'
+    arg_pos_dict = layer._call_fn_arg_positions
+    arg_defaults_dict = layer._call_fn_arg_defaults
+
+    if not input_info_dict:
+        return []
+
+    if not arg_pos_dict:
+        return [value for _, value in input_info_dict.items()]
+
+    node_input_info = []
+    inbound_nodes_cnt = len(layer.inbound_nodes)
+
+    for arg_name, arg_pos in arg_pos_dict.items():
+        if arg_name == 'name':
+            continue
+        if arg_pos < inbound_nodes_cnt:
+            input_tensors = layer.get_input_at(arg_pos)
+            if isinstance(input_tensors, (list, tuple)):
+                if len(input_tensors) == 0:
+                    continue
+            else:
+                if not tf.is_tensor(input_tensors):
+                    continue
+                elif 'numpy' in dir(input_tensors) and '_CONSTANT_VALUE' in input_info_dict:
+                    input_info = input_info_dict['_CONSTANT_VALUE']
+                    node_input_info.append(input_info)
+                    continue
+            inbound_layers = layer.inbound_nodes[arg_pos].inbound_layers
+            inbound_layers = inbound_layers if isinstance(inbound_layers, (list, tuple)) else [inbound_layers]
+            inbound_nodes = [node.name for node in inbound_layers]
+            for node_name in inbound_nodes:
+                if node_name in input_info_dict:
+                    input_info = input_info_dict[node_name]
+                    node_input_info.append(input_info)
+                else:
+                    WARN('[Parser]: Meet invalid node (%s) in get_node_input!' % node_name)
+        elif arg_name in attr_names:
+            # Attrs should be after all the inputs
+            break
+        elif arg_name in input_info_dict \
+                and len(input_info_dict[arg_name]) == 5:
+            input_info = input_info_dict[arg_name]
+            node_input_info.append(input_info)
+        elif arg_name in arg_defaults_dict:
+            value = arg_defaults_dict[arg_name]
+            input_info = (layer.name + '/' + arg_name, 0, False, True, value)
+            node_input_info.append(input_info)
+        else:
+            WARN('[Parser]: Missing node (%s) in get_node_input!' % arg_name)
+    return node_input_info
+
+
+def get_const_node_content(node_name, const_value):
+    '''Create Const node for inputs that are not shown as model layer.
     '''
     ret = {}
-    arg_name = const_input_name
-    prefix = layer.name + '/'
-    if const_input_name.startswith(prefix):
-        arg_name = const_input_name.replace(prefix, '', 1)
-    const_value = None
-    for node in layer.inbound_nodes:
-        if not node.call_kwargs or arg_name not in node.call_kwargs.keys():
-            continue
-        try:
-            kwargs_value = node.call_kwargs[arg_name]
-            const_value = np.array(kwargs_value)
-        except:
-            break
     if const_value is not None:
-        out_tensor_name = const_input_name + ':0'
-        ret = {'name': const_input_name,
-               'type': 'Const',
-               'input': [],
-               'output': [(out_tensor_name, list(const_value.shape))],
-               'attr': {'value': const_value, 'dtype': const_value.dtype.name},
-               'opcode_version': 1
-               }
+        const_value = np.array(const_value)
     else:
-        WARN('[Parser]: Fail to get const value for (%s) in layer %s!' % (const_input_name, layer.name))
+        const_value = np.empty([], 'float32')
+    out_tensor_name = node_name + ':0'
+    ret = {'name': node_name,
+           'type': 'Const',
+           'input': [],
+           'output': [(out_tensor_name, list(const_value.shape))],
+           'attr': {'value': const_value, 'dtype': const_value.dtype.name},
+           'opcode_version': 1
+           }
     return ret
 
 
@@ -208,24 +237,56 @@ def get_node_content(layer):
     return ret
 
 
+def get_node_attr_name(op_type):
+    from tensorflow.python.framework import op_def_registry
+
+    ret = []
+    if not op_type or op_type.startswith('Keras'):
+        return ret
+
+    # For some tf2 ops, they do not have corresponding raw ops(need conversion) or the raw ops
+    # are different with them. In this case, we define attrs for them.
+    op_type_attr_map = {
+        'Cast': ['dtype'],
+    }
+
+    # Some tf2 ops are renamed. Use name in raw ops instead to get op_def.
+    op_type_rename_map = {
+        'Stack': 'Pack',
+    }
+
+    if op_type in op_type_attr_map:
+        ret = op_type_attr_map[op_type]
+    else:
+        op_type = op_type_rename_map.get(op_type, op_type)
+        op_def = op_def_registry.get(op_type)
+        if op_def:
+            ret = [attr.name for attr in op_def.attr]
+    return ret
+
+
 def get_nodes_content(layers, model_configs):
     layers = layers if isinstance(layers, list) else [layers]
-    input_nodes_dict, const_inputs_dict, extra_attrs_dict = get_nodes_input_and_attr(model_configs)
+    inputs_info_dict = get_nodes_input_and_attr(model_configs)
     nodes_content = []
     for layer in layers:
-        node_input_info = input_nodes_dict.get(layer.name, [])
-        extra_attr_dict = extra_attrs_dict.get(layer.name, {})
-        const_input_names = const_inputs_dict.get(layer.name, [])
         # if hasattr(layer, 'layers'):
         #     nodes_content.extend(get_nodes_content(layer.layers, exp_input_names))
         #     continue
         node_content = get_node_content(layer)
-        if extra_attr_dict:
-            node_content['attr'].update(extra_attr_dict)
-        node_content.update({'input': node_input_info})
+        node_attr_name = get_node_attr_name(node_content.get('type', ''))
+        input_info_dict = inputs_info_dict.get(layer.name, {})
+        for key, (_, _, _, is_const, value) in input_info_dict.items():
+            if key in node_attr_name and is_const and value is not None:
+                node_content['attr'].update({key: value})
+        node_input_info = get_node_input(layer, node_attr_name, input_info_dict)
+
+        node_content.update({
+            'input': [(name, src_out_port, control_edge) for name, src_out_port, control_edge, _, _ in node_input_info]})
         nodes_content.append(node_content)
-        for const_input in const_input_names:
-            nodes_content.append(get_const_node_content(layer, const_input))
+        const_nodes = [(name, value) for name, _, _, is_const, value in node_input_info if is_const]
+        for name, value in const_nodes:
+            nodes_content.append(get_const_node_content(name, value))
     return nodes_content
 
 

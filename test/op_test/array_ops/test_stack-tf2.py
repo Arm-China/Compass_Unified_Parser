@@ -7,15 +7,14 @@ from tensorflow import keras
 from utils.run import run_parser
 
 
-def create_add_model(model_path, x1_size, x2_size):
-    ''' Create tensorflow model for add op.
+def create_stack_model(model_path, x1_size, x2_size):
+    ''' Create tensorflow model for stack op.
     '''
     x1 = keras.Input(shape=x1_size[1:], batch_size=x1_size[0], name='X1')
     x2 = keras.Input(shape=x2_size[1:], batch_size=x2_size[0], name='X2')
-    add1 = tf.add(x1, x2)
-    add2 = tf.keras.layers.Add()([add1, x1])
-    add3 = tf.keras.layers.add([add1, add2])
-    y = tf.math.add(10.0, add3, name='Y')
+    stack = tf.stack([x1, x2], axis=1)
+    stack2 = tf.stack([stack])
+    y = tf.math.add(stack2, 1.11, name='Y')
 
     model = keras.models.Model([x1, x2], y)
     # model.summary()
@@ -24,9 +23,9 @@ def create_add_model(model_path, x1_size, x2_size):
     model.save(model_path)
 
 
-TEST_NAME = 'add'
-input_shape1 = [2, 1, 1, 1, 2]
-input_shape2 = [2, 1, 2]
+TEST_NAME = 'stack'
+input_shape1 = [2, 1, 3]
+input_shape2 = [2, 1, 3]
 
 # Generate input data
 feed_dict = {}
@@ -35,7 +34,7 @@ feed_dict['X2:0'] = np.random.ranf(input_shape2).astype(np.float32)
 
 model_path = TEST_NAME + '.h5'
 # Create model
-create_add_model(
+create_stack_model(
     model_path, input_shape1, input_shape2)
 
 # Run tests with parser and compare result with runtime

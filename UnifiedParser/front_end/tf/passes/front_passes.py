@@ -3305,7 +3305,7 @@ def convert_to_onnx(graph):
                     NodeWrap(graph, const_name)['object'].value = values
                     in_edges[2][2]['tensor'].value = values
                     graph.remove_edges_from(in_edges[3:])
-                elif pure_type == 'Pack':
+                elif pure_type in ('Pack', 'Stack'):
                     new_node_attr.update({'new_axis': True})
                 elif pure_type in ('Pad', 'PadV2', 'MirrorPad'):
                     if pure_type == 'MirrorPad':

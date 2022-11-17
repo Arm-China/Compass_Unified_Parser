@@ -29,7 +29,9 @@ class TfBatchToSpaceNDOp(OpHasOneOutPort, TfOp):
 class TfCastOp(OpHasOneOutPort, TfOp):
     @classmethod
     def attributes(cls):
-        return {1: {'DstT': {'type': AttrType.STRING, 'required': True}}
+        return {1: {'DstT': {'type': AttrType.STRING, 'required': True}},
+                2: {'DstT': {'type': AttrType.STRING, 'required': False},
+                    'dtype': {'required': True}}
                 }
 
     def __init__(self, graph, attr_dict=None):
@@ -40,6 +42,8 @@ class TfCastOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfCastOp, self).infer_shape()
         inputs = self.get_input_tensors()
+        if self.cur_version == 2:
+            self.DstT = self.dtype
         out_tensor = inputs[0].astype(np.dtype(self.DstT))
         self.set_out_tensor(out_tensor)
 
@@ -799,6 +803,10 @@ class TfSqueezeOp(OpHasAxis, OpHasOneOutPort, TfOp):
     @property
     def correspond_onnx_op(self):
         return {'type': 'Squeeze', 'version': 1}
+
+
+class TfStackOp(TfPackOp):
+    pass
 
 
 class TfStridedSliceOp(OpHasOneOutPort, TfOp):
