@@ -82,11 +82,11 @@ class BatchNormalizationOp(LayoutConcernedOp, OpHasVariableOutPorts, OnnxOp):
     @classmethod
     def attributes(cls):
         return {1: {'consumed_inputs': {'type': AttrType.INTS, 'default': [1], 'required': True},
-                    'epsilon': {'type': AttrType.FLOAT, 'default': 1},
+                    'epsilon': {'type': AttrType.FLOAT, 'default': 1e-5},
                     'momentum': {'type': AttrType.FLOAT, 'default': 0.9},
                     'spatial': {'type': AttrType.INT, 'default': 1}
                     },
-                6: {'epsilon': {'type': AttrType.FLOAT, 'default': 1},
+                6: {'epsilon': {'type': AttrType.FLOAT, 'default': 1e-5},
                     'momentum': {'type': AttrType.FLOAT, 'default': 0.9},
                     'spatial': {'type': AttrType.INT, 'default': 1}
                     },
@@ -98,7 +98,7 @@ class BatchNormalizationOp(LayoutConcernedOp, OpHasVariableOutPorts, OnnxOp):
                     'momentum': {'type': AttrType.FLOAT, 'default': 0.9},
                     'spatial': {'type': AttrType.INT, 'default': 1}
                     },
-                14: {'epsilon': {'type': AttrType.FLOAT, 'default': 1},
+                14: {'epsilon': {'type': AttrType.FLOAT, 'default': 1e-5},
                      'momentum': {'type': AttrType.FLOAT, 'default': 0.9},
                      'training_mode': {'type': AttrType.INT, 'default': 0}
                      },

@@ -195,27 +195,34 @@ def convert_bn_train(graph):
             if x.shape is None:
                 continue
             matched = True
+            x_src, _, x_out_attr = fusebnv3_in_edges[0]
+            scale, _, scale_out_attr = fusebnv3_in_edges[1]
+            offset, _, offset_out_attr = fusebnv3_in_edges[2]
+            input_mean, _, inmean_out_attr = fusebnv3_in_edges[3]
+            input_var, _, invar_out_attr = fusebnv3_in_edges[4]
             inp_rank = len(x.shape)
             eps = fusebnv3_obj.epsilon
+            momentum = fusebnv3_obj.momentum
             if fusebnv3_obj.data_format == 'NCHW':
                 dims = [0] + list(range(2, inp_rank))
                 reshape_dim = [-1] + [1] * (inp_rank-2)
             else:
                 dims = list(range(0, inp_rank-1))
                 reshape_dim = [1] * (inp_rank-2) + [-1]
-            # run_mean_value -> onnx input_mean; run_var_value -> onnx input_var
+            # Step 1: Consider output Y
+            # current_mean_value -> onnx input_mean; current_var_value -> onnx input_var
             inp_shape = np.array(x.shape, np.dtype(np.int32))
             reduce_dims = np.take(inp_shape, np.array(dims, np.int32), axis=0)
             cnt_float = np.prod(reduce_dims, axis=tuple(
                 [0]), keepdims=False).astype(np.float32)
-            run_mean_value = np.mean(x, axis=tuple(dims), keepdims=True)
-            sub_value = np.subtract(x, run_mean_value)
+            current_mean_value = np.mean(x, axis=tuple(dims), keepdims=True)
+            sub_value = np.subtract(x, current_mean_value)
             var_squeezed_value = np.sum(
                 np.square(sub_value), axis=tuple(dims), keepdims=False)
-            run_var_value = np.true_divide(var_squeezed_value, cnt_float)
+            current_var_value = np.true_divide(var_squeezed_value, cnt_float)
             # weights_value -> onnx 1/sqrt(input_var+eps)=(input_var+eps)^(-0.5)
-            run_var_eps_value = np.add(run_var_value, eps)
-            sqrt_value = np.sqrt(run_var_eps_value)
+            current_var_eps_value = np.add(current_var_value, eps)
+            sqrt_value = np.sqrt(current_var_eps_value)
             weights_value = np.true_divide(1, sqrt_value)
             reshaped_weights_value = np.reshape(weights_value, reshape_dim)
             # y = reshaped_weights_value * (x - input_mean) * scale + B
@@ -223,12 +230,12 @@ def convert_bn_train(graph):
             #   = reshaped_weights_value * sub_value * inputs[1] + inputs[2]
             mul_sub_value = reshaped_weights_value * sub_value
 
-            run_mean = get_valid_node_name(graph, fusebnv3 + '_run_mean')
+            current_mean = get_valid_node_name(graph, fusebnv3 + '_current_mean')
             sub = get_valid_node_name(graph, fusebnv3 + '_sub')
             var_squeezed = get_valid_node_name(
                 graph, fusebnv3 + '_var_squeeze')
-            run_var = get_valid_node_name(graph, fusebnv3 + '_run_var')
-            run_var_eps = get_valid_node_name(graph, fusebnv3 + '_run_var_eps')
+            current_var = get_valid_node_name(graph, fusebnv3 + '_current_var')
+            current_var_eps = get_valid_node_name(graph, fusebnv3 + '_current_var_eps')
             weights = get_valid_node_name(graph, fusebnv3 + '_weights')
             mul_sub = get_valid_node_name(
                 graph, fusebnv3 + '_mul_sub')
@@ -237,19 +244,17 @@ def convert_bn_train(graph):
             y = get_valid_node_name(graph, fusebnv3 + '_add_bias')
 
             graph.remove_edges_from(fusebnv3_in_edges)
-            x_src, _, x_out_attr = fusebnv3_in_edges[0]
-            scale, _, scale_out_attr = fusebnv3_in_edges[1]
-            offset, _, offset_out_attr = fusebnv3_in_edges[2]
 
-            graph.add_edge(x_src, run_mean, **x_out_attr)
+            graph.add_edge(x_src, current_mean, **x_out_attr)
             graph.add_edge(x_src, sub, **x_out_attr)
-            graph.add_edge(run_mean, sub, **
-                           {'src_out_port': 0, 'dst_in_port': 1, 'tensor': Tensor(value=run_mean_value)})
+            current_mean_out_attr = {'src_out_port': 0, 'dst_in_port': 1, 'tensor': Tensor(value=current_mean_value)}
+            graph.add_edge(current_mean, sub, **current_mean_out_attr)
             graph.add_edge(sub, var_squeezed, **{'tensor': Tensor(value=sub_value)})
-            graph.add_edge(var_squeezed, run_var, **
+            graph.add_edge(var_squeezed, current_var, **
                            {'src_out_port': 0, 'dst_in_port': 0, 'tensor': Tensor(value=var_squeezed_value)})
-            graph.add_edge(run_var, run_var_eps, **{'tensor': Tensor(value=run_var_value)})
-            graph.add_edge(run_var_eps, weights, **{'tensor': Tensor(value=run_var_eps_value)})
+            current_var_out_attr = {'tensor': Tensor(value=current_var_value)}
+            graph.add_edge(current_var, current_var_eps, **current_var_out_attr)
+            graph.add_edge(current_var_eps, weights, **{'tensor': Tensor(value=current_var_eps_value)})
 
             # reshaped_weights_value * sub
             graph.add_edge(sub, mul_sub, **
@@ -267,32 +272,28 @@ def convert_bn_train(graph):
                            {'src_out_port': 0, 'dst_in_port': 0, 'tensor': Tensor(value=mul_sub_value)})
             graph.add_edge(offset, y, **offset_out_attr)
 
-            for _, dst, out_attr in fusebnv3_out_edges:
-                graph.remove_edge(fusebnv3, dst)
-                graph.add_edge(y, dst, **out_attr)
-
-            insert_constant(graph, run_var_eps + '_add', np.array(eps).astype(np.float32),
-                            run_var_eps, in_port=1, data_format='NHWC')
+            insert_constant(graph, current_var_eps + '_add', np.array(eps).astype(np.float32),
+                            current_var_eps, in_port=1, data_format='NHWC')
             insert_constant(graph, weights + '_pow', np.array(-0.5).astype(np.float32),
                             weights, in_port=1, data_format='NHWC')
-            insert_constant(graph, run_var + '_cnt_float', np.array(cnt_float),
-                            run_var, in_port=1, data_format='NHWC')
+            insert_constant(graph, current_var + '_cnt_float', np.array(cnt_float),
+                            current_var, in_port=1, data_format='NHWC')
 
-            NodeWrap(graph, run_mean).replace_obj('ReduceMean',  {
-                'name': run_mean, 'axes': dims, 'keepdims': True, 'opset_version': 11})
-            NodeWrap(graph, sub).replace_obj('Sub',  {
+            NodeWrap(graph, current_mean).replace_obj('ReduceMean', {
+                'name': current_mean, 'axes': dims, 'keepdims': True, 'opset_version': 11})
+            NodeWrap(graph, sub).replace_obj('Sub', {
                 'name': sub, 'opset_version': 14})
-            NodeWrap(graph, var_squeezed).replace_obj('ReduceSumSquare',  {
+            NodeWrap(graph, var_squeezed).replace_obj('ReduceSumSquare', {
                 'name': var_squeezed, 'axes': dims, 'keepdims': False, 'opset_version': 13})
-            NodeWrap(graph, run_var).replace_obj('Div', {
-                'name': run_var, 'opset_version': 7})
-            NodeWrap(graph, run_var_eps).replace_obj('Add', {
-                'name': run_var_eps, 'opset_version': 7})
-            NodeWrap(graph, weights).replace_obj('Pow',  {
+            NodeWrap(graph, current_var).replace_obj('Div', {
+                'name': current_var, 'opset_version': 7})
+            NodeWrap(graph, current_var_eps).replace_obj('Add', {
+                'name': current_var_eps, 'opset_version': 7})
+            NodeWrap(graph, weights).replace_obj('Pow', {
                 'name': weights, 'opset_version': 7})
-            NodeWrap(graph, mul_sub).replace_obj('Mul',  {
+            NodeWrap(graph, mul_sub).replace_obj('Mul', {
                 'name': mul_sub, 'opset_version': 7})
-            NodeWrap(graph, mul_scale).replace_obj('Mul',  {
+            NodeWrap(graph, mul_scale).replace_obj('Mul', {
                 'name': mul_scale, 'opset_version': 7})
             NodeWrap(graph, y).replace_obj('Add',  {
                 'name': y, 'opset_version': 7})
@@ -304,9 +305,95 @@ def convert_bn_train(graph):
                 insert_reshape(graph, scale, mul_scale, scale_out_attr, reshape_dim)
                 insert_reshape(graph, offset, y, offset_out_attr, reshape_dim)
 
+            # Step 2: Consider output running_mean
+            # running_mean = input_mean * momentum + reshaped_current_mean * (1 - momentum)
+            mul_in_mean = get_valid_node_name(graph, fusebnv3 + '_mul_in_mean')
+            mul_cur_mean = get_valid_node_name(graph, fusebnv3 + '_mul_cur_mean')
+            running_mean = get_valid_node_name(graph, fusebnv3 + '_running_mean')
+
+            # input_mean * momentum
+            mul_in_mean_in_attr = copy.deepcopy(inmean_out_attr)
+            mul_in_mean_in_attr.update({'dst_in_port': 0})
+            graph.add_edge(input_mean, mul_in_mean, **mul_in_mean_in_attr)
+            insert_constant(graph, mul_in_mean + '_momentum', np.array(momentum).astype(np.float32),
+                            mul_in_mean, in_port=1, data_format='NHWC')
+            # reshaped_current_mean * (1 - momentum)
+            graph.add_node(mul_cur_mean)
+            mul_cur_mean_in_attr = {'dst_in_port': 0, 'tensor': Tensor(value=current_mean_out_attr['tensor'].value)}
+            reshaped_current_mean = insert_reshape(graph, current_mean, mul_cur_mean, mul_cur_mean_in_attr, [-1]) \
+                if fusebnv3_obj.data_format == 'NCHW' else current_mean
+            insert_constant(graph, mul_cur_mean + '_momentum', np.array(1-momentum).astype(np.float32),
+                            mul_cur_mean, in_port=1, data_format='NHWC')
+            # input_mean * momentum + reshaped_current_mean * (1 - momentum)
+            mul_in_mean_value = None if mul_in_mean_in_attr['tensor'].value is None \
+                else (mul_in_mean_in_attr['tensor'].value * momentum)
+            run_mean_in_attr = copy.deepcopy(inmean_out_attr)
+            run_mean_in_attr.update({'src_out_port': 0, 'dst_in_port': 0, 'tensor': Tensor(value=mul_in_mean_value)})
+            graph.add_edge(mul_in_mean, running_mean, **run_mean_in_attr)
+            mul_cur_mean_value = None if mul_cur_mean_in_attr['tensor'].value is None \
+                else np.reshape(mul_cur_mean_in_attr['tensor'].value, [-1]) * (1 - momentum)
+            run_mean_in_attr1 = {'dst_in_port': 1, 'tensor': Tensor(value=mul_cur_mean_value)}
+            graph.add_edge(mul_cur_mean, running_mean, **run_mean_in_attr1)
+
+            NodeWrap(graph, mul_in_mean).replace_obj('Mul', {
+                'name': mul_in_mean, 'opset_version': 7})
+            NodeWrap(graph, mul_cur_mean).replace_obj('Mul', {
+                'name': mul_cur_mean, 'opset_version': 7})
+            NodeWrap(graph, running_mean).replace_obj('Add', {
+                'name': running_mean, 'opset_version': 7})
+
+            # Step 3: Consider output running_var
+            # running_var = input_var * momentum + current_var * (1 - momentum)
+            mul_in_var = get_valid_node_name(graph, fusebnv3 + '_mul_in_var')
+            mul_cur_var = get_valid_node_name(graph, fusebnv3 + '_mul_cur_var')
+            running_var = get_valid_node_name(graph, fusebnv3 + '_running_var')
+
+            # input_var * momentum
+            mul_in_var_in_attr = copy.deepcopy(invar_out_attr)
+            mul_in_var_in_attr.update({'dst_in_port': 0})
+            graph.add_edge(input_var, mul_in_var, **mul_in_var_in_attr)
+            insert_constant(graph, mul_in_var + '_momentum', np.array(momentum).astype(np.float32),
+                            mul_in_var, in_port=1, data_format='NHWC')
+            # current_var * (1 - momentum)
+            mul_cur_var_in_attr = {'dst_in_port': 0, 'tensor': Tensor(value=current_var_out_attr['tensor'].value)}
+            graph.add_edge(current_var, mul_cur_var, **mul_cur_var_in_attr)
+            insert_constant(graph, mul_cur_var + '_momentum', np.array(1-momentum).astype(np.float32),
+                            mul_cur_var, in_port=1, data_format='NHWC')
+            # input_var * momentum + current_var * (1 - momentum)
+            mul_in_var_value = None if mul_in_var_in_attr['tensor'].value is None \
+                else mul_in_var_in_attr['tensor'].value * momentum
+            run_var_in_attr = copy.deepcopy(invar_out_attr)
+            run_var_in_attr.update({'src_out_port': 0, 'dst_in_port': 0, 'tensor': Tensor(value=mul_in_var_value)})
+            graph.add_edge(mul_in_var, running_var, **run_var_in_attr)
+            mul_cur_mean_value = None if mul_cur_var_in_attr['tensor'].value is None \
+                else mul_cur_var_in_attr['tensor'].value * (1 - momentum)
+            run_var_in_attr1 = {'dst_in_port': 1, 'tensor': Tensor(value=mul_cur_mean_value)}
+            graph.add_edge(mul_cur_var, running_var, **run_var_in_attr1)
+
+            NodeWrap(graph, mul_in_var).replace_obj('Mul', {
+                'name': mul_in_var, 'opset_version': 7})
+            NodeWrap(graph, mul_cur_var).replace_obj('Mul', {
+                'name': mul_cur_var, 'opset_version': 7})
+            NodeWrap(graph, running_var).replace_obj('Add', {
+                'name': running_var, 'opset_version': 7})
+
+            for _, dst, out_attr in fusebnv3_out_edges:
+                graph.remove_edge(fusebnv3, dst)
+                src_out_port = out_attr['src_out_port']
+                new_out_attr = copy.deepcopy(out_attr)
+                new_out_attr.update({'src_out_port': 0})
+                if src_out_port == 0:
+                    graph.add_edge(y, dst, **new_out_attr)
+                elif src_out_port == 1:
+                    graph.add_edge(running_mean, dst, **new_out_attr)
+                else:
+                    graph.add_edge(running_var, dst, **new_out_attr)
+
             if fusebnv3 in graph._attr['output_names']:
                 index = graph._attr['output_names'].index(fusebnv3)
                 graph._attr['output_names'][index] = y
+                graph._attr['output_names'].insert(index+1, running_mean)
+                graph._attr['output_names'].insert(index+2, running_var)
 
         else:
             WARN(
@@ -1364,7 +1451,6 @@ def fuse_mul_add_or_sub(graph):
             mul_out_edges = graph.sorted_out_edges(mul)
             if len(mul_out_edges) > 1:
                 continue
-
             input_shapes = input_obj.get_output_shapes()
             if len(input_shapes) < 1:
                 continue
@@ -1413,12 +1499,18 @@ def fuse_mul_add_or_sub(graph):
             for _, out, out_attr in add_sub_out_edges:
                 graph.remove_edge(add_sub, out)
                 graph.add_edge(mul, out, **out_attr)
+            if add_sub in graph._attr['output_names']:
+                index = graph._attr['output_names'].index(add_sub)
+                graph._attr['output_names'].pop(index)
+                if mul not in graph._attr['output_names']:
+                    graph._attr['output_names'].insert(index, mul)
             graph.remove_node(add_sub)
 
             gamma = get_valid_node_name(graph, mul + '_bn_gamma')
             beta = get_valid_node_name(graph, mul + '_bn_beta')
             mean = get_valid_node_name(graph, mul + '_bn_mean')
             var = get_valid_node_name(graph, mul + '_bn_var')
+
             graph.add_nodes_from([gamma, beta, mean, var])
             gamma_attr = {'name': gamma, 'value': weights, 'data_format': 'NHWC',
                           'opset_version': 9}
