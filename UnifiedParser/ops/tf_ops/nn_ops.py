@@ -498,17 +498,25 @@ class TfDepthwiseConv2dNativeOp(TfHasPaddingStrides, OpHasWeights, OpHasOneOutPo
     def infer_shape(self):
         super(TfDepthwiseConv2dNativeOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        inp = np.transpose(inputs[0], [0, 2, 3, 1]
-                           ) if self.data_format == 'NCHW' else inputs[0]
         if self.kernel_shape is None:
             self.kernel_shape = self.weights.shape[0:2]
+        if self.auto_pad == 'VALID':
+            padding = 'VALID'
+        elif self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
+            padding = 'SAME'
+        else:
+            padding = np.reshape(
+                np.array(self.explicit_paddings), (4, 2)).tolist()
+            if self.data_format == 'NCHW':
+                padding = padding[0:1] + padding[2:4] + padding[1:2]
+        inp = np.transpose(inputs[0], [0, 2, 3, 1]
+                           ) if self.data_format == 'NCHW' else inputs[0]
         self.group = inp.shape[-1]
         out_tensor = tf.nn.depthwise_conv2d_native(inp,
                                                    self.weights,
                                                    strides=[1] +
                                                    self.strides + [1],
-                                                   padding='VALID' if self.auto_pad in (
-                                                       'VALID', 'NOTSET') else 'SAME',
+                                                   padding=padding,
                                                    dilations=[
                                                        1] + self.dilations + [1],
                                                    data_format='NHWC').numpy()
@@ -524,6 +532,13 @@ class TfDepthwiseConv2dNativeOp(TfHasPaddingStrides, OpHasWeights, OpHasOneOutPo
                 zero_minimum=True
             )
             self.auto_pad = 'NOTSET'
+        elif self.auto_pad == 'NOTSET':
+            pad_slice = slice(
+                1, 3) if self.data_format == 'NHWC' else slice(2, 4)
+            self.pads = np.transpose(
+                np.reshape(np.array(self.explicit_paddings), (4, 2))[
+                    pad_slice, :]
+            ).flatten().tolist()
         if self.data_format == 'NCHW':
             out_tensor = np.transpose(out_tensor, [0, 3, 1, 2])
         self.set_out_tensor(out_tensor)
