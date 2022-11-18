@@ -1476,7 +1476,7 @@ class ArmDilationOp(OpHasPaddingStrides, OpHasWeights, OpHasOneOutPort, LayoutCo
         inputs = self.get_input_tensors()
         inp = tf.pad(inputs[0], self.tf_pads) if self.auto_pad == 'NOTSET' else inputs[0]
         out_tensor = tf.nn.dilation2d(inp,
-                                      np.transpose(np.reshape(self.weights, self.weights.shape[:3]), [1, 2, 0]),
+                                      np.reshape(self.weights, self.weights.shape[:3]),
                                       strides=[1]+self.strides+[1],
                                       padding='VALID',
                                       dilations=[1]+self.dilations+[1]).numpy()
@@ -1625,8 +1625,7 @@ class ArmErosionOp(OpHasPaddingStrides, OpHasWeights, OpHasOneOutPort, ArmOp):
         inp = tf.pad(inputs[0], self.tf_pads) if self.auto_pad == 'NOTSET' else inputs[0]
 
         out_tensor = tf.compat.v1.nn.erosion2d(inp,
-                                               np.transpose(np.reshape(
-                                                   self.weights, self.weights.shape[:3]), [1, 2, 0]),
+                                               np.reshape(self.weights, self.weights.shape[:3]),
                                                strides=[1]+self.strides+[1],
                                                rates=[1]+self.dilations+[1],
                                                padding='VALID').numpy()

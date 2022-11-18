@@ -671,7 +671,8 @@ def rename_dilation_erosion(graph):
             continue
         ero_dila_attr = ero_dila_obj.copied_attr()
         if len(ero_dila_obj.weights.shape) == 3:
-            new_weights = np.reshape(ero_dila_obj.weights, list(ero_dila_obj.weights.shape)+[1])
+            weights_tran = np.transpose(ero_dila_obj.weights, [1, 2, 0])
+            new_weights = np.reshape(weights_tran, list(weights_tran.shape)+[1])
             ero_dila_attr.update({'weights': new_weights})
             if ero_dila_obj.type == 'Erosion':
                 NodeWrap(graph, ero_dila).replace_obj('ArmErosion', ero_dila_attr)
