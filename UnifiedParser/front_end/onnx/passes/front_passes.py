@@ -3,7 +3,7 @@
 
 
 import numpy as np
-from ....ops.op import OpHasWeights, OpHasBiases, KerasOp
+from ....ops.op import Op, OpHasWeights, OpHasBiases, KerasOp, BaseDeconvOp
 from ....graph.node_wrap import NodeWrap
 from ....graph.pattern_match import matched_patterns, single_node_matcher, two_nodes_matcher
 from ....logger import INFO, DEBUG, WARN, ERROR, FATAL
@@ -93,3 +93,34 @@ def convert_special_prelu(graph):
             leaky_attr = prelu_obj.copied_attr()
             leaky_attr.update({'opeset_version': 6, 'alpha': float(slope)})
             NodeWrap(graph, prelu).replace_obj('LeakyRelu', leaky_attr)
+
+
+def convert_deconv(graph):
+    deconv_ops = BaseDeconvOp.get_concrete_subclass_names()
+    framework_ops = Op.framework_op_types(graph._attr['framework'])
+    current_deconvs = list(set(deconv_ops).intersection(framework_ops))
+    matches = single_node_matcher(graph, current_deconvs)
+    for m in matches:
+        deconv = m['target']
+        deconv_obj = NodeWrap(graph, deconv)['object']
+        if deconv_obj is None:
+            WARN('[Parser]: Meets invalid Deconv Op(%s) in convert_deconv!' % deconv)
+            continue
+        main_in_port = type(deconv_obj).main_in_port()
+        input_shapes = deconv_obj.get_input_shapes()
+        in_edges = graph.sorted_in_edges(deconv, data=True)
+        if len(input_shapes) >= 0 \
+                and len(input_shapes) > main_in_port \
+                and input_shapes[main_in_port] is not None \
+                and all(s is not None for s in input_shapes[main_in_port]) \
+                and len(input_shapes) == len(in_edges):
+            src, _, in_attr = in_edges[main_in_port]
+            graph.remove_edges_from(in_edges)
+            in_attr['dst_in_port'] = 0
+            graph.add_edge(src, deconv, **in_attr)
+            in_shape = input_shapes[main_in_port]
+            spatial_in_shape = in_shape[1:-1] if deconv_obj.data_format == 'NHWC' else in_shape[2:]
+            deconv_obj.update_pads(spatial_in_shape)
+            attrs = deconv_obj.copied_attr()
+            attrs.update({'opset_version': 11})
+            NodeWrap(graph, deconv).replace_obj('ConvTranspose', attrs)

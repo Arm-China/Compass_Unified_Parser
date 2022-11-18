@@ -434,9 +434,12 @@ class ConvTransposeOp(BaseConvOp, OnnxOp):
                     zero_minimum=True,
                     out_padding=self.output_padding
                 )
-            self.output_shape = BaseConvOp.cal_deconv_out_shape(input_shape, self.pads,
-                                                                self.strides, self.kernel_shape,
-                                                                self.output_padding, self.dilations)
+            self.output_shape = BaseDeconvOp.cal_out_shape(input_shape,
+                                                           self.pads,
+                                                           self.strides,
+                                                           self.kernel_shape,
+                                                           self.output_padding,
+                                                           self.dilations)
             self.auto_pad = 'NOTSET'
 
 

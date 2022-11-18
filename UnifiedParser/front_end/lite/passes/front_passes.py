@@ -1602,9 +1602,7 @@ def convert_to_onnx(graph):
                     )[0][0], node_obj.sorted_in_consts()[0][2]
                     new_node_attr.update({'perm': const_value.tolist()})
                     graph.remove_node(const_name)
-                elif pure_type in ('TRANSPOSE_CONV', 'CONV_3D_TRANSPOSE'):
-                    in_edges = graph.sorted_in_edges(node_name)
-                    graph.remove_edges_from(in_edges[:1])
+
                 new_node_attr.update(
                     {'opset_version': node_obj.correspond_onnx_op['version']})
                 NodeWrap(graph, node_name).replace_obj(

@@ -471,6 +471,10 @@ class LiteCONV_3D_TRANSPOSEOp(BaseActivationOp, BaseConvOp, TfliteOp):
                 }
 
     @classmethod
+    def main_in_port(cls):
+        return 1
+
+    @classmethod
     def perm_lite_to_onnx(cls):
         return [4, 3, 0, 1, 2]
 
@@ -519,17 +523,6 @@ class LiteCONV_3D_TRANSPOSEOp(BaseActivationOp, BaseConvOp, TfliteOp):
             out_tensor, self.biases, data_format='NHWC').numpy()
         self.set_out_tensor(out_tensor)
         self.output_shape = inputs[0].tolist()[1:-1]
-        if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
-            self.pads, _ = OpHasPaddingStrides.cal_pads(
-                inputs[1].shape[1:-1],
-                out_tensor.shape[1:-1],
-                self.strides,
-                self.kernel_shape,
-                self.auto_pad,
-                dilations=self.dilations,
-                is_transpose=True,
-                zero_minimum=True
-            )
 
     @property
     def correspond_onnx_op(self):
@@ -2710,13 +2703,17 @@ class LiteTRANSPOSEOp(OpHasOneOutPort, TfliteOp):
         return {'type': 'Transpose', 'version': 1}
 
 
-class LiteTRANSPOSE_CONVOp(BaseConvOp, TfliteOp):
+class LiteTRANSPOSE_CONVOp(BaseDeconvOp, TfliteOp):
     @classmethod
     def attributes(cls):
         return {1: {'output_shape': {'type': AttrType.INTS}},
                 2: {'output_shape': {'type': AttrType.INTS}},
                 3: {'output_shape': {'type': AttrType.INTS}}
                 }
+
+    @classmethod
+    def main_in_port(cls):
+        return 1
 
     @classmethod
     def perm_lite_to_onnx(cls):
@@ -2747,18 +2744,7 @@ class LiteTRANSPOSE_CONVOp(BaseConvOp, TfliteOp):
         out_tensor = tf.nn.bias_add(
             out_tensor, self.biases, data_format='NHWC').numpy()
         self.set_out_tensor(out_tensor)
-        self.output_shape = inputs[0].tolist()[1:3]
-        if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
-            self.pads, _ = OpHasPaddingStrides.cal_pads(
-                inputs[1].shape[1:3],
-                out_tensor.shape[1:3],
-                self.strides,
-                self.kernel_shape,
-                self.auto_pad,
-                dilations=self.dilations,
-                is_transpose=True,
-                zero_minimum=True
-            )
+        self.output_shape = inputs[0].tolist()[1:-1]
 
     @property
     def correspond_onnx_op(self):

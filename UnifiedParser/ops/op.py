@@ -129,6 +129,23 @@ class Op(abc.ABC):
         '''Get parent class types of OP class.'''
         return [t for t in inspect.getmro(cls) if re.search(r'^Op|Op$', t.__name__)]
 
+    @staticmethod
+    def framework_op_types(fw, extend=False):
+        assert isinstance(fw, Framework), ('%s is not a valid framework type!' % str(fw))
+        opsets = set()
+        if fw == Framework.ONNX:
+            opsets.add(OnnxOp)
+        elif fw == Framework.TFLITE:
+            opsets.add(TfliteOp)
+        elif fw == Framework.CAFFE:
+            opsets.add(CaffeOp)
+        elif fw == Framework.TENSORFLOW:
+            opsets.add(TfOp)
+        if extend:
+            opsets.update([OnnxOp, CommonOp])
+        opsets = list(opsets)
+        return list(set([name for s in opsets for name in s.get_concrete_subclass_names()]))
+
     @classmethod
     def cast_in_ports(cls):
         '''Returns the port index to which the cast needs to be added and the cast dtype to be converted.'''
@@ -861,7 +878,7 @@ class OpHasPaddingStrides(LayoutConcernedOp):
         pads = (out_shape - 1) * strides + out_padding + \
             (kernel_shape - 1) * dilations + 1 - in_shape
 
-        new_out_padding = out_padding
+        new_out_padding = out_padding[:]
         if zero_minimum:
             for idx, (pad, out_pad) in enumerate(zip(pads, out_padding)):
                 new_out_pad = (-pad + out_pad) if pad < 0 else out_pad
@@ -1243,20 +1260,6 @@ class BaseConvOp(OpHasPaddingStrides, BaseLinearOp, LayoutConcernedOp):
             ret = []
         return ret
 
-    @staticmethod
-    def cal_deconv_out_shape(in_shape, pads, strides, kernel_shape, output_padding=None, dilations=None):
-        if not output_padding:
-            output_padding = [0] * len(kernel_shape)
-        if not dilations:
-            dilations = [0] * len(dilations)
-        pads_half = len(pads) // 2
-        out_shape = np.array(strides, np.int64) * (np.array(in_shape, np.int64) - 1) \
-            + np.array(output_padding, np.int64) \
-            + ((np.array(kernel_shape, np.int64) - 1) * np.array(dilations, np.int64) + 1) \
-            - np.array(pads[0:pads_half], np.int64) \
-            - np.array(pads[pads_half:], np.int64)
-        return out_shape.tolist()
-
     @classmethod
     def attributes(cls):
         '''return attributes of BaseConvOp class.'''
@@ -1278,6 +1281,82 @@ class BaseConvOp(OpHasPaddingStrides, BaseLinearOp, LayoutConcernedOp):
         if ret:
             txt_file.write('group=%d\n' % self.group)
         return ret
+
+
+class BaseDeconvOp(BaseConvOp):
+    @staticmethod
+    def cal_out_shape(in_shape, pads, strides, kernel_shape, output_padding=None, dilations=None):
+        if not output_padding:
+            output_padding = [0] * len(kernel_shape)
+        if not dilations:
+            dilations = [0] * len(dilations)
+        pads_half = len(pads) // 2
+        out_shape = np.array(strides, np.int64) * (np.array(in_shape, np.int64) - 1) \
+            + np.array(output_padding, np.int64) \
+            + ((np.array(kernel_shape, np.int64) - 1) * np.array(dilations, np.int64) + 1) \
+            - np.array(pads[0:pads_half], np.int64) \
+            - np.array(pads[pads_half:], np.int64)
+        return out_shape.tolist()
+
+    @classmethod
+    def attributes(cls):
+        return {'output_padding': {'type': AttrType.INTS, 'required': False, 'default': None}
+                }
+
+    @classmethod
+    def main_in_port(cls):
+        return 0
+
+    def __init__(self, graph, attr_dict=None):
+        super(BaseDeconvOp, self).__init__(graph, attr_dict)
+        self.update_attributes(BaseDeconvOp, attr_dict)
+
+    @abc.abstractmethod
+    def infer_shape(self):
+        super(BaseDeconvOp, self).infer_shape()
+        input_shapes = self.get_input_shapes()
+        if self.output_padding is None:
+            main_in_port = type(self).main_in_port()
+            if 0 <= main_in_port < len(input_shapes) \
+                    and input_shapes[main_in_port] is not None \
+                    and all(s is not None for s in input_shapes[main_in_port]):
+                self.output_padding = [0] * (len(input_shapes[main_in_port]) - 2)
+
+    def update_pads(self, input_shape):
+        assert input_shape, 'input_shape does not exist in BaseDeconvOp update_pads.'
+        if self.output_shape:
+            self.pads, self.output_padding = OpHasPaddingStrides.cal_pads(
+                input_shape,
+                self.output_shape,
+                self.strides,
+                self.kernel_shape,
+                self.auto_pad,
+                dilations=self.dilations,
+                is_transpose=True,
+                zero_minimum=True,
+                out_padding=self.output_padding
+            )
+            self.auto_pad = 'NOTSET'
+        else:
+            if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
+                self.pads, self.output_padding = OpHasPaddingStrides.cal_pads(
+                    input_shape,
+                    (np.array(input_shape) * np.array(self.strides)).tolist(),
+                    self.strides,
+                    self.kernel_shape,
+                    self.auto_pad,
+                    dilations=self.dilations,
+                    is_transpose=True,
+                    zero_minimum=True,
+                    out_padding=self.output_padding
+                )
+            self.output_shape = BaseDeconvOp.cal_out_shape(input_shape,
+                                                           self.pads,
+                                                           self.strides,
+                                                           self.kernel_shape,
+                                                           self.output_padding,
+                                                           self.dilations)
+            self.auto_pad = 'NOTSET'
 
 
 class BaseActivationOp(OpHasOneOutPort):

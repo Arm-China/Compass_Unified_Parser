@@ -7,7 +7,7 @@ from .passes.front_passes import split_op_has_activation, split_fc, split_s2b, s
     split_not_equal, split_rsqrt, remove_detection_postprocess, convert_to_onnx, convert_onehot, convert_reverse_sequence, convert_square, \
     convert_unpack, convert_negative_pool_pad, convert_scatternd, convert_special_uni_seq_lstm, convert_strided_slice, convert_square_diff, \
     convert_broadcast_to, remove_redundant_broadcast_to, remove_sub_equal_select, remove_dequantize
-from ..onnx.passes.front_passes import fuse_weights_const
+from ..onnx.passes.front_passes import fuse_weights_const, convert_deconv
 from ..onnx.passes.common_passes import apply_subgraph_plugin, record_output_tensors
 from ...graph.graph_algo import infer, clear_redundant_nodes
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
@@ -48,6 +48,8 @@ def process_tflite(model_path, params):
 
         clear_redundant_nodes(graph)
         infer(graph)
+
+        convert_deconv(graph)
         convert_negative_pool_pad(graph)
         remove_redundant_broadcast_to(graph)
         convert_broadcast_to(graph)
