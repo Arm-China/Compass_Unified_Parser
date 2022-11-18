@@ -3692,6 +3692,9 @@ def merge_erosion(graph):
                     graph.remove_edge(m['neg2'], dst2)
                     graph.add_edge(m['dilation'], dst2, **out_attr)
                 graph.add_edge(src1, m['dilation'], **in_attr)
+                if len(obj_dict['dilation'].weights.shape) == 3:
+                    new_weights = np.flip(obj_dict['dilation'].weights, [1, 2])
+                    act_attr.update({'weights': new_weights})
 
                 NodeWrap(graph, m['dilation']).replace_obj('Erosion', act_attr)
 
