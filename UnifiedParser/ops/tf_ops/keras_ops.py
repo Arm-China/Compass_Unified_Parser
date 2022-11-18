@@ -8,6 +8,50 @@ from ..op import *
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
+class TfKerasAveragePooling1DOp(TfHasPaddingStrides, OpHasOneOutPort, KerasOp):
+    @classmethod
+    def attributes(cls):
+        return {2: {'pool_size': {'type': AttrType.INT, 'required': False, 'default': 2},
+                    },
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfKerasAveragePooling1DOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfKerasAveragePooling1DOp, attr_dict)
+        assert self.check_required(), 'TfKerasAveragePooling1DOp is missing a required parameter.'
+        self.kernel_shape = self.pool_size
+        if not self.strides:
+            self.strides = self.kernel_shape
+
+    def infer_shape(self):
+        super(TfKerasAveragePooling1DOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        inp = np.transpose(inputs[0], [0, 2, 1]
+                           ) if self.data_format == 'NCHW' else inputs[0]
+        avg_pool = tf.keras.layers.AveragePooling1D(self.kernel_shape,
+                                                    strides=self.strides,
+                                                    padding='valid' if self.auto_pad == 'VALID' else 'same',
+                                                    data_format='channels_last')
+        out_tensor = avg_pool(inp).numpy()
+        if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
+            self.pads, _ = OpHasPaddingStrides.cal_pads(
+                inp.shape[1:-1],
+                out_tensor.shape[1:-1],
+                self.strides,
+                self.kernel_shape,
+                self.auto_pad,
+                zero_minimum=True
+            )
+            self.auto_pad = 'NOTSET'
+        if self.data_format == 'NCHW':
+            out_tensor = np.transpose(out_tensor, [0, 2, 1])
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'AveragePool', 'version': 10}
+
+
 class TfKerasAveragePooling2DOp(TfHasPaddingStrides, OpHasOneOutPort, KerasOp):
     @classmethod
     def attributes(cls):
@@ -536,3 +580,51 @@ class TfKerasLSTMOp(KerasRecurrentOp):
             self.set_out_tensor([whole_or_state_out, hidden_state_out, cell_state_out])
         else:
             self.set_out_tensor([whole_or_state_out])
+
+
+class TfKerasMaxPool1DOp(TfHasPaddingStrides, OpHasOneOutPort, KerasOp):
+    @classmethod
+    def attributes(cls):
+        return {2: {'pool_size': {'type': AttrType.INT, 'required': False, 'default': 2},
+                    },
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfKerasMaxPool1DOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfKerasMaxPool1DOp, attr_dict)
+        assert self.check_required(), 'TfKerasMaxPool1DOp is missing a required parameter.'
+        self.kernel_shape = self.pool_size
+        if not self.strides:
+            self.strides = self.kernel_shape
+
+    def infer_shape(self):
+        super(TfKerasMaxPool1DOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        inp = np.transpose(inputs[0], [0, 2, 1]
+                           ) if self.data_format == 'NCHW' else inputs[0]
+        avg_pool = tf.keras.layers.MaxPool1D(self.kernel_shape,
+                                             strides=self.strides,
+                                             padding='valid' if self.auto_pad == 'VALID' else 'same',
+                                             data_format='channels_last')
+        out_tensor = avg_pool(inp).numpy()
+        if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
+            self.pads, _ = OpHasPaddingStrides.cal_pads(
+                inp.shape[1:-1],
+                out_tensor.shape[1:-1],
+                self.strides,
+                self.kernel_shape,
+                self.auto_pad,
+                zero_minimum=True
+            )
+            self.auto_pad = 'NOTSET'
+        if self.data_format == 'NCHW':
+            out_tensor = np.transpose(out_tensor, [0, 2, 1])
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'MaxPool', 'version': 10}
+
+
+class TfKerasMaxPooling1DOp(TfKerasMaxPool1DOp):
+    pass
