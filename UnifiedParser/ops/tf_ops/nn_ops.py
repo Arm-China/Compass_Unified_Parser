@@ -144,7 +144,7 @@ class TfComputeAccidentalHitsOp(OpHasMultipleOutPorts, TfOp):
 class TfDilation2DOp(TfHasPaddingStrides, OpHasWeights, OpHasOneOutPort, TfOp):
     @classmethod
     def attributes(cls):
-        return {1: {'dilations': {'default': [1, 1, 1, 1]}
+        return {1: {'dilations': {'default': [1, 1, 1, 1]},
                     }
                 }
 

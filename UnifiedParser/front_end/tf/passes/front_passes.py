@@ -3186,7 +3186,6 @@ def convert_to_onnx(graph):
                         axis_value = int(in_edges[1][2]['tensor'].value)
                         new_node_attr.update({'axis': axis_value})
                         graph.remove_edges_from(in_edges[1:])
-
                 elif pure_type == 'DepthToSpace':
                     new_node_attr.update(
                         {'blocksize': node_obj.block_size, 'mode': 'DCR'})

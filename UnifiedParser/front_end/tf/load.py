@@ -85,6 +85,9 @@ def convert_attr_to_onnx(attr_dict):
             new_attr.pop(k)
         elif k == 'parallel_iterations':
             new_attr.update({k: int(v)})
+        elif k == 'rates':
+            new_attr.update({'dilations': v})
+            new_attr.pop(k)
         elif k == 'reduction_indices':
             v = list(v) if isinstance(v, Iterable) else [v]
             new_attr.update({tf_attr_names_map.get(k, k): v})
