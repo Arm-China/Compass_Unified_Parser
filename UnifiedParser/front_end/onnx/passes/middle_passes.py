@@ -626,6 +626,59 @@ def convert_sigmoid_mul_to_silu(graph):
         clear_redundant_nodes(graph)
 
 
+def convert_sigmoid_mul_to_swish(graph):
+    matched = False
+    matches = matched_patterns(graph,
+                               nodes=[
+                                   ('mul1', {'op': 'Mul'}),
+                                   ('sigmoid', {'op': 'Sigmoid'}),
+                                   ('mul2', {'op': 'Mul'}),
+                               ],
+                               edges=[
+                                   ('mul1', 'sigmoid'),
+                                   ('sigmoid', 'mul2', {
+                                       'src_out_port': 0, 'dst_in_port': 1}),
+                               ])
+    for m in matches:
+        obj_dict = {name: NodeWrap(graph, m[name])['object']
+                    for name in ['mul1', 'sigmoid', 'mul2']}
+        if any(obj is None for obj in obj_dict.values()):
+            WARN('[Parser]: Meets invalid Node in convert_sigmoid_mul_to_swish!')
+            continue
+
+        mul1_in_edges = graph.sorted_in_edges(m['mul1'], data=True)
+        mul1_out_edges = graph.sorted_out_edges(m['mul1'], data=True)
+        mul2_in_edges = graph.sorted_in_edges(m['mul2'], data=True)
+        sigmoid_out_edges = graph.sorted_out_edges(m['sigmoid'], data=True)
+        if len(mul1_in_edges) == 2 \
+                and len(mul2_in_edges) == 2 \
+                and len(mul1_out_edges) == 1 \
+                and len(sigmoid_out_edges) == 1 \
+                and mul1_in_edges[1][2]['tensor'].is_const\
+                and mul2_in_edges[0][0] == mul1_in_edges[0][0]:
+            matched = True
+
+            inp, _, in_attr1 = mul1_in_edges[0]
+            in_attr2 = {'src_out_port': 0, 'dst_in_port': 0}
+            for src, _, in_attr in mul2_in_edges:
+                if inp == src:
+                    if in_attr['src_out_port'] != in_attr1['src_out_port']:
+                        matched = False
+                    else:
+                        in_attr2 = copy.deepcopy(in_attr)
+                    break
+            if not matched:
+                continue
+
+            graph.remove_edges_from(mul1_in_edges + mul2_in_edges)
+            graph.add_edge(inp, m['mul2'], **in_attr2)
+            silu_attr = obj_dict['mul2'].copied_attr()
+            silu_attr.update({'alpha': float(mul1_in_edges[1][2]['tensor'].value)})
+            NodeWrap(graph, m['mul2']).replace_obj('Swish', silu_attr)
+    if matched:
+        clear_redundant_nodes(graph)
+
+
 def convert_fill(graph):
     matches = single_node_matcher(graph, 'Fill')
     matched = False
@@ -6723,6 +6776,7 @@ def middle_passes(graph, params):
     # merge_l2pool(graph)
     convert_special_clip_to_relu(graph)
     convert_sigmoid_mul_to_silu(graph)
+    convert_sigmoid_mul_to_swish(graph)
     remove_useless_op(graph, ['Cast', 'Concat', 'Identity', 'Pad', 'Slice',
                               'Transpose', 'Reshape', 'AveragePool', 'MaxPool', 'Resize'])
     remove_sub_add_pair(graph)
