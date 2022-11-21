@@ -121,6 +121,7 @@ def convert_deconv(graph):
             in_shape = input_shapes[main_in_port]
             spatial_in_shape = in_shape[1:-1] if deconv_obj.data_format == 'NHWC' else in_shape[2:]
             deconv_obj.update_pads(spatial_in_shape)
+            new_weights = np.transpose(deconv_obj.weights, axes=type(deconv_obj).perm_lite_to_onnx())
             attrs = deconv_obj.copied_attr()
-            attrs.update({'opset_version': 11})
+            attrs.update({'opset_version': 11, 'weights': new_weights})
             NodeWrap(graph, deconv).replace_obj('ConvTranspose', attrs)
