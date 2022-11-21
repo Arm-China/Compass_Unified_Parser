@@ -145,6 +145,7 @@ def convert_gru_lstm(graph):
             graph, rnn, seq_output_shape, seq_output_shape_with_dir, out_port=0)
         Y_h_reshape_after = insert_reshape_after(graph, rnn, state_output_shape,
                                                  state_output_shape_with_dir, out_port=1)
+        Y_c_reshape_after = None
         if rnn_type == 'TfKerasLSTM':
             Y_c_reshape_after = insert_reshape_after(graph, rnn, state_output_shape,
                                                      state_output_shape_with_dir, out_port=2)
@@ -153,12 +154,12 @@ def convert_gru_lstm(graph):
             if rnn_obj.return_sequences and rnn_obj.return_state:
                 graph._attr['output_names'][index] = Y_reshape_after
                 graph._attr['output_names'].insert(index, Y_h_reshape_after)
-                if rnn_type == 'TfKerasLSTM':
+                if Y_c_reshape_after is not None:
                     graph._attr['output_names'].insert(
                         index + 1, Y_c_reshape_after)
             elif not rnn_obj.return_sequences:
                 graph._attr['output_names'][index] = Y_h_reshape_after
-                if rnn_type == 'TfKerasLSTM' and rnn_obj.return_state:
+                if rnn_obj.return_state and Y_c_reshape_after is not None:
                     graph._attr['output_names'].insert(
                         index, Y_c_reshape_after)
             else:
