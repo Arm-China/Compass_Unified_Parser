@@ -2533,6 +2533,72 @@ class KerasNormalizationOp(OpHasAxis, OpHasBiases, OpHasWeights, OpHasOneOutPort
             self.biases = np.zeros(weights_biases_shape, dtype=inputs[0].dtype)
 
 
+class KerasPoolingOp(TfHasPaddingStrides, OpHasOneOutPort, KerasOp):
+    '''
+    Class KerasPoolingOp inherited from TfHasPaddingStrides, OpHasOneOutPort and KerasOp.
+    Tf Keras Pooling OPs must inherit this class, such as TfKerasAveragePooling2DOp,
+    TfKerasMaxPooling2DOp and etc.
+    '''
+    @classmethod
+    def ufunc(cls):
+        return None
+
+    @classmethod
+    def attributes(cls):
+        return {'pool_size': {'required': False, 'default': None},
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(KerasPoolingOp, self).__init__(graph, attr_dict)
+        self.update_attributes(KerasPoolingOp, attr_dict)
+        assert self.check_required(), 'KerasPoolingOp is missing a required parameter.'
+        op_type_name = type(self).__name__
+        pool_length = 3 if '3D' in op_type_name else (2 if '2D' in op_type_name else 1)
+        # Update kernel_shape and strides
+        if self.pool_size is None:
+            self.pool_size = 2 if pool_length == 3 else [2] * (pool_length - 2)
+        elif isinstance(self.pool_size, int) and pool_length > 3:
+            self.pool_size = [self.pool_size] * (pool_length - 2)
+        elif isinstance(self.pool_size, tuple):
+            self.pool_size = list(self.pool_size[:])
+        self.kernel_shape = list(self.pool_size)
+        if not self.strides:
+            self.strides = self.kernel_shape
+
+    @abc.abstractmethod
+    def infer_shape(self):
+        super(KerasPoolingOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        if len(inputs) < 1 or inputs[0] is None:
+            return
+        # Pre transpose is needed for channels first data format
+        pre_perm = None
+        if self.data_format.startswith('NC'):
+            pre_perm = [idx for idx in range(len(inputs[0])) if idx != 1] + [1]
+            inp = np.transpose(inputs[0], pre_perm)
+        else:
+            inp = inputs[0]
+        pool = type(self).ufunc()(self.pool_size,
+                                  strides=self.strides,
+                                  padding='valid' if self.auto_pad == 'VALID' else 'same',
+                                  data_format='channels_last')
+        out_tensor = pool(inp).numpy()
+        # Update pads and auto_pad
+        if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
+            self.pads, _ = OpHasPaddingStrides.cal_pads(
+                inp.shape[1:-1],
+                out_tensor.shape[1:-1],
+                self.strides,
+                self.kernel_shape,
+                self.auto_pad,
+                zero_minimum=True
+            )
+            self.auto_pad = 'NOTSET'
+        if pre_perm is not None:
+            out_tensor = np.transpose(out_tensor, Op.cal_inverse_perm(pre_perm))
+        self.set_out_tensor(out_tensor)
+
+
 class ArmOp(Op):
     '''
     Class ArmOp inherited from Op class.
