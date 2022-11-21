@@ -2444,6 +2444,39 @@ class KerasBaseDeconvOp(KerasBaseConvOp):
         self.auto_pad = 'NOTSET'
 
 
+class KerasGlobalPoolingOp(OpHasOneOutPort, LayoutConcernedOp, KerasOp):
+    '''
+    Class KerasGlobalPoolingOp inherited from OpHasOneOutPort, LayoutConcernedOp,
+    and KerasOp.
+    Tf Keras Global Pooling OPs must inherit this class, such as GlobalAveragePooling1D,
+    GlobalMaxPool2D and etc.
+    '''
+    @classmethod
+    def attributes(cls):
+        return {'keepdims': {'type': AttrType.INT, 'required': False, 'default': 0, 'options': [0, 1]},
+                'keras_data_format': {'type': AttrType.STRING,
+                                      'default': 'channels_last',
+                                      'options': ['channels_last', 'channels_first']},
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(KerasGlobalPoolingOp, self).__init__(graph, attr_dict)
+        self.update_attributes(KerasGlobalPoolingOp, attr_dict)
+        assert self.check_required(), 'KerasGlobalPoolingOp is missing a required parameter.'
+        self.keras_data_format = 'channels_first' if self.data_format.startswith('NC') else 'channels_last'
+
+    def __getattr__(self, item):
+        ret = None
+        try:
+            if item == 'keepdims':
+                ret = bool(self.__dict__['_attr'][item].value)
+        except:
+            ret = None
+        if ret is None:
+            ret = super(KerasGlobalPoolingOp, self).__getattr__(item)
+        return ret
+
+
 class KerasNormalizationOp(OpHasAxis, OpHasBiases, OpHasWeights, OpHasOneOutPort, KerasOp):
     '''
     Class KerasNormalizationOp inherited from OpHasAxis, OpHasBiases, OpHasWeights,

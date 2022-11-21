@@ -5,7 +5,7 @@
 import numpy as np
 import re
 import copy
-from ....ops.op import Op, KerasOp, OpHasWeights
+from ....ops.op import Op, OpHasWeights, KerasOp, KerasGlobalPoolingOp
 from ....graph.node_wrap import NodeWrap
 from ....graph.graph_algo import get_valid_node_name, clear_redundant_nodes
 from ....graph.pattern_match import matched_patterns, single_node_matcher
@@ -59,6 +59,46 @@ def convert_batchnorm(graph):
         node_attr = batchnorm_obj.copied_attr()
         node_attr.update({'opset_version': 14, 'data_format': 'NHWC'})
         NodeWrap(graph, batchnorm).replace_obj('BatchNormalization', node_attr)
+
+
+def convert_global_pooling(graph):
+    op_types = KerasGlobalPoolingOp.get_concrete_subclass_names()
+    matches = single_node_matcher(graph, op_types)
+    for m in matches:
+        global_pool = m['target']
+        global_pool_obj = NodeWrap(graph, global_pool)['object']
+        if global_pool_obj is None:
+            WARN(
+                '[Parser]: Meets invalid Op (%s) in convert_global_pooling!' % global_pool)
+            continue
+        if getattr(global_pool_obj, 'correspond_onnx_op', None) is None:
+            continue
+        in_edges = graph.sorted_in_edges(global_pool)
+        graph.remove_edges_from(in_edges[1:])
+        node_data_format = 'NCHW' if global_pool_obj.data_format.startswith('NC') else 'NHWC'
+        if not global_pool_obj.keepdims:
+            input_shapes = global_pool_obj.get_input_shapes()
+            if len(input_shapes) < 1 \
+                    or input_shapes[0] is None \
+                    or len(input_shapes[0]) not in (3, 4, 5) \
+                    or None in input_shapes[0]:
+                continue
+            if node_data_format == 'NCHW':
+                reshape_dim = input_shapes[0][:2]
+                old_dim = input_shapes[0][:2] + [1] * (len(input_shapes[0]) - 2)
+            else:
+                reshape_dim = [input_shapes[0][0], input_shapes[0][-1]]
+                old_dim = [input_shapes[0][0]] + [1] * (len(input_shapes[0]) - 2) + [input_shapes[0][-1]]
+            post_reshape = insert_reshape_after(graph, global_pool, reshape_dim, old_dim)
+            if global_pool in graph._attr['output_names']:
+                index = graph._attr['output_names'].index(global_pool)
+                graph._attr['output_names'][index] = post_reshape
+        new_node_attr = global_pool_obj.copied_attr()
+        new_node_attr.update(
+            {'opset_version': global_pool_obj.correspond_onnx_op['version'],
+             'data_format': node_data_format})
+        NodeWrap(graph, global_pool).replace_obj(
+            global_pool_obj.correspond_onnx_op['type'], new_node_attr)
 
 
 def convert_gru_lstm(graph):
@@ -223,7 +263,6 @@ def convert_to_onnx(graph):
 
         if pure_type == 'Flatten':
             if node_data_format == 'NCHW':
-                input_shapes = node_obj.get_input_shapes()
                 if not is_first_input_valid(in_edges, input_shapes):
                     continue
                 if len(input_shapes[0]) > 2:
@@ -254,5 +293,6 @@ def process_keras_op_after_infer(graph):
         return
 
     convert_batchnorm(graph)
+    convert_global_pooling(graph)
 
     convert_to_onnx(graph)

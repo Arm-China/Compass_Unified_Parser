@@ -444,6 +444,84 @@ class TfKerasFlattenOp(OpHasOneOutPort, LayoutConcernedOp, KerasOp):
         return {'type': 'Reshape', 'version': 1}
 
 
+class TfKerasGlobalAveragePooling1DOp(KerasGlobalPoolingOp):
+    def infer_shape(self):
+        super(TfKerasGlobalAveragePooling1DOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        global_avg_pool = tf.keras.layers.GlobalAveragePooling1D(self.keras_data_format, keepdims=self.keepdims)
+        out_tensor = global_avg_pool(inputs[0]).numpy()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'GlobalAveragePool', 'version': 1}
+
+
+class TfKerasGlobalAveragePooling2DOp(KerasGlobalPoolingOp):
+    def infer_shape(self):
+        super(TfKerasGlobalAveragePooling2DOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        global_avg_pool = tf.keras.layers.GlobalAveragePooling2D(self.keras_data_format, keepdims=self.keepdims)
+        out_tensor = global_avg_pool(inputs[0]).numpy()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'GlobalAveragePool', 'version': 1}
+
+
+class TfKerasGlobalAveragePooling3DOp(KerasGlobalPoolingOp):
+    def infer_shape(self):
+        super(TfKerasGlobalAveragePooling3DOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        global_avg_pool = tf.keras.layers.GlobalAveragePooling3D(self.keras_data_format, keepdims=self.keepdims)
+        out_tensor = global_avg_pool(inputs[0]).numpy()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'GlobalAveragePool', 'version': 1}
+
+
+class TfKerasGlobalMaxPooling1DOp(KerasGlobalPoolingOp):
+    def infer_shape(self):
+        super(TfKerasGlobalMaxPooling1DOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        global_max_pool = tf.keras.layers.GlobalMaxPool1D(self.keras_data_format, keepdims=self.keepdims)
+        out_tensor = global_max_pool(inputs[0]).numpy()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'GlobalMaxPool', 'version': 1}
+
+
+class TfKerasGlobalMaxPooling2DOp(KerasGlobalPoolingOp):
+    def infer_shape(self):
+        super(TfKerasGlobalMaxPooling2DOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        global_max_pool = tf.keras.layers.GlobalMaxPool2D(self.keras_data_format, keepdims=self.keepdims)
+        out_tensor = global_max_pool(inputs[0]).numpy()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'GlobalMaxPool', 'version': 1}
+
+
+class TfKerasGlobalMaxPooling3DOp(KerasGlobalPoolingOp):
+    def infer_shape(self):
+        super(TfKerasGlobalMaxPooling3DOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        global_max_pool = tf.keras.layers.GlobalMaxPool3D(self.keras_data_format, keepdims=self.keepdims)
+        out_tensor = global_max_pool(inputs[0]).numpy()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'GlobalMaxPool', 'version': 1}
+
+
 class TfKerasGRUOp(KerasRecurrentOp):
     @classmethod
     def attributes(cls):
