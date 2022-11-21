@@ -706,3 +706,27 @@ class TfKerasMaxPool1DOp(TfHasPaddingStrides, OpHasOneOutPort, KerasOp):
 
 class TfKerasMaxPooling1DOp(TfKerasMaxPool1DOp):
     pass
+
+
+class TfKerasPermuteOp(OpHasOneOutPort, KerasOp):
+    @classmethod
+    def attributes(cls):
+        return {2: {'dims': {'type': AttrType.INTS, 'required': True},
+                    },
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfKerasPermuteOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfKerasPermuteOp, attr_dict)
+        assert self.check_required(), 'TfKerasPermuteOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(TfKerasPermuteOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        permute = tf.keras.layers.Permute(self.dims)
+        out_tensor = permute(inputs[0]).numpy()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'Transpose', 'version': 1}

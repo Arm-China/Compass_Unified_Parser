@@ -271,6 +271,9 @@ def convert_to_onnx(graph):
                     insert_transpose(graph, src, node_name, in_attr, perm)
                     node_data_format = 'NHWC'
             new_node_attr.update({'shape': [0, -1]})
+        elif pure_type == 'Permute':
+            perm = [0] + list(node_obj.dims)
+            new_node_attr.update({'perm': perm})
 
         new_node_attr.update(
             {'opset_version': node_obj.correspond_onnx_op['version'],
