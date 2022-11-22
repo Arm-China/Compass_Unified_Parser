@@ -51,17 +51,15 @@ def convert_broadcast_to(graph):
 
 
 def convert_onehot(graph):
+    matched = False
     matches = matched_patterns(graph,
                                nodes=[
-                                   ('input', {}),
                                    ('depth', {'op': 'Constant'}),
                                    ('on_value', {'op': 'Constant'}),
                                    ('off_value', {'op': 'Constant'}),
                                    ('one_hot', {'op': 'LiteONE_HOT'})
                                ],
                                edges=[
-                                   ('input', 'one_hot', {
-                                    'src_out_port': 0, 'dst_in_port': 0}),
                                    ('depth', 'one_hot', {
                                     'src_out_port': 0, 'dst_in_port': 1}),
                                    ('on_value', 'one_hot', {
@@ -70,15 +68,19 @@ def convert_onehot(graph):
                                     'src_out_port': 0, 'dst_in_port': 3})
                                ])
     for m in matches:
-        names = ['input', 'depth', 'on_value', 'off_value', 'one_hot']
-        node_objs = {n: NodeWrap(graph, m[n])['object'] for n in names}
-        onehot = m['one_hot']
-        off_value = m['off_value']
-        on_value_obj = node_objs['on_value']
-        off_value_obj = node_objs['off_value']
-        on_value_obj.value = np.append(
-            off_value_obj.value, on_value_obj.value)
-        graph.remove_edge(off_value, onehot)
+        obj_dict = {name: NodeWrap(graph, m[name])['object']
+                    for name in ['depth', 'on_value', 'off_value', 'one_hot']}
+        if any(obj is None for obj in obj_dict.values()):
+            WARN('[Parser]: Meets invalid Node in convert_onehot!')
+            continue
+        matched = True
+        obj_dict['on_value'].value = np.append(obj_dict['off_value'].value, obj_dict['on_value'].value)
+        graph.remove_edge(m['off_value'], m['one_hot'])
+        onehot_attr = obj_dict['one_hot'].copied_attr()
+        onehot_attr.update({'opset_version': 11})
+        NodeWrap(graph, m['one_hot']).replace_obj('OneHot', onehot_attr)
+    if matched:
+        clear_redundant_nodes(graph)
 
 
 def convert_negative_pool_pad(graph):
