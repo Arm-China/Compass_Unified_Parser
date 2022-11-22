@@ -92,24 +92,27 @@ def parse_tensor(tensor_pb):
             return np.array(value, dtype='<U0')
         else:
             value = np.atleast_1d(value).copy()
-            assert len(value) == 1
-            return np.array(value[0], dtype=tf_types_convert_mapping[dtype][1])
-    else:
-        if tensor_pb.tensor_content:
-            flat = np.array(np.frombuffer(
-                tensor_pb.tensor_content, tf_types_convert_mapping[dtype][1]))
-            if len(flat) == shape.prod():
-                return flat.reshape(shape)
-            else:
-                return flat
+            if len(value) == 1:
+                return np.array(value[0], dtype=tf_types_convert_mapping[dtype][1])
+            elif not tensor_pb.tensor_content:
+                WARN('[Parser]: Meet invalid tensor_pb in parse_tensor!')
+                return np.array(value, dtype=tf_types_convert_mapping[dtype][1])
+
+    if tensor_pb.tensor_content:
+        flat = np.array(np.frombuffer(
+            tensor_pb.tensor_content, tf_types_convert_mapping[dtype][1]))
+        if len(flat) == shape.prod():
+            return flat.reshape(shape)
         else:
-            value = np.array(tf_types_convert_mapping[dtype][2](
-                tensor_pb), dtype=tf_types_convert_mapping[dtype][1])
-            try:
-                value = np.broadcast_to(value, shape=shape).copy()
-            except:
-                value = np.reshape(value, shape)
-            return value
+            return flat
+    else:
+        value = np.array(tf_types_convert_mapping[dtype][2](
+            tensor_pb), dtype=tf_types_convert_mapping[dtype][1])
+        try:
+            value = np.broadcast_to(value, shape=shape).copy()
+        except:
+            value = np.reshape(value, shape)
+        return value
 
 
 def parse_proto(container, func):
