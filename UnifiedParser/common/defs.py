@@ -58,7 +58,8 @@ def get_opset_version(version_number):
         '1.09': 14,
         '1.10': 15,
         '1.11': 16,
-        '1.12': 17
+        '1.12': 17,
+        '1.13': 18
     }
     version_str = '%1.2f' % float(version_number)
     versions = sorted(
@@ -124,8 +125,10 @@ class Tensor(object):
                 'value': None,
                 'shape': None,
                 'required': False,
+                'is_const': False,
                 'min_max': tuple(),
-                'is_const': False
+                'scale_zp': tuple(),
+                'dtype': None
                 }
 
     def __init__(self, **kwargs):

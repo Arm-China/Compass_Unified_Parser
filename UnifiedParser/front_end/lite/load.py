@@ -172,10 +172,10 @@ def convert_attr_to_onnx(attr_dict):
             new_attr.update({'weights_format': v})
             new_attr.pop(k)
         elif k == 'BatchDim':
-            new_attr.update({'batch_dim':  v})
+            new_attr.update({'batch_dim': v})
             new_attr.pop(k)
         elif k == 'BatchDims':
-            new_attr.update({'batch_dims':  v})
+            new_attr.update({'batch_dims': v})
             new_attr.pop(k)
         elif k == 'SeqDim':
             new_attr.update({'seq_dim': v})
@@ -188,6 +188,11 @@ def convert_tflite_to_graph(model_path, params):
     graph = Graph(name=params.get('model_name', ''))
     graph._attr['framework'] = Framework.TFLITE
     graph._attr['output_tensor_names'] = params.get('output_tensor_names', [])
+    quantize = True \
+        if params.get('compat_quantized_model', 'false').lower() == 'true' \
+        else False
+    graph._attr['quantize'] = quantize
+
     try:
         ret, model, buffer = read_tflite_model(model_path)
         if ret:
@@ -217,7 +222,7 @@ def convert_tflite_to_graph(model_path, params):
                 tensors_table = [(tensor, ti not in non_const_tensor_ids, linear_weights_tensor_id.get(
                     ti, '')) for ti, tensor in enumerate(tensors_table)]
                 parsed_tensors_table = list(
-                    map(partial(parse_tensor, tflite_model=model), tensors_table))
+                    map(partial(parse_tensor, tflite_model=model, quantize=quantize), tensors_table))
 
                 tensor_name_count = defaultdict(int)
                 for in_tensor_id in non_const_tensor_ids:
@@ -228,7 +233,7 @@ def convert_tflite_to_graph(model_path, params):
                     tensor_name_count[tensor_name] += 1
                     if tensor_name_count[tensor_name] > 1:
                         parsed_tensors_table[in_tensor_id]['name'] = tensor_name + \
-                            '_' + str(tensor_name_count[tensor_name]-1)
+                            '_' + str(tensor_name_count[tensor_name] - 1)
 
                 out_tensor_operator_map = {k: oi for oi, op_info in enumerate(
                     parsed_operators_table) for k in op_info['outputs']}
@@ -252,7 +257,7 @@ def convert_tflite_to_graph(model_path, params):
                         op_type = ('Tf' if op_info['is_tf_op'] else 'Lite') + op_info['type']
                     attr_dict = copy.deepcopy(op_info['attr'])
                     attr_dict.update(
-                        {'name': node_name, 'data_format': 'NHWC'})
+                        {'name': node_name, 'data_format': 'NHWC', 'quantize': quantize})
                     if re.search(r'Lite', op_type):
                         attr_dict.update(
                             {'opcode_version': op_info['opcode_version']})
@@ -285,11 +290,17 @@ def convert_tflite_to_graph(model_path, params):
                                 in_tensor_id)
                             edge_tensor = Tensor(shape=in_tensor['data'].shape)
                             edge_tensor.value = in_tensor['data']
-                            if 'quant_info' in in_tensor \
-                                    and 'Max' in in_tensor['quant_info'] \
-                                    and 'Min' in in_tensor['quant_info']:
-                                edge_tensor.min_max = (
-                                    in_tensor['quant_info']['Min'], in_tensor['quant_info']['Max'])
+                            if 'quant_info' in in_tensor:
+                                if 'Max' in in_tensor['quant_info'] \
+                                        and 'Min' in in_tensor['quant_info']:
+                                    edge_tensor.min_max = (
+                                        in_tensor['quant_info']['Min'], in_tensor['quant_info']['Max'])
+                                if 'Scale' in in_tensor['quant_info'] \
+                                        and 'ZeroPoint' in in_tensor['quant_info']:
+                                    edge_tensor.scale_zp = (
+                                        in_tensor['quant_info']['Scale'], in_tensor['quant_info']['ZeroPoint'])
+                            if 'dtype' in in_tensor:
+                                edge_tensor.dtype = in_tensor['dtype']
                             edge_attr = {'src_out_port': src_out_port,
                                          'dst_in_port': in_port, 'tensor': edge_tensor}
                             assert graph.has_node(
@@ -310,17 +321,25 @@ def convert_tflite_to_graph(model_path, params):
                                          'dst_in_port': in_port,
                                          'tensor': Tensor(value=const_tensor['data'], is_const=True)
                                          }
-                            if const_tensor.get('quant_info', {}).get('Min', None) is not None \
-                                    and const_tensor.get('quant_info', {}).get('Max', None) is not None:
-                                edge_attr['tensor'].min_max = (
-                                    const_tensor['quant_info']['Min'], const_tensor['quant_info']['Max'])
+                            if 'quant_info' in const_tensor:
+                                if 'Max' in const_tensor['quant_info'] \
+                                        and 'Min' in const_tensor['quant_info']:
+                                    edge_attr['tensor'].min_max = (const_tensor['quant_info']['Min'],
+                                                                   const_tensor['quant_info']['Max'])
+                                if 'Scale' in const_tensor['quant_info'] \
+                                        and 'ZeroPoint' in const_tensor['quant_info']:
+                                    edge_attr['tensor'].scale_zp = (const_tensor['quant_info']['Scale'],
+                                                                    const_tensor['quant_info']['ZeroPoint'])
+                            if 'dtype' in const_tensor:
+                                edge_attr['tensor'].dtype = const_tensor['dtype']
                             graph.add_edge(const_name, node_name, **edge_attr)
                             const_node = NodeWrap(graph, const_name)
                             const_node.replace_obj('Constant',
                                                    {'name': const_name,
                                                     'value': const_tensor['data'],
                                                     'data_format': 'NHWC',
-                                                    'opset_version': opset_version
+                                                    'opset_version': opset_version,
+                                                    'quantize': quantize
                                                     }
                                                    )
 

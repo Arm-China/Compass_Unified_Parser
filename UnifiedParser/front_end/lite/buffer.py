@@ -268,13 +268,12 @@ def parse_quantization_info(quant_info):
             meta_info_length = getattr(quant_info, name + 'Length')()
             if meta_info_length != 0:
                 value = getattr(quant_info, name + 'AsNumpy')()
-                value = value.astype(np.float32) if isinstance(
-                    value, np.ndarray) else np.array(value, np.float32)
+                value = value if isinstance(value, np.ndarray) else np.array(value)
                 ret.update({name: value})
     return ret
 
 
-def parse_tensor(tensor_info, tflite_model):
+def parse_tensor(tensor_info, tflite_model, quantize=False):
     tensor, is_const, linear_type = tensor_info
     buffer_index = tensor.Buffer()
     assert 0 <= buffer_index < tflite_model.BuffersLength(
@@ -293,19 +292,20 @@ def parse_tensor(tensor_info, tflite_model):
     quant_info_dict = parse_quantization_info(tensor.Quantization())
     if quant_info_dict:
         if is_const:
-            if linear_type == 'DEPTHWISE_CONV_2D':
-                scale = quant_info_dict['Scale']
-                zp = quant_info_dict['ZeroPoint']
-            else:
-                expand_dims = len(parsed_data.shape) - \
-                    len(quant_info_dict['Scale'].shape)
-                new_scale_zp_shape = list(
-                    quant_info_dict['Scale'].shape) + [1 for _ in range(expand_dims)]
-                scale = np.reshape(
-                    quant_info_dict['Scale'], newshape=new_scale_zp_shape)
-                zp = np.reshape(
-                    quant_info_dict['ZeroPoint'], newshape=new_scale_zp_shape)
-            parsed_data = (parsed_data - zp) * scale
+            if not quantize:
+                if linear_type == 'DEPTHWISE_CONV_2D':
+                    scale = quant_info_dict['Scale']
+                    zp = quant_info_dict['ZeroPoint']
+                else:
+                    expand_dims = len(parsed_data.shape) - \
+                        len(quant_info_dict['Scale'].shape)
+                    new_scale_zp_shape = list(
+                        quant_info_dict['Scale'].shape) + [1 for _ in range(expand_dims)]
+                    scale = np.reshape(
+                        quant_info_dict['Scale'], newshape=new_scale_zp_shape)
+                    zp = np.reshape(
+                        quant_info_dict['ZeroPoint'], newshape=new_scale_zp_shape)
+                parsed_data = (parsed_data - zp) * scale
         else:
             if 'ZeroPoint' in quant_info_dict and 'Scale' in quant_info_dict:
                 parsed_data = (
@@ -313,8 +313,11 @@ def parse_tensor(tensor_info, tflite_model):
         if parsed_data.dtype == np.float64:
             parsed_data = parsed_data.astype(np.float32)
 
-    ret = {'name': tensor.Name().decode('utf-8'), 'data': parsed_data,
-           'is_const': is_const}
+    ret = {'name': tensor.Name().decode('utf-8'),
+           'data': parsed_data,
+           'is_const': is_const,
+           'dtype': str(data_type.__name__)
+           }
     if quant_info_dict:
         ret.update({'quant_info': quant_info_dict})
     return ret

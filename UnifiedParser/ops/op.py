@@ -107,6 +107,7 @@ class Op(abc.ABC):
                                 'options': ['NWC', 'NCW', 'NHWC', 'NCHW', 'NDHWC', 'NCDHW'],
                                 'required': True},
                 'cur_version': {'type': AttrType.INT, 'default': 0, 'required': False},
+                'quantize': {'type': AttrType.INT, 'default': 0, 'options': [0, 1]}
                 }
 
     @classmethod
@@ -168,6 +169,8 @@ class Op(abc.ABC):
             ret = None
             if self.__dict__['_attr'].get(item, None) is not None:
                 ret = self.__dict__['_attr'][item].value
+                if item in ('quantize',):
+                    ret = bool(ret)
             elif self.cur_version in type(self).attributes() \
                     and 'default' in type(self).attributes()[self.cur_version]:
                 ret = type(self).attributes()[self.cur_version]['default']
@@ -311,12 +314,34 @@ class Op(abc.ABC):
                 top_info[0] if len(top_info) >= 3 else []))
             txt_file.write('layer_top_shape=[%s]\n' % string_list_to_string(
                 top_info[1] if len(top_info) >= 3 else []))
-            txt_file.write('layer_top_type=[%s]\n' % string_list_to_string(
-                top_info[2] if len(top_info) >= 3 else []))
-            range_str = string_list_to_string(
-                top_info[3] if len(top_info) >= 4 else [])
-            if range_str:
-                txt_file.write('layer_top_range=[%s]\n' % range_str)
+
+            if self.quantize \
+                    and len(top_info) >= 4 \
+                    and all('dtype' in info for info in top_info[3]):
+                top_type_str = string_list_to_string([info['dtype'] for info in top_info[3]])
+            else:
+                top_type_str = string_list_to_string(top_info[2] if len(top_info) >= 3 else [])
+            txt_file.write('layer_top_type=[%s]\n' % top_type_str)
+
+            if len(top_info) >= 4:
+                if all('min_max' in info for info in top_info[3]):
+                    min_max_list = [info['min_max'] for info in top_info[3]]
+                    range_str = string_list_to_string(min_max_list)
+                    if range_str:
+                        txt_file.write('layer_top_range=[%s]\n' % range_str)
+
+            if self.quantize \
+                    and len(top_info) >= 4 \
+                    and all('scale_zp' in info for info in top_info[3]):
+                scale_list = [info['scale_zp'][0] for info in top_info[3]]
+                scale_str = string_list_to_string(scale_list)
+                zp_list = [info['scale_zp'][1] for info in top_info[3]]
+                zp_str = string_list_to_string(zp_list)
+                if scale_str:
+                    txt_file.write('layer_top_scale=[%s]\n' % scale_str)
+                if zp_str:
+                    txt_file.write('layer_top_zp=[%s]\n' % zp_str)
+
         else:
             FATAL(
                 '[Parser]: Invalid file to write properties for Node(%s) in write_attrs!' % (self.name))
@@ -429,17 +454,23 @@ class Op(abc.ABC):
             if (d['tensor'].value is not None and d['tensor'].value.size > 0) \
                     or (d['tensor'].shape is not None and len(d['tensor'].shape) > 0):
                 tensor_shape = list(d['tensor'].value.shape)
-                info_value = [re.sub(r' ', '', str(tensor_shape)), str(
-                    d['tensor'].value.dtype)]
+                info_value = [re.sub(r' ', '', str(tensor_shape)),
+                              str(d['tensor'].value.dtype),
+                              OrderedDict()]
             else:
                 tensor_shape = []
                 WARN('[Parser]: An exception occurred with get_outputs_info. Got invalid output shape for Node(%s)!' %
                      self.name)
-                info_value = [re.sub(r' ', '', str(tensor_shape)), '']
-            info.update({u + name_suffix: info_value})
+                info_value = [re.sub(r' ', '', str(tensor_shape)), '', OrderedDict()]
             if len(d['tensor'].min_max) == 2:
-                info_value.append('[%f,%f]' % (
-                    float(d['tensor'].min_max[0]), float(d['tensor'].min_max[1])))
+                min_max_str = '[%f,%f]' % (float(d['tensor'].min_max[0]), float(d['tensor'].min_max[1]))
+                info_value[2].update({'min_max': min_max_str})
+            if d['tensor'].dtype is not None:
+                info_value[2].update({'dtype': str(d['tensor'].dtype)})
+            if len(d['tensor'].scale_zp) == 2:
+                scale_zp = (np.array(d['tensor'].scale_zp[0]), np.array(d['tensor'].scale_zp[1]))
+                info_value[2].update({'scale_zp': scale_zp})
+            info.update({u + name_suffix: info_value})
         if len(info) > 0:
             ret = [(k, *v) for k, v in info.items()]
             ret = list(zip(*ret))
