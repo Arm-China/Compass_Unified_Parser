@@ -147,7 +147,7 @@ class ArmActivationOp(LayoutUnawareOp, OpHasMethod, OpHasOneOutPort, ArmOp):
         elif self.method == 'SILU':
             out_tensor = self.silu()
         elif self.method == 'SWISH':
-            out_tensor = func(inputs[0], self.alpha).numpy()
+            out_tensor = func(inputs[0], self.alpha).numpy().astype(np.float32)
         elif self.method == 'THRESHOLDEDRELU':
             out_tensor = self.thresholded_relu()
         else:
