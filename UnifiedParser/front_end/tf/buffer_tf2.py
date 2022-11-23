@@ -84,6 +84,11 @@ def get_node_attr(layer):
         try:
             value = eval('layer.' + key)
             if eval('callable(layer.' + key + ')'):
+                if key == 'get_config':
+                    value = layer.get_config()
+                    if isinstance(value, dict):
+                        ret.update(value)
+                    continue
                 if any(key.startswith(func) for func in ('add_', 'apply', 'compute_', 'from_', 'get_', 'reset_', 'set_')) \
                         or any(key.endswith(func) for func in ('_initializer', '_constraint')) \
                         or '__name__' not in dir(value):

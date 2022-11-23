@@ -653,3 +653,37 @@ class TfKerasReshapeOp(OpHasOneOutPort, KerasOp):
     @property
     def correspond_onnx_op(self):
         return {'type': 'Reshape', 'version': 1}
+
+
+class TfKerasResizingOp(OpHasOneOutPort, KerasOp):
+    @classmethod
+    def attributes(cls):
+        return {2: {'height': {'type': AttrType.INT, 'required': True},
+                    'width': {'type': AttrType.INT, 'required': True},
+                    'interpolation': {'type': AttrType.STRING, 'required': False, 'default': 'bilinear'},
+                    'crop_to_aspect_ratio': {'type': AttrType.INT, 'required': False, 'default': 0, 'options': [0, 1]}
+                    },
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfKerasResizingOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfKerasResizingOp, attr_dict)
+        assert self.check_required(), 'TfKerasResizingOp is missing a required parameter.'
+
+    def __getattr__(self, item):
+        ret = None
+        try:
+            if item == 'crop_to_aspect_ratio':
+                ret = bool(self.__dict__['_attr'][item].value)
+        except:
+            ret = None
+        if ret is None:
+            ret = super(TfKerasResizingOp, self).__getattr__(item)
+        return ret
+
+    def infer_shape(self):
+        super(TfKerasResizingOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        resize = tf.keras.layers.Resizing(self.height, self.width, self.interpolation, self.crop_to_aspect_ratio)
+        out_tensor = resize(inputs[0]).numpy()
+        self.set_out_tensor(out_tensor)

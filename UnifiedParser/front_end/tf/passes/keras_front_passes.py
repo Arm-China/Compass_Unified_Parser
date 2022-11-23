@@ -10,7 +10,7 @@ from ....graph.node_wrap import NodeWrap
 from ....graph.graph_algo import get_valid_node_name, clear_redundant_nodes
 from ....graph.pattern_match import matched_patterns, single_node_matcher
 from ...onnx.passes.common_passes import insert_constant, insert_reshape_after, \
-    insert_transpose, insert_transpose_after
+    insert_slice, insert_transpose, insert_transpose_after
 from ....common.utils import extend_lists
 from ....logger import INFO, DEBUG, WARN, ERROR, FATAL
 
@@ -221,6 +221,64 @@ def convert_gru_lstm(graph):
         NodeWrap(graph, rnn).replace_obj(dst_onnx_type, rnn_attr)
 
 
+def convert_resizing(graph):
+    matches = single_node_matcher(graph, 'TfKerasResizing')
+    for m in matches:
+        resize = m['target']
+        resize_obj = NodeWrap(graph, resize)['object']
+        in_edges = graph.sorted_in_edges(resize, data=True)
+        if resize_obj is None or len(in_edges) < 1:
+            WARN('[Parser]: Meets invalid TfKerasResizing Op (%s) in convert_resizing!' % resize)
+            continue
+        if resize_obj.interpolation not in ('bilinear', 'nearest', 'bicubic'):
+            WARN('[Parser]: Meet unsupported interpolation method (%s) in convert_resizing!' % resize_obj.interpolation)
+            continue
+        input_shapes = resize_obj.get_input_shapes()
+        if len(input_shapes) < 1 or input_shapes[0] is None \
+                or len(input_shapes[0]) not in (3, 4) \
+                or None in input_shapes[0]:
+            continue
+        is_4d_input = len(input_shapes[0]) == 4
+        target_shape = [resize_obj.height, resize_obj.width, input_shapes[0][-1]]
+        if is_4d_input:
+            input_height, input_width = input_shapes[0][1:3]
+            target_shape = [input_shapes[0][0]] + target_shape
+        else:
+            input_height, input_width = input_shapes[0][0:2]
+        mode = 'linear' if resize_obj.interpolation == 'bilinear' else (
+            'cubic' if resize_obj.interpolation == 'bicubic' else 'nearest')
+        if resize_obj.crop_to_aspect_ratio:
+            crop_height = int(resize_obj.height * input_width / resize_obj.width)
+            crop_height = min(crop_height, input_height)
+            crop_width = int(resize_obj.width * input_height / resize_obj.height)
+            crop_width = min(crop_width, input_width)
+            crop_hstart = int((input_height - crop_height) / 2)
+            crop_wstart = int((input_width - crop_width) / 2)
+            if crop_hstart != 0 or crop_wstart != 0 \
+                    or crop_height != input_height or crop_width != input_width:
+                if is_4d_input:
+                    begin = [0, crop_hstart, crop_wstart, 0]
+                    size = [input_shapes[0][0], crop_height, crop_width, input_shapes[0][-1]]
+                else:
+                    begin = [crop_hstart, crop_wstart, 0]
+                    size = [crop_height, crop_width, input_shapes[0][-1]]
+                src, _, in_attr = in_edges[0]
+                insert_slice(graph, src, resize, in_attr, begin, size)
+        graph.remove_edges_from(in_edges[1:])
+        # insert constant empty roi
+        insert_constant(graph, resize + '_roi',
+                        np.array([], np.float32), resize, in_port=1)
+        # insert constant empty scale
+        insert_constant(graph, resize + '_scale',
+                        np.array([], np.float32), resize, in_port=2)
+        # insert constant size
+        insert_constant(graph, resize + '_size',
+                        np.array(target_shape, np.int64), resize, in_port=3)
+        resize_attr = resize_obj.copied_attr()
+        resize_attr.update({'mode': mode, 'nearest_mode': 'round_prefer_ceil', 'opset_version': 13})
+        NodeWrap(graph, resize).replace_obj('Resize', resize_attr)
+
+
 def convert_to_onnx(graph):
     '''Convert keras op to the onnx version.'''
     def warn_invalid_node(op_type, node_name):
@@ -297,6 +355,7 @@ def process_keras_op_before_infer(graph):
 
     from ...lite.passes.front_passes import split_op_has_activation
     convert_gru_lstm(graph)
+    convert_resizing(graph)
     split_op_has_activation(graph, is_tf_op=True)
 
 
