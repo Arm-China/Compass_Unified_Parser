@@ -629,3 +629,27 @@ class TfKerasPermuteOp(OpHasOneOutPort, KerasOp):
     @property
     def correspond_onnx_op(self):
         return {'type': 'Transpose', 'version': 1}
+
+
+class TfKerasReshapeOp(OpHasOneOutPort, KerasOp):
+    @classmethod
+    def attributes(cls):
+        return {2: {'target_shape': {'type': AttrType.INTS, 'required': True},
+                    },
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfKerasReshapeOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfKerasReshapeOp, attr_dict)
+        assert self.check_required(), 'TfKerasReshapeOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(TfKerasReshapeOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        reshape = tf.keras.layers.Reshape(self.target_shape)
+        out_tensor = reshape(inputs[0]).numpy()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'Reshape', 'version': 1}

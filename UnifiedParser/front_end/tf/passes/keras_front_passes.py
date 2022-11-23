@@ -227,12 +227,15 @@ def convert_to_onnx(graph):
         WARN('[Parser]: Meets invalid Keras op(%s) for Node(%s) in convert_to_onnx!' %
              (str(op_type), str(node_name)))
 
-    def is_first_input_valid(in_edges, in_shapes):
+    def is_first_input_valid(in_edges, in_shapes, min_length=None):
         if len(in_edges) < 1 \
                 or len(input_shapes) < 1 \
                 or input_shapes[0] is None \
                 or None in input_shapes[0]:
             warn_invalid_node(pure_type, node_name)
+            return False
+        if isinstance(min_length, int) \
+                and len(input_shapes[0]) < min_length:
             return False
         return True
 
@@ -274,6 +277,12 @@ def convert_to_onnx(graph):
         elif pure_type == 'Permute':
             perm = [0] + list(node_obj.dims)
             new_node_attr.update({'perm': perm})
+        elif pure_type == 'Reshape':
+            if not is_first_input_valid(in_edges, input_shapes, 1):
+                continue
+            batch_size = input_shapes[0][0]
+            shape = [batch_size] + list(node_obj.target_shape)
+            new_node_attr.update({'shape': shape})
 
         new_node_attr.update(
             {'opset_version': node_obj.correspond_onnx_op['version'],
