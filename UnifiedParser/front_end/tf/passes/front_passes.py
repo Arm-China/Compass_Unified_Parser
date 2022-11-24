@@ -696,13 +696,21 @@ def split_s2b(graph):
         out_edges = graph.sorted_out_edges(s2b, data=True)
         if s2b_obj is not None and len(in_edges) >= 1 and len(out_edges) >= 1:
             block_shape, paddings = [c[2] for c in s2b_obj.sorted_in_consts()]
-            if block_shape is None or block_shape.size != 2:
+            in_shape = s2b_obj.get_input_shapes()[0]
+            if in_shape is None or None in in_shape:
+                continue
+            if block_shape is None or len(in_shape) not in (3, 4) \
+                    or (len(in_shape) == 3 and block_shape.size != 1) \
+                    or (len(in_shape) == 4 and block_shape.size != 2):
                 WARN(
-                    '[Parser]: Only support 4D inputs for SPACE_TO_BATCH_ND Op (%s) for now!' % s2b)
+                    '[Parser]: Only support 4D inputs(block_shape shape=[2]) or 3D inputs(block_shape shape=[1])'
+                    ' for TfSpaceToBatchND Op (%s) for now!' % s2b)
                 continue
             pads = OpHasPaddingStrides.tf_to_onnx(paddings, as_full=True)
-            full_pads = [0] + pads[0:2] + [0, 0] + pads[2:4] + [0]
-            if block_shape[0] == block_shape[1]:
+            half_pads_len = int(len(pads) / 2)
+            full_pads = [0] + pads[:half_pads_len] + [0, 0] + pads[half_pads_len:] + [0]
+            is_4d_input = (len(in_shape) == 4)
+            if is_4d_input and block_shape[0] == block_shape[1]:
                 block_size = block_shape[0]
                 pad = get_valid_node_name(graph, s2b + '_pad')
                 trans1 = get_valid_node_name(graph, s2b + '_transpose1')
@@ -733,20 +741,33 @@ def split_s2b(graph):
                 last_name = trans2
             else:
                 need_pad = np.any(paddings != 0)
-                block_size_y, block_size_x = block_shape.tolist()
-                in_shape = s2b_obj.get_input_shapes()[0]
-                padded_in_shape = (np.array(in_shape, np.int64) + np.array(
-                    [0, np.sum(paddings[0, :]), np.sum(paddings[1, :]), 0], np.int64)).tolist()
-                dim1 = [padded_in_shape[0],
-                        padded_in_shape[1] // block_size_y,
-                        block_size_y,
-                        padded_in_shape[2] // block_size_x,
-                        block_size_x,
-                        padded_in_shape[-1]]
-                dim2 = [padded_in_shape[0] * block_size_y * block_size_x,
-                        padded_in_shape[1] // block_size_y,
-                        padded_in_shape[2] // block_size_x,
-                        padded_in_shape[-1]]
+                if is_4d_input:
+                    block_size_y, block_size_x = block_shape.tolist()
+                    padded_in_shape = (np.array(in_shape, np.int64) + np.array(
+                        [0, np.sum(paddings[0, :]), np.sum(paddings[1, :]), 0], np.int64)).tolist()
+                    dim1 = [padded_in_shape[0],
+                            padded_in_shape[1] // block_size_y,
+                            block_size_y,
+                            padded_in_shape[2] // block_size_x,
+                            block_size_x,
+                            padded_in_shape[-1]]
+                    dim2 = [padded_in_shape[0] * block_size_y * block_size_x,
+                            padded_in_shape[1] // block_size_y,
+                            padded_in_shape[2] // block_size_x,
+                            padded_in_shape[-1]]
+                    trans_perm = [2, 4, 0, 1, 3, 5]
+                else:
+                    block_size = block_shape.item()
+                    padded_in_shape = (np.array(in_shape, np.int64) + np.array(
+                        [0, np.sum(paddings[0, :]), 0], np.int64)).tolist()
+                    dim1 = [padded_in_shape[0],
+                            padded_in_shape[1] // block_size,
+                            block_size,
+                            padded_in_shape[-1]]
+                    dim2 = [padded_in_shape[0] * block_size,
+                            padded_in_shape[1] // block_size,
+                            padded_in_shape[-1]]
+                    trans_perm = [2, 0, 1, 3]
 
                 pad = get_valid_node_name(graph, s2b + '_pad')
                 reshape1 = get_valid_node_name(graph, s2b + '_reshape1')
@@ -769,7 +790,7 @@ def split_s2b(graph):
                                  'opset_version': reshape_version}
                 transpose_attr = s2b_obj.copied_attr()
                 transpose_attr.update(
-                    {'opset_version': transpose_version, 'perm': [2, 4, 0, 1, 3, 5]})
+                    {'opset_version': transpose_version, 'perm': trans_perm})
                 reshape2_attr = {'name': reshape2,
                                  'opset_version': reshape_version}
 
@@ -809,18 +830,29 @@ def split_b2s(graph):
                 and len(out_edges) >= 1 \
                 and len(output_shapes) >= 1 \
                 and in_edges[0][2]['tensor'].shape is not None \
-                and len(in_edges[0][2]['tensor'].shape) >= 3:
-            if np.any(crops[:, 0] != -crops[:, 1]) \
-                    or (np.all(crops[:, 0] == -crops[:, 1]) and output_shapes[0] is not None and len(output_shapes[0]) == 4):
-                if np.all(crops[:, 0] == -crops[:, 1]):
+                and len(in_edges[0][2]['tensor'].shape) in (3, 4):
+            if output_shapes[0] is None or len(output_shapes[0]) not in (3, 4):
+                continue
+            is_4d_input = (len(output_shapes[0]) == 4)
+            if len(crops.shape) == 2 \
+                    and crops.shape[1] == 2 \
+                    and ((is_4d_input and crops.shape[0] == 2)
+                         or (not is_4d_input and crops.shape[0] == 1)):
+                if crops[0, 1] == 0:
                     crops[0, 1] = - output_shapes[0][1]
+                if is_4d_input and crops[1, 1] == 0:
                     crops[1, 1] = - output_shapes[0][2]
-                block_size_y, block_size_x = block_shape.tolist()
                 in_shape = in_edges[0][2]['tensor'].shape
-                dim1 = [-1, block_size_y, block_size_x] + list(in_shape[1:])
-                dim2 = [-1, in_shape[1] * block_size_y,
-                        in_shape[2] * block_size_x, in_shape[-1]]
-                if block_shape[0] == block_shape[1]:
+                if is_4d_input:
+                    block_size_y, block_size_x = block_shape.tolist()
+                    dim1 = [block_size_y, block_size_x, -1] + list(in_shape[1:])
+                    dim2 = [-1, in_shape[1] * block_size_y,
+                            in_shape[2] * block_size_x, in_shape[-1]]
+                else:
+                    block_size = block_shape.item()
+                    dim1 = [block_size, -1] + list(in_shape[1:])
+                    dim2 = [-1, in_shape[1] * block_size, in_shape[-1]]
+                if is_4d_input and block_shape[0] == block_shape[1]:
                     block_size = block_shape[0]
                     trans1 = get_valid_node_name(graph, b2s + '_transpose1')
                     trans2 = get_valid_node_name(graph, b2s + '_transpose2')
@@ -836,10 +868,6 @@ def split_b2s(graph):
                         graph.add_edge(slice, dst, **out_attr)
                     start_dim = crops[:, 0].tolist()
                     end_dim = (-crops[:, 1]).tolist()
-                    # [batch / prod(block_shape), input_shape[1] * block_shape[0] - crops[0,0] - crops[0,1], ..., input_shape[M] * block_shape[M-1] - crops[M-1,0] - crops[M-1,1], input_shape[M+1], ..., input_shape[N-1]]
-                    for index, value in enumerate(end_dim):
-                        if value == 0:
-                            end_dim[index] = dim2[index + 1]
                     trans1_attr = {
                         'name': trans1, 'opset_version': transpose_version, 'perm': [3, 1, 2, 0]}
                     d2s_attr = {
@@ -863,7 +891,7 @@ def split_b2s(graph):
                         index = graph._attr['output_names'].index(b2s)
                         graph._attr['output_names'][index] = slice
                 else:
-                    need_slice = np.any(crops != 0)
+                    need_slice = (np.any(crops[:, 0] != 0) and np.any(crops[:, 1] != output_shapes[0][1:-1]))
 
                     reshape1 = get_valid_node_name(graph, b2s + '_reshape1')
                     reshape2 = get_valid_node_name(graph, b2s + '_reshape2')
@@ -887,23 +915,11 @@ def split_b2s(graph):
                     reshape1_attr = {'name': reshape1,
                                      'opset_version': reshape_version}
                     transpose_attr = b2s_obj.copied_attr()
+                    trans_perm = [2, 3, 0, 4, 1, 5] if is_4d_input else [1, 2, 0, 3]
                     transpose_attr.update(
-                        {'opset_version': transpose_version, 'perm': [0, 3, 1, 4, 2, 5]})
+                        {'opset_version': transpose_version, 'perm': trans_perm})
                     reshape2_attr = {'name': reshape2,
                                      'opset_version': reshape_version}
-                    start_dim = crops[:, 0].tolist()
-                    end_dim = (-crops[:, 1]).tolist()
-                    # [batch / prod(block_shape), input_shape[1] * block_shape[0] - crops[0,0] - crops[0,1], ..., input_shape[M] * block_shape[M-1] - crops[M-1,0] - crops[M-1,1], input_shape[M+1], ..., input_shape[N-1]]
-                    for index, value in enumerate(end_dim):
-                        if value == 0:
-                            end_dim[index] = dim2[index + 1]
-                    slice_attr = {'name': slice,
-                                  'opset_version': slice_version,
-                                  'axes': [1, 2],
-                                  'starts': start_dim,
-                                  'ends': end_dim,
-                                  'steps': 1
-                                  }
                     NodeWrap(graph, reshape1).replace_obj(
                         'Reshape', reshape1_attr)
                     insert_constant(graph, reshape1 + '_shape', np.array(dim1,
@@ -915,6 +931,15 @@ def split_b2s(graph):
                     insert_constant(graph, reshape2 + '_shape', np.array(dim2,
                                                                          np.int64), reshape2, in_port=1, data_format='NHWC')
                     if need_slice:
+                        start_dim = crops[:, 0].tolist()
+                        end_dim = (-crops[:, 1]).tolist()
+                        slice_attr = {'name': slice,
+                                      'opset_version': slice_version,
+                                      'axes': [1, 2] if is_4d_input else [1],
+                                      'starts': start_dim,
+                                      'ends': end_dim,
+                                      'steps': 1
+                                      }
                         NodeWrap(graph, slice).replace_obj('Slice', slice_attr)
 
             else:
