@@ -3568,10 +3568,15 @@ class ArmResizeOp(OpHasMethod, OpHasOneOutPort, ArmOp):
     def write_attrs(self, txt_file):
         ret = super(ArmResizeOp, self).write_attrs(txt_file)
         if ret:
-            txt_file.write('ratio_x=%.8f\n' % self.factors[-1])
-            txt_file.write('ratio_y=%.8f\n' % self.factors[-2])
-            if len(self.factors) == 3:
-                txt_file.write('ratio_z=%.8f\n' % self.factors[-3])
+            if self.sizes:
+                input_shape = self.get_input_shapes()[0]
+                size = [input_shape[0]] + self.sizes + [input_shape[-1]]
+                txt_file.write('size=[%s]\n' % list_list_to_string(size))
+            else:
+                txt_file.write('ratio_x=%.8f\n' % self.factors[-1])
+                txt_file.write('ratio_y=%.8f\n' % self.factors[-2])
+                if len(self.factors) == 3:
+                    txt_file.write('ratio_z=%.8f\n' % self.factors[-3])
             txt_file.write('mode=%s\n' % self.mode.upper())
             if self.method.upper() == 'NEAREST':
                 txt_file.write('nearest_mode=%s\n' % self.nearest_mode.upper())

@@ -69,5 +69,4 @@ for version in (11, ):
         if exit_status == False:
             all_passed = False
             print('Test %s is failed with target_size: %s' % (model_name, str(target_size)))
-# FIXME: Enable the assert sentence after the similarity issue is fixed
-# assert all_passed
+assert all_passed
