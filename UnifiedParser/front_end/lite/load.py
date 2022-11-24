@@ -384,12 +384,19 @@ def convert_tflite_to_graph(model_path, params):
 
                         src_out_port = out_op_info['outputs'].index(
                             output_tensor_id)
-                        out_edge_tensor = Tensor(name=out_tensor.get('name', ''))
-                        if 'quant_info' in out_tensor \
-                                and 'Max' in out_tensor['quant_info'] \
-                                and 'Min' in out_tensor['quant_info']:
-                            out_edge_tensor.min_max = (
-                                out_tensor['quant_info']['Min'], out_tensor['quant_info']['Max'])
+                        out_edge_tensor = Tensor(
+                            name=out_tensor.get('name', ''))
+                        if 'quant_info' in out_tensor:
+                            if 'Max' in out_tensor['quant_info'] \
+                                    and 'Min' in out_tensor['quant_info']:
+                                out_edge_tensor.min_max = (
+                                    out_tensor['quant_info']['Min'], out_tensor['quant_info']['Max'])
+                            if 'Scale' in out_tensor['quant_info'] \
+                                    and 'ZeroPoint' in out_tensor['quant_info']:
+                                out_edge_tensor.scale_zp = (
+                                    out_tensor['quant_info']['Scale'], out_tensor['quant_info']['ZeroPoint'])
+                        if 'dtype' in out_tensor:
+                            out_edge_tensor.dtype = out_tensor['dtype']
                         if out_tensor.get('data', None) is not None:
                             out_edge_tensor.value = out_tensor['data']
                             out_edge_tensor.shape = out_tensor['data'].shape

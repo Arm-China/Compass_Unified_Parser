@@ -671,7 +671,7 @@ def rename_dilation_erosion(graph):
             continue
         ero_dila_attr = ero_dila_obj.copied_attr()
         if len(ero_dila_obj.weights.shape) == 3:
-            new_weights = np.reshape(ero_dila_obj.weights, list(ero_dila_obj.weights.shape)+[1])
+            new_weights = np.reshape(ero_dila_obj.weights, list(ero_dila_obj.weights.shape) + [1])
             ero_dila_attr.update({'weights': new_weights})
             if ero_dila_obj.type == 'Erosion':
                 NodeWrap(graph, ero_dila).replace_obj('ArmErosion', ero_dila_attr)
@@ -1838,6 +1838,11 @@ def rename_activations(graph):
             method = 'LEAKYRELU'
             act_attr.update({'alpha': act_obj.alpha})
         elif act_obj.type == 'PRelu':
+            in_edges = graph.sorted_in_edges(act, data=True)
+            if len(in_edges) != 2:
+                WARN(
+                    '[Parser]: Meets invalid PRelu node(%s) in rename_activations!' % act)
+                continue
             method = 'PRELU'
             slope = act_obj.get_input_tensors()[1]
             if len(slope.shape) in (2, 3) and slope.shape[0] == 1:
@@ -1854,6 +1859,11 @@ def rename_activations(graph):
                            in_shape[-1]]
                 slope = np.reshape(slope, pre_dim)
             act_attr.update({'negative_slope': slope})
+            if act_obj.quantize and np.issubdtype(slope.dtype, np.integer):
+                scale_zp = in_edges[1][2]['tensor'].scale_zp
+                act_attr.update({'negative_slope_scale': np.array(scale_zp[0]),
+                                 'negative_slope_zp': np.array(scale_zp[1])
+                                 })
         elif act_obj.type == 'Clip':
             if FLOAT_EQUAL(act_obj.min, 0) and FLOAT_EQUAL(act_obj.max, 6):
                 method = 'RELU6'
@@ -2752,6 +2762,14 @@ def rename_tile(graph):
             tile_attr.update({'reps': reps_value.tolist()})
             NodeWrap(graph, tile).replace_obj('ArmTile', tile_attr)
 
+            _, _, in_attr = in_edges[0]
+            if in_attr['tensor'] is not None \
+                    and (in_attr['tensor'].dtype is not None or len(in_attr['tensor'].scale_zp) > 0):
+                for _, _, out_attr in graph.sorted_out_edges(tile, data=True):
+                    if out_attr['tensor'] is not None:
+                        out_attr['tensor'].dtype = in_attr['tensor'].dtype
+                        out_attr['tensor'].scale_zp = in_attr['tensor'].scale_zp
+
 
 def rename_topk(graph):
     matches = single_node_matcher(graph, 'TopK')
@@ -2908,6 +2926,7 @@ def fuse_relu(graph):
     fuse_relu_combinations = itertools.product(
         ops_has_relu_list, relu_ops_list)
     for op_type, relu_type in fuse_relu_combinations:
+        matched = False
         matches1 = matched_patterns(graph,
                                     nodes=[
                                         ('linear', {'op': op_type}),
@@ -2949,18 +2968,18 @@ def fuse_relu(graph):
                     relu_attr.update({'activations': 'RELU6'})
                 else:
                     continue
+            matched = True
             op_has_relu_obj.update_activation(relu_attr)
-            if not transpose:
-                remove_node_safely(graph, relu)
-            else:
-                graph.remove_edge(transpose, relu)
-                for _, dst, out_attr in graph.sorted_out_edges(relu, data=True):
-                    graph.remove_edge(relu, dst)
-                    graph.add_edge(transpose, dst, **out_attr)
-                if relu in graph._attr['output_names']:
-                    out_index = graph._attr['output_names'].index(relu)
-                    graph._attr['output_names'][out_index] = transpose
-    clear_redundant_nodes(graph)
+            node_before_relu = op_has_relu if (not transpose) else transpose
+            graph.remove_edge(node_before_relu, relu)
+            for _, dst, out_attr in graph.sorted_out_edges(relu, data=True):
+                graph.remove_edge(relu, dst)
+                graph.add_edge(node_before_relu, dst, **out_attr)
+            if relu in graph._attr['output_names']:
+                out_index = graph._attr['output_names'].index(relu)
+                graph._attr['output_names'][out_index] = node_before_relu
+        if matched:
+            clear_redundant_nodes(graph)
 
 
 def detection_post_process(graph, params):

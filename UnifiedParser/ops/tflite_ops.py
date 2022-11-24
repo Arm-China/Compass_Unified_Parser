@@ -358,7 +358,11 @@ class LiteCONV_2DOp(BaseActivationOp, BaseConvOp, TfliteOp):
             self.kernel_shape = self.weights.shape[1:3]
         if self.biases is None:
             self.biases = np.zeros((self.num_output,), np.float32)
-        out_tensor = tf.nn.conv2d(inputs[0],
+        if inputs[0].dtype != 'float32':
+            inp = inputs[0].astype(np.float32)
+        else:
+            inp = inputs[0]
+        out_tensor = tf.nn.conv2d(inp,
                                   np.transpose(self.weights, axes=type(
                                       self).perm_lite_to_tf()),
                                   strides=[1] + self.strides + [1],
@@ -744,7 +748,10 @@ class LiteDEQUANTIZEOp(OpHasOneOutPort, TfliteOp):
 
     @property
     def correspond_onnx_op(self):
-        return {'type': 'DequantizeLinear', 'version': 10}
+        if not self.quantize:
+            return {'type': 'DequantizeLinear', 'version': 10}
+        else:
+            return None
 
 
 class LiteDIVOp(BaseActivationOp, TfliteOp):
@@ -1269,7 +1276,11 @@ class LiteLOGISTICOp(OpHasOneOutPort, TfliteOp):
     def infer_shape(self):
         super(LiteLOGISTICOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.sigmoid(inputs[0]).numpy()
+        if np.issubdtype(inputs[0].dtype, np.integer):
+            inp = inputs[0].astype(np.float32)
+        else:
+            inp = inputs[0]
+        out_tensor = tf.sigmoid(inp).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -1371,15 +1382,26 @@ class LiteMEANOp(OpHasAxis, OpHasOneOutPort, TfliteOp):
         self.update_attributes(LiteMEANOp, attr_dict)
         assert self.check_required(), 'LiteMEANOp is missing a required parameter.'
 
+    def __getattr__(self, item):
+        ret = None
+        try:
+            if item == 'axes':
+                inputs = self.get_input_tensors()
+                ret = np.array(np.atleast_1d(inputs[1])).tolist()
+                self.__dict__['_attr'][item].value = ret
+            elif item == 'keepdims':
+                ret = bool(self.__dict__['_attr'][item].value)
+        except:
+            ret = None
+        if ret is None:
+            ret = super(LiteMEANOp, self).__getattr__(item)
+        return ret
+
     def infer_shape(self):
         super(LiteMEANOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor = tf.reduce_mean(
-            inputs[0], axis=inputs[1], keepdims=bool(self.keepdims)).numpy()
-        self.axes = inputs[1].tolist() if np.ndim(
-            inputs[1]) != 0 else [int(inputs[1])]
-        self.axes = OpHasAxis.make_axes_non_negative(
-            self.axes, len(inputs[0].shape))
+            inputs[0], axis=self.axes, keepdims=self.keepdims).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -1734,7 +1756,10 @@ class LiteQUANTIZEOp(OpHasOneOutPort, TfliteOp):
 
     @property
     def correspond_onnx_op(self):
-        return {'type': 'Identity', 'version': 1}
+        if not self.quantize:
+            return {'type': 'Identity', 'version': 1}
+        else:
+            return None
 
 
 class LiteRANGEOp(OpHasOneOutPort, TfliteOp):
@@ -2734,10 +2759,14 @@ class LiteTRANSPOSE_CONVOp(BaseDeconvOp, TfliteOp):
         if self.kernel_shape is None:
             self.kernel_shape = self.weights.shape[1:3]
         if self.biases is None:
-            self.biases = np.zeros((self.num_output,), np.float32)
+            biases_dtype = np.int32 \
+                if np.issubdtype(self.weights.dtype, np.integer) \
+                else np.float32
+            self.biases = np.zeros((self.num_output,), biases_dtype)
         out_tensor = tf.nn.conv2d_transpose(inputs[1],
-                                            np.transpose(self.weights, axes=type(
-                                                self).perm_lite_to_tf()),
+                                            np.transpose(self.weights.astype(np.float32),
+                                                         axes=type(self).perm_lite_to_tf()
+                                                         ),
                                             inputs[0],
                                             strides=[1] + self.strides + [1],
                                             padding='VALID' if self.auto_pad in ('VALID', 'NOTSET') else 'SAME')

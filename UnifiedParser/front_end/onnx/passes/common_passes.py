@@ -95,6 +95,7 @@ def remove_useless_op(graph, op_type_list):
                         node_obj.to = new_dtype
                 if len(in_tensors) > 0 \
                         and in_tensors[0] is not None \
+                        and not node_obj.quantize \
                         and str(in_tensors[0].dtype) == node_obj.to:
                     removing_nodes.append(node_name)
                 else:
@@ -102,6 +103,7 @@ def remove_useless_op(graph, op_type_list):
             elif op_type == 'ArmCast':
                 if len(in_tensors) > 0 \
                         and in_tensors[0] is not None \
+                        and not node_obj.quantize \
                         and str(in_tensors[0].dtype) == node_obj.to_dtype:
                     removing_nodes.append(node_name)
                 else:
@@ -314,12 +316,12 @@ def remove_redundant_transpose_pro(graph, trans_type='Transpose', max_branches=6
     for b in range(max_branches, 0, -1):
         matched = False
         nodes = [('trans', {'op': trans_type})] + \
-            [('trans_out_%s' % str(i+1), {}) for i in range(b)]
-        edges = [('trans', 'trans_out_%s' % str(i+1)) for i in range(b)]
+            [('trans_out_%s' % str(i + 1), {}) for i in range(b)]
+        edges = [('trans', 'trans_out_%s' % str(i + 1)) for i in range(b)]
         matches = matched_patterns(graph, nodes, edges)
         for m in matches:
             trans = m['trans']
-            trans_out_names = [m['trans_out_%s' % str(i+1)] for i in range(b)]
+            trans_out_names = [m['trans_out_%s' % str(i + 1)] for i in range(b)]
             if any([not graph.has_node(name) for name in [trans] + trans_out_names]):
                 WARN(
                     '[Parser]: Meets invalid name that does not exist in graph in remove_redundant_transpose_pro!')
@@ -452,7 +454,7 @@ def insert_cast_after(graph, src, from_dtype, to_dtype, out_port=0, type='Cast')
     return ret
 
 
-def insert_constant(graph, name, value, dst, in_port=0, data_format='NCHW', const_ver=9):
+def insert_constant(graph, name, value, dst, in_port=0, data_format='NCHW', const_ver=9, scale_zp=None):
     if graph.has_node(dst) and value is not None and isinstance(value, np.ndarray):
         const_name = get_valid_node_name(graph, name)
         graph.add_node(const_name)
@@ -463,6 +465,10 @@ def insert_constant(graph, name, value, dst, in_port=0, data_format='NCHW', cons
         NodeWrap(graph, const_name).replace_obj('Constant', const_attr)
         edge_attr = {'src_out_port': 0, 'dst_in_port': in_port,
                      'tensor': Tensor(value=value, is_const=True)}
+        if isinstance(scale_zp, (tuple, list)) \
+                and len(scale_zp) == 2:
+            edge_attr['tensor'].scale_zp = tuple(scale_zp)
+            edge_attr['tensor'].dtype = str(value.dtype)
         graph.add_edge(const_name, dst, **edge_attr)
     else:
         WARN('[Parser]: Invalid params for insert_constant (%s)!' % name)
@@ -494,7 +500,7 @@ def insert_gather(graph, src, dst, indices, axis=0, edge_attr=None, key=None, ty
         gather_attr = {'name': gather, 'axis': axis}
         if type == 'Gather':
             gather_attr.update({'opset_version': 11})
-        NodeWrap(graph, gather).replace_obj(type,  gather_attr)
+        NodeWrap(graph, gather).replace_obj(type, gather_attr)
         ret = gather
     else:
         WARN('[Parser]: Invalid params for insert_gather!')
@@ -568,7 +574,7 @@ def insert_reshape_after(graph, src, new_dim, old_dim=None, out_port=0, type='Re
             reshape_attr.update({'dim': new_dim})
         NodeWrap(graph, reshape).replace_obj(type, reshape_attr)
 
-        src_out_attr = {'src_out_port': out_port, 'dst_in_port': 0}
+        src_out_attr = {'src_out_port': out_port, 'dst_in_port': 0, 'tensor': Tensor()}
         out_edges = graph.sorted_out_edges(src, keys=True, data=True)
         for _, dst, key, out_attr in out_edges:
             if out_attr.get('src_out_port', 0) == out_port:
@@ -588,6 +594,11 @@ def insert_reshape_after(graph, src, new_dim, old_dim=None, out_port=0, type='Re
                             new_out_attr['tensor'].value, newshape=new_dim)
                         src_out_attr.update(
                             {'tensor': Tensor(value=new_src_out_tensor)})
+                    if src_out_attr.get('tensor', None) is not None \
+                            and (new_out_attr['tensor'].dtype is not None
+                                 or len(new_out_attr['tensor'].scale_zp) > 0):
+                        src_out_attr['tensor'].dtype = new_out_attr['tensor'].dtype
+                        src_out_attr['tensor'].scale_zp = new_out_attr['tensor'].scale_zp
         graph.add_edge(src, reshape, **src_out_attr)
         ret = reshape
     else:
@@ -713,6 +724,9 @@ def insert_tile(graph, src, dst, in_attr, reps, key=None, type='Tile', data_form
         if dst_in_attr['tensor'].value is not None:
             tensor = Tensor(min_max=in_attr['tensor'].min_max, value=np.tile(
                 dst_in_attr['tensor'].value, reps.tolist()))
+            if dst_in_attr['tensor'].dtype is not None:
+                tensor.dtype = dst_in_attr['tensor'].dtype
+                tensor.scale_zp = dst_in_attr['tensor'].scale_zp
         else:
             tensor = Tensor(min_max=in_attr['tensor'].min_max)
         dst_in_attr.update({'src_out_port': 0, 'tensor': tensor})
@@ -930,9 +944,9 @@ def apply_pattern_subgraph_plugin(graph):
 
     def get_op_name(optype):
         optype_prefix = {
-            Framework.TFLITE: lambda x: 'Lite'+x,
-            Framework.CAFFE: lambda x: 'Caffe'+x.upper(),
-            Framework.TENSORFLOW: lambda x: 'Tf'+x,
+            Framework.TFLITE: lambda x: 'Lite' + x,
+            Framework.CAFFE: lambda x: 'Caffe' + x.upper(),
+            Framework.TENSORFLOW: lambda x: 'Tf' + x,
         }
 
         framework = graph._attr.get('framework', Framework.NONE)
@@ -981,11 +995,11 @@ def apply_named_subgraph_plugin(graph):
     named_subgraph = list(named_subgraph)
     named_subgraph.sort(key=lambda x: x.priority, reverse=True)
     for plugin in named_subgraph:
-        if not all(graph.has_node(n) for n in plugin.start_nodes+plugin.end_nodes):
+        if not all(graph.has_node(n) for n in plugin.start_nodes + plugin.end_nodes):
             continue
 
         merge_pattern_to_plugin(
-            graph, '.named_subgraph.'+plugin.op_type, plugin.start_nodes, plugin.end_nodes)
+            graph, '.named_subgraph.' + plugin.op_type, plugin.start_nodes, plugin.end_nodes)
         DEBUG('[Parser]: name_based subgraph plugin applied: {[%s]->[%s]} merged to %s' % (
             ','.join(plugin.start_nodes), ','.join(plugin.end_nodes), plugin.op_type))
 
@@ -995,7 +1009,7 @@ def record_output_tensors(graph):
     out_tensors = graph._attr['output_tensor_names']
 
     matches = single_node_matcher(graph, 'Out')
-    out_nodes = [None]*len(out_tensors)
+    out_nodes = [None] * len(out_tensors)
     for m in matches:
         node_name = m['target']
         if node_name in graph.nodes:

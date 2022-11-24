@@ -76,7 +76,7 @@ class ArmAcoshOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
 class ArmActivationOp(LayoutUnawareOp, OpHasMethod, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
-        return {0: 'float32'}
+        return {0: ['float32', 'int8']}
 
     @classmethod
     def attributes(cls):
@@ -87,6 +87,8 @@ class ArmActivationOp(LayoutUnawareOp, OpHasMethod, OpHasOneOutPort, ArmOp):
                 'beta': {'type': AttrType.FLOAT, 'default': None},
                 'negative_slope': {'type': AttrType.TENSOR, 'default': None},
                 'negative_slope_offset': {'type': AttrType.INT, 'default': None},
+                'negative_slope_scale': {'type': AttrType.TENSOR, 'default': None},
+                'negative_slope_zp': {'type': AttrType.TENSOR, 'default': None},
                 'gamma': {'type': AttrType.FLOAT, 'default': None},
                 'bias': {'type': AttrType.FLOAT, 'default': None},
                 'lambd': {'type': AttrType.FLOAT, 'default': None},
@@ -110,7 +112,7 @@ class ArmActivationOp(LayoutUnawareOp, OpHasMethod, OpHasOneOutPort, ArmOp):
               'SILU': lambda x: (x) * tf.sigmoid(x),
               'SOFTPLUS': lambda x: tf.log(tf.exp(x) + 1),
               'SOFTSIGN': lambda x: x / (1 + tf.abs(x)),
-              'SWISH': lambda x, alpha: (x) * tf.sigmoid(alpha*x),
+              'SWISH': lambda x, alpha: (x) * tf.sigmoid(alpha * x),
               'TANH': tf.tanh,
               'TANH_ABS': lambda x: tf.abs(tf.tanh(x)),
               'THRESHOLDEDRELU': lambda x: (x),
@@ -138,7 +140,8 @@ class ArmActivationOp(LayoutUnawareOp, OpHasMethod, OpHasOneOutPort, ArmOp):
         elif self.method == 'LEAKYRELU':
             out_tensor = func(inputs[0], self.alpha).numpy()
         elif self.method == 'PRELU':
-            self.negative_slope = self.negative_slope.astype(np.float32)
+            if not self.quantize:
+                self.negative_slope = self.negative_slope.astype(np.float32)
             out_tensor = func(inputs[0], self.negative_slope).numpy()
         elif self.method == 'SELU':
             out_tensor = self.selu()
@@ -751,6 +754,13 @@ class ArmConstantOp(OpHasWeights, OpHasOneOutPort, ConstLikeOp, ArmOp):
 
     def infer_shape(self):
         super(ArmConstantOp, self).infer_shape()
+        out_edges = self._graph.sorted_out_edges(self.name, data=True)
+        if len(out_edges) > 0:
+            _, _, out_attr = out_edges[0]
+            if out_attr.get('tensor', None) is not None \
+                    and len(out_attr['tensor'].scale_zp) == 2:
+                self.weights_scale_zp = [
+                    np.array(sz).tolist() for sz in out_attr['tensor'].scale_zp]
         if self.weights.dtype == 'int64':
             self.weights = np.array(self.weights).astype(np.int32)
         elif self.weights.dtype == 'uint64':
@@ -1008,7 +1018,7 @@ class ArmCountOp(OpHasOneOutPort, ArmOp):
         super(ArmCountOp, self).infer_shape()
         inputs = self.get_input_tensors()
         if str(inputs[0].dtype) not in ('int32', 'int64', 'float32', 'float64'):
-            if np.issubdtype(type(inputs[0]), int) or np.issubdtype(type(inputs[0]), bool):
+            if np.issubdtype(inputs[0].dtype, np.integer) or np.issubdtype(inputs[0].dtype, np.bool_):
                 inp = inputs[0].astype(np.int32)
             else:
                 inp = inputs[0].astype(np.float32)
@@ -1456,6 +1466,28 @@ class ArmDepthwiseConvOp(BaseActivationOp, BaseConvOp, ArmOp):
         return ret
 
 
+class ArmDeQuantizeOp(OpHasOneOutPort, ArmOp):
+    @classmethod
+    def attributes(cls):
+        return {'scale': {'type': AttrType.TENSOR, 'default': np.array([1], np.float32)},
+                'zero_point': {'type': AttrType.TENSOR, 'default': np.array([0], np.int64)},
+                'from_dtype': {'type': AttrType.STRING,
+                               'required': True,
+                               'options': ['int8', 'uint8', 'int32', 'uint32']}
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(ArmDeQuantizeOp, self).__init__(graph, attr_dict)
+        self.update_attributes(ArmDeQuantizeOp, attr_dict)
+        assert self.check_required(), 'ArmDeQuantizeOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(ArmDeQuantizeOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = ((inputs[0].astype(self.zero_point.dtype) - self.zero_point) * self.scale).astype(np.float32)
+        self.set_out_tensor(out_tensor)
+
+
 class ArmDilationOp(OpHasPaddingStrides, OpHasWeights, OpHasOneOutPort, LayoutConcernedOp, ArmOp):
     @classmethod
     def attributes(cls):
@@ -1477,9 +1509,9 @@ class ArmDilationOp(OpHasPaddingStrides, OpHasWeights, OpHasOneOutPort, LayoutCo
         inp = tf.pad(inputs[0], self.tf_pads) if self.auto_pad == 'NOTSET' else inputs[0]
         out_tensor = tf.nn.dilation2d(inp,
                                       np.transpose(np.reshape(self.weights, self.weights.shape[:3]), [1, 2, 0]),
-                                      strides=[1]+self.strides+[1],
+                                      strides=[1] + self.strides + [1],
                                       padding='VALID',
-                                      dilations=[1]+self.dilations+[1]).numpy()
+                                      dilations=[1] + self.dilations + [1]).numpy()
         self.set_out_tensor(out_tensor)
 
 
@@ -1561,7 +1593,7 @@ class ArmEltwiseOp(LayoutUnawareOp, OpHasMethod, BaseActivationOp, ArmOp):
 
     @classmethod
     def cast_in_ports(cls):
-        return {0: 'float32', 1: 'float32'}
+        return {0: ['float32', 'int8', 'uint8'], 1: ['float32', 'int8', 'uint8']}
 
     @classmethod
     def num_in_ports(cls):
@@ -1627,8 +1659,8 @@ class ArmErosionOp(OpHasPaddingStrides, OpHasWeights, OpHasOneOutPort, ArmOp):
         out_tensor = tf.compat.v1.nn.erosion2d(inp,
                                                np.transpose(np.reshape(
                                                    self.weights, self.weights.shape[:3]), [1, 2, 0]),
-                                               strides=[1]+self.strides+[1],
-                                               rates=[1]+self.dilations+[1],
+                                               strides=[1] + self.strides + [1],
+                                               rates=[1] + self.dilations + [1],
                                                padding='VALID').numpy()
 
         self.set_out_tensor(out_tensor)
@@ -1771,7 +1803,7 @@ class ArmFloorOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
 class ArmFullyConnectedOp(BaseActivationOp, BaseLinearOp, ArmOp):
     @classmethod
     def cast_in_ports(cls):
-        return {0: 'float32'}
+        return {0: ['float32', 'int8']}
 
     @classmethod
     def perm_onnx_to_ir(cls):
@@ -1790,7 +1822,12 @@ class ArmFullyConnectedOp(BaseActivationOp, BaseLinearOp, ArmOp):
         inputs = self.get_input_tensors()
         assert len(
             inputs[0].shape) == 2, 'The shape of input is invalid in ArmFullyConnectedOp.'
-        out_tensor = (tf.matmul(inputs[0],
+
+        if np.issubdtype(inputs[0].dtype, np.integer):
+            inp = inputs[0].astype(np.float32)
+        else:
+            inp = inputs[0]
+        out_tensor = (tf.matmul(inp,
                                 np.transpose(self.weights, axes=type(
                                     self).perm_onnx_to_tf())
                                 ) + self.biases).numpy()
@@ -2461,7 +2498,7 @@ class ArmMatMulOp(OpHasOneOutPort, ArmOp):
 
     @classmethod
     def cast_in_ports(cls):
-        return {0: 'float32', 1: 'float32'}
+        return {0: ['float32', 'int8'], 1: ['float32', 'int8']}
 
     @classmethod
     def attributes(cls):
@@ -2903,7 +2940,7 @@ class ArmOneHotOp(OpHasOneOutPort, OpHasAxis, ArmOp):
 class ArmPadOp(OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
-        return {0: 'float32'}
+        return {0: ['float32', 'int8']}
 
     @classmethod
     def attributes(cls):
@@ -3237,6 +3274,28 @@ class ArmPyramidROIAlignOp(OpHasOneOutPort, ArmOp):
             txt_file.write('resize_width=%d\n' % self.resize_width)
             txt_file.write('resize_height=%d\n' % self.resize_height)
         return ret
+
+
+class ArmQuantizeOp(OpHasOneOutPort, ArmOp):
+    @classmethod
+    def attributes(cls):
+        return {'scale': {'type': AttrType.TENSOR, 'default': np.array([1], np.float32)},
+                'zero_point': {'type': AttrType.TENSOR, 'default': np.array([0], np.int64)},
+                'to_dtype': {'type': AttrType.STRING,
+                             'required': True,
+                             'options': ['int8', 'uint8', 'int32', 'uint32']}
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(ArmQuantizeOp, self).__init__(graph, attr_dict)
+        self.update_attributes(ArmQuantizeOp, attr_dict)
+        assert self.check_required(), 'ArmQuantizeOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(ArmQuantizeOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = (inputs[0] / self.scale + self.zero_point).astype(self.to_dtype)
+        self.set_out_tensor(out_tensor)
 
 
 class ArmReduceOp(OpHasMethod, OpHasAxis, OpHasOneOutPort, ArmOp):

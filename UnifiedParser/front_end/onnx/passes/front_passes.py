@@ -41,14 +41,21 @@ def fuse_weights_const(graph):
                 try:
                     if i == 1 and isinstance(data, np.ndarray):
                         node_obj.weights = data
-                        if edge_attr.get('tensor', None) is not None \
-                                and len(edge_attr['tensor'].min_max) == 2:
-                            node_obj.weights_min_max = list(
-                                edge_attr['tensor'].min_max)
+                        if edge_attr.get('tensor', None) is not None:
+                            if len(edge_attr['tensor'].min_max) == 2:
+                                node_obj.weights_min_max = list(
+                                    edge_attr['tensor'].min_max)
+                            if len(edge_attr['tensor'].scale_zp) == 2:
+                                node_obj.weights_scale_zp = list(
+                                    edge_attr['tensor'].scale_zp)
                         matched = True
                         graph.remove_edge(src_name, node_name, key=k)
                     elif i == biases_in_port and isinstance(data, np.ndarray):
                         node_obj.biases = data
+                        if edge_attr.get('tensor', None) is not None:
+                            if len(edge_attr['tensor'].scale_zp) == 2:
+                                node_obj.biases_scale_zp = list(
+                                    edge_attr['tensor'].scale_zp)
                         matched = True
                         graph.remove_edge(src_name, node_name, key=k)
                 except Exception as e:
@@ -60,10 +67,13 @@ def fuse_weights_const(graph):
                 data = _get_src_data(src_name, edge_attr)
                 if i == 1 and isinstance(data, np.ndarray):
                     node_obj.weights = data
-                    if edge_attr.get('tensor', None) is not None \
-                            and len(edge_attr['tensor'].min_max) == 2:
-                        node_obj.weights_min_max = list(
-                            edge_attr['tensor'].min_max)
+                    if edge_attr.get('tensor', None) is not None:
+                        if len(edge_attr['tensor'].min_max) == 2:
+                            node_obj.weights_min_max = list(
+                                edge_attr['tensor'].min_max)
+                        if len(edge_attr['tensor'].scale_zp) == 2:
+                            node_obj.weights_scale_zp = list(
+                                edge_attr['tensor'].scale_zp)
                     matched = True
                     graph.remove_edge(src_name, node_name, key=k)
     if matched:

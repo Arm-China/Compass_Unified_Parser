@@ -435,6 +435,10 @@ class Op(abc.ABC):
                 pre_name_suffix = '' if isinstance(
                     pred_node_obj, OpHasOneOutPort) else '_' + str(d['src_out_port'])
                 if d['tensor'].value is not None:
+                    if d['tensor'].dtype is not None:
+                        dtype = d['tensor'].dtype
+                    else:
+                        dtype = str(d['tensor'].value.dtype)
                     ret.append((u + pre_name_suffix, re.sub(r' ', '',
                                                             str(list(d['tensor'].value.shape))), str(d['tensor'].value.dtype)))
         if ret:
@@ -1061,7 +1065,8 @@ class OpHasWeights(Op):
         '''return attributes of OpHasWeights class.'''
         return {'weights': {'type': AttrType.TENSOR, 'default': None},
                 'weights_offset': {'type': AttrType.INT, 'default': -1},
-                'weights_min_max': {'type': AttrType.FLOATS, 'default': []}
+                'weights_min_max': {'type': AttrType.FLOATS, 'default': []},
+                'weights_scale_zp': {'type': AttrType.FLOATS, 'default': [np.array([1.0]), np.array([0])]}
                 }
 
     @classmethod
@@ -1126,6 +1131,15 @@ class OpHasWeights(Op):
             if self.weights_min_max:
                 txt_file.write('weights_range=[%s]\n' % num_list_to_string(
                     [float(np.min(m) if i == 0 else np.max(m)) for i, m in enumerate(self.weights_min_max)]))
+            if self.quantize \
+                    and np.issubdtype(self.weights.dtype, np.integer) \
+                    and len(self.weights_scale_zp) == 2:
+                weights_scale = np.array(self.weights_scale_zp[0]).tolist()
+                weights_zp = np.array(self.weights_scale_zp[1]).tolist()
+                txt_file.write('weights_scale=[%s]\n' %
+                               num_list_to_string(weights_scale))
+                txt_file.write('weights_zp=[%s]\n' %
+                               num_list_to_string(weights_zp))
         return ret
 
     def write_weights(self, bin_file):
@@ -1159,7 +1173,8 @@ class OpHasBiases(Op):
     def attributes(cls):
         '''return attributes of OpHasBiases class.'''
         return {'biases': {'type': AttrType.TENSOR, 'default': None},
-                'biases_offset': {'type': AttrType.INT, 'default': -1}
+                'biases_offset': {'type': AttrType.INT, 'default': -1},
+                'biases_scale_zp': {'type': AttrType.FLOATS, 'default': [np.array([1.0]), np.array([0])]}
                 }
 
     def __init__(self, graph, attr_dict=None):
@@ -1176,6 +1191,15 @@ class OpHasBiases(Op):
                            (self.biases.size * self.biases.dtype.itemsize))
             txt_file.write('biases_shape=[%s]\n' %
                            num_list_to_string(list(self.biases.shape)))
+            if self.quantize \
+                    and np.issubdtype(self.biases.dtype, np.integer) \
+                    and len(self.biases_scale_zp) == 2:
+                biases_scale = np.array(self.biases_scale_zp[0]).tolist()
+                biases_zp = np.array(self.biases_scale_zp[1]).tolist()
+                txt_file.write('biases_scale=[%s]\n' %
+                               num_list_to_string(biases_scale))
+                txt_file.write('biases_zp=[%s]\n' %
+                               num_list_to_string(biases_zp))
         return ret
 
     def write_biases(self, bin_file):
