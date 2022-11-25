@@ -3624,6 +3624,65 @@ def detection_post_process(graph, params):
                  len(graph._attr['output_names']))
 
 
+def remove_redundant_reshape_transpose(graph):
+    matches = matched_patterns(graph,
+                               nodes=[
+                                   ('reshape_1', {'op': 'ArmReshape'}),
+                                   ('transpose', {'op': 'ArmTranspose'}),
+                                   ('reshape_2', {'op': 'ArmReshape'})],
+                               edges=[('reshape_1', 'transpose'),
+                                      ('transpose', 'reshape_2')]
+                               )
+    matched = False
+    for m in matches:
+        obj_dict = {name: NodeWrap(graph, m[name])['object']
+                    for name in ['reshape_1', 'transpose', 'reshape_2']}
+        if any(obj is None for obj in obj_dict.values()):
+            WARN('[Parser]: Meets invalid Node in remove_redundant_reshape_transpose!')
+            continue
+        reshape_1_in_edges = graph.sorted_in_edges(m['reshape_1'], data=True)
+        reshape_1_out_edges = graph.sorted_out_edges(m['reshape_1'], data=True)
+        transpose_out_edges = graph.sorted_out_edges(m['transpose'], data=True)
+
+        if len(obj_dict['reshape_1'].get_input_shapes()) < 1 \
+                or len(reshape_1_out_edges) != 1 \
+                or len(transpose_out_edges) != 1 \
+                or len(reshape_1_in_edges) < 1:
+            WARN('[Parser]: Meets invalid node in remove_redundant_reshape_transpose!')
+            continue
+        inp, _, in_attr = reshape_1_in_edges[0]
+        in_shape = obj_dict['reshape_1'].get_input_shapes()[0]
+        if in_shape is None \
+                or any([s is None for s in in_shape]) \
+                or in_shape != obj_dict['reshape_2'].dim:
+            continue
+
+        in_tensor = np.array(np.random.ranf(in_shape)).astype('float32')
+        in_reshape1 = np.reshape(in_tensor, obj_dict['reshape_1'].dim)
+        in_trans = np.transpose(in_reshape1, obj_dict['transpose'].perm)
+        in_reshape2 = np.reshape(in_trans, obj_dict['reshape_2'].dim)
+        if (in_tensor != in_reshape2).any():
+            continue
+
+        matched = True
+        graph.remove_edge(inp, m['reshape_1'])
+        for _, dst, out_attr in graph.sorted_out_edges(m['reshape_2'], data=True):
+            graph.remove_edge(m['reshape_2'], dst)
+            new_out_attr = copy.deepcopy(out_attr)
+            new_out_attr.update({'src_out_port': in_attr['src_out_port']})
+            graph.add_edge(inp, dst, **new_out_attr)
+
+        if m['reshape_2'] in graph._attr['output_names']:
+            if inp not in graph._attr['output_names']:
+                index = graph._attr['output_names'].index(m['reshape_2'])
+                graph._attr['output_names'][index] = inp
+            else:
+                graph._attr['output_names'].remove(m['reshape_2'])
+
+    if matched:
+        clear_redundant_nodes(graph)
+
+
 def remove_const(graph):
     removing_const = []
     for node_name in graph.nodes:
@@ -4439,6 +4498,7 @@ def back_passes(graph, params):
     merge_s2b_pool_b2s(graph)
 
     remove_redundant_bn(graph)
+    remove_redundant_reshape_transpose(graph)
     remove_redundant_reshape(graph, 'ArmReshape')
     remove_redundant_transpose(graph)
     remove_useless_op(graph, ['ArmReshape', 'ArmTranspose'])

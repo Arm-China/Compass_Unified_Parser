@@ -5945,48 +5945,6 @@ def rename_single_mul_or_add_or_sub(graph):
                         graph._attr['output_names'][index] = post_reshape
 
 
-def remove_redundant_reshape_transpose(graph):
-    matches = matched_patterns(graph,
-                               nodes=[
-                                   ('reshape_1', {'op': 'Reshape'}),
-                                   ('transpose', {'op': 'Transpose'}),
-                                   ('reshape_2', {'op': 'Reshape'})],
-                               edges=[('reshape_1', 'transpose'),
-                                      ('transpose', 'reshape_2')]
-                               )
-    matched = False
-    for m in matches:
-        reshape_1, transpose, reshape_2 = m['reshape_1'], m['transpose'], m['reshape_2']
-        reshape_1_obj = NodeWrap(graph, reshape_1)['object']
-        trans_obj = NodeWrap(graph, transpose)['object']
-        reshape_2_obj = NodeWrap(graph, reshape_2)['object']
-        reshape_1_in_edges = graph.sorted_in_edges(reshape_1, data=True)
-        if reshape_1_obj is None or trans_obj is None or reshape_2_obj is None \
-                or len(reshape_1_obj.get_input_shapes()) < 1 \
-                or len(reshape_1_in_edges) < 1:
-            WARN('[Parser]: Meets invalid node in remove_redundant_reshape_transpose!')
-            continue
-        in_shape = reshape_1_obj.get_input_shapes()[0]
-        if in_shape is None \
-                or any([s is None for s in in_shape]) \
-                or len(reshape_1_obj.shape) < 2 \
-                or all([s != 1 for s in reshape_1_obj.shape[:2]]) \
-                or in_shape != reshape_2_obj.shape:
-            continue
-        if len(trans_obj.perm) < 2 \
-                or trans_obj.perm != [1, 0] + list(range(2, len(trans_obj.perm))):
-            continue
-        matched = True
-        inp, _, in_attr = reshape_1_in_edges[0]
-        for _, dst, out_attr in graph.sorted_out_edges(reshape_2, data=True):
-            graph.remove_edge(reshape_2, dst)
-            new_out_attr = copy.deepcopy(out_attr)
-            new_out_attr.update({'src_out_port': in_attr['src_out_port']})
-            graph.add_edge(inp, dst, **new_out_attr)
-    if matched:
-        clear_redundant_nodes(graph)
-
-
 def remove_sub_add_pair(graph):
     matches_1 = matched_patterns(graph,
                                  nodes=[
@@ -6839,7 +6797,6 @@ def middle_passes(graph, params):
     convert_quantizelinear(graph)
     convert_bn_train(graph)
     clear_useless_concat_input(graph)
-
     remove_redundant_transpose(graph)
     merge_dilated_conv_group(graph)
     merge_dilated_conv(graph)
@@ -6929,7 +6886,6 @@ def middle_passes(graph, params):
     rearrange_pack_concat(graph)
     convert_min_max_to_clip(graph)
     remove_redundant_reshape(graph)
-    remove_redundant_reshape_transpose(graph)
     rearrange_linear_reshape_relu(graph)
     rearrange_linear_concat_relu(graph)
     convert_special_transpose(graph)
