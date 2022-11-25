@@ -147,6 +147,12 @@ class ArmActivationOp(LayoutUnawareOp, OpHasMethod, OpHasOneOutPort, ArmOp):
             out_tensor = self.selu()
         elif self.method == 'SHRINK':
             out_tensor = self.shrink()
+        elif self.method == 'SIGMOID':
+            if np.issubdtype(inputs[0].dtype, np.integer):
+                inp = inputs[0].astype(np.float32)
+            else:
+                inp = inputs[0]
+            out_tensor = func(inp).numpy().astype(np.float32)
         elif self.method == 'SILU':
             out_tensor = self.silu()
         elif self.method == 'SWISH':
@@ -228,13 +234,22 @@ class ArmActivationOp(LayoutUnawareOp, OpHasMethod, OpHasOneOutPort, ArmOp):
                 txt_file.write('negative_slope_value=%1.6f\n' %
                                float(self.alpha))
             elif self.method == 'PRELU' and self.negative_slope is not None:
-                txt_file.write('negative_slope_type=%s\n' % 'float32')
+                txt_file.write('negative_slope_type=%s\n' % str(self.negative_slope.dtype))
                 txt_file.write('negative_slope_offset=%d\n' %
                                self.negative_slope_offset)
                 txt_file.write('negative_slope_size=%d\n' % (
                     self.negative_slope.size * self.negative_slope.dtype.itemsize))
                 txt_file.write('negative_slope_shape=[%s]\n' % num_list_to_string(
                     list(self.negative_slope.shape)))
+                if self.quantize \
+                        and self.negative_slope_scale is not None \
+                        and self.negative_slope_zp is not None:
+                    negative_slope_scale = self.negative_slope_scale.tolist()
+                    negative_slope_zp = self.negative_slope_zp.tolist()
+                    txt_file.write('negative_slope_scale=[%s]\n' %
+                                   num_list_to_string(negative_slope_scale))
+                    txt_file.write('negative_slope_zp=[%s]\n' %
+                                   num_list_to_string(negative_slope_zp))
             elif self.method == 'SELU':
                 txt_file.write('alpha=%1.6f\n' % float(self.alpha))
                 txt_file.write('gamma=%1.6f\n' % float(self.gamma))
@@ -340,7 +355,7 @@ class ArmAsinhOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
 class ArmBasicLSTMOp(BaseRnnOp, OpHasBiases, OpHasWeights, ArmOp):
     @classmethod
     def cast_in_ports(cls):
-        return {0: 'float32', 1: 'float32', 2: 'float32'}
+        return {0: ['float32', 'int8'], 1: ['float32', 'int8'], 2: ['float32', 'int8']}
 
     @classmethod
     def num_in_ports(cls):
@@ -445,7 +460,7 @@ class ArmBasicLSTMOp(BaseRnnOp, OpHasBiases, OpHasWeights, ArmOp):
 class ArmBatchNormOp(BaseLinearOp, OpHasAxis, ArmOp):
     @classmethod
     def cast_in_ports(cls):
-        return {0: 'float32'}
+        return {0: ['float32', 'int8']}
 
     @classmethod
     def attributes(cls):
@@ -713,7 +728,7 @@ class ArmConcatOp(OpHasAxis, OpHasOneOutPort, ArmOp):
 
     @classmethod
     def cast_in_ports(cls):
-        return {None: ['float32', 'int32', 'uint8']}
+        return {None: ['float32', 'int32', 'uint8', 'int8']}
 
     def infer_shape(self):
         super(ArmConcatOp, self).infer_shape()
@@ -775,7 +790,7 @@ class ArmConstantOp(OpHasWeights, OpHasOneOutPort, ConstLikeOp, ArmOp):
 class ArmConvolutionOp(BaseActivationOp, BaseConvOp, ArmOp):
     @classmethod
     def cast_in_ports(cls):
-        return {0: 'float32'}
+        return {0: ['float32', 'int8']}
 
     @classmethod
     def perm_onnx_to_ir(cls):

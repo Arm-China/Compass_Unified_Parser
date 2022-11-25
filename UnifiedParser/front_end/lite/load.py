@@ -295,11 +295,12 @@ def convert_tflite_to_graph(model_path, params):
                                         and 'Min' in in_tensor['quant_info']:
                                     edge_tensor.min_max = (
                                         in_tensor['quant_info']['Min'], in_tensor['quant_info']['Max'])
-                                if 'Scale' in in_tensor['quant_info'] \
+                                if quantize \
+                                        and 'Scale' in in_tensor['quant_info'] \
                                         and 'ZeroPoint' in in_tensor['quant_info']:
-                                    edge_tensor.scale_zp = (
-                                        in_tensor['quant_info']['Scale'], in_tensor['quant_info']['ZeroPoint'])
-                            if 'dtype' in in_tensor:
+                                    edge_tensor.scale_zp = (in_tensor['quant_info']['Scale'],
+                                                            in_tensor['quant_info']['ZeroPoint'])
+                            if quantize and 'dtype' in in_tensor:
                                 edge_tensor.dtype = in_tensor['dtype']
                             edge_attr = {'src_out_port': src_out_port,
                                          'dst_in_port': in_port, 'tensor': edge_tensor}
@@ -326,11 +327,12 @@ def convert_tflite_to_graph(model_path, params):
                                         and 'Min' in const_tensor['quant_info']:
                                     edge_attr['tensor'].min_max = (const_tensor['quant_info']['Min'],
                                                                    const_tensor['quant_info']['Max'])
-                                if 'Scale' in const_tensor['quant_info'] \
+                                if quantize \
+                                        and 'Scale' in const_tensor['quant_info'] \
                                         and 'ZeroPoint' in const_tensor['quant_info']:
                                     edge_attr['tensor'].scale_zp = (const_tensor['quant_info']['Scale'],
                                                                     const_tensor['quant_info']['ZeroPoint'])
-                            if 'dtype' in const_tensor:
+                            if quantize and 'dtype' in const_tensor:
                                 edge_attr['tensor'].dtype = const_tensor['dtype']
                             graph.add_edge(const_name, node_name, **edge_attr)
                             const_node = NodeWrap(graph, const_name)

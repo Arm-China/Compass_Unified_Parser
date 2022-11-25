@@ -2091,7 +2091,7 @@ class LiteREVERSE_SEQUENCEOp(OpHasOneOutPort, TfliteOp):
 class LiteREVERSE_V2Op(OpHasAxis, OpHasOneOutPort, TfliteOp):
     @classmethod
     def attributes(cls):
-        return {1: {}, 2: {}}
+        return {1: {}, 2: {}, 3: {}}
 
     def __init__(self, graph, attr_dict=None):
         super(LiteREVERSE_V2Op, self).__init__(graph, attr_dict)

@@ -205,10 +205,10 @@ def convert_bn_train(graph):
             momentum = fusebnv3_obj.momentum
             if fusebnv3_obj.data_format == 'NCHW':
                 dims = [0] + list(range(2, inp_rank))
-                reshape_dim = [-1] + [1] * (inp_rank-2)
+                reshape_dim = [-1] + [1] * (inp_rank - 2)
             else:
-                dims = list(range(0, inp_rank-1))
-                reshape_dim = [1] * (inp_rank-2) + [-1]
+                dims = list(range(0, inp_rank - 1))
+                reshape_dim = [1] * (inp_rank - 2) + [-1]
             # Step 1: Consider output Y
             # current_mean_value -> onnx input_mean; current_var_value -> onnx input_var
             inp_shape = np.array(x.shape, np.dtype(np.int32))
@@ -259,7 +259,7 @@ def convert_bn_train(graph):
             # reshaped_weights_value * sub
             graph.add_edge(sub, mul_sub, **
                            {'src_out_port': 0, 'dst_in_port': 0})
-            graph.add_edge(weights, mul_sub,  **
+            graph.add_edge(weights, mul_sub, **
                            {'src_out_port': 0, 'dst_in_port': 1, 'tensor': Tensor(value=weights_value)})
             # reshaped_weights_value * sub * scale
             graph.add_edge(mul_sub, mul_scale, **
@@ -295,7 +295,7 @@ def convert_bn_train(graph):
                 'name': mul_sub, 'opset_version': 7})
             NodeWrap(graph, mul_scale).replace_obj('Mul', {
                 'name': mul_scale, 'opset_version': 7})
-            NodeWrap(graph, y).replace_obj('Add',  {
+            NodeWrap(graph, y).replace_obj('Add', {
                 'name': y, 'opset_version': 7})
 
             # Reshape is needed when data format is NCHW
@@ -322,7 +322,7 @@ def convert_bn_train(graph):
             mul_cur_mean_in_attr = {'dst_in_port': 0, 'tensor': Tensor(value=current_mean_out_attr['tensor'].value)}
             reshaped_current_mean = insert_reshape(graph, current_mean, mul_cur_mean, mul_cur_mean_in_attr, [-1]) \
                 if fusebnv3_obj.data_format == 'NCHW' else current_mean
-            insert_constant(graph, mul_cur_mean + '_momentum', np.array(1-momentum).astype(np.float32),
+            insert_constant(graph, mul_cur_mean + '_momentum', np.array(1 - momentum).astype(np.float32),
                             mul_cur_mean, in_port=1, data_format='NHWC')
             # input_mean * momentum + reshaped_current_mean * (1 - momentum)
             mul_in_mean_value = None if mul_in_mean_in_attr['tensor'].value is None \
@@ -357,7 +357,7 @@ def convert_bn_train(graph):
             # current_var * (1 - momentum)
             mul_cur_var_in_attr = {'dst_in_port': 0, 'tensor': Tensor(value=current_var_out_attr['tensor'].value)}
             graph.add_edge(current_var, mul_cur_var, **mul_cur_var_in_attr)
-            insert_constant(graph, mul_cur_var + '_momentum', np.array(1-momentum).astype(np.float32),
+            insert_constant(graph, mul_cur_var + '_momentum', np.array(1 - momentum).astype(np.float32),
                             mul_cur_var, in_port=1, data_format='NHWC')
             # input_var * momentum + current_var * (1 - momentum)
             mul_in_var_value = None if mul_in_var_in_attr['tensor'].value is None \
@@ -392,8 +392,8 @@ def convert_bn_train(graph):
             if fusebnv3 in graph._attr['output_names']:
                 index = graph._attr['output_names'].index(fusebnv3)
                 graph._attr['output_names'][index] = y
-                graph._attr['output_names'].insert(index+1, running_mean)
-                graph._attr['output_names'].insert(index+2, running_var)
+                graph._attr['output_names'].insert(index + 1, running_mean)
+                graph._attr['output_names'].insert(index + 2, running_var)
 
         else:
             WARN(
@@ -437,10 +437,10 @@ def convert_nms(graph):
                 max_output_size = nms_obj.max_output_boxes_per_class
                 center_box = nms_obj.center_point_box
                 score_reshape_dim = [score_shape[0],
-                                     score_shape[1]*score_shape[2]]
+                                     score_shape[1] * score_shape[2]]
                 tile_dim = [1, class_num, 1]
                 add_num = np.array(
-                    onnx_batch*[[-0.5]*box_num+[-0.5]*box_num+[0.5]*box_num+[0.5]*box_num])
+                    onnx_batch * [[-0.5] * box_num + [-0.5] * box_num + [0.5] * box_num + [0.5] * box_num])
                 reshape_box_1_dim = [onnx_batch, box_num]
                 reshapedim2 = [onnx_batch, box_shape[2], box_num]
 
@@ -449,15 +449,15 @@ def convert_nms(graph):
                 out_edges = graph.sorted_out_edges(nms, data=True)
 
                 post_slice_start = np.array([0, 0]).astype(np.int32).tolist()
-                post_slice_end_num = box_num*class_num if onnx_batch*box_num * \
-                    class_num < max_output_boxes_per_class else max_output_boxes_per_class//onnx_batch
+                post_slice_end_num = box_num * class_num if onnx_batch * box_num * \
+                    class_num < max_output_boxes_per_class else max_output_boxes_per_class // onnx_batch
                 post_slice_end = np.array(
                     [onnx_batch, int(post_slice_end_num)]).tolist()
                 post_slice_step = np.array([1, 1]).tolist()
 
-                onnx_res_first_row = [box_num*class_num*[i]
+                onnx_res_first_row = [box_num * class_num * [i]
                                       for i in range(onnx_batch)]
-                onnx_res_second_row = [box_num*[j]
+                onnx_res_second_row = [box_num * [j]
                                        for i in range(onnx_batch) for j in range(class_num)]
                 class_num_list = np.array(onnx_res_second_row)  # class_num
                 class_num_list = np.reshape(class_num_list, (-1, 1))
@@ -465,8 +465,8 @@ def convert_nms(graph):
                 batch_list = np.array(onnx_res_first_row)  # batch
                 batch_list = np.reshape(batch_list, (-1, 1))
                 batch_list = batch_list[:max_output_boxes_per_class, :]
-                need_insert_num1 = max_output_boxes_per_class-box_num*class_num*onnx_batch
-                need_insert_num2 = max_output_boxes_per_class*onnx_batch*class_num-box_num
+                need_insert_num1 = max_output_boxes_per_class - box_num * class_num * onnx_batch
+                need_insert_num2 = max_output_boxes_per_class * onnx_batch * class_num - box_num
                 complete_res = None
                 if need_insert_num1 > 0 or need_insert_num2 > 0:
                     need_insert_num = min(need_insert_num1, need_insert_num2) if need_insert_num1 > 0 and need_insert_num2 > 0 else max(
@@ -554,28 +554,28 @@ def convert_nms(graph):
                                     add_num, mul_num, in_port=1, data_format='NHWC')
 
                     NodeWrap(graph, split).replace_obj(
-                        'Split',  {'name': split, 'split': [1, 1, 1, 1], 'axis': 2, 'opset_version': 11})
-                    NodeWrap(graph, xcenter_reshape).replace_obj('Reshape',  {
+                        'Split', {'name': split, 'split': [1, 1, 1, 1], 'axis': 2, 'opset_version': 11})
+                    NodeWrap(graph, xcenter_reshape).replace_obj('Reshape', {
                         'name': xcenter_reshape, 'shape': reshape_box_1_dim})
-                    NodeWrap(graph, ycenter_reshape).replace_obj('Reshape',  {
+                    NodeWrap(graph, ycenter_reshape).replace_obj('Reshape', {
                         'name': ycenter_reshape, 'shape': reshape_box_1_dim})
-                    NodeWrap(graph, width_reshape).replace_obj('Reshape',  {
+                    NodeWrap(graph, width_reshape).replace_obj('Reshape', {
                         'name': width_reshape, 'shape': reshape_box_1_dim})
-                    NodeWrap(graph, height_reshape).replace_obj('Reshape',  {
+                    NodeWrap(graph, height_reshape).replace_obj('Reshape', {
                         'name': height_reshape, 'shape': reshape_box_1_dim})
                     NodeWrap(graph, xyc_concat1).replace_obj(
-                        'Concat',  {'name': xyc_concat1, 'opset_version': 11, 'axis': 1})
+                        'Concat', {'name': xyc_concat1, 'opset_version': 11, 'axis': 1})
                     NodeWrap(graph, hw_concat2).replace_obj(
-                        'Concat',  {'name': hw_concat2, 'opset_version': 11, 'axis': 1})
+                        'Concat', {'name': hw_concat2, 'opset_version': 11, 'axis': 1})
                     NodeWrap(graph, mul_num).replace_obj(
                         'Mul', {'name': mul_num, 'opset_version': 7})
                     NodeWrap(graph, xy_add).replace_obj(
                         'Add', {'name': xy_add, 'opset_version': 7})
-                    NodeWrap(graph, c_reshape).replace_obj('Reshape',  {
+                    NodeWrap(graph, c_reshape).replace_obj('Reshape', {
                         'name': c_reshape, 'shape': reshapedim2, 'opset_version': 1})
-                    NodeWrap(graph, box_trans).replace_obj('Transpose',  {
+                    NodeWrap(graph, box_trans).replace_obj('Transpose', {
                         'name': box_trans, 'opset_version': 13, 'perm': [0, 2, 1]})
-                    NodeWrap(graph, box_tile).replace_obj('Tile',  {
+                    NodeWrap(graph, box_tile).replace_obj('Tile', {
                         'name': box_tile, 'opset_version': 6})
                 else:
                     box_tile = get_valid_node_name(graph, nms + '_tile')
@@ -595,7 +595,7 @@ def convert_nms(graph):
                     insert_constant(graph, box_tile + '_indices', np.array(tile_dim),
                                     box_tile, in_port=1, data_format='NHWC')
 
-                    NodeWrap(graph, box_tile).replace_obj('Tile',  {
+                    NodeWrap(graph, box_tile).replace_obj('Tile', {
                         'name': box_tile, 'opset_version': 6})
 
                 post_slice = get_valid_node_name(graph, nms + '_slice')
@@ -636,22 +636,22 @@ def convert_nms(graph):
                                     post_concatenate_0, in_port=0)
 
                     NodeWrap(graph, post_concatenate_0).replace_obj(
-                        'Concat',  {'name': post_concatenate_0, 'opset_version': 11, 'axis': 0})
+                        'Concat', {'name': post_concatenate_0, 'opset_version': 11, 'axis': 0})
 
                 NodeWrap(graph, nms).replace_obj(
-                    'ArmNMS',  {'name': nms,
-                                'iou_threshold': nms_obj.iou_threshold,
-                                'max_box_num': max_output_size,
-                                'score_threshold': nms_obj.score_threshold,
-                                'center_point_box': 0,
-                                'max_output_boxes_per_class': nms_obj.max_output_boxes_per_class
-                                })
+                    'ArmNMS', {'name': nms,
+                               'iou_threshold': nms_obj.iou_threshold,
+                               'max_box_num': max_output_size,
+                               'score_threshold': nms_obj.score_threshold,
+                               'center_point_box': 0,
+                               'max_output_boxes_per_class': nms_obj.max_output_boxes_per_class
+                               })
                 NodeWrap(graph, post_slice).replace_obj(
                     'Slice', {'name': post_slice, 'opset_version': 1, 'starts': post_slice_start, 'ends': post_slice_end, 'steps': post_slice_step})
                 NodeWrap(graph, post_reshape).replace_obj(
                     'Reshape', {'name': post_reshape, 'opset_version': 1, 'shape': [-1, 1]})
                 NodeWrap(graph, post_concatenate).replace_obj(
-                    'Concat',  {'name': post_concatenate, 'opset_version': 11, 'axis': 1})
+                    'Concat', {'name': post_concatenate, 'opset_version': 11, 'axis': 1})
 
                 if nms in graph._attr['output_names']:
                     index = graph._attr['output_names'].index(nms)
@@ -676,7 +676,7 @@ def convert_sigmoid_mul_to_silu(graph):
                                 edges=[
                                     ('input', 'sigmoid'),
                                     ('input', 'mul', {
-                                     'dst_in_port': 1-i}),
+                                     'dst_in_port': 1 - i}),
                                     ('sigmoid', 'mul', {
                                         'src_out_port': 0, 'dst_in_port': i}),
                                 ]) for i in range(2)]
@@ -781,7 +781,7 @@ def convert_fill(graph):
 
             matched = True
             dims = in_edges[0][2]['tensor'].value
-            reshape_dim = [1]*len(dims)
+            reshape_dim = [1] * len(dims)
             tile_dim = dims
             need_tile = np.any(np.array(dims) != 1)
 
@@ -1085,14 +1085,14 @@ def convert_special_resize(graph):
                 NodeWrap(graph, pre_reshape).replace_obj(
                     'Reshape', {'name': pre_reshape, 'opset_version': 5})
                 insert_constant(graph,
-                                pre_reshape+'_dim',
+                                pre_reshape + '_dim',
                                 np.array(pre_reshape_dim, np.int32),
                                 pre_reshape,
                                 in_port=1)
                 NodeWrap(graph, resize).replace_obj(
                     'Reshape', {'name': resize, 'opset_version': 5})
                 insert_constant(graph,
-                                resize+'_dim',
+                                resize + '_dim',
                                 np.array(post_reshape_dim, np.int32),
                                 resize,
                                 in_port=1)
@@ -1284,7 +1284,7 @@ def fuse_gather_const_mul(graph):
                                     nodes=[('const', {'op': 'Constant'}),
                                            ('gather', {'op': 'Gather'})
                                            ],
-                                    edges=[('const', 'gather',  {'src_out_port': 0, 'dst_in_port': 0})
+                                    edges=[('const', 'gather', {'src_out_port': 0, 'dst_in_port': 0})
                                            ]
                                     )
     for init_m in init_matches:
@@ -1303,7 +1303,7 @@ def fuse_gather_const_mul(graph):
                     + [('multiplier_%s' % str(i), {'op': 'Constant'}) for i in range(gather_num)] \
                     + [('mul_%s' % str(i), {'op': 'Mul'})
                         for i in range(gather_num)]
-                edges = [('const', 'gather_%s' % str(i),  {'src_out_port': 0, 'dst_in_port': 0}) for i in range(gather_num)] \
+                edges = [('const', 'gather_%s' % str(i), {'src_out_port': 0, 'dst_in_port': 0}) for i in range(gather_num)] \
                     + [('gather_%s' % str(i), 'mul_%s' % str(i)) for i in range(gather_num)] \
                     + [('multiplier_%s' % str(i), 'mul_%s' % str(i),
                         {'src_out_port': 0, 'dst_in_port': 1}) for i in range(gather_num)]
@@ -1448,6 +1448,10 @@ def fuse_mul_add_or_sub(graph):
         add_sub_obj = NodeWrap(graph, add_sub)['object']
 
         if input_obj is not None and mul_obj is not None and add_sub_obj is not None:
+            if mul_obj.quantize \
+                    or add_sub_obj.quantize:
+                continue
+
             mul_out_edges = graph.sorted_out_edges(mul)
             if len(mul_out_edges) > 1:
                 continue
@@ -1718,8 +1722,8 @@ def convert_reducemean_to_avgpool(graph):
         last_name = mean
         if need_transpose:
             if cur_data_format == 'NCHW':
-                perm1 = [0, len(input_shape)-1] + \
-                    list(range(1, len(input_shape)-1))
+                perm1 = [0, len(input_shape) - 1] + \
+                    list(range(1, len(input_shape) - 1))
             else:
                 perm1 = [0] + list(range(2, len(input_shape))) + [1]
             perm2 = Op.cal_inverse_perm(perm1)
@@ -1839,7 +1843,7 @@ def convert_dequantizelinear(graph):
 
             cast = insert_cast(graph, inp, dequant, 'float32')
 
-            if dequant_axis != len(input_shapes[0])-1:
+            if dequant_axis != len(input_shapes[0]) - 1:
                 pre_perm = [idx for idx in range(
                     len(input_shapes[0])) if idx != dequant_axis] + [dequant_axis]
                 _, _, dequant_in_attr = graph.sorted_in_edges(dequant, data=True)[
@@ -1872,7 +1876,7 @@ def convert_dequantizelinear(graph):
 
         insert_cast(graph, sub, dequant, 'float32')
 
-        if len(input_shapes[1]) == 1 and dequant_axis != len(input_shapes[0])-1:
+        if len(input_shapes[1]) == 1 and dequant_axis != len(input_shapes[0]) - 1:
             dim = [1 if idx != dequant_axis else axis_dim for idx in range(
                 len(input_shapes[0]))]
             insert_reshape(graph, scale, dequant, scale_in_attr, dim)
@@ -2151,16 +2155,16 @@ def merge_channel_shuffle_with_split(graph):
                     nhw_dim = len(reshape2_out_shape) - 1
                     if (int(np.prod(reshape1_in_shape[nhw_dim:])) == reshape2_out_shape[-1]
                             if transpose_obj.data_format == 'NHWC'
-                            else int(np.prod([reshape1_in_shape[0]] + reshape1_in_shape[-(nhw_dim-1):])) == reshape2_out_shape[1]):
+                            else int(np.prod([reshape1_in_shape[0]] + reshape1_in_shape[-(nhw_dim - 1):])) == reshape2_out_shape[1]):
                         perm_dim = len(transpose_obj.perm)
-                        ref_perm = list(range(perm_dim-2)) + [perm_dim-1, perm_dim-2] \
+                        ref_perm = list(range(perm_dim - 2)) + [perm_dim - 1, perm_dim - 2] \
                             if transpose_obj.data_format == 'NHWC' \
                             else [0, 2, 1] + list(range(3, perm_dim))
                         if transpose_obj.perm == ref_perm:
                             group = reshape1_out_shape[-2] if transpose_obj.data_format == 'NHWC' else reshape1_out_shape[1]
                             if len(split_obj.split) == group \
                                     and all([split_obj.split[0] == s for s in split_obj.split[1:]]) \
-                                    and (split_obj.axis in (-1, perm_dim-1) if split_obj.data_format == 'NHWC' else split_obj.axis == 1):
+                                    and (split_obj.axis in (-1, perm_dim - 1) if split_obj.data_format == 'NHWC' else split_obj.axis == 1):
                                 matched = True
                                 graph.remove_edges_from(reshape2_out_edges)
                                 reshape1_in_edges = graph.sorted_in_edges(
@@ -2245,7 +2249,7 @@ def merge_channel_shuffle_with_pack(graph):
         ref_perm = list(range(perm_dim - 2)) + [perm_dim - 1, perm_dim - 2] \
             if transpose_obj.data_format == 'NHWC' \
             else [0, 2, 1] + list(range(3, perm_dim))
-        is_channel_axis = pack_obj.axis in (-1, perm_dim-2) \
+        is_channel_axis = pack_obj.axis in (-1, perm_dim - 2) \
             if pack_obj.data_format == 'NHWC' else pack_obj.axis == 1
         # Check transpose perm and whether the axis of pack is channel axis
         if transpose_obj.perm != ref_perm or not is_channel_axis:
@@ -2465,7 +2469,7 @@ def merge_gelu_3(graph):
                                ]
                                )
     for m in matches:
-        key_names = ['inp',  'div', 'divc', 'erf', 'add', 'addc2',
+        key_names = ['inp', 'div', 'divc', 'erf', 'add', 'addc2',
                      'mul_1', 'mulc', 'mul_2']
         node_objs = {k: NodeWrap(graph, m[k])['object'] for k in key_names}
         if all([obj is not None for obj in node_objs.values()]):
@@ -2599,7 +2603,7 @@ def merge_dilated_conv(graph):
                                  0, 3, 1, 2])  # NHWC->NCHW
 
                 conv_post_trans = get_valid_node_name(
-                    graph,  conv + '_post_trans')
+                    graph, conv + '_post_trans')
                 conv_out_edges = graph.sorted_out_edges(conv, data=True)
                 for _, dst, out_attr in conv_out_edges:
                     graph.remove_edge(conv, dst)
@@ -2924,7 +2928,7 @@ def merge_hardsigmoid(graph):
                 if src == inp:
                     graph.add_edge(src, mul, **in_attr)
             hs_attr = NodeWrap(graph, mul)['object'].copied_attr()
-            hs_attr.update({'opset_version': 6, 'alpha': 1/6, 'beta': 0.5})
+            hs_attr.update({'opset_version': 6, 'alpha': 1 / 6, 'beta': 0.5})
             NodeWrap(graph, mul).replace_obj('HardSigmoid', hs_attr)
     if matched:
         clear_redundant_nodes(graph)
@@ -2980,7 +2984,7 @@ def merge_hargsigmoid2(graph):
             continue
         matched = True
         in_attr['dst_in_port'] = 0
-        graph.remove_edges_from(add_in_edges+mul_div_in_edges)
+        graph.remove_edges_from(add_in_edges + mul_div_in_edges)
         graph.add_edge(inp, m['mul_or_div'], **in_attr)
         hs_attr = obj_dict['mul_or_div'].copied_attr()
         hs_attr.update({'alpha': 1.,
@@ -3077,7 +3081,7 @@ def merge_leaky_relu(graph):
                                      ('relu', 'end'),
                                      ('neg', 'relu_1'),
                                      ('relu_1', 'mul', {
-                                         'dst_in_port': 1-const_in_port}),
+                                         'dst_in_port': 1 - const_in_port}),
                                      ('const', 'mul', {
                                          'dst_in_port': const_in_port}),
                                      ('mul', 'neg_1'),
@@ -3947,7 +3951,7 @@ def merge_ln(graph):
                                    ('pow', {'op': 'Pow'}),
                                    ('pow_y', {'op': 'Constant'}),
                                    ('mul_2', {'op': 'Mul'}),
-                                   ('gamma',  {'op': 'Constant'}),
+                                   ('gamma', {'op': 'Constant'}),
                                    ('add_2', {'op': 'Add'}),
                                    ('beta', {'op': 'Constant'}),
                                ],
@@ -4132,7 +4136,7 @@ def merge_ln2(graph):
                             weights, non_axes[1], [in_shape[non_axes[1]]])
                     if new_biases is not None and (gamma and new_weights is not None):
                         is_in = True
-                        if non_axes[1] not in (1, len(in_shape)-1):
+                        if non_axes[1] not in (1, len(in_shape) - 1):
                             need_transpose = True
                             pre_perm = [num for num in range(
                                 len(in_shape)) if num != non_axes[1]] + [non_axes[1]]
@@ -4224,7 +4228,7 @@ def merge_ln3(graph):
     for m in ln_matches:
         key_names = ['inp', 'mean', 'sub', 'sub_1', 'square', 'power',
                      'mean_1', 'add', 'epsilon', 'sqrt', 'recip', 'mul', 'beta', 'add_1']
-        inp, mean, sub, sub_1, square, power, mean_1, add, epsilon, sqrt, recip,  mul_1, beta, add_1 = [
+        inp, mean, sub, sub_1, square, power, mean_1, add, epsilon, sqrt, recip, mul_1, beta, add_1 = [
             m[name] for name in key_names]
         objs_dict = {m[name]: NodeWrap(graph, m[name])[
             'object'] for name in key_names}
@@ -4288,7 +4292,7 @@ def merge_ln4(graph):
                                    ('div', {'op': 'Div'}),
                                    ('mul', {'op': 'Mul'}),
                                    ('add_2', {'op': 'Add'}),
-                                   ('eps',  {'op': 'Constant'}),
+                                   ('eps', {'op': 'Constant'}),
                                    ('weight', {'op': 'Constant'}),
                                    ('bias', {'op': 'Constant'}),
                                ],
@@ -4608,7 +4612,7 @@ def merge_ln_reshape(graph):
         ln_axes = np.sort(OpHasAxis.make_axes_non_negative(
             obj_dict['ln'].axes, ln_in_shape))
         if list(ln_axes) != list(range(ln_axes[0], ln_axes[0] + len(ln_axes))) \
-                or any(ln_in_shape[axis] != 1 for axis in range(ln_axes[-1]+1, len(ln_in_shape))):
+                or any(ln_in_shape[axis] != 1 for axis in range(ln_axes[-1] + 1, len(ln_in_shape))):
             continue
         norm_shape_size = int(np.prod(ln_in_shape[ln_axes[0]:]))
         new_begin_axis = [axis for axis in range(0, len(reshape2_shape))
@@ -5001,7 +5005,7 @@ def merge_gn(graph):
         channels_axis = channels_axis[0] if len(
             channels_axis) >= 1 else (len(origin_shape) - 1)
         if channels_axis == 0 or (0, channels_axis) in axes or \
-                not np.array_equal(origin_shape[:channels_axis] + origin_shape[channels_axis+1:], expand_shape[:channels_axis] + expand_shape[channels_axis+2:]):
+                not np.array_equal(origin_shape[:channels_axis] + origin_shape[channels_axis + 1:], expand_shape[:channels_axis] + expand_shape[channels_axis + 2:]):
             continue
 
         weights_shape = [origin_shape[channels_axis]]
@@ -5015,7 +5019,7 @@ def merge_gn(graph):
                 len(origin_shape)) if i != channels_axis] + [channels_axis]
             if len(weights.shape) == len(expand_shape):
                 new_weights_shape = list(
-                    weights.shape[:channels_axis]) + [-1] + list(weights.shape[channels_axis+2:])
+                    weights.shape[:channels_axis]) + [-1] + list(weights.shape[channels_axis + 2:])
                 weights_c_last = np.transpose(
                     np.reshape(weights, new_weights_shape), perm)
                 weights_2d = np.reshape(
@@ -5034,7 +5038,7 @@ def merge_gn(graph):
                 continue
             if len(biases.shape) == len(expand_shape):
                 new_biases_shape = list(
-                    biases.shape[:channels_axis]) + [-1] + list(biases.shape[channels_axis+2:])
+                    biases.shape[:channels_axis]) + [-1] + list(biases.shape[channels_axis + 2:])
                 biases_c_last = np.transpose(
                     np.reshape(biases, new_biases_shape), perm)
                 biases_2d = np.reshape(
@@ -5155,10 +5159,10 @@ def merge_gn2(graph):
             len(expanded_shape)) if num not in axes]
         if len(non_axes) != 2 \
                 or non_axes[0] != 0 \
-                or non_axes[1] >= len(expanded_shape)-1:
+                or non_axes[1] >= len(expanded_shape) - 1:
             continue
         channels_axis = non_axes[1]
-        axes_after_reshape = [channels_axis, channels_axis+1]
+        axes_after_reshape = [channels_axis, channels_axis + 1]
         exp_shape = [expanded_shape[axis] for axis in axes_after_reshape]
         biases = OpHasAxis.align_axes(
             objs_dict[beta].value, axes_after_reshape, exp_shape)
@@ -5252,7 +5256,7 @@ def merge_in(graph):
         sub_in_edges = graph.sorted_in_edges(m['sub'], data=True)
         div_in_edges = graph.sorted_in_edges(m['div'], data=True)
         _, _, in_attr = mean_1_in_edges[0]
-        graph.remove_edges_from(mean_1_in_edges+sub_in_edges+div_in_edges)
+        graph.remove_edges_from(mean_1_in_edges + sub_in_edges + div_in_edges)
         graph.add_edge(m['inp'], m['div'], **in_attr)
         instace_norm_attr = obj_dict['div'].copied_attr()
         instace_norm_attr.update({'opset_version': 6,
@@ -5523,7 +5527,7 @@ def rearrange_linear_concat_relu(graph):
                 relu_obj = NodeWrap(graph, relu)['object']
                 for i, (src, _, in_attr) in enumerate(concat_in_edges):
                     meta_relu = get_valid_node_name(
-                        graph, relu + '_before_concat_' + str(i+1))
+                        graph, relu + '_before_concat_' + str(i + 1))
                     graph.remove_edge(src, concat)
                     meta_relu_in_attr = copy.deepcopy(in_attr)
                     meta_relu_in_attr.update({'dst_in_port': 0})
@@ -5588,7 +5592,7 @@ def rearrange_pack_concat(graph):
                                    ('input_2', {}),
                                    ('pack_2', {'op': 'Unsqueeze'}),
                                    ('concat', {'op': 'Concat'}),
-                                   ('transpose',  {'op': 'Transpose'})
+                                   ('transpose', {'op': 'Transpose'})
                                ],
                                edges=[
                                    ('input_1', 'pack_1'),
@@ -5789,6 +5793,8 @@ def rename_single_mul_or_add_or_sub(graph):
         n_obj = NodeWrap(graph, n)['object']
         if n_obj is None:
             WARN('[Parser]: Meets invalid Op(%s) in rename_single_mul_or_add_or_sub!' % n)
+            continue
+        if n_obj.quantize:
             continue
         in_shapes = n_obj.get_input_shapes()
         in_consts = n_obj.sorted_in_consts()
@@ -6120,7 +6126,7 @@ def split_group_conv(graph):
 
             for i in range(split_num):
                 meta_conv = get_valid_node_name(
-                    graph, conv + '_split_conv_' + str(i+1))
+                    graph, conv + '_split_conv_' + str(i + 1))
                 graph.add_edge(split, meta_conv, **
                                {'src_out_port': i, 'dst_in_port': 0})
                 if conv_out_tensor_split:
@@ -6385,8 +6391,8 @@ def split_sum(graph):
 
                 adds_list = [sum]
                 for i in range(split_num):
-                    cur_src, _, _, cur_in_attr = in_edges[2+i]
-                    add = get_valid_node_name(graph, sum + '_add_' + str(i+1))
+                    cur_src, _, _, cur_in_attr = in_edges[2 + i]
+                    add = get_valid_node_name(graph, sum + '_add_' + str(i + 1))
                     last_add_obj = NodeWrap(graph, adds_list[-1])['object']
                     if last_add_obj is not None and all([inp is not None for inp in last_add_obj.get_input_tensors()]):
                         add_result = reduce(
@@ -6513,7 +6519,7 @@ def adjust_scalar_to_1d(graph):
                         and all([s is not None and len(s) == 0 for s in input_shapes]):
                     for i, (src, _, k, in_attr) in enumerate(in_edges):
                         reshape = get_valid_node_name(
-                            graph, broadcast+'_pre_reshape_' + str(i))
+                            graph, broadcast + '_pre_reshape_' + str(i))
                         reshape_in_attr = copy.deepcopy(in_attr)
                         reshape_in_attr['dst_in_port'] = 0
 
@@ -6525,7 +6531,7 @@ def adjust_scalar_to_1d(graph):
                         NodeWrap(graph, reshape).replace_obj(
                             'Reshape', {'name': reshape, 'opset_version': 5})
                         insert_constant(graph,
-                                        reshape+'_dim',
+                                        reshape + '_dim',
                                         np.array([1], np.int32),
                                         reshape,
                                         in_port=1,
@@ -6548,7 +6554,7 @@ def adjust_scalar_to_1d(graph):
                         NodeWrap(graph, post_reshape).replace_obj(
                             'Reshape', {'name': post_reshape, 'opset_version': 5})
                         insert_constant(graph,
-                                        post_reshape+'_dim',
+                                        post_reshape + '_dim',
                                         np.array([], np.int32),
                                         post_reshape,
                                         in_port=1,
