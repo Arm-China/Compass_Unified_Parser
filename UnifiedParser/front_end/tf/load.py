@@ -71,7 +71,7 @@ def convert_attr_to_onnx(attr_dict):
         elif k == 'keep_dims':
             new_attr.update({tf_attr_names_map.get(k, k): int(v)})
             new_attr.pop(k)
-        elif k == 'padding':
+        elif k == 'padding' and isinstance(v, str):
             v = v.upper()
             if v == 'VALID':
                 new_attr.update({tf_attr_names_map.get(k, k): 'VALID'})

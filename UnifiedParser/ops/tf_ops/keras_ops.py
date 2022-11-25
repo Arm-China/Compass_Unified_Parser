@@ -687,3 +687,88 @@ class TfKerasResizingOp(OpHasOneOutPort, KerasOp):
         resize = tf.keras.layers.Resizing(self.height, self.width, self.interpolation, self.crop_to_aspect_ratio)
         out_tensor = resize(inputs[0]).numpy()
         self.set_out_tensor(out_tensor)
+
+
+class TfKerasZeroPadding1DOp(OpHasOneOutPort, KerasOp):
+    @classmethod
+    def attributes(cls):
+        return {2: {'padding': {'required': False, 'default': 1}}
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfKerasZeroPadding1DOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfKerasZeroPadding1DOp, attr_dict)
+        assert self.check_required(), 'TfKerasZeroPadding1DOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(TfKerasZeroPadding1DOp, self).infer_shape()
+        if isinstance(self.padding, int):
+            self.padding = [self.padding, self.padding]
+        inputs = self.get_input_tensors()
+        zero_pad = tf.keras.layers.ZeroPadding1D(self.padding)
+        out_tensor = zero_pad(inputs[0]).numpy()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'Pad', 'version': 1}
+
+
+class TfKerasZeroPadding2DOp(OpHasOneOutPort, LayoutConcernedOp, KerasOp):
+    @classmethod
+    def attributes(cls):
+        return {2: {'padding': {'required': False, 'default': [1, 1]}}
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfKerasZeroPadding2DOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfKerasZeroPadding2DOp, attr_dict)
+        assert self.check_required(), 'TfKerasZeroPadding2DOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(TfKerasZeroPadding2DOp, self).infer_shape()
+        if isinstance(self.padding, int):
+            self.padding = [[self.padding] * 2] * 2
+        elif isinstance(self.padding, (list, tuple)):
+            assert len(self.padding) == 2, 'Meet invalid padding in TfKerasZeroPadding2DOp!'
+            if all(isinstance(pad, int) for pad in self.padding):
+                self.padding = [[self.padding[0]] * 2, [self.padding[1]] * 2]
+        inputs = self.get_input_tensors()
+        zero_pad = tf.keras.layers.ZeroPadding2D(
+            self.padding, 'channels_first' if self.data_format.startswith('NC') else 'channels_last')
+        out_tensor = zero_pad(inputs[0]).numpy()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'Pad', 'version': 1}
+
+
+class TfKerasZeroPadding3DOp(OpHasOneOutPort, LayoutConcernedOp, KerasOp):
+    @classmethod
+    def attributes(cls):
+        return {2: {'padding': {'required': False, 'default': [1, 1, 1]}}
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfKerasZeroPadding3DOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfKerasZeroPadding3DOp, attr_dict)
+        assert self.check_required(), 'TfKerasZeroPadding3DOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(TfKerasZeroPadding3DOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        if isinstance(self.padding, int):
+            self.padding = [[self.padding] * 2] * 3
+        elif isinstance(self.padding, (list, tuple)):
+            assert len(self.padding) == 3, 'Meet invalid padding in TfKerasZeroPadding3DOp!'
+            if all(isinstance(pad, int) for pad in self.padding):
+                self.padding = [[self.padding[0]] * 2, [self.padding[1]] * 2, [self.padding[2]] * 2]
+        zero_pad = tf.keras.layers.ZeroPadding3D(
+            self.padding, 'channels_first' if self.data_format.startswith('NC') else 'channels_last')
+        out_tensor = zero_pad(inputs[0]).numpy()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'Pad', 'version': 1}

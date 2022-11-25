@@ -341,6 +341,22 @@ def convert_to_onnx(graph):
             batch_size = input_shapes[0][0]
             shape = [batch_size] + list(node_obj.target_shape)
             new_node_attr.update({'shape': shape})
+        elif pure_type in ('ZeroPadding1D', 'ZeroPadding2D', 'ZeroPadding3D'):
+            if not is_first_input_valid(in_edges, input_shapes, 1):
+                continue
+            spatial_rank = len(input_shapes[0]) - 2
+            padding = np.array(node_obj.padding)
+            if padding.size != spatial_rank * 2:
+                WARN('[Parser]: Meets invalid ZeroPadding op for Node(%s) in convert_to_onnx!' % node_name)
+                continue
+            padding = np.reshape(padding, [spatial_rank, 2])
+            begin_pads = padding[:, 0].tolist()
+            end_pads = padding[:, 1].tolist()
+            if node_data_format == 'NCHW':
+                full_pads = [0, 0] + begin_pads + [0, 0] + end_pads
+            else:
+                full_pads = [0] + begin_pads + [0, 0] + end_pads + [0]
+            new_node_attr.update({'paddings': full_pads})
 
         new_node_attr.update(
             {'opset_version': node_obj.correspond_onnx_op['version'],
