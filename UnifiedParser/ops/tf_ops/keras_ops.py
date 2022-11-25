@@ -701,6 +701,77 @@ class TfKerasResizingOp(OpHasOneOutPort, KerasOp):
         self.set_out_tensor(out_tensor)
 
 
+class TfKerasUpSampling1DOp(OpHasOneOutPort, KerasOp):
+    @classmethod
+    def attributes(cls):
+        return {2: {'size': {'type': AttrType.INT, 'required': False, 'default': 2},
+                    'interpolation': {'type': AttrType.STRING, 'required': False, 'default': 'nearest'},
+                    },
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfKerasUpSampling1DOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfKerasUpSampling1DOp, attr_dict)
+        assert self.check_required(), 'TfKerasUpSampling1DOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(TfKerasUpSampling1DOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        upsample = tf.keras.layers.UpSampling1D(self.size)
+        out_tensor = upsample(inputs[0]).numpy()
+        self.set_out_tensor(out_tensor)
+
+
+class TfKerasUpSampling2DOp(OpHasOneOutPort, LayoutConcernedOp, KerasOp):
+    @classmethod
+    def attributes(cls):
+        return {2: {'size': {'required': False, 'default': [2, 2]},
+                    'interpolation': {'type': AttrType.STRING, 'required': False, 'default': 'nearest'},
+                    },
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfKerasUpSampling2DOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfKerasUpSampling2DOp, attr_dict)
+        assert self.check_required(), 'TfKerasUpSampling2DOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(TfKerasUpSampling2DOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        if isinstance(self.size, int):
+            self.size = [self.size] * 2
+        resize = tf.keras.layers.UpSampling2D(self.size,
+                                              'channels_first' if self.data_format.startswith(
+                                                  'NC') else 'channels_last',
+                                              self.interpolation)
+        out_tensor = resize(inputs[0]).numpy()
+        self.set_out_tensor(out_tensor)
+
+
+class TfKerasUpSampling3DOp(OpHasOneOutPort, LayoutConcernedOp, KerasOp):
+    @classmethod
+    def attributes(cls):
+        return {2: {'size': {'required': False, 'default': [2, 2, 2]},
+                    'interpolation': {'type': AttrType.STRING, 'required': False, 'default': 'nearest'},
+                    },
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfKerasUpSampling3DOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfKerasUpSampling3DOp, attr_dict)
+        assert self.check_required(), 'TfKerasUpSampling3DOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(TfKerasUpSampling3DOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        if isinstance(self.size, int):
+            self.size = [self.size] * 3
+        upsample = tf.keras.layers.UpSampling3D(self.size,
+                                                'channels_first' if self.data_format.startswith('NC') else 'channels_last')
+        out_tensor = upsample(inputs[0]).numpy()
+        self.set_out_tensor(out_tensor)
+
+
 class TfKerasZeroPadding1DOp(OpHasOneOutPort, KerasOp):
     @classmethod
     def attributes(cls):
