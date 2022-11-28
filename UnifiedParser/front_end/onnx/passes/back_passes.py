@@ -4394,7 +4394,7 @@ def back_passes(graph, params):
     merge_not_equal(graph)
 
     merge_greater_less_equal_or(graph)
-    split_crd_d2s(graph)
+    # split_crd_d2s(graph)
     split_expand(graph)
 
     rename_argminmax(graph)

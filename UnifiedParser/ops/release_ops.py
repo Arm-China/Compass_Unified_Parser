@@ -1401,7 +1401,9 @@ class ArmDecodeBoxOp(OpHasWeights, OpHasMultipleOutPorts, ArmOp):
 class ArmDepthToSpaceOp(OpHasOneOutPort, ArmOp):
     @classmethod
     def attributes(cls):
-        return {'blocksize': {'type': AttrType.INT, 'required': True}}
+        return {'blocksize': {'type': AttrType.INT, 'required': True},
+                'mode': {'type': AttrType.STRING, 'default': 'DCR', 'options': ['DCR', 'CRD']}
+                }
 
     def __init__(self, graph, attr_dict=None):
         super(ArmDepthToSpaceOp, self).__init__(graph, attr_dict)
@@ -1411,12 +1413,23 @@ class ArmDepthToSpaceOp(OpHasOneOutPort, ArmOp):
     def infer_shape(self):
         super(ArmDepthToSpaceOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.nn.depth_to_space(inputs[0], self.blocksize).numpy()
+        n, h, w, c = inputs[0].shape
+        if self.mode == 'DCR':
+            reshape_dim = [n, h, w, self.blocksize, self.blocksize, c // self.blocksize ** 2]
+            trans_perm = [0, 3, 4, 1, 5, 2]
+        else:
+            reshape_dim = [n, h, w, c // self.blocksize ** 2, self.blocksize, self.blocksize]
+            trans_perm = [0, 1, 4, 2, 5, 3]
+        inp = np.reshape(inputs[0], reshape_dim)
+        out = np.transpose(inp, trans_perm)
+        out_tensor = np.reshape(
+            out, (n, h * self.blocksize, w * self.blocksize, c // self.blocksize ** 2))
         self.set_out_tensor(out_tensor)
 
     def write_attrs(self, txt_file):
         ret = super(ArmDepthToSpaceOp, self).write_attrs(txt_file)
         if ret:
+            txt_file.write('mode=%s\n' % self.mode)
             txt_file.write('block_size_x=%d\n' % self.blocksize)
             txt_file.write('block_size_y=%d\n' % self.blocksize)
         return ret
