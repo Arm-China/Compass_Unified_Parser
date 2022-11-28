@@ -5,6 +5,7 @@ module load swdev git/git/2.17.1
 
 export LD_LIBRARY_PATH="/arm/tools/gnu/gcc/7.3.0/rhe7-x86_64/lib64:$LD_LIBRARY_PATH"
 export PYTHONPATH="`realpath ../`:${PYTHONPATH}"
+export PYTHONPATH="`realpath ../../Compass_OpportunePostTrainingTools`:${PYTHONPATH}"
 
 # suppose you allready built the aipubuilder
 git log -n 1 > temp.log
