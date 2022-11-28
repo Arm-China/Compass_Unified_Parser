@@ -8,6 +8,18 @@ from ..op import *
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
+class TfKerasAverageOp(OpHasOneOutPort, KerasOp):
+    def infer_shape(self):
+        super(TfKerasAverageOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = tf.keras.layers.Average()([*inputs]).numpy()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'Mean', 'version': 13}
+
+
 class TfKerasAveragePooling1DOp(KerasPoolingOp):
     @classmethod
     def ufunc(cls):

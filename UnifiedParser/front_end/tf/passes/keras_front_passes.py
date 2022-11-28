@@ -22,7 +22,7 @@ def convert_batchnorm(graph):
         batchnorm_obj = NodeWrap(graph, batchnorm)['object']
         if batchnorm_obj is None:
             WARN(
-                '[Parser]: Meets TfKerasBatchNormalization Op (%s) in convert_batchnorm!' % batchnorm)
+                '[Parser]: Meets invalid TfKerasBatchNormalization Op (%s) in convert_batchnorm!' % batchnorm)
             continue
         input_shapes = batchnorm_obj.get_input_shapes()
         in_edges = graph.sorted_in_edges(batchnorm, data=True)
