@@ -61,6 +61,40 @@ def convert_batchnorm(graph):
         NodeWrap(graph, batchnorm).replace_obj('BatchNormalization', node_attr)
 
 
+def convert_centercrop(graph):
+    '''
+    Convert TfKerasCenterCrop op to onnx Slice.
+    '''
+    matches = single_node_matcher(graph, 'TfKerasCenterCrop')
+    for m in matches:
+        crop = m['target']
+        crop_obj = NodeWrap(graph, crop)['object']
+        in_edges = graph.sorted_in_edges(crop, data=True)
+        if crop_obj is None or len(in_edges) < 1 or len(crop_obj.get_input_shapes()) < 1:
+            WARN('[Parser]: Meets invalid TfKerasCenterCrop Op (%s) in convert_centercrop!' % crop)
+            continue
+        input_shape = crop_obj.get_input_shapes()[0]
+        if input_shape is None or len(input_shape) < 3 or None in input_shape:
+            continue
+        input_rank = len(input_shape)
+        input_height = input_shape[-3]
+        input_width = input_shape[-2]
+        target_height = crop_obj.height
+        target_width = crop_obj.width
+        diff_height = input_height - target_height
+        diff_width = input_width - target_width
+        new_node_attr = crop_obj.copied_attr()
+        if diff_height < 0 or diff_width < 0:
+            WARN('[Parser]: The crop height(%d)/width(%d) should not be greater than input height(%d)/width(%d)!' %
+                 (target_height, target_width, input_height, input_width))
+            continue
+        starts = [0] * (input_rank - 3) + [int(diff_height / 2), int(diff_width / 2), 0]
+        sizes = input_shape[:-3] + [target_height, target_width] + input_shape[-1:]
+        ends = (np.array(starts) + np.array(sizes)).tolist()
+        new_node_attr.update({'starts': starts, 'ends': ends, 'opset_version': 1})
+        NodeWrap(graph, crop).replace_obj('Slice', new_node_attr)
+
+
 def convert_global_pooling(graph):
     op_types = KerasGlobalPoolingOp.get_concrete_subclass_names()
     matches = single_node_matcher(graph, op_types)
@@ -386,6 +420,7 @@ def process_keras_op_before_infer(graph):
 
     from ...lite.passes.front_passes import split_op_has_activation
     convert_gru_lstm(graph)
+    convert_centercrop(graph)
     convert_resizing(graph)
     split_op_has_activation(graph, is_tf_op=True)
 

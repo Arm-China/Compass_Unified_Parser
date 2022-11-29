@@ -119,6 +119,26 @@ class TfKerasBatchNormalizationOp(KerasNormalizationOp):
         self.set_out_tensor(out_tensor)
 
 
+class TfKerasCenterCropOp(OpHasOneOutPort, KerasOp):
+    @classmethod
+    def attributes(cls):
+        return {2: {'height': {'type': AttrType.INT, 'required': True},
+                    'width': {'type': AttrType.INT, 'required': True}}
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfKerasCenterCropOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfKerasCenterCropOp, attr_dict)
+        assert self.check_required(), 'TfKerasCenterCropOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(TfKerasCenterCropOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        crop = tf.keras.layers.CenterCrop(self.height, self.width)
+        out_tensor = crop(inputs[0]).numpy()
+        self.set_out_tensor(out_tensor)
+
+
 class TfKerasConcatenateOp(OpHasAxis, OpHasOneOutPort, KerasOp):
     @classmethod
     def attributes(cls):
