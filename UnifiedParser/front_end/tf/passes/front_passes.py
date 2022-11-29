@@ -838,20 +838,22 @@ def split_b2s(graph):
                     and crops.shape[1] == 2 \
                     and ((is_4d_input and crops.shape[0] == 2)
                          or (not is_4d_input and crops.shape[0] == 1)):
-                if crops[0, 1] == 0:
-                    crops[0, 1] = - output_shapes[0][1]
-                if is_4d_input and crops[1, 1] == 0:
-                    crops[1, 1] = - output_shapes[0][2]
                 in_shape = in_edges[0][2]['tensor'].shape
                 if is_4d_input:
                     block_size_y, block_size_x = block_shape.tolist()
                     dim1 = [block_size_y, block_size_x, -1] + list(in_shape[1:])
                     dim2 = [-1, in_shape[1] * block_size_y,
                             in_shape[2] * block_size_x, in_shape[-1]]
+                    if crops[0, 1] == 0:
+                        crops[0, 1] = -dim2[1]
+                    if crops[1, 1] == 0:
+                        crops[1, 1] = -dim2[2]
                 else:
                     block_size = block_shape.item()
                     dim1 = [block_size, -1] + list(in_shape[1:])
                     dim2 = [-1, in_shape[1] * block_size, in_shape[-1]]
+                    if crops[0, 1] == 0:
+                        crops[0, 1] = -dim2[1]
                 if is_4d_input and block_shape[0] == block_shape[1]:
                     block_size = block_shape[0]
                     trans1 = get_valid_node_name(graph, b2s + '_transpose1')
