@@ -134,7 +134,7 @@ def all_simple_paths(graph, source, target):
             nodes = G._adj_dict[vertex].keys()
             for w in nodes:
                 if w == target:
-                    yield seen+[target]
+                    yield seen + [target]
                 elif w not in seen:
                     queue.append(w)
                     seen.append(w)
@@ -185,7 +185,8 @@ def clear_redundant_nodes(g, outputs=None):
     '''Delete redundant nodes in the graph.'''
     noop_names = [n for n in g.nodes if g.get_node(n)._attr['op'] == 'Out'
                   and g.pred[n]
-                  and any([p in g._attr.get('output_names', []) for p in g.pred[n]])
+                  and (any([p in g._attr.get('output_names', []) for p in g.pred[n]])
+                       or len(g.succ[g.pred[n][0]]) > 1)
                   ]
     output_names = outputs if outputs else (
         noop_names if noop_names else g._attr.get('output_names', []))

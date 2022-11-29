@@ -257,8 +257,8 @@ class ErosionOp(OpHasPaddingStrides, OpHasWeights, OpHasOneOutPort, LayoutConcer
                            ) if self.data_format == 'NCHW' else inputs[0]
         out_tensor = tf.compat.v1.nn.erosion2d(inp,
                                                np.transpose(self.weights, [1, 2, 0]),
-                                               strides=[1]+self.strides+[1],
-                                               rates=[1]+self.dilations+[1],
+                                               strides=[1] + self.strides + [1],
+                                               rates=[1] + self.dilations + [1],
                                                padding='VALID' if self.auto_pad == 'NOTSET' else 'SAME').numpy()
 
         if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
@@ -319,7 +319,11 @@ class FullyConnectedOp(BaseLinearOp, CommonOp):
     def infer_shape(self):
         super(FullyConnectedOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = (tf.matmul(inputs[0], np.transpose(self.weights, axes=type(self).perm_onnx_to_tf()))
+        if inputs[0].dtype in ('int8', 'uint8'):
+            inp = inputs[0].astype(np.float32)
+        else:
+            inp = inputs[0]
+        out_tensor = (tf.matmul(inp, np.transpose(self.weights, axes=type(self).perm_onnx_to_tf()))
                       + self.biases
                       ).numpy()
         self.set_out_tensor(out_tensor)

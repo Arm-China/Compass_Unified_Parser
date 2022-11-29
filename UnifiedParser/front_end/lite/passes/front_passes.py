@@ -633,7 +633,8 @@ def convert_strided_slice(graph, op_type='TfStridedSlice'):
         strided_slice = m['target']
         slice_obj = NodeWrap(graph, strided_slice)['object']
         in_edges = graph.sorted_in_edges(strided_slice, keys=True, data=True)
-        if slice_obj is not None and len(in_edges) == 4:
+        out_edges = graph.sorted_out_edges(strided_slice, data=True)
+        if slice_obj is not None and len(in_edges) == 4 and len(out_edges) > 0:
             in_consts = slice_obj.sorted_in_consts()
             if len(in_consts) < 3 or (len(in_consts) == 3 and in_consts[0][0] == strided_slice):
                 WARN('[Parser]: Invalid StridedSlice (%s) to convert due to dynamic range of begin/end/strides in convert_strided_slice!' % strided_slice)
@@ -676,19 +677,26 @@ def convert_strided_slice(graph, op_type='TfStridedSlice'):
                                                                                                                                               end_mask)
 
                 if reshape_dim1 != None:
-                    src, dst, k, p_in_attr = in_edges[0]
+                    src, _, k, p_in_attr = in_edges[0]
                     insert_reshape(
                         graph, src, strided_slice, p_in_attr, reshape_dim1, key=k)
 
                 if reshape_dim2 != None:
                     post_reshape = get_valid_node_name(
                         graph, strided_slice + '_post_reshape')
-                    for _, dst, out_attr in graph.sorted_out_edges(strided_slice, data=True):
+                    for _, dst, out_attr in out_edges:
                         graph.remove_edge(strided_slice, dst)
                         graph.add_edge(
                             post_reshape, dst, **out_attr)
 
-                    graph.add_edge(strided_slice, post_reshape)
+                    slice_out_attr = {'src_out_port': 0, 'dst_in_port': 0}
+                    if out_edges[0][2]['tensor'].dtype is not None:
+                        slice_out_tensor = Tensor(dtype=out_edges[0][2]['tensor'].dtype,
+                                                  scale_zp=out_edges[0][2]['tensor'].scale_zp)
+                        slice_out_attr.update({'tensor': slice_out_tensor})
+                    graph.add_edge(strided_slice, post_reshape,
+                                   **slice_out_attr)
+
                     NodeWrap(graph, post_reshape).replace_obj(
                         'Reshape', {'name': post_reshape, 'opset_version': 1, 'shape': reshape_dim2})
                     last_name = post_reshape
@@ -696,15 +704,27 @@ def convert_strided_slice(graph, op_type='TfStridedSlice'):
                     if splits_dim != None:
                         post_split = get_valid_node_name(
                             graph, strided_slice + '_post_split')
-                        graph.remove_edge(strided_slice, post_reshape)
-                        graph.add_edge(strided_slice, post_split)
-                        graph.add_edge(post_split, post_reshape)
-
                         out = get_valid_node_name(graph, post_split + '_out')
-                        graph.add_edge(post_split, out, **
-                                       {'src_out_port': 1, 'dst_in_port': 0})
-                        NodeWrap(graph, out).replace_obj('Out', {'name': out})
+                        out_edges = graph.sorted_out_edges(strided_slice, data=True)
+                        slice_out_tensor = out_edges[0][2]['tensor']
+                        slice_out_attr = {'src_out_port': 0, 'dst_in_port': 0}
+                        split_out_attr = {'src_out_port': 0, 'dst_in_port': 0}
+                        split_out_1_attr = {'src_out_port': 1, 'dst_in_port': 0}
+                        if slice_out_tensor.dtype is not None:
+                            tensor = Tensor(dtype=out_attr['tensor'].dtype,
+                                            scale_zp=out_attr['tensor'].scale_zp)
+                            slice_out_attr.update(
+                                {'tensor': copy.deepcopy(tensor)})
+                            split_out_attr.update(
+                                {'tensor': copy.deepcopy(tensor)})
+                            split_out_1_attr.update(
+                                {'tensor': copy.deepcopy(tensor)})
 
+                        graph.remove_edge(strided_slice, post_reshape)
+                        graph.add_edge(strided_slice, post_split, **slice_out_attr)
+                        graph.add_edge(post_split, post_reshape, **split_out_attr)
+                        graph.add_edge(post_split, out, **split_out_1_attr)
+                        NodeWrap(graph, out).replace_obj('Out', {'name': out})
                         NodeWrap(graph, post_split).replace_obj(
                             'Split', {'name': post_split, 'opset_version': 11, 'axis': split_axis, 'split': splits_dim})
 
