@@ -372,7 +372,7 @@ def convert_resize_bilinear_nearest(graph):
                             np.array(size_value, np.int64), resize_bili_near, in_port=3)
             mode = 'linear' if resize_bili_near_obj.type == 'TfResizeBilinear' else 'nearest'
             if resize_bili_near_obj.align_corners:
-                nearest_mode = 'round_prefer_floor'
+                nearest_mode = 'round_prefer_ceil'
                 transform_mode = 'align_corners'
             else:
                 nearest_mode = 'floor'

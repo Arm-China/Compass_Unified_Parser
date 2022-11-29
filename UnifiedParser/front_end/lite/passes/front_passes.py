@@ -2160,7 +2160,7 @@ def convert_to_onnx(graph):
                     mode = 'linear' if pure_type == 'RESIZE_BILINEAR' else 'nearest'
                     if node_obj.align_corners:
                         coordinate_transformation_mode = 'align_corners'
-                        nearest_mode = 'round_prefer_floor'
+                        nearest_mode = 'round_prefer_ceil'
                     else:
                         if node_obj.half_pixel:
                             if mode == 'nearest':
