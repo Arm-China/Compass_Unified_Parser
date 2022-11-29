@@ -711,6 +711,7 @@ def insert_tile(graph, src, dst, in_attr, reps, key=None, type='Tile', data_form
             and reps is not None \
             and ((isinstance(reps, (list, tuple)) and len(reps) > 0) or (isinstance(reps, np.ndarray) and reps.size > 0)) \
             and type in ('Tile', 'ArmTile'):
+
         if isinstance(reps, (list, tuple)):
             reps = np.array(reps, np.int32)
         graph.remove_edge(src, dst, key=key)
@@ -732,7 +733,6 @@ def insert_tile(graph, src, dst, in_attr, reps, key=None, type='Tile', data_form
         dst_in_attr.update({'src_out_port': 0, 'tensor': tensor})
         graph.add_edge(tile, dst, **dst_in_attr)
 
-        tile_attr = NodeWrap(graph, dst)['object'].copied_attr()
         if type == 'Tile':
             const = get_valid_node_name(graph, tile + '_reps')
             graph.add_node(const)
@@ -745,10 +745,10 @@ def insert_tile(graph, src, dst, in_attr, reps, key=None, type='Tile', data_form
                                                             'opset_version': 9
                                                             }
                                                )
-            tile_attr.update({'name': tile, 'opset_version': 6})
+            tile_attr = {'name': tile, 'opset_version': 6}
             NodeWrap(graph, tile).replace_obj('Tile', tile_attr)
         else:
-            tile_attr.update({'name': tile, 'reps': reps.tolist()})
+            tile_attr = {'name': tile, 'reps': reps.tolist()}
             NodeWrap(graph, tile).replace_obj('ArmTile', tile_attr)
 
         ret = tile

@@ -315,7 +315,7 @@ class Op(abc.ABC):
             txt_file.write('layer_top_shape=[%s]\n' % string_list_to_string(
                 top_info[1] if len(top_info) >= 3 else []))
 
-            if self.quantize \
+            if self._graph._attr.get('quantize', False) \
                     and len(top_info) >= 4 \
                     and all('dtype' in info for info in top_info[3]):
                 top_type_str = string_list_to_string([info['dtype'] for info in top_info[3]])
@@ -330,7 +330,7 @@ class Op(abc.ABC):
                     if range_str:
                         txt_file.write('layer_top_range=[%s]\n' % range_str)
 
-            if self.quantize \
+            if self._graph._attr.get('quantize', False) \
                     and len(top_info) >= 4 \
                     and all('scale_zp' in info for info in top_info[3]):
                 scale_list = [info['scale_zp'][0].tolist() for info in top_info[3]]
