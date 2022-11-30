@@ -192,7 +192,7 @@ def rt_forward(model_path, feed_dict, output_names=None, save_output=True, proto
     return {}
 
 
-def opt_forward(txt_path, bin_path, feed_dict, output_names=None, save_output=True):
+def opt_forward(txt_path, bin_path, feed_dict, output_names=None, save_output=True, forward_type='float'):
     from .run_ir_forward import run_ir_forward
 
     with open(txt_path, 'r') as f:
@@ -220,7 +220,7 @@ def opt_forward(txt_path, bin_path, feed_dict, output_names=None, save_output=Tr
         else:
             ERROR('Cannot find output names from IR!')
 
-    outputs = run_ir_forward(txt_path, bin_path, ordered_feed_dict)
+    outputs = run_ir_forward(txt_path, bin_path, ordered_feed_dict, forward_type)
 
     if len(output_names) != len(outputs):
         WARN('Outputs name len != outputs data len. Will save parts of outputs.')
