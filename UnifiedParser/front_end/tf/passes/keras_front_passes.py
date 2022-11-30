@@ -371,7 +371,26 @@ def convert_to_onnx(graph):
                 node_obj.weights, axes=type(node_obj).perm_tf_to_onnx())
             new_node_attr.update({'weights': new_weights})
 
-        if pure_type == 'Flatten':
+        if pure_type in ('Cropping1D', 'Cropping2D', 'Cropping3D'):
+            if not is_first_input_valid(in_edges, input_shapes, 3):
+                continue
+            input_shape = input_shapes[0]
+            spatial_rank = len(input_shape) - 2
+            cropping = np.array(node_obj.cropping)
+            if cropping.size != spatial_rank * 2:
+                WARN('[Parser]: Meets invalid Cropping op for Node(%s) in convert_to_onnx!' % node_name)
+                continue
+            cropping = np.reshape(cropping, [spatial_rank, 2])
+            begin_crops = cropping[:, 0].tolist()
+            end_crops = cropping[:, 1].tolist()
+            if node_data_format == 'NCHW':
+                slice_starts = [0, 0] + begin_crops
+                slice_ends = input_shape[:2] + (-np.array(end_crops)).tolist()
+            else:
+                slice_starts = [0] + begin_crops + [0]
+                slice_ends = input_shape[:1] + (-np.array(end_crops)).tolist() + input_shape[-1:]
+            new_node_attr.update({'starts': slice_starts, 'ends': slice_ends})
+        elif pure_type == 'Flatten':
             if node_data_format == 'NCHW':
                 if not is_first_input_valid(in_edges, input_shapes):
                     continue

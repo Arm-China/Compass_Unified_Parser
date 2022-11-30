@@ -346,6 +346,91 @@ class TfKerasConv3DTransposeOp(KerasBaseDeconvOp):
         return {'type': 'ConvTranspose', 'version': 11}
 
 
+class TfKerasCropping1DOp(OpHasOneOutPort, KerasOp):
+    @classmethod
+    def attributes(cls):
+        return {2: {'cropping': {'required': False, 'default': [1, 1]}}
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfKerasCropping1DOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfKerasCropping1DOp, attr_dict)
+        assert self.check_required(), 'TfKerasCropping1DOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(TfKerasCropping1DOp, self).infer_shape()
+        if isinstance(self.cropping, int):
+            self.cropping = [self.cropping, self.cropping]
+        inputs = self.get_input_tensors()
+        crop = tf.keras.layers.Cropping1D(self.cropping)
+        out_tensor = crop(inputs[0]).numpy()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'Slice', 'version': 1}
+
+
+class TfKerasCropping2DOp(OpHasOneOutPort, LayoutConcernedOp, KerasOp):
+    @classmethod
+    def attributes(cls):
+        return {2: {'cropping': {'required': False, 'default': [[0, 0], [0, 0]]}}
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfKerasCropping2DOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfKerasCropping2DOp, attr_dict)
+        assert self.check_required(), 'TfKerasCropping2DOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(TfKerasCropping2DOp, self).infer_shape()
+        if isinstance(self.cropping, int):
+            self.cropping = [[self.cropping] * 2] * 2
+        elif isinstance(self.cropping, (list, tuple)):
+            assert len(self.cropping) == 2, 'Meet invalid cropping in TfKerasCropping2DOp!'
+            if all(isinstance(crop_val, int) for crop_val in self.cropping):
+                self.cropping = [[self.cropping[0]] * 2, [self.cropping[1]] * 2]
+        inputs = self.get_input_tensors()
+        crop = tf.keras.layers.Cropping2D(
+            self.cropping, 'channels_first' if self.data_format.startswith('NC') else 'channels_last')
+        out_tensor = crop(inputs[0]).numpy()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'Slice', 'version': 1}
+
+
+class TfKerasCropping3DOp(OpHasOneOutPort, LayoutConcernedOp, KerasOp):
+    @classmethod
+    def attributes(cls):
+        return {2: {'cropping': {'required': False, 'default': [[1, 1], [1, 1], [1, 1]]}}
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfKerasCropping3DOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfKerasCropping3DOp, attr_dict)
+        assert self.check_required(), 'TfKerasCropping3DOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(TfKerasCropping3DOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        if isinstance(self.cropping, int):
+            self.cropping = [[self.cropping] * 2] * 3
+        elif isinstance(self.cropping, (list, tuple)):
+            assert len(self.cropping) == 3, 'Meet invalid padding in TfKerasCropping3DOp!'
+            if all(isinstance(crop_val, int) for crop_val in self.cropping):
+                self.cropping = [[self.cropping[0]] * 2, [self.cropping[1]] * 2, [self.cropping[2]] * 2]
+        crop = tf.keras.layers.Cropping3D(
+            self.cropping, 'channels_first' if self.data_format.startswith('NC') else 'channels_last')
+        out_tensor = crop(inputs[0]).numpy()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'Slice', 'version': 1}
+
+
 class TfKerasELUOp(OpHasOneOutPort, KerasOp):
     @classmethod
     def attributes(cls):
