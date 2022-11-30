@@ -1131,7 +1131,7 @@ class OpHasWeights(Op):
             if self.weights_min_max:
                 txt_file.write('weights_range=[%s]\n' % num_list_to_string(
                     [float(np.min(m) if i == 0 else np.max(m)) for i, m in enumerate(self.weights_min_max)]))
-            if self.quantize \
+            if self._graph._attr.get('quantize', False) \
                     and np.issubdtype(self.weights.dtype, np.integer) \
                     and len(self.weights_scale_zp) == 2:
                 weights_scale = np.array(self.weights_scale_zp[0]).tolist()
@@ -1191,7 +1191,7 @@ class OpHasBiases(Op):
                            (self.biases.size * self.biases.dtype.itemsize))
             txt_file.write('biases_shape=[%s]\n' %
                            num_list_to_string(list(self.biases.shape)))
-            if self.quantize \
+            if self._graph._attr.get('quantize', False) \
                     and np.issubdtype(self.biases.dtype, np.integer) \
                     and len(self.biases_scale_zp) == 2:
                 biases_scale = np.array(self.biases_scale_zp[0]).tolist()
