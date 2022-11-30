@@ -2194,25 +2194,6 @@ def convert_to_onnx(graph):
                                           'coordinate_transformation_mode': coordinate_transformation_mode,
                                           'nearest_mode': nearest_mode
                                           })
-                elif pure_type == 'REVERSE_V2':
-                    in_edges = graph.sorted_in_edges(node_name, data=True)
-                    input_shapes = node_obj.get_input_shapes()
-                    if len(in_edges) >= 1 and len(input_shapes) >= 1 and len(input_shapes[0]) >= 2:
-                        in_shape = input_shapes[0]
-                        time_axis = node_obj.axis
-                        batch_axis = 1 - time_axis
-                        seq_len = np.ndarray([in_shape[batch_axis]], np.int32)
-                        for b in range(batch_axis):
-                            seq_len[b] = in_shape[time_axis]
-                        graph.remove_edges_from(in_edges[1:])
-                        insert_constant(
-                            graph, node_name + '_seq_len', seq_len, node_name, in_port=1, data_format='NHWC')
-                        new_node_attr.update(
-                            {'time_axis': time_axis, 'batch_axis': batch_axis})
-                    else:
-                        WARN(
-                            '[Parser]: Invalid TFlite REVERSE_V2 (%s) to convert in convert_to_onnx!' % node_name)
-                        continue
                 elif pure_type == 'SEGMENT_SUM':
                     new_node_attr.update({'method': 'SUM'})
                 elif pure_type == 'SELECT':

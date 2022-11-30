@@ -2098,16 +2098,25 @@ class LiteREVERSE_V2Op(OpHasAxis, OpHasOneOutPort, TfliteOp):
         self.update_attributes(LiteREVERSE_V2Op, attr_dict)
         assert self.check_required(), 'LiteREVERSE_V2Op is missing a required parameter.'
 
+    def __getattr__(self, item):
+        ret = None
+        try:
+            if item == 'axes':
+                ret = self.get_input_tensors()[1].tolist()
+                self.__dict__['_attr'][item].value = ret
+        except:
+            ret = None
+        if ret is None:
+            ret = super(LiteREVERSE_V2Op, self).__getattr__(item)
+        return ret
+
     def infer_shape(self):
         super(LiteREVERSE_V2Op, self).infer_shape()
         inputs = self.get_input_tensors()
+        if not self.is_all_inputs_const():
+            assert inputs[1].size == 1, 'LiteREVERSE_V2Op only supports 1 axis for now, but got %d' % inputs[1].size
         out_tensor = tf.reverse(*inputs).numpy()
         self.set_out_tensor(out_tensor)
-        self.axis = int(inputs[1])
-
-    @property
-    def correspond_onnx_op(self):
-        return {'type': 'ReverseSequence', 'version': 10}
 
 
 class LiteROUNDOp(OpHasOneOutPort, TfliteOp):

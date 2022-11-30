@@ -393,8 +393,11 @@ def convert_resize_bilinear_nearest(graph):
                 '[Parser]: Meets invalid Op (%s) in convert_resize_bilinear_nearest!' % resize_bili_near)
 
 
-def convert_reverse(graph):
-    matches = single_node_matcher(graph, 'TfReverseV2')
+def convert_reverse(graph, op_type='TfReverseV2'):
+    if op_type not in ('TfReverseV2', 'LiteREVERSE_V2'):
+        WARN('[Parser]: Meets invalid Op type (%s) in convert_reverse!' % op_type)
+        return
+    matches = single_node_matcher(graph, op_type)
     for m in matches:
         rev = m['target']
         rev_obj = NodeWrap(graph, rev)['object']
@@ -402,7 +405,7 @@ def convert_reverse(graph):
         if rev_obj is None or len(in_edges) < 1 \
                 or len(rev_obj.get_input_shapes()) < 1:
             WARN(
-                '[Parser]: Meets invalid TfReverseV2 (%s) in convert_reverse!' % rev)
+                '[Parser]: Meets invalid Op (%s) in convert_reverse!' % rev)
             continue
         input_shape = rev_obj.get_input_shapes()[0]
         if input_shape is None \

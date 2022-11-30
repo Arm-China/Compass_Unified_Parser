@@ -48,6 +48,9 @@ def process_tflite(model_path, params):
         convert_square(graph, 'LiteSQUARE')
         convert_square_diff(graph, 'LiteSQUARED_DIFFERENCE')
         convert_scatternd(graph, 'LiteSCATTER_ND')
+
+        from ..tf.passes.front_passes import convert_reverse
+        convert_reverse(graph, op_type='LiteREVERSE_V2')
         convert_reverse_sequence(graph, 'LiteREVERSE_SEQUENCE')
         convert_unpack(graph)
         convert_special_uni_seq_lstm(graph)
