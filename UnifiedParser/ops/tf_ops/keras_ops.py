@@ -647,6 +647,30 @@ class TfKerasLayerNormalizationOp(KerasNormalizationOp):
         return {'type': 'LayerNorm', 'version': None}
 
 
+class TfKerasLeakyReLUOp(OpHasOneOutPort, KerasOp):
+    @classmethod
+    def attributes(cls):
+        return {2: {'alpha': {'type': AttrType.FLOAT, 'required': False, 'default': 0.3},
+                    },
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfKerasLeakyReLUOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfKerasLeakyReLUOp, attr_dict)
+        assert self.check_required(), 'TfKerasLeakyReLUOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(TfKerasLeakyReLUOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        leaky_relu = tf.keras.layers.LeakyReLU(self.alpha)
+        out_tensor = leaky_relu(inputs[0]).numpy()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'LeakyRelu', 'version': 6}
+
+
 class TfKerasLSTMOp(KerasRecurrentOp):
     @classmethod
     def attributes(cls):
@@ -748,6 +772,33 @@ class TfKerasPermuteOp(OpHasOneOutPort, KerasOp):
         return {'type': 'Transpose', 'version': 1}
 
 
+class TfKerasPReLUOp(OpHasOneOutPort, KerasOp):
+    @classmethod
+    def attributes(cls):
+        return {2: {'alpha': {'type': AttrType.TENSOR, 'required': False, 'default': None},
+                    },
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfKerasPReLUOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfKerasPReLUOp, attr_dict)
+        assert self.check_required(), 'TfKerasPReLUOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(TfKerasPReLUOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        if self.alpha is None:
+            self.alpha = np.zeros_like(inputs[0])
+        pos = tf.keras.layers.ReLU()(inputs[0]).numpy()
+        neg = -self.alpha * (tf.keras.layers.ReLU()(-inputs[0]).numpy())
+        out_tensor = pos + neg
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'PRelu', 'version': 6}
+
+
 class TfKerasReshapeOp(OpHasOneOutPort, KerasOp):
     @classmethod
     def attributes(cls):
@@ -804,6 +855,30 @@ class TfKerasResizingOp(OpHasOneOutPort, KerasOp):
         resize = tf.keras.layers.Resizing(self.height, self.width, self.interpolation, self.crop_to_aspect_ratio)
         out_tensor = resize(inputs[0]).numpy()
         self.set_out_tensor(out_tensor)
+
+
+class TfKerasThresholdedReLUOp(OpHasOneOutPort, KerasOp):
+    @classmethod
+    def attributes(cls):
+        return {2: {'theta': {'type': AttrType.FLOAT, 'required': False, 'default': 1.0},
+                    },
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfKerasThresholdedReLUOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfKerasThresholdedReLUOp, attr_dict)
+        assert self.check_required(), 'TfKerasThresholdedReLUOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(TfKerasThresholdedReLUOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        thresholded_relu = tf.keras.layers.ThresholdedReLU(self.theta)
+        out_tensor = thresholded_relu(inputs[0]).numpy()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'ThresholdedRelu', 'version': 10}
 
 
 class TfKerasUpSampling1DOp(OpHasOneOutPort, KerasOp):

@@ -403,12 +403,16 @@ def convert_to_onnx(graph):
         elif pure_type == 'Permute':
             perm = [0] + list(node_obj.dims)
             new_node_attr.update({'perm': perm})
+        elif pure_type == 'PReLU':
+            insert_constant(graph, node_name + '_slope', node_obj.alpha, node_name, in_port=1, data_format='NHWC')
         elif pure_type == 'Reshape':
             if not is_first_input_valid(in_edges, input_shapes, 1):
                 continue
             batch_size = input_shapes[0][0]
             shape = [batch_size] + list(node_obj.target_shape)
             new_node_attr.update({'shape': shape})
+        elif pure_type == 'ThresholdedReLU':
+            new_node_attr.update({'alpha': node_obj.theta})
         elif pure_type in ('ZeroPadding1D', 'ZeroPadding2D', 'ZeroPadding3D'):
             if not is_first_input_valid(in_edges, input_shapes, 1):
                 continue
