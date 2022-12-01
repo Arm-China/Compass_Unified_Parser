@@ -677,14 +677,22 @@ class SwishOp(OpHasOneOutPort, CommonOp):
         self.set_out_tensor(out_tensor)
 
 
-class RollOp(OpHasOneOutPort, CommonOp):
+class RollOp(OpHasAxis, OpHasOneOutPort, CommonOp):
+    @classmethod
+    def attributes(cls):
+        return {'axes': {'type': AttrType.INTS, 'required': True},
+                'shift': {'type': AttrType.INTS, 'required': True}
+                }
+
     def __init__(self, graph, attr_dict=None):
         super(RollOp, self).__init__(graph, attr_dict)
+        self.update_attributes(RollOp, attr_dict)
+        assert self.check_required(), 'RollOp is missing a required parameter.'
 
     def infer_shape(self):
         super(RollOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.roll(*inputs).numpy()
+        out_tensor = tf.roll(inputs[0], self.shift, self.axes).numpy()
         self.set_out_tensor(out_tensor)
 
 

@@ -3356,6 +3356,19 @@ def convert_to_onnx(graph):
                     new_node_attr.update({'min': 0., 'max': 6.})
                 elif pure_type == 'RightShift':
                     new_node_attr.update({'direction': 'RIGHT'})
+                elif pure_type == 'Roll':
+                    if len(in_edges) == 3 \
+                            and in_edges[1][2]['tensor'].value is not None \
+                            and in_edges[2][2]['tensor'].value is not None \
+                            and in_edges[1][2]['tensor'].is_const \
+                            and in_edges[2][2]['tensor'].is_const:
+                        shift = np.atleast_1d(in_edges[1][2]['tensor'].value).tolist()
+                        axes = np.atleast_1d(in_edges[2][2]['tensor'].value).tolist()
+                        new_node_attr.update({'shift': shift, 'axes': axes})
+                        graph.remove_edges_from(in_edges[1:])
+                    else:
+                        WARN('[Parser]: Meets invalid TF Roll(%s) that cannot be converted to Onnx!' % node_name)
+                        continue
                 elif pure_type == 'ScatterNd':
                     # TfScatterNd should be converted in convert_scatternd.
                     # If not, then indices or shape is not constant.
