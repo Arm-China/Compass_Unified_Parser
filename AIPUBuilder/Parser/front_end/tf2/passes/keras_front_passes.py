@@ -5,13 +5,14 @@
 import numpy as np
 import re
 import copy
+import torch
 from ....ops.op import Op, OpHasAxis, OpHasWeights, KerasOp, KerasGlobalPoolingOp, KerasNeedBroadcast
 from ....graph.node_wrap import NodeWrap
 from ....graph.graph_algo import get_valid_node_name, clear_redundant_nodes
 from ....graph.pattern_match import matched_patterns, single_node_matcher
 from ...onnx.passes.common_passes import insert_constant, insert_reshape, insert_reshape_after, \
     insert_slice, insert_tile, insert_transpose, insert_transpose_after
-from ....common.defs import Tensor
+from ....common.defs import Tensor, FLOAT_EQUAL
 from ....common.utils import extend_lists
 from ....logger import INFO, DEBUG, WARN, ERROR, FATAL
 
@@ -396,6 +397,106 @@ def convert_gru_lstm(graph):
         NodeWrap(graph, rnn).replace_obj(dst_onnx_type, rnn_attr)
 
 
+def convert_relu(graph):
+    matched = False
+    matches = single_node_matcher(graph, 'TfKerasReLU')
+    for m in matches:
+        relu = m['target']
+        relu_obj = NodeWrap(graph, relu)['object']
+        in_edges = graph.sorted_in_edges(relu, data=True)
+        out_edges = graph.sorted_out_edges(relu, data=True)
+        if relu_obj is None or len(in_edges) < 1:
+            WARN('[Parser]: Meets invalid Op (%s) in convert_relu!' % relu)
+            continue
+        matched = True
+        threshold = np.array(relu_obj.threshold)
+        negative_slope = np.array(relu_obj.negative_slope)
+        negative_slope_is_zero = FLOAT_EQUAL(negative_slope, 0)
+        max_value = relu_obj.max_value
+        new_node_attr = relu_obj.copied_attr()
+
+        if max_value is None and FLOAT_EQUAL(threshold, 0):
+            if negative_slope_is_zero:
+                new_node_type = 'Relu'
+            else:
+                new_node_type = 'LeakyRelu'
+                new_node_attr.update({'alpha': negative_slope})
+            new_node_attr.update({'opset_version': 6})
+            NodeWrap(graph, relu).replace_obj(new_node_type, new_node_attr)
+            continue
+
+        graph.remove_edges_from(in_edges)
+        src, _, in_attr = in_edges[0]
+
+        # Step 1: For x > threshold, convert to thresholded_relu+min(which will make x<=threshold part becomes 0)
+        thresholded_relu = get_valid_node_name(graph, relu + '_thresholded_relu')
+        thresholded_relu_in_attr = copy.deepcopy(in_attr)
+        graph.add_edge(src, thresholded_relu, **thresholded_relu_in_attr)
+        thres_out_tensor = None if in_attr['tensor'].value is None else \
+            torch.nn.Threshold(threshold.item(), 0)(torch.tensor(in_attr['tensor'].value)).detach().numpy()
+        add_pos_in_tensor = thres_out_tensor
+        pos_last_node = thresholded_relu
+        if max_value is not None:
+            min_after_thres = get_valid_node_name(graph, thresholded_relu + '_min')
+            min_in_attr = {'tensor': Tensor(value=thres_out_tensor)}
+            graph.add_edge(thresholded_relu, min_after_thres, **min_in_attr)
+            insert_constant(graph, min_after_thres + '_operand', np.array(max_value),
+                            min_after_thres, in_port=1, data_format='NHWC')
+            add_pos_in_tensor = None if thres_out_tensor is None else \
+                np.maximum(thres_out_tensor, max_value)
+
+            min_attr = {'name': min_after_thres, 'opset_version': 12}
+            NodeWrap(graph, min_after_thres).replace_obj('Min', min_attr)
+            pos_last_node = min_after_thres
+
+        thresholded_relu_attr = {'name': thresholded_relu, 'opset_version': 10, 'alpha': threshold.item()}
+        NodeWrap(graph, thresholded_relu).replace_obj('ThresholdedRelu', thresholded_relu_attr)
+        if negative_slope_is_zero:
+            if relu in graph._attr['output_names']:
+                index = graph._attr['output_names'].index(relu)
+                graph._attr['output_names'][index] = pos_last_node
+            for _, dst, out_attr in out_edges:
+                graph.remove_edge(relu, dst)
+                graph.add_edge(pos_last_node, dst, **out_attr)
+            continue
+
+        # Step 2: For x < threshold, convert to sub+min+mul(which will make x>=threshold part becomes 0)
+        sub = get_valid_node_name(graph, relu + '_sub')
+        graph.add_edge(src, sub, **in_attr)
+        insert_constant(graph, relu + '_sub_operand', threshold, sub, in_port=1, data_format='NHWC')
+        min_after_sub = get_valid_node_name(graph, sub + '_min')
+        min_after_sub_in_tensor = None if in_attr['tensor'].value is None else (in_attr['tensor'].value - threshold)
+        min_after_sub_in_attr = {'tensor': Tensor(value=min_after_sub_in_tensor)}
+        graph.add_edge(sub, min_after_sub, **min_after_sub_in_attr)
+        insert_constant(graph, min_after_sub + '_zero', np.array(0.), min_after_sub, in_port=1, data_format='NHWC')
+        mul_after_min = get_valid_node_name(graph, relu + '_mul')
+        mul_after_min_in_tensor = None if min_after_sub_in_tensor is None else np.minimum(min_after_sub_in_tensor, 0)
+        mul_after_min_in_attr = {'tensor': Tensor(value=mul_after_min_in_tensor)}
+        graph.add_edge(min_after_sub, mul_after_min, **mul_after_min_in_attr)
+        insert_constant(graph, mul_after_min + '_mul_operand', negative_slope,
+                        mul_after_min, in_port=1, data_format='NHWC')
+        mul_after_min_out_tensor = None if mul_after_min_in_tensor is None else \
+            mul_after_min_in_tensor * negative_slope
+
+        sub_attr = {'name': sub, 'opset_version': 13}
+        NodeWrap(graph, sub).replace_obj('Sub', sub_attr)
+        min_after_sub_attr = {'name': min_after_sub, 'opset_version': 13}
+        NodeWrap(graph, min_after_sub).replace_obj('Min', min_after_sub_attr)
+        mul_after_min_attr = {'name': mul_after_min, 'opset_version': 13}
+        NodeWrap(graph, mul_after_min).replace_obj('Mul', mul_after_min_attr)
+
+        # Step 3: Add above 2 steps to get the final output if negative_slope is not 0
+        add_neg_in_attr = {'src_out_port': 0, 'dst_in_port': 0, 'tensor': Tensor(value=mul_after_min_out_tensor)}
+        graph.add_edge(mul_after_min, relu, **add_neg_in_attr)
+        add_pos_in_attr = {'src_out_port': 0, 'dst_in_port': 1, 'tensor': Tensor(value=add_pos_in_tensor)}
+        graph.add_edge(pos_last_node, relu, **add_pos_in_attr)
+
+        new_node_attr.update({'opset_version': 13})
+        NodeWrap(graph, relu).replace_obj('Add', new_node_attr)
+    if matched:
+        clear_redundant_nodes(graph)
+
+
 def convert_resizing(graph):
     matches = single_node_matcher(graph, ['TfKerasResizing', 'TfKerasUpSampling1D',
                                   'TfKerasUpSampling2D', 'TfKerasUpSampling3D'])
@@ -686,6 +787,7 @@ def process_keras_op_before_infer(graph):
     convert_bidirectional(graph)
     convert_gru_lstm(graph)
     convert_centercrop(graph)
+    convert_relu(graph)
     convert_resizing(graph)
     split_op_has_activation(graph, is_tf_op=True)
     multidirectional_broadcasting(graph)

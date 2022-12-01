@@ -821,6 +821,28 @@ class TfKerasPReLUOp(OpHasOneOutPort, KerasOp):
         return {'type': 'PRelu', 'version': 6}
 
 
+class TfKerasReLUOp(OpHasOneOutPort, KerasOp):
+    @classmethod
+    def attributes(cls):
+        return {2: {'max_value': {'type': AttrType.FLOAT, 'required': False, 'default': None},
+                    'negative_slope': {'type': AttrType.FLOAT, 'required': False, 'default': 0.},
+                    'threshold': {'type': AttrType.FLOAT, 'required': False, 'default': 0.},
+                    }
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfKerasReLUOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfKerasReLUOp, attr_dict)
+        assert self.check_required(), 'TfKerasReLUOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(TfKerasReLUOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        relu = tf.keras.layers.ReLU(self.max_value, self.negative_slope, self.threshold)
+        out_tensor = relu(inputs[0]).numpy()
+        self.set_out_tensor(out_tensor)
+
+
 class TfKerasReshapeOp(OpHasOneOutPort, KerasOp):
     @classmethod
     def attributes(cls):
