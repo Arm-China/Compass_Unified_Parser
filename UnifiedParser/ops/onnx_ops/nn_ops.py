@@ -344,7 +344,7 @@ class ConvIntegerOp(BaseConvOp, OnnxOp):
         self.set_out_tensor(out_tensor)
 
 
-class ConvTransposeOp(BaseConvOp, OnnxOp):
+class ConvTransposeOp(BaseDeconvOp, OnnxOp):
     @classmethod
     def attributes(cls):
         return {1: {'output_padding': {'type': AttrType.INTS, 'default': [], 'required': False},
@@ -365,7 +365,6 @@ class ConvTransposeOp(BaseConvOp, OnnxOp):
         super(ConvTransposeOp, self).__init__(graph, attr_dict)
         self.update_attributes(ConvTransposeOp, attr_dict)
         assert self.check_required(), 'ConvTransposeOp is missing a required parameter.'
-        self.pads_updated = False
 
     def __getattr__(self, item):
         ret = None
@@ -390,10 +389,7 @@ class ConvTransposeOp(BaseConvOp, OnnxOp):
         inputs = self.get_input_tensors()
         if len(inputs[0].shape) == 3 and len(self.output_padding) == 2:
             self.output_padding = self.output_padding[1:]
-        if not self.pads_updated:
-            self.update_pads(
-                inputs[0].shape[1:-1] if self.data_format == 'NHWC' else inputs[0].shape[2:])
-            self.pads_updated = True
+        self.update_pads(inputs[0].shape[1:-1] if self.data_format == 'NHWC' else inputs[0].shape[2:])
         if self.biases is None:
             self.biases = np.zeros(self.num_output, np.float32)
         if self.data_format == 'NHWC':
@@ -405,42 +401,6 @@ class ConvTransposeOp(BaseConvOp, OnnxOp):
                          self.num_output] + self.output_shape
         out_tensor = np.random.ranf(size=out_shape).astype(np.float32)
         self.set_out_tensor(out_tensor)
-
-    def update_pads(self, input_shape):
-        assert input_shape, 'input_shape does not exist in ConvTransposeOp update_pads.'
-        if self.output_shape:
-            self.pads, self.output_padding = OpHasPaddingStrides.cal_pads(
-                input_shape,
-                self.output_shape,
-                self.strides,
-                self.kernel_shape,
-                self.auto_pad,
-                dilations=self.dilations,
-                is_transpose=True,
-                zero_minimum=True,
-                out_padding=self.output_padding
-            )
-            self.auto_pad = 'NOTSET'
-        else:
-            if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
-                self.pads, _ = OpHasPaddingStrides.cal_pads(
-                    input_shape,
-                    (np.array(input_shape) * np.array(self.strides)).tolist(),
-                    self.strides,
-                    self.kernel_shape,
-                    self.auto_pad,
-                    dilations=self.dilations,
-                    is_transpose=True,
-                    zero_minimum=True,
-                    out_padding=self.output_padding
-                )
-            self.output_shape = BaseDeconvOp.cal_out_shape(input_shape,
-                                                           self.pads,
-                                                           self.strides,
-                                                           self.kernel_shape,
-                                                           self.output_padding,
-                                                           self.dilations)
-            self.auto_pad = 'NOTSET'
 
 
 class DropoutOp(OpHasVariableOutPorts, OnnxOp):

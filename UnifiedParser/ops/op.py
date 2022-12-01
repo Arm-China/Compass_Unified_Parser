@@ -1355,7 +1355,8 @@ class BaseDeconvOp(BaseConvOp):
 
     @classmethod
     def attributes(cls):
-        return {'output_padding': {'type': AttrType.INTS, 'required': False, 'default': None}
+        return {'output_padding': {'type': AttrType.INTS, 'required': False, 'default': None},
+                'pads_updated': {'type': AttrType.INT, 'options': [0, 1], 'default': 0}
                 }
 
     @classmethod
@@ -1365,6 +1366,17 @@ class BaseDeconvOp(BaseConvOp):
     def __init__(self, graph, attr_dict=None):
         super(BaseDeconvOp, self).__init__(graph, attr_dict)
         self.update_attributes(BaseDeconvOp, attr_dict)
+
+    def __getattr__(self, item):
+        ret = None
+        try:
+            if item == 'pads_updated':
+                ret = bool(self.__dict__['_attr'][item].value)
+        except:
+            ret = None
+        if ret is None:
+            ret = super(BaseDeconvOp, self).__getattr__(item)
+        return ret
 
     @abc.abstractmethod
     def infer_shape(self):
@@ -1378,6 +1390,8 @@ class BaseDeconvOp(BaseConvOp):
                 self.output_padding = [0] * (len(input_shapes[main_in_port]) - 2)
 
     def update_pads(self, input_shape):
+        if self.pads_updated:
+            return
         assert input_shape, 'input_shape does not exist in BaseDeconvOp update_pads.'
         if self.output_shape:
             self.pads, self.output_padding = OpHasPaddingStrides.cal_pads(
@@ -1412,6 +1426,7 @@ class BaseDeconvOp(BaseConvOp):
                                                            self.output_padding,
                                                            self.dilations)
             self.auto_pad = 'NOTSET'
+        self.pads_updated = True
 
 
 class BaseActivationOp(OpHasOneOutPort):
