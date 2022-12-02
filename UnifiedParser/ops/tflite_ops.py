@@ -466,7 +466,7 @@ class LiteCONV_3DOp(BaseActivationOp, BaseConvOp, TfliteOp):
         return {'type': 'Conv', 'version': 1}
 
 
-class LiteCONV_3D_TRANSPOSEOp(BaseActivationOp, BaseConvOp, TfliteOp):
+class LiteCONV_3D_TRANSPOSEOp(BaseActivationOp, BaseDeconvOp, TfliteOp):
     @classmethod
     def attributes(cls):
         return {1: {'output_shape': {'type': AttrType.INTS}},
@@ -527,10 +527,6 @@ class LiteCONV_3D_TRANSPOSEOp(BaseActivationOp, BaseConvOp, TfliteOp):
             out_tensor, self.biases, data_format='NHWC').numpy()
         self.set_out_tensor(out_tensor)
         self.output_shape = inputs[0].tolist()[1:-1]
-
-    @property
-    def correspond_onnx_op(self):
-        return {'type': 'ConvTranspose', 'version': 1}
 
 
 class LiteCUMSUMOp(OpHasOneOutPort, OpHasAxis, TfliteOp):
@@ -2737,7 +2733,7 @@ class LiteTRANSPOSEOp(OpHasOneOutPort, TfliteOp):
         return {'type': 'Transpose', 'version': 1}
 
 
-class LiteTRANSPOSE_CONVOp(BaseDeconvOp, TfliteOp):
+class LiteTRANSPOSE_CONVOp(BaseActivationOp, BaseDeconvOp, TfliteOp):
     @classmethod
     def attributes(cls):
         return {1: {'output_shape': {'type': AttrType.INTS}},
@@ -2783,10 +2779,6 @@ class LiteTRANSPOSE_CONVOp(BaseDeconvOp, TfliteOp):
             out_tensor, self.biases, data_format='NHWC').numpy()
         self.set_out_tensor(out_tensor)
         self.output_shape = inputs[0].tolist()[1:-1]
-
-    @property
-    def correspond_onnx_op(self):
-        return {'type': 'ConvTranspose', 'version': 1}
 
 
 class LiteUNIDIRECTIONAL_SEQUENCE_LSTMOp(OpHasOneOutPort, TfliteOp):
