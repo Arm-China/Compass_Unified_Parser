@@ -3637,18 +3637,16 @@ def remove_redundant_reshape_transpose(graph):
     for m in matches:
         obj_dict = {name: NodeWrap(graph, m[name])['object']
                     for name in ['reshape_1', 'transpose', 'reshape_2']}
-        if any(obj is None for obj in obj_dict.values()):
+        reshape_1_in_edges = graph.sorted_in_edges(m['reshape_1'], data=True)
+        if any(obj is None for obj in obj_dict.values()) \
+                or len(obj_dict['reshape_1'].get_input_shapes()) < 1 \
+                or len(reshape_1_in_edges) < 1:
             WARN('[Parser]: Meets invalid Node in remove_redundant_reshape_transpose!')
             continue
-        reshape_1_in_edges = graph.sorted_in_edges(m['reshape_1'], data=True)
         reshape_1_out_edges = graph.sorted_out_edges(m['reshape_1'], data=True)
         transpose_out_edges = graph.sorted_out_edges(m['transpose'], data=True)
 
-        if len(obj_dict['reshape_1'].get_input_shapes()) < 1 \
-                or len(reshape_1_out_edges) != 1 \
-                or len(transpose_out_edges) != 1 \
-                or len(reshape_1_in_edges) < 1:
-            WARN('[Parser]: Meets invalid node in remove_redundant_reshape_transpose!')
+        if len(reshape_1_out_edges) != 1 or len(transpose_out_edges) != 1:
             continue
         inp, _, in_attr = reshape_1_in_edges[0]
         in_shape = obj_dict['reshape_1'].get_input_shapes()[0]

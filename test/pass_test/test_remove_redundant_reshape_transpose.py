@@ -80,6 +80,5 @@ create_reshape_transpose_model2(model_path, input_shape)
 # Run tests with parser and compare result with runtime
 exit_status = run_parser(
     model_path, feed_dict, model_type='tf', save_output=True, verify=True,
-    expected_keywords=['BatchNorm'],
-    unexpected_keywords=['Reshape', 'Transpose'])
+    expected_keywords=['BatchNorm', 'Reshape', 'Transpose'])
 assert exit_status

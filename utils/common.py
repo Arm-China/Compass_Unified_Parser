@@ -20,27 +20,27 @@ def check_float_ir(ir_txt_path, expected_keywords, unexpected_keywords=[]):
         expected_keywords = [expected_keywords]
     if not isinstance(unexpected_keywords, list):
         unexpected_keywords = [unexpected_keywords]
-    expected_res = [False] * len(expected_keywords)
-    unexpected_res = [False] * len(unexpected_keywords)
+    found_expected = [False] * len(expected_keywords)
+    found_unexpected = [False] * len(unexpected_keywords)
     with open(ir_txt_path) as f:
         for line in f:
             ex_rets = [True if word in line else False for word in expected_keywords]
             if any(ex_rets):
                 for idx, ret in enumerate(ex_rets):
-                    expected_res[idx] |= ret
-            unex_rets = [True if word not in line else False for word in unexpected_keywords]
+                    found_expected[idx] |= ret
+            unex_rets = [True if word in line else False for word in unexpected_keywords]
             if any(unex_rets):
                 for idx, ret in enumerate(unex_rets):
-                    unexpected_res[idx] |= ret
-    if all(expected_res) and all(unexpected_res):
+                    found_unexpected[idx] |= ret
+    if all(found_expected) and not any(found_unexpected):
         INFO('No issue found in checking IR file!')
         return True
-    if not all(expected_res):
-        words_not_found = [expected_keywords[idx] for idx, res in enumerate(expected_res) if not res]
+    if not all(found_expected):
+        words_not_found = [expected_keywords[idx] for idx, res in enumerate(found_expected) if not res]
         WARN('Cannot find expected words(%s) in IR!' % str(words_not_found))
-    if not all(unexpected_res):
-        words_found = [unexpected_keywords[idx] for idx, res in enumerate(unexpected_res) if not res]
-        WARN('Find unexpected words(%s) in IR!' % str(words_not_found))
+    if any(found_unexpected):
+        words_found = [unexpected_keywords[idx] for idx, res in enumerate(found_unexpected) if res]
+        WARN('Find unexpected words(%s) in IR!' % str(words_found))
     return False
 
 
