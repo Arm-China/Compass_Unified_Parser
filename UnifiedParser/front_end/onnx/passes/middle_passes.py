@@ -13,7 +13,7 @@ from ....common.utils import extend_lists, get_converted_dtype
 from ....graph.node_wrap import NodeWrap
 from ....graph.pattern_match import matched_patterns, single_node_matcher, two_nodes_matcher
 from ....graph.graph_algo import get_valid_node_name, clear_redundant_nodes, determined_sort, all_simple_paths, has_path
-from ....ops.op import Op, BaseLinearOp, BaseConvOp, BaseOnnxPoolOp, OpHasOneOutPort, OpHasPaddingStrides, OpHasAxis, \
+from ....ops.op import Op, BaseLinearOp, BaseConvOp, BaseDeconvOp, BaseOnnxPoolOp, OpHasOneOutPort, OpHasPaddingStrides, OpHasAxis, \
     OnnxOp, CommonOp, OpNeedBroadcast, OpNeedUniBroadcast
 from ....ops.onnx_ops.array_ops import ReshapeOp
 from .common_passes import fuse_const, remove_useless_op, remove_node_safely, insert_reshape, insert_reshape_after, \
@@ -2545,6 +2545,10 @@ def merge_dilated_conv(graph):
     for m in all_matches:
         pad, trans1, s2d, trans2, conv, slice = m['pad'], m['transpose_1'], m[
             'space_to_depth'], m['transpose_2'], m['conv'], m['slice']
+        in_edges = graph.sorted_in_edges(pad, data=True)
+        if len(in_edges) < 1:
+            WARN('[Parser]: The length of in_edges of Pad(%s) is invalid in merge_dilated_conv!' % pad)
+            continue
         trans5 = graph.succ[slice][0] if len(graph.succ[slice]) > 0 else None
         pad_obj = NodeWrap(graph, pad)['object']
         trans1_obj = NodeWrap(graph, trans1)['object']
@@ -2567,7 +2571,6 @@ def merge_dilated_conv(graph):
                 pad_obj.data_format = 'NHWC'
             block_size = s2d_obj.blocksize
             conv_obj.dilations = [block_size, block_size]
-
             sliced = type(slice_obj).cal_sliced(slice_obj.starts if len(slice_obj.starts) == 2 else slice_obj.starts[1:3],
                                                 slice_obj.ends if len(
                                                     slice_obj.ends) == 2 else slice_obj.ends[1:3],
@@ -2576,14 +2579,18 @@ def merge_dilated_conv(graph):
                 + np.reshape(np.array(pad_obj.space_pads(), np.int64), newshape=(2, -1)) \
                 - np.reshape(sliced, newshape=(2, -1))
             conv_obj.pads = fused_pads.flatten().tolist()
-            conv_obj.auto_pad = 'VALID' if np.all(
-                np.array(conv_obj.pads, np.int64) == 0) else 'SAME_UPPER'
             if hasattr(conv_obj, 'output_shape'):
                 conv_obj.output_shape = slice_obj.get_output_shapes()[0][1:3]
-
-            in_edges = graph.sorted_in_edges(pad, data=True)
-            assert len(
-                in_edges) >= 1, 'The length of in_edges of pad is invalid in merge_dilated_conv.'
+            if isinstance(conv_obj, BaseDeconvOp):
+                conv_obj.pads_updated = False
+                pad_in_shape = pad_obj.get_input_shapes()[0]
+                if pad_in_shape is not None and all(s is not None for s in pad_in_shape):
+                    conv_sptial_in_shape = pad_in_shape[1:-1] if conv_obj.data_format == 'NHWC' else pad_in_shape[-2:]
+                    conv_obj.update_pads(conv_sptial_in_shape)
+            else:
+                conv_obj.auto_pad = 'VALID' \
+                    if np.all(np.array(conv_obj.pads, np.int64) == 0) \
+                    else 'SAME_UPPER'
             out_node = slice if trans5_obj is None else trans5
             out_edges = graph.sorted_out_edges(out_node, data=True)
             graph.remove_edges_from(in_edges[1:])
@@ -2687,10 +2694,16 @@ def merge_dilated_conv_group(graph):
                 and bias_add_2_obj is not None \
                 and slice_1_obj is not None \
                 and slice_2_obj is not None:
+            pad_in_edges = graph.sorted_in_edges(pad, data=True)
+            if len(pad_in_edges) < 1:
+                WARN('[Parser]: The length of in_edges of Pad(%s) is invalid in merge_dilated_conv_group!' % pad)
+                continue
+
             matched = True
             block_size = s2d_obj.blocksize
             pad_pads = np.reshape(
                 np.array(pad_obj.space_pads(), np.int64), newshape=(2, -1))
+
             sliced_pads_1 = type(slice_1_obj).cal_sliced(slice_1_obj.starts if len(slice_1_obj.starts) == 2 else slice_1_obj.starts[1:3],
                                                          slice_1_obj.ends if len(
                                                              slice_1_obj.ends) == 2 else slice_1_obj.ends[1:3],
@@ -2699,11 +2712,18 @@ def merge_dilated_conv_group(graph):
                 + pad_pads \
                 - np.reshape(np.array(sliced_pads_1, np.int64),
                              newshape=(2, -1))
-            conv_1_obj.auto_pad = 'VALID' if np.all(
-                fused_pads1 == 0) else 'SAME_UPPER'
+            if isinstance(conv_1_obj, BaseDeconvOp):
+                conv_1_obj.pads_updated = False
+                pad_in_shape = pad_obj.get_input_shapes()[0]
+                if pad_in_shape is not None and all(s is not None for s in pad_in_shape):
+                    conv_sptial_in_shape = pad_in_shape[1:-1] if conv_1_obj.data_format == 'NHWC' else pad_in_shape[-2:]
+                    conv_1_obj.update_pads(conv_sptial_in_shape)
+            else:
+                conv_1_obj.auto_pad = 'VALID' if np.all(fused_pads1 == 0) else 'SAME_UPPER'
             conv_1_obj.pads = fused_pads1.flatten().tolist()
             conv_1_obj.dilations = [block_size, block_size]
             conv_1_obj.biases += bias_add_1_obj.sorted_in_consts()[0][2]
+
             sliced_pads_2 = type(slice_2_obj).cal_sliced(slice_2_obj.starts if len(slice_2_obj.starts) == 2 else slice_2_obj.starts[1:3],
                                                          slice_2_obj.ends if len(
                                                              slice_2_obj.ends) == 2 else slice_2_obj.ends[1:3],
@@ -2712,15 +2732,18 @@ def merge_dilated_conv_group(graph):
                 + pad_pads \
                 - np.reshape(np.array(sliced_pads_2, np.int64),
                              newshape=(2, -1))
-            conv_2_obj.auto_pad = 'VALID' if np.all(
-                fused_pads2 == 0) else 'SAME_UPPER'
+            if isinstance(conv_2_obj, BaseDeconvOp):
+                conv_2_obj.pads_updated = False
+                pad_in_shape = pad_obj.get_input_shapes()[0]
+                if pad_in_shape is not None and all(s is not None for s in pad_in_shape):
+                    conv_sptial_in_shape = pad_in_shape[1:-1] if conv_2_obj.data_format == 'NHWC' else pad_in_shape[-2:]
+                    conv_2_obj.update_pads(conv_sptial_in_shape)
+            else:
+                conv_2_obj.auto_pad = 'VALID' if np.all(fused_pads2 == 0) else 'SAME_UPPER'
             conv_2_obj.pads = fused_pads2.flatten().tolist()
             conv_2_obj.dilations = [block_size, block_size]
             conv_2_obj.biases += bias_add_2_obj.sorted_in_consts()[0][2]
 
-            pad_in_edges = graph.sorted_in_edges(pad, data=True)
-            assert len(
-                pad_in_edges) == 1, 'The length of in_edges of pad is invalid in merge_dilated_conv.'
             bias_add_1_out_edges = graph.sorted_out_edges(
                 bias_add_1, data=True)
             bias_add_2_out_edges = graph.sorted_out_edges(

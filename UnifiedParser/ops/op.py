@@ -1391,6 +1391,7 @@ class BaseDeconvOp(BaseConvOp):
 
     def update_pads(self, input_shape):
         if self.pads_updated:
+            DEBUG('[Parser]: Pad already updated for %s Op(%s)!' % (type(self).__name__, self.name))
             return
         assert input_shape, 'input_shape does not exist in BaseDeconvOp update_pads.'
         if self.output_shape:
