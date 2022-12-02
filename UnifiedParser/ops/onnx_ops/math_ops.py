@@ -1333,7 +1333,14 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
                             (np.reshape(self.roi, (2, -1))
                              [1, :] - np.reshape(self.roi, (2, -1))[0, :])
                 out_shape = np.floor(base_shape).astype(np.int64).tolist()
-        out_tensor = np.random.ranf(out_shape).astype(inputs[0].dtype)
+        if self.is_all_inputs_const():
+            if FLOAT_EQUAL(inputs[0], 0):
+                out_tensor = np.zeros(out_shape).astype(inputs[0].dtype)
+            else:
+                WARN('[Parser]: Non-zero constant inputs for Resize op is unsupported for now!')
+                out_tensor = None
+        else:
+            out_tensor = np.random.ranf(out_shape).astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
     def convert_version(self):
