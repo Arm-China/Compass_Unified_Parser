@@ -30,7 +30,7 @@ def create_reverse_model(pb_file_path, input_size, axis, is_const_input=False):
 
 
 TEST_NAME = 'reverse'
-input_shapes = [[10], [4, 5], [4, 2, 3, 5]]
+input_shapes = [[10], [4, 5, 7], [4, 2, 3, 5]]
 axes = [[0], [-1], [3, 1]]  # TODO: Consider multiple axis, like [1, 3]
 
 # Generate input data

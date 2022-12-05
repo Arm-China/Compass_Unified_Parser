@@ -431,7 +431,7 @@ def convert_reverse(graph, op_type='TfReverseV2'):
             post_perm = Op.cal_inverse_perm(pre_perm)
             out_node = insert_transpose_after(graph, rev, post_perm)
             time_axis = 0
-            batch = input_shape[1]
+            batch = input_shape[0]
             seq_length = input_shape[rev_axis]
         seq_len = np.array([seq_length] * batch, np.int32)
         graph.remove_edges_from(in_edges[1:])
