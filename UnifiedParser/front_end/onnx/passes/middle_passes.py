@@ -6189,6 +6189,13 @@ def split_conv_transpose(graph):
             continue
         if all(p == 0 for p in conv_trans_obj.output_padding):
             continue
+        strides = np.array(conv_trans_obj.strides)
+        dilations = np.array(conv_trans_obj.dilations)
+        output_padding = np.array(conv_trans_obj.output_padding)
+        if np.any(np.logical_and(output_padding >= strides, output_padding >= dilations)):
+            WARN('[Parser]: Onnx %s (%s) output_padding should be less than stride or dilation!'
+                 % (type(conv_trans_obj).__name__, conv_trans_obj.name))
+            continue
         spatial_rank = len(conv_trans_obj.output_padding)
         ori_output_shape = conv_trans_obj.get_output_shapes()[0]
         data_format = conv_trans_obj.data_format
