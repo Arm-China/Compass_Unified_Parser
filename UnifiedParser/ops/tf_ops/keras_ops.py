@@ -8,7 +8,28 @@ from ..op import *
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
-class TfKerasAverageOp(OpHasOneOutPort, KerasOp):
+class TfKerasAddOp(OpHasOneOutPort, KerasNeedBroadcast):
+    @classmethod
+    def attributes(cls):
+        return {2: {}}
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfKerasAddOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfKerasAddOp, attr_dict)
+        assert self.check_required(), 'TfKerasAddOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(TfKerasAddOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = tf.keras.layers.Add()([*inputs]).numpy()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'Sum', 'version': 6}
+
+
+class TfKerasAverageOp(OpHasOneOutPort, KerasNeedBroadcast):
     def infer_shape(self):
         super(TfKerasAverageOp, self).infer_shape()
         inputs = self.get_input_tensors()
@@ -57,27 +78,6 @@ class TfKerasAveragePooling3DOp(KerasPoolingOp):
     @property
     def correspond_onnx_op(self):
         return {'type': 'AveragePool', 'version': 10}
-
-
-class TfKerasAddOp(OpHasOneOutPort, KerasOp):
-    @classmethod
-    def attributes(cls):
-        return {2: {}}
-
-    def __init__(self, graph, attr_dict=None):
-        super(TfKerasAddOp, self).__init__(graph, attr_dict)
-        self.update_attributes(TfKerasAddOp, attr_dict)
-        assert self.check_required(), 'TfKerasAddOp is missing a required parameter.'
-
-    def infer_shape(self):
-        super(TfKerasAddOp, self).infer_shape()
-        inputs = self.get_input_tensors()
-        out_tensor = tf.keras.layers.Add()([*inputs]).numpy()
-        self.set_out_tensor(out_tensor)
-
-    @property
-    def correspond_onnx_op(self):
-        return {'type': 'Sum', 'version': 6}
 
 
 class TfKerasBatchNormalizationOp(KerasNormalizationOp):
@@ -748,7 +748,7 @@ class TfKerasMaxPooling3DOp(KerasPoolingOp):
         return {'type': 'MaxPool', 'version': 10}
 
 
-class TfKerasMaximumOp(OpHasOneOutPort, KerasOp):
+class TfKerasMaximumOp(OpHasOneOutPort, KerasNeedBroadcast):
     @classmethod
     def attributes(cls):
         return {2: {}}
@@ -769,7 +769,7 @@ class TfKerasMaximumOp(OpHasOneOutPort, KerasOp):
         return {'type': 'Max', 'version': 6}
 
 
-class TfKerasMinimumOp(OpHasOneOutPort, KerasOp):
+class TfKerasMinimumOp(OpHasOneOutPort, KerasNeedBroadcast):
     @classmethod
     def attributes(cls):
         return {2: {}}
@@ -790,7 +790,7 @@ class TfKerasMinimumOp(OpHasOneOutPort, KerasOp):
         return {'type': 'Min', 'version': 6}
 
 
-class TfKerasMultiplyOp(OpHasOneOutPort, KerasOp):
+class TfKerasMultiplyOp(OpHasOneOutPort, KerasNeedBroadcast):
     @classmethod
     def attributes(cls):
         return {2: {}}

@@ -2548,6 +2548,35 @@ class KerasGlobalPoolingOp(OpHasOneOutPort, LayoutConcernedOp, KerasOp):
         return ret
 
 
+class KerasNeedBroadcast(KerasOp):
+    '''
+    Class KerasNeedBroadcast inherited from KerasOp class.
+    Keras ops that support broadcast must inherit this class.
+    '''
+    @staticmethod
+    def cal_reshape_and_tile(input_shapes):
+        '''Calculates the parameters of reshape and tile.'''
+        ret = []
+        if len(input_shapes) < 2 or all(np.array_equal(shape, input_shapes[0]) for shape in input_shapes[1:]):
+            return ret
+        batch_size = input_shapes[0][0] if len(input_shapes[0]) >= 1 else None
+        if batch_size is None \
+                or any((len(shape) < 1 or shape[0] != batch_size) for shape in input_shapes[1:]):
+            WARN('Parser: Meet different batch sizes in cal_reshape_and_tile of KerasNeedBroadcast!')
+            return ret
+        input_shapes_without_batch = [shape[1:] for shape in input_shapes[:]]
+        reshape_and_tile_lists = OpNeedBroadcast.cal_reshape_and_tile(input_shapes_without_batch)
+        for reshape_tile_dict in reshape_and_tile_lists:
+            reshape_dim = reshape_tile_dict.get('reshape', None)
+            tile = reshape_tile_dict.get('tile', None)
+            if reshape_dim is not None:
+                reshape_dim = [batch_size] + reshape_dim
+            if tile is not None:
+                tile = [1] + tile
+            ret.append({'reshape': reshape_dim, 'tile': tile})
+        return ret
+
+
 class KerasNormalizationOp(OpHasAxis, OpHasBiases, OpHasWeights, OpHasOneOutPort, KerasOp):
     '''
     Class KerasNormalizationOp inherited from OpHasAxis, OpHasBiases, OpHasWeights,

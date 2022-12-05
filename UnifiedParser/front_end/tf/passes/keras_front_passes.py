@@ -5,12 +5,12 @@
 import numpy as np
 import re
 import copy
-from ....ops.op import Op, OpHasWeights, KerasOp, KerasGlobalPoolingOp
+from ....ops.op import Op, OpHasWeights, KerasOp, KerasGlobalPoolingOp, KerasNeedBroadcast
 from ....graph.node_wrap import NodeWrap
 from ....graph.graph_algo import get_valid_node_name, clear_redundant_nodes
 from ....graph.pattern_match import matched_patterns, single_node_matcher
-from ...onnx.passes.common_passes import insert_constant, insert_reshape_after, \
-    insert_slice, insert_transpose, insert_transpose_after
+from ...onnx.passes.common_passes import insert_constant, insert_reshape, insert_reshape_after, \
+    insert_slice, insert_tile, insert_transpose, insert_transpose_after
 from ....common.utils import extend_lists
 from ....logger import INFO, DEBUG, WARN, ERROR, FATAL
 
@@ -437,6 +437,34 @@ def convert_to_onnx(graph):
             node_obj.correspond_onnx_op['type'], new_node_attr)
 
 
+def multidirectional_broadcasting(graph):
+    op_type_list = KerasNeedBroadcast.get_concrete_subclass_names()
+    matches = single_node_matcher(graph, op_type_list)
+    for m in matches:
+        broadcast = m['target']
+        broadcast_obj = NodeWrap(graph, broadcast)['object']
+        in_edges = graph.sorted_in_edges(broadcast, keys=True, data=True)
+        if broadcast_obj is None or len(in_edges) < 2:
+            WARN(
+                '[Parser]: Meets Invalid broadcast Op (%s) in multidirectional_broadcasting!' % broadcast)
+            continue
+        in_shapes = broadcast_obj.get_input_shapes()
+        dims_and_reps = KerasNeedBroadcast.cal_reshape_and_tile(in_shapes)
+        if len(dims_and_reps) not in (0, len(in_edges)):
+            WARN(
+                '[Parser]: Failed to calculate broadcast for Broadcast op (%s) in multidirectional_broadcasting!' % broadcast)
+            continue
+        for i, dr in enumerate(dims_and_reps):
+            if dr['reshape'] is not None:
+                src, _, k, in_attr = in_edges[i]
+                insert_reshape(graph, src, broadcast, in_attr, dr['reshape'], key=k)
+                in_edges = graph.sorted_in_edges(broadcast, keys=True, data=True)
+            if dr['tile'] is not None:
+                src, _, k, in_attr = in_edges[i]
+                insert_tile(graph, src, broadcast, in_attr, dr['tile'], key=k)
+                in_edges = graph.sorted_in_edges(broadcast, keys=True, data=True)
+
+
 def process_keras_op_before_infer(graph):
     if not graph._attr['is_keras_model']:
         return
@@ -446,6 +474,7 @@ def process_keras_op_before_infer(graph):
     convert_centercrop(graph)
     convert_resizing(graph)
     split_op_has_activation(graph, is_tf_op=True)
+    multidirectional_broadcasting(graph)
 
     from ...onnx.passes.middle_passes import split_sum_or_max_or_min
     split_sum_or_max_or_min(graph, op_type_list=['TfKerasMultiply'])
