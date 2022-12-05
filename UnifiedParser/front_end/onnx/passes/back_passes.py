@@ -4370,14 +4370,14 @@ def back_passes(graph, params):
     while back_pass focuses on converting onnx operators into Arm operators defined in IR def.
     '''
 
-    from .middle_passes import broadcast_prelu, multidirectional_broadcasting, split_mean, split_sum
+    from .middle_passes import broadcast_prelu, multidirectional_broadcasting, split_mean, split_sum_or_max_or_min
     broadcast_prelu(graph)
     merge_squared_diff(graph)
     merge_square(graph)
     merge_square2(graph)
     multidirectional_broadcasting(graph)
     split_mean(graph)
-    split_sum(graph)
+    split_sum_or_max_or_min(graph)
 
     convert_uni_gru(graph)
     convert_bi_gru(graph)

@@ -447,6 +447,9 @@ def process_keras_op_before_infer(graph):
     convert_resizing(graph)
     split_op_has_activation(graph, is_tf_op=True)
 
+    from ...onnx.passes.middle_passes import split_sum_or_max_or_min
+    split_sum_or_max_or_min(graph, op_type_list=['TfKerasMultiply'])
+
 
 def process_keras_op_after_infer(graph):
     if not graph._attr['is_keras_model']:

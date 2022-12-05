@@ -931,7 +931,9 @@ class MaxOp(OpNeedBroadcast, LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
     def attributes(cls):
         return {1: {'consumed_inputs': {'type': AttrType.INTS}},
                 6: {},
-                8: {}}
+                8: {},
+                12: {},
+                13: {}}
 
     def __init__(self, graph, attr_dict=None):
         super(MaxOp, self).__init__(graph, attr_dict)
@@ -999,7 +1001,9 @@ class MinOp(OpNeedBroadcast, LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
     def attributes(cls):
         return {1: {'consumed_inputs': {'type': AttrType.INTS}},
                 6: {},
-                8: {}}
+                8: {},
+                12: {},
+                13: {}}
 
     def __init__(self, graph, attr_dict=None):
         super(MinOp, self).__init__(graph, attr_dict)

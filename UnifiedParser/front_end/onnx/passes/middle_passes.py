@@ -6406,54 +6406,65 @@ def split_mean(graph):
             WARN('[Parser]: Meets invalid Mean Op(%s) in split_mean!' % mean)
 
 
-def split_sum(graph):
-    matches = single_node_matcher(graph, 'Sum')
+def split_sum_or_max_or_min(graph, op_type_list=['Sum', 'Max', 'Min']):
+    # a dict of new op_type and its opset version
+    op_type_name_and_ver_dict = {'Sum': ['Add', 7],
+                                 'Max': ['Max', 8],
+                                 'Min': ['Min', 8],
+                                 'TfKerasMultiply': ['Mul', 7]}
+    if not isinstance(op_type_list, list) \
+            or any((op_type not in op_type_name_and_ver_dict
+                    or len(op_type_name_and_ver_dict[op_type]) != 2) for op_type in op_type_list):
+        WARN('[Parser]: Meet invalid op_type %s in split_sum_or_max_or_min!' % str(op_type_list))
+        return
+
+    matches = single_node_matcher(graph, op_type_list)
     for single_match in matches:
-        add_version = 7
-        sum = single_match['target']
-        sum_obj = NodeWrap(graph, sum)['object']
-        if sum_obj is not None and len(sum_obj.get_input_shapes()) >= 2:
-            split_num = len(sum_obj.get_input_shapes()) - 2
+        node = single_match['target']
+        node_obj = NodeWrap(graph, node)['object']
+        if node_obj is not None and len(node_obj.get_input_shapes()) >= 2:
+            new_op_type, new_op_version = op_type_name_and_ver_dict[node_obj.type]
+            split_num = len(node_obj.get_input_shapes()) - 2
             if split_num > 0:
-                in_edges = graph.sorted_in_edges(sum, keys=True, data=True)
-                out_edges = graph.sorted_out_edges(sum, data=True)
+                in_edges = graph.sorted_in_edges(node, keys=True, data=True)
+                out_edges = graph.sorted_out_edges(node, data=True)
                 graph.remove_edges_from(in_edges[2:])
 
-                adds_list = [sum]
+                nodes_list = [node]
                 for i in range(split_num):
                     cur_src, _, _, cur_in_attr = in_edges[2 + i]
-                    add = get_valid_node_name(graph, sum + '_add_' + str(i + 1))
-                    last_add_obj = NodeWrap(graph, adds_list[-1])['object']
-                    if last_add_obj is not None and all([inp is not None for inp in last_add_obj.get_input_tensors()]):
-                        add_result = reduce(
-                            lambda x, y: x + y, last_add_obj.get_input_tensors())
+                    new_node = get_valid_node_name(graph, node + '_expand_' + str(i + 1))
+                    last_node_obj = NodeWrap(graph, nodes_list[-1])['object']
+                    if last_node_obj is not None and all([inp is not None for inp in last_node_obj.get_input_tensors()]):
+                        node_result = reduce(
+                            lambda x, y: x + y, last_node_obj.get_input_tensors())
                     else:
-                        add_result = None
+                        node_result = None
                     graph.add_edge(
-                        adds_list[-1], add, **{'src_out_port': 0, 'dst_in_port': 0, 'tensor': Tensor(value=add_result)})
+                        nodes_list[-1], new_node, **{'src_out_port': 0, 'dst_in_port': 0, 'tensor': Tensor(value=node_result)})
                     new_in_attr = copy.deepcopy(cur_in_attr)
                     new_in_attr.update({'dst_in_port': 1})
-                    graph.add_edge(cur_src, add, **new_in_attr)
+                    graph.add_edge(cur_src, new_node, **new_in_attr)
 
-                    add_attr = sum_obj.copied_attr()
-                    add_attr.update(
-                        {'name': add, 'opset_version': add_version})
-                    NodeWrap(graph, add).replace_obj('Add', add_attr)
-                    adds_list.append(add)
+                    node_attr = node_obj.copied_attr()
+                    node_attr.update(
+                        {'name': new_node, 'opset_version': new_op_version})
+                    NodeWrap(graph, new_node).replace_obj(new_op_type, node_attr)
+                    nodes_list.append(new_node)
 
                 for _, dst, out_attr in out_edges:
-                    graph.remove_edge(sum, dst)
-                    graph.add_edge(adds_list[-1], dst, **out_attr)
+                    graph.remove_edge(node, dst)
+                    graph.add_edge(nodes_list[-1], dst, **out_attr)
 
-                if sum in graph._attr['output_names']:
-                    index = graph._attr['output_names'].index(sum)
-                    graph._attr['output_names'][index] = adds_list[-1]
+                if node in graph._attr['output_names']:
+                    index = graph._attr['output_names'].index(node)
+                    graph._attr['output_names'][index] = nodes_list[-1]
 
-            sum_attr = sum_obj.copied_attr()
-            sum_attr.update({'opset_version': add_version})
-            NodeWrap(graph, sum).replace_obj('Add', sum_attr)
+            new_node_attr = node_obj.copied_attr()
+            new_node_attr.update({'opset_version': new_op_version})
+            NodeWrap(graph, node).replace_obj(new_op_type, new_node_attr)
         else:
-            WARN('[Parser]: Invalid Sum (%s) for splitting in split_sum!' % sum)
+            WARN('[Parser]: Invalid Op(%s) for splitting in split_sum_or_max_or_min!' % node)
 
 
 def split_hardmax(graph):

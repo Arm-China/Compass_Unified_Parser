@@ -748,6 +748,65 @@ class TfKerasMaxPooling3DOp(KerasPoolingOp):
         return {'type': 'MaxPool', 'version': 10}
 
 
+class TfKerasMaximumOp(OpHasOneOutPort, KerasOp):
+    @classmethod
+    def attributes(cls):
+        return {2: {}}
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfKerasMaximumOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfKerasMaximumOp, attr_dict)
+        assert self.check_required(), 'TfKerasMaximumOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(TfKerasMaximumOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = tf.keras.layers.Maximum()([*inputs]).numpy()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'Max', 'version': 6}
+
+
+class TfKerasMinimumOp(OpHasOneOutPort, KerasOp):
+    @classmethod
+    def attributes(cls):
+        return {2: {}}
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfKerasMinimumOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfKerasMinimumOp, attr_dict)
+        assert self.check_required(), 'TfKerasMinimumOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(TfKerasMinimumOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = tf.keras.layers.Minimum()([*inputs]).numpy()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'Min', 'version': 6}
+
+
+class TfKerasMultiplyOp(OpHasOneOutPort, KerasOp):
+    @classmethod
+    def attributes(cls):
+        return {2: {}}
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfKerasMultiplyOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfKerasMultiplyOp, attr_dict)
+        assert self.check_required(), 'TfKerasMultiplyOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(TfKerasMultiplyOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = tf.keras.layers.Multiply()([*inputs]).numpy()
+        self.set_out_tensor(out_tensor)
+
+
 class TfKerasPermuteOp(OpHasOneOutPort, KerasOp):
     @classmethod
     def attributes(cls):
@@ -855,6 +914,27 @@ class TfKerasResizingOp(OpHasOneOutPort, KerasOp):
         resize = tf.keras.layers.Resizing(self.height, self.width, self.interpolation, self.crop_to_aspect_ratio)
         out_tensor = resize(inputs[0]).numpy()
         self.set_out_tensor(out_tensor)
+
+
+class TfKerasSubtractOp(OpHasOneOutPort, KerasOp):
+    @classmethod
+    def attributes(cls):
+        return {2: {}}
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfKerasSubtractOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfKerasSubtractOp, attr_dict)
+        assert self.check_required(), 'TfKerasSubtractOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(TfKerasSubtractOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = tf.keras.layers.Subtract()([*inputs]).numpy()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'Sub', 'version': 6}
 
 
 class TfKerasThresholdedReLUOp(OpHasOneOutPort, KerasOp):
