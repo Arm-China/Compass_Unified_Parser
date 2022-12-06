@@ -300,20 +300,7 @@ class TfConv2DBackpropInputOp(TfHasPaddingStrides, OpHasWeights, OpHasOneOutPort
                        ) if self.data_format == 'NHWC' else ([1, 1] + self.dilations)
         ).numpy()
         self.set_out_tensor(out_tensor)
-        if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
-            shape_slice = slice(
-                1, 3) if self.data_format == 'NHWC' else slice(2, 4)
-            self.pads, self.output_padding = OpHasPaddingStrides.cal_pads(
-                inputs[1].shape[shape_slice],
-                out_tensor.shape[shape_slice],
-                self.strides,
-                self.kernel_shape,
-                self.auto_pad,
-                dilations=self.dilations,
-                is_transpose=True,
-                zero_minimum=True
-            )
-        elif self.auto_pad == 'NOTSET':
+        if self.auto_pad == 'NOTSET':
             pad_slice = slice(
                 1, 3) if self.data_format == 'NHWC' else slice(2, 4)
             self.pads = np.transpose(np.reshape(np.array(self.explicit_paddings), (4, 2))[
@@ -409,17 +396,6 @@ class TfConv3DBackpropInputV2Op(TfHasPaddingStrides, OpHasWeights, OpHasOneOutPo
             data_format='NDHWC',
             dilations=([1] + self.dilations + [1])
         ).numpy()
-        if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
-            self.pads, self.output_padding = OpHasPaddingStrides.cal_pads(
-                inp.shape[1:-1],
-                out_tensor.shape[1:-1],
-                self.strides,
-                self.kernel_shape,
-                self.auto_pad,
-                dilations=self.dilations,
-                is_transpose=True,
-                zero_minimum=True
-            )
         if self.data_format == 'NCDHW':
             out_tensor = np.transpose(out_tensor, [0, 4, 1, 2, 3])
         self.set_out_tensor(out_tensor)

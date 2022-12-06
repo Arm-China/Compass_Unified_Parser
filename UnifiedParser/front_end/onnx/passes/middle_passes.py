@@ -6223,20 +6223,20 @@ def split_conv_transpose(graph):
                     'data_format': data_format}
         NodeWrap(graph, pre_pad).replace_obj('Pad', pad_attr)
 
-        begin = [0] * (2 + spatial_rank)
-        size = ori_output_shape
-        post_slice = insert_slice_after(
-            graph, conv_trans, begin, size, data_format=data_format)
+        if ori_spatial_output_shape != new_spatial_output_shape:
+            begin = [0] * (2 + spatial_rank)
+            size = ori_output_shape
+            post_slice = insert_slice_after(
+                graph, conv_trans, begin, size, data_format=data_format)
+            if conv_trans in graph._attr['output_names']:
+                index = graph._attr['output_names'].index(conv_trans)
+                graph._attr['output_names'][index] = post_slice
 
         if conv_trans_obj.output_shape:
             assert(len(conv_trans_obj.output_shape) == spatial_rank), \
                 '[Parser]: Meets invalid output_shape of ConvTranspose (%s) in split_conv_transpose!' % conv_trans
             conv_trans_obj.output_shape = new_spatial_output_shape
         conv_trans_obj.output_padding = [0] * spatial_rank
-
-        if conv_trans in graph._attr['output_names']:
-            index = graph._attr['output_names'].index(conv_trans)
-            graph._attr['output_names'][index] = post_slice
 
 
 def split_negative_pads(graph):

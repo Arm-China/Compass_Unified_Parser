@@ -39,6 +39,11 @@ def convert_conv_backpropinput(graph):
                 WARN('[Parser]: TfConv2DBackpropInput/TfConv3DBackpropInputV2 Node(%s) does not contain weights!' %
                      conv_back)
                 continue
+            in_tensors = conv_back_obj.get_input_tensors()
+            if len(in_tensors) < 2 \
+                    or in_tensors[1] is None:
+                continue
+
             matched = True
             graph.remove_edges_from(in_edges)
 
@@ -51,9 +56,11 @@ def convert_conv_backpropinput(graph):
             new_weights = np.transpose(
                 conv_back_obj.weights, axes=type(conv_back_obj).perm_tf_to_onnx())
             if conv_back_obj.data_format[:2] == 'NC':
+                input_shape = in_tensors[1].shape[2:]
                 output_shape = const_obj.value.tolist()[2:]
                 data_format = 'NCHW'
             else:
+                input_shape = in_tensors[1].shape[1:-1]
                 output_shape = const_obj.value.tolist()[1:-1]
                 data_format = 'NHWC'
             # When padding is explictly provided, do not set output_shape so that pads won't
@@ -67,6 +74,7 @@ def convert_conv_backpropinput(graph):
                               'data_format': data_format
                               })
             NodeWrap(graph, conv_back).replace_obj('ConvTranspose', conv_attr)
+            NodeWrap(graph, conv_back)['object'].update_pads(input_shape)
         else:
             WARN(
                 '[Parser]: Meets invalid Conv2DBackpropInput/Conv3DBackpropInputV2 Op (%s) in convert_conv_backpropinput!' % conv_back)

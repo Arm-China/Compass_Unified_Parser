@@ -913,7 +913,7 @@ class OpHasPaddingStrides(LayoutConcernedOp):
         pads = (out_shape - 1) * strides + out_padding + \
             (kernel_shape - 1) * dilations + 1 - in_shape
 
-        new_out_padding = out_padding[:]
+        new_out_padding = out_padding.copy()
         if zero_minimum:
             for idx, (pad, out_pad) in enumerate(zip(pads, out_padding)):
                 new_out_pad = (-pad + out_pad) if pad < 0 else out_pad
@@ -1409,7 +1409,7 @@ class BaseDeconvOp(BaseConvOp):
             self.auto_pad = 'NOTSET'
         else:
             if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
-                self.pads, self.output_padding = OpHasPaddingStrides.cal_pads(
+                self.pads, _ = OpHasPaddingStrides.cal_pads(
                     input_shape,
                     (np.array(input_shape) * np.array(self.strides)).tolist(),
                     self.strides,
