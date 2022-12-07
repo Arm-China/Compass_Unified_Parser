@@ -5,10 +5,13 @@ module load swdev git/git/2.17.1
 
 export LD_LIBRARY_PATH="/arm/tools/gnu/gcc/7.3.0/rhe7-x86_64/lib64:$LD_LIBRARY_PATH"
 export PYTHONPATH="`realpath ../`:${PYTHONPATH}"
-export PYTHONPATH="`realpath ../../Compass_OpportunePostTrainingTools`:${PYTHONPATH}"
 
 # suppose you allready built the aipubuilder
 git log -n 1 > temp.log
+
+# suppose Compass_OpportunePostTrainingTools has been added in ../../
+# add soft link to opt code
+ln -s ../../Compass_OpportunePostTrainingTools/AIPUBuilder/Optimizer ../AIPUBuilder/
 
 failed_op_tests=""
 failed_pass_tests=""
@@ -91,6 +94,9 @@ then
         fi
     fi
 fi
+
+# unlink opt after finishing tests
+unlink ../AIPUBuilder/Optimizer
 
 all_passed=1
 if [[ -n $failed_op_tests ]]
