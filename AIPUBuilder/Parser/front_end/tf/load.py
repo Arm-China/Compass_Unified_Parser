@@ -27,23 +27,59 @@ tf_attr_names_map = {'activation': 'activations',
                      'kernel_size': 'kernel_shape',
                      'ksize': 'kernel_shape',
                      'padding': 'auto_pad',
+                     'rates': 'dilations',
                      'reduction_indices': 'axes'
                      }
 
 
-def convert_attr_to_onnx(attr_dict):
+def attr_to_list(key, value):
+    '''Convert value of attr to list and update key if it can be found in tf_attr_names_map.
+    '''
+    value = [value] if isinstance(value, int) else list(value[:])
+    new_k = tf_attr_names_map.get(key, key)
+    return {new_k: value}
+
+
+def attr_to_int(key, value):
+    '''Convert value of attr to int type and update key if it can be found in tf_attr_names_map.
+    '''
+    return {tf_attr_names_map.get(key, key): int(value)}
+
+
+def attr_rename(key, value):
+    '''Rename attr only. Keep the original value.
+    '''
+    return {tf_attr_names_map.get(key, key): value}
+
+
+def padding_attr_rename(key, value):
+    '''Rename padding attr. Update both key and value.
+    '''
+    value = value.upper()
+    new_attr = {}
+    if value == 'VALID':
+        new_attr = {tf_attr_names_map.get(key, key): 'VALID'}
+    elif value == 'SAME':
+        new_attr = {tf_attr_names_map.get(key, key): 'SAME_UPPER'}
+    elif value == 'EXPLICIT':
+        new_attr = {tf_attr_names_map.get(key, key): 'NOTSET'}
+    else:
+        WARN(
+            '[Parser]: Unsupported TF padding type (%s) in padding_attr_rename' % value)
+    return new_attr
+
+
+def convert_keras_attr_to_onnx(attr_dict):
     new_attr = copy.deepcopy(attr_dict)
     for k, v in attr_dict.items():
+        updated_attr = {}
         if k == 'activation' and 'recurrent_activation' not in attr_dict:
             v = 'NONE' if v is None or v == 'linear' else v.upper()
-            new_attr.update({tf_attr_names_map.get(k, k): v})
-            new_attr.pop(k)
+            updated_attr = attr_rename(k, v)
         elif k == 'axis' and isinstance(v, (list, tuple)):
-            new_attr.update({k: None, 'axes': list(v[:])})
+            updated_attr = {k: None, 'axes': list(v[:])}
         elif k in ('bias', 'groups'):
-            ''' Rename attr '''
-            new_attr.update({tf_attr_names_map.get(k, k): v})
-            new_attr.pop(k)
+            updated_attr = attr_rename(k, v)
         elif k == 'data_format':
             if v == 'channels_first':
                 if 'input_shape' in attr_dict \
@@ -61,42 +97,45 @@ def convert_attr_to_onnx(attr_dict):
                     data_format = 'NHWC'
             else:
                 data_format = v
-            new_attr.update({k: data_format})
-        elif k in ('dilation_rate', 'kernel_size', 'ksize', 'strides'):
-            v = [v] if isinstance(v, int) else list(v[:])
-            new_k = tf_attr_names_map.get(k, k)
-            new_attr.update({new_k: v})
-            if k != new_k:
-                new_attr.pop(k)
+            updated_attr = {k: data_format}
+        elif k in ('dilation_rate', 'kernel_size'):
+            updated_attr = attr_to_list(k, v)
         elif k == 'keep_dims':
-            new_attr.update({tf_attr_names_map.get(k, k): int(v)})
-            new_attr.pop(k)
+            updated_attr = attr_to_int(k, v)
         elif k == 'padding' and isinstance(v, str):
-            v = v.upper()
-            if v == 'VALID':
-                new_attr.update({tf_attr_names_map.get(k, k): 'VALID'})
-            elif v == 'SAME':
-                new_attr.update({tf_attr_names_map.get(k, k): 'SAME_UPPER'})
-            elif v == 'EXPLICIT':
-                new_attr.update({tf_attr_names_map.get(k, k): 'NOTSET'})
-            else:
-                WARN(
-                    '[Parser]: Unsupported TF padding type (%s) in convert_attr_to_onnx' % v)
+            updated_attr = padding_attr_rename(k, v)
+        else:
+            continue
+        if k not in updated_attr:
             new_attr.pop(k)
-        elif k == 'parallel_iterations':
-            new_attr.update({k: int(v)})
+        new_attr.update(updated_attr)
+    return new_attr
+
+
+def convert_attr_to_onnx(attr_dict, is_keras_op=False):
+    if is_keras_op:
+        return convert_keras_attr_to_onnx(attr_dict)
+
+    new_attr = copy.deepcopy(attr_dict)
+    for k, v in attr_dict.items():
+        updated_attr = {}
+        if k in ('ksize', 'reduction_indices', 'strides'):
+            updated_attr = attr_to_list(k, v)
+        elif k in ('keep_dims', 'parallel_iterations'):
+            updated_attr = attr_to_int(k, v)
+        elif k == 'padding' and isinstance(v, str):
+            updated_attr = padding_attr_rename(k, v)
         elif k == 'rates':
-            new_attr.update({'dilations': v})
-            new_attr.pop(k)
-        elif k == 'reduction_indices':
-            v = list(v) if isinstance(v, Iterable) else [v]
-            new_attr.update({tf_attr_names_map.get(k, k): v})
-            new_attr.pop(k)
+            updated_attr = attr_rename(k, v)
         elif k in ('shape', 'element_shape'):
-            new_attr.update({k: v['dim'].tolist()})
+            updated_attr = {k: v['dim'].tolist()}
         elif k == 'T' and 'dtype' not in attr_dict:
-            new_attr.update({'dtype': v})
+            updated_attr = {'dtype': v}
+        else:
+            continue
+        if k not in updated_attr:
             new_attr.pop(k)
+        new_attr.update(updated_attr)
     return new_attr
 
 
@@ -474,12 +513,13 @@ def convert_tf_to_graph(model_path, params):
                                       'Please check config file.' % (out_name, placeholder))
 
                 for n in graph.nodes:
+                    node_type = nodes_dict[n]['type']
                     attr_dict = convert_attr_to_onnx(
-                        nodes_dict[n].get('attr', {}))
+                        nodes_dict[n].get('attr', {}), node_type.startswith('Keras'))
                     attr_dict.update({'name': n,
                                       'opcode_version': nodes_dict[n].get('opcode_version', 1)})
                     NodeWrap(graph, n).replace_obj(
-                        'Tf' + nodes_dict[n]['type'], attr_dict)
+                        'Tf' + node_type, attr_dict)
 
                 for out_name in graph._attr['output_names']:
                     for out_port, out_info in enumerate(nodes_dict[out_name].get('output', [])):
