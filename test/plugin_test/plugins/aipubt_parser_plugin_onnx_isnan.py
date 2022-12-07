@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import numpy as np
-from UnifiedParser.plugin_op import ParserOp
-from UnifiedParser.plugin_loader import register_plugin, PluginType
+from AIPUBuilder.Parser.plugin_op import ParserOp
+from AIPUBuilder.Parser.plugin_loader import register_plugin, PluginType
 
 
 @register_plugin(PluginType.Parser, '0.1')

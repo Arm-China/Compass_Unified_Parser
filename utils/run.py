@@ -5,7 +5,7 @@
 import os
 import subprocess
 
-from UnifiedParser.logger import INFO, WARN, DEBUG
+from AIPUBuilder.Parser.logger import INFO, WARN, DEBUG
 from .common import get_model_type, check_float_ir
 from .compare import compare_data_dict
 from .forward import opt_forward, rt_forward

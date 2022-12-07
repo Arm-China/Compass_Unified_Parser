@@ -4,7 +4,7 @@
 
 import os
 
-from UnifiedParser.logger import ERROR, WARN
+from AIPUBuilder.Parser.logger import ERROR, WARN
 from .common import get_model_type
 
 

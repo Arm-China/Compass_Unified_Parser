@@ -6,7 +6,7 @@ import os
 
 import numpy as np
 
-from UnifiedParser.logger import ERROR, INFO, WARN
+from AIPUBuilder.Parser.logger import ERROR, INFO, WARN
 
 
 def check_float_ir(ir_txt_path, expected_keywords, unexpected_keywords=[]):

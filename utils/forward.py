@@ -5,7 +5,7 @@
 import os
 import re
 
-from UnifiedParser.logger import ERROR, FATAL, INFO, WARN
+from AIPUBuilder.Parser.logger import ERROR, FATAL, INFO, WARN
 from .common import (get_model_type, match_node_name,
                      save_data_to_file)
 

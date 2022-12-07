@@ -5,7 +5,7 @@
 import numpy as np
 
 from .common import get_feed_dict
-from UnifiedParser.logger import DEBUG, ERROR, INFO
+from AIPUBuilder.Parser.logger import DEBUG, ERROR, INFO
 
 
 def compare_data(data1, data2):
