@@ -102,8 +102,8 @@ def insert_transpose_for_layoutconcern(graph):
                     and len(output_shape) >= 2:
                 input_dim = len(input_shape)
                 pre_trans_perm = [0] + list(range(2, input_dim)) + [1]
-                post_trans_perm = [0, input_dim-1] + \
-                    list(range(1, input_dim-1))
+                post_trans_perm = [0, input_dim - 1] + \
+                    list(range(1, input_dim - 1))
                 in_edges = graph.sorted_in_edges(node, data=True)
                 out_edges = graph.sorted_out_edges(
                     node, keys=True, data=True)
@@ -230,7 +230,7 @@ def insert_transpose_for_layoutconcern(graph):
                                       out_shape,
                                       node,
                                       np.array(
-                                          [0]+list(range(2, len(input_shape)))+[1], np.int32),
+                                          [0] + list(range(2, len(input_shape))) + [1], np.int32),
                                       edge_attr=in_attr_2)
                     else:
                         WARN(

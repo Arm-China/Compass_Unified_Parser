@@ -28,7 +28,7 @@ class IfOp(OpHasSubGraph, OnnxOp):
         super(IfOp, self).infer_shape()
         inputs = self.get_input_tensors()
         in_ports = self.then_branch._attr['root_in_ports'] if inputs[0] else self.else_branch._attr['root_in_ports']
-        self.set_out_tensor(inputs[in_ports[0]: in_ports[-1]+1])
+        self.set_out_tensor(inputs[in_ports[0]: in_ports[-1] + 1])
 
 
 class LoopOp(OpHasSubGraph, OnnxOp):

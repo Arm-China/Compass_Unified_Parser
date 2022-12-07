@@ -7,7 +7,7 @@
 # -*- coding: UTF-8 -*-
 
 
-from UnifiedParser.univ_main import main
+from AIPUBuilder.UnifiedParser.univ_main import main
 import os
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '.'))

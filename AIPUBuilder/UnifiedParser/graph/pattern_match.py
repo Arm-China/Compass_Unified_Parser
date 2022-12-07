@@ -129,7 +129,7 @@ def _extend_match(u, p, i, f, g, graph_2):
     if i + 1 == len(p):
         return True, f
 
-    if f[p[i+2].hash_value] is None:
+    if f[p[i + 2].hash_value] is None:
         u_out_edges = graph_2.sorted_out_edges(u, keys=True)
         for u_name, v_name, key in u_out_edges:
             v_node = graph_2.get_node(v_name)
@@ -137,12 +137,12 @@ def _extend_match(u, p, i, f, g, graph_2):
             v_hash, e_hash = v_node.hash_value, e_edge.hash_value
             if g[v_hash] is False \
                     and g[e_hash] is False \
-                    and _node_feasibility(v_node, p[i+2]) \
-                    and _edge_feasibility(e_edge, p[i+1]):
+                    and _node_feasibility(v_node, p[i + 2]) \
+                    and _edge_feasibility(e_edge, p[i + 1]):
                 f_tmp, g_tmp = copy.deepcopy(f), copy.deepcopy(g)
-                f_tmp[p[i+1].hash_value], f_tmp[p[i+2].hash_value] = e_hash, v_hash
+                f_tmp[p[i + 1].hash_value], f_tmp[p[i + 2].hash_value] = e_hash, v_hash
                 g_tmp[e_hash], g_tmp[v_hash] = True, True
-                ret = _extend_match(v_name, p, i+2, f_tmp,
+                ret = _extend_match(v_name, p, i + 2, f_tmp,
                                     g_tmp, graph_2)
                 if ret[0]:
                     return ret
@@ -154,30 +154,30 @@ def _extend_match(u, p, i, f, g, graph_2):
             v_hash, e_hash = v_node.hash_value, e_edge.hash_value
             if g[v_hash] is False \
                     and g[e_hash] is False \
-                    and _node_feasibility(v_node, p[i+2]) \
-                    and _edge_feasibility(e_edge, p[i+1]):
+                    and _node_feasibility(v_node, p[i + 2]) \
+                    and _edge_feasibility(e_edge, p[i + 1]):
                 f_tmp, g_tmp = copy.deepcopy(f), copy.deepcopy(g)
-                f_tmp[p[i+1].hash_value], f_tmp[p[i+2].hash_value] = e_hash, v_hash
+                f_tmp[p[i + 1].hash_value], f_tmp[p[i + 2].hash_value] = e_hash, v_hash
                 g_tmp[e_hash], g_tmp[v_hash] = True, True
-                ret = _extend_match(v_name, p, i+2, f_tmp,
+                ret = _extend_match(v_name, p, i + 2, f_tmp,
                                     g_tmp, graph_2)
                 if ret[0]:
                     return ret
     else:
-        v_hash = f[p[i+2].hash_value]
+        v_hash = f[p[i + 2].hash_value]
         v_node = graph_2._attr['hash_map'][v_hash]
-        if f[p[i+1].hash_value] is None:
+        if f[p[i + 1].hash_value] is None:
             u_out_edges = graph_2.sorted_out_edges(u, keys=True)
             u_out_edges = [
                 out_edge for out_edge in u_out_edges if out_edge[1] == v_node.key]
             for u_name, v_name, key in u_out_edges:
                 e_edge = graph_2.get_edge(u_name, v_name, key)
                 e_hash = e_edge.hash_value
-                if g[e_hash] is False and _edge_feasibility(e_edge, p[i+1]):
+                if g[e_hash] is False and _edge_feasibility(e_edge, p[i + 1]):
                     f_tmp, g_tmp = copy.deepcopy(f), copy.deepcopy(g)
-                    f_tmp[p[i+1].hash_value] = e_hash
+                    f_tmp[p[i + 1].hash_value] = e_hash
                     g_tmp[e_hash] = True
-                    ret = _extend_match(v_node.key, p, i+2,
+                    ret = _extend_match(v_node.key, p, i + 2,
                                         f_tmp, g_tmp, graph_2)
                     if ret[0]:
                         return ret
@@ -188,16 +188,16 @@ def _extend_match(u, p, i, f, g, graph_2):
             for v_name, u_name, key in u_in_edges:
                 e_edge = graph_2.get_edge(v_name, u_name, key)
                 e_hash = e_edge.hash_value
-                if g[e_hash] is False and _edge_feasibility(e_edge, p[i+1]):
+                if g[e_hash] is False and _edge_feasibility(e_edge, p[i + 1]):
                     f_tmp, g_tmp = copy.deepcopy(f), copy.deepcopy(g)
-                    f_tmp[p[i+1].hash_value] = e_hash
+                    f_tmp[p[i + 1].hash_value] = e_hash
                     g_tmp[e_hash] = True
-                    ret = _extend_match(v_node.key, p, i+2,
+                    ret = _extend_match(v_node.key, p, i + 2,
                                         f_tmp, g_tmp, graph_2)
                     if ret[0]:
                         return ret
         else:
-            ret = _extend_match(v_node.key, p, i+2, f, g, graph_2)
+            ret = _extend_match(v_node.key, p, i + 2, f, g, graph_2)
             if ret[0]:
                 return ret
 

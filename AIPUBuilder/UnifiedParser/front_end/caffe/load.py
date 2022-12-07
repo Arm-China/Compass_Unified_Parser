@@ -224,7 +224,7 @@ def convert_caffe_to_graph(model_path, params):
                 attr_dict.update(
                     {'data_format': params.get('input_data_format', 'NCHW')})
                 NodeWrap(graph, op_name).replace_obj(
-                    'Caffe'+l['type'], attr_dict)
+                    'Caffe' + l['type'], attr_dict)
 
                 for in_port, in_tensor_name in enumerate(l.get('bottom', [])):
                     pred_op_index, out_port = out_tensor_operator_map[in_tensor_name]
@@ -250,7 +250,7 @@ def convert_caffe_to_graph(model_path, params):
                     insert_constant(graph, op_name + '_weights',
                                     w, op_name, in_port=cur_in_ports)
                     insert_constant(graph, op_name + '_biases',
-                                    b, op_name, in_port=cur_in_ports+1)
+                                    b, op_name, in_port=cur_in_ports + 1)
                 elif isinstance(node_obj, OpHasWeights) and len(attr_dict.get('blobs', [])) >= 1:
                     w = attr_dict['blobs'][0]
                     if node_obj.type == 'CaffeINNER_PRODUCT':

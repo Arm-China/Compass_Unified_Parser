@@ -186,7 +186,7 @@ def convert_lstm(graph):
             graph.remove_edges_from(in_edges[1:])
 
             if len(input_shapes[0]) > 3:
-                dim = input_shapes[0][:2]+[int(np.prod(input_shapes[0][2:]))]
+                dim = input_shapes[0][:2] + [int(np.prod(input_shapes[0][2:]))]
                 src = insert_reshape(graph, src, lstm, in_attr, dim)
                 time_steps, batch_size, input_size = dim
             else:
@@ -309,7 +309,7 @@ def convert_pool(graph):
                         'Sub', {'name': sub, 'opset_version': 7})
                     if pool in graph._attr['output_names']:
                         index = graph._attr['output_names'].index(pool)
-                        graph._attr['output_names'].insert(index+1, sub)
+                        graph._attr['output_names'].insert(index + 1, sub)
                 else:
                     WARN(
                         '[Parser]: Invalid CaffePOOLING (%s) to convert to MaxPoolWithArgmax in convert_pool!' % pool)
@@ -459,7 +459,7 @@ def convert_slice(graph):
                         new_slice_names = []
                         for i, (_, dst, out_attr) in enumerate(out_edges):
                             new_slice = get_valid_node_name(
-                                graph, slice + '_new_' + str(i+1))
+                                graph, slice + '_new_' + str(i + 1))
                             new_in_attr = copy.deepcopy(in_attr)
                             graph.add_edge(src, new_slice, **new_in_attr)
 
@@ -471,7 +471,7 @@ def convert_slice(graph):
                             cur_start, cur_end = starts.copy()[slice_obj.axis], ends.copy()[
                                 slice_obj.axis]
                             if i > 0:
-                                cur_start = slice_obj.slice_point[i-1]
+                                cur_start = slice_obj.slice_point[i - 1]
                             if i < slice_num - 1:
                                 cur_end = slice_obj.slice_point[i]
                             insert_constant(
@@ -495,7 +495,7 @@ def convert_slice(graph):
                             for i, name in enumerate(new_slice_names[1:]):
                                 index += 1
                                 graph._attr['output_names'].insert(
-                                    index, new_slice_names[1+i])
+                                    index, new_slice_names[1 + i])
 
                         remove_node_safely(graph, slice)
                     else:
@@ -1222,7 +1222,7 @@ def remove_detection_postprocess(graph):
             if detection in graph._attr['output_names']:
                 index = graph._attr['output_names'].index(detection)
                 graph._attr['output_names'][index] = conf_out
-                graph._attr['output_names'].insert(index+1, box_out)
+                graph._attr['output_names'].insert(index + 1, box_out)
 
         clear_redundant_nodes(graph)
 
@@ -1396,7 +1396,7 @@ def convert_to_onnx(graph):
                             for i, (src, _, k, in_attr) in enumerate(in_edges):
                                 if node_obj.coeff[i] != 1.0:
                                     mul = get_valid_node_name(
-                                        graph, node_name + '_pre_mul' + str(i+1))
+                                        graph, node_name + '_pre_mul' + str(i + 1))
                                     graph.remove_edge(src, node_name, key=k)
 
                                     mul_in_attr = copy.deepcopy(in_attr)
@@ -1410,7 +1410,7 @@ def convert_to_onnx(graph):
                                         mul, node_name, **elt_in_attr)
 
                                     insert_constant(
-                                        graph, mul+'_multiplier', np.array(node_obj.coeff[i], np.float32), mul, in_port=1)
+                                        graph, mul + '_multiplier', np.array(node_obj.coeff[i], np.float32), mul, in_port=1)
                                     mul_attr = node_obj.copied_attr()
                                     mul_attr.update(
                                         {'name': mul, 'opset_version': 7})
@@ -1450,7 +1450,7 @@ def convert_to_onnx(graph):
                 elif pure_type == 'PRELU':
                     input_shape = node_obj.get_input_shapes()[0]
                     slope = np.reshape(node_obj.weights, list(
-                        node_obj.weights.shape) + [1] * (len(input_shape)-2))
+                        node_obj.weights.shape) + [1] * (len(input_shape) - 2))
                     insert_constant(graph, node_name + '_slope',
                                     slope, node_name, in_port=1)
                 elif pure_type == 'REDUCTION':

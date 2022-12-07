@@ -117,7 +117,7 @@ def gamut_preprocess(graph, params):
             inp_tensor = input_out_edges[0][2]['tensor'].value
             inp_shape = inp_tensor.shape
             gamut['dtype'] = inp_tensor.dtype
-            raw_input = get_valid_node_name(graph, inputs[0]+'_raw')
+            raw_input = get_valid_node_name(graph, inputs[0] + '_raw')
 
             def replace_input():
                 graph.add_node(raw_input)
@@ -139,10 +139,10 @@ def gamut_preprocess(graph, params):
                     ERROR('For RgbToYuv, the original model input must has a 2 '
                           'dimensions input, but got a shape: %s ' % (str(inp_shape)))
                     return
-                if int(h*w*1.5) != inp_shape[1]:
+                if int(h * w * 1.5) != inp_shape[1]:
                     ERROR('For RgbToYuv the input size mismatches with rgb_shape. '
                           'Expect h*w*3/2 == input\'s_size, but got h*w*3/2=%d, and '
-                          'input size=%d' % (int(h*w*1.5), inp_shape[1]))
+                          'input size=%d' % (int(h * w * 1.5), inp_shape[1]))
                     return
                 replace_input()
                 t = Tensor(value=np.random.randn(
@@ -176,7 +176,7 @@ def gamut_preprocess(graph, params):
                 graph._attr['input_tensors'][ori_inp] = t
                 NodeWrap(graph, raw_input).replace_obj('ArmYuvToRgb', gamut)
                 if need_insert_transpose:
-                    trans = get_valid_node_name(graph, raw_input+'_trans')
+                    trans = get_valid_node_name(graph, raw_input + '_trans')
                     transpose_attr = {'name': trans, 'opset_version': 1}
                     transpose_attr.update({'perm': [0, 3, 1, 2]})
                     graph.add_node(trans)
@@ -343,7 +343,7 @@ def resize_preprocess(graph, params, hooking_node):
                     NodeWrap(graph, resize).replace_obj('Resize', resize_attr)
                     insert_constant(graph,
                                     resize + '_roi',
-                                    np.ones([len(shape)*2], np.float32),
+                                    np.ones([len(shape) * 2], np.float32),
                                     resize,
                                     in_port=1,
                                     data_format=data_format)
@@ -411,7 +411,7 @@ def rgb2bgr_preprocess(graph, method, hooking_node):
                 graph, reverse + '_pre_transpose')
             post_transpose = get_valid_node_name(
                 graph, reverse + '_post_transpose')
-            pre_perm = [0, len(inp_shape)-1] + list(range(1, len(inp_shape)-1))
+            pre_perm = [0, len(inp_shape) - 1] + list(range(1, len(inp_shape) - 1))
             post_perm = [0] + list(range(2, len(inp_shape))) + [1]
         else:
             pre_transpose, post_transpose = None, None
@@ -612,12 +612,12 @@ def rgb2gray_preprocess(graph, method, hooking_node):
     B = np.zeros((3,), np.float32)
     mean = np.zeros((3,), np.float32)
     var = np.ones((3,), np.float32)
-    insert_constant(graph, bn+'_scale', scale, bn,
+    insert_constant(graph, bn + '_scale', scale, bn,
                     in_port=1, data_format=data_format)
-    insert_constant(graph, bn+'_B', B, bn, in_port=2, data_format=data_format)
-    insert_constant(graph, bn+'_mean', mean, bn,
+    insert_constant(graph, bn + '_B', B, bn, in_port=2, data_format=data_format)
+    insert_constant(graph, bn + '_mean', mean, bn,
                     in_port=3, data_format=data_format)
-    insert_constant(graph, bn+'_var', var, bn,
+    insert_constant(graph, bn + '_var', var, bn,
                     in_port=4, data_format=data_format)
 
     NodeWrap(graph, reduce).replace_obj('ReduceSum',

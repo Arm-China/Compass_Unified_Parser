@@ -62,12 +62,13 @@ def register_plugin(type, version=0):
                             else:
                                 if hasattr(cls, '_subgraph_type') and cls._subgraph_type == 'named_subgraph':
                                     # for named plugin, the add a prefix for register optype
-                                    PARSER_OP_DICT['.named_subgraph.'+optype] = cls
+                                    PARSER_OP_DICT['.named_subgraph.' + optype] = cls
                                     pass
                         PARSER_OP_DICT[optype] = cls
                         PARSER_OP_DICT[optype.upper()] = cls
             else:
-                raise TypeError('Parser Plugin must be a subclass of ParserOp. But the plugin\'s class is %s' % cls.__name__)
+                raise TypeError(
+                    'Parser Plugin must be a subclass of ParserOp. But the plugin\'s class is %s' % cls.__name__)
 
         if cls.__name__ not in PLUGINS[type]:
             PLUGINS[type][cls.__name__] = cls
@@ -76,8 +77,8 @@ def register_plugin(type, version=0):
     return wrapper
 
 
-AIPUPLUGIN_PATH = [i for i in set(AIPUPLUGIN_PATH+['./plugin', '.']) if len(i) != 0]
-sys.path = AIPUPLUGIN_PATH+sys.path
+AIPUPLUGIN_PATH = [i for i in set(AIPUPLUGIN_PATH + ['./plugin', '.']) if len(i) != 0]
+sys.path = AIPUPLUGIN_PATH + sys.path
 
 ALL_MODULES = {
     name: importlib.import_module(name)

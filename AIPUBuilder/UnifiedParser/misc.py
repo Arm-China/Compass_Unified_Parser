@@ -18,10 +18,10 @@ def special_character_conversion(graph, params):
         newname = re.sub(r'[^0-9a-zA-Z\.\:\/\_\;\'\x22]', '_', newname)
         for value in newname_dict.values():
             while value == newname:
-                newname = newname+'_'
+                newname = newname + '_'
         for key in newname_dict.keys():
             while key == newname:
-                newname = newname+'_'
+                newname = newname + '_'
         if node_obj.name != newname:
             DEBUG('[Parser]: Duplicate layer name found! Convert layer name:(%s) to layer name: (%s)!' % (
                 str(node_obj.name), str(newname)))

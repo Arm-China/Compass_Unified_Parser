@@ -26,7 +26,7 @@ import copy
 # COMPLEX128 = 15; // complex
 # BFLOAT16 = 16;
 onnx_tensor_np_mapping = [
-    ('UNDEFINED',  None, lambda pb: pb),
+    ('UNDEFINED', None, lambda pb: pb),
     ('FLOAT', np.float32, lambda pb: pb.float_data if len(pb.float_data)
      > 0 else np.frombuffer(pb.raw_data, dtype=np.float32)),
     ('UINT8', np.uint8, lambda pb: pb.int32_data if len(pb.int32_data) > 0 else np.frombuffer(pb.raw_data, dtype=np.uint8)),

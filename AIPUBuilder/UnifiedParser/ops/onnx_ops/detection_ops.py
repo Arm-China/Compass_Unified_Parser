@@ -84,7 +84,7 @@ class NonMaxSuppressionOp(OpHasOneOutPort, OnnxOp):
         return intersection_over_union > iou_threshold
 
     @staticmethod
-    def compute(boxes, scores,  max_output_boxes_per_class, iou_threshold, score_threshold, center_point_box):
+    def compute(boxes, scores, max_output_boxes_per_class, iou_threshold, score_threshold, center_point_box):
         # boxes: [num_batches, num_boxes, 4]
         # scores: [num_batches, num_classes, num_boxes]
         def _box_comparator(a, b):
@@ -179,7 +179,7 @@ class NonMaxSuppressionOp(OpHasOneOutPort, OnnxOp):
         box_shape = inputs[0].shape
         score_shape = inputs[1].shape
         max_output_boxes_per_class = min(
-            int(np.asscalar(inputs[2])), box_shape[0]*box_shape[1]*score_shape[1])
+            int(np.asscalar(inputs[2])), box_shape[0] * box_shape[1] * score_shape[1])
         out_tensor = NonMaxSuppressionOp.compute(boxes,
                                                  scores,
                                                  max_output_boxes_per_class,

@@ -516,7 +516,7 @@ class Graph(object):
                         label += "src_out: %s, " % (in_port)
 
             label_end = "}\" ];\n"
-            label += "%s"+label_end
+            label += "%s" + label_end
             comment = ""
             ret += label % (comment)
 

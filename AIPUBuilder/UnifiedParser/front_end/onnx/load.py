@@ -211,7 +211,7 @@ def convert_onnx_to_graph(model_path, params):
                                 size=input_shape).astype(input_type)
 
                         graph._attr['input_tensors'].update({
-                            single_input['name']:  Tensor(
+                            single_input['name']: Tensor(
                                 name=single_input['name'], value=input_tensor)
                         })
 
