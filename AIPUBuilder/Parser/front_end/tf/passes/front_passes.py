@@ -833,134 +833,113 @@ def split_b2s(graph):
         if b2s_obj is None:
             WARN('[Parser]: Meets invalid TfBatchToSpaceND Node(%s) in split_b2s!' % b2s)
             continue
-        output_shapes = b2s_obj.get_output_shapes()
         in_edges = graph.sorted_in_edges(b2s, data=True)
         out_edges = graph.sorted_out_edges(b2s, data=True)
-        block_shape, crops = [c[2] for c in b2s_obj.sorted_in_consts()]
-        if len(in_edges) >= 1 \
-                and len(out_edges) >= 1 \
-                and len(output_shapes) >= 1 \
-                and in_edges[0][2]['tensor'].shape is not None \
-                and len(in_edges[0][2]['tensor'].shape) in (3, 4):
-            if output_shapes[0] is None or len(output_shapes[0]) not in (3, 4):
-                continue
-            is_4d_input = (len(output_shapes[0]) == 4)
-            if len(crops.shape) == 2 \
-                    and crops.shape[1] == 2 \
-                    and ((is_4d_input and crops.shape[0] == 2)
-                         or (not is_4d_input and crops.shape[0] == 1)):
-                in_shape = in_edges[0][2]['tensor'].shape
-                if is_4d_input:
-                    block_size_y, block_size_x = block_shape.tolist()
-                    dim1 = [block_size_y, block_size_x, -1] + list(in_shape[1:])
-                    dim2 = [-1, in_shape[1] * block_size_y,
-                            in_shape[2] * block_size_x, in_shape[-1]]
-                    if crops[0, 1] == 0:
-                        crops[0, 1] = -dim2[1]
-                    if crops[1, 1] == 0:
-                        crops[1, 1] = -dim2[2]
-                else:
-                    block_size = block_shape.item()
-                    dim1 = [block_size, -1] + list(in_shape[1:])
-                    dim2 = [-1, in_shape[1] * block_size, in_shape[-1]]
-                    if crops[0, 1] == 0:
-                        crops[0, 1] = -dim2[1]
-                if is_4d_input and block_shape[0] == block_shape[1]:
-                    block_size = block_shape[0]
-                    trans1 = get_valid_node_name(graph, b2s + '_transpose1')
-                    trans2 = get_valid_node_name(graph, b2s + '_transpose2')
-                    slice = get_valid_node_name(graph, b2s + '_slice')
-                    graph.remove_edges_from(in_edges[1:])
-                    for src, _, in_attr in in_edges[:1]:
-                        graph.remove_edge(src, b2s)
-                        graph.add_edge(src, trans1, **in_attr)
-                    graph.add_edges_from(
-                        [(trans1, b2s), (b2s, trans2), (trans2, slice)])
-                    for _, dst, out_attr in out_edges:
-                        graph.remove_edge(b2s, dst)
-                        graph.add_edge(slice, dst, **out_attr)
-                    start_dim = crops[:, 0].tolist()
-                    end_dim = (-crops[:, 1]).tolist()
-                    trans1_attr = {
-                        'name': trans1, 'opset_version': transpose_version, 'perm': [3, 1, 2, 0]}
-                    d2s_attr = {
-                        'name': b2s, 'opset_version': d2s_version, 'blocksize': block_size}
-                    trans2_attr = {
-                        'name': trans2, 'opset_version': transpose_version, 'perm': [3, 1, 2, 0]}
-                    slice_attr = {'name': slice,
-                                  'opset_version': slice_version,
-                                  'axes': [1, 2],
-                                  'starts': start_dim,
-                                  'ends': end_dim,
-                                  'steps': 1
-                                  }
-                    NodeWrap(graph, trans1).replace_obj(
-                        'Transpose', trans1_attr)
-                    NodeWrap(graph, b2s).replace_obj('DepthToSpace', d2s_attr)
-                    NodeWrap(graph, trans2).replace_obj(
-                        'Transpose', trans2_attr)
-                    NodeWrap(graph, slice).replace_obj('Slice', slice_attr)
-                    if b2s in graph._attr['output_names']:
-                        index = graph._attr['output_names'].index(b2s)
-                        graph._attr['output_names'][index] = slice
-                else:
-                    need_slice = (np.any(crops[:, 0] != 0) and np.any(crops[:, 1] != output_shapes[0][1:-1]))
+        if len(in_edges) != 3 or len(out_edges) < 1:
+            continue
+        input_shapes = b2s_obj.get_input_shapes()
+        in_consts = b2s_obj.sorted_in_consts()
+        if len(input_shapes) == 3 \
+                and input_shapes[0] is not None \
+                and len(input_shapes[0]) in (3, 4) \
+                and all(s is not None for s in input_shapes[0]) \
+                and len(in_consts) == 2 \
+                and [c[1] for c in in_consts] == [1, 2]:
+            in_shape = input_shapes[0]
+            block_shape, crops = [c[2] for c in in_consts]
+            is_4d = len(in_shape) == 4
+            need_slice = np.any(crops != 0)
+            spatial_in_shape = in_shape[1:-1]
+            spatial_out_shape_before_slice = (np.array(spatial_in_shape) * block_shape).tolist()
+            slice = get_valid_node_name(graph, b2s + '_slice')
+            last = ''
 
-                    reshape1 = get_valid_node_name(graph, b2s + '_reshape1')
-                    reshape2 = get_valid_node_name(graph, b2s + '_reshape2')
-                    slice = get_valid_node_name(graph, b2s + '_slice')
-                    end_name = slice if need_slice else reshape2
+            if is_4d and block_shape[0] == block_shape[1]:
+                block_size = block_shape[0]
+                trans1 = get_valid_node_name(graph, b2s + '_transpose1')
+                trans2 = get_valid_node_name(graph, b2s + '_transpose2')
+                last = slice if need_slice else trans2
 
-                    graph.remove_edges_from(in_edges[1:])
-                    for src, _, in_attr in in_edges[:1]:
-                        graph.remove_edge(src, b2s)
-                        graph.add_edge(src, reshape1, **in_attr)
-                    graph.add_edges_from(
-                        [(reshape1, b2s), (b2s, reshape2)] + ([(reshape2, slice)] if need_slice else []))
-                    for _, dst, out_attr in out_edges:
-                        graph.remove_edge(b2s, dst)
-                        graph.add_edge(end_name, dst, **out_attr)
+                src, _, in_attr = in_edges[0]
+                graph.remove_edges_from(in_edges)
+                graph.add_edge(src, trans1, **in_attr)
+                graph.add_edge(trans1, b2s)
+                for _, dst, out_attr in out_edges:
+                    graph.remove_edge(b2s, dst)
+                    graph.add_edge(last, dst, **out_attr)
+                graph.add_edge(b2s, trans2)
+                if need_slice:
+                    graph.add_edge(trans2, slice)
 
-                    if b2s in graph._attr['output_names']:
-                        index = graph._attr['output_names'].index(b2s)
-                        graph._attr['output_names'][index] = end_name
-
-                    reshape1_attr = {'name': reshape1,
-                                     'opset_version': reshape_version}
-                    transpose_attr = b2s_obj.copied_attr()
-                    trans_perm = [2, 3, 0, 4, 1, 5] if is_4d_input else [1, 2, 0, 3]
-                    transpose_attr.update(
-                        {'opset_version': transpose_version, 'perm': trans_perm})
-                    reshape2_attr = {'name': reshape2,
-                                     'opset_version': reshape_version}
-                    NodeWrap(graph, reshape1).replace_obj(
-                        'Reshape', reshape1_attr)
-                    insert_constant(graph, reshape1 + '_shape', np.array(dim1,
-                                                                         np.int64), reshape1, in_port=1, data_format='NHWC')
-                    NodeWrap(graph, b2s).replace_obj(
-                        'Transpose', transpose_attr)
-                    NodeWrap(graph, reshape2).replace_obj(
-                        'Reshape', reshape2_attr)
-                    insert_constant(graph, reshape2 + '_shape', np.array(dim2,
-                                                                         np.int64), reshape2, in_port=1, data_format='NHWC')
-                    if need_slice:
-                        start_dim = crops[:, 0].tolist()
-                        end_dim = (-crops[:, 1]).tolist()
-                        slice_attr = {'name': slice,
-                                      'opset_version': slice_version,
-                                      'axes': [1, 2] if is_4d_input else [1],
-                                      'starts': start_dim,
-                                      'ends': end_dim,
-                                      'steps': 1
-                                      }
-                        NodeWrap(graph, slice).replace_obj('Slice', slice_attr)
+                trans1_attr = {'name': trans1, 'opset_version': transpose_version, 'perm': [3, 1, 2, 0]}
+                NodeWrap(graph, trans1).replace_obj('Transpose', trans1_attr)
+                d2s_attr = {'name': b2s, 'opset_version': d2s_version, 'blocksize': block_size}
+                NodeWrap(graph, b2s).replace_obj('DepthToSpace', d2s_attr)
+                trans2_attr = {'name': trans2, 'opset_version': transpose_version, 'perm': [3, 1, 2, 0]}
+                NodeWrap(graph, trans2).replace_obj('Transpose', trans2_attr)
 
             else:
-                WARN(
-                    '[Parser]: TfBatchToSpaceND Node(%s) has invalid attributes to split in split_b2s!' % b2s_obj.name)
-        else:
-            WARN('[Parser]: Meets invalid TfBatchToSpaceND Node(%s) in split_b2s!' %
-                 b2s_obj.name)
+                dim1 = [*block_shape.tolist(), -1] + list(in_shape[1:])
+                perm = [2, 3, 0, 4, 1, 5] if is_4d else [1, 2, 0, 3]
+                dim2 = [-1] + spatial_out_shape_before_slice + [in_shape[-1]]
+
+                reshape1 = get_valid_node_name(graph, b2s + '_reshape1')
+                reshape2 = get_valid_node_name(graph, b2s + '_reshape2')
+                last = slice if need_slice else reshape2
+
+                src, _, in_attr = in_edges[0]
+                graph.remove_edges_from(in_edges)
+                graph.add_edge(src, reshape1, **in_attr)
+                graph.add_edge(reshape1, b2s)
+                for _, dst, out_attr in out_edges:
+                    graph.remove_edge(b2s, dst)
+                    graph.add_edge(last, dst, **out_attr)
+                graph.add_edge(b2s, reshape2)
+                if need_slice:
+                    graph.add_edge(reshape2, slice)
+
+                NodeWrap(graph, reshape1).replace_obj('Reshape',
+                                                      {'name': reshape1,
+                                                       'opset_version': reshape_version}
+                                                      )
+                insert_constant(graph,
+                                reshape1 + '_shape',
+                                np.array(dim1, np.int64),
+                                reshape1,
+                                in_port=1,
+                                data_format='NHWC')
+
+                transpose_attr = b2s_obj.copied_attr()
+                transpose_attr.update({'opset_version': transpose_version, 'perm': perm})
+                NodeWrap(graph, b2s).replace_obj('Transpose', transpose_attr)
+
+                NodeWrap(graph, reshape2).replace_obj('Reshape',
+                                                      {'name': reshape2,
+                                                       'opset_version': reshape_version}
+                                                      )
+                insert_constant(graph,
+                                reshape2 + '_shape',
+                                np.array(dim2, np.int64),
+                                reshape2,
+                                in_port=1,
+                                data_format='NHWC')
+
+            if need_slice:
+                starts = crops[:, 0]
+                ends = -crops[:, 1]
+                zero_mask = ends == 0
+                ends[zero_mask] = np.array(spatial_out_shape_before_slice)[zero_mask]
+                slice_attr = {'name': slice,
+                              'opset_version': slice_version,
+                              'axes': [1, 2] if is_4d else [1],
+                              'starts': starts.tolist(),
+                              'ends': ends.tolist(),
+                              }
+                NodeWrap(graph, slice).replace_obj('Slice', slice_attr)
+
+            if b2s in graph._attr['output_names']:
+                index = graph._attr['output_names'].index(b2s)
+                graph._attr['output_names'][index] = last
 
 
 def split_special_floormod(graph, op_type='TfFloorMod'):

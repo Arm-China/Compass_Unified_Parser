@@ -2513,121 +2513,198 @@ def merge_gelu_3(graph):
 
 
 def merge_dilated_conv(graph):
+    _REFERENCE_PERM = {'NHWC': [3, 1, 2, 0], 'NCHW': [1, 0, 2, 3]}
+
+    def _check_pads(pad_obj, trans1_obj, data_format):
+        perm = trans1_obj.perm[:]
+        exclude_pad, spatial_pads, true_in_shape = False, [0] * ((len(perm) - 2) * 2), None
+        ref_perm = _REFERENCE_PERM[data_format]
+        new_inner_perm = Op.cal_inserting_before_perm(perm, ref_perm)
+        new_perm = Op.cal_inverse_perm(new_inner_perm)
+        if pad_obj.type != 'Pad':
+            exclude_pad = True
+        else:
+            pads = np.reshape(np.array(pad_obj.pads), [2, -1])
+            pads = np.transpose(pads)
+            if new_perm is not None:
+                pads = pads[np.array(perm)]
+            if (data_format == 'NHWC' and np.all(pads[0, :] == 0) and np.all(pads[-1, :] == 0)) \
+                    or (data_format == 'NCHW' and np.all(pads[:2, :] == 0)):
+                if data_format == 'NHWC':
+                    spatial_pads = pads[1:-1, :]
+                else:
+                    spatial_pads = pads[2:, :]
+                spatial_pads = np.transpose(spatial_pads).flatten().tolist()
+            else:
+                exclude_pad = True
+        if (exclude_pad and len(trans1_obj.get_input_shapes()) > 0 and all(s is not None for s in trans1_obj.get_input_shapes()[0])) \
+                or ((not exclude_pad) and len(pad_obj.get_input_shapes()) > 0 and all(s is not None for s in pad_obj.get_input_shapes()[0])):
+            true_in_shape = trans1_obj.get_input_shapes()[0] if exclude_pad else pad_obj.get_input_shapes()[0]
+            if new_perm is not None:
+                inverse_perm = Op.cal_inverse_perm(ref_perm)
+                true_in_shape = np.array(true_in_shape)[np.array(perm)]
+                true_in_shape = true_in_shape[np.array(inverse_perm)].tolist()
+        return exclude_pad, spatial_pads, new_perm, true_in_shape
+
+    def _check_crops(slice_obj, trans4_obj, data_format):
+        perm = trans4_obj.perm[:]
+        exclude_slice, spatial_crops, true_out_shape = False, [0] * ((len(perm) - 2) * 2), None
+        ref_perm = _REFERENCE_PERM[data_format]
+        new_inner_perm = Op.cal_inserting_after_perm(perm, ref_perm)
+        new_perm = Op.cal_inverse_perm(new_inner_perm)
+        if slice_obj.type != 'Slice' or any(s != 1 for s in slice_obj.steps):
+            exclude_slice = True
+        else:
+            slice_in_shapes = slice_obj.get_input_shapes()
+            if len(slice_in_shapes) < 1 \
+                    or slice_in_shapes[0] is None \
+                    or any(d is None for d in slice_in_shapes[0]):
+                exclude_slice = True
+            else:
+                in_shape = slice_in_shapes[0]
+                axes = slice_obj.axes[:]
+                starts = slice_obj.starts[:]
+                ends = slice_obj.ends[:]
+                if len(axes) < len(perm):
+                    full_starts = np.array([0] * len(in_shape))
+                    full_ends = np.array(in_shape)
+                    axes = np.array(axes)
+                    full_starts[axes] = np.array(starts)
+                    full_ends[axes] = np.array(ends)
+                    starts = full_starts.tolist()
+                    ends = full_ends.tolist()
+                sliced = type(slice_obj).cal_sliced(starts, ends, in_shape)
+                crops = np.reshape(np.array(sliced), [2, -1])
+                crops = np.transpose(crops)
+                if new_perm is not None:
+                    inverse_perm = Op.cal_inverse_perm(perm)
+                    crops = crops[np.array(inverse_perm)]
+                if (data_format == 'NHWC' and np.all(crops[0, :] == 0) and np.all(crops[-1, :] == 0)) \
+                        or (data_format == 'NCHW' and np.all(crops[:2, :] == 0)):
+                    if data_format == 'NHWC':
+                        spatial_crops = crops[1:-1, :]
+                    else:
+                        spatial_crops = crops[2:, :]
+                    spatial_crops = np.transpose(spatial_crops).flatten().tolist()
+                else:
+                    exclude_slice = True
+            if (exclude_slice and len(trans4_obj.get_output_shapes()) > 0 and all(s is not None for s in trans4_obj.get_output_shapes()[0])) \
+                    or ((not exclude_slice) and len(slice_obj.get_output_shapes()) > 0 and all(s is not None for s in slice_obj.get_output_shapes()[0])):
+                true_out_shape = trans4_obj.get_output_shapes(
+                )[0] if exclude_slice else slice_obj.get_output_shapes()[0]
+                if new_perm is not None:
+                    inverse_perm = Op.cal_inverse_perm(perm)
+                    true_out_shape = np.array(true_out_shape)[np.array(inverse_perm)]
+                    true_out_shape = true_out_shape[np.array(ref_perm)].tolist()
+        return exclude_slice, spatial_crops, new_perm, true_out_shape
+
+    matched = False
     conv_ops_list = list(set(BaseConvOp.get_concrete_subclass_names()).intersection(
         OnnxOp.get_concrete_subclass_names()))
-    all_matches = [matched_patterns(graph,
-                                    nodes=[
-                                        ('pad', {'op': 'Pad'}),
-                                        ('transpose_1', {'op': 'Transpose'}),
-                                        ('space_to_depth', {
-                                         'op': 'SpaceToDepth'}),
-                                        ('transpose_2', {'op': 'Transpose'}),
-                                        ('conv', {'op': conv_op}),
-                                        ('transpose_3', {'op': 'Transpose'}),
-                                        ('depth_to_space', {
-                                         'op': 'DepthToSpace'}),
-                                        ('transpose_4', {'op': 'Transpose'}),
-                                        ('slice', {'op': 'Slice'}),
-                                    ],
-                                    edges=[
-                                        ('pad', 'transpose_1'),
-                                        ('transpose_1', 'space_to_depth'),
-                                        ('space_to_depth', 'transpose_2'),
-                                        ('transpose_2', 'conv'),
-                                        ('conv', 'transpose_3'),
-                                        ('transpose_3', 'depth_to_space'),
-                                        ('depth_to_space', 'transpose_4'),
-                                        ('transpose_4', 'slice'),
-                                    ]
-                                    ) for conv_op in conv_ops_list]
-    all_matches = extend_lists(all_matches)
-    matched = False
-    for m in all_matches:
-        pad, trans1, s2d, trans2, conv, slice = m['pad'], m['transpose_1'], m[
-            'space_to_depth'], m['transpose_2'], m['conv'], m['slice']
-        in_edges = graph.sorted_in_edges(pad, data=True)
-        if len(in_edges) < 1:
-            WARN('[Parser]: The length of in_edges of Pad(%s) is invalid in merge_dilated_conv!' % pad)
-            continue
-        trans5 = graph.succ[slice][0] if len(graph.succ[slice]) > 0 else None
-        pad_obj = NodeWrap(graph, pad)['object']
-        trans1_obj = NodeWrap(graph, trans1)['object']
-        s2d_obj = NodeWrap(graph, s2d)['object']
-        trans2_obj = NodeWrap(graph, trans2)['object']
-        conv_obj = NodeWrap(graph, conv)['object']
-        slice_obj = NodeWrap(graph, slice)['object']
-        if trans5 is not None:
-            trans5_obj = NodeWrap(graph, trans5)['object']
-            if trans5_obj is not None and (trans5_obj.type != 'Transpose' or trans5_obj.perm != [0, 3, 1, 2]):
-                trans5_obj = None
-        else:
-            trans5_obj = None
-        if all([obj is not None for obj in [pad_obj, trans1_obj, s2d_obj, trans2_obj, conv_obj, slice_obj]]) \
-                and (trans5_obj is None or len(graph.sorted_out_edges(slice)) == 1):
-            matched = True
-            meets_special_pad = False
-            if trans1_obj.perm == [3, 0, 1, 2] and trans2_obj.perm == [1, 0, 2, 3]:
-                meets_special_pad = True
-                pad_obj.data_format = 'NHWC'
-            block_size = s2d_obj.blocksize
-            conv_obj.dilations = [block_size, block_size]
-            sliced = type(slice_obj).cal_sliced(slice_obj.starts if len(slice_obj.starts) == 2 else slice_obj.starts[1:3],
-                                                slice_obj.ends if len(
-                                                    slice_obj.ends) == 2 else slice_obj.ends[1:3],
-                                                slice_obj.get_input_shapes()[0][1:3])
-            fused_pads = np.reshape(np.array(conv_obj.pads, np.int64), newshape=(2, -1)) \
-                + np.reshape(np.array(pad_obj.space_pads(), np.int64), newshape=(2, -1)) \
-                - np.reshape(sliced, newshape=(2, -1))
-            conv_obj.pads = fused_pads.flatten().tolist()
-            if hasattr(conv_obj, 'output_shape'):
-                conv_obj.output_shape = slice_obj.get_output_shapes()[0][1:3]
-            if isinstance(conv_obj, BaseDeconvOp):
-                conv_obj.pads_updated = False
-                pad_in_shape = pad_obj.get_input_shapes()[0]
-                if pad_in_shape is not None and all(s is not None for s in pad_in_shape):
-                    conv_sptial_in_shape = pad_in_shape[1:-1] if conv_obj.data_format == 'NHWC' else pad_in_shape[-2:]
-                    conv_obj.update_pads(conv_sptial_in_shape)
-            else:
-                conv_obj.auto_pad = 'VALID' \
-                    if np.all(np.array(conv_obj.pads, np.int64) == 0) \
-                    else 'SAME_UPPER'
-            out_node = slice if trans5_obj is None else trans5
-            out_edges = graph.sorted_out_edges(out_node, data=True)
-            graph.remove_edges_from(in_edges[1:])
-            conv_in_edges = graph.sorted_in_edges(conv)
-            for src, _, in_attr in in_edges[:1]:
-                graph.remove_edge(src, pad)
-                graph.add_edge(src, conv, **in_attr)
-            for _, out, out_attr in out_edges:
-                graph.remove_edge(out_node, out)
-                graph.add_edge(conv, out, **out_attr)
-            graph.remove_edges_from(conv_in_edges)
-
-            if meets_special_pad:
-                conv_in_edges = graph.sorted_in_edges(conv, data=True)
-                conv_src, _, conv_in_attr = conv_in_edges[0]
-                insert_transpose(graph, conv_src, conv, conv_in_attr, [
-                                 0, 3, 1, 2])  # NHWC->NCHW
-
-                conv_post_trans = get_valid_node_name(
-                    graph, conv + '_post_trans')
-                conv_out_edges = graph.sorted_out_edges(conv, data=True)
-                for _, dst, out_attr in conv_out_edges:
-                    graph.remove_edge(conv, dst)
-                    graph.add_edge(conv_post_trans, dst, **out_attr)
-                graph.add_edge(conv, conv_post_trans)
-                # NCHW -> NHWC
-                NodeWrap(graph, conv_post_trans).replace_obj('Transpose', {
-                    'name': conv_post_trans, 'opset_version': 1, 'perm': [0, 2, 3, 1]})
-                last_name = conv_post_trans
-            else:
-                last_name = conv
-
-            if out_node in graph._attr['output_names']:
-                index = graph._attr['output_names'].index(out_node)
-                graph._attr['output_names'][index] = last_name
-        else:
+    matches = matched_patterns(graph,
+                               nodes=[
+                                   ('pad', {}),
+                                   ('transpose_1', {'op': 'Transpose'}),
+                                   ('space_to_depth', {'op': 'SpaceToDepth'}),
+                                   ('transpose_2', {'op': 'Transpose'}),
+                                   ('conv', {'op': conv_ops_list}),
+                                   ('transpose_3', {'op': 'Transpose'}),
+                                   ('depth_to_space', {'op': 'DepthToSpace'}),
+                                   ('transpose_4', {'op': 'Transpose'}),
+                                   ('slice', {}),
+                               ],
+                               edges=[
+                                   ('pad', 'transpose_1'),
+                                   ('transpose_1', 'space_to_depth'),
+                                   ('space_to_depth', 'transpose_2'),
+                                   ('transpose_2', 'conv'),
+                                   ('conv', 'transpose_3'),
+                                   ('transpose_3', 'depth_to_space'),
+                                   ('depth_to_space', 'transpose_4'),
+                                   ('transpose_4', 'slice'),
+                               ]
+                               )
+    for m in matches:
+        names = ['pad', 'transpose_1', 'space_to_depth', 'transpose_2',
+                 'conv', 'transpose_3', 'depth_to_space', 'transpose_4', 'slice']
+        obj_dict = {n: NodeWrap(graph, m[n])['object'] for n in names}
+        if any([obj is None for obj in obj_dict.values()]):
             WARN('[Parser]: Meets invalid Op in merge_dilated_conv!')
+            continue
+        conv_out_edges = graph.sorted_out_edges(m['conv'])
+        if len(conv_out_edges) != 1:
+            continue
+        conv_in_shapes = obj_dict['conv'].get_input_shapes()
+        if len(conv_in_shapes) < 1 or len(conv_in_shapes[0]) != 4:
+            continue
+        if isinstance(obj_dict['conv'], BaseDeconvOp) \
+                and obj_dict['conv'].output_padding:
+            continue
+        data_format = obj_dict['conv'].data_format
+        if obj_dict['space_to_depth'].data_format != data_format \
+                or obj_dict['depth_to_space'].data_format != data_format:
+            continue
+        if obj_dict['space_to_depth'].blocksize != obj_dict['depth_to_space'].blocksize:
+            continue
+        if (obj_dict['transpose_2'].perm != _REFERENCE_PERM[data_format]) \
+                or (obj_dict['transpose_3'].perm != _REFERENCE_PERM[data_format]):
+            continue
+
+        matched = True
+        exclude_pad, spatial_pads, new_in_perm, true_in_shape \
+            = _check_pads(obj_dict['pad'], obj_dict['transpose_1'], data_format)
+        exclude_slice, spatial_crops, new_out_perm, true_out_shape \
+            = _check_crops(obj_dict['slice'], obj_dict['transpose_4'], data_format)
+        first = m['transpose_1'] if exclude_pad else m['pad']
+        last = m['transpose_4'] if exclude_slice else m['slice']
+        block_size = obj_dict['space_to_depth'].blocksize
+        obj_dict['conv'].dilations = (np.array(obj_dict['conv'].dilations) * block_size).tolist()
+        pads = np.reshape(np.array(obj_dict['conv'].pads), (2, -1)) \
+            + np.reshape(np.array(spatial_pads), (2, -1)) \
+            - np.reshape(spatial_crops, (2, -1))
+        obj_dict['conv'].pads = pads.flatten().tolist()
+
+        if isinstance(obj_dict['conv'], BaseDeconvOp):
+            obj_dict['conv'].pads_updated = False
+            if true_in_shape is not None:
+                conv_sptial_in_shape = true_in_shape[1:-1] \
+                    if data_format == 'NHWC' \
+                    else true_in_shape[2:]
+                obj_dict['conv'].update_pads(conv_sptial_in_shape)
+            if hasattr(obj_dict['conv'], 'output_shape') \
+                    and true_out_shape is not None:
+                obj_dict['conv'].output_shape = true_out_shape[1:-1] \
+                    if data_format == 'NHWC' \
+                    else true_out_shape[2:]
+        else:
+            obj_dict['conv'].auto_pad = 'VALID' \
+                if np.all(np.array(obj_dict['conv'].pads, np.int64) == 0) \
+                else 'SAME_UPPER'
+
+        in_edges = graph.sorted_in_edges(first, data=True)
+        out_edges = graph.sorted_out_edges(last, data=True)
+        conv_in_edges = graph.sorted_in_edges(m['conv'], data=True)
+        src, _, in_attr = in_edges[0]
+        graph.remove_edges_from(conv_in_edges + conv_out_edges)
+        graph.add_edge(src, m['conv'], **in_attr)
+        for _, dst, out_attr in out_edges:
+            graph.remove_edge(last, dst)
+            graph.add_edge(m['conv'], dst, **out_attr)
+        if new_in_perm:
+            conv_in_edges = graph.sorted_in_edges(m['conv'], data=True)
+            conv_src, _, conv_in_attr = conv_in_edges[0]
+            insert_transpose(graph, conv_src, m['conv'], conv_in_attr, new_in_perm)
+        if new_out_perm:
+            new_out_transpose = insert_transpose_after(graph, m['conv'], new_out_perm)
+        else:
+            new_out_transpose = None
+
+        if last in graph._attr['output_names']:
+            index = graph._attr['output_names'].index(last)
+            if new_out_transpose:
+                graph._attr['output_names'][index] = new_out_transpose
+            else:
+                graph._attr['output_names'][index] = m['conv']
     if matched:
         clear_redundant_nodes(graph)
 
@@ -6849,6 +6926,7 @@ def middle_passes(graph, params):
     merge_dilated_conv(graph)
     remove_useless_op(graph, ['Concat',
                               'Dropout', 'Expand', 'Reshape', 'Slice', 'Transpose'])
+    remove_redundant_transpose(graph)
 
     decompose_const_if(graph, params)
     rename_reshape_like(graph)

@@ -54,6 +54,20 @@ class Op(abc.ABC):
                 return [src_perm.index(i) for i in range(len(src_perm))]
 
     @staticmethod
+    def cal_inserting_before_perm(existing_perm, ref_perm):
+        ''' insert transpose before existing transpose to create an expecting transpose '''
+        if list(existing_perm) == list(ref_perm):
+            return None
+        return [ref_perm[existing_perm.index(i)] for i in range(len(ref_perm))]
+
+    @staticmethod
+    def cal_inserting_after_perm(existing_perm, ref_perm):
+        ''' insert transpose after existing transpose to create an expecting transpose '''
+        if list(existing_perm) == list(ref_perm):
+            return None
+        return [existing_perm.index(i) for i in ref_perm]
+
+    @staticmethod
     def shape_nchw_to_nhwc(shape):
         '''Calculate the shape of the tensor after converting nchw to nhwc.'''
         assert len(

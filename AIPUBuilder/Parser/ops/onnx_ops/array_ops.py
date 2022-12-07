@@ -949,7 +949,8 @@ class SliceOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
 
     @staticmethod
     def cal_sliced(starts, ends, input_shape):
-        assert len(input_shape) == 2, 'input_shape is invalid in SliceOp.'
+        assert (len(starts) == len(ends)) and (len(starts) == len(input_shape)), \
+            'input_shape is invalid in SliceOp.'
         starts_np, ends_np, in_shape_np = [np.array(s, np.int64) for s in [
             starts, ends, input_shape]]
         end_neg_mask = ends_np < 0
