@@ -1341,8 +1341,27 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
             if FLOAT_EQUAL(inputs[0], 0):
                 out_tensor = np.zeros(out_shape).astype(inputs[0].dtype)
             else:
-                WARN('[Parser]: Non-zero constant inputs for Resize op is unsupported for now!')
-                out_tensor = None
+                to_nchw_perm = None
+                if self.data_format.startswith('NC'):
+                    inp = inputs[0]
+                    size = None if self.sizes is None else self.sizes[2:].tolist()
+                    scale_factor = None if (size is not None or self.scales is None) else self.scales[2:].tolist()
+                else:
+                    to_nchw_perm = [0, (len(input_dim_np) - 1)] + list(range(1, (len(input_dim_np) - 1)))
+                    inp = np.transpose(inputs[0], to_nchw_perm)
+                    size = None if self.sizes is None else self.sizes[1:-1].tolist()
+                    scale_factor = None if (size is not None or self.scales is None) else self.scales[1:-1].tolist()
+                if self.mode == 'linear' and self.coordinate_transformation_mode == 'pytorch_half_pixel':
+                    mode = 'linear' if len(input_dim_np) < 4 else (
+                        'bilinear' if len(input_dim_np) == 4 else 'trilinear')
+                    out_tensor = torch.nn.functional.interpolate(
+                        torch.from_numpy(inp), size, scale_factor, mode).numpy()
+                else:
+                    WARN('[Parser]: Non-zero constant inputs for Resize op with non-linear mode is unsupported for now!')
+                    # FIXME: Calling this function to get output tensor may get incorrect result.
+                    out_tensor = torch.nn.functional.interpolate(torch.from_numpy(inp), size, scale_factor).numpy()
+                if to_nchw_perm is not None:
+                    out_tensor = np.transpose(out_tensor, Op.cal_inverse_perm(to_nchw_perm))
         else:
             out_tensor = np.random.ranf(out_shape).astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)

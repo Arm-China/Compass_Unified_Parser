@@ -16,7 +16,7 @@ def create_fuse_const_model(onnx_path, resize_input_size, pow_input_shape, versi
             data_type = TensorProto.FLOAT
             tensor_value = np.random.ranf(tensor_value_shape).astype(np.float32)
         elif input_name == 'sizes':
-            tensor_value_shape = [4]
+            tensor_value_shape = [len(pow_input_shape)]
             data_type = TensorProto.INT64
             tensor_value = pow_input_shape
         else:
@@ -40,8 +40,8 @@ def create_fuse_const_model(onnx_path, resize_input_size, pow_input_shape, versi
         'Resize',
         inputs=['const_x', 'roi', 'scales', 'sizes'],
         outputs=['Y0'],
-        coordinate_transformation_mode='half_pixel',
-        mode='nearest',
+        coordinate_transformation_mode='pytorch_half_pixel',
+        mode='linear',
         nearest_mode='round_prefer_ceil'
     )
     pow_node = helper.make_node(
@@ -63,24 +63,22 @@ def create_fuse_const_model(onnx_path, resize_input_size, pow_input_shape, versi
 
 
 OP_NAME = 'fuse_const'
-resize_input_shape = [2, 3, 20, 40]
-pow_input_shape = [2, 3, 18, 34]
+resize_input_shapes = [[3, 10, 15], [1, 7, 24, 24], [2, 5, 16, 17, 18]]
+pow_input_shapes = [[3, 10, 19], [1, 7, 32, 32], [2, 5, 26, 27, 28]]
 
 # Generate input data
 feed_dict = dict()
-feed_dict['X'] = np.random.ranf(pow_input_shape).astype(np.float32)
 
-all_passed = True
 for version in (11, ):
-    model_name = '-'.join([OP_NAME, str(version)])
-    model_path = model_name + '.onnx'
-    # Create model
-    create_fuse_const_model(model_path, resize_input_shape, pow_input_shape, version)
+    for resize_input_shape, pow_input_shape in zip(resize_input_shapes, pow_input_shapes):
+        model_name = '-'.join([OP_NAME, str(version), str(len(pow_input_shape))])
+        model_path = model_name + '.onnx'
+        # Set feed_dict
+        feed_dict.clear()
+        feed_dict['X'] = np.random.ranf(pow_input_shape).astype(np.float32)
+        # Create model
+        create_fuse_const_model(model_path, resize_input_shape, pow_input_shape, version)
 
-    # FIXME: Remove try/except and enable assert after fixing the issue
-    try:
         # Run tests with parser and compare result with runtime
         exit_status = run_parser(model_path, feed_dict, verify=True)
-        # assert exit_status
-    except:
-        pass
+        assert exit_status
