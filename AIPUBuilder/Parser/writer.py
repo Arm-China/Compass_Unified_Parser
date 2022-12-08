@@ -138,6 +138,10 @@ def serialize(graph, params):
                                 if not op_obj.write_negative_slope(bin_file):
                                     ret = False
                                     break
+                            if isinstance(op_obj, PluginOp):
+                                if not op_obj.write_constants(bin_file):
+                                    ret = False
+                                    break
                         else:
                             WARN(
                                 '[Parser]: Meets invalid op for Node (%s) in serialize!' % n)

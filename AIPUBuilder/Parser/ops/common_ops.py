@@ -508,14 +508,16 @@ class PluginOp(OpHasVariableOutPorts, CommonOp):
     def __init__(self, graph, attr_dict=None):
         super(PluginOp, self).__init__(graph, attr_dict)
         self._type = 'Plugin' + attr_dict.get('type', 'Plugin')
+        self.constants = {}
+        self.constants_offset_dict = {}
         fw = graph._attr['framework'].name
         try:
             plugin_type = PARSER_OP_DICT[re.sub(
                 r'^Plugin', '', self._type, count=1)]
             nest_input = None
-            if "_nest_inputs" in attr_dict:
-                nest_input = attr_dict["_nest_inputs"]
-                attr_dict.pop("_nest_inputs")
+            if '_nest_inputs' in attr_dict:
+                nest_input = attr_dict['_nest_inputs']
+                attr_dict.pop('_nest_inputs')
             self._plugin = plugin_type(fw, attr_dict)
             if nest_input is not None:
                 self._plugin._nest_inputs = nest_input
@@ -532,8 +534,8 @@ class PluginOp(OpHasVariableOutPorts, CommonOp):
         out_tensors = []
         if self._plugin is not None:
             # check if is subgraph plugin, use nest list
-            if hasattr(self._plugin, "_subgraph_type"):
-                nest_input_index = getattr(self._plugin, "_nest_inputs", [])
+            if hasattr(self._plugin, '_subgraph_type'):
+                nest_input_index = getattr(self._plugin, '_nest_inputs', [])
                 inputs = [[inputs[i] for i in inps]
                           for inps in nest_input_index]
             try:
@@ -546,12 +548,12 @@ class PluginOp(OpHasVariableOutPorts, CommonOp):
         else:
             WARN('[Parser]: Invalid Plugin op (%s) for infer_shape!' % self.name)
         self.set_out_tensor(out_tensors)
-
-    def nchw_to_nhwc(self):
-        if self._plugin is not None:
-            self._plugin.nchw_to_nhwc()
-        else:
-            WARN('[Parser]: Invalid Plugin op (%s) for nchw_to_nhwc' % self.name)
+        # self.constants could be used in self._plugin.infer_shape, so check constants here
+        self.constants = getattr(self._plugin, 'constants', {})
+        if not all((isinstance(key, str) and isinstance(val, np.ndarray))
+                   for key, val in self.constants.items()):
+            WARN('[Parser]: Invalid constants in Plugin op (%s). Expect key is string and value is numpy array!' % self.name)
+            WARN('constants: %s' % str(self.constants))
 
     def write_attrs(self, txt_file):
         ret = super(PluginOp, self).write_attrs(txt_file)
@@ -579,10 +581,45 @@ class PluginOp(OpHasVariableOutPorts, CommonOp):
                                  (self.name, str(e)))
                             continue
                     txt_file.write('%s=%s\n' % (k, v))
+                for key, np_array in self.constants.items():
+                    if key not in self.constants_offset_dict:
+                        WARN('[Parser]: Fail to save constants (%s) for unknown offset in write_attrs!' % key)
+                        continue
+                    txt_file.write('%s_type=%s\n' % (key, str(np_array.dtype)))
+                    txt_file.write('%s_offset=%d\n' % (key, self.constants_offset_dict[key]))
+                    txt_file.write('%s_size=%d\n' % (key,
+                                                     (np_array.size * np_array.dtype.itemsize)))
+                    txt_file.write('%s_shape=[%s]\n' % (key, num_list_to_string(
+                        list(np_array.shape))))
             else:
                 WARN('[Parser]: Invalid Plugin op(%s) for write_attrs!' %
                      self.name)
                 ret = False
+        return ret
+
+    def write_constants(self, bin_file):
+        '''Write value of constants in IR binfile.'''
+        ret = True
+        if not bin_file.closed and bin_file.mode == 'wb':
+            if not self.constants:
+                pass
+            elif not self.constants_offset_dict \
+                    or any(key not in self.constants_offset_dict for key in self.constants):
+                ERROR('[Parser]: Node(%s) has invalid offset for constants in write_constants!' % self.name)
+                ret = False
+            else:
+                start = bin_file.tell()
+                for key, value in self.constants.items():
+                    offset = self.constants_offset_dict[key]
+                    assert start == offset, 'constants offset not match! layer name: %s, %d' % (self.name, offset)
+                    value.tofile(bin_file)
+                    end = bin_file.tell()
+                    assert (value.dtype.itemsize * int(np.prod(value.shape))) == (end - start), \
+                        'Node(%s) has error in writing constants (%s) to bin in write_constants!' % (self.name, key)
+                    start = end
+        else:
+            FATAL(
+                '[Parser]: Invalid file to write constants for Node(%s) in write_constants!' % self.name)
         return ret
 
 

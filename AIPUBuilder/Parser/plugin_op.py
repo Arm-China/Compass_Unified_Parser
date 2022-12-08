@@ -14,7 +14,6 @@ class ParserOpNotImplement(Exception):
 class ParserOp(object):
     # a string type of Op type
     op_type = None
-    layout = None
     alias = None
     # the plugin use priority
     priority = 0
@@ -75,7 +74,7 @@ class ParserOp(object):
         self.params = OrderedDict()
         # if 'name' in op_infos:
         #   self.params.update({'name': op_infos['name']})
-        # for weights: str,numpy.array
+        # for weights: key is str, value is numpy.array
         self.constants = OrderedDict()
 
     def infer_shape(self, input_tensors, *args):
@@ -85,17 +84,6 @@ class ParserOp(object):
         '''
         raise ParserOpNotImplement(
             'Plugin Node (' + self.params.get('name', '') + ') infer_shape not implemented!')
-
-    def nchw_to_nhwc(self):
-        '''
-        convert current layout to NHWC
-        in this function, you need to change some parameters due to the layout conversion, for example:
-        the permutes of transpose, axis of concat, etc.
-        '''
-        raise ParserOpNotImplement('')
-
-    def multi_batch_transform(self, origin_batch_size, new_batch_size):
-        raise ParserOpNotImplement('')
 
 
 class ParserSubgraphNotImplement(Exception):

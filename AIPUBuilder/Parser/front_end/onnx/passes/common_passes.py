@@ -906,6 +906,8 @@ def merge_pattern_to_plugin(graph, plugin_node_optype, innodes, outnodes, match=
         for k, v in getattr(NodeWrap(graph, name)['object'],
                             '_attr',
                             {}).items():
+            if not getattr(v, 'value', ''):
+                continue
             if k == 'keepdims':
                 v.value = bool(v.value)
             attrs[name].update({k: v.value})

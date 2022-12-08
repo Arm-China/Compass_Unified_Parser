@@ -3744,7 +3744,7 @@ def trim_weights(graph):
             if isinstance(node_obj, OpHasWeights):
                 if node_obj.weights is not None:
                     node_obj.weights = data_in_supported_dtype(
-                        node_obj.weights, "weights", node_name)
+                        node_obj.weights, 'weights', node_name)
                     node_obj.weights_offset = offset
                     offset += node_obj.weights.size * node_obj.weights.dtype.itemsize
                 else:
@@ -3765,10 +3765,15 @@ def trim_weights(graph):
                     and node_obj.negative_slope is not None \
                     and np.ndim(node_obj.negative_slope) > 0:
                 node_obj.negative_slope = data_in_supported_dtype(
-                    node_obj.negative_slope, "negative_slope", node_name)
+                    node_obj.negative_slope, 'negative_slope', node_name)
                 node_obj.negative_slope_offset = offset
                 offset += node_obj.negative_slope.size * node_obj.negative_slope.dtype.itemsize
-                pass
+            if isinstance(node_obj, PluginOp) \
+                    and node_obj.constants:
+                # Keep the original dtype for constants in Plugin
+                for key, np_array in node_obj.constants.items():
+                    node_obj.constants_offset_dict.update({key: offset})
+                    offset += np_array.size * np_array.dtype.itemsize
         else:
             WARN(
                 '[Parser]: Meets invalid Op object for Node %s in trim_weights!' % node_name)
