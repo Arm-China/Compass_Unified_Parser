@@ -207,6 +207,28 @@ class TfFakeQuantWithMinMaxVarsOp(OpHasOneOutPort, TfOp):
         self.set_out_tensor(out_tensor)
 
 
+class TfFakeQuantWithMinMaxVarsPerChannelOp(OpHasOneOutPort, TfOp):
+    @classmethod
+    def attributes(cls):
+        return {1: {'num_bits': {'type': AttrType.INT, 'default': 8},
+                    'narrow_range': {'type': AttrType.INT, 'default': 0, 'options': [0, 1]},
+                    },
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfFakeQuantWithMinMaxVarsPerChannelOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfFakeQuantWithMinMaxVarsPerChannelOp, attr_dict)
+        assert self.check_required(), 'TfFakeQuantWithMinMaxVarsPerChannelOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(TfFakeQuantWithMinMaxVarsPerChannelOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        assert len(inputs) >= 3, 'TfFakeQuantWithMinMaxVarsPerChannelOp expects 3 inputs, but got %d!' % len(inputs)
+        out_tensor = tf.quantization.fake_quant_with_min_max_vars_per_channel(
+            inputs[0], inputs[1], inputs[2], self.num_bits, bool(self.narrow_range)).numpy()
+        self.set_out_tensor(out_tensor)
+
+
 class TfFillOp(OpHasOneOutPort, TfOp):
     @classmethod
     def attributes(cls):
