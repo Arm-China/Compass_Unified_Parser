@@ -26,5 +26,9 @@ class SubGraphTest_NameMatch(ParserOp):
         sub_y = sub_inputs[0]
         self.constants['div_y'] = div_inputs[1]
         self.constants['bias'] = np.array(-1 * sub_y)
+        self.remove_inputs_at(tensor_index=1)
+        self.remove_inputs_at(tensor_index=0, node_index=1)
+        # Raise error for below: Infer of Node(sub_plugin) meets issues: Expect tensor_index < inputs length (1), but got 1
+        # self.remove_inputs_at(tensor_index=1, node_index=1)
         res = np.subtract(inp, sub_y)
         return [res]

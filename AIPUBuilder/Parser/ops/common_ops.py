@@ -510,6 +510,7 @@ class PluginOp(OpHasVariableOutPorts, CommonOp):
         self._type = 'Plugin' + attr_dict.get('type', 'Plugin')
         self.constants = {}
         self.constants_offset_dict = {}
+        self.shape_infered = False
         fw = graph._attr['framework'].name
         try:
             plugin_type = PARSER_OP_DICT[re.sub(
@@ -528,26 +529,57 @@ class PluginOp(OpHasVariableOutPorts, CommonOp):
             import traceback
             print(traceback.format_exc())
 
+    def remove_inputs(self, nest_input_index, inputs):
+        # remove input edges if _inputs_to_remove is set in ParserOp
+        remove_input_indexes = getattr(self._plugin, '_inputs_to_remove', [])
+        remove_edge_indexes = []
+        for node_index, tensor_index in remove_input_indexes:
+            if nest_input_index is None:
+                assert node_index == 0, 'Expect node_index == 0 in non-subgraph plugin, but got %d' % node_index
+                assert tensor_index < len(inputs), 'Expect tensor_index < inputs length (%d), but got %d' % (
+                    len(inputs), tensor_index)
+                remove_edge_index = tensor_index
+            else:
+                assert node_index < len(nest_input_index), 'Expect node_index < inputs length (%d) in subgraph plugin, but got %d' % (
+                    len(nest_input_index), node_index)
+                assert tensor_index < len(nest_input_index[node_index]), 'Expect tensor_index < inputs length (%d), but got %d' % (
+                    len(nest_input_index[node_index]), tensor_index)
+                remove_edge_index = np.sum([len(nest_input_index[idx]) for idx in range(node_index)]) + tensor_index
+            remove_edge_indexes.append(remove_edge_index)
+        in_edges = self._graph.sorted_in_edges(self.name)
+        self._graph.remove_edges_from([edge for idx, edge in enumerate(in_edges) if idx in remove_edge_indexes])
+
     def infer_shape(self):
+        # Do infer_shape only once for plugin
+        if self.shape_infered:
+            return
         super(PluginOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensors = []
         if self._plugin is not None:
             # check if is subgraph plugin, use nest list
+            nest_input_index = None
             if hasattr(self._plugin, '_subgraph_type'):
                 nest_input_index = getattr(self._plugin, '_nest_inputs', [])
                 inputs = [[inputs[i] for i in inps]
                           for inps in nest_input_index]
             try:
+                DEBUG('[Parser]: Call plugin infer_shape!')
                 out_tensors = self._plugin.infer_shape(inputs)
             except Exception as e:
                 WARN('[Parser]: plugin type (%s) infer shape meets error %s! ' %
                      (self.type, str(e)))
                 import traceback
                 print(traceback.format_exc())
+            try:
+                self.remove_inputs(nest_input_index, inputs)
+            except Exception as e:
+                WARN('[Parser]: plugin type (%s) meets error in removing input tensors: %s!' %
+                     (self.type, str(e)))
         else:
             WARN('[Parser]: Invalid Plugin op (%s) for infer_shape!' % self.name)
         self.set_out_tensor(out_tensors)
+        self.shape_infered = True
         # self.constants could be used in self._plugin.infer_shape, so check constants here
         self.constants = getattr(self._plugin, 'constants', {})
         if not all((isinstance(key, str) and isinstance(val, np.ndarray))

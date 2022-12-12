@@ -18,5 +18,5 @@ class PowOp(ParserOp):
         out_tensors = np.power(input_tensors[0], input_tensors[1])
         self.constants['exponent'] = input_tensors[1]
         self.constants['exponent_1'] = input_tensors[1]
-        # FIXME: How to remove the corresponding node of input_tensors[1]?
+        self.remove_inputs_at(1)
         return out_tensors

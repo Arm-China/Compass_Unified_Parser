@@ -76,6 +76,21 @@ class ParserOp(object):
         #   self.params.update({'name': op_infos['name']})
         # for weights: key is str, value is numpy.array
         self.constants = OrderedDict()
+        # for removing input tensors(edges). Its element is a tuple: (node_index, tensor_index).
+        self._inputs_to_remove = []
+
+    def remove_inputs_at(self, tensor_index, node_index=0):
+        '''
+        remove input tensors at the specific tensor index and node index(for subgraph);
+        the specific input tensor is removed after infer_shape is called;
+        call this function with different args if there are multiple input tensors to remove.
+        '''
+        assert isinstance(tensor_index, int), \
+            'Expect tensor_index to be a integer, but got %s' % type(tensor_index)
+        assert isinstance(node_index, int), \
+            'Expect node_index to be a integer, but got %s' % type(node_index)
+        remove_inputs = (node_index, tensor_index)
+        self._inputs_to_remove.append(remove_inputs)
 
     def infer_shape(self, input_tensors, *args):
         '''

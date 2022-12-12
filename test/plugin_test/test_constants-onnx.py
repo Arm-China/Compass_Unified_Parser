@@ -69,5 +69,6 @@ for exponent in ([-3, 2], [-5.1], ):
     # Run tests with parser and compare result with runtime
     exit_status = run_parser(
         model_path, feed_dict, model_type=None, save_output=True, verify=False,
-        expected_keywords=['for_test', 'exponent_offset', 'exponent_1_offset'])
+        expected_keywords=['for_test', 'exponent_offset', 'exponent_1_offset'],
+        unexpected_keywords=['Constant'])
     assert exit_status

@@ -43,5 +43,6 @@ os.environ['AIPUPLUGIN_PATH'] = os.path.join(os.path.dirname(__file__), 'plugins
 
 exit_status = run_parser(
     model_path, feed_dict, model_type='tf', save_output=False, verify=False,
-    expected_keywords=['MySubGraph', 'div_y_offset', 'bias_offset'])
+    expected_keywords=['MySubGraph', 'div_y_offset', 'bias_offset'],
+    unexpected_keywords=['Constant'])
 assert exit_status
