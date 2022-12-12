@@ -227,6 +227,8 @@ class ConvOp(BaseConvOp, OnnxOp):
         if self.weights.shape[1] * self.group != (inputs[0].shape[-1] if self.data_format == 'NHWC' else inputs[0].shape[1]):
             WARN(
                 '[Parser]: Meets invalid weights shape or input shape for Conv (%s)!' % self.name)
+        if self.kernel_shape is None:
+            self.kernel_shape = list(self.weights.shape[2:])
         if self.data_format == 'NHWC':
             # inp = tf.pad(inputs[0], self.tf_pads) if self.auto_pad == 'NOTSET' else inputs[0]
             # if self.group == 1:
@@ -387,6 +389,8 @@ class ConvTransposeOp(BaseDeconvOp, OnnxOp):
     def infer_shape(self):
         super(ConvTransposeOp, self).infer_shape()
         inputs = self.get_input_tensors()
+        if self.kernel_shape is None:
+            self.kernel_shape = list(self.weights.shape[2:])
         if len(inputs[0].shape) == 3 and len(self.output_padding) == 2:
             self.output_padding = self.output_padding[1:]
         self.update_pads(inputs[0].shape[1:-1] if self.data_format == 'NHWC' else inputs[0].shape[2:])
