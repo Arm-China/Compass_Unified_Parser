@@ -2677,9 +2677,7 @@ def merge_dilated_conv(graph):
                     if data_format == 'NHWC' \
                     else true_out_shape[2:]
         else:
-            obj_dict['conv'].auto_pad = 'VALID' \
-                if np.all(np.array(obj_dict['conv'].pads, np.int64) == 0) \
-                else 'SAME_UPPER'
+            obj_dict['conv'].auto_pad = 'NOTSET'
 
         in_edges = graph.sorted_in_edges(first, data=True)
         out_edges = graph.sorted_out_edges(last, data=True)
@@ -2796,7 +2794,7 @@ def merge_dilated_conv_group(graph):
                     conv_sptial_in_shape = pad_in_shape[1:-1] if conv_1_obj.data_format == 'NHWC' else pad_in_shape[-2:]
                     conv_1_obj.update_pads(conv_sptial_in_shape)
             else:
-                conv_1_obj.auto_pad = 'VALID' if np.all(fused_pads1 == 0) else 'SAME_UPPER'
+                conv_1_obj.auto_pad = 'NOTSET'
             conv_1_obj.pads = fused_pads1.flatten().tolist()
             conv_1_obj.dilations = [block_size, block_size]
             conv_1_obj.biases += bias_add_1_obj.sorted_in_consts()[0][2]
@@ -2816,7 +2814,7 @@ def merge_dilated_conv_group(graph):
                     conv_sptial_in_shape = pad_in_shape[1:-1] if conv_2_obj.data_format == 'NHWC' else pad_in_shape[-2:]
                     conv_2_obj.update_pads(conv_sptial_in_shape)
             else:
-                conv_2_obj.auto_pad = 'VALID' if np.all(fused_pads2 == 0) else 'SAME_UPPER'
+                conv_2_obj.auto_pad = 'NOTSET'
             conv_2_obj.pads = fused_pads2.flatten().tolist()
             conv_2_obj.dilations = [block_size, block_size]
             conv_2_obj.biases += bias_add_2_obj.sorted_in_consts()[0][2]
