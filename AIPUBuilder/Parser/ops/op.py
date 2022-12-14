@@ -11,6 +11,7 @@ from collections import OrderedDict, defaultdict
 from collections.abc import Iterable
 import numpy as np
 import torch
+import tensorflow as tf
 from ..common.defs import TensorType, Tensor, AttrType, Attribute, Framework, FLOAT_EQUAL
 from ..logger import INFO, DEBUG, WARN, ERROR, FATAL
 from ..common.utils import num_list_to_string, string_list_to_string, extend_lists
@@ -2473,7 +2474,8 @@ class KerasBaseConvOp(BaseConvOp, BaseActivationOp, KerasOp):
     '''
     @classmethod
     def attributes(cls):
-        return {'use_bias': {'type': AttrType.INT, 'default': 1, 'options': [0, 1]}
+        return {'use_bias': {'type': AttrType.INT, 'default': 1, 'options': [0, 1]},
+                'filters': {'type': AttrType.INT, 'required': True},
                 }
 
     def __init__(self, graph, attr_dict=None):
@@ -2482,6 +2484,7 @@ class KerasBaseConvOp(BaseConvOp, BaseActivationOp, KerasOp):
         assert self.check_required(), 'KerasBaseConvOp is missing a required parameter.'
         if not self.use_bias:
             self.biases = None
+        self.num_output = self.filters
 
     def __getattr__(self, item):
         ret = None
@@ -2494,6 +2497,49 @@ class KerasBaseConvOp(BaseConvOp, BaseActivationOp, KerasOp):
             ret = super(KerasBaseConvOp, self).__getattr__(item)
         return ret
 
+    @abc.abstractmethod
+    def infer_shape(self):
+        super(KerasBaseConvOp, self).infer_shape()
+        if isinstance(self, KerasBaseDeconvOp):
+            return
+        inputs = self.get_input_tensors()
+        pre_perm = None
+        if self.data_format.startswith('NC'):
+            pre_perm = [idx for idx in range(len(inputs[0])) if idx != 1] + [1]
+            inp = np.transpose(inputs[0], pre_perm)
+        else:
+            inp = inputs[0]
+        activation = None if self.activations == 'NONE' else self.activations.lower()
+        biases = 'zeros' if self.biases is None else tf.keras.initializers.Constant(self.biases)
+        conv = type(self).ufunc()(
+            filters=self.filters,
+            kernel_size=self.kernel_shape,
+            strides=self.strides,
+            padding='valid' if self.auto_pad == 'VALID' else 'same',
+            data_format='channels_last',
+            dilation_rate=self.dilations,
+            groups=self.group,
+            activation=activation,
+            use_bias=self.use_bias,
+            kernel_initializer=tf.keras.initializers.Constant(self.weights),
+            bias_initializer=biases)
+        out_tensor = conv(inp).numpy()
+        if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
+            self.pads, _ = OpHasPaddingStrides.cal_pads(
+                inp.shape[1:-1],
+                out_tensor.shape[1:-1],
+                self.strides,
+                self.kernel_shape,
+                self.auto_pad,
+                dilations=self.dilations,
+                is_transpose=False,
+                zero_minimum=True,
+            )
+            self.auto_pad = 'NOTSET'
+        if pre_perm is not None:
+            out_tensor = np.transpose(out_tensor, Op.cal_inverse_perm(pre_perm))
+        self.set_out_tensor(out_tensor)
+
 
 class KerasBaseDeconvOp(KerasBaseConvOp):
     '''
@@ -2502,7 +2548,7 @@ class KerasBaseDeconvOp(KerasBaseConvOp):
     '''
     @classmethod
     def attributes(cls):
-        return {'output_padding': {'type': AttrType.INTS, 'required': False, 'default': None}
+        return {'output_padding': {'type': AttrType.INTS, 'required': False, 'default': None},
                 }
 
     def __init__(self, graph, attr_dict=None):
@@ -2527,6 +2573,36 @@ class KerasBaseDeconvOp(KerasBaseConvOp):
         if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
             self.pads = new_pads
         self.auto_pad = 'NOTSET'
+
+    @abc.abstractmethod
+    def infer_shape(self):
+        super(KerasBaseDeconvOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        pre_perm = None
+        if self.data_format.startswith('NC'):
+            pre_perm = [idx for idx in range(len(inputs[0])) if idx != 1] + [1]
+            inp = np.transpose(inputs[0], pre_perm)
+        else:
+            inp = inputs[0]
+        activation = None if self.activations == 'NONE' else self.activations.lower()
+        biases = 'zeros' if self.biases is None else tf.keras.initializers.Constant(self.biases)
+        conv_trans = type(self).ufunc()(
+            filters=self.filters,
+            kernel_size=self.kernel_shape,
+            strides=self.strides,
+            padding='valid' if self.auto_pad == 'VALID' else 'same',
+            output_padding=self.output_padding,
+            data_format='channels_last',
+            dilation_rate=self.dilations,
+            activation=activation,
+            use_bias=self.use_bias,
+            kernel_initializer=tf.keras.initializers.Constant(self.weights),
+            bias_initializer=biases)
+        out_tensor = conv_trans(inp).numpy()
+        self.update_pads(list(inp.shape[1:-1]), list(out_tensor.shape[1:-1]))
+        if pre_perm is not None:
+            out_tensor = np.transpose(out_tensor, Op.cal_inverse_perm(pre_perm))
+        self.set_out_tensor(out_tensor)
 
 
 class KerasGlobalPoolingOp(OpHasOneOutPort, LayoutConcernedOp, KerasOp):

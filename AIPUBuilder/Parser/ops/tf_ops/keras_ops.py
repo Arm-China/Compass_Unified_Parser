@@ -114,7 +114,9 @@ class TfKerasBatchNormalizationOp(KerasNormalizationOp):
         batchnorm = tf.keras.layers.BatchNormalization(self.axis,
                                                        epsilon=self.epsilon,
                                                        center=self.center,
-                                                       scale=self.scale)
+                                                       scale=self.scale,
+                                                       beta_initializer=tf.keras.initializers.Constant(self.biases),
+                                                       gamma_initializer=tf.keras.initializers.Constant(self.weights))
         out_tensor = batchnorm(inputs[0], training=self.training_mode).numpy()
         self.set_out_tensor(out_tensor)
 
@@ -164,55 +166,15 @@ class TfKerasConcatenateOp(OpHasAxis, OpHasOneOutPort, KerasOp):
 
 class TfKerasConv1DOp(KerasBaseConvOp):
     @classmethod
-    def attributes(cls):
-        return {2: {'filters': {'type': AttrType.INT, 'required': True}}
-                }
-
-    @classmethod
     def perm_tf_to_onnx(cls):
         return [2, 1, 0]
 
-    def __init__(self, graph, attr_dict=None):
-        super(TfKerasConv1DOp, self).__init__(graph, attr_dict)
-        self.update_attributes(TfKerasConv1DOp, attr_dict)
-        assert self.check_required(), 'TfKerasConv1DOp is missing a required parameter.'
+    @classmethod
+    def ufunc(cls):
+        return tf.keras.layers.Conv1D
 
     def infer_shape(self):
         super(TfKerasConv1DOp, self).infer_shape()
-        inputs = self.get_input_tensors()
-        inp = np.transpose(inputs[0], [0, 2, 1]
-                           ) if self.data_format.startswith('NC') else inputs[0]
-        self.num_output = self.filters
-        activation = None if self.activations == 'NONE' else self.activations.lower()
-        biases = 'zeros' if self.biases is None else tf.keras.initializers.Constant(self.biases)
-        conv1d = tf.keras.layers.Conv1D(
-            filters=self.filters,
-            kernel_size=self.kernel_shape,
-            strides=self.strides,
-            padding='valid' if self.auto_pad == 'VALID' else 'same',
-            data_format='channels_last',
-            dilation_rate=self.dilations,
-            groups=self.group,
-            activation=activation,
-            use_bias=self.use_bias,
-            kernel_initializer=tf.keras.initializers.Constant(self.weights),
-            bias_initializer=biases)
-        out_tensor = conv1d(inp).numpy()
-        if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
-            self.pads, _ = OpHasPaddingStrides.cal_pads(
-                inp.shape[1:-1],
-                out_tensor.shape[1:-1],
-                self.strides,
-                self.kernel_shape,
-                self.auto_pad,
-                dilations=self.dilations,
-                is_transpose=False,
-                zero_minimum=True,
-            )
-            self.auto_pad = 'NOTSET'
-        if self.data_format.startswith('NC'):
-            out_tensor = np.transpose(out_tensor, [0, 2, 1])
-        self.set_out_tensor(out_tensor)
 
     @property
     def correspond_onnx_op(self):
@@ -221,45 +183,15 @@ class TfKerasConv1DOp(KerasBaseConvOp):
 
 class TfKerasConv1DTransposeOp(KerasBaseDeconvOp):
     @classmethod
-    def attributes(cls):
-        return {2: {'filters': {'type': AttrType.INT, 'required': True},
-                    },
-                }
-
-    @classmethod
     def perm_tf_to_onnx(cls):
         return [2, 1, 0]
 
-    def __init__(self, graph, attr_dict=None):
-        super(TfKerasConv1DTransposeOp, self).__init__(graph, attr_dict)
-        self.update_attributes(TfKerasConv1DTransposeOp, attr_dict)
-        assert self.check_required(), 'TfKerasConv1DTransposeOp is missing a required parameter.'
+    @classmethod
+    def ufunc(cls):
+        return tf.keras.layers.Conv1DTranspose
 
     def infer_shape(self):
         super(TfKerasConv1DTransposeOp, self).infer_shape()
-        inputs = self.get_input_tensors()
-        inp = np.transpose(inputs[0], [0, 2, 1]
-                           ) if self.data_format.startswith('NC') else inputs[0]
-        self.num_output = self.filters
-        activation = None if self.activations == 'NONE' else self.activations.lower()
-        biases = 'zeros' if self.biases is None else tf.keras.initializers.Constant(self.biases)
-        conv1d_trans = tf.keras.layers.Conv1DTranspose(
-            filters=self.filters,
-            kernel_size=self.kernel_shape,
-            strides=self.strides,
-            padding='valid' if self.auto_pad == 'VALID' else 'same',
-            output_padding=self.output_padding,
-            data_format='channels_last',
-            dilation_rate=self.dilations,
-            activation=activation,
-            use_bias=self.use_bias,
-            kernel_initializer=tf.keras.initializers.Constant(self.weights),
-            bias_initializer=biases)
-        out_tensor = conv1d_trans(inp).numpy()
-        self.update_pads(list(inp.shape[1:-1]), list(out_tensor.shape[1:-1]))
-        if self.data_format.startswith('NC'):
-            out_tensor = np.transpose(out_tensor, [0, 2, 1])
-        self.set_out_tensor(out_tensor)
 
     @property
     def correspond_onnx_op(self):
@@ -268,49 +200,15 @@ class TfKerasConv1DTransposeOp(KerasBaseDeconvOp):
 
 class TfKerasConv2DOp(KerasBaseConvOp):
     @classmethod
-    def attributes(cls):
-        return {2: {'filters': {'type': AttrType.INT, 'required': True}}
-                }
-
-    @classmethod
     def perm_tf_to_onnx(cls):
         return [3, 2, 0, 1]
 
-    def __init__(self, graph, attr_dict=None):
-        super(TfKerasConv2DOp, self).__init__(graph, attr_dict)
-        self.update_attributes(TfKerasConv2DOp, attr_dict)
-        assert self.check_required(), 'TfKerasConv2DOp is missing a required parameter.'
+    @classmethod
+    def ufunc(cls):
+        return tf.keras.layers.Conv2D
 
     def infer_shape(self):
         super(TfKerasConv2DOp, self).infer_shape()
-        inputs = self.get_input_tensors()
-        inp = np.transpose(inputs[0], [0, 2, 3, 1]
-                           ) if self.data_format == 'NCHW' else inputs[0]
-        self.num_output = self.filters
-        conv2d = tf.keras.layers.Conv2D(
-            filters=self.filters,
-            kernel_size=self.kernel_shape,
-            strides=self.strides,
-            padding='valid' if self.auto_pad == 'VALID' else 'same',
-            data_format='channels_last',
-            dilation_rate=self.dilations,
-            groups=self.group)
-        out_tensor = conv2d(inp).numpy()
-        if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
-            self.pads, _ = OpHasPaddingStrides.cal_pads(
-                inp.shape[1:3],
-                out_tensor.shape[1:3],
-                self.strides,
-                self.kernel_shape,
-                self.auto_pad,
-                dilations=self.dilations,
-                is_transpose=False,
-                zero_minimum=True,
-            )
-            self.auto_pad = 'NOTSET'
-        if self.data_format == 'NCHW':
-            out_tensor = np.transpose(out_tensor, [0, 3, 1, 2])
-        self.set_out_tensor(out_tensor)
 
     @property
     def correspond_onnx_op(self):
@@ -319,39 +217,15 @@ class TfKerasConv2DOp(KerasBaseConvOp):
 
 class TfKerasConv2DTransposeOp(KerasBaseDeconvOp):
     @classmethod
-    def attributes(cls):
-        return {2: {'filters': {'type': AttrType.INT, 'required': True},
-                    },
-                }
-
-    @classmethod
     def perm_tf_to_onnx(cls):
         return [3, 2, 0, 1]
 
-    def __init__(self, graph, attr_dict=None):
-        super(TfKerasConv2DTransposeOp, self).__init__(graph, attr_dict)
-        self.update_attributes(TfKerasConv2DTransposeOp, attr_dict)
-        assert self.check_required(), 'TfKerasConv2DTransposeOp is missing a required parameter.'
+    @classmethod
+    def ufunc(cls):
+        return tf.keras.layers.Conv2DTranspose
 
     def infer_shape(self):
         super(TfKerasConv2DTransposeOp, self).infer_shape()
-        inputs = self.get_input_tensors()
-        inp = np.transpose(inputs[0], [0, 2, 3, 1]
-                           ) if self.data_format == 'NCHW' else inputs[0]
-        self.num_output = self.filters
-        conv2d = tf.keras.layers.Conv2DTranspose(
-            filters=self.filters,
-            kernel_size=self.kernel_shape,
-            strides=self.strides,
-            padding='valid' if self.auto_pad == 'VALID' else 'same',
-            output_padding=self.output_padding,
-            data_format='channels_last',
-            dilation_rate=self.dilations)
-        out_tensor = conv2d(inp).numpy()
-        self.update_pads(list(inp.shape[1:3]), list(out_tensor.shape[1:3]))
-        if self.data_format == 'NCHW':
-            out_tensor = np.transpose(out_tensor, [0, 3, 1, 2])
-        self.set_out_tensor(out_tensor)
 
     @property
     def correspond_onnx_op(self):
@@ -360,49 +234,15 @@ class TfKerasConv2DTransposeOp(KerasBaseDeconvOp):
 
 class TfKerasConv3DOp(KerasBaseConvOp):
     @classmethod
-    def attributes(cls):
-        return {2: {'filters': {'type': AttrType.INT, 'required': True}}
-                }
-
-    @classmethod
     def perm_tf_to_onnx(cls):
         return [4, 3, 0, 1, 2]
 
-    def __init__(self, graph, attr_dict=None):
-        super(TfKerasConv3DOp, self).__init__(graph, attr_dict)
-        self.update_attributes(TfKerasConv3DOp, attr_dict)
-        assert self.check_required(), 'TfKerasConv3DOp is missing a required parameter.'
+    @classmethod
+    def ufunc(cls):
+        return tf.keras.layers.Conv3D
 
     def infer_shape(self):
         super(TfKerasConv3DOp, self).infer_shape()
-        inputs = self.get_input_tensors()
-        inp = np.transpose(inputs[0], [0, 2, 3, 4, 1]
-                           ) if self.data_format == 'NCDHW' else inputs[0]
-        self.num_output = self.filters
-        conv3d = tf.keras.layers.Conv3D(
-            filters=self.filters,
-            kernel_size=self.kernel_shape,
-            strides=self.strides,
-            padding='valid' if self.auto_pad == 'VALID' else 'same',
-            data_format='channels_last',
-            dilation_rate=self.dilations,
-            groups=self.group)
-        out_tensor = conv3d(inp).numpy()
-        if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
-            self.pads, _ = OpHasPaddingStrides.cal_pads(
-                inp.shape[1:4],
-                out_tensor.shape[1:4],
-                self.strides,
-                self.kernel_shape,
-                self.auto_pad,
-                dilations=self.dilations,
-                is_transpose=False,
-                zero_minimum=True,
-            )
-            self.auto_pad = 'NOTSET'
-        if self.data_format == 'NCDHW':
-            out_tensor = np.transpose(out_tensor, [0, 4, 1, 2, 3])
-        self.set_out_tensor(out_tensor)
 
     @property
     def correspond_onnx_op(self):
@@ -411,39 +251,15 @@ class TfKerasConv3DOp(KerasBaseConvOp):
 
 class TfKerasConv3DTransposeOp(KerasBaseDeconvOp):
     @classmethod
-    def attributes(cls):
-        return {2: {'filters': {'type': AttrType.INT, 'required': True},
-                    },
-                }
-
-    @classmethod
     def perm_tf_to_onnx(cls):
         return [4, 3, 0, 1, 2]
 
-    def __init__(self, graph, attr_dict=None):
-        super(TfKerasConv3DTransposeOp, self).__init__(graph, attr_dict)
-        self.update_attributes(TfKerasConv3DTransposeOp, attr_dict)
-        assert self.check_required(), 'TfKerasConv3DTransposeOp is missing a required parameter.'
+    @classmethod
+    def ufunc(cls):
+        return tf.keras.layers.Conv3DTranspose
 
     def infer_shape(self):
         super(TfKerasConv3DTransposeOp, self).infer_shape()
-        inputs = self.get_input_tensors()
-        inp = np.transpose(inputs[0], [0, 2, 3, 4, 1]
-                           ) if self.data_format == 'NCDHW' else inputs[0]
-        self.num_output = self.filters
-        conv3d = tf.keras.layers.Conv3DTranspose(
-            filters=self.filters,
-            kernel_size=self.kernel_shape,
-            strides=self.strides,
-            padding='valid' if self.auto_pad == 'VALID' else 'same',
-            output_padding=self.output_padding,
-            data_format='channels_last',
-            dilation_rate=self.dilations)
-        out_tensor = conv3d(inp).numpy()
-        self.update_pads(list(inp.shape[1:4]), list(out_tensor.shape[1:4]))
-        if self.data_format == 'NCDHW':
-            out_tensor = np.transpose(out_tensor, [0, 4, 1, 2, 3])
-        self.set_out_tensor(out_tensor)
 
     @property
     def correspond_onnx_op(self):
@@ -742,7 +558,9 @@ class TfKerasLayerNormalizationOp(KerasNormalizationOp):
         layernorm = tf.keras.layers.LayerNormalization(self.axes,
                                                        epsilon=self.epsilon,
                                                        center=self.center,
-                                                       scale=self.scale)
+                                                       scale=self.scale,
+                                                       beta_initializer=tf.keras.initializers.Constant(self.biases),
+                                                       gamma_initializer=tf.keras.initializers.Constant(self.weights))
         out_tensor = layernorm(inputs[0]).numpy()
         self.set_out_tensor(out_tensor)
 
