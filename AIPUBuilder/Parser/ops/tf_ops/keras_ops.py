@@ -838,6 +838,29 @@ class TfKerasResizingOp(OpHasOneOutPort, KerasOp):
         self.set_out_tensor(out_tensor)
 
 
+class TfKerasSoftmaxOp(OpHasOneOutPort, OpHasAxis, KerasOp):
+    @classmethod
+    def attributes(cls):
+        return {2: {'axes': {'type': AttrType.INTS, 'required': False, 'default': [-1]},
+                    }}
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfKerasSoftmaxOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfKerasSoftmaxOp, attr_dict)
+        assert self.check_required(), 'TfKerasSoftmaxOp is missing a required parameter.'
+        if self.axis is not None and isinstance(self.axis, int):
+            self.axes = [self.axis]
+
+    def infer_shape(self):
+        super(TfKerasSoftmaxOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        mask = None
+        if len(inputs) >= 2 and inputs[1].size >= 1 and inputs[1].item(0) is not None:
+            mask = inputs[1]
+        out_tensor = tf.keras.layers.Softmax(axis=self.axes)(inputs[0], mask=mask).numpy()
+        self.set_out_tensor(out_tensor)
+
+
 class TfKerasSubtractOp(OpHasOneOutPort, KerasOp):
     @classmethod
     def attributes(cls):

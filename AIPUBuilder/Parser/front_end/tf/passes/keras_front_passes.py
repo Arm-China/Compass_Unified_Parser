@@ -11,6 +11,7 @@ from ....graph.graph_algo import get_valid_node_name, clear_redundant_nodes
 from ....graph.pattern_match import matched_patterns, single_node_matcher
 from ...onnx.passes.common_passes import insert_constant, insert_reshape, insert_reshape_after, \
     insert_slice, insert_tile, insert_transpose, insert_transpose_after
+from ....common.defs import Tensor
 from ....common.utils import extend_lists
 from ....logger import INFO, DEBUG, WARN, ERROR, FATAL
 
@@ -328,6 +329,69 @@ def convert_resizing(graph):
         NodeWrap(graph, resize).replace_obj('Resize', resize_attr)
 
 
+def convert_softmax(graph):
+    '''
+    Keras Softmax support multiple axes. Convert to onnx Softmax for one axis, otherwise
+    convert to Exp(input)/ReduceSum(Exp(input), axis=axis, keepdims=1)
+    '''
+    matches = single_node_matcher(graph, 'TfKerasSoftmax')
+    for m in matches:
+        softmax = m['target']
+        softmax_obj = NodeWrap(graph, softmax)['object']
+        in_edges = graph.sorted_in_edges(softmax, data=True)
+        if softmax_obj is None or len(in_edges) < 1:
+            WARN('[Parser]: Meets invalid Op (%s) in convert_softmax!' % softmax)
+            continue
+        if len(in_edges) >= 2:
+            mask_src, _, mask_in_attr = in_edges[1]
+            if mask_in_attr['tensor'] is None \
+                    or not mask_in_attr['tensor'].is_const \
+                    or mask_in_attr['tensor'].value.item(0) is not None \
+                    or False in mask_in_attr['tensor'].value:
+                WARN('[Parser]: Mask in Op (%s) is not yet supported!' % softmax)
+                continue
+        new_node_attr = softmax_obj.copied_attr()
+        if len(softmax_obj.axes) == 1:
+            new_node_attr.update({'axes': None, 'axis': softmax_obj.axes[0], 'opset_version': 13})
+            NodeWrap(graph, softmax).replace_obj('Softmax', new_node_attr)
+            graph.remove_edges_from(in_edges[1:])
+        else:
+            src, _, in_attr = in_edges[0]
+            # # option 1: convert to Exp(input)/ReduceSum(Exp(input), axis=axis, keepdims=1)
+            # exp = get_valid_node_name(graph, softmax + '_exp')
+            # reduce_sum = get_valid_node_name(graph, softmax + '_reduce_sum')
+            # exp_out_tensor = None if in_attr['tensor'] is None or in_attr['tensor'].value is None else \
+            #     np.exp(in_attr['tensor'].value)
+            # reduce_sum_out_tensor = None if exp_out_tensor is None else \
+            #     np.sum(exp_out_tensor, axis=tuple(softmax_obj.axes), keepdims=True)
+
+            # graph.remove_edges_from(in_edges)
+            # graph.add_edge(src, exp, **in_attr)
+            # graph.add_edge(exp, reduce_sum, **{'tensor': Tensor(value=exp_out_tensor)})
+            # graph.add_edge(exp, softmax, **{'dst_in_port': 0, 'tensor': Tensor(value=exp_out_tensor)})
+            # graph.add_edge(reduce_sum, softmax, **{'dst_in_port': 1, 'tensor': Tensor(value=reduce_sum_out_tensor)})
+
+            # NodeWrap(graph, exp).replace_obj('Exp', {'name': exp, 'opset_version': 13})
+            # reduce_sum_attr = {'name': reduce_sum, 'axes': softmax_obj.axes, 'keepdims': 1, 'opset_version': 1}
+            # NodeWrap(graph, reduce_sum).replace_obj('ReduceSum', reduce_sum_attr)
+            # new_node_attr.update({'opset_version': 14})
+            # NodeWrap(graph, softmax).replace_obj('Div', new_node_attr)
+            # # option 2: convert to Exp(inputs - reduce_logsumexp(inputs, axis=self.axis, keepdims=1))
+            logsumexp = get_valid_node_name(graph, softmax + '_logsumexp')
+            sub = get_valid_node_name(graph, softmax + '_sub')
+            graph.remove_edges_from(in_edges)
+            graph.add_edge(src, logsumexp, **in_attr)
+            graph.add_edge(src, sub, **in_attr)
+            graph.add_edge(logsumexp, sub, **{'dst_in_port': 1})
+            graph.add_edge(sub, softmax)
+
+            logsumexp_attr = {'name': logsumexp, 'axes': softmax_obj.axes, 'keepdims': 1, 'opset_version': 13}
+            NodeWrap(graph, logsumexp).replace_obj('ReduceLogSumExp', logsumexp_attr)
+            NodeWrap(graph, sub).replace_obj('Sub', {'name': sub, 'opset_version': 13})
+            new_node_attr.update({'opset_version': 13})
+            NodeWrap(graph, softmax).replace_obj('Exp', new_node_attr)
+
+
 def convert_to_onnx(graph):
     '''Convert keras op to the onnx version.'''
     def warn_invalid_node(op_type, node_name):
@@ -486,5 +550,6 @@ def process_keras_op_after_infer(graph):
 
     convert_batchnorm(graph)
     convert_global_pooling(graph)
+    convert_softmax(graph)
 
     convert_to_onnx(graph)

@@ -216,7 +216,7 @@ def get_const_node_content(node_name, const_value):
     if const_value is not None:
         const_value = np.array(const_value)
     else:
-        const_value = np.empty([], 'float32')
+        const_value = np.array(None)
     out_tensor_name = node_name + ':0'
     ret = {'name': node_name,
            'type': 'Const',

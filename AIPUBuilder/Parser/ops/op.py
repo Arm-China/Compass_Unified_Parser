@@ -686,7 +686,7 @@ class OpHasAxis(Op):
     @classmethod
     def attributes(cls):
         '''return attributes of OpHasAxis class.'''
-        return {'axis': {'type': AttrType.INT, 'default': 0},
+        return {'axis': {'type': AttrType.INT, 'default': None},
                 'axes': {'type': AttrType.INTS, 'default': None},
                 'keepdims': {'type': AttrType.INT, 'default': 1},
                 'new_axis': {'type': AttrType.INT, 'default': 0}
