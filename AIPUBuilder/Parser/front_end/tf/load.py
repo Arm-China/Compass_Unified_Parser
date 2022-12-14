@@ -98,7 +98,7 @@ def convert_keras_attr_to_onnx(attr_dict):
             else:
                 data_format = v
             updated_attr = {k: data_format}
-        elif k in ('dilation_rate', 'kernel_size'):
+        elif k in ('dilation_rate', 'kernel_size', 'strides'):
             updated_attr = attr_to_list(k, v)
         elif k == 'keep_dims':
             updated_attr = attr_to_int(k, v)

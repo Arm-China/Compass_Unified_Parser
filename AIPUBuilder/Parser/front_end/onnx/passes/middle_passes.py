@@ -78,7 +78,8 @@ def convert_1d_conv(graph):
                 if len(in_edges) >= 1 and len(out_edges) >= 1:
                     in_shape = conv_obj.get_input_shapes()[0]
                     out_shape = conv_obj.get_output_shapes()[0]
-                    if conv_obj.data_format == 'NHWC':
+                    is_channels_last = (conv_obj.data_format == 'NHWC')
+                    if is_channels_last:
                         reshape1_dim = [in_shape[0], 1,
                                         in_shape[1], in_shape[2]]
                     else:
@@ -94,7 +95,11 @@ def convert_1d_conv(graph):
                     for _, dst, out_attr in out_edges:
                         graph.remove_edge(conv, dst)
                         graph.add_edge(reshape2, dst, **out_attr)
-                    graph.add_edge(conv, reshape2)
+                    conv_out_tensor = None
+                    conv_out_attr = out_edges[0][2]
+                    if conv_out_attr['tensor'] is not None and conv_out_attr['tensor'].value is not None:
+                        conv_out_tensor = np.expand_dims(conv_out_attr['tensor'].value, 1 if is_channels_last else 2)
+                    graph.add_edge(conv, reshape2, **{'tensor': Tensor(value=conv_out_tensor)})
 
                     reshape2_shape_const = get_valid_node_name(
                         graph, reshape2 + '_shape')
@@ -112,19 +117,23 @@ def convert_1d_conv(graph):
                     conv_attr['kernel_shape'] = [1] + conv_attr['kernel_shape']
                     conv_attr['strides'] = [1] + conv_attr['strides']
                     conv_attr['dilations'] = [1] + conv_attr['dilations']
-                    pad_len = len(conv_attr['pads'])
-                    pads = copy.deepcopy(conv_attr['pads'])
-                    pads.insert(pad_len // 2, 0)
-                    pads.insert(0, 0)
-                    conv_attr['pads'] = pads
+                    if 'pads' in conv_attr and conv_attr['pads']:
+                        pad_len = len(conv_attr['pads'])
+                        pads = copy.deepcopy(conv_attr['pads'])
+                        pads.insert(pad_len // 2, 0)
+                        pads.insert(0, 0)
+                        conv_attr['pads'] = pads
 
-                    if 'output_shape' in conv_attr:
+                    if 'output_shape' in conv_attr and conv_attr['output_shape']:
                         conv_attr['output_shape'] = [
                             1] + conv_attr['output_shape']
-                    if 'output_padding' in conv_attr:
+                    if 'output_padding' in conv_attr and conv_attr['output_padding']:
                         conv_attr['output_padding'] = [
                             0] + conv_attr['output_padding']
                     NodeWrap(graph, conv).replace_obj(conv_type, conv_attr)
+                    if conv in graph._attr['output_names']:
+                        index = graph._attr['output_names'].index(conv)
+                        graph._attr['output_names'][index] = reshape2
 
 
 def convert_1d_pooling(graph):
