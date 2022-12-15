@@ -906,13 +906,15 @@ def merge_pattern_to_plugin(graph, plugin_node_optype, innodes, outnodes, match=
         for k, v in getattr(NodeWrap(graph, name)['object'],
                             '_attr',
                             {}).items():
-            if not getattr(v, 'value', ''):
+            # TODO: do not wrap attr values, e.g.  keepdims = false --> keepdims = 0
+            try:
+                v_value = getattr(v, 'value')
+            except AttributeError:
                 continue
-            if k == 'keepdims':
-                v.value = bool(v.value)
-            attrs[name].update({k: v.value})
+
+            attrs[name].update({k: v_value})
             if k in attr_names_map:
-                attrs[name].update({attr_names_map[k]: v.value})
+                attrs[name].update({attr_names_map[k]: v_value})
 
     if match:
         inverse_match = {v: k for k, v in match.items()}
