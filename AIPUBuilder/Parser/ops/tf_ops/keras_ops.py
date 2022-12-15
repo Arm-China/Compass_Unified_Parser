@@ -3,6 +3,7 @@
 
 
 import numpy as np
+import copy
 import tensorflow as tf
 from ..op import *
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
@@ -119,6 +120,81 @@ class TfKerasBatchNormalizationOp(KerasNormalizationOp):
                                                        gamma_initializer=tf.keras.initializers.Constant(self.weights))
         out_tensor = batchnorm(inputs[0], training=self.training_mode).numpy()
         self.set_out_tensor(out_tensor)
+
+
+class TfKerasBidirectionalOp(OpHasVariableOutPorts, KerasOp):
+    @classmethod
+    def attributes(cls):
+        return {2: {'weights_list': {'type': AttrType.TENSORS, 'default': []},
+                    'layer': {'required': True},
+                    'merge_mode': {'type': AttrType.STRING, 'default': 'concat', 'options': ['sum', 'mul', 'concat', 'ave', 'none']},
+                    'backward_layer': {'default': None},
+                    }}
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfKerasBidirectionalOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfKerasBidirectionalOp, attr_dict)
+        assert self.check_required(), 'TfKerasBidirectionalOp is missing a required parameter.'
+
+    def create_node(self, direction):
+        '''Return node object for the layer in the specified direction; return None if
+        fail to create node object.
+        '''
+        ret = None
+        if direction not in ('forward', 'backward'):
+            WARN('Unsupported direction %s in TfKerasBidirectionalOp (%s)!' % (str(direction), self.name))
+            return ret
+        layer_type = self.layer.get('class_name', None)
+        layer_config = self.layer.get('config', {})
+        go_backwards = layer_config.get('go_backwards', False)
+        if direction == 'backward' and self.backward_layer is not None:
+            layer_type = self.backward_layer.get('class_name', None)
+            layer_config = self.backward_layer.get('config', {})
+        if layer_type is None or layer_type not in ('GRU', 'LSTM'):
+            WARN('Meet unsupported layer type (%s) in TfKerasBidirectionalOp (%s)!' % (str(layer_type), self.name))
+            return ret
+        if not layer_config:
+            WARN('Meet empty layer config in TfKerasBidirectionalOp (%s)!' % self.name)
+            return ret
+        if len(self.weights_list) != 6:
+            WARN('Expect weights length == 6, but got %d in TfKerasBidirectionalOp (%s)!' %
+                 (len(self.weights_list), self.name))
+            return ret
+
+        from ...graph.graph_algo import get_valid_node_name
+        from ...graph.node_wrap import NodeWrap
+        if direction == 'forward':
+            weights_list = self.weights_list[:3]
+        else:
+            weights_list = self.weights_list[3:]
+            go_backwards = not go_backwards
+        node_name = layer_config.get('name', self.name) + '_' + direction
+        node_name = get_valid_node_name(self._graph, node_name)
+        node_attr = copy.deepcopy(layer_config)
+        node_attr.update({'name': node_name, 'opcode_version': 2,
+                          'weights_list': weights_list, 'go_backwards': go_backwards})
+        self._graph.add_node(node_name)
+        ret = NodeWrap(self._graph, node_name).replace_obj('TfKeras' + layer_type, node_attr)
+        return ret
+
+    def infer_shape(self):
+        super(TfKerasBidirectionalOp, self).infer_shape()
+        forward_node_obj = self.create_node('forward')
+        assert forward_node_obj is not None, 'Meet invalid forward node in TfKerasBidirectionalOp (%s)' % self.name
+        backward_node_obj = self.create_node('backward')
+        assert backward_node_obj is not None, 'Meet invalid backward node in TfKerasBidirectionalOp (%s)' % self.name
+        merge_mode = None if self.merge_mode == 'none' else self.merge_mode
+        inputs = self.get_input_tensors()
+        inputs = [None if inp.item(0) is None else inp for inp in inputs]
+        bidir_layer_func = tf.keras.layers.Bidirectional(forward_node_obj.layer_func,
+                                                         merge_mode=merge_mode,
+                                                         backward_layer=backward_node_obj.layer_func)
+        out_tensors = bidir_layer_func(*inputs)
+        if merge_mode is None or forward_node_obj.return_state:
+            out_tensors = [out_tensor.numpy() for out_tensor in out_tensors]
+        else:
+            out_tensors = [out_tensors.numpy()]
+        self.set_out_tensor(out_tensors)
 
 
 class TfKerasCenterCropOp(OpHasOneOutPort, KerasOp):
@@ -478,6 +554,7 @@ class TfKerasGRUOp(KerasRecurrentOp):
         super(TfKerasGRUOp, self).__init__(graph, attr_dict)
         self.update_attributes(TfKerasGRUOp, attr_dict)
         assert self.check_required(), 'TfKerasGRUOp is missing a required parameter.'
+        self.layer_func = self.create_func(extra_args_dict={'reset_after': self.reset_after})
 
     def __getattr__(self, item):
         ret = None
@@ -490,30 +567,12 @@ class TfKerasGRUOp(KerasRecurrentOp):
             ret = super(TfKerasGRUOp, self).__getattr__(item)
         return ret
 
+    @classmethod
+    def ufunc(cls):
+        return tf.keras.layers.GRU
+
     def infer_shape(self):
         super(TfKerasGRUOp, self).infer_shape()
-        inputs = self.get_input_tensors()
-        assert len(inputs) >= 1, 'The length of inputs is invalid in TfKerasGRUOp infer shape.'
-        assert inputs[0] is not None and len(
-            inputs[0].shape) == 3, 'The first input is invalid in TfKerasGRUOp infer shape.'
-        hidden_size = self.units
-        if not self.time_major:
-            batch, timesteps, feature = inputs[0].shape
-            whole_out_shape = [batch, timesteps, hidden_size]
-        else:
-            timesteps, batch, feature = inputs[0].shape
-            whole_out_shape = [timesteps, batch, hidden_size]
-        state_out_shape = [batch, hidden_size]
-        input_dtype = inputs[0].dtype
-        if self.return_sequences:
-            whole_or_state_out = np.random.ranf(whole_out_shape).astype(input_dtype)
-        else:
-            whole_or_state_out = np.random.ranf(state_out_shape).astype(input_dtype)
-        if self.return_state:
-            state_out = np.random.ranf(state_out_shape).astype(input_dtype)
-            self.set_out_tensor([whole_or_state_out, state_out])
-        else:
-            self.set_out_tensor([whole_or_state_out])
 
 
 class TfKerasInputLayerOp(OpHasOneOutPort, InputLikeOp, KerasOp):
@@ -603,32 +662,14 @@ class TfKerasLSTMOp(KerasRecurrentOp):
         super(TfKerasLSTMOp, self).__init__(graph, attr_dict)
         self.update_attributes(TfKerasLSTMOp, attr_dict)
         assert self.check_required(), 'TfKerasLSTMOp is missing a required parameter.'
+        self.layer_func = self.create_func()
+
+    @classmethod
+    def ufunc(cls):
+        return tf.keras.layers.LSTM
 
     def infer_shape(self):
         super(TfKerasLSTMOp, self).infer_shape()
-        inputs = self.get_input_tensors()
-        assert len(inputs) >= 1, 'The length of inputs is invalid in TfKerasLSTMOp infer shape.'
-        assert inputs[0] is not None and len(
-            inputs[0].shape) == 3, 'The first input is invalid in TfKerasLSTMOp infer shape.'
-        hidden_size = self.units
-        if not self.time_major:
-            batch, timesteps, feature = inputs[0].shape
-            whole_out_shape = [batch, timesteps, hidden_size]
-        else:
-            timesteps, batch, feature = inputs[0].shape
-            whole_out_shape = [timesteps, batch, hidden_size]
-        state_out_shape = [batch, hidden_size]
-        input_dtype = inputs[0].dtype
-        if self.return_sequences:
-            whole_or_state_out = np.random.ranf(whole_out_shape).astype(input_dtype)
-        else:
-            whole_or_state_out = np.random.ranf(state_out_shape).astype(input_dtype)
-        if self.return_state:
-            hidden_state_out = np.random.ranf(state_out_shape).astype(input_dtype)
-            cell_state_out = np.random.ranf(state_out_shape).astype(input_dtype)
-            self.set_out_tensor([whole_or_state_out, hidden_state_out, cell_state_out])
-        else:
-            self.set_out_tensor([whole_or_state_out])
 
 
 class TfKerasMaxPooling1DOp(KerasPoolingOp):

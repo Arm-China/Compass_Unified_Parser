@@ -105,18 +105,9 @@ def adjust_pow(graph):
 
 def convert_uni_gru(graph):
     matched = False
-    matches = matched_patterns(graph,
-                               nodes=[
-                                   ('inp', {}),
-                                   ('init_h', {}),
-                                   ('gru', {'op': 'GRU'})
-                               ],
-                               edges=[
-                                   ('inp', 'gru', {'dst_in_port': 0}),
-                                   ('init_h', 'gru', {'dst_in_port': 5}),
-                               ])
+    matches = single_node_matcher(graph, 'GRU')
     for m in matches:
-        gru, inp, init_h = m['gru'], m['inp'], m['init_h']
+        gru = m['target']
         gru_obj = NodeWrap(graph, gru)['object']
         in_edges = graph.sorted_in_edges(gru, data=True)
         out_edges = graph.sorted_out_edges(gru, data=True)
@@ -133,7 +124,7 @@ def convert_uni_gru(graph):
                 time_steps, hidden_size = gru_obj.time_steps, gru_obj.hidden_size
 
                 _, _, inp_in_attr = in_edges[0]
-                _, _, init_h_in_attr = in_edges[5]
+                init_h, _, init_h_in_attr = in_edges[5]
                 graph.remove_edges_from(in_edges[1:])
                 init_h_in_attr['dst_in_port'] = 1
                 graph.add_edge(init_h, gru, **init_h_in_attr)
@@ -535,43 +526,12 @@ def convert_bi_gru(graph):
 
 
 def convert_uni_lstm(graph):
-    matches = matched_patterns(graph,
-                               nodes=[
-                                   ('inp', {}),
-                                   ('init_h', {}),
-                                   ('init_c', {}),
-                                   ('lstm', {'op': 'LSTM'})
-                               ],
-                               edges=[
-                                   ('inp', 'lstm', {'dst_in_port': 0}),
-                                   ('init_h', 'lstm', {'dst_in_port': 5}),
-                                   ('init_c', 'lstm', {'dst_in_port': 6}),
-                               ])
-    matches_2 = matched_patterns(graph,
-                                 nodes=[
-                                     ('inp', {}),
-                                     ('init', {}),
-                                     ('lstm', {'op': 'LSTM'})
-                                 ],
-                                 edges=[
-                                     ('inp', 'lstm', {'dst_in_port': 0}),
-                                     ('init', 'lstm', {'dst_in_port': 5}),
-                                     ('init', 'lstm', {'dst_in_port': 6}),
-                                 ])
+    matches = single_node_matcher(graph, 'LSTM')
     matched = False
-    for m in (matches + matches_2):
-        if len(m) == 4:
-            inp, lstm, init_h, init_c = m['inp'], m['lstm'], m['init_h'], m['init_c']
-        else:
-            # TODO: Split into separate pass. Add edges between the same init node and lstm node.
-            inp, lstm, init_h = m['inp'], m['lstm'], m['init']
-            init_c = init_h
-        inp_obj, lstm_obj, init_h_obj, init_c_obj = [
-            NodeWrap(graph, name)['object'] for name in (inp, lstm, init_h, init_c)]
-        if inp_obj is not None \
-                and lstm_obj is not None \
-                and init_h_obj is not None \
-                and init_c_obj is not None:
+    for m in matches:
+        lstm = m['target']
+        lstm_obj = NodeWrap(graph, lstm)['object']
+        if lstm_obj is not None:
             in_edges = graph.sorted_in_edges(lstm, data=True)
             out_edges = graph.sorted_out_edges(lstm, keys=True, data=True)
             if lstm_obj.direction != 'bidirectional' and len(in_edges) == 8 and len(out_edges) >= 1:
@@ -595,9 +555,9 @@ def convert_uni_lstm(graph):
                 batch_size = lstm_obj.get_input_shapes(
                 )[0][0] if lstm_obj.layout else lstm_obj.get_input_shapes()[0][1]
 
-                _, _, inp_in_attr = in_edges[0]
-                _, _, init_h_in_attr = in_edges[5]
-                _, _, init_c_in_attr = in_edges[6]
+                inp, _, inp_in_attr = in_edges[0]
+                init_h, _, init_h_in_attr = in_edges[5]
+                init_c, _, init_c_in_attr = in_edges[6]
                 graph.remove_edges_from(in_edges[1:])
                 init_h_in_attr['dst_in_port'] = 1
                 init_c_in_attr['dst_in_port'] = 2

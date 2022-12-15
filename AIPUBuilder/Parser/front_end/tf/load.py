@@ -102,6 +102,8 @@ def convert_keras_attr_to_onnx(attr_dict):
             updated_attr = {k: data_format}
         elif k in ('dilation_rate', 'kernel_size', 'strides'):
             updated_attr = attr_to_list(k, v)
+        elif k == 'merge_mode':
+            updated_attr = {k: str(v).lower()}
         elif k == 'keep_dims':
             updated_attr = attr_to_int(k, v)
         elif k == 'padding' and isinstance(v, str):
@@ -337,7 +339,10 @@ def convert_tf_to_graph(model_path, params):
                                 params['input_shapes'][n['name']] = params['input_shapes'].pop(out_tensor_name)
                         if out_tensor_name in graph._attr['output_names']:
                             index = graph._attr['output_names'].index(out_tensor_name)
-                            graph._attr['output_names'][index] = n['name']
+                            if n['name'] not in graph._attr['output_names']:
+                                graph._attr['output_names'][index] = n['name']
+                            else:
+                                graph._attr['output_names'].pop(index)
                 if n['name'] in graph._attr['input_names']:
                     if n.get('input', []):
                         nodes_inputs.update([src_name for src_name, _, _ in n['input']])

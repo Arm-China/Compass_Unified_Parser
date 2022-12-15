@@ -62,6 +62,127 @@ def convert_batchnorm(graph):
         NodeWrap(graph, batchnorm).replace_obj('BatchNormalization', node_attr)
 
 
+def convert_bidirectional(graph):
+    matched = False
+    matches = single_node_matcher(graph, 'TfKerasBidirectional')
+    for m in matches:
+        bidir = m['target']
+        bidir_obj = NodeWrap(graph, bidir)['object']
+        in_edges = graph.sorted_in_edges(bidir, data=True)
+        out_edges = graph.sorted_out_edges(bidir, data=True)
+        if bidir_obj is None or len(in_edges) < 1:
+            WARN('[Parser]: Meets invalid Op (%s) in convert_bidirectional!' % bidir)
+            continue
+        forward_node_obj = bidir_obj.create_node('forward')
+        if forward_node_obj is None:
+            WARN('[Parser]: Meet invalid layer of Op (%s) in convert_bidirectional!' % bidir)
+            continue
+        backward_node_obj = bidir_obj.create_node('backward')
+        if backward_node_obj is None:
+            WARN('[Parser]: Meet invalid backward_layer of Op (%s) in convert_bidirectional!' % bidir)
+            continue
+        in_shapes = bidir_obj.get_input_shapes()
+        if len(in_shapes) < 1 or in_shapes[0] is None or len(in_shapes[0]) != 3:
+            WARN('[Parser]: Meets invalid input shapes of Op (%s) in convert_bidirectional!' % bidir)
+            continue
+        matched = True
+        time_dim = 0 if forward_node_obj.time_major else 1
+        if time_dim == 0:
+            time_steps, batch_size, _ = in_shapes[0]
+        else:
+            batch_size, time_steps, _ = in_shapes[0]
+        forward_hidden_size = forward_node_obj.units
+        backward_hidden_size = backward_node_obj.units
+        forward_node = forward_node_obj.name
+        backward_node = backward_node_obj.name
+        # TODO: Consider initial state inputs
+        src, _, in_attr = in_edges[0]
+        graph.remove_edges_from(in_edges)
+        graph.add_edge(src, forward_node, **in_attr)
+        graph.add_edge(src, backward_node, **in_attr)
+        forward_type_is_lstm = (forward_node_obj.type == 'TfKerasLSTM')
+        backward_type_is_lstm = (backward_node_obj.type == 'TfKerasLSTM')
+        return_sequences = forward_node_obj.return_sequences
+        backward_rev = backward_node
+        if return_sequences:
+            backward_rev = get_valid_node_name(graph, backward_node + '_rev')
+            graph.add_edge(backward_node, backward_rev)
+            seq_len = np.array([time_steps] * batch_size, np.int32)
+            insert_constant(graph, backward_rev + '_seq_len', seq_len, backward_rev, in_port=1)
+            rev_seq_attr = {'name': backward_rev, 'time_axis': time_dim, 'batch_axis': 1-time_dim,
+                            'opset_version': 10}
+            NodeWrap(graph, backward_rev).replace_obj('ReverseSequence', rev_seq_attr)
+        # output_info_list save new output node and new src_out_port
+        output_info_list = []
+        merge_mode = bidir_obj.merge_mode
+        mode_type_map = {'sum': 'Add', 'mul': 'Mul', 'concat': 'Concat', 'ave': 'Mean'}
+        if merge_mode in mode_type_map:
+            forward_out_attr = {'src_out_port': 0, 'dst_in_port': 0}
+            graph.add_edge(forward_node, bidir, **forward_out_attr)
+            backward_out_attr = {'src_out_port': 0, 'dst_in_port': 1}
+            graph.add_edge(backward_rev, bidir, **backward_out_attr)
+
+            opset_version = 13
+            merge_node_attr = bidir_obj.copied_attr()
+            merge_node_attr.update({'opset_version': opset_version})
+            if merge_mode == 'concat':
+                merge_node_attr.update({'axis': -1})
+            NodeWrap(graph, bidir).replace_obj(mode_type_map[merge_mode], merge_node_attr)
+            output_info_list.append([bidir, 0])
+        else:  # merge_mode is 'none'
+            concat_y = get_valid_node_name(graph, bidir + '_concat_y')
+            graph.add_edge(forward_node, concat_y, **{'dst_in_port': 0})
+            graph.add_edge(backward_rev, concat_y, **{'dst_in_port': 1})
+            graph.add_edge(concat_y, bidir)
+            NodeWrap(graph, concat_y).replace_obj('Concat', {'name': concat_y, 'axis': -1, 'opset_version': 13})
+            split_y_attr = bidir_obj.copied_attr()
+            split_y_attr.update({'axis': -1, 'split': [forward_hidden_size, backward_hidden_size],
+                                 'opset_version': 11})
+            NodeWrap(graph, bidir).replace_obj('Split', split_y_attr)
+            output_info_list.extend([[bidir, 0], [bidir, 1]])
+        split_state = None
+        return_state = forward_node_obj.return_state
+        if return_state:
+            concat_state = get_valid_node_name(graph, bidir + '_concat_state')
+            split_state = get_valid_node_name(graph, bidir + '_split_state')
+            dst_in_port = 0
+            split = []
+            for direction in ('forward', 'backward'):
+                from_node, split_size, is_lstm = (forward_node, forward_hidden_size, forward_type_is_lstm) if direction == 'forward' \
+                    else (backward_node, backward_hidden_size, backward_type_is_lstm)
+                for out_port in (1, 2):
+                    if out_port == 2 and not is_lstm:
+                        continue
+                    graph.add_edge(from_node, concat_state, **{'src_out_port': out_port, 'dst_in_port': dst_in_port})
+                    output_info_list.append([split_state, dst_in_port])
+                    dst_in_port = dst_in_port + 1
+                    split.append(split_size)
+            graph.add_edge(concat_state, split_state)
+            NodeWrap(graph, concat_state).replace_obj(
+                'Concat', {'name': concat_state, 'axis': -1, 'opset_version': 13})
+            split_state_attr = {'name': split_state, 'axis': -1,
+                                'split': split, 'opset_version': 11}
+            NodeWrap(graph, split_state).replace_obj('Split', split_state_attr)
+        for _, dst, out_attr in out_edges:
+            graph.remove_edge(bidir, dst)
+            src_out_port = out_attr['src_out_port']
+            if src_out_port >= len(output_info_list):
+                WARN('[Parser]: Meet invalid src_out_port (%d) of Op (%s) in convert_bidirectional!' % (src_out_port, bidir))
+                continue
+            new_src_node, new_src_out_port = output_info_list[src_out_port]
+            out_attr.update({'src_out_port': new_src_out_port})
+            graph.add_edge(new_src_node, dst, **out_attr)
+        if bidir in graph._attr['output_names']:
+            index = graph._attr['output_names'].index(bidir)
+            # For GRU, if return_sequences is False, the first output is state output. No matter
+            # return_state is True or False, there is only 1 output in tf2 GRU.
+            if split_state is not None \
+                    and (return_sequences or forward_type_is_lstm or backward_type_is_lstm):
+                graph._attr['output_names'].insert(index + 1, split_state)
+        if matched:
+            clear_redundant_nodes(graph)
+
+
 def convert_centercrop(graph):
     '''
     Convert TfKerasCenterCrop op to onnx Slice.
@@ -149,8 +270,7 @@ def convert_gru_lstm(graph):
                 or len(rnn_obj.get_input_shapes()) < 1 \
                 or rnn_obj.get_input_shapes()[0] is None \
                 or len(rnn_obj.get_input_shapes()[0]) != 3 \
-                or len(in_edges) < 1 \
-                or len(rnn_obj.weights_list) < 2:
+                or len(in_edges) < 1:
             WARN(
                 '[Parser]: Meets invalid Op (%s) in convert_gru_lstm!' % rnn)
             continue
@@ -171,11 +291,10 @@ def convert_gru_lstm(graph):
             state_output_shape_with_dir = [batch_size, 1, hidden_size]
         state_output_shape = [batch_size, hidden_size]
         # weights and biases
-        kernel = rnn_obj.weights_list[0]
-        recurrent_kernel = rnn_obj.weights_list[1]
-        B_value, bias = None, None
-        if rnn_obj.use_bias and len(rnn_obj.weights_list) >= 3:
-            bias = rnn_obj.weights_list[2]
+        kernel = rnn_obj.kernel
+        recurrent_kernel = rnn_obj.recurrent_kernel
+        bias = rnn_obj.bias
+        B_value = None
         if rnn_type == 'TfKerasGRU':
             W_value = np.expand_dims(np.transpose(kernel), axis=0)
             R_value = np.expand_dims(np.transpose(recurrent_kernel), axis=0)
@@ -564,6 +683,7 @@ def process_keras_op_before_infer(graph):
         return
 
     from ...lite.passes.front_passes import split_op_has_activation
+    convert_bidirectional(graph)
     convert_gru_lstm(graph)
     convert_centercrop(graph)
     convert_resizing(graph)

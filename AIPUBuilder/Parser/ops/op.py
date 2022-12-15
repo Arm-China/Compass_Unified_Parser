@@ -2450,7 +2450,8 @@ class KerasRecurrentOp(OpHasVariableOutPorts, KerasOp):
                 'return_state': {'type': AttrType.INT, 'required': False, 'default': 0, 'options': [0, 1]},
                 'go_backwards': {'type': AttrType.INT, 'required': False, 'default': 0, 'options': [0, 1]},
                 'time_major': {'type': AttrType.INT, 'required': False, 'default': 0, 'options': [0, 1]},
-                'weights_list': {'type': AttrType.TENSORS, 'default': []}
+                'weights_list': {'type': AttrType.TENSORS, 'default': []},
+                'layer_func': {'required': False, 'default': None},
                 }
 
     def __init__(self, graph, attr_dict=None):
@@ -2468,6 +2469,46 @@ class KerasRecurrentOp(OpHasVariableOutPorts, KerasOp):
         if ret is None:
             ret = super(KerasRecurrentOp, self).__getattr__(item)
         return ret
+
+    def create_func(self, extra_args_dict=None):
+        ret = None
+        if len(self.weights_list) < 2:
+            WARN('Expect weights_list length >= 2, but got %d in KerasRecurrentOp (%s)!' %
+                 (len(self.weights_list), self.name))
+            return ret
+        self.kernel = self.weights_list[0]
+        self.recurrent_kernel = self.weights_list[1]
+        layer_args = {'units': self.units,
+                      'activation': self.activation,
+                      'recurrent_activation': self.recurrent_activation,
+                      'use_bias': self.use_bias,
+                      'kernel_initializer': tf.keras.initializers.Constant(self.kernel),
+                      'recurrent_initializer': tf.keras.initializers.Constant(self.recurrent_kernel),
+                      'return_sequences': self.return_sequences,
+                      'return_state': self.return_state,
+                      'go_backwards': self.go_backwards,
+                      'time_major': self.time_major}
+        self.bias = None
+        if self.use_bias and len(self.weights_list) >= 3:
+            self.bias = self.weights_list[2]
+            layer_args.update({'bias_initializer': tf.keras.initializers.Constant(self.bias)})
+        if extra_args_dict is not None:
+            layer_args.update(extra_args_dict)
+        ret = type(self).ufunc()(**layer_args)
+        return ret
+
+    @abc.abstractmethod
+    def infer_shape(self):
+        super(KerasRecurrentOp, self).infer_shape()
+        assert self.layer_func is not None, 'Meet invalid layer in KerasRecurrentOp (%s)' % self.name
+        inputs = self.get_input_tensors()
+        inputs = [None if inp.item(0) is None else inp for inp in inputs]
+        out_tensors = self.layer_func(*inputs)
+        if self.return_state:
+            out_tensors = [out_tensor.numpy() for out_tensor in out_tensors]
+        else:
+            out_tensors = [out_tensors.numpy()]
+        self.set_out_tensor(out_tensors)
 
 
 class KerasBaseConvOp(BaseConvOp, BaseActivationOp, KerasOp):
