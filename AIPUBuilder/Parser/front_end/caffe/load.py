@@ -113,6 +113,8 @@ def convert_attr_to_onnx(attr_dict):
 
 def convert_caffe_to_graph(model_path, params):
     '''Parse the caffe model into a graph structure.'''
+
+    from ...plugin_loader import PARSER_OP_DICT
     if not params.get('model_name', ''):
         params['model_name'] = 'caffe_model'
     graph = Graph(name=params['model_name'])
@@ -220,7 +222,10 @@ def convert_caffe_to_graph(model_path, params):
                 op_name = get_valid_node_name(graph, l['name'])
                 graph.add_node(op_name)
                 layer_map.update({op_name: l})
-                attr_dict = convert_attr_to_onnx(l)
+                if l['type'] not in PARSER_OP_DICT:
+                    attr_dict = convert_attr_to_onnx(l)
+                else:
+                    attr_dict = l.copy()
                 attr_dict.update(
                     {'data_format': params.get('input_data_format', 'NCHW')})
                 NodeWrap(graph, op_name).replace_obj(

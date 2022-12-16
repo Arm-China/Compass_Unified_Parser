@@ -185,6 +185,8 @@ def convert_attr_to_onnx(attr_dict):
 
 def convert_tflite_to_graph(model_path, params):
     '''Parse the tflite model into a graph structure.'''
+
+    from ...plugin_loader import PARSER_OP_DICT
     graph = Graph(name=params.get('model_name', ''))
     graph._attr['framework'] = Framework.TFLITE
     graph._attr['output_tensor_names'] = params.get('output_tensor_names', [])
@@ -265,7 +267,8 @@ def convert_tflite_to_graph(model_path, params):
                         parsed_tensors_table[op_info['outputs'][0]])
                     if activation and attr_dict.get('FusedActivationFunction', 'NONE') == 'NONE':
                         attr_dict['FusedActivationFunction'] = activation['act_type']
-                    attr_dict = convert_attr_to_onnx(attr_dict)
+                    if op_type not in PARSER_OP_DICT:
+                        attr_dict = convert_attr_to_onnx(attr_dict)
                     node = NodeWrap(graph, node_name)
                     node.replace_obj(op_type, attr_dict)
 

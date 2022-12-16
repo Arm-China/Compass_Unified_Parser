@@ -272,6 +272,7 @@ def parse_pb(graph, model_path, params, anchor_tensor):
 def convert_tf_to_graph(model_path, params):
     '''Parse the tensorflow model into a graph structure.'''
 
+    from ...plugin_loader import PARSER_OP_DICT
     is_keras_model = model_path.endswith('.h5') or model_path.endswith('.hdf5') or model_path.endswith(
         '.keras') or is_dir(model_path)
 
@@ -514,8 +515,11 @@ def convert_tf_to_graph(model_path, params):
 
                 for n in graph.nodes:
                     node_type = nodes_dict[n]['type']
-                    attr_dict = convert_attr_to_onnx(
-                        nodes_dict[n].get('attr', {}), node_type.startswith('Keras'))
+                    if node_type not in PARSER_OP_DICT:
+                        attr_dict = convert_attr_to_onnx(
+                            nodes_dict[n].get('attr', {}), node_type.startswith('Keras'))
+                    else:
+                        attr_dict = nodes_dict[n].get('attr', {})
                     attr_dict.update({'name': n,
                                       'opcode_version': nodes_dict[n].get('opcode_version', 1)})
                     NodeWrap(graph, n).replace_obj(

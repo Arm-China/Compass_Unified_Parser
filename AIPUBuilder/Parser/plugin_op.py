@@ -14,7 +14,9 @@ class ParserOpNotImplement(Exception):
 class ParserOp(object):
     # a string type of Op type
     op_type = None
-    alias = None
+
+    # the alias_op_type write to op_type in IR if you specified it, a string
+    alias_op_type = None
     # the plugin use priority
     priority = 0
     '''

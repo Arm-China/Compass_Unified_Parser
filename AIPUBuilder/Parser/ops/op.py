@@ -312,7 +312,10 @@ class Op(abc.ABC):
                 txt_file.write('layer_name=%s\n' % self.name)
             if re.search(r'^Plugin', self.type):
                 if hasattr(self, "_plugin") and self._plugin is not None:
-                    txt_file.write('layer_type=%s\n' % self._plugin.op_type)
+                    if self._plugin.alias_op_type is not None:
+                        txt_file.write('layer_type=%s\n' % self._plugin.alias_op_type)
+                    else:
+                        txt_file.write('layer_type=%s\n' % self._plugin.op_type)
                 else:
                     txt_file.write('layer_type=%s\n' %
                                    re.sub(r'^Plugin', '', self.type))

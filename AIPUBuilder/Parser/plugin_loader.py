@@ -50,22 +50,18 @@ def register_plugin(type, version=0):
         elif type == PluginType.Parser:
             from .plugin_op import ParserOp
             if issubclass(cls, ParserOp):
-                alias = [cls.op_type]
-                if hasattr(cls, 'alias') and cls.alias is not None:
-                    alias = set(cls.alias)
-                    alias.add(cls.op_type)
-                for optype in alias:
-                    if optype not in PARSER_OP_DICT:
-                        if hasattr(cls, '_check_'):
-                            if not cls._check_():
-                                continue
-                            else:
-                                if hasattr(cls, '_subgraph_type') and cls._subgraph_type == 'named_subgraph':
-                                    # for named plugin, the add a prefix for register optype
-                                    PARSER_OP_DICT['.named_subgraph.' + optype] = cls
-                                    pass
-                        PARSER_OP_DICT[optype] = cls
-                        PARSER_OP_DICT[optype.upper()] = cls
+                optype = cls.op_type
+                if optype not in PARSER_OP_DICT:
+                    if hasattr(cls, '_check_'):
+                        if not cls._check_():
+                            pass
+                        else:
+                            if hasattr(cls, '_subgraph_type') and cls._subgraph_type == 'named_subgraph':
+                                # for named plugin, the add a prefix for register optype
+                                PARSER_OP_DICT['.named_subgraph.' + optype] = cls
+                                pass
+                    PARSER_OP_DICT[optype] = cls
+                    PARSER_OP_DICT[optype.upper()] = cls
             else:
                 raise TypeError(
                     'Parser Plugin must be a subclass of ParserOp. But the plugin\'s class is %s' % cls.__name__)
