@@ -37,7 +37,6 @@ for set_mask in (True, False):
     # Create model
     create_softmax_model(model_path, input_shape, set_mask)
 
-    # FIXME: Enable verify after supporting mask for Softmax
     exit_status = run_parser(
-        model_path, feed_dict, model_type='tf', verify=False if set_mask else True)
+        model_path, feed_dict, model_type='tf', verify=True)
     assert exit_status

@@ -343,13 +343,26 @@ def convert_softmax(graph):
             WARN('[Parser]: Meets invalid Op (%s) in convert_softmax!' % softmax)
             continue
         if len(in_edges) >= 2:
-            mask_src, _, mask_in_attr = in_edges[1]
+            _, _, mask_in_attr = in_edges[1]
             if mask_in_attr['tensor'] is None \
-                    or not mask_in_attr['tensor'].is_const \
-                    or mask_in_attr['tensor'].value.item(0) is not None \
-                    or False in mask_in_attr['tensor'].value:
-                WARN('[Parser]: Mask in Op (%s) is not yet supported!' % softmax)
+                    or not mask_in_attr['tensor'].is_const:
+                WARN('[Parser]: Non-constant mask in Op (%s) is not yet supported!' % softmax)
                 continue
+            if mask_in_attr['tensor'].value.item(0) is not None \
+                    and False in mask_in_attr['tensor'].value:
+                add_operand = (1 - mask_in_attr['tensor'].value.astype(np.float32)) * np.finfo(np.float32).min
+                add_node = get_valid_node_name(graph, softmax + '_masked')
+                graph.remove_edges_from(in_edges)
+                src, _, in_attr = in_edges[0]
+                graph.add_edge(src, add_node, **in_attr)
+                insert_constant(graph, add_node + '_operand', add_operand, add_node, in_port=1, data_format='NHWC')
+                softmax_in_attr = copy.deepcopy(in_attr)
+                softmax_in_attr.update({'src_out_port': 0})
+                if in_attr['tensor'] is not None and in_attr['tensor'].value is not None:
+                    softmax_in_attr['tensor'].value = in_attr['tensor'].value + add_operand
+                graph.add_edge(add_node, softmax, **softmax_in_attr)
+                NodeWrap(graph, add_node).replace_obj('Add', {'name': add_node, 'opset_version': 13})
+                in_edges = graph.sorted_in_edges(softmax, data=True)
         new_node_attr = softmax_obj.copied_attr()
         if len(softmax_obj.axes) == 1:
             new_node_attr.update({'axes': None, 'axis': softmax_obj.axes[0], 'opset_version': 13})
