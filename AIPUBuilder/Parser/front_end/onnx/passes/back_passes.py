@@ -150,6 +150,21 @@ def convert_uni_gru(graph):
                     init_h, _, init_h_in_attr = in_edges[1]
                 insert_reshape(graph, init_h, gru, init_h_in_attr, [
                                batch_size, hidden_size])
+                if gru_obj.direction == 'reverse':
+                    rev = get_valid_node_name(graph, gru + '_reverse')
+                    graph.remove_edge(inp, gru)
+                    graph.add_edge(inp, rev, **inp_in_attr)
+                    gru_in_attr = copy.deepcopy(inp_in_attr)
+                    if inp_in_attr['tensor'] is not None and inp_in_attr['tensor'].value is not None:
+                        gru_in_attr['tensor'].value = np.flip(inp_in_attr['tensor'].value, 1)
+                    gru_in_attr.update({'src_out_port': 0})
+                    graph.add_edge(rev, gru, **gru_in_attr)
+                    seq_len = np.array([time_steps] * batch_size, np.int32)
+                    insert_constant(graph, rev + '_seq_len', seq_len, rev, in_port=1)
+                    rev_seq_attr = {'name': rev, 'time_axis': 1, 'batch_axis': 0,
+                                    'opset_version': 10}
+                    NodeWrap(graph, rev).replace_obj('ReverseSequence', rev_seq_attr)
+                    gru_obj.direction = 'forward'
 
                 last_names = []
                 out_ports = gru_obj.get_out_ports()
