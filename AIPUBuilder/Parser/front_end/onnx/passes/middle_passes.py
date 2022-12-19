@@ -2640,6 +2640,8 @@ def merge_dilated_conv(graph):
         if any([obj is None for obj in obj_dict.values()]):
             WARN('[Parser]: Meets invalid Op in merge_dilated_conv!')
             continue
+        if obj_dict['depth_to_space'].mode != 'DCR':
+            continue
         conv_out_edges = graph.sorted_out_edges(m['conv'])
         if len(conv_out_edges) != 1:
             continue
@@ -2758,14 +2760,17 @@ def merge_dilated_conv_group(graph):
                                ]
                                )
     for m in matches:
-        pad, s2d, conv_1, bias_add_1, conv_2, bias_add_2 = m['pad'], m[
-            'space_to_depth'], m['conv_1'], m['bias_add_1'], m['conv_2'], m['bias_add_2']
+        pad, s2d, conv_1, d2s_1, bias_add_1, conv_2, d2s_2, bias_add_2 \
+            = m['pad'], m['space_to_depth'], m['conv_1'], m['depth_to_space_1'], m['bias_add_1'], \
+            m['conv_2'], m['depth_to_space_2'], m['bias_add_2']
         slice_1, slice_2 = m['slice_1'], m['slice_2']
         pad_obj = NodeWrap(graph, pad)['object']
         s2d_obj = NodeWrap(graph, s2d)['object']
         conv_1_obj = NodeWrap(graph, conv_1)['object']
+        d2s_1_obj = NodeWrap(graph, d2s_1)['object']
         bias_add_1_obj = NodeWrap(graph, bias_add_1)['object']
         conv_2_obj = NodeWrap(graph, conv_2)['object']
+        d2s_2_obj = NodeWrap(graph, d2s_2)['object']
         bias_add_2_obj = NodeWrap(graph, bias_add_2)['object']
         slice_1_obj = NodeWrap(graph, slice_1)['object']
         slice_2_obj = NodeWrap(graph, slice_2)['object']
@@ -2773,11 +2778,15 @@ def merge_dilated_conv_group(graph):
         if pad_obj is not None \
                 and s2d_obj is not None \
                 and conv_1_obj is not None \
+                and d2s_1_obj is not None \
                 and bias_add_1_obj is not None \
                 and conv_2_obj is not None \
+                and d2s_2_obj is not None \
                 and bias_add_2_obj is not None \
                 and slice_1_obj is not None \
                 and slice_2_obj is not None:
+            if d2s_1_obj.mode != 'DCR' or d2s_2_obj.mode != 'DCR':
+                continue
             pad_in_edges = graph.sorted_in_edges(pad, data=True)
             if len(pad_in_edges) < 1:
                 WARN('[Parser]: The length of in_edges of Pad(%s) is invalid in merge_dilated_conv_group!' % pad)

@@ -1007,6 +1007,14 @@ def merge_b2s(graph):
         transpose1, d2s, transpose2, out = m['transpose1'], m['d2s'], m['transpose2'], m['output']
         transpose1_obj, d2s_obj, transpose2_obj, out_obj = [
             NodeWrap(graph, name)['object'] for name in [transpose1, d2s, transpose2, out]]
+        if transpose1_obj is None \
+                or d2s_obj is None \
+                or transpose2_obj is None \
+                or out_obj is None:
+            WARN('[Parser]: Meets invalid node in merge_b2s!')
+            continue
+        if d2s_obj.mode != 'DCR':
+            continue
         transpose_perm = np.arange(0, len(transpose2_obj.perm))
         transpose_perm[0], transpose_perm[len(
             transpose2_obj.perm) - 1] = transpose_perm[len(transpose2_obj.perm) - 1], transpose_perm[0]
