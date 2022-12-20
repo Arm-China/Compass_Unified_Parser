@@ -205,7 +205,8 @@ class DilationOp(OpHasPaddingStrides, OpHasWeights, OpHasOneOutPort, LayoutConce
                                       np.transpose(self.weights, [1, 2, 0]),
                                       strides=[1] + self.strides + [1],
                                       padding=padding,
-                                      dilations=[1] + self.dilations + [1]).numpy()
+                                      dilations=[1] + self.dilations + [1],
+                                      data_format='NHWC').numpy()
 
         if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
             self.pads, _ = OpHasPaddingStrides.cal_pads(

@@ -1539,7 +1539,8 @@ class ArmDilationOp(OpHasPaddingStrides, OpHasWeights, OpHasOneOutPort, LayoutCo
                                       np.transpose(np.reshape(self.weights, self.weights.shape[:3]), [1, 2, 0]),
                                       strides=[1] + self.strides + [1],
                                       padding='VALID',
-                                      dilations=[1] + self.dilations + [1]).numpy()
+                                      dilations=[1] + self.dilations + [1],
+                                      data_format='NHWC').numpy()
         self.set_out_tensor(out_tensor)
 
 

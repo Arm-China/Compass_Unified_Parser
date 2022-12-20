@@ -176,7 +176,8 @@ class TfDilation2DOp(TfHasPaddingStrides, OpHasWeights, OpHasOneOutPort, TfOp):
                                       self.weights,
                                       strides=[1] + self.strides + [1],
                                       padding=padding,
-                                      dilations=[1] + self.dilations + [1]).numpy()
+                                      dilations=[1] + self.dilations + [1],
+                                      data_format='NHWC').numpy()
 
         if self.data_format == 'NCHW':
             out_tensor = np.transpose(out_tensor, [0, 3, 1, 2])
