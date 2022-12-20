@@ -19,6 +19,7 @@ from .buffer import *
 from .buffer_tf2 import parse_keras
 from .utils import trim_tensor_name
 
+
 tf_attr_names_map = {'activation': 'activations',
                      'bias': 'biases',
                      'dilation_rate': 'dilations',
@@ -140,6 +141,7 @@ def convert_attr_to_onnx(attr_dict, is_keras_op=False):
 
 
 def parse_pb(graph, model_path, params, anchor_tensor):
+
     def _remove_unneeded_nodes(graph, nodes):
         if not graph._attr['output_names']:
             return nodes
@@ -264,9 +266,9 @@ def parse_pb(graph, model_path, params, anchor_tensor):
                     threads.append(t)
                 coord.join(threads)
                 np_tensors = {nt[0]: nt[1] for nt in np_tensors_list}
+        return nodes, nodes_dict, tensors, np_tensors, input_shapes
     except Exception as e:
         FATAL('[Parser]: Meet error in parse_pb: %s' % str(e))
-    return nodes, nodes_dict, tensors, np_tensors, input_shapes
 
 
 def convert_tf_to_graph(model_path, params):

@@ -1416,7 +1416,7 @@ class ArmDepthToSpaceOp(OpHasOneOutPort, ArmOp):
         n, h, w, c = inputs[0].shape
         if self.mode == 'DCR':
             reshape_dim = [n, h, w, self.blocksize, self.blocksize, c // self.blocksize ** 2]
-            trans_perm = [0, 3, 4, 1, 5, 2]
+            trans_perm = [0, 1, 3, 2, 4, 5]
         else:
             reshape_dim = [n, h, w, c // self.blocksize ** 2, self.blocksize, self.blocksize]
             trans_perm = [0, 1, 4, 2, 5, 3]
