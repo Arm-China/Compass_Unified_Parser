@@ -150,6 +150,8 @@ def convert_uni_gru(graph):
                     init_h, _, init_h_in_attr = in_edges[1]
                 insert_reshape(graph, init_h, gru, init_h_in_attr, [
                                batch_size, hidden_size])
+
+                out_rev = None
                 if gru_obj.direction == 'reverse':
                     rev = get_valid_node_name(graph, gru + '_reverse')
                     graph.remove_edge(inp, gru)
@@ -165,6 +167,21 @@ def convert_uni_gru(graph):
                                     'opset_version': 10}
                     NodeWrap(graph, rev).replace_obj('ReverseSequence', rev_seq_attr)
                     gru_obj.direction = 'forward'
+                    if 0 in gru_obj.get_out_ports():
+                        out_rev = get_valid_node_name(graph, gru + '_output_reverse')
+                        out_rev_in_attr = {}
+                        for _, dst, out_attr in out_edges:
+                            if out_attr['src_out_port'] == 0:
+                                graph.remove_edge(gru, dst)
+                                graph.add_edge(out_rev, dst, **out_attr)
+                                if not out_rev_in_attr:
+                                    out_rev_in_attr = out_attr
+                        out_rev_in_attr.update({'dst_in_port': 0})
+                        graph.add_edge(gru, out_rev, **out_rev_in_attr)
+                        insert_constant(graph, out_rev + '_seq_len', seq_len, out_rev, in_port=1)
+                        out_rev_attr = {'name': out_rev, 'time_axis': 1, 'batch_axis': 0,
+                                        'opset_version': 10}
+                        NodeWrap(graph, out_rev).replace_obj('ReverseSequence', out_rev_attr)
 
                 last_names = []
                 out_ports = gru_obj.get_out_ports()
@@ -173,8 +190,9 @@ def convert_uni_gru(graph):
                         batch_size, hidden_size]
                     reshape_dim = [batch_size, time_steps, 1, hidden_size] if p == 0 else [
                         batch_size, 1, hidden_size]
+                    gru_out_node = (out_rev if p == 0 and out_rev is not None else gru)
                     reshape = insert_reshape_after(
-                        graph, gru, reshape_dim, old_dim=old_dim, out_port=p)
+                        graph, gru_out_node, reshape_dim, old_dim=old_dim, out_port=p)
                     last_name = reshape
                     if not gru_obj.layout:
                         post_trans_perm = [1, 2, 0, 3] if p == 0 else [1, 0, 2]

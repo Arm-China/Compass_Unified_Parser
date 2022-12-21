@@ -14,7 +14,6 @@ def create_gru_model(model_path, x1_size, initial_state, time_major, reset_after
     gru_layer = keras.layers.GRU(4, bias_initializer='glorot_uniform', time_major=time_major, activation='sigmoid',
                                  reset_after=reset_after, return_sequences=True, return_state=False,
                                  go_backwards=go_backwards)
-    #initial_state = tf.constant(initial_state)
     gru_y = gru_layer(x1, initial_state=initial_state, training=False)
 
     model = keras.models.Model(x1, gru_y)

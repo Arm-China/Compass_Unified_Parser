@@ -29,7 +29,7 @@ def compare_data(data1, data2):
                   torch.from_numpy(data1.reshape([1, -1]))).numpy()
         mean_value = np.mean(abs(data1 - data2))
         INFO('Similarity is %s, mean is %s' % (str(sim), str(mean_value)))
-        if mean_value > 1e-4:
+        if sim < 0.9 or mean_value > 1e-4:
             INFO('Former data output: ')
             print(data1.flatten()[:50])
             INFO('Latter data output: ')

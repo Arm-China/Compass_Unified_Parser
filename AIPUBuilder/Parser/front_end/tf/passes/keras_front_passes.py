@@ -202,6 +202,27 @@ def convert_gru_lstm(graph):
                 B_value = np.stack([np.concatenate([bias_w, bias_r])])
 
         graph.remove_edges_from(in_edges[1:])
+
+        if rnn_obj.go_backwards:
+            # tf2 GRU/LSTM reverse is different with onnx GRU/LSTM reverse:
+            # tf2 return the reversed sequence while onnx doesn't. Thus, convert
+            # to forward in this pass so that no need to reverse output twice.
+            inp, _, inp_in_attr = in_edges[0]
+            rev = get_valid_node_name(graph, rnn + '_reverse')
+            graph.remove_edge(inp, rnn)
+            graph.add_edge(inp, rev, **inp_in_attr)
+            rnn_in_attr = copy.deepcopy(inp_in_attr)
+            if inp_in_attr['tensor'] is not None and inp_in_attr['tensor'].value is not None:
+                rnn_in_attr['tensor'].value = np.flip(inp_in_attr['tensor'].value, 1)
+            rnn_in_attr.update({'src_out_port': 0})
+            graph.add_edge(rev, rnn, **rnn_in_attr)
+            seq_len = np.array([seq_length] * batch_size, np.int32)
+            insert_constant(graph, rev + '_seq_len', seq_len, rev, in_port=1)
+            time_axis = 0 if rnn_obj.time_major else 1
+            rev_seq_attr = {'name': rev, 'time_axis': time_axis, 'batch_axis': 1-time_axis,
+                            'opset_version': 10}
+            NodeWrap(graph, rev).replace_obj('ReverseSequence', rev_seq_attr)
+
         insert_constant(graph, get_valid_node_name(graph, rnn + '_W'),
                         W_value, rnn, in_port=1)
         insert_constant(graph, get_valid_node_name(graph, rnn + '_R'),
@@ -241,7 +262,7 @@ def convert_gru_lstm(graph):
                 graph._attr['output_names'][index] = Y_reshape_after
 
         rnn_attr = rnn_obj.copied_attr()
-        rnn_attr.update({'direction': 'reverse' if rnn_obj.go_backwards else 'forward',
+        rnn_attr.update({'direction': 'forward',
                          'hidden_size': hidden_size,
                          'layout': 0 if rnn_obj.time_major else 1,
                          'opset_version': 14})

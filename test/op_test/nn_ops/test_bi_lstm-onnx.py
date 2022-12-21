@@ -64,6 +64,5 @@ for output_num in [2, 1]:
         model_path = OP_NAME + '.onnx'
         create_lstm(model_path, input_shape, output_shape, version, output_num)
         # Run tests with parser and compare result with runtime
-        exit_status = run_parser(model_path, feed_dict,
-                                 model_type=None, save_output=True, verify=True)
+        exit_status = run_parser(model_path, feed_dict, verify=True)
         assert exit_status
