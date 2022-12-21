@@ -66,15 +66,22 @@ then
 fi
 
 # 4 If you provide keyword in commit like: [tf2] ...
+#   If there are multiple keywords, separate them with comma, like [tf2,onnx]
 keyword="`git log --oneline -n 1 --format=%s | grep -o '\[.*\]'`"
 if [[ -n $keyword ]]
 then
     keyword=${keyword:1:-1} # Remove '[' and ']'
     echo "Find keyword ${keyword} in commit message!"
-    lc_keyword=${keyword,,}
-    if [[ $lc_keyword != 'parser_op' && $lc_keyword != 'parser_pass' ]]
-    then
-        filelist=`find ./*_test -iname "*${keyword}*" -type f | grep -vw plugins`
+    lc_keywords=${keyword,,}
+    lc_keywords=`echo ${lc_keywords} | sed -e 's/,/ /g'`
+    for lc_keyword in ${lc_keywords}
+    do
+        if [[ $lc_keyword == 'parser_op' || $lc_keyword == 'parser_pass' ]]
+        then
+            continue
+        fi
+        echo "Find tests for keyword ${lc_keyword}..."
+        filelist=`find ./*_test -iname "*${lc_keyword}*" -type f | grep -vw plugins`
         if [[ -n $filelist ]]
         then
             for file in $filelist
@@ -92,7 +99,7 @@ then
                 fi
             done
         fi
-    fi
+    done
 fi
 
 # unlink opt after finishing tests
