@@ -28,7 +28,7 @@ PLUGINS = {t: dict() for t in PluginType}
 VERSIONS = {t: dict() for t in PluginType}
 
 
-def register_plugin(type, version=0):
+def register_plugin(type=PluginType.Parser, version=0):
     '''
     register a plugin with type and version
     supporting plugin type: Parser,Builder

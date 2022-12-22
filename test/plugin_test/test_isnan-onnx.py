@@ -41,5 +41,5 @@ create_isnan_model(model_path, input_shape, output_shape)
 # Set environment variable AIPUPLUGIN_PATH
 os.environ["AIPUPLUGIN_PATH"] = os.path.join(os.path.dirname(__file__), 'plugins')
 exit_status = run_parser(model_path, feed_dict, save_output=False,
-                         expected_keywords=['IsNaN'], verify=False)
+                         expected_keywords=['NewIsNaN', 'for_test'], verify=False)
 assert exit_status

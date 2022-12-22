@@ -8,6 +8,7 @@ from AIPUBuilder.Parser.plugin_loader import register_plugin, PluginType
 
 @register_plugin(PluginType.Parser, '0.1')
 class IsNaNOp(ParserOp):
+    alias_op_type = 'NewIsNaN'
     op_type = 'IsNaN'
 
     def __init__(self, fw, attrs):
