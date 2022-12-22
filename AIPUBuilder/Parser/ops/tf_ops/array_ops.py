@@ -513,7 +513,7 @@ class TfPlaceholderWithDefaultOp(OpHasOneOutPort, ConstLikeOp, TfOp):
 class TfPackOp(OpHasAxis, OpHasOneOutPort, TfOp):
     @classmethod
     def attributes(cls):
-        return {1: {}}
+        return {1: {'axis': {'default': 0}}}
 
     def __init__(self, graph, attr_dict=None):
         super(TfPackOp, self).__init__(graph, attr_dict)

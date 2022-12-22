@@ -19,7 +19,7 @@ failed_change_tests=""
 failed_specfied_tests=""
 
 # 1 If you commit like: [Parser_op] ...
-if grep -i Parser_op temp.log
+if grep -i '\[Parser_op\]' temp.log
 then
     for f in `find ./op_test -type f -name '*.py'`
     do
@@ -34,7 +34,7 @@ then
 fi
 
 # 2 If you commit like: [Parser_pass] ...
-if grep -i Parser_pass temp.log
+if grep -i '\[Parser_pass\]' temp.log
 then
     for f in `find ./pass_test -type f -name '*.py'`
     do
