@@ -2775,21 +2775,6 @@ def rename_slice(graph):
             WARN('[Parser]: Meets invalid Slice Op (%s) in rename_slice!' % slice)
 
 
-def rename_softmax(graph):
-    matches = single_node_matcher(graph, 'Softmax')
-    for m in matches:
-        softmax = m['target']
-        softmax_obj = NodeWrap(graph, softmax)['object']
-        softmax_input_shapes = softmax_obj.get_input_shapes()
-        NodeWrap(graph, softmax).replace_obj(
-            'ArmSoftmax', softmax_obj.copied_attr())
-        if softmax_input_shapes \
-                and softmax_input_shapes[0] is not None \
-                and len(softmax_input_shapes[0]) == 1:
-            WARN(
-                '[Parser]: Cannot support softmax Op (%s) with input_shape=1 in rename_softmax!' % softmax)
-
-
 def rename_tile(graph):
     matches = single_node_matcher(graph, 'Tile')
     for m in matches:
@@ -4469,7 +4454,6 @@ def back_passes(graph, params):
     rename_scatternd(graph)
     rename_scatterel(graph)
     rename_slice(graph)
-    rename_softmax(graph)
     rename_tile(graph)
     rename_topk(graph)
     rename_where(graph)
@@ -4520,6 +4504,7 @@ def back_passes(graph, params):
     simple_rename(graph, 'Sign', 'ArmSign')
     simple_rename(graph, 'Sin', 'ArmSine')
     simple_rename(graph, 'Sinh', 'ArmSinh')
+    simple_rename(graph, 'Softmax', 'ArmSoftmax')
     simple_rename(graph, 'SpaceToDepth', 'ArmSpaceToDepth')
     simple_rename(graph, 'Split', 'ArmSplit')
     simple_rename(graph, 'Sqrt', 'ArmSqrt')

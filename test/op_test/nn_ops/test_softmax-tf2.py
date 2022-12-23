@@ -11,7 +11,7 @@ def create_softmax_model(model_path, x_size, set_mask):
     ''' Create tensorflow model for softmax op.
     '''
     x = keras.Input(shape=x_size[1:], batch_size=x_size[0], name='X')
-    softmax_func = tf.keras.layers.Softmax([-1, -2])
+    softmax_func = tf.keras.layers.Softmax([0, 1])
     mask = None
     if set_mask:
         mask = np.random.randint(0, 2, x_size).astype(np.bool)
@@ -26,7 +26,7 @@ def create_softmax_model(model_path, x_size, set_mask):
 
 
 TEST_NAME = 'softmax'
-input_shape = [1, 5, 5, 3]
+input_shape = [4, 5, 5, 3]
 
 # Generate input data
 feed_dict = {}

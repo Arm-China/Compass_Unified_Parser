@@ -5,7 +5,7 @@
 import numpy as np
 import re
 import copy
-from ....ops.op import Op, OpHasWeights, KerasOp, KerasGlobalPoolingOp, KerasNeedBroadcast
+from ....ops.op import Op, OpHasAxis, OpHasWeights, KerasOp, KerasGlobalPoolingOp, KerasNeedBroadcast
 from ....graph.node_wrap import NodeWrap
 from ....graph.graph_algo import get_valid_node_name, clear_redundant_nodes
 from ....graph.pattern_match import matched_patterns, single_node_matcher
@@ -353,7 +353,7 @@ def convert_resizing(graph):
 def convert_softmax(graph):
     '''
     Keras Softmax support multiple axes. Convert to onnx Softmax for one axis, otherwise
-    convert to Exp(input)/ReduceSum(Exp(input), axis=axis, keepdims=1)
+    convert to transpose+reshape+Softmax(axis=0)+reshape+transpose.
     '''
     matches = single_node_matcher(graph, 'TfKerasSoftmax')
     for m in matches:
@@ -386,44 +386,40 @@ def convert_softmax(graph):
                 in_edges = graph.sorted_in_edges(softmax, data=True)
         new_node_attr = softmax_obj.copied_attr()
         if len(softmax_obj.axes) == 1:
-            new_node_attr.update({'axes': None, 'axis': softmax_obj.axes[0], 'opset_version': 13})
-            NodeWrap(graph, softmax).replace_obj('Softmax', new_node_attr)
-            graph.remove_edges_from(in_edges[1:])
+            new_axis = softmax_obj.axes[0]
         else:
+            in_shapes = softmax_obj.get_input_shapes()
+            if len(in_shapes) < 1 or in_shapes[0] is None or None in in_shapes[0]:
+                WARN('[Parser]: Meets input shape for Op (%s) in convert_softmax!' % softmax)
+                continue
+            in_shape = in_shapes[0]
+            in_length = len(in_shape)
+            softmax_axes = OpHasAxis.make_axes_non_negative(softmax_obj.axes, in_length)
+            softmax_axes.sort()
+            pre_trans_perm = softmax_axes + [axis for axis in range(in_length) if axis not in softmax_axes]
+            pre_reshape_dim = [-1] + [shape for axis, shape in enumerate(in_shape) if axis not in softmax_axes]
             src, _, in_attr = in_edges[0]
-            # # option 1: convert to Exp(input)/ReduceSum(Exp(input), axis=axis, keepdims=1)
-            # exp = get_valid_node_name(graph, softmax + '_exp')
-            # reduce_sum = get_valid_node_name(graph, softmax + '_reduce_sum')
-            # exp_out_tensor = None if in_attr['tensor'] is None or in_attr['tensor'].value is None else \
-            #     np.exp(in_attr['tensor'].value)
-            # reduce_sum_out_tensor = None if exp_out_tensor is None else \
-            #     np.sum(exp_out_tensor, axis=tuple(softmax_obj.axes), keepdims=True)
+            pre_trans = insert_transpose(graph, src, softmax, in_attr, pre_trans_perm)
+            pre_trans_out_attr = copy.deepcopy(in_attr)
+            pre_trans_out_attr.update({'src_out_port': 0})
+            if in_attr['tensor'] is not None and in_attr['tensor'].value is not None:
+                pre_trans_out_attr['tensor'].value = np.transpose(in_attr['tensor'].value, pre_trans_perm)
+            insert_reshape(graph, pre_trans, softmax, pre_trans_out_attr, pre_reshape_dim)
 
-            # graph.remove_edges_from(in_edges)
-            # graph.add_edge(src, exp, **in_attr)
-            # graph.add_edge(exp, reduce_sum, **{'tensor': Tensor(value=exp_out_tensor)})
-            # graph.add_edge(exp, softmax, **{'dst_in_port': 0, 'tensor': Tensor(value=exp_out_tensor)})
-            # graph.add_edge(reduce_sum, softmax, **{'dst_in_port': 1, 'tensor': Tensor(value=reduce_sum_out_tensor)})
+            post_reshape_dim = [in_shape[axis] for axis in pre_trans_perm]
+            post_reshape_old_dim = [np.prod(post_reshape_dim[:len(softmax_axes)])] + \
+                post_reshape_dim[len(softmax_axes):]
+            post_trans_perm = Op.cal_inverse_perm(pre_trans_perm)
+            post_reshape = insert_reshape_after(graph, softmax, post_reshape_dim, post_reshape_old_dim)
+            post_trans = insert_transpose_after(graph, post_reshape, post_trans_perm)
 
-            # NodeWrap(graph, exp).replace_obj('Exp', {'name': exp, 'opset_version': 13})
-            # reduce_sum_attr = {'name': reduce_sum, 'axes': softmax_obj.axes, 'keepdims': 1, 'opset_version': 1}
-            # NodeWrap(graph, reduce_sum).replace_obj('ReduceSum', reduce_sum_attr)
-            # new_node_attr.update({'opset_version': 14})
-            # NodeWrap(graph, softmax).replace_obj('Div', new_node_attr)
-            # # option 2: convert to Exp(inputs - reduce_logsumexp(inputs, axis=self.axis, keepdims=1))
-            logsumexp = get_valid_node_name(graph, softmax + '_logsumexp')
-            sub = get_valid_node_name(graph, softmax + '_sub')
-            graph.remove_edges_from(in_edges)
-            graph.add_edge(src, logsumexp, **in_attr)
-            graph.add_edge(src, sub, **in_attr)
-            graph.add_edge(logsumexp, sub, **{'dst_in_port': 1})
-            graph.add_edge(sub, softmax)
-
-            logsumexp_attr = {'name': logsumexp, 'axes': softmax_obj.axes, 'keepdims': 1, 'opset_version': 13}
-            NodeWrap(graph, logsumexp).replace_obj('ReduceLogSumExp', logsumexp_attr)
-            NodeWrap(graph, sub).replace_obj('Sub', {'name': sub, 'opset_version': 13})
-            new_node_attr.update({'opset_version': 13})
-            NodeWrap(graph, softmax).replace_obj('Exp', new_node_attr)
+            new_axis = 0
+            if softmax in graph._attr['output_names']:
+                index = graph._attr['output_names'].index(softmax)
+                graph._attr['output_names'][index] = post_trans
+        new_node_attr.update({'axes': None, 'axis': new_axis, 'opset_version': 13})
+        NodeWrap(graph, softmax).replace_obj('Softmax', new_node_attr)
+        graph.remove_edges_from(in_edges[1:])
 
 
 def convert_to_onnx(graph):
