@@ -216,14 +216,18 @@ class TfFakeQuantWithMinMaxVarsPerChannelOp(OpHasOneOutPort, TfOp):
                 }
 
     def __init__(self, graph, attr_dict=None):
-        super(TfFakeQuantWithMinMaxVarsPerChannelOp, self).__init__(graph, attr_dict)
-        self.update_attributes(TfFakeQuantWithMinMaxVarsPerChannelOp, attr_dict)
-        assert self.check_required(), 'TfFakeQuantWithMinMaxVarsPerChannelOp is missing a required parameter.'
+        super(TfFakeQuantWithMinMaxVarsPerChannelOp,
+              self).__init__(graph, attr_dict)
+        self.update_attributes(
+            TfFakeQuantWithMinMaxVarsPerChannelOp, attr_dict)
+        assert self.check_required(
+        ), 'TfFakeQuantWithMinMaxVarsPerChannelOp is missing a required parameter.'
 
     def infer_shape(self):
         super(TfFakeQuantWithMinMaxVarsPerChannelOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        assert len(inputs) >= 3, 'TfFakeQuantWithMinMaxVarsPerChannelOp expects 3 inputs, but got %d!' % len(inputs)
+        assert len(
+            inputs) >= 3, 'TfFakeQuantWithMinMaxVarsPerChannelOp expects 3 inputs, but got %d!' % len(inputs)
         out_tensor = tf.quantization.fake_quant_with_min_max_vars_per_channel(
             inputs[0], inputs[1], inputs[2], self.num_bits, bool(self.narrow_range)).numpy()
         self.set_out_tensor(out_tensor)
@@ -747,7 +751,7 @@ class TfSplitOp(OpHasAxis, OpHasMultipleOutPorts, TfOp):
         return {1: {'num_split': {'type': AttrType.INT, 'required': True},
                     'axis': {'default': 0}
                     },
-                2: {'num_or_size_splits': {'required': True},
+                2: {'num_or_size_splits': {},
                     'axis': {'default': 0}
                     }
                 }
@@ -757,22 +761,41 @@ class TfSplitOp(OpHasAxis, OpHasMultipleOutPorts, TfOp):
         self.update_attributes(TfSplitOp, attr_dict)
         assert self.check_required(), 'TfSplitOp is missing a required parameter.'
 
+    def __getattr__(self, item):
+        ret = None
+        try:
+            if item in ('num_or_size_splits',):
+                if self.cur_version == 2:
+                    inputs = self.get_input_tensors()
+                    ret = list(inputs[1])
+            elif item in ('axis',):
+                if self.cur_version == 2:
+                    inputs = self.get_input_tensors()
+                    ret = int(inputs[2])
+        except:
+            ret = None
+        if ret is None:
+            ret = super(TfSplitOp, self).__getattr__(item)
+        return ret
+
     def infer_shape(self):
         super(TfSplitOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        if self.opcode_version == 1:
-            assert len(inputs) >= 2, 'TfSplitOp expects 2 inputs, but got %d.' % len(inputs)
+        if self.cur_version == 1:
+            assert len(
+                inputs) >= 2, 'TfSplitOp expects 2 inputs, but got %d.' % len(inputs)
             self.axis = int(inputs[0])
             input_data = inputs[1]
             num_split = self.num_split
         else:
             input_data = inputs[0]
+            self.axis = int(inputs[2])
             num_split = self.num_or_size_splits
         if np.ndim(num_split) == 0:
-            self.split = np.array(
-                [input_data.shape[self.axis] // int(num_split)] * int(num_split), np.int64)
+            self.split = [input_data.shape[self.axis] //
+                          int(num_split)] * int(num_split)
         else:
-            self.split = np.array(num_split, np.int64)
+            self.split = num_split
         out_tensors = tf.split(input_data, self.split, axis=self.axis)
         out_tensors = [t.numpy() for t in out_tensors]
         self.set_out_tensor(out_tensors)
