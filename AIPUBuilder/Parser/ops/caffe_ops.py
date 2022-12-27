@@ -3,7 +3,7 @@
 
 
 import torch
-import tensorflow.compat.v1 as tf
+import tensorflow as tf
 from .op import *
 from ..common.defs import FLOAT_EQUAL
 from ..logger import INFO, DEBUG, WARN, ERROR, FATAL
@@ -786,7 +786,7 @@ class CaffeINTERPOp(OpHasOneOutPort, CaffeOp):
         else:
             height_out, width_out = height_in, width_in
         self.height, self.width = height_out, width_out
-        out_tensor = tf.image.resize_bilinear(np.transpose(inputs[0], axes=(
+        out_tensor = tf.compat.v1.image.resize_bilinear(np.transpose(inputs[0], axes=(
             0, 2, 3, 1)), size=np.array([height_out, width_out], np.int32)).numpy()
         out_tensor = np.transpose(out_tensor, (0, 3, 1, 2))
         self.set_out_tensor(out_tensor)

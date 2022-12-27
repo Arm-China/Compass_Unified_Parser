@@ -3,7 +3,7 @@
 
 
 import torch
-import tensorflow.compat.v1 as tf
+import tensorflow as tf
 import sys
 from ..op import *
 from ...front_end.onnx.buffer import onnx_tensor_np_mapping

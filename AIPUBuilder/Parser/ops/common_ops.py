@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 
-import tensorflow.compat.v1 as tf
+import tensorflow as tf
 import numpy as np
 from .op import *
 from ..common.utils import get_random_array, list_list_to_string

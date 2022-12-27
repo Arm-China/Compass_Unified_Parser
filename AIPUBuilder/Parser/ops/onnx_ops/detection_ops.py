@@ -4,7 +4,6 @@
 
 from functools import cmp_to_key
 import torch
-import tensorflow.compat.v1 as tf
 from ..op import *
 
 

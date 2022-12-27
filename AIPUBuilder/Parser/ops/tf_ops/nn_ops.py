@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 
-import tensorflow.compat.v1 as tf
+import tensorflow as tf
 from ..op import *
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 
@@ -288,7 +288,7 @@ class TfConv2DBackpropInputOp(TfHasPaddingStrides, OpHasWeights, OpHasOneOutPort
             padding = np.reshape(
                 np.array(self.explicit_paddings), (4, 2)).tolist()
 
-        out_tensor = tf.nn.conv2d_backprop_input(
+        out_tensor = tf.compat.v1.nn.conv2d_backprop_input(
             input_sizes=inputs[0],
             filter=self.weights,
             out_backprop=inputs[1],
@@ -554,10 +554,10 @@ class TfFusedBatchNormOp(LayoutConcernedOp, OpHasVariableOutPorts, TfOp):
     def infer_shape(self):
         super(TfFusedBatchNormOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_list = tf.nn.fused_batch_norm(*inputs,
-                                          epsilon=self.epsilon,
-                                          data_format=self.data_format,
-                                          is_training=self.is_training)
+        out_list = tf.compat.v1.nn.fused_batch_norm(*inputs,
+                                                    epsilon=self.epsilon,
+                                                    data_format=self.data_format,
+                                                    is_training=self.is_training)
         out_tensor_list = [o.numpy() for o in out_list]
         self.set_out_tensor(out_tensor_list)
 
@@ -583,10 +583,10 @@ class TfFusedBatchNormV3Op(LayoutConcernedOp, OpHasVariableOutPorts, TfOp):
     def infer_shape(self):
         super(TfFusedBatchNormV3Op, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_list = tf.nn.fused_batch_norm(*inputs,
-                                          epsilon=self.epsilon,
-                                          data_format=self.data_format,
-                                          is_training=self.is_training)
+        out_list = tf.compat.v1.nn.fused_batch_norm(*inputs,
+                                                    epsilon=self.epsilon,
+                                                    data_format=self.data_format,
+                                                    is_training=self.is_training)
         out_tensor_list = [o.numpy() for o in out_list]
         self.set_out_tensor(out_tensor_list)
 

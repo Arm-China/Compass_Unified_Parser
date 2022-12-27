@@ -5,7 +5,6 @@
 import random
 import copy
 import numpy as np
-import tensorflow.compat.v1 as tf
 import sys
 import itertools
 from collections import defaultdict
@@ -213,7 +212,6 @@ def infer(graph, partial=False, chosen_list=None):
     ret = {}
     if len(graph) > 0:
         nodes_list = determined_sort(graph, graph._attr['output_names'])
-        sess = tf.InteractiveSession()
         for node_name in nodes_list:
             if chosen_list and node_name not in chosen_list:
                 continue
@@ -251,7 +249,6 @@ def infer(graph, partial=False, chosen_list=None):
                 DEBUG(msg)
             else:
                 WARN('[Parser]: Meet invalid Node (%s) in infer!' % node_name)
-        sess.close()
 
         for out_name in graph._attr['output_names']:
             out_edges = graph.sorted_out_edges(out_name, data=True)

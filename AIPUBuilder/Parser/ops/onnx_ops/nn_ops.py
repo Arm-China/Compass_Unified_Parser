@@ -3,7 +3,7 @@
 
 
 import torch
-import tensorflow.compat.v1 as tf
+import tensorflow as tf
 from ..op import *
 from ..release_ops import ArmDepthwiseConvOp
 from ...common.defs import FLOAT_EQUAL

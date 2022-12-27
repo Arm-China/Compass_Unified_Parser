@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 
-import tensorflow.compat.v1 as tf
+import tensorflow as tf
 from .op import *
 from ..common.defs import FLOAT_EQUAL
 
@@ -2004,7 +2004,7 @@ class LiteRESIZE_BILINEAROp(OpHasOneOutPort, TfliteOp):
         if self.cur_version < 3 \
                 and (np.array(inputs[1], np.int64) // np.array(inputs[0].shape[1:3], np.int64)).tolist() == [2, 2]:
             self.half_pixel = False
-        out_tensor = tf.image.resize_bilinear(
+        out_tensor = tf.compat.v1.image.resize_bilinear(
             *inputs, align_corners=self.align_corners, half_pixel_centers=self.half_pixel).numpy()
         self.set_out_tensor(out_tensor)
 
@@ -2050,7 +2050,7 @@ class LiteRESIZE_NEAREST_NEIGHBOROp(OpHasOneOutPort, TfliteOp):
     def infer_shape(self):
         super(LiteRESIZE_NEAREST_NEIGHBOROp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.image.resize_nearest_neighbor(
+        out_tensor = tf.compat.v1.image.resize_nearest_neighbor(
             *inputs, align_corners=self.align_corners).numpy()
         self.set_out_tensor(out_tensor)
 
@@ -2210,7 +2210,7 @@ class LiteSELECTOp(OpHasOneOutPort, TfliteOp):
         super(LiteSELECTOp, self).infer_shape()
         inputs = self.get_input_tensors()
         # tf 1.x only,  tf.where in 2.0 has the same broadcast rule as np.where
-        out_tensor = tf.where(*inputs).numpy()
+        out_tensor = tf.compat.v1.where(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
     @property

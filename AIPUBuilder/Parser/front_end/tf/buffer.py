@@ -5,7 +5,7 @@
 import numpy as np
 import re
 import copy
-import tensorflow.compat.v1 as tf
+import tensorflow as tf
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 

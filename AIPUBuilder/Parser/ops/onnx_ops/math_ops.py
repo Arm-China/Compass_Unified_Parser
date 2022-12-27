@@ -3,7 +3,7 @@
 
 
 import torch
-import tensorflow.compat.v1 as tf
+import tensorflow as tf
 import numpy as np
 from ..op import *
 from ...common.defs import FLOAT_MIN, FLOAT_MAX, FLOAT_EQUAL, TYPE_MIN, TYPE_MAX
@@ -1599,7 +1599,7 @@ class SoftplusOp(LayoutUnawareOp, BaseActivationOp, OnnxOp):
         super(SoftplusOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor = np.array(inputs[0])
-        out_tensor = tf.log(1 + tf.exp(out_tensor)).numpy()
+        out_tensor = tf.math.log(1 + tf.exp(out_tensor)).numpy()
         self.set_out_tensor(out_tensor)
 
 

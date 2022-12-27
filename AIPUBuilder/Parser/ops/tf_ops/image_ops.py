@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 
-import tensorflow.compat.v1 as tf
+import tensorflow as tf
 from ..op import *
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 
@@ -188,7 +188,7 @@ class TfResizeBilinearOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfResizeBilinearOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.image.resize_bilinear(
+        out_tensor = tf.compat.v1.image.resize_bilinear(
             *inputs, align_corners=self.align_corners, half_pixel_centers=self.half_pixel_centers).numpy()
         self.set_out_tensor(out_tensor)
 
@@ -209,6 +209,6 @@ class TfResizeNearestNeighborOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfResizeNearestNeighborOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.image.resize_nearest_neighbor(
+        out_tensor = tf.compat.v1.image.resize_nearest_neighbor(
             *inputs, align_corners=self.align_corners, half_pixel_centers=self.half_pixel_centers).numpy()
         self.set_out_tensor(out_tensor)

@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 
-import tensorflow.compat.v1 as tf
+import tensorflow as tf
 import math
 from ..op import *
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL

@@ -5,7 +5,7 @@
 from functools import partial
 import itertools
 import multiprocessing as mp
-import tensorflow.compat.v1 as tf
+import tensorflow as tf
 import numpy as np
 from .op import *
 from ..common.defs import FLOAT_EQUAL

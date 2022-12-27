@@ -3,7 +3,8 @@
 
 
 from collections import OrderedDict, Iterable
-import tensorflow.compat.v1 as tf
+import tensorflow as tf
+import tensorflow.compat.v1 as tfv1
 import onnx
 import os
 import itertools
@@ -162,15 +163,15 @@ def parse_pb(graph, model_path, params, anchor_tensor):
         FATAL('[Parser]: Invalid pb file %s in parse_pb!' %
               model_path)
     try:
-        with tf.gfile.GFile(model_path, 'rb') as f:
-            graph_def = tf.GraphDef()
+        with tfv1.gfile.GFile(model_path, 'rb') as f:
+            graph_def = tfv1.GraphDef()
             graph_def.ParseFromString(f.read())
-            _ = tf.import_graph_def(graph_def, name='')
+            _ = tfv1.import_graph_def(graph_def, name='')
 
-        with tf.Session() as sess:
-            graph_def = tf.graph_util.convert_variables_to_constants(
+        with tfv1.Session() as sess:
+            graph_def = tfv1.graph_util.convert_variables_to_constants(
                 sess, graph_def, params['output_names'])
-            default_graph = tf.get_default_graph()
+            default_graph = tfv1.get_default_graph()
             nodes = list(parse_proto(
                 default_graph.get_operations(), get_op_content))
             for func in graph_def.library.function:
