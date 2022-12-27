@@ -4216,9 +4216,9 @@ def merge_ln2(graph):
             objs_dict.update({gamma: NodeWrap(graph, gamma)['object']})
         else:
             gamma = ''
-        if all([obj is not None for obj in objs_dict.values()]):
-            if objs_dict[epsilon].value.size > 1 and \
-                    not all([FLOAT_EQUAL(val, objs_dict[epsilon].value.item(0)) for val in objs_dict[epsilon].value.flatten()[1:]]):
+        if all(obj is not None for obj in objs_dict.values()):
+            if objs_dict[epsilon].value.size > 1 \
+                    and not FLOAT_EQUAL(objs_dict[epsilon].value.flatten()[1:], objs_dict[epsilon].value.item(0)):
                 continue
             input_shapes = objs_dict[inp].get_output_shapes()
             mean_1_in_edges = graph.sorted_in_edges(mean_1, data=True)
@@ -4237,23 +4237,23 @@ def merge_ln2(graph):
                 in_shape = input_shapes[0]
                 axes = OpHasAxis.make_axes_non_negative(
                     objs_dict[mean_1].axes, len(in_shape))
-                axes = sorted(axes)
+                axes.sort()
                 biases = objs_dict[beta].value
                 weights = objs_dict[gamma].value if gamma else None
                 non_axes = [num for num in range(
                     len(in_shape)) if num not in axes]
-                need_transpose = False
+                pre_perm = None
                 is_in = False
                 if len(non_axes) == 2 and non_axes[0] == 0:
-                    new_biases = OpHasAxis.align_axes(
+                    in_biases = OpHasAxis.align_axes(
                         biases, non_axes[1], [in_shape[non_axes[1]]])
+                    in_weights = None
                     if gamma:
-                        new_weights = OpHasAxis.align_axes(
+                        in_weights = OpHasAxis.align_axes(
                             weights, non_axes[1], [in_shape[non_axes[1]]])
-                    if new_biases is not None and (gamma and new_weights is not None):
+                    if in_biases is not None and (not gamma or in_weights is not None):
                         is_in = True
                         if non_axes[1] not in (1, len(in_shape) - 1):
-                            need_transpose = True
                             pre_perm = [num for num in range(
                                 len(in_shape)) if num != non_axes[1]] + [non_axes[1]]
                             channel_axis = len(in_shape) - 1
@@ -4261,8 +4261,8 @@ def merge_ln2(graph):
                         else:
                             channel_axis = non_axes[1]
                         data_format = 'NCHW' if channel_axis == 1 else 'NHWC'
-                        biases = new_biases
-                        weights = new_weights if gamma else None
+                        biases = in_biases
+                        weights = in_weights
                 if not is_in:
                     exp_shape = [in_shape[axis] for axis in axes]
                     biases = OpHasAxis.align_axes(biases, axes, exp_shape)
@@ -4291,7 +4291,7 @@ def merge_ln2(graph):
                 else:
                     ln_attr.update({'axes': axes})
                     NodeWrap(graph, add_2).replace_obj('LayerNorm', ln_attr)
-                if need_transpose:
+                if pre_perm is not None:
                     insert_transpose(graph, inp, add_2, inp_out_attr, pre_perm)
                     post_trans = insert_transpose_after(
                         graph, add_2, Op.cal_inverse_perm(pre_perm))
