@@ -751,8 +751,9 @@ class TfSplitOp(OpHasAxis, OpHasMultipleOutPorts, TfOp):
         return {1: {'num_split': {'type': AttrType.INT, 'required': True},
                     'axis': {'default': 0}
                     },
-                2: {'num_or_size_splits': {},
-                    'axis': {'default': 0}
+                2: {'num_or_size_splits': {'default': None},
+                    'axis': {'default': 0},
+                    'num': {'type': AttrType.INT, 'default': None}
                     }
                 }
 
@@ -767,11 +768,7 @@ class TfSplitOp(OpHasAxis, OpHasMultipleOutPorts, TfOp):
             if item in ('num_or_size_splits',):
                 if self.cur_version == 2:
                     inputs = self.get_input_tensors()
-                    ret = list(inputs[1])
-            elif item in ('axis',):
-                if self.cur_version == 2:
-                    inputs = self.get_input_tensors()
-                    ret = int(inputs[2])
+                    ret = list(inputs[1]) if (np.ndim(inputs[1]) != 0) else int(inputs[1])
         except:
             ret = None
         if ret is None:
@@ -789,8 +786,12 @@ class TfSplitOp(OpHasAxis, OpHasMultipleOutPorts, TfOp):
             num_split = self.num_split
         else:
             input_data = inputs[0]
-            self.axis = int(inputs[2])
-            num_split = self.num_or_size_splits
+            if (isinstance(self.num_or_size_splits, list) and len(self.num_or_size_splits) >= 1) \
+                    or (isinstance(self.num_or_size_splits, int) and self.num_or_size_splits >= 1):
+                num_split = self.num_or_size_splits
+            else:
+                num_split = self.num
+        assert num_split is not None, 'Invalid num_split of TfSplitOp(%s)!' % self.name
         if np.ndim(num_split) == 0:
             self.split = [input_data.shape[self.axis] //
                           int(num_split)] * int(num_split)

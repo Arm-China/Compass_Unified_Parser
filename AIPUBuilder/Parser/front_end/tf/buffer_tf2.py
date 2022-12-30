@@ -197,15 +197,16 @@ def get_node_input(layer, attr_names, input_info_dict):
             # Attrs should be after all the inputs
             break
         elif arg_name in input_info_dict \
-                and len(input_info_dict[arg_name]) == 5:
+                and len(input_info_dict[arg_name]) == 5 \
+                and arg_name not in arg_defaults_dict:
             input_info = input_info_dict[arg_name]
             node_input_info.append(input_info)
-        elif arg_name in arg_defaults_dict:
-            value = arg_defaults_dict[arg_name]
-            input_info = (layer.name + '/' + arg_name, 0, False, True, value)
-            node_input_info.append(input_info)
-        else:
-            WARN('[Parser]: Missing node (%s) in get_node_input!' % arg_name)
+        # elif arg_name in arg_defaults_dict:
+        #     value = arg_defaults_dict[arg_name]
+        #     input_info = (layer.name + '/' + arg_name, 0, False, True, value)
+        #     node_input_info.append(input_info)
+        # else:
+        #     WARN('[Parser]: Missing node (%s) in get_node_input!' % arg_name)
     return node_input_info
 
 
@@ -280,12 +281,15 @@ def get_nodes_content(layers, model_configs):
         #     continue
         node_content = get_node_content(layer)
         node_attr_name = get_node_attr_name(node_content.get('type', ''))
+        node_attr_name = list(set(node_attr_name + list(layer._call_fn_arg_defaults.keys())))
         input_info_dict = inputs_info_dict.get(layer.name, {})
         for key, (_, _, _, is_const, value) in input_info_dict.items():
             if key in node_attr_name and is_const and value is not None:
                 node_content['attr'].update({key: value})
+        for k in layer._call_fn_arg_defaults.keys():
+            if 'attr' in node_content and k not in node_content['attr']:
+                node_content['attr'][k] = layer._call_fn_arg_defaults[k]
         node_input_info = get_node_input(layer, node_attr_name, input_info_dict)
-
         node_content.update({
             'input': [(name, src_out_port, control_edge) for name, src_out_port, control_edge, _, _ in node_input_info]})
         nodes_content.append(node_content)
