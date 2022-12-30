@@ -11,7 +11,7 @@ import itertools
 import multiprocessing as mp
 import threading
 from ...common.defs import Framework, get_opset_version, Tensor
-from ...common.utils import is_dir, is_file, get_version, extend_lists
+from ...common.utils import is_dir, is_file, get_version, extend_lists, multi_string_to_list
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 from ...graph.graph import Graph
 from ...graph.graph_algo import clear_redundant_nodes, all_simple_paths, has_path, get_valid_node_name
@@ -143,7 +143,7 @@ def convert_attr_to_onnx(attr_dict, is_keras_op=False):
     return new_attr
 
 
-def parse_pb(graph, model_path, params, anchor_tensor):
+def parse_pb(graph, model_path, params, anchor_tensors):
 
     def _remove_unneeded_nodes(graph, nodes):
         if not graph._attr['output_names']:
@@ -181,9 +181,8 @@ def parse_pb(graph, model_path, params, anchor_tensor):
                 if any((node['type'] == func_name) for node in nodes):
                     nodes = get_function_node_content(func, nodes)
 
-            if anchor_tensor is not None:
-                anchor_node = [n for n in nodes if n['name']
-                               == trim_tensor_name(anchor_tensor)]
+            for anchor_tensor in anchor_tensors:
+                anchor_node = [n for n in nodes if n['name'] == trim_tensor_name(anchor_tensor)]
                 if not anchor_node:
                     WARN(
                         '[Parser]: Invalid anchor (%s) in convert_tf_to_graph!' % anchor_tensor)
@@ -233,9 +232,10 @@ def parse_pb(graph, model_path, params, anchor_tensor):
                     tensors.update(
                         {out[0]: default_graph.get_tensor_by_name(out[0])})
 
-            if anchor_tensor and anchor_tensor not in tensors:
-                tensors.update(
-                    {anchor_tensor: default_graph.get_tensor_by_name(anchor_tensor)})
+            for anchor_tensor in anchor_tensors:
+                if anchor_tensor not in tensors:
+                    tensors.update(
+                        {anchor_tensor: default_graph.get_tensor_by_name(anchor_tensor)})
 
             np_tensors = OrderedDict()
             try:
@@ -297,10 +297,11 @@ def convert_tf_to_graph(model_path, params):
             params['input_shapes'] = {trim_tensor_name(
                 k): v for k, v in params['input_shapes'].items()}
 
-    anchor_tensor = None
-    if params.get('anchor_tensor_name') is not None:
-        anchor_tensor = params['anchor_tensor_name'] if ':' in params['anchor_tensor_name'] else params[
-            'anchor_tensor_name'] + ':0'
+    anchor_tensors = params.get('anchor_tensor_name', [])
+    if anchor_tensors:
+        anchor_tensors_list = multi_string_to_list(anchor_tensors)
+        anchor_tensors = [tensor_name if ':' in tensor_name else (
+            tensor_name + ':0') for tensor_name in anchor_tensors_list]
 
     consumer_ver = get_version(onnx)
     if consumer_ver >= 1.04:
@@ -317,12 +318,19 @@ def convert_tf_to_graph(model_path, params):
         try:
             if not is_keras_model:
                 nodes, nodes_dict, tensors, np_tensors, input_shapes \
-                    = parse_pb(graph, model_path, params, anchor_tensor)
+                    = parse_pb(graph, model_path, params, anchor_tensors)
             else:
                 nodes, nodes_dict, tensors, np_tensors, input_shapes \
                     = parse_keras(model_path, params)
-            if anchor_tensor and anchor_tensor in np_tensors:
-                graph._attr['anchors'] = np_tensors[anchor_tensor]
+            if anchor_tensors:
+                anchor_tensors_value = []
+                for anchor_tensor in anchor_tensors:
+                    anchor_tensors_value.append(np_tensors[anchor_tensor] if anchor_tensor in np_tensors else None)
+                try:
+                    graph._attr['anchors'] = np.reshape(np.concatenate(anchor_tensors_value, axis=-1), [-1, 4])
+                except:
+                    WARN('[Parser]: Cannot get anchor tensors (%s) in convert_tf_to_graph!' % str(anchor_tensors))
+
             nodes_outputs = {n['name']: n['output'] for n in nodes}
             nodes_inputs = set()
             for n in nodes:

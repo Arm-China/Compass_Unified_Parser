@@ -227,6 +227,13 @@ def convert_onnx_to_graph(model_path, params):
                         FATAL(
                             '[Parser]: Input name (%s) does not exit in node names or tensor names. Please check config file.' % name)
 
+                anchor_tensors = params.get('anchor_tensor_name', [])
+                anchor_tensors_value = []
+                if anchor_tensors:
+                    anchor_tensors = multi_string_to_list(anchor_tensors)
+                    anchor_tensors_value = [None] * len(anchor_tensors)
+                graph._attr['anchors'] = None
+
                 const_tensor_count = defaultdict(int)
                 for ni, node in enumerate(nodes):
                     op_attr = {k: v for k, v in node.items()}
@@ -310,6 +317,14 @@ def convert_onnx_to_graph(model_path, params):
                                                                    is_const=True)}
                                                  )
                             graph.add_edge(pre_op_name, op_name, **edge_attr)
+                        if anchor_tensors \
+                                and any(val is None for val in anchor_tensors_value) \
+                                and in_tensor_name in anchor_tensors:
+                            if not edge_attr['tensor'].is_const:
+                                WARN('[Parser]: Meet non-const anchor (%s) in convert_onnx_to_graph!' % in_tensor_name)
+                            else:
+                                index = anchor_tensors.index(in_tensor_name)
+                                anchor_tensors_value[index] = edge_attr['tensor'].value
 
                     if node['type'] == 'If':
                         if_in_port = 1
@@ -324,6 +339,12 @@ def convert_onnx_to_graph(model_path, params):
                                 graph.add_edge(
                                     branch_out, op_name, **edge_attr)
                                 if_in_port += 1
+
+                if anchor_tensors and anchor_tensors_value:
+                    try:
+                        graph._attr['anchors'] = np.reshape(np.concatenate(anchor_tensors_value, axis=-1), [-1, 4])
+                    except:
+                        WARN('[Parser]: Cannot get anchor tensors (%s) in convert_onnx_to_graph!' % str(anchor_tensors))
 
                 graph._attr['output_names'] = copy.deepcopy(
                     params.get('output_names', []))
