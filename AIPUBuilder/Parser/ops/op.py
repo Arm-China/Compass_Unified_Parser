@@ -2420,9 +2420,26 @@ class TfHasPaddingStrides(OpHasPaddingStrides, TfOp):
                         '[Parser]: Meets invalid kernel_shape for Node(%s) in infer_shape!' % self.name)
 
 
-class KerasOp(TfOp):
+class Tf2Op(TfOp):
     '''
-    Class KerasOp inherited from TfOp class.
+    Class Tf2Op inherited from TfOp class.
+    All tf2 ops under the Tensorflow framework must inherit Tf2Op.
+    '''
+    @classmethod
+    def attributes(cls):
+        '''return attributes of Tf2Op class.'''
+        return {'opcode_version': {'type': AttrType.INT, 'required': False, 'default': 2},
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(Tf2Op, self).__init__(graph, attr_dict)
+        self.update_attributes(Tf2Op, attr_dict)
+        assert self.check_required(), 'Tf2Op is missing a required parameter.'
+
+
+class KerasOp(Tf2Op):
+    '''
+    Class KerasOp inherited from Tf2Op class.
     All ops under tf.keras.layers must inherit KerasOp.
     '''
     pass

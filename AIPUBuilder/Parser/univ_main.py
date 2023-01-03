@@ -16,6 +16,7 @@ from .front_end.lite.process import process_tflite
 from .front_end.caffe.process import process_caffe
 from .front_end.onnx.passes.common_passes import remove_useless_op
 from .front_end.tf.process import process_tf
+from .front_end.tf2.process import process_tf2
 from .front_end.torch.process import convert_torch_to_onnx
 from .graph.graph_algo import infer, has_path
 from .graph.pattern_match import matched_patterns, single_node_matcher
@@ -101,7 +102,12 @@ def univ_parser(params):
                 elif model_type == 'caffe':
                     graph = process_caffe(model_path, params)
                 elif model_type in ('tf', 'tensorflow'):
-                    graph = process_tf(model_path, params)
+                    is_keras_model = model_path.endswith('.h5') or model_path.endswith('.hdf5') or model_path.endswith(
+                        '.keras') or is_dir(model_path)
+                    if is_keras_model:
+                        graph = process_tf2(model_path, params)
+                    else:
+                        graph = process_tf(model_path, params)
                 else:
                     ERROR('[Parser]: Framework %s is not supported!' %
                           params.get('model_type', ''))

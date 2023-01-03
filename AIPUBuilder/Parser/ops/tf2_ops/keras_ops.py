@@ -430,7 +430,7 @@ class TfKerasCropping3DOp(OpHasOneOutPort, LayoutConcernedOp, KerasOp):
 class TfKerasELUOp(OpHasOneOutPort, KerasOp):
     @classmethod
     def attributes(cls):
-        return {1: {'alpha': {'type': AttrType.FLOAT, 'default': 1.}}
+        return {2: {'alpha': {'type': AttrType.FLOAT, 'default': 1.}}
                 }
 
     def __init__(self, graph, attr_dict=None):

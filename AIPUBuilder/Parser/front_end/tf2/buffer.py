@@ -123,12 +123,6 @@ def get_node_attr(layer):
 
 
 def get_node_type(layer):
-    def make_first_letter_upper(letters):
-        if not letters:
-            return letters
-        new_letters = letters[0].upper() + letters[1:]
-        return new_letters
-
     layer_type = type(layer).__name__
     if layer_type == 'TFOpLambda':
         node_type = layer.get_config().get('function', layer_type)
@@ -140,22 +134,13 @@ def get_node_type(layer):
         node_type = 'Keras' + node_type
         return node_type
 
-    # Try to convert to raw ops for non-keras op
-    # Convert type like 'math.add' to 'Add', 'cast' to 'Cast'(similar to type of raw ops)
+    # Remove prefix like 'math.', 'nn.' and etc
     node_type = node_type.split('.')[-1]
-    # Also convert snake case like 'compute_accidental_hits' to camel case 'ComputeAccidentalHits'
-    node_type = node_type.split('_')
-    node_type = ''.join(make_first_letter_upper(subs) for subs in node_type)
-
-    # Convert type like 'Conv2d' to 'Conv2D', 'argmax' to 'ArgMax' to match with type in raw ops
-    possible_node_types = [ops for ops in dir(tf.raw_ops) if ops.lower() == node_type.lower()]
-    if len(possible_node_types) == 1:
-        node_type = possible_node_types[0]
 
     return node_type
 
 
-def get_node_input(layer, attr_names, input_info_dict):
+def get_node_input(layer, input_info_dict):
     assert isinstance(input_info_dict, dict), 'Expect input_info_dict to be a dict!'
     arg_pos_dict = layer._call_fn_arg_positions
     arg_defaults_dict = layer._call_fn_arg_defaults
@@ -193,20 +178,16 @@ def get_node_input(layer, attr_names, input_info_dict):
                     node_input_info.append(input_info)
                 else:
                     WARN('[Parser]: Meet invalid node (%s) in get_node_input!' % node_name)
-        elif arg_name in attr_names:
-            # Attrs should be after all the inputs
-            break
         elif arg_name in input_info_dict \
-                and len(input_info_dict[arg_name]) == 5 \
-                and arg_name not in arg_defaults_dict:
+                and len(input_info_dict[arg_name]) == 5:
             input_info = input_info_dict[arg_name]
             node_input_info.append(input_info)
-        # elif arg_name in arg_defaults_dict:
-        #     value = arg_defaults_dict[arg_name]
-        #     input_info = (layer.name + '/' + arg_name, 0, False, True, value)
-        #     node_input_info.append(input_info)
-        # else:
-        #     WARN('[Parser]: Missing node (%s) in get_node_input!' % arg_name)
+        elif arg_name in arg_defaults_dict:
+            value = arg_defaults_dict[arg_name]
+            input_info = (layer.name + '/' + arg_name, 0, False, True, value)
+            node_input_info.append(input_info)
+        else:
+            WARN('[Parser]: Missing node (%s) in get_node_input!' % arg_name)
     return node_input_info
 
 
@@ -220,11 +201,11 @@ def get_const_node_content(node_name, const_value):
         const_value = np.array(None)
     out_tensor_name = node_name + ':0'
     ret = {'name': node_name,
-           'type': 'Const',
+           'type': 'constant',
            'input': [],
            'output': [(out_tensor_name, list(const_value.shape))],
            'attr': {'value': const_value, 'dtype': const_value.dtype.name},
-           'opcode_version': 1
+           'opcode_version': 2
            }
     return ret
 
@@ -243,34 +224,6 @@ def get_node_content(layer):
     return ret
 
 
-def get_node_attr_name(op_type):
-    from tensorflow.python.framework import op_def_registry
-
-    ret = []
-    if not op_type or op_type.startswith('Keras'):
-        return ret
-
-    # For some tf2 ops, they do not have corresponding raw ops(need conversion) or the raw ops
-    # are different with them. In this case, we define attrs for them.
-    op_type_attr_map = {
-        'Cast': ['dtype'],
-    }
-
-    # Some tf2 ops are renamed. Use name in raw ops instead to get op_def.
-    op_type_rename_map = {
-        'Stack': 'Pack',
-    }
-
-    if op_type in op_type_attr_map:
-        ret = op_type_attr_map[op_type]
-    else:
-        op_type = op_type_rename_map.get(op_type, op_type)
-        op_def = op_def_registry.get(op_type)
-        if op_def:
-            ret = [attr.name for attr in op_def.attr]
-    return ret
-
-
 def get_nodes_content(layers, model_configs):
     layers = layers if isinstance(layers, list) else [layers]
     inputs_info_dict = get_nodes_input_and_attr(model_configs)
@@ -280,16 +233,8 @@ def get_nodes_content(layers, model_configs):
         #     nodes_content.extend(get_nodes_content(layer.layers, exp_input_names))
         #     continue
         node_content = get_node_content(layer)
-        node_attr_name = get_node_attr_name(node_content.get('type', ''))
-        node_attr_name = list(set(node_attr_name + list(layer._call_fn_arg_defaults.keys())))
         input_info_dict = inputs_info_dict.get(layer.name, {})
-        for key, (_, _, _, is_const, value) in input_info_dict.items():
-            if key in node_attr_name and is_const and value is not None:
-                node_content['attr'].update({key: value})
-        for k in layer._call_fn_arg_defaults.keys():
-            if 'attr' in node_content and k not in node_content['attr']:
-                node_content['attr'][k] = layer._call_fn_arg_defaults[k]
-        node_input_info = get_node_input(layer, node_attr_name, input_info_dict)
+        node_input_info = get_node_input(layer, input_info_dict)
         node_content.update({
             'input': [(name, src_out_port, control_edge) for name, src_out_port, control_edge, _, _ in node_input_info]})
         nodes_content.append(node_content)
@@ -319,7 +264,7 @@ def parse_keras(model_path, params):
         if n['name'] in model_inputs_names and n['name'] not in input_shapes:
             tensor_shape = n['output'][0][1]
             input_shapes.update({n['name']: tensor_shape})
-        if n['type'] == 'Const' and n['attr'].get('value', None) is not None:
+        if n['type'] == 'constant' and n['attr'].get('value', None) is not None:
             const_tensor_name = n['output'][0][0]
             const_tensor_value = n['attr']['value']
             np_tensors.update({const_tensor_name: const_tensor_value})

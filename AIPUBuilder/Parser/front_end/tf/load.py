@@ -17,7 +17,7 @@ from ...graph.graph import Graph
 from ...graph.graph_algo import clear_redundant_nodes, all_simple_paths, has_path, get_valid_node_name
 from ...graph.node_wrap import NodeWrap
 from .buffer import *
-from .buffer_tf2 import parse_keras
+from ..tf2.buffer import parse_keras
 from .utils import trim_tensor_name
 
 
