@@ -49,14 +49,13 @@ def create_resize_model(onnx_path, input_size, target_size, version=11):
 
 OP_NAME = 'Resize'
 # input_shape = [2, 3, 22, 44] # passed
-input_shape = [2, 3, 20, 40]  # failed: similarity issue
+input_shape = [2, 3, 20, 40]
 target_sizes = [[2, 3, 18, 34], [2, 3, 17, 33], ]
 
 # Generate input data
 feed_dict = dict()
 feed_dict['X'] = np.random.ranf(input_shape).astype(np.float32)
 
-all_passed = True
 for version in (11, ):
     for idx, target_size in enumerate(target_sizes):
         model_name = '-'.join([OP_NAME, str(idx), str(version)])
@@ -66,7 +65,4 @@ for version in (11, ):
 
         # Run tests with parser and compare result with runtime
         exit_status = run_parser(model_path, feed_dict, verify=True)
-        if exit_status == False:
-            all_passed = False
-            print('Test %s is failed with target_size: %s' % (model_name, str(target_size)))
-assert all_passed
+        assert exit_status

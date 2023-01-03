@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 
+import math
 import torch
 import tensorflow as tf
 import numpy as np
@@ -1258,7 +1259,7 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
             ret = super(ResizeOp, self).__getattr__(item)
         except:
             ret = None
-        if ret is None and item in ('roi', 'scales', 'sizes', 'coordinate_transformation_mode'):
+        if ret is None and item in ('roi', 'scales', 'sizes', 'coordinate_transformation_mode', 'extrapolation_value'):
             try:
                 cur_ver = self.__dict__['_attr']['cur_version'].value
                 if item == 'roi':
@@ -1291,6 +1292,13 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
                         ret = 'asymmetric'
                     else:
                         ret = self.__dict__['_attr'][item].value
+                elif item == 'extrapolation_value':
+                    if cur_ver >= 11:
+                        ret = self.__dict__['_attr'][item].value
+                    else:
+                        ret = 0.0
+                        self.__dict__['_attr'][item] = Attribute(
+                            item, {'type': AttrType.FLOAT, 'value': ret})
             except:
                 ret = None
         return ret
@@ -1312,6 +1320,211 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
                     item, {'type': AttrType.STRING, 'value': str(value)})
         else:
             super(ResizeOp, self).__setattr__(item, value)
+
+    @staticmethod
+    def get_nearest_pixel(nearest_mode, x_original, is_down_sample):
+        # Use around to avoid errors between onnx runtime and this implementation because
+        # most decimal fractions can't be represented exactly as a float, for example
+        # 25.00000031370866 is used to represent 25. Then, we will get unexpected ceil
+        # result because ceil(25.00000031370866)=26, not 25.
+        x_original = np.around(x_original, 5)
+        if nearest_mode == 'simple':
+            ret = math.ceil(x_original) if is_down_sample else int(x_original)
+        elif nearest_mode == 'round_prefer_ceil':
+            ret = math.ceil(x_original) if np.isclose(x_original, (int(x_original) + 0.5)) else round(x_original)
+        elif nearest_mode == 'floor':
+            ret = math.floor(x_original)
+        elif nearest_mode == 'ceil':
+            ret = math.ceil(x_original)
+        else:  # round_prefer_floor
+            ret = math.floor(x_original) if np.isclose(x_original, (int(x_original) + 0.5)) else round(x_original)
+        return int(ret)
+
+    @staticmethod
+    def get_original_coordinate(coordinate_transform_mode, x_resized, x_scale,
+                                length_resized, length_original,
+                                roi_start=None, roi_end=None):
+        x_resized = float(x_resized)
+        length_resized = float(length_resized)
+        length_original = float(length_original)
+        if coordinate_transform_mode == 'asymmetric':
+            ret = x_resized / x_scale
+        elif coordinate_transform_mode == 'pytorch_half_pixel':
+            ret = ((x_resized + 0.5) / x_scale - 0.5) if length_resized > 1 else 0.
+        elif coordinate_transform_mode == 'tf_half_pixel_for_nn':
+            ret = (x_resized + 0.5) / x_scale
+        elif coordinate_transform_mode == 'align_corners':
+            ret = 0. if np.isclose(length_resized, 1) else (x_resized * (length_original - 1) / (length_resized - 1))
+        elif coordinate_transform_mode == 'tf_crop_and_resize':
+            assert roi_start is not None and roi_end is not None, \
+                'roi_start and roi_end are required for tf_crop_and_resize, but got None'
+            if length_resized > 1:
+                ret = roi_start * (length_original - 1) + \
+                    (x_resized * (roi_end - roi_start) * (length_original - 1)) / (length_resized - 1)
+            else:
+                ret = 0.5 * (roi_start + roi_end) * (length_original - 1)
+        else:  # half_pixel
+            ret = ((x_resized + 0.5) / x_scale) - 0.5
+        return ret
+
+    @staticmethod
+    def setup_upsample_linear(input_spatial_sizes, output_spatial_sizes, spatial_scales, roi=None,
+                              coordinate_transform_mode='asymmetric', is_nchw=True):
+        ret_dict = {}
+        spatial_len = len(input_spatial_sizes)
+        assert spatial_len == len(output_spatial_sizes), \
+            'Expect len(output_spatial_sizes)==%d, but got %d' % (spatial_len, len(output_spatial_sizes))
+        assert spatial_len == len(spatial_scales), \
+            'Expect len(spatial_scales)==%d, but got %d' % (spatial_len, len(spatial_scales))
+        original_lists, d1_lists, d2_lists, inp1_lists, inp2_lists = [], [], [], [], []
+        for idx in range(spatial_len):
+            roi_start_value, roi_end_value = None, None
+            if roi is not None and len(roi) != 0:
+                roi = np.array(roi)
+                assert np.ndim(roi) == 1 and len(roi) == 2 * (spatial_len + 2), \
+                    'Meet invalid roi in setup_upsample_linear'
+                if idx == 0:
+                    roi_index = 1 if is_nchw else 2
+                else:
+                    roi_index = 0 if is_nchw else 1
+                roi_start_index = roi.size / 2 - (roi_index + 1)
+                roi_end_index = roi.size - (roi_index + 1)
+                roi_start_value = roi[roi_start_index]
+                roi_end_value = roi[roi_end_index]
+            current_scale = spatial_scales[idx]
+            current_input_size = input_spatial_sizes[idx]
+            current_output_size = output_spatial_sizes[idx]
+            original_list, d1_list, d2_list, inp1_list, inp2_list = [], [], [], [], []
+            for output_idx in range(current_output_size):
+                inp = output_idx if FLOAT_EQUAL(current_scale, 1) else \
+                    ResizeOp.get_original_coordinate(coordinate_transform_mode,
+                                                     output_idx,
+                                                     current_scale,
+                                                     current_output_size,
+                                                     current_input_size,
+                                                     roi_start_value,
+                                                     roi_end_value)
+                original_list.append(inp)
+                inp = max(0, min(inp, (current_input_size - 1)))
+                inp_1 = min(int(inp), current_input_size - 1)
+                inp_2 = min(inp_1+1, current_input_size - 1)
+                d_1 = 0.5 if inp_1 == inp_2 else abs(inp - inp_1)
+                d_2 = 0.5 if inp_1 == inp_2 else abs(inp - inp_2)
+                d1_list.append(d_1)
+                d2_list.append(d_2)
+                inp1_list.append(inp_1)
+                inp2_list.append(inp_2)
+            original_lists.append(original_list)
+            d1_lists.append(d1_list)
+            d2_lists.append(d2_list)
+            inp1_lists.append(inp1_list)
+            inp2_lists.append(inp2_list)
+        ret_dict.update({'original': original_lists, 'd1': d1_lists,
+                        'd2': d2_lists, 'in1': inp1_lists, 'in2': inp2_lists})
+        return ret_dict
+
+    @staticmethod
+    def upsample_linear(x_data, output_spatial_sizes, spatial_scales, roi=None,
+                        coordinate_transform_mode='asymmetric', is_nchw=True):
+        import itertools
+        input_shape = list(x_data.shape)
+        batch_size = input_shape[0]
+        num_channels = input_shape[1] if is_nchw else input_shape[-1]
+        input_spatial_sizes = input_shape[2:] if is_nchw else input_shape[1:-1]
+
+        init_dict = ResizeOp.setup_upsample_linear(input_spatial_sizes, output_spatial_sizes,
+                                                   spatial_scales, roi,
+                                                   coordinate_transform_mode, is_nchw)
+        pre_perm = None
+        if not is_nchw:
+            pre_perm = [0, len(input_shape) - 1] + list(range(1, len(input_shape) - 1))
+            x_data = np.transpose(x_data, pre_perm)
+        y_data = np.zeros([batch_size, num_channels] + output_spatial_sizes)
+        y_data_idx = [list(range(dim_len)) for dim_len in y_data.shape]
+        spatial_len = len(y_data.shape) - 2
+        for ele_idx in itertools.product(*y_data_idx):
+            ret = 0
+            for in_idx in itertools.product(list(range(1, 3)), repeat=spatial_len):
+                in_names = ['in1' if idx == 1 else 'in2' for idx in in_idx]
+                d_names = ['d1' if idx == 2 else 'd2' for idx in in_idx]
+                data_idx = ele_idx[:2] + tuple([init_dict[in_names[idx]][idx][ele_idx[idx+2]]
+                                                for idx in range(spatial_len)])
+                in_x = x_data[data_idx]
+                ret = ret + np.prod([init_dict[d_names[idx]][idx][ele_idx[idx+2]] for idx in range(spatial_len)]) * in_x
+            y_data[ele_idx] = ret
+        if pre_perm is not None:
+            y_data = np.transpose(y_data, Op.cal_inverse_perm(pre_perm))
+        return y_data
+
+    @staticmethod
+    def upsample_nearest(x_data, output_spatial_sizes, spatial_scales, roi=None,
+                         coordinate_transform_mode='asymmetric', nearest_mode='simple',
+                         extrapolation_value=0.0, is_nchw=True):
+        assert isinstance(output_spatial_sizes, list), \
+            'Expect output_spatial_sizes to be a list in upsample_nearest'
+        assert isinstance(spatial_scales, list), \
+            'Expect spatial_scales to be a list in upsample_nearest'
+        input_shape = list(x_data.shape)
+        n_dim = len(input_shape)
+        input_dim_factor = [1] * n_dim
+        for dim_idx in reversed(range(n_dim-1)):
+            input_dim_factor[dim_idx] = input_dim_factor[dim_idx+1] * input_shape[dim_idx+1]
+        if is_nchw:
+            full_scales = [1, 1] + spatial_scales
+            output_shape = input_shape[:2] + output_spatial_sizes
+        else:
+            full_scales = [1] + spatial_scales + [1]
+            output_shape = input_shape[:1] + output_spatial_sizes + input_shape[-1:]
+        output_data = np.zeros(output_shape)
+
+        use_extrapolation = (coordinate_transform_mode == 'tf_crop_and_resize')
+        if use_extrapolation:
+            assert roi is not None and len(roi) == 2 * n_dim, \
+                'Expect roi in 1d and with size=%d in upsample_nearest' % len(roi)
+
+        input_size = input_dim_factor[0] * input_shape[0]
+        input_mappings = []
+        for dim_idx in range(n_dim):
+            input_mapping = []
+            if FLOAT_EQUAL(full_scales[dim_idx], 1):
+                for dim in range(output_shape[dim_idx]):
+                    input_mapping.append(dim * input_dim_factor[dim_idx])
+            else:
+                roi_start = roi[dim_idx] if use_extrapolation else None
+                roi_end = roi[dim_idx + n_dim] if use_extrapolation else None
+                for dim in range(output_shape[dim_idx]):
+                    original_dim = ResizeOp.get_original_coordinate(
+                        coordinate_transform_mode, dim, full_scales[dim_idx],
+                        output_shape[dim_idx], input_shape[dim_idx],
+                        roi_start, roi_end)
+                    need_extrapolation = (use_extrapolation and (
+                        original_dim < 0 or original_dim >= input_shape[dim_idx]))
+                    input_dim = ResizeOp.get_nearest_pixel(nearest_mode, original_dim, full_scales[dim_idx] < 1)
+                    input_dim = max(0, min(input_dim, input_shape[dim_idx] - 1))
+                    input_mapping_value = (-input_size) if need_extrapolation else (input_dim *
+                                                                                    input_dim_factor[dim_idx])
+                    input_mapping.append(input_mapping_value)
+            input_mappings.append(input_mapping)
+
+        flatten_output_data = []
+        output_dim_counter = [0] * n_dim
+        input_idx = 0
+        for dim_idx in range(n_dim):
+            input_idx = input_idx + input_mappings[dim_idx][0]
+        out_size = np.prod(output_shape)
+        for _ in range(0, out_size):
+            ret = extrapolation_value if input_idx < 0 else x_data.flatten()[input_idx]
+            flatten_output_data.append(ret)
+            for dim_idx in reversed(range(0, n_dim)):
+                input_idx = input_idx - input_mappings[dim_idx][output_dim_counter[dim_idx]]
+                output_dim_counter[dim_idx] = output_dim_counter[dim_idx] + 1
+                if output_dim_counter[dim_idx] < output_shape[dim_idx]:
+                    input_idx = input_idx + input_mappings[dim_idx][output_dim_counter[dim_idx]]
+                    break
+                output_dim_counter[dim_idx] = 0
+                input_idx = input_idx + input_mappings[dim_idx][0]
+        output_data = np.reshape(flatten_output_data, output_shape)
+        return output_data
 
     def infer_shape(self):
         super(ResizeOp, self).infer_shape()
@@ -1341,28 +1554,26 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
             if FLOAT_EQUAL(inputs[0], 0):
                 out_tensor = np.zeros(out_shape).astype(inputs[0].dtype)
             else:
-                to_nchw_perm = None
-                if self.data_format.startswith('NC'):
-                    inp = inputs[0]
-                    size = None if self.sizes is None else self.sizes[2:].tolist()
-                    scale_factor = None if (size is not None or self.scales is None) else self.scales[2:].tolist()
+                mode = ResizeOp.MODE_MAP[self.mode]
+                is_nchw = (self.data_format == 'NCHW')
+                out_spatial_shape = out_shape[2:] if is_nchw else out_shape[1:-1]
+                spatial_scales = list(self.scales[2:]) if is_nchw else list(self.scales[1:-1])
+                if mode == 'linear':
+                    out_tensor = ResizeOp.upsample_linear(inputs[0], out_spatial_shape, spatial_scales, self.roi,
+                                                          self.coordinate_transformation_mode, is_nchw)
+                elif mode == 'nearest':
+                    out_tensor = ResizeOp.upsample_nearest(inputs[0], out_spatial_shape, spatial_scales, self.roi,
+                                                           self.coordinate_transformation_mode, self.nearest_mode,
+                                                           self.extrapolation_value, is_nchw)
+                elif mode == 'cubic':
+                    # TODO: Support cubic mode
+                    WARN('[Parser]: Cubic mode is not yet supported! May get incorrect output tensor for Resize Op (%s)' % self.name)
+                    out_tensor = np.random.ranf(out_shape).astype(inputs[0].dtype)
                 else:
-                    to_nchw_perm = [0, (len(input_dim_np) - 1)] + list(range(1, (len(input_dim_np) - 1)))
-                    inp = np.transpose(inputs[0], to_nchw_perm)
-                    size = None if self.sizes is None else self.sizes[1:-1].tolist()
-                    scale_factor = None if (size is not None or self.scales is None) else self.scales[1:-1].tolist()
-                if self.mode == 'linear' and self.coordinate_transformation_mode == 'pytorch_half_pixel':
-                    mode = 'linear' if len(input_dim_np) < 4 else (
-                        'bilinear' if len(input_dim_np) == 4 else 'trilinear')
-                    out_tensor = torch.nn.functional.interpolate(
-                        torch.from_numpy(inp), size, scale_factor, mode).numpy()
-                else:
-                    WARN('[Parser]: Non-zero constant inputs for Resize op with non-linear mode is unsupported for now!')
-                    # FIXME: Calling this function to get output tensor may get incorrect result.
-                    out_tensor = torch.nn.functional.interpolate(torch.from_numpy(inp), size, scale_factor).numpy()
-                if to_nchw_perm is not None:
-                    out_tensor = np.transpose(out_tensor, Op.cal_inverse_perm(to_nchw_perm))
+                    WARN('[Parser]: Meet unsupported mode (%s) of Resize Op (%s) in infer_shape!' % (mode, self.name))
+                    out_tensor = None
         else:
+            # Still use random output here to speedup parsing if inputs are non-const
             out_tensor = np.random.ranf(out_shape).astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
@@ -1844,7 +2055,17 @@ class UpsampleOp(OpHasOneOutPort, OnnxOp):
             input_dim_np = np.array(inputs[0].shape, np.float32)
             out_shape = np.floor(
                 input_dim_np * self.scales).astype(np.int64).tolist()
-            out_tensor = np.random.ranf(out_shape).astype(inputs[0].dtype)
+            mode = ResizeOp.MODE_MAP[self.mode]
+            is_nchw = True if self.data_format == 'NCHW' else False
+            out_spatial_shape = out_shape[2:] if is_nchw else out_shape[1:-1]
+            spatial_scales = self.scales[2:] if is_nchw else self.scales[1:-1]
+            if not self.is_all_inputs_const():
+                out_tensor = np.random.ranf(out_shape).astype(inputs[0].dtype)
+            else:
+                if mode == 'linear':
+                    out_tensor = ResizeOp.upsample_linear(inputs[0], out_spatial_shape, spatial_scales)
+                else:
+                    out_tensor = ResizeOp.upsample_nearest(inputs[0], out_spatial_shape, spatial_scales)
         self.set_out_tensor(out_tensor)
 
     def convert_version(self):

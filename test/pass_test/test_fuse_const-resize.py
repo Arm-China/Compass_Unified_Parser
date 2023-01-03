@@ -4,7 +4,7 @@ from utils.run import run_parser
 from onnx import TensorProto, helper
 
 
-def create_fuse_const_model(onnx_path, resize_input_size, pow_input_shape, version=11):
+def create_fuse_const_model(onnx_path, resize_input_size, pow_input_shape, mode, version=11):
     ''' Create onnx model for fuse_const op.
     '''
     X = helper.make_tensor_value_info('X', TensorProto.FLOAT, pow_input_shape)
@@ -41,7 +41,7 @@ def create_fuse_const_model(onnx_path, resize_input_size, pow_input_shape, versi
         inputs=['const_x', 'roi', 'scales', 'sizes'],
         outputs=['Y0'],
         coordinate_transformation_mode='pytorch_half_pixel',
-        mode='linear',
+        mode=mode,
         nearest_mode='round_prefer_ceil'
     )
     pow_node = helper.make_node(
@@ -71,14 +71,15 @@ feed_dict = dict()
 
 for version in (11, ):
     for resize_input_shape, pow_input_shape in zip(resize_input_shapes, pow_input_shapes):
-        model_name = '-'.join([OP_NAME, str(version), str(len(pow_input_shape))])
-        model_path = model_name + '.onnx'
-        # Set feed_dict
-        feed_dict.clear()
-        feed_dict['X'] = np.random.ranf(pow_input_shape).astype(np.float32)
-        # Create model
-        create_fuse_const_model(model_path, resize_input_shape, pow_input_shape, version)
+        for mode in ('linear', 'nearest'):  # TODO: Support cubic
+            model_name = '-'.join([OP_NAME, str(version), str(len(pow_input_shape)), mode])
+            model_path = model_name + '.onnx'
+            # Set feed_dict
+            feed_dict.clear()
+            feed_dict['X'] = np.random.ranf(pow_input_shape).astype(np.float32)
+            # Create model
+            create_fuse_const_model(model_path, resize_input_shape, pow_input_shape, mode, version)
 
-        # Run tests with parser and compare result with runtime
-        exit_status = run_parser(model_path, feed_dict, verify=True)
-        assert exit_status
+            # Run tests with parser and compare result with runtime
+            exit_status = run_parser(model_path, feed_dict, verify=True)
+            assert exit_status
