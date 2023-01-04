@@ -129,15 +129,17 @@ def get_node_type(layer):
     else:
         node_type = layer_type
 
+    opcode_version = 1 if 'compat.v1' in node_type else 2
+
     # Add prefix 'Keras' for keras op type to distiguish from raw ops
     if node_type in dir(tf.keras.layers):
         node_type = 'Keras' + node_type
-        return node_type
+        return (node_type, opcode_version)
 
     # Remove prefix like 'math.', 'nn.' and etc
     node_type = node_type.split('.')[-1]
 
-    return node_type
+    return (node_type, opcode_version)
 
 
 def get_node_input(layer, input_info_dict):
@@ -215,11 +217,12 @@ def get_node_content(layer):
     output_name_shape = [(out.name, out.shape.as_list() if out.shape is not None else [])
                          for out in layer_outputs]
     DEBUG('layer: %s, output: %s' % (layer.name, str(output_name_shape)))
+    node_type, opcode_version = get_node_type(layer)
     ret = {'name': layer.name,
-           'type': get_node_type(layer),
+           'type': node_type,
            'output': output_name_shape,
            'attr': get_node_attr(layer),
-           'opcode_version': 2
+           'opcode_version': opcode_version
            }
     return ret
 

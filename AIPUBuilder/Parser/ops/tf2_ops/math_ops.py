@@ -19,24 +19,30 @@ class TfaddOp(OpHasOneOutPort, Tf2Op):
         return {'type': 'Add', 'version': 7}
 
 
-class TfconstantOp(OpHasOneOutPort, ConstLikeOp, Tf2Op):
-    @classmethod
-    def attributes(cls):
-        return {2: {'value': {'type': AttrType.TENSOR, 'required': True, 'default': None},
-                    'dtype': {'type': AttrType.STRING, 'required': True},
-                    },
-                }
-
-    def __init__(self, graph, attr_dict=None):
-        super(TfconstantOp, self).__init__(graph, attr_dict)
-        self.update_attributes(TfconstantOp, attr_dict)
-        assert self.check_required(), 'TfconstantOp is missing a required parameter.'
-
+class TfcumsumOp(OpHasOneOutPort, OpHasAxis, Tf2Op):
     def infer_shape(self):
-        super(TfconstantOp, self).infer_shape()
-        out_tensor = self.value.copy()
+        super(TfcumsumOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        for idx in range(1, len(inputs)):
+            assert inputs[idx].size == 1, 'Expect inputs at index %d of TfcumsumOp (%s) to be scalar, but got size %d' % (
+                idx, self.name, inputs[idx].size)
+        self.axis = inputs[1].item()
+        self.exclusive, self.reverse = [int(inp.item()) for inp in inputs[2:4]]
+        out_tensor = tf.math.cumsum(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
     def correspond_onnx_op(self):
-        return {'type': 'Constant', 'version': 9}
+        return {'type': 'CumSum', 'version': 14}
+
+
+class TfminimumOp(OpHasOneOutPort, Tf2Op):
+    def infer_shape(self):
+        super(TfminimumOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = tf.math.minimum(*inputs).numpy()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'Min', 'version': 6}

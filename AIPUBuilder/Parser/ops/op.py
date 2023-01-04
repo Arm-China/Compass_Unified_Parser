@@ -2425,16 +2425,7 @@ class Tf2Op(TfOp):
     Class Tf2Op inherited from TfOp class.
     All tf2 ops under the Tensorflow framework must inherit Tf2Op.
     '''
-    @classmethod
-    def attributes(cls):
-        '''return attributes of Tf2Op class.'''
-        return {'opcode_version': {'type': AttrType.INT, 'required': False, 'default': 2},
-                }
-
-    def __init__(self, graph, attr_dict=None):
-        super(Tf2Op, self).__init__(graph, attr_dict)
-        self.update_attributes(Tf2Op, attr_dict)
-        assert self.check_required(), 'Tf2Op is missing a required parameter.'
+    pass
 
 
 class KerasOp(Tf2Op):

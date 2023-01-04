@@ -751,10 +751,6 @@ class TfSplitOp(OpHasAxis, OpHasMultipleOutPorts, TfOp):
         return {1: {'num_split': {'type': AttrType.INT, 'required': True},
                     'axis': {'default': 0}
                     },
-                2: {'num_or_size_splits': {'default': None},
-                    'axis': {'default': 0},
-                    'num': {'type': AttrType.INT, 'default': None}
-                    }
                 }
 
     def __init__(self, graph, attr_dict=None):
@@ -762,35 +758,14 @@ class TfSplitOp(OpHasAxis, OpHasMultipleOutPorts, TfOp):
         self.update_attributes(TfSplitOp, attr_dict)
         assert self.check_required(), 'TfSplitOp is missing a required parameter.'
 
-    def __getattr__(self, item):
-        ret = None
-        try:
-            if item in ('num_or_size_splits',):
-                if self.cur_version == 2:
-                    inputs = self.get_input_tensors()
-                    ret = list(inputs[1]) if (np.ndim(inputs[1]) != 0) else int(inputs[1])
-        except:
-            ret = None
-        if ret is None:
-            ret = super(TfSplitOp, self).__getattr__(item)
-        return ret
-
     def infer_shape(self):
         super(TfSplitOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        if self.cur_version == 1:
-            assert len(
-                inputs) >= 2, 'TfSplitOp expects 2 inputs, but got %d.' % len(inputs)
-            self.axis = int(inputs[0])
-            input_data = inputs[1]
-            num_split = self.num_split
-        else:
-            input_data = inputs[0]
-            if (isinstance(self.num_or_size_splits, list) and len(self.num_or_size_splits) >= 1) \
-                    or (isinstance(self.num_or_size_splits, int) and self.num_or_size_splits >= 1):
-                num_split = self.num_or_size_splits
-            else:
-                num_split = self.num
+        assert len(
+            inputs) >= 2, 'TfSplitOp expects 2 inputs, but got %d.' % len(inputs)
+        self.axis = int(inputs[0])
+        input_data = inputs[1]
+        num_split = self.num_split
         assert num_split is not None, 'Invalid num_split of TfSplitOp(%s)!' % self.name
         if np.ndim(num_split) == 0:
             self.split = [input_data.shape[self.axis] //
@@ -861,10 +836,6 @@ class TfSqueezeOp(OpHasAxis, OpHasOneOutPort, TfOp):
     @property
     def correspond_onnx_op(self):
         return {'type': 'Squeeze', 'version': 1}
-
-
-class TfStackOp(TfPackOp):
-    pass
 
 
 class TfStridedSliceOp(OpHasOneOutPort, TfOp):

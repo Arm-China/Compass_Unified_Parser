@@ -20,7 +20,6 @@ def process_tf2(model_path, params):
         apply_subgraph_plugin(graph)
         infer(graph, partial=True)
         fuse_const(graph)
-        fuse_weights_const(graph)
 
         process_keras_op_before_infer(graph)
 
