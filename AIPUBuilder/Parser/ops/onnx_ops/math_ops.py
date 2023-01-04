@@ -1842,7 +1842,7 @@ class UpsampleOp(OpHasOneOutPort, OnnxOp):
             out_tensor = inputs[0].copy()
         else:
             input_dim_np = np.array(inputs[0].shape, np.float32)
-            out_shape = np.round(
+            out_shape = np.floor(
                 input_dim_np * self.scales).astype(np.int64).tolist()
             out_tensor = np.random.ranf(out_shape).astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
