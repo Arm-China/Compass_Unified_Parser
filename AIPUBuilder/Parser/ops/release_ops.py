@@ -110,7 +110,7 @@ class ArmActivationOp(LayoutUnawareOp, OpHasMethod, OpHasOneOutPort, ArmOp):
               'SHRINK': lambda x: (x),
               'SIGMOID': tf.sigmoid,
               'SILU': lambda x: (x) * tf.sigmoid(x),
-              'SOFTPLUS': lambda x: tf.log(tf.exp(x) + 1),
+              'SOFTPLUS': lambda x: tf.math.log(tf.exp(x) + 1),
               'SOFTSIGN': lambda x: x / (1 + tf.abs(x)),
               'SWISH': lambda x, alpha: (x) * tf.sigmoid(alpha * x),
               'TANH': tf.tanh,
