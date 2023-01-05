@@ -570,6 +570,55 @@ def convert_resizing(graph):
         NodeWrap(graph, resize).replace_obj('Resize', resize_attr)
 
 
+def convert_dense(graph):
+    matches = single_node_matcher(graph, 'TfKerasDense')
+    for m in matches:
+        dense = m['target']
+        dense_obj = NodeWrap(graph, dense)['object']
+        in_edges = graph.sorted_in_edges(dense, data=True)
+        out_edges = graph.sorted_out_edges(dense, data=True)
+        kernel_value = dense_obj.weights
+        biases_value = dense_obj.biases
+
+        if dense_obj is None:
+            WARN('[Parser]: Meets invalid Op (%s) in convert_dense!' % dense)
+            continue
+
+        in_shapes = dense_obj.get_input_shapes()[0]
+
+        if len(in_edges) != 1 \
+                or len(kernel_value.shape) != 2 \
+                or len(in_shapes) < 2 \
+                or in_shapes[-1] != kernel_value.shape[0]:
+            WARN('[Parser]: Meets invalid Op (%s) in convert_dense!' % dense)
+            continue
+
+        inp_value = dense_obj.get_input_tensors()[0]
+        src, _, in_attr = in_edges[0]
+        if biases_value is None:
+            biases_value = np.zeros(dense_obj.units).astype(np.float32)
+
+        if len(inp_value.shape) > 2:
+            # calculate the shape
+            old_shape = list(inp_value.shape)
+            new_shape = [-1, inp_value.shape[-1]]
+            dense_shape = copy.deepcopy(old_shape)
+            dense_shape[-1] = dense_obj.units
+
+            insert_reshape(graph, src, dense, in_attr, new_shape)
+            last_reshape_name = insert_reshape_after(
+                graph, dense, dense_shape)
+
+            if dense in graph._attr['output_names']:
+                index = graph._attr['output_names'].index(dense)
+                graph._attr['output_names'][index] = last_reshape_name
+
+        NodeWrap(graph, dense).replace_obj(
+            'FullyConnected', {'name': dense, 'weights': np.transpose(kernel_value, [1, 0]),
+                               'biases': biases_value,
+                               'num_output': kernel_value.shape[0]})
+
+
 def convert_softmax(graph):
     '''
     Keras Softmax support multiple axes. Convert to onnx Softmax for one axis, otherwise
@@ -790,6 +839,7 @@ def process_keras_op_before_infer(graph):
     convert_relu(graph)
     convert_resizing(graph)
     split_op_has_activation(graph, is_tf_op=True)
+    convert_dense(graph)
     multidirectional_broadcasting(graph)
 
     from ...onnx.passes.middle_passes import split_sum_or_max_or_min

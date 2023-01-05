@@ -427,6 +427,42 @@ class TfKerasCropping3DOp(OpHasOneOutPort, LayoutConcernedOp, KerasOp):
         return {'type': 'Slice', 'version': 1}
 
 
+class TfKerasDenseOp(BaseLinearOp, BaseActivationOp, KerasOp):
+    @classmethod
+    def attributes(cls):
+        return {2: {'units': {'type': AttrType.INT},
+                    'use_bias': {'type': AttrType.INT, 'default': 1},
+                    'kernel_initializer': {'type': AttrType.STRING, 'default': None},
+                    'bias_initializer': {'type': AttrType.STRING, 'default': None},
+                    }
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfKerasDenseOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfKerasDenseOp, attr_dict)
+        assert self.check_required(), 'TfKerasDenseOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(TfKerasDenseOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        activation = (self.activations).lower(
+        ) if self.activations != 'NONE' else None
+        out_tensor = tf.keras.layers.Dense(
+            units=self.units,
+            activation=activation,
+            use_bias=self.use_bias,
+            kernel_initializer=tf.keras.initializers.Constant(self.weights),
+            bias_initializer=tf.keras.initializers.Constant(self.biases),
+            kernel_regularizer=None,
+            bias_regularizer=None,
+            activity_regularizer=None,
+            kernel_constraint=None,
+            bias_constraint=None,
+        )(inputs[0]).numpy()
+
+        self.set_out_tensor(out_tensor)
+
+
 class TfKerasELUOp(OpHasOneOutPort, KerasOp):
     @classmethod
     def attributes(cls):
