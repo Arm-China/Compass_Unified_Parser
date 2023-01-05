@@ -293,7 +293,7 @@ class FilterOp(OpHasMultipleOutPorts, CommonOp):
     def infer_shape(self):
         super(FilterOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        mask = inputs[-1].astype(np.bool)
+        mask = inputs[-1].astype(bool)
         out_tensors = [np.zeros_like(inp) for inp in inputs[:-1]]
         for i, ot in enumerate(inputs[:-1]):
             true_indices = np.where(mask)[0]

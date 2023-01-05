@@ -657,7 +657,7 @@ class CaffeFILTEROp(OpHasMultipleOutPorts, CaffeOp):
         inputs = self.get_input_tensors()
         assert all([inp.shape[0] == inputs[-1].shape[0]
                     for inp in inputs[:-1]]), 'input shape is invalid in CaffeFILTEROp.'
-        mask = inputs[-1].astype(np.bool)
+        mask = inputs[-1].astype(bool)
         mask = np.squeeze(mask, axis=tuple(range(1, len(inputs[0].shape))))
         out_tensors = [np.array(inp)[mask] for inp in inputs[:-1]]
         self.set_out_tensor(out_tensors)

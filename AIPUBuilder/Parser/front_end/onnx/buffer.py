@@ -37,9 +37,9 @@ onnx_tensor_np_mapping = [
      > 0 else np.frombuffer(pb.raw_data, dtype=np.int32)),
     ('INT64', np.int64, lambda pb: pb.int64_data if len(pb.int64_data)
      > 0 else np.frombuffer(pb.raw_data, dtype=np.int64)),
-    ('STRING', np.str, lambda pb: pb.string_data),
-    ('BOOL', np.bool, lambda pb: pb.int32_data if len(pb.int32_data)
-     > 0 else np.frombuffer(pb.raw_data, dtype=np.bool)),
+    ('STRING', str, lambda pb: pb.string_data),
+    ('BOOL', bool, lambda pb: pb.int32_data if len(pb.int32_data)
+     > 0 else np.frombuffer(pb.raw_data, dtype=bool)),
     ('FLOAT16', np.float16, lambda pb: pb.int32_data),
     ('DOUBLE', np.double, lambda pb: pb.double_data if len(pb.double_data)
      > 0 else np.frombuffer(pb.raw_data, dtype=np.float64)),

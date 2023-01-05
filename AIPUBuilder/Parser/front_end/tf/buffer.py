@@ -17,10 +17,10 @@ tf_types_convert_mapping = [
     ('DT_UINT8', np.uint8, lambda pb: np.uint8(pb.int_val)),
     ('DT_INT16', np.int16, lambda pb: np.int16(pb.int_val)),
     ('DT_INT8', np.int8, lambda pb: np.int8(pb.int_val)),
-    ('DT_STRING', np.str, lambda pb: np.str(pb.string_val)),
+    ('DT_STRING', str, lambda pb: str(pb.string_val)),
     ('DT_COMPLEX64', np.complex64, lambda pb: np.complex64(pb.scomplex_val)),
     ('DT_INT64', np.int64, lambda pb: np.int64(pb.int64_val)),
-    ('DT_BOOL', np.bool, lambda pb: pb.bool_val),
+    ('DT_BOOL', bool, lambda pb: pb.bool_val),
     ('DT_QINT8', 'qint8', lambda pb: pb.int_val),
     ('DT_QUINT8', 'quint8', lambda pb: pb.int_val),
     ('DT_QINT32', 'qint32', lambda pb: pb.int_val),
@@ -40,7 +40,7 @@ tf_types_convert_mapping = [
 tf_attr_value_types_map = {
     's': lambda x: x.decode('utf-8'),
     'i': lambda x: np.int64(x),
-    'f': lambda x: np.float(x),
+    'f': lambda x: float(x),
     'b': lambda x: bool(x),
     'type': lambda x: str(np.dtype(tf_types_convert_mapping[x][1]))
     if isinstance(tf_types_convert_mapping[x][1], type)

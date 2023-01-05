@@ -1786,7 +1786,7 @@ class TopKOp(OpHasAxis, OpHasMultipleOutPorts, OnnxOp):
     def infer_shape(self):
         super(TopKOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        if inputs[0].dtype == np.bool:
+        if inputs[0].dtype == bool:
             inputs[0] = inputs[0].astype(np.int32)
         input_tensor = torch.from_numpy(inputs[0])
         cur_ver = self.cur_version

@@ -1033,7 +1033,7 @@ class ArmCountOp(OpHasOneOutPort, ArmOp):
         super(ArmCountOp, self).infer_shape()
         inputs = self.get_input_tensors()
         if str(inputs[0].dtype) not in ('int32', 'int64', 'float32', 'float64'):
-            if np.issubdtype(inputs[0].dtype, np.integer) or np.issubdtype(inputs[0].dtype, np.bool_):
+            if np.issubdtype(inputs[0].dtype, np.integer) or np.issubdtype(inputs[0].dtype, bool):
                 inp = inputs[0].astype(np.int32)
             else:
                 inp = inputs[0].astype(np.float32)
@@ -1768,7 +1768,7 @@ class ArmFilterOp(OpHasAxis, OpHasMultipleOutPorts, ArmOp):
         super(ArmFilterOp, self).infer_shape()
         inputs = self.get_input_tensors()
         self.num = len(inputs) - 1
-        mask = inputs[-1].astype(np.bool)
+        mask = inputs[-1].astype(bool)
         out_tensors = [np.zeros_like(inp) for inp in inputs[:-1]]
         for i, ot in enumerate(inputs[:-1]):
             true_indices = np.where(mask)[0]
