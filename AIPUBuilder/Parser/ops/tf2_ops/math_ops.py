@@ -19,6 +19,23 @@ class TfaddOp(OpHasOneOutPort, Tf2Op):
         return {'type': 'Add', 'version': 7}
 
 
+class TfcumprodOp(OpHasOneOutPort, OpHasAxis, Tf2Op):
+    def infer_shape(self):
+        super(TfcumprodOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        for idx in range(1, len(inputs)):
+            assert inputs[idx].size == 1, 'Expect inputs at index %d of TfcumprodOp (%s) to be scalar, but got size %d' % (
+                idx, self.name, inputs[idx].size)
+        self.axis = inputs[1].item()
+        self.exclusive, self.reverse = [int(inp.item()) for inp in inputs[2:4]]
+        out_tensor = tf.math.cumprod(*inputs).numpy()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'CumProd', 'version': 1}
+
+
 class TfcumsumOp(OpHasOneOutPort, OpHasAxis, Tf2Op):
     def infer_shape(self):
         super(TfcumsumOp, self).infer_shape()

@@ -642,7 +642,7 @@ class TfKerasInputLayerOp(OpHasOneOutPort, InputLikeOp, KerasOp):
 
     @property
     def correspond_onnx_op(self):
-        return {'type': 'Input', 'version': None}
+        return {'type': 'Input', 'version': 1}
 
 
 class TfKerasLayerNormalizationOp(KerasNormalizationOp):
@@ -661,7 +661,7 @@ class TfKerasLayerNormalizationOp(KerasNormalizationOp):
 
     @property
     def correspond_onnx_op(self):
-        return {'type': 'LayerNorm', 'version': None}
+        return {'type': 'LayerNorm', 'version': 1}
 
 
 class TfKerasLeakyReLUOp(OpHasOneOutPort, KerasOp):

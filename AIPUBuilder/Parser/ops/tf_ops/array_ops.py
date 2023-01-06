@@ -503,7 +503,7 @@ class TfPlaceholderOp(OpHasOneOutPort, InputLikeOp, TfOp):
 
     @property
     def correspond_onnx_op(self):
-        return {'type': 'Input', 'version': None}
+        return {'type': 'Input', 'version': 1}
 
 
 class TfPlaceholderWithDefaultOp(OpHasOneOutPort, ConstLikeOp, TfOp):
