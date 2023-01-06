@@ -198,6 +198,30 @@ def remove_useless_op(graph, op_type_list):
                         removing_nodes.append(node_name)
                     elif len(in_tensors) == 4 and in_tensors[3].size > 0 and in_shapes[0] == in_tensors[3].tolist():
                         removing_nodes.append(node_name)
+            elif op_type == 'Roll':
+                axis_value = node_obj.axes[0] if len(
+                    node_obj.axes) == 1 else node_obj.axes
+                roll_shift = node_obj.shift
+                roll_shape = node_obj.get_input_shapes()[0]
+                if len(roll_shift) == 1:
+                    roll_shift = roll_shift[0]
+                    from ....ops.common_ops import RollOp
+                    roll_shift, start1, end1, steps1, axes1, start2, end2, steps2, axes2 =\
+                        RollOp.cal_roll_parm(
+                            axis_value, roll_shift, roll_shape)
+
+                    if roll_shift == 0 \
+                            or np.any(np.abs(start1) >= np.abs(end1)) \
+                            or np.any(np.abs(start2) >= np.abs(end2)):
+                        removing_nodes.append(node_name)
+                else:
+                    if np.all(np.array(roll_shift) == 0):
+                        removing_nodes.append(node_name)
+                    else:
+                        WARN(
+                            '[Parser]: Meets unsupported Roll(%s) to remove in remove_useless_op!' % node_name)
+                        continue
+
             elif op_type == 'Slice':
                 out_tensors = node_obj.get_output_tensors()
                 if len(in_tensors) >= 1 \

@@ -6449,6 +6449,64 @@ def split_reduce_sumsq(graph):
             NodeWrap(graph, rss).replace_obj('ReduceSum', sum_attr)
 
 
+def split_roll(graph):
+    # only support split roll with len(axis)==1 and len(shift)==1 currently
+    matches = single_node_matcher(graph, 'Roll')
+    matched = False
+    from ....ops.common_ops import RollOp
+    for single_match in matches:
+        roll = single_match['target']
+        roll_obj = NodeWrap(graph, roll)['object']
+        roll_in_edges = graph.sorted_in_edges(roll, data=True)
+        if roll_obj is not None and len(roll_in_edges) == 1:
+            axis_value = roll_obj.axes[0]
+            roll_shift = roll_obj.shift
+            roll_shape = roll_obj.get_input_shapes()[0]
+            if len(roll_shift) != 1:
+                continue
+            roll_shift = roll_shift[0]
+            roll_shift, start1, end1, steps1, axes1, start2, end2, steps2, axes2 =\
+                RollOp.cal_roll_parm(axis_value, roll_shift, roll_shape)
+
+            if roll_shift == 0 \
+                    or np.any(np.abs(start1) >= np.abs(end1)) \
+                    or np.any(np.abs(start2) >= np.abs(end2)):
+                continue
+
+            matched = True
+            slice1 = get_valid_node_name(graph, roll + '_slice1')
+            slice2 = get_valid_node_name(graph, roll + '_slice2')
+
+            src, dst, roll_in_attr = roll_in_edges[0]
+
+            slice_in_attr = copy.deepcopy(roll_in_attr)
+
+            graph.remove_edge(src, roll)
+            graph.add_edge(src, slice1, **roll_in_attr)
+            graph.add_edge(src, slice2, **slice_in_attr)
+            graph.add_edge(slice1, roll, **
+                           {'src_out_port': 0, 'dst_in_port': 0})
+            graph.add_edge(slice2, roll, **
+                           {'src_out_port': 0, 'dst_in_port': 1})
+
+            slice1_attr = {'name': slice1, 'opset_version': 1,
+                           'axes': axes1, 'starts': start1, 'ends': end1}
+            slice2_attr = {'name': slice2, 'opset_version': 1,
+                           'axes': axes2, 'starts': start2, 'ends': end2}
+
+            concat_attr = roll_obj.copied_attr()
+            concat_attr.update(
+                {'opset_version': 11, 'axis': axis_value, 'axes': None})
+            NodeWrap(graph, roll).replace_obj('Concat', concat_attr)
+
+            NodeWrap(graph, slice1).replace_obj('Slice', slice1_attr)
+            NodeWrap(graph, slice2).replace_obj('Slice', slice2_attr)
+
+            if roll in graph._attr['output_names']:
+                index = graph._attr['output_names'].index(roll)
+                graph._attr['output_names'][index] = concat
+
+
 def split_mean(graph):
     matches = single_node_matcher(graph, 'Mean')
     for m in matches:
@@ -6942,7 +7000,7 @@ def middle_passes(graph, params):
     merge_dilated_conv_group(graph)
     merge_dilated_conv(graph)
     remove_useless_op(graph, ['Concat',
-                              'Dropout', 'Expand', 'Reshape', 'Slice', 'Transpose'])
+                              'Dropout', 'Expand', 'Reshape', 'Slice', 'Transpose', 'Roll'])
     remove_redundant_transpose(graph)
 
     decompose_const_if(graph, params)
@@ -6961,6 +7019,7 @@ def middle_passes(graph, params):
     split_reduce_logsumexp(graph)
     split_reduce_logsum(graph)
     split_reduce_sumsq(graph)
+    split_roll(graph)
     convert_upsample_to_resize(graph)
     convert_special_resize(graph)
     convert_global_pool(graph)

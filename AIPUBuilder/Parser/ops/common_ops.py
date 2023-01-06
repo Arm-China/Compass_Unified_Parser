@@ -748,6 +748,34 @@ class SwishOp(OpHasOneOutPort, CommonOp):
 
 
 class RollOp(OpHasAxis, OpHasOneOutPort, CommonOp):
+
+    @staticmethod
+    def cal_roll_parm(axis_value, roll_shift, roll_shape):
+        if axis_value < 0:
+            axis_value = len(roll_shape)+axis_value
+
+        if abs(roll_shift) > roll_shape[axis_value]:
+            roll_shift = roll_shift % roll_shape[axis_value]
+
+        roll_shift = roll_shape[axis_value]+roll_shift
+        slice_num = roll_shape[axis_value]-roll_shift
+
+        start1 = np.zeros((axis_value+1)).astype(np.int32).tolist()
+        start1[-1] = slice_num
+        end1 = np.array([roll_shape[i]
+                        for i in range(0, axis_value+1)]).tolist()
+        steps1 = np.ones((axis_value+1)).astype(np.int32).tolist()
+        axes1 = np.arange(axis_value+1).astype(np.int32).tolist()
+
+        start2 = np.zeros((axis_value+1)).astype(np.int32).tolist()
+        end2 = np.array([roll_shape[i]
+                        for i in range(0, axis_value+1)]).tolist()
+        end2[-1] = slice_num
+        steps2 = np.ones((axis_value+1)).astype(np.int32).tolist()
+        axes2 = np.arange(axis_value+1).astype(np.int32).tolist()
+
+        return roll_shift, start1, end1, steps1, axes1, start2, end2, steps2, axes2
+
     @classmethod
     def attributes(cls):
         return {'axes': {'type': AttrType.INTS, 'required': True},
