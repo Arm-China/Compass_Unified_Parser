@@ -13,7 +13,7 @@ from .passes.front_passes import merge_gru, merge_gru2, merge_lstm, merge_zero_f
     convert_resize_bilinear_nearest, remove_identity_n, convert_conv_backpropinput, \
     convert_special_fakequantminmaxvars, convert_maxpoolwithargmax, convert_nms, convert_fusebatchnormv3, \
     convert_matmul, convert_invert_permutation, convert_reverse, \
-    remove_isfinite_select, merge_fasterrcnn, merge_keras_maskrcnn
+    remove_isfinite_select, merge_fasterrcnn, merge_keras_maskrcnn, merge_lstm2
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
@@ -39,6 +39,7 @@ def process_tf(model_path, params):
         merge_gru(graph)
         merge_gru2(graph)
         merge_lstm(graph)
+        merge_lstm2(graph)
         merge_zero_fraction(graph)
         convert_reverse_sequence(graph, op_type='TfReverseSequence')
         convert_scatternd(graph, op_type='TfScatterNd')

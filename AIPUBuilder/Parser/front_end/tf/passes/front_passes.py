@@ -1802,6 +1802,268 @@ def merge_gru2(graph):
         clear_redundant_nodes(graph)
 
 
+def merge_lstm2(graph):
+    begin_matches = matched_patterns(graph,
+                                     nodes=[('trans', {'op': 'TfTranspose'}),
+                                            ('tensor_arr_scatter', {
+                                             'op': 'TfTensorArrayScatterV3'}),
+                                            ('tensor_arr', {
+                                             'op': 'TfTensorArrayV3'}),
+                                            ('range', {}),
+                                            ('tensor_read', {
+                                             'op': 'TfTensorArrayReadV3'}),
+                                            ('concat', {'op': 'TfConcatV2'}),
+                                            ],
+                                     edges=[('trans', 'tensor_arr_scatter', {'src_out_port': 0, 'dst_in_port': 2}),
+                                            ('tensor_arr', 'tensor_arr_scatter'),
+                                            ('tensor_arr', 'tensor_arr_scatter', {
+                                             'src_out_port': 1, 'dst_in_port': 3}),
+                                            ('range', 'tensor_arr_scatter', {
+                                             'src_out_port': 0, 'dst_in_port': 1}),
+                                            ('tensor_arr_scatter', 'tensor_read'),
+                                            ('tensor_read', 'concat'),
+                                            ])
+    cell_matches = matched_patterns(graph,
+                                    nodes=[('concat', {'op': 'TfConcatV2'}),
+                                           ('matmul', {'op': 'TfMatMul'}),
+                                           ('weights', {'op': 'TfConst'}),
+                                           ('biasadd', {'op': 'TfBiasAdd'}),
+                                           ('bias', {'op': 'TfConst'}),
+                                           ('split', {'op': 'TfSplit'}),
+                                           ('add', {'op': 'TfAdd'}),
+                                           ('const_b', {'op': 'TfConst'}),
+                                           ('sig1', {'op': 'TfSigmoid'}),
+                                           ('sig2', {'op': 'TfSigmoid'}),
+                                           ('sig3', {'op': 'TfSigmoid'}),
+                                           ('mul', {'op': 'TfMul'}),
+                                           ('mul2', {'op': 'TfMul'}),
+                                           ('mul3', {'op': 'TfMul'}),
+                                           ('tanh', {'op': 'TfTanh'}),
+                                           ],
+                                    edges=[('concat', 'matmul'),
+                                           ('weights', 'matmul', {
+                                            'src_out_port': 0, 'dst_in_port': 1}),
+                                           ('bias', 'biasadd', {
+                                            'src_out_port': 0, 'dst_in_port': 1}),
+                                           ('matmul', 'biasadd'),
+                                           ('biasadd', 'split'),
+                                           ('split', 'add'),
+                                           ('split', 'sig2', {
+                                            'src_out_port': 0, 'dst_in_port': 0}),
+                                           ('split', 'sig3'),
+                                           ('split', 'tanh'),
+                                           ('const_b', 'add'),
+                                           ('add', 'sig1'),
+                                           ('sig1', 'mul'),
+                                           ('sig2', 'mul2'),
+                                           ('sig3', 'mul3'),
+                                           ('tanh', 'mul2'),
+                                           ])
+
+    sequence_out_matches = matched_patterns(graph,
+                                            nodes=[
+                                                ('ht', {'op': 'TfMul'}),
+                                                ('write', {
+                                                 'op': 'TfTensorArrayWriteV3'}),
+                                                ('iter', {
+                                                 'op': 'TfNextIteration'}),
+                                                ('merge', {'op': 'TfMerge'}),
+                                                ('switch', {'op': 'TfSwitch'}),
+                                                ('exit', {'op': 'TfExit'}),
+                                                ('trans', {
+                                                 'op': 'TfTranspose'}),
+                                                ('concat', {}),
+                                                ('gather', {'op': 'TfTensorArrayGatherV3'})],
+                                            edges=[
+                                                ('ht', 'write', {
+                                                 'src_out_port': 0, 'dst_in_port': 2}),
+                                                ('write', 'iter'),
+                                                ('iter', 'merge'),
+                                                ('merge', 'switch'),
+                                                ('switch', 'exit'),
+                                                ('exit', 'gather'),
+                                                ('concat', 'trans'),
+                                                ('gather', 'trans')
+                                            ])
+
+    h_init_matches = matched_patterns(graph,
+                                      nodes=[
+                                          ('h_init', {}),
+                                          ('next_iter', {
+                                           'op': 'TfNextIteration'}),
+                                          ('merge', {'op': 'TfMerge'}),
+                                          ('switch', {'op': 'TfSwitch'}),
+                                          ('cell_concat', {
+                                           'op': 'TfConcatV2'}),
+                                      ],
+                                      edges=[
+                                          ('h_init', 'merge'),
+                                          ('next_iter', 'merge'),
+                                          ('merge', 'switch'),
+                                          ('switch', 'cell_concat'),
+                                      ])
+
+    c_init_matches = matched_patterns(graph,
+                                      nodes=[
+                                          ('c_init', {}),
+                                          ('next_iter', {
+                                           'op': 'TfNextIteration'}),
+                                          ('merge', {'op': 'TfMerge'}),
+                                          ('switch', {'op': 'TfSwitch'}),
+                                          ('mul', {'op': 'TfMul'}),
+                                      ],
+                                      edges=[
+                                          ('c_init', 'merge'),
+                                          ('next_iter', 'merge'),
+                                          ('merge', 'switch'),
+                                          ('switch', 'mul'),
+                                      ])
+    matched = False
+    if begin_matches \
+            and cell_matches \
+            and h_init_matches \
+            and c_init_matches \
+            and sequence_out_matches \
+            and len(begin_matches) >= len(cell_matches) \
+            and len(sequence_out_matches) == len(cell_matches):
+
+        for cm in cell_matches:
+            begin_match = [
+                b for b in begin_matches if b["concat"] == cm["concat"]]
+            Y_out_match = [
+                s for s in sequence_out_matches if s["ht"] == cm["mul3"]]
+            h_init_match = [
+                h for h in h_init_matches if h["cell_concat"] == cm["concat"]]
+            c_init_match = [c for c in c_init_matches if c["mul"] == cm["mul"]]
+
+            if not begin_match or not Y_out_match or not h_init_match or not c_init_match:
+                continue
+
+            const_b = cm['const_b']
+            const_b_obj = NodeWrap(graph, const_b)['object']
+
+            begin_name = begin_match[0]['trans']
+            begin_obj = NodeWrap(graph, begin_name)['object']
+            begin_in_shapes = begin_obj.get_input_shapes()
+
+            weights_name = cm['matmul']
+            weights_value_name = cm['weights']
+            weights_value_name_obj = NodeWrap(
+                graph, weights_value_name)['object']
+
+            scatter = begin_match[0]['tensor_arr_scatter']
+            scatter_obj = NodeWrap(graph, scatter)['object']
+            scatter_in_edges = graph.sorted_in_edges(scatter, data=True)
+            scatter_out_edges = graph.sorted_out_edges(scatter)
+
+            biases_name = cm['biasadd']
+            biases_value_name = cm['bias']
+            biases_value_name_obj = NodeWrap(
+                graph, biases_value_name)['object']
+
+            initial_h_name = h_init_match[0]["h_init"]
+            initial_c_name = c_init_match[0]["c_init"]
+            h_init_obj = NodeWrap(graph, initial_h_name)['object']
+            c_init_obj = NodeWrap(graph, initial_c_name)['object']
+            h_init_out_edge = graph.sorted_out_edges(initial_h_name, data=True)
+            c_init_out_edge = graph.sorted_out_edges(initial_c_name, data=True)
+
+            if scatter_obj is None \
+                    or len(scatter_in_edges) < 3 \
+                    or h_init_obj is None \
+                    or c_init_obj is None \
+                    or begin_obj is None:
+                continue
+
+            matched = True
+            # Prepare inputs for onnx lstm
+            weights = weights_value_name_obj.value
+            biases = biases_value_name_obj.value
+            w_np = np.transpose(weights)
+            b_np = biases
+
+            batch_size, time_steps, input_size = begin_in_shapes[0]
+            kernel_weights, recurrent_weights = np.split(
+                w_np, [input_size], axis=1)
+            input_w, cell_w, forget_w, output_w = np.split(
+                kernel_weights, 4, axis=0)
+            input_r, cell_r, forget_r, output_r = np.split(
+                recurrent_weights, 4, axis=0)
+            input_wb, cell_wb, forget_wb, output_wb = np.split(
+                biases, 4, axis=0)
+            forget_wb = np.full(forget_wb.shape, float(
+                const_b_obj.value)).astype(np.float32)
+            W_value = np.stack(
+                [np.concatenate([input_w, output_w, forget_w, cell_w], axis=0)])
+            R_value = np.stack(
+                [np.concatenate([input_r, output_r, forget_r, cell_r], axis=0)])
+            biases_w = np.concatenate(
+                [input_wb, output_wb, forget_wb, cell_wb])
+            biases_r = np.zeros_like(biases_w)
+            B_value = np.stack([np.concatenate([biases_w, biases_r])])
+            seq_length = np.array([time_steps] * batch_size, np.int32)
+            hidden_size = begin_in_shapes[0][-1]
+            Y_out_dim = [batch_size, time_steps, hidden_size]
+            initial_hc_shape = [batch_size, 1, hidden_size]
+
+            # Create a new node for LSTM
+            lstm_begin = get_valid_node_name(graph, begin_name + '_lstm')
+
+            _, _, initial_h_attr = h_init_out_edge[0]
+            _, _, initial_c_attr = c_init_out_edge[0]
+            new_h_init_attr = copy.deepcopy(initial_h_attr)
+            new_h_init_attr['dst_in_port'] = 5
+            new_c_init_attr = copy.deepcopy(initial_c_attr)
+            new_c_init_attr['dst_in_port'] = 6
+            trans_src, _, attr = graph.sorted_in_edges(
+                begin_name, data=True)[0]
+
+            graph.remove_edge(trans_src, begin_name)
+            graph.add_edge(trans_src, lstm_begin, **attr)
+            graph.add_edge(initial_h_name, lstm_begin, **new_h_init_attr)
+            graph.add_edge(initial_c_name, lstm_begin, **new_c_init_attr)
+            graph.remove_edges_from(scatter_in_edges + scatter_out_edges)
+
+            seq_end_name = Y_out_match[0]['trans']
+            seq_end_out_edge = graph.sorted_out_edges(
+                seq_end_name, data=True)
+            for _, seq_end_dst, seq_end_attr in seq_end_out_edge:
+                graph.remove_edge(seq_end_name, seq_end_dst)
+                graph.add_edge(lstm_begin, seq_end_dst, **seq_end_attr)
+            post_reshape_name = insert_reshape_after(
+                graph, lstm_begin, Y_out_dim)
+
+            # Convert to onnx lstm
+            insert_constant(graph, lstm_begin + '_W', W_value, lstm_begin,
+                            in_port=1, data_format='NHWC')
+            insert_constant(graph, lstm_begin + '_R', R_value, lstm_begin,
+                            in_port=2, data_format='NHWC')
+            insert_constant(graph, lstm_begin + '_B', B_value, lstm_begin,
+                            in_port=3, data_format='NHWC')
+            insert_constant(graph, lstm_begin + '_seq_length', seq_length, lstm_begin,
+                            in_port=4, data_format='NHWC')
+            insert_reshape(graph, initial_h_name, lstm_begin,
+                           new_h_init_attr, initial_hc_shape)
+            insert_reshape(graph, initial_c_name, lstm_begin,
+                           new_c_init_attr, initial_hc_shape)
+
+            lstm_attr = begin_obj.copied_attr()
+            lstm_attr = {'name': lstm_begin,
+                         'opset_version': 14,
+                         'layout': True,
+                         'hidden_size': hidden_size,
+                         'method': 'Y',
+                         }
+            NodeWrap(graph, lstm_begin).replace_obj('LSTM', lstm_attr)
+
+            if seq_end_name in graph._attr['output_names']:
+                index = graph._attr['output_names'].index(seq_end_name)
+                graph._attr['output_names'][index] = post_reshape_name
+
+    if matched:
+        clear_redundant_nodes(graph)
+
+
 def merge_lstm(graph):
     cell_matches = matched_patterns(graph,
                                     nodes=[
