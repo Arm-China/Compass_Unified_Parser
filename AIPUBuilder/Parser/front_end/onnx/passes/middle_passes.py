@@ -2649,7 +2649,8 @@ def merge_dilated_conv(graph):
         if len(conv_in_shapes) < 1 or len(conv_in_shapes[0]) != 4:
             continue
         if isinstance(obj_dict['conv'], BaseDeconvOp) \
-                and obj_dict['conv'].output_padding:
+                and obj_dict['conv'].output_padding \
+                and any(p != 0 for p in obj_dict['conv'].output_padding):
             continue
         data_format = obj_dict['conv'].data_format
         if obj_dict['space_to_depth'].data_format != data_format \
