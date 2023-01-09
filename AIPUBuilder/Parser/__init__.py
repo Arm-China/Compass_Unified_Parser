@@ -6,7 +6,7 @@
 #!/usr/bin/python3
 # -*- coding: UTF-8 -*-
 
-__VERSION__ = '0.1'
+__VERSION__ = '1.3'
 __build_number__ = None
 if __build_number__ is not None:
     __VERSION__ = __VERSION__ + '.' + str(__build_number__)
