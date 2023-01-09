@@ -44,6 +44,20 @@ class TfconstantOp(OpHasOneOutPort, ConstLikeOp, Tf2Op):
 
 
 class TfsplitOp(OpHasAxis, OpHasMultipleOutPorts, Tf2Op):
+    @classmethod
+    def attributes(cls):
+        return {2: {'value': {'type': AttrType.TENSOR},
+                    'num_or_size_splits': {},
+                    'axis': {'default': 0},
+                    'num': {'type': AttrType.INT, 'default': None}
+                    },
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfsplitOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfsplitOp, attr_dict)
+        assert self.check_required(), 'TfsplitOp is missing a required parameter.'
+
     def __getattr__(self, item):
         ret = None
         try:

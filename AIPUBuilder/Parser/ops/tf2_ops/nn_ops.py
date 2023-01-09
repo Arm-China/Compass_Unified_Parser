@@ -12,6 +12,10 @@ class Tfconv2dOp(TfHasPaddingStrides, Tf2Op, OpHasWeights, OpHasOneOutPort):
     def attributes(cls):
         return {1: {'padding': {'default': None},
                     'dilations': {'default': [1, 1, 1, 1]},
+                    'use_cudnn_on_gpu': {'type': AttrType.INT, 'default': 1, 'options': [0, 1]},
+                    },
+                2: {'padding': {'default': None},
+                    'dilations': {'default': [1, 1, 1, 1]},
                     },
                 }
 
@@ -40,6 +44,8 @@ class Tfconv2dOp(TfHasPaddingStrides, Tf2Op, OpHasWeights, OpHasOneOutPort):
                     else:
                         ret = inputs[item_idx].item() if inputs[item_idx].size == 1 else list(
                             inputs[item_idx])
+                    if item == 'use_cudnn_on_gpu':
+                        ret = int(ret)
                     if ret is not None:
                         self.__dict__['_attr'][item].value = ret
         except:
