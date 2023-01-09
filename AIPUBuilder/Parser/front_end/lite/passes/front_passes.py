@@ -688,6 +688,7 @@ def convert_strided_slice(graph, op_type='TfStridedSlice'):
                         graph.remove_edge(strided_slice, dst)
                         graph.add_edge(
                             post_reshape, dst, **out_attr)
+                    _, _, out_attr = out_edges[0]
 
                     slice_out_attr = {'src_out_port': 0, 'dst_in_port': 0}
                     if out_edges[0][2]['tensor'].dtype is not None:
