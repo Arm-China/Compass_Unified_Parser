@@ -23,6 +23,9 @@ def process_tf2(model_path, params):
 
         process_keras_op_before_infer(graph)
 
+        from ..tf.passes.front_passes import split_b2s
+        split_b2s(graph, op_type='Tfbatch_to_space_nd')
+
         infer(graph)
 
         process_keras_op_after_infer(graph)

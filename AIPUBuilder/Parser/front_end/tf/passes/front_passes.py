@@ -824,9 +824,12 @@ def split_s2b(graph):
                 '[Parser]: Meets invalid TfSpaceToBatchND Node(%s) in split_s2b!' % s2b)
 
 
-def split_b2s(graph):
+def split_b2s(graph, op_type='TfBatchToSpaceND'):
+    if op_type not in ('TfBatchToSpaceND', 'Tfbatch_to_space_nd'):
+        WARN('[Parser]: Meets invalid Op type (%s) in split_b2s!' % op_type)
+        return
     transpose_version, d2s_version, slice_version, reshape_version = 1, 1, 1, 5
-    matches = single_node_matcher(graph, 'TfBatchToSpaceND')
+    matches = single_node_matcher(graph, op_type)
     for m in matches:
         b2s = m['target']
         b2s_obj = NodeWrap(graph, b2s)['object']

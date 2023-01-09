@@ -7,6 +7,14 @@ from ..op import *
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
+class Tfbatch_to_space_ndOp(OpHasOneOutPort, Tf2Op):
+    def infer_shape(self):
+        super(Tfbatch_to_space_ndOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = tf.compat.v1.batch_to_space_nd(*inputs).numpy()
+        self.set_out_tensor(out_tensor)
+
+
 class Tfclip_by_valueOp(ActivationOnlyOp, Tf2Op):
     def infer_shape(self):
         super(Tfclip_by_valueOp, self).infer_shape()

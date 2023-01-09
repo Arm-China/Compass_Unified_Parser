@@ -426,7 +426,7 @@ class Op(abc.ABC):
         ret = []
         for u, _, in_attr in self._graph.sorted_in_edges(self.name, data=True):
             obj = self._graph.nodes[u]._attr.get('object', None)
-            if obj is not None and obj.type in ('Constant', 'TfConst'):
+            if obj is not None and obj.type in ('Constant', 'TfConst', 'Tfconstant'):
                 ret.append((u, in_attr['dst_in_port'], obj.value))
         return ret
 
