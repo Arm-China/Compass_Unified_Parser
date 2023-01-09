@@ -23,6 +23,7 @@ from .tf_ops.nn_ops import *
 from .tf_ops.random_ops import *
 from .tf_ops.sparse_ops import *
 from .tf2_ops.array_ops import *
+from .tf2_ops.bitwise_ops import *
 from .tf2_ops.math_ops import *
 from .tf2_ops.nn_ops import *
 from .tf2_ops.keras_ops import *
