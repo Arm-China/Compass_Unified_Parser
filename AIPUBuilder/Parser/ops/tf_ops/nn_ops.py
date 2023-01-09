@@ -489,14 +489,12 @@ class TfDepthwiseConv2dNativeOp(TfHasPaddingStrides, OpHasWeights, OpHasOneOutPo
         inp = np.transpose(inputs[0], [0, 2, 3, 1]
                            ) if self.data_format == 'NCHW' else inputs[0]
         self.group = inp.shape[-1]
-        out_tensor = tf.nn.depthwise_conv2d_native(inp,
-                                                   self.weights,
-                                                   strides=[1] +
-                                                   self.strides + [1],
-                                                   padding=padding,
-                                                   dilations=[
-                                                       1] + self.dilations + [1],
-                                                   data_format='NHWC').numpy()
+        out_tensor = tf.compat.v1.nn.depthwise_conv2d_native(inp,
+                                                             self.weights,
+                                                             strides=[1] + self.strides + [1],
+                                                             padding=padding,
+                                                             dilations=[1] + self.dilations + [1],
+                                                             data_format='NHWC').numpy()
         if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
             self.pads, _ = OpHasPaddingStrides.cal_pads(
                 inp.shape[1:3],
