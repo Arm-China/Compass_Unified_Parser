@@ -22,7 +22,7 @@ class TfBatchToSpaceNDOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfBatchToSpaceNDOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.batch_to_space_nd(*inputs).numpy()
+        out_tensor = tf.compat.v1.batch_to_space_nd(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
 

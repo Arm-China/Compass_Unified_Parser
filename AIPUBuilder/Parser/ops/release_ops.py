@@ -503,10 +503,10 @@ class ArmBatchToSpaceOp(OpHasOneOutPort, ArmOp):
     def infer_shape(self):
         super(ArmBatchToSpaceOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.batch_to_space_nd(inputs[0],
-                                          block_shape=np.array(
-                                              [self.block_size_y, self.block_size_x], dtype=np.int64),
-                                          crops=OpHasPaddingStrides.onnx_to_tf(self.crops)[1:3, :]).numpy()
+        out_tensor = tf.compat.v1.batch_to_space_nd(inputs[0],
+                                                    block_shape=np.array(
+            [self.block_size_y, self.block_size_x], dtype=np.int64),
+            crops=OpHasPaddingStrides.onnx_to_tf(self.crops)[1:3, :]).numpy()
         self.set_out_tensor(out_tensor)
 
     def write_attrs(self, txt_file):
