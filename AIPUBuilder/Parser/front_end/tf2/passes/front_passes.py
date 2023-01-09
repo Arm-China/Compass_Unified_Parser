@@ -63,7 +63,13 @@ def convert_to_onnx(graph):
                     new_node_attr.update(
                         {'dilations': node_obj.dilations[1:3]})
 
-            if pure_type in ('conv2d', 'cumsum', 'cumprod'):
+            if pure_type in ('argmax', 'argmin'):
+                remove_edges_if_const(node_name, in_edges[1:])
+                new_node_attr.update({'keepdims': 0})
+            elif pure_type == 'cast':
+                remove_edges_if_const(node_name, in_edges[1:])
+                new_node_attr.update({'to': node_obj.dtype})
+            elif pure_type in ('conv2d', 'cumsum', 'cumprod'):
                 remove_edges_if_const(node_name, in_edges[2:])
             elif pure_type == 'left_shift':
                 new_node_attr.update({'direction': 'LEFT'})

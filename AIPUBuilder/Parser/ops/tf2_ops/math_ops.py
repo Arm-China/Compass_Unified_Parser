@@ -7,6 +7,18 @@ from ..op import *
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
+class TfabsOp(OpHasOneOutPort, Tf2Op):
+    def infer_shape(self):
+        super(TfabsOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = tf.math.abs(*inputs).numpy()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'Abs', 'version': 6}
+
+
 class TfaddOp(OpHasOneOutPort, Tf2Op):
     def infer_shape(self):
         super(TfaddOp, self).infer_shape()
@@ -17,6 +29,44 @@ class TfaddOp(OpHasOneOutPort, Tf2Op):
     @property
     def correspond_onnx_op(self):
         return {'type': 'Add', 'version': 7}
+
+
+class TfargmaxOp(OpHasAxis, OpHasOneOutPort, Tf2Op):
+    def infer_shape(self):
+        super(TfargmaxOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        assert len(inputs) >= 3, 'TfargmaxOp expects 3 inputs, but got %d.' % len(inputs)
+        self.axis = inputs[1].item(0)
+        output_type = inputs[2].item(0)
+        out_tensor = tf.argmax(inputs[0],
+                               axis=self.axis,
+                               output_type=tf.int32
+                               if output_type == 'int32'
+                               else tf.int64).numpy()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'ArgMax', 'version': 13}
+
+
+class TfargminOp(OpHasAxis, OpHasOneOutPort, Tf2Op):
+    def infer_shape(self):
+        super(TfargminOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        assert len(inputs) >= 3, 'TfargminOp expects 3 inputs, but got %d.' % len(inputs)
+        self.axis = inputs[1].item(0)
+        output_type = inputs[2].item(0)
+        out_tensor = tf.argmin(inputs[0],
+                               axis=self.axis,
+                               output_type=tf.int32
+                               if output_type == 'int32'
+                               else tf.int64).numpy()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'ArgMin', 'version': 13}
 
 
 class TfcumprodOp(OpHasOneOutPort, OpHasAxis, Tf2Op):

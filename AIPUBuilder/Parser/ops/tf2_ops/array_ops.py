@@ -15,6 +15,20 @@ class Tfbatch_to_space_ndOp(OpHasOneOutPort, Tf2Op):
         self.set_out_tensor(out_tensor)
 
 
+class TfcastOp(OpHasOneOutPort, Tf2Op):
+    def infer_shape(self):
+        super(TfcastOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        assert len(inputs) >= 2, 'TfcastOp expects 2 inputs, but got %d.' % len(inputs)
+        self.dtype = inputs[1].item(0)
+        out_tensor = inputs[0].astype(self.dtype)
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'Cast', 'version': 1}
+
+
 class Tfclip_by_valueOp(ActivationOnlyOp, Tf2Op):
     def infer_shape(self):
         super(Tfclip_by_valueOp, self).infer_shape()
