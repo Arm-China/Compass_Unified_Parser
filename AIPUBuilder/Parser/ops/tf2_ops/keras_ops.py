@@ -256,6 +256,16 @@ class TfKerasConcatenateOp(OpHasAxis, OpHasOneOutPort, KerasOp):
 
 class TfKerasConv1DOp(KerasBaseConvOp):
     @classmethod
+    def attributes(cls):
+        return {2: {'filters': {'type': AttrType.INT, 'required': True},
+                    }}
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfKerasConv1DOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfKerasConv1DOp, attr_dict)
+        assert self.check_required(), 'TfKerasConv1DOp is missing a required parameter.'
+
+    @classmethod
     def perm_tf_to_onnx(cls):
         return [2, 1, 0]
 
@@ -272,6 +282,16 @@ class TfKerasConv1DOp(KerasBaseConvOp):
 
 
 class TfKerasConv1DTransposeOp(KerasBaseDeconvOp):
+    @classmethod
+    def attributes(cls):
+        return {2: {'filters': {'type': AttrType.INT, 'required': True},
+                    }}
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfKerasConv1DTransposeOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfKerasConv1DTransposeOp, attr_dict)
+        assert self.check_required(), 'TfKerasConv1DTransposeOp is missing a required parameter.'
+
     @classmethod
     def perm_tf_to_onnx(cls):
         return [2, 1, 0]
@@ -290,6 +310,16 @@ class TfKerasConv1DTransposeOp(KerasBaseDeconvOp):
 
 class TfKerasConv2DOp(KerasBaseConvOp):
     @classmethod
+    def attributes(cls):
+        return {2: {'filters': {'type': AttrType.INT, 'required': True},
+                    }}
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfKerasConv2DOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfKerasConv2DOp, attr_dict)
+        assert self.check_required(), 'TfKerasConv2DOp is missing a required parameter.'
+
+    @classmethod
     def perm_tf_to_onnx(cls):
         return [3, 2, 0, 1]
 
@@ -306,6 +336,16 @@ class TfKerasConv2DOp(KerasBaseConvOp):
 
 
 class TfKerasConv2DTransposeOp(KerasBaseDeconvOp):
+    @classmethod
+    def attributes(cls):
+        return {2: {'filters': {'type': AttrType.INT, 'required': True},
+                    }}
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfKerasConv2DTransposeOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfKerasConv2DTransposeOp, attr_dict)
+        assert self.check_required(), 'TfKerasConv2DTransposeOp is missing a required parameter.'
+
     @classmethod
     def perm_tf_to_onnx(cls):
         return [3, 2, 0, 1]
@@ -324,6 +364,16 @@ class TfKerasConv2DTransposeOp(KerasBaseDeconvOp):
 
 class TfKerasConv3DOp(KerasBaseConvOp):
     @classmethod
+    def attributes(cls):
+        return {2: {'filters': {'type': AttrType.INT, 'required': True},
+                    }}
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfKerasConv3DOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfKerasConv3DOp, attr_dict)
+        assert self.check_required(), 'TfKerasConv3DOp is missing a required parameter.'
+
+    @classmethod
     def perm_tf_to_onnx(cls):
         return [4, 3, 0, 1, 2]
 
@@ -340,6 +390,16 @@ class TfKerasConv3DOp(KerasBaseConvOp):
 
 
 class TfKerasConv3DTransposeOp(KerasBaseDeconvOp):
+    @classmethod
+    def attributes(cls):
+        return {2: {'filters': {'type': AttrType.INT, 'required': True},
+                    }}
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfKerasConv3DTransposeOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfKerasConv3DTransposeOp, attr_dict)
+        assert self.check_required(), 'TfKerasConv3DTransposeOp is missing a required parameter.'
+
     @classmethod
     def perm_tf_to_onnx(cls):
         return [4, 3, 0, 1, 2]
@@ -475,6 +535,36 @@ class TfKerasDenseOp(BaseLinearOp, BaseActivationOp, KerasOp):
         )(inputs[0]).numpy()
 
         self.set_out_tensor(out_tensor)
+
+
+class TfKerasDepthwiseConv2DOp(KerasBaseConvOp):
+    @classmethod
+    def attributes(cls):
+        return {2: {'depth_multiplier': {'type': AttrType.INT, 'default': 1, 'required': False},
+                    }}
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfKerasDepthwiseConv2DOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfKerasDepthwiseConv2DOp, attr_dict)
+        assert self.check_required(), 'TfKerasDepthwiseConv2DOp is missing a required parameter.'
+        channels = attr_dict['input_shape'][1] if self.data_format.startswith(
+            'NC') else attr_dict['input_shape'][-1]
+        self.num_output = channels * self.depth_multiplier
+
+    @classmethod
+    def perm_tf_to_onnx(cls):
+        return [2, 3, 0, 1]
+
+    @classmethod
+    def ufunc(cls):
+        return tf.keras.layers.DepthwiseConv2D
+
+    def infer_shape(self):
+        super(TfKerasDepthwiseConv2DOp, self).infer_shape()
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'Conv', 'version': 1}
 
 
 class TfKerasELUOp(OpHasOneOutPort, KerasOp):

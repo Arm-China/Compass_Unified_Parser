@@ -751,8 +751,16 @@ def convert_to_onnx(graph):
             if node_obj.weights is None:
                 WARN('[Parser]: Node(%s) does not contain weights!' % node_name)
                 continue
+            if pure_type == 'DepthwiseConv2D':
+                # Tf fliter:[f_h,f_w,in_channel,channel_multiper]
+                # onnx fliter:[out_channel,in_channel/group,f_h,f_w]
+                new_weights = np.reshape(node_obj.weights, list(
+                    node_obj.weights.shape[:2]) + [-1, node_obj.weights.shape[2]//node_obj.group])
+            else:
+                new_weights = node_obj.weights
+
             new_weights = np.transpose(
-                node_obj.weights, axes=type(node_obj).perm_tf_to_onnx())
+                new_weights, axes=type(node_obj).perm_tf_to_onnx())
             new_node_attr.update({'weights': new_weights})
 
         if pure_type in ('Cropping1D', 'Cropping2D', 'Cropping3D'):

@@ -2566,7 +2566,7 @@ class KerasBaseConvOp(BaseConvOp, BaseActivationOp, KerasOp):
     @classmethod
     def attributes(cls):
         return {'use_bias': {'type': AttrType.INT, 'default': 1, 'options': [0, 1]},
-                'filters': {'type': AttrType.INT, 'required': True},
+                'filters': {'type': AttrType.INT},
                 }
 
     def __init__(self, graph, attr_dict=None):
@@ -2601,19 +2601,37 @@ class KerasBaseConvOp(BaseConvOp, BaseActivationOp, KerasOp):
         else:
             inp = inputs[0]
         activation = None if self.activations == 'NONE' else self.activations.lower()
-        biases = 'zeros' if self.biases is None else tf.keras.initializers.Constant(self.biases)
-        conv = type(self).ufunc()(
-            filters=self.filters,
-            kernel_size=self.kernel_shape,
-            strides=self.strides,
-            padding='valid' if self.auto_pad == 'VALID' else 'same',
-            data_format='channels_last',
-            dilation_rate=self.dilations,
-            groups=self.group,
-            activation=activation,
-            use_bias=self.use_bias,
-            kernel_initializer=tf.keras.initializers.Constant(self.weights),
-            bias_initializer=biases)
+        biases = 'zeros' if self.biases is None else tf.keras.initializers.Constant(
+            self.biases)
+        if self._type == 'TfKerasDepthwiseConv2D':
+            self.group = inp.shape[-1]
+            conv = type(self).ufunc()(
+                kernel_size=self.kernel_shape,
+                strides=self.strides,
+                padding='valid' if self.auto_pad == 'VALID' else 'same',
+                depth_multiplier=self.depth_multiplier,
+                data_format='channels_last',
+                dilation_rate=self.dilations,
+                activation=activation,
+                use_bias=self.use_bias,
+                depthwise_initializer=tf.keras.initializers.Constant(
+                    self.weights),
+                bias_initializer=biases)
+        else:
+            conv = type(self).ufunc()(
+                filters=self.filters,
+                kernel_size=self.kernel_shape,
+                strides=self.strides,
+                padding='valid' if self.auto_pad == 'VALID' else 'same',
+                data_format='channels_last',
+                dilation_rate=self.dilations,
+                groups=self.group,
+                activation=activation,
+                use_bias=self.use_bias,
+                kernel_initializer=tf.keras.initializers.Constant(
+                    self.weights),
+                bias_initializer=biases)
+
         out_tensor = conv(inp).numpy()
         if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
             self.pads, _ = OpHasPaddingStrides.cal_pads(
@@ -2628,7 +2646,8 @@ class KerasBaseConvOp(BaseConvOp, BaseActivationOp, KerasOp):
             )
             self.auto_pad = 'NOTSET'
         if pre_perm is not None:
-            out_tensor = np.transpose(out_tensor, Op.cal_inverse_perm(pre_perm))
+            out_tensor = np.transpose(
+                out_tensor, Op.cal_inverse_perm(pre_perm))
         self.set_out_tensor(out_tensor)
 
 
@@ -2640,6 +2659,7 @@ class KerasBaseDeconvOp(KerasBaseConvOp):
     @classmethod
     def attributes(cls):
         return {'output_padding': {'type': AttrType.INTS, 'required': False, 'default': None},
+                'filters': {'type': AttrType.INT, 'required': True},
                 }
 
     def __init__(self, graph, attr_dict=None):
