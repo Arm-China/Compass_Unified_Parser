@@ -6,7 +6,7 @@ import numpy as np
 import re
 import copy
 import torch
-from ....ops.op import Op, OpHasAxis, OpHasWeights, KerasOp, KerasGlobalPoolingOp, KerasNeedBroadcast
+from ....ops.op import BaseActivationOp, Op, OpHasAxis, OpHasWeights, KerasOp, KerasGlobalPoolingOp, KerasNeedBroadcast
 from ....graph.node_wrap import NodeWrap
 from ....graph.graph_algo import get_valid_node_name, clear_redundant_nodes
 from ....graph.pattern_match import matched_patterns, single_node_matcher
@@ -15,6 +15,27 @@ from ...onnx.passes.common_passes import insert_constant, insert_reshape, insert
 from ....common.defs import Tensor, FLOAT_EQUAL
 from ....common.utils import extend_lists
 from ....logger import INFO, DEBUG, WARN, ERROR, FATAL
+
+
+def convert_activations(graph):
+    matches = single_node_matcher(graph, 'TfKerasActivation')
+    for m in matches:
+        act = m['target']
+        act_obj = NodeWrap(graph, act)['object']
+        if act_obj is None:
+            WARN(
+                '[Parser]: Meets invalid TfKerasActivation Op (%s) in convert_activations!' % act)
+            continue
+        act_name = act_obj.activations
+        onnx_op_dict = BaseActivationOp.activation_to_onnx_op(act_name)
+        onnx_op_type = onnx_op_dict.get('type', None)
+        opset_version = onnx_op_dict.get('opset_version', None)
+        if onnx_op_type is None or opset_version is None:
+            WARN('[Parser]: Meet unsupported activation (%s) in TfKerasActivation Op (%s) in convert_activations!' % (act_name, act))
+            continue
+        node_attr = act_obj.copied_attr()
+        node_attr.update(onnx_op_dict)
+        NodeWrap(graph, act).replace_obj(onnx_op_type, node_attr)
 
 
 def convert_batchnorm(graph):
@@ -832,12 +853,14 @@ def process_keras_op_before_infer(graph):
     if not graph._attr['is_keras_model']:
         return
 
-    from ...lite.passes.front_passes import split_op_has_activation
     convert_bidirectional(graph)
     convert_gru_lstm(graph)
     convert_centercrop(graph)
     convert_relu(graph)
     convert_resizing(graph)
+    convert_activations(graph)
+
+    from ...lite.passes.front_passes import split_op_has_activation
     split_op_has_activation(graph, is_tf_op=True)
     convert_dense(graph)
     multidirectional_broadcasting(graph)

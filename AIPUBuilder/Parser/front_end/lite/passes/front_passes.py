@@ -1443,16 +1443,6 @@ def split_op_has_activation(graph, is_tf_op=False):
     activation_types = ActivationOnlyOp.get_concrete_subclass_names()
     op_has_activations = list(set(op_has_activations).difference(activation_types))
 
-    activations_optype_map = {
-        # activations: (onnx op type, onnx opset version)
-        'LEAKYRELU': ('LeakyRelu', 6),
-        'RELU': ('Relu', 6),
-        'RELU6': ('Clip', 6),
-        'RELU_N1_TO_1': ('Clip', 6),
-        'SIGMOID': ('Sigmoid', 6),
-        'TANH': ('Tanh', 6),
-    }
-
     matches = [single_node_matcher(graph, op_type)
                for op_type in op_has_activations]
     matches = extend_lists(matches)
@@ -1462,8 +1452,10 @@ def split_op_has_activation(graph, is_tf_op=False):
         node_obj = node['object']
         if node_obj.activations == 'NONE':
             continue
-        # TODO: Add other activations to activations_optype_map
-        if node_obj.activations not in activations_optype_map:
+        onnx_op_dict = BaseActivationOp.activation_to_onnx_op(node_obj.activations)
+        onnx_op_type = onnx_op_dict.get('type', None)
+        opset_version = onnx_op_dict.get('opset_version', None)
+        if onnx_op_type is None or opset_version is None:
             ERROR('[Parser]: Activation type %s not implemented in split_op_has_activation!' %
                   node_obj.activations)
         activation_name = get_valid_node_name(
@@ -1474,12 +1466,7 @@ def split_op_has_activation(graph, is_tf_op=False):
         activation_node = NodeWrap(graph, activation_name)
         activation_attr = {'name': activation_name,
                            'activations': node_obj.activations}
-        onnx_op_type, opset_version = activations_optype_map[node_obj.activations]
-        activation_attr.update({'opset_version': opset_version})
-        if node_obj.activations == 'RELU6':
-            activation_attr.update({'min': 0., 'max': 6.})
-        elif node_obj.activations == 'RELU_N1_TO_1':
-            activation_attr.update({'min': -1., 'max': 1.})
+        activation_attr.update(onnx_op_dict)
         activation_node.replace_obj(onnx_op_type, activation_attr)
         node_out_edges = graph.sorted_out_edges(node_name, data=True)
         for _, out, out_attr in node_out_edges:

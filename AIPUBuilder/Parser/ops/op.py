@@ -1458,7 +1458,11 @@ class BaseActivationOp(OpHasOneOutPort):
         '''return attributes of BaseActivationOp class.'''
         return {'activations': {'type': AttrType.STRING,
                                 'default': 'NONE',
-                                'options': ['NONE', 'CLIP', 'CELU', 'RELU', 'RELU6', 'LEAKYRELU', 'PRELU', 'RELU_N1_TO_1', 'SIGMOID', 'TANH', 'SOFTSIGN', 'SELU'],
+                                'options': ['NONE', 'CLIP', 'CELU', 'ELU', 'EXPONENTIAL', 'GELU',
+                                            'HARD_SIGMOID', 'LEAKYRELU',
+                                            'PRELU', 'RELU', 'RELU6', 'RELU_N1_TO_1',
+                                            'SIGMOID', 'SILU', 'SOFTMAX', 'SOFTPLUS',
+                                            'SOFTSIGN', 'SELU', 'SWISH', 'TANH'],
                                 'required': True
                                 },
                 'negative_slope': {'type': AttrType.TENSOR},
@@ -1633,6 +1637,40 @@ class BaseActivationOp(OpHasOneOutPort):
             elif self.activations == 'CLIP':
                 self.clip_min = attr_dict['clip_min']
                 self.clip_max = attr_dict['clip_max']
+
+    @staticmethod
+    def activation_to_onnx_op(activations):
+        '''Return a dict with type, opset_version and other attrs if activations is found in activations_optype_map.
+        Otherwise return an empty dict.'''
+        activations_optype_map = {
+            # activations: (onnx op type, onnx opset version)
+            'ELU': ('Elu', 6),
+            'EXPONENTIAL': ('Exp', 13),
+            'GELU': ('Gelu', 1),
+            'HARD_SIGMOID': ('HardSigmoid', 6),
+            'LEAKYRELU': ('LeakyRelu', 6),
+            'NONE': ('Identity', 13),
+            'RELU': ('Relu', 6),
+            'RELU6': ('Clip', 6),
+            'RELU_N1_TO_1': ('Clip', 6),
+            'SELU': ('Selu', 6),
+            'SIGMOID': ('Sigmoid', 6),
+            'SILU': ('Silu', 1),
+            'SOFTMAX': ('Softmax', 13),
+            'SOFTPLUS': ('Softplus', 1),
+            'SOFTSIGN': ('Softsign', 1),
+            'SWISH': ('Swish', 1),
+            'TANH': ('Tanh', 6),
+        }
+        ret_onnx_op_dict = {}
+        if activations in activations_optype_map:
+            op_type, opset_version = activations_optype_map[activations]
+            if activations == 'RELU6':
+                ret_onnx_op_dict.update({'min': 0., 'max': 6.})
+            elif activations == 'RELU_N1_TO_1':
+                ret_onnx_op_dict.update({'min': -1., 'max': 1.})
+            ret_onnx_op_dict.update({'type': op_type, 'opset_version': opset_version})
+        return ret_onnx_op_dict
 
 
 class ActivationOnlyOp(BaseActivationOp):

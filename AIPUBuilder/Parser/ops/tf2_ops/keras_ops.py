@@ -9,6 +9,20 @@ from ..op import *
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
+class TfKerasActivationOp(ActivationOnlyOp, KerasOp):
+    def infer_shape(self):
+        super(TfKerasActivationOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        if self.activations == 'NONE':
+            activation = 'linear'
+        elif self.activations == 'LEAKYRELU':
+            activation = 'leaky_relu'
+        else:
+            activation = self.activations.lower()
+        out_tensor = tf.keras.layers.Activation(activation)(inputs[0]).numpy()
+        self.set_out_tensor(out_tensor)
+
+
 class TfKerasAddOp(OpHasOneOutPort, KerasNeedBroadcast):
     @classmethod
     def attributes(cls):
