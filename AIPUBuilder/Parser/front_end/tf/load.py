@@ -79,6 +79,8 @@ def convert_keras_attr_to_onnx(attr_dict):
             v = 'NONE' if v is None or v == 'linear' else v.upper()
             if v == 'LEAKY_RELU':
                 v = 'LEAKYRELU'
+            elif v.endswith('_V2'):
+                v = v[:-3]
             updated_attr = attr_rename(k, v)
         elif k == 'axis' and isinstance(v, (list, tuple)):
             updated_attr = {k: None, 'axes': list(v[:])}

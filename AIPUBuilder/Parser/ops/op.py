@@ -1649,6 +1649,7 @@ class BaseActivationOp(OpHasOneOutPort):
             'GELU': ('Gelu', 1),
             'HARD_SIGMOID': ('HardSigmoid', 6),
             'LEAKYRELU': ('LeakyRelu', 6),
+            'LOG_SOFTMAX': ('LogSoftmax', 13),
             'NONE': ('Identity', 13),
             'RELU': ('Relu', 6),
             'RELU6': ('Clip', 6),
