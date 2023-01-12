@@ -288,6 +288,30 @@ class TfArgMinOp(OpHasAxis, OpHasOneOutPort, TfOp):
         return {'type': 'ArgMin', 'version': 13}
 
 
+class TfAtanOp(OpHasOneOutPort, TfOp):
+    def infer_shape(self):
+        super(TfAtanOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = tf.math.atan(inputs[0]).numpy()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'Atan', 'version': 7}
+
+
+class TfAtanhOp(OpHasOneOutPort, TfOp):
+    def infer_shape(self):
+        super(TfAtanhOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = tf.math.atanh(inputs[0]).numpy()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'Atanh', 'version': 9}
+
+
 class TfBatchMatMulV2Op(OpHasOneOutPort, TfOp):
     @classmethod
     def attributes(cls):
