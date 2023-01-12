@@ -69,9 +69,12 @@ pow_input_shapes = [[3, 10, 19], [1, 7, 32, 32], [2, 5, 26, 27, 28]]
 # Generate input data
 feed_dict = dict()
 
-for version in (11, ):
+for version in (11, 13):
     for resize_input_shape, pow_input_shape in zip(resize_input_shapes, pow_input_shapes):
-        for mode in ('linear', 'nearest'):  # TODO: Support cubic
+        for mode in ('cubic', 'linear', 'nearest'):
+            if mode == 'cubic' and len(resize_input_shape) != 4:
+                # onnx Resize only supports 4d cubic
+                continue
             model_name = '-'.join([OP_NAME, str(version), str(len(pow_input_shape)), mode])
             model_path = model_name + '.onnx'
             # Set feed_dict

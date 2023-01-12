@@ -1246,7 +1246,8 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
     MODE_MAP = {'nearest': 'nearest',
                 'linear': 'linear',
                 'bilinear': 'linear',
-                'trilinear': 'linear'
+                'trilinear': 'linear',
+                'cubic': 'cubic',
                 }
 
     def __init__(self, graph, attr_dict=None):
@@ -1368,6 +1369,31 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
         return ret
 
     @staticmethod
+    def get_cubic_coeffs(val, cubic_coeff_a=-0.75):
+        abs_val = abs(val)
+        coeffs_0 = ((cubic_coeff_a * (abs_val + 1) - 5 * cubic_coeff_a) * (abs_val + 1) + 8 * cubic_coeff_a) \
+            * (abs_val + 1) - 4 * cubic_coeff_a
+        coeffs_1 = ((cubic_coeff_a + 2) * abs_val - (cubic_coeff_a + 3)) \
+            * abs_val * abs_val + 1
+        coeffs_2 = ((cubic_coeff_a + 2) * (1 - abs_val) - (cubic_coeff_a + 3)) \
+            * (1 - abs_val) * (1 - abs_val) + 1
+        coeffs_3 = ((cubic_coeff_a * (2 - abs_val) - 5 * cubic_coeff_a) * (2 - abs_val) + 8 * cubic_coeff_a) \
+            * (2 - abs_val) - 4 * cubic_coeff_a
+        coeffs = [coeffs_0, coeffs_1, coeffs_2, coeffs_3]
+        return coeffs
+
+    @staticmethod
+    def get_data_for_coordinate(data, data_idx, input_height, input_width, is_nchw=True):
+        height_idx, width_idx = data_idx[2:4] if is_nchw else data_idx[1:3]
+        valid_height_idx = np.clip(height_idx, 0, input_height-1)
+        valid_width_idx = np.clip(width_idx, 0, input_width-1)
+        if is_nchw:
+            new_data_idx = data_idx[:2] + [valid_height_idx, valid_width_idx]
+        else:
+            new_data_idx = data_idx[:1] + [valid_height_idx, valid_width_idx] + data_idx[3:]
+        return data[tuple(new_data_idx)]
+
+    @staticmethod
     def setup_upsample_linear(input_spatial_sizes, output_spatial_sizes, spatial_scales, roi=None,
                               coordinate_transform_mode='asymmetric', is_nchw=True):
         ret_dict = {}
@@ -1454,7 +1480,7 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
             y_data[ele_idx] = ret
         if pre_perm is not None:
             y_data = np.transpose(y_data, Op.cal_inverse_perm(pre_perm))
-        return y_data
+        return y_data.astype(x_data.dtype)
 
     @staticmethod
     def upsample_nearest(x_data, output_spatial_sizes, spatial_scales, roi=None,
@@ -1524,7 +1550,128 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
                 output_dim_counter[dim_idx] = 0
                 input_idx = input_idx + input_mappings[dim_idx][0]
         output_data = np.reshape(flatten_output_data, output_shape)
-        return output_data
+        return output_data.astype(x_data.dtype)
+
+    @staticmethod
+    def cubic_interpolation_1d(data, data_idx, input_height, input_width,
+                               coeff_array, coeff_sum, cache, is_nchw=True):
+        assert isinstance(data_idx, list) and len(data_idx) == 4, \
+            'Expect data_idx to be a list of 4 elements in cubic_interpolation_1d, but got %s' % str(data_idx)
+        if not is_nchw:
+            data = np.transpose(data, [0, 3, 1, 2])
+            data_idx = [data_idx[0], data_idx[-1]] + data_idx[1:-1]
+        n, c, y, x = data_idx
+        grid_start_pos = y * input_width + (x-1)
+        if grid_start_pos in cache:
+            return cache[grid_start_pos]
+
+        result = 0.0
+        for i, j in zip(range(4), range(-1, 3)):
+            orig_data = ResizeOp.get_data_for_coordinate(data, [n, c, y, x+j], input_height, input_width)
+            result = result + coeff_array[i] / coeff_sum * orig_data
+
+        cache.update({grid_start_pos: result})
+        return result
+
+    @staticmethod
+    def upsample_cubic(x_data, output_spatial_sizes, spatial_scales, roi=None,
+                       coordinate_transform_mode='asymmetric', cubic_coeff_a=-0.75,
+                       exclude_outside=False, extrapolation_value=0.0, is_nchw=True):
+        input_shape = list(x_data.shape)
+        if len(input_shape) != 4:
+            WARN('[Parser]: Resize op only supports cubic mode with 4d input, but got %dd!' % len(input_shape))
+            return None
+        if not is_nchw:
+            x_data = np.transpose(x_data, [0, 3, 1, 2])
+        cubic_coeffs = {}
+        coeff_to_1Dinterpolation_map = {}
+        original_lists = []
+        batch_size, num_channels = input_shape[0:2]
+        input_spatial_sizes = input_shape[2:]
+        for idx in range(2):
+            roi_start_value, roi_end_value = None, None
+            if roi is not None and np.array(roi).size > 0:
+                roi_size = np.array(roi).size
+                assert roi_size == 8, 'Expect size of roi == 8, but got %d' % roi_size
+                roi_index = 1 if idx == 0 else 0
+                roi_start = int(roi_size / 2 - (roi_index + 1))
+                roi_end = int(roi_size - (roi_index + 1))
+                roi_start_value = roi[roi_start]
+                roi_end_value = roi[roi_end]
+
+            current_scale = spatial_scales[idx]
+            current_output_size = output_spatial_sizes[idx]
+            current_input_size = input_spatial_sizes[idx]
+            original_list = []
+            for output_idx in range(current_output_size):
+                inp = output_idx if FLOAT_EQUAL(current_scale, 1) else \
+                    ResizeOp.get_original_coordinate(coordinate_transform_mode,
+                                                     output_idx,
+                                                     current_scale,
+                                                     current_output_size,
+                                                     current_input_size,
+                                                     roi_start_value,
+                                                     roi_end_value)
+                original_list.append(inp)
+                diff = np.around(inp - math.floor(inp), 6)
+                if diff not in cubic_coeffs:
+                    cubic_coeffs[diff] = ResizeOp.get_cubic_coeffs(diff, cubic_coeff_a)
+                    coeff_to_1Dinterpolation_map[diff] = {}
+            original_lists.append(original_list)
+
+        use_extrapolation = (coordinate_transform_mode == 'tf_crop_and_resize')
+        output_height, output_width = output_spatial_sizes
+        input_height, input_width = input_spatial_sizes
+        output_shape = [batch_size, num_channels] + output_spatial_sizes
+        y_data = np.zeros(output_shape)
+
+        def get_coeff_and_sum(in_val, in_val_int, input_length, cubic_coeffs, exclude_outside):
+            diff_val = np.around(in_val - in_val_int, 6)
+            coeff_sum = 1.0
+            if exclude_outside:
+                coeff_sum = 0.0
+                coeff_list = []
+                for idx in range(0, 4):
+                    val = in_val_int + idx - 1
+                    coeff_holder = 0.0 if (
+                        val < 0 or val >= input_length) else cubic_coeffs[diff_val][idx]
+                    coeff_sum = coeff_sum + coeff_holder
+                    coeff_list.append(coeff_holder)
+            else:
+                coeff_list = cubic_coeffs[diff_val]
+            return coeff_list, coeff_sum
+
+        for n in range(batch_size):
+            for c in range(num_channels):
+                for y in range(output_height):
+                    in_y = original_lists[0][y]
+                    if use_extrapolation and (in_y < 0 or in_y >= input_height):
+                        y_data[n, c, y, :] = extrapolation_value
+                        continue
+                    y_int = int(math.floor(in_y))
+                    coeff_y, y_coeff_sum = get_coeff_and_sum(in_y, y_int, input_height, cubic_coeffs, exclude_outside)
+                    for x in range(output_width):
+                        in_x = original_lists[1][x]
+                        if use_extrapolation and (in_x < 0 or in_x >= input_width):
+                            y_data[n, c, y, x] = extrapolation_value
+                            continue
+                        x_int = int(math.floor(in_x))
+                        diff_x = np.around(in_x - x_int, 6)
+                        cache = coeff_to_1Dinterpolation_map[diff_x] if diff_x in coeff_to_1Dinterpolation_map else {}
+                        coeff_x, x_coeff_sum = get_coeff_and_sum(
+                            in_x, x_int, input_width, cubic_coeffs, exclude_outside)
+                        result = 0.
+                        for idx in range(0, 4):
+                            y_val = y_int + idx - 1
+                            data_idx = [n, c, y_val, x_int]
+                            x_interpolation_result = ResizeOp.cubic_interpolation_1d(
+                                x_data, data_idx, input_height, input_width, coeff_x, x_coeff_sum, cache)
+                            result = result + x_interpolation_result * coeff_y[idx] / y_coeff_sum
+                        y_data[n, c, y, x] = result
+                coeff_to_1Dinterpolation_map.clear()
+        if not is_nchw:
+            y_data = np.transpose(y_data, [0, 2, 3, 1])
+        return y_data.astype(x_data.dtype)
 
     def infer_shape(self):
         super(ResizeOp, self).infer_shape()
@@ -1554,6 +1701,8 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
             if FLOAT_EQUAL(inputs[0], 0):
                 out_tensor = np.zeros(out_shape).astype(inputs[0].dtype)
             else:
+                assert self.mode in ResizeOp.MODE_MAP, \
+                    'Meet unsupported mode (%s) of Resize Op (%s) in infer_shape' % (mode, self.name)
                 mode = ResizeOp.MODE_MAP[self.mode]
                 is_nchw = (self.data_format == 'NCHW')
                 out_spatial_shape = out_shape[2:] if is_nchw else out_shape[1:-1]
@@ -1565,13 +1714,11 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
                     out_tensor = ResizeOp.upsample_nearest(inputs[0], out_spatial_shape, spatial_scales, self.roi,
                                                            self.coordinate_transformation_mode, self.nearest_mode,
                                                            self.extrapolation_value, is_nchw)
-                elif mode == 'cubic':
-                    # TODO: Support cubic mode
-                    WARN('[Parser]: Cubic mode is not yet supported! May get incorrect output tensor for Resize Op (%s)' % self.name)
-                    out_tensor = np.random.ranf(out_shape).astype(inputs[0].dtype)
-                else:
-                    WARN('[Parser]: Meet unsupported mode (%s) of Resize Op (%s) in infer_shape!' % (mode, self.name))
-                    out_tensor = None
+                else:  # mode == 'cubic'
+                    assert self.cur_version > 10, 'Mode cubic in Resize Op (%s) is not supported until opset 11' % self.name
+                    out_tensor = ResizeOp.upsample_cubic(inputs[0], out_spatial_shape, spatial_scales, self.roi,
+                                                         self.coordinate_transformation_mode, self.cubic_coeff_a,
+                                                         self.exclude_outside, self.extrapolation_value, is_nchw)
         else:
             # Still use random output here to speedup parsing if inputs are non-const
             out_tensor = np.random.ranf(out_shape).astype(inputs[0].dtype)
