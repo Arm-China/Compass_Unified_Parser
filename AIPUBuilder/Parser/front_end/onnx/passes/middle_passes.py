@@ -839,43 +839,32 @@ def convert_gather_to_slice(graph):
             if len(in_edges) == 2 \
                     and len(input_shapes) == 2 \
                     and input_shapes[0] is not None \
-                    and len(in_consts) == 1\
+                    and len(in_consts) == 1 \
                     and in_consts[0][2] is not None \
-                    and np.ndim(in_consts[0][2]) == 0 \
-                    and in_consts[0][2].size == 1 \
-                    and gather_obj.axis == 0:
+                    and in_consts[0][2].size == 1:
                 graph.remove_edges_from(in_edges[1:])
                 in_shape = input_shapes[0]
-                indices = in_consts[0][2]
-
-                reshape = get_valid_node_name(graph, gather + '_post_reshape')
-                for _, dst, out_attr in graph.sorted_out_edges(gather, data=True):
-                    graph.remove_edge(gather, dst)
-                    graph.add_edge(reshape, dst, **out_attr)
-                graph.add_edge(gather, reshape)
+                gather_axis = (gather_obj.axis + len(in_shape)) if gather_obj.axis < 0 else gather_obj.axis
+                indices = np.array(in_consts[0][2]).item()
+                indices = (indices + in_shape[gather_axis]) if indices < 0 else indices
 
                 starts = [0] * len(in_shape)
                 ends = in_shape
-                starts[gather_obj.axis] = int(indices)
-                ends[gather_obj.axis] = starts[gather_obj.axis] + 1
+                starts[gather_axis] = int(indices)
+                ends[gather_axis] = starts[gather_axis] + 1
                 axes = list(range(len(in_shape)))
                 slice_attr = gather_obj.copied_attr()
                 slice_attr.update(
                     {'name': gather, 'opset_version': 1, 'axes': axes, 'starts': starts, 'ends': ends})
                 NodeWrap(graph, gather).replace_obj('Slice', slice_attr)
 
-                reshape_dim = np.array(
-                    ends[1:], np.int64) - np.array(starts[1:], np.int64)
-                reshape_attr = gather_obj.copied_attr()
-                reshape_attr.update({'name': reshape, 'opset_version': 5})
-                NodeWrap(graph, reshape).replace_obj('Reshape', reshape_attr)
-                const = get_valid_node_name(graph, reshape + '_shape')
-                insert_constant(graph, const, reshape_dim,
-                                reshape, in_port=1, data_format='NHWC')
-                if gather in graph._attr['output_names']:
-                    index = graph._attr['output_names'].index(gather)
-                    graph._attr['output_names'].remove(gather)
-                    graph._attr['output_names'].insert(index, reshape)
+                if np.ndim(in_consts[0][2]) == 0:
+                    old_dim = (np.array(ends, np.int64) - np.array(starts, np.int64)).tolist()
+                    reshape_dim = old_dim[:gather_axis] + old_dim[(gather_axis+1):]
+                    reshape = insert_reshape_after(graph, gather, reshape_dim, old_dim)
+                    if gather in graph._attr['output_names']:
+                        index = graph._attr['output_names'].index(gather)
+                        graph._attr['output_names'][index] = reshape
 
 
 def convert_gemm_to_fc(graph):
@@ -7082,6 +7071,7 @@ def middle_passes(graph, params):
     convert_special_matmul_to_fc(graph)
     fuse_mul_add_or_sub(graph)
     fuse_gather_const_mul(graph)
+    convert_gather_to_slice(graph)
     rearrange_matmul_reshape_bias(graph)
     rename_single_mul_or_add_or_sub(graph)
     rearrange_fc_reshape_bn(graph)
