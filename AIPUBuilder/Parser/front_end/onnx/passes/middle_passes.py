@@ -2348,7 +2348,7 @@ def merge_gelu_1(graph):
             graph.remove_edges_from(mul_2_in_edges)
             graph.add_edge(m['inp'], m['mul_2'], **in_attr)
             gelu_attr = node_objs['mul_2'].copied_attr()
-            gelu_attr.update({'method': 'GELU', 'approximate': 'tanh'})
+            gelu_attr.update({'approximate': 'tanh'})
             NodeWrap(graph, m['mul_2']).replace_obj('Gelu', gelu_attr)
         else:
             WARN('[Parser]: Meets invalid nodes in merge_gelu!')
@@ -2360,7 +2360,6 @@ def merge_gelu_2(graph):
     matched = False
     matches = matched_patterns(graph,
                                nodes=[
-                                   ('inp', {}),
                                    ('pow', {'op': 'Pow'}),
                                    ('mul_1', {'op': 'Mul'}),
                                    ('mul_1c', {'op': 'Constant'}),
@@ -2371,39 +2370,50 @@ def merge_gelu_2(graph):
                                    ('add_2', {'op': 'Add'}),
                                    ('add_2c', {'op': 'Constant'}),
                                    ('mul_3', {'op': 'Mul'}),
+                                   ('mul_4c', {'op': 'Constant'}),
                                    ('mul_4', {'op': 'Mul'}),
                                ],
                                edges=[
-                                   ('inp', 'pow'),
-                                   ('inp', 'mul_4'),
                                    ('pow', 'mul_1'),
-                                   ('mul_1c', 'mul_1', {
-                                    'src_out_port': 0, 'dst_in_port': 1}),
+                                   ('mul_1c', 'mul_1'),
                                    ('mul_1', 'add_1', {
-                                    'src_out_port': 0, 'dst_in_port': 1}),
-                                   ('inp', 'add_1'),
+                                       'src_out_port': 0, 'dst_in_port': 1}),
                                    ('add_1', 'mul_2'),
                                    ('mul_2', 'tanh'),
-                                   ('mul_2c', 'mul_2', {
-                                    'src_out_port': 0, 'dst_in_port': 1}),
-                                   ('add_2c', 'add_2', {
-                                    'src_out_port': 0, 'dst_in_port': 1}),
+                                   ('mul_2c', 'mul_2'),
+                                   ('add_2c', 'add_2'),
                                    ('tanh', 'add_2'),
                                    ('add_2', 'mul_3', {
-                                    'src_out_port': 0, 'dst_in_port': 1}),
+                                       'src_out_port': 0, 'dst_in_port': 1}),
+                                   ('mul_4c', 'mul_4'),
                                    ('mul_4', 'mul_3'),
                                ]
                                )
     for m in matches:
-        key_names = ['inp', 'pow', 'mul_1', 'add_1', 'mul_2',
+        key_names = ['pow', 'mul_1', 'add_1', 'mul_2',
                      'tanh', 'add_2', 'mul_3', 'mul_4']
         node_objs = {k: NodeWrap(graph, m[k])['object'] for k in key_names}
         if all([obj is not None for obj in node_objs.values()]):
 
             pow_in_edges = graph.sorted_in_edges(m['pow'], data=True)
             mul_4_in_edges = graph.sorted_in_edges(m['mul_4'], data=True)
-            mul_3_in_edges = graph.sorted_in_edges(m['mul_3'], data=True)
             add_1_in_edges = graph.sorted_in_edges(m['add_1'], data=True)
+
+            if len(pow_in_edges) != 2 \
+                    or len(mul_4_in_edges) != 2 \
+                    or len(add_1_in_edges) != 2:
+                continue
+            pow_src, _, in_attr1 = pow_in_edges[0]
+            mul_4_src, _, in_attr2 = mul_4_in_edges[1]
+            add_1_src, _, in_attr3 = add_1_in_edges[0]
+
+            if pow_src != mul_4_src \
+                    or pow_src != add_1_src \
+                    or in_attr1['src_out_port'] != in_attr2['src_out_port'] \
+                    or in_attr1['src_out_port'] != in_attr3['src_out_port']:
+                continue
+
+            mul_3_in_edges = graph.sorted_in_edges(m['mul_3'], data=True)
 
             pow_out_edges = graph.sorted_out_edges(m['pow'])
             mul_1_out_edges = graph.sorted_out_edges(m['mul_1'])
@@ -2420,26 +2430,25 @@ def merge_gelu_2(graph):
                     or len(tanh_out_edges) != 1 \
                     or len(add_2_out_edges) != 1 \
                     or len(mul_4_out_edges) != 1\
-                    or mul_4_in_edges[0][2]['src_out_port'] != add_1_in_edges[0][2]['src_out_port']  \
-                    or add_1_in_edges[0][2]['src_out_port'] != pow_in_edges[0][2]['src_out_port']\
                     or len(node_objs['pow'].sorted_in_consts()) != 1\
                     or len(node_objs['add_2'].sorted_in_consts()) != 1\
                     or len(node_objs['mul_2'].sorted_in_consts()) != 1\
                     or len(node_objs['mul_1'].sorted_in_consts()) != 1\
+                    or len(node_objs['mul_4'].sorted_in_consts()) != 1\
                     or FLOAT_EQUAL(node_objs['pow'].sorted_in_consts()[0][2], 3.0) is False\
                     or FLOAT_EQUAL(node_objs['mul_1'].sorted_in_consts()[0][2], 0.044714998453855515) is False \
                     or FLOAT_EQUAL(node_objs['mul_2'].sorted_in_consts()[0][2], 0.7978845834732056) is False\
+                    or FLOAT_EQUAL(node_objs['mul_4'].sorted_in_consts()[0][2], 0.5) is False\
                     or FLOAT_EQUAL(node_objs['add_2'].sorted_in_consts()[0][2], 1.0) is False:
                 continue
 
             matched = True
-            _, _, in_attr = add_1_in_edges[0]
-            graph.remove_edge(m['inp'], m['pow'])
-            graph.remove_edge(m['inp'], m['mul_4'])
+            graph.remove_edge(pow_src, m['pow'])
+            graph.remove_edge(pow_src, m['mul_4'])
             graph.remove_edges_from(mul_3_in_edges)
-            graph.add_edge(m['inp'], m['mul_3'], **in_attr)
+            graph.add_edge(pow_src, m['mul_3'], **in_attr1)
             gelu_attr = node_objs['mul_3'].copied_attr()
-            gelu_attr.update({'method': 'GELU', 'approximate': 'tanh'})
+            gelu_attr.update({'approximate': 'tanh'})
             NodeWrap(graph, m['mul_3']).replace_obj('Gelu', gelu_attr)
         else:
             WARN('[Parser]: Meets invalid nodes in merge_gelu!')
@@ -2451,7 +2460,6 @@ def merge_gelu_3(graph):
     matched = False
     matches = matched_patterns(graph,
                                nodes=[
-                                   ('inp', {}),
                                    ('div', {'op': 'Div'}),
                                    ('divc', {'op': 'Constant'}),
                                    ('erf', {'op': 'Erf'}),
@@ -2462,31 +2470,36 @@ def merge_gelu_3(graph):
                                    ('mul_2', {'op': 'Mul'}),
                                ],
                                edges=[
-                                   ('inp', 'div'),
                                    ('divc', 'div', {
                                        'src_out_port': 0, 'dst_in_port': 1}),
-                                   ('inp', 'mul_1'),
-                                   ('mulc', 'mul_1', {
-                                       'src_out_port': 0, 'dst_in_port': 1}),
+                                   ('mulc', 'mul_1'),
                                    ('div', 'erf'),
-                                   ('addc2', 'add', {
-                                       'src_out_port': 0, 'dst_in_port': 1}),
+                                   ('addc2', 'add'),
                                    ('erf', 'add'),
                                    ('mul_1', 'mul_2'),
-                                   ('add', 'mul_2', {
-                                       'src_out_port': 0, 'dst_in_port': 1})
+                                   ('add', 'mul_2')
                                ]
                                )
     for m in matches:
-        key_names = ['inp', 'div', 'divc', 'erf', 'add', 'addc2',
+        key_names = ['div', 'divc', 'erf', 'add', 'addc2',
                      'mul_1', 'mulc', 'mul_2']
         node_objs = {k: NodeWrap(graph, m[k])['object'] for k in key_names}
         if all([obj is not None for obj in node_objs.values()]):
 
-            div_in_edges = graph.sorted_in_edges(m['div'], data=True)
             mul_1_in_edges = graph.sorted_in_edges(m['mul_1'], data=True)
-            mul_2_in_edges = graph.sorted_in_edges(m['mul_2'], data=True)
+            div_in_edges = graph.sorted_in_edges(m['div'], data=True)
 
+            if len(mul_1_in_edges) != 2 \
+                    or len(div_in_edges) != 2:
+                continue
+            mul_1_src, _, in_attr1 = mul_1_in_edges[1]
+            div_src, _, in_attr2 = div_in_edges[0]
+
+            if mul_1_src != div_src \
+                    or in_attr1['src_out_port'] != in_attr2['src_out_port']:
+                continue
+
+            mul_2_in_edges = graph.sorted_in_edges(m['mul_2'], data=True)
             div_out_edges = graph.sorted_out_edges(m['div'])
             mul_1_out_edges = graph.sorted_out_edges(m['mul_1'])
             add_out_edges = graph.sorted_out_edges(m['add'])
@@ -2496,7 +2509,6 @@ def merge_gelu_3(graph):
                     or len(mul_1_out_edges) != 1 \
                     or len(add_out_edges) != 1 \
                     or len(erf_out_edges) != 1\
-                    or div_in_edges[0][2]['src_out_port'] != mul_1_in_edges[0][2]['src_out_port'] \
                     or len(node_objs['div'].sorted_in_consts()) != 1\
                     or len(node_objs['add'].sorted_in_consts()) != 1\
                     or len(node_objs['mul_1'].sorted_in_consts()) != 1\
@@ -2506,14 +2518,12 @@ def merge_gelu_3(graph):
                 continue
 
             matched = True
-            _, _, in_attr = div_in_edges[0]
-
-            graph.remove_edge(m['inp'], m['mul_1'])
-            graph.remove_edge(m['inp'], m['div'])
+            graph.remove_edge(div_src, m['mul_1'])
+            graph.remove_edge(div_src, m['div'])
             graph.remove_edges_from(mul_2_in_edges)
-            graph.add_edge(m['inp'], m['mul_2'], **in_attr)
+            graph.add_edge(div_src, m['mul_2'], **in_attr1)
             gelu_attr = node_objs['mul_2'].copied_attr()
-            gelu_attr.update({'method': 'GELU', 'approximate': 'tanh'})
+            gelu_attr.update({'approximate': 'tanh'})
             NodeWrap(graph, m['mul_2']).replace_obj('Gelu', gelu_attr)
         else:
             WARN('[Parser]: Meets invalid nodes in merge_gelu!')

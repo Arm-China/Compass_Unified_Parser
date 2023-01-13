@@ -73,6 +73,9 @@ def convert_to_onnx(graph):
                 remove_edges_if_const(node_name, in_edges[2:])
             elif pure_type == 'floormod':
                 new_node_attr.update({'fmod': 0})
+            elif pure_type == 'gelu':
+                approximate = 'none' if node_obj.approximate == 0 else 'tanh'
+                new_node_attr.update({'approximate': approximate})
             elif pure_type == 'left_shift':
                 new_node_attr.update({'direction': 'LEFT'})
             elif pure_type == 'right_shift':

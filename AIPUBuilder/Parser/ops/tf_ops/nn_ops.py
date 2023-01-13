@@ -119,54 +119,6 @@ class TfComputeAccidentalHitsOp(OpHasMultipleOutPorts, TfOp):
         return {'type': 'AccidentalHits', 'version': 1}
 
 
-class TfDilation2DOp(TfHasPaddingStrides, OpHasWeights, OpHasOneOutPort):
-    @classmethod
-    def attributes(cls):
-        return {1: {'dilations': {'default': [1, 1, 1, 1]},
-                    }
-                }
-
-    @classmethod
-    def perm_tf_to_onnx(cls):
-        return [2, 0, 1]
-
-    def __init__(self, graph, attr_dict=None):
-        super(TfDilation2DOp, self).__init__(graph, attr_dict)
-        self.update_attributes(TfDilation2DOp, attr_dict)
-        assert self.check_required(), 'TfDilation2DOp is missing a required parameter.'
-
-    def infer_shape(self):
-        super(TfDilation2DOp, self).infer_shape()
-        inputs = self.get_input_tensors()
-        if self.kernel_shape is None:
-            assert isinstance(
-                self.weights, np.ndarray), 'TfDilation2DOp only supports constant filter'
-            self.kernel_shape = self.weights.shape[0:2]
-
-        if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
-            padding = 'SAME'
-        else:
-            padding = 'VALID'
-
-        inp = np.transpose(inputs[0], [0, 2, 3, 1]
-                           ) if self.data_format == 'NCHW' else inputs[0]
-
-        out_tensor = tf.nn.dilation2d(inp,
-                                      self.weights,
-                                      strides=[1] + self.strides + [1],
-                                      padding=padding,
-                                      dilations=[1] + self.dilations + [1],
-                                      data_format='NHWC').numpy()
-
-        if self.data_format == 'NCHW':
-            out_tensor = np.transpose(out_tensor, [0, 3, 1, 2])
-        self.set_out_tensor(out_tensor)
-
-    @property
-    def correspond_onnx_op(self):
-        return {'type': 'Dilation', 'version': 1}
-
-
 class TfConv2DOp(TfHasPaddingStrides, OpHasWeights, OpHasOneOutPort):
     @classmethod
     def attributes(cls):
@@ -395,6 +347,54 @@ class TfDepthToSpaceOp(LayoutConcernedOp, OpHasOneOutPort, TfOp):
     @property
     def correspond_onnx_op(self):
         return {'type': 'DepthToSpace', 'version': 13}
+
+
+class TfDilation2DOp(TfHasPaddingStrides, OpHasWeights, OpHasOneOutPort):
+    @classmethod
+    def attributes(cls):
+        return {1: {'dilations': {'default': [1, 1, 1, 1]},
+                    }
+                }
+
+    @classmethod
+    def perm_tf_to_onnx(cls):
+        return [2, 0, 1]
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfDilation2DOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfDilation2DOp, attr_dict)
+        assert self.check_required(), 'TfDilation2DOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(TfDilation2DOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        if self.kernel_shape is None:
+            assert isinstance(
+                self.weights, np.ndarray), 'TfDilation2DOp only supports constant filter'
+            self.kernel_shape = self.weights.shape[0:2]
+
+        if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
+            padding = 'SAME'
+        else:
+            padding = 'VALID'
+
+        inp = np.transpose(inputs[0], [0, 2, 3, 1]
+                           ) if self.data_format == 'NCHW' else inputs[0]
+
+        out_tensor = tf.nn.dilation2d(inp,
+                                      self.weights,
+                                      strides=[1] + self.strides + [1],
+                                      padding=padding,
+                                      dilations=[1] + self.dilations + [1],
+                                      data_format='NHWC').numpy()
+
+        if self.data_format == 'NCHW':
+            out_tensor = np.transpose(out_tensor, [0, 3, 1, 2])
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'Dilation', 'version': 1}
 
 
 class TfDepthwiseConv2dNativeOp(TfHasPaddingStrides, OpHasWeights, OpHasOneOutPort):

@@ -101,6 +101,29 @@ class Tfconv2dOp(TfHasPaddingStrides, Tf2Op, OpHasWeights, OpHasOneOutPort):
         return {'type': 'Conv', 'version': 1}
 
 
+class TfgeluOp(ActivationOnlyOp, Tf2Op):
+    @classmethod
+    def attributes(cls):
+        return {2: {'approximate': {'type': AttrType.INT, 'default': 0, 'options': [0, 1]},
+                    }}
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfgeluOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfgeluOp, attr_dict)
+        assert self.check_required(), 'TfgeluOp is missing a required parameter.'
+        self.activations = 'GELU'
+
+    def infer_shape(self):
+        super(TfgeluOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = tf.nn.gelu(inputs[0], approximate=self.approximate).numpy()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'Gelu', 'version': 1}
+
+
 class TfsiluOp(LayoutUnawareOp, ActivationOnlyOp, Tf2Op):
     @classmethod
     def attributes(cls):
