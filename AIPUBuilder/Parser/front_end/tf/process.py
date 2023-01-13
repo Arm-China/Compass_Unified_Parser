@@ -40,6 +40,10 @@ def process_tf(model_path, params):
         merge_gru2(graph)
         merge_lstm(graph)
         merge_lstm2(graph)
+
+        infer(graph)
+        fuse_const(graph)
+
         merge_zero_fraction(graph)
         convert_reverse_sequence(graph, op_type='TfReverseSequence')
         convert_scatternd(graph, op_type='TfScatterNd')
@@ -52,8 +56,6 @@ def process_tf(model_path, params):
         convert_strided_slice(graph, 'TfStridedSlice')
         convert_square(graph, op_type='TfSquare')
         convert_square_diff(graph, op_type='TfSquaredDifference')
-
-        infer(graph)
 
         remove_switch(graph)
         remove_merge(graph)
@@ -68,6 +70,8 @@ def process_tf(model_path, params):
         convert_nms(graph, params)
         convert_invert_permutation(graph)
         convert_reverse(graph)
+
+        infer(graph)
 
         convert_to_onnx(graph)
 

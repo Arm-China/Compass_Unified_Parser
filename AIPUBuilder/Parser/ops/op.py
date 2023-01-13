@@ -2458,6 +2458,43 @@ class TfHasPaddingStrides(OpHasPaddingStrides, TfOp):
                     WARN(
                         '[Parser]: Meets invalid kernel_shape for Node(%s) in infer_shape!' % self.name)
 
+    def update_pads(self, input_shape, output_shape):
+        assert len(input_shape) == len(output_shape)
+        if self.data_format.startswith('NC'):
+            in_spatial_shape = input_shape[2:]
+            out_spatial_shape = output_shape[2:]
+        else:
+            in_spatial_shape = input_shape[1:-1]
+            out_spatial_shape = output_shape[1:-1]
+        if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
+            is_transpose = True if self.type in ('TfConv2DBackpropInput', ) else False
+            self.pads, _ = OpHasPaddingStrides.cal_pads(
+                in_spatial_shape,
+                out_spatial_shape,
+                self.strides,
+                self.kernel_shape,
+                self.auto_pad,
+                dilations=self.dilations,
+                is_transpose=is_transpose,
+                zero_minimum=True
+            )
+            self.auto_pad = 'NOTSET'
+        elif self.auto_pad == 'NOTSET':
+            full_len = len(input_shape)
+            spatial_len = len(in_spatial_shape)
+            if not getattr(self, 'explicit_paddings', []):
+                self.pads = [0] * (full_len * 2)
+            else:
+                if len(self.explicit_paddings) != full_len * 2 \
+                        and all(p == 0 for p in self.explicit_paddings):
+                    self.explicit_paddings = [0] * (full_len * 2)
+                if self.data_format.startswith('NC'):
+                    pad_slice = slice(2, spatial_len)
+                else:
+                    pad_slice = slice(1, spatial_len - 1)
+                pads = np.transpose(np.reshape(np.array(self.explicit_paddings), (spatial_len, 2))[pad_slice, :])
+                self.pads = pads.flatten().tolist()
+
 
 class Tf2Op(TfOp):
     '''

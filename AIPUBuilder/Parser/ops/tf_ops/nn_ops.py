@@ -28,18 +28,6 @@ class TfAvgPoolOp(TfHasPaddingStrides, OpHasOneOutPort):
                                     padding='VALID' if self.auto_pad in (
                                         'VALID', 'NOTSET') else 'SAME',
                                     data_format='NHWC').numpy()
-        if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
-            self.pads, _ = OpHasPaddingStrides.cal_pads(
-                inp.shape[1:-1],
-                out_tensor.shape[1:-1],
-                self.strides,
-                self.kernel_shape,
-                self.auto_pad,
-                dilations=self.dilations,
-                is_transpose=False,
-                zero_minimum=True
-            )
-            self.auto_pad = 'NOTSET'
         if self.data_format == 'NCHW':
             out_tensor = np.transpose(out_tensor, [0, 3, 1, 2])
         self.set_out_tensor(out_tensor)
@@ -72,16 +60,6 @@ class TfAvgPool3DOp(TfHasPaddingStrides, OpHasOneOutPort):
             padding='SAME' if self.auto_pad in (
                 'SAME_UPPER', 'SAME_LOWER') else 'VALID',
             data_format='NDHWC').numpy()
-        if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
-            self.pads, _ = OpHasPaddingStrides.cal_pads(
-                inp.shape[1:-1],
-                out_tensor.shape[1:-1],
-                self.strides,
-                self.kernel_shape,
-                self.auto_pad,
-                zero_minimum=True
-            )
-            self.auto_pad = 'NOTSET'
         if self.data_format == 'NCDHW':
             out_tensor = np.transpose(out_tensor, [0, 4, 1, 2, 3])
         self.set_out_tensor(out_tensor)
@@ -141,7 +119,7 @@ class TfComputeAccidentalHitsOp(OpHasMultipleOutPorts, TfOp):
         return {'type': 'AccidentalHits', 'version': 1}
 
 
-class TfDilation2DOp(TfHasPaddingStrides, OpHasWeights, OpHasOneOutPort, TfOp):
+class TfDilation2DOp(TfHasPaddingStrides, OpHasWeights, OpHasOneOutPort):
     @classmethod
     def attributes(cls):
         return {1: {'dilations': {'default': [1, 1, 1, 1]},
@@ -164,10 +142,11 @@ class TfDilation2DOp(TfHasPaddingStrides, OpHasWeights, OpHasOneOutPort, TfOp):
             assert isinstance(
                 self.weights, np.ndarray), 'TfDilation2DOp only supports constant filter'
             self.kernel_shape = self.weights.shape[0:2]
-        if self.auto_pad == 'VALID':
-            padding = 'VALID'
-        elif self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
+
+        if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
             padding = 'SAME'
+        else:
+            padding = 'VALID'
 
         inp = np.transpose(inputs[0], [0, 2, 3, 1]
                            ) if self.data_format == 'NCHW' else inputs[0]
@@ -227,26 +206,6 @@ class TfConv2DOp(TfHasPaddingStrides, OpHasWeights, OpHasOneOutPort):
                                   padding=padding,
                                   dilations=self.dilations,
                                   data_format='NHWC').numpy()
-        if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
-            self.pads, _ = OpHasPaddingStrides.cal_pads(
-                inp.shape[1:3],
-                out_tensor.shape[1:3],
-                self.strides,
-                self.kernel_shape,
-                self.auto_pad,
-                dilations=self.dilations,
-                is_transpose=False,
-                zero_minimum=True,
-
-            )
-            self.auto_pad = 'NOTSET'
-        elif self.auto_pad == 'NOTSET':
-            pad_slice = slice(
-                1, 3) if self.data_format == 'NHWC' else slice(2, 4)
-            self.pads = np.transpose(
-                np.reshape(np.array(self.explicit_paddings), (4, 2))[
-                    pad_slice, :]
-            ).flatten().tolist()
         if self.data_format == 'NCHW':
             out_tensor = np.transpose(out_tensor, [0, 3, 1, 2])
         self.set_out_tensor(out_tensor)
@@ -301,11 +260,6 @@ class TfConv2DBackpropInputOp(TfHasPaddingStrides, OpHasWeights, OpHasOneOutPort
                        ) if self.data_format == 'NHWC' else ([1, 1] + self.dilations)
         ).numpy()
         self.set_out_tensor(out_tensor)
-        if self.auto_pad == 'NOTSET':
-            pad_slice = slice(
-                1, 3) if self.data_format == 'NHWC' else slice(2, 4)
-            self.pads = np.transpose(np.reshape(np.array(self.explicit_paddings), (4, 2))[
-                                     pad_slice, :]).flatten().tolist()
 
 
 class TfConv3DOp(TfHasPaddingStrides, OpHasWeights, OpHasOneOutPort):
@@ -339,18 +293,6 @@ class TfConv3DOp(TfHasPaddingStrides, OpHasWeights, OpHasOneOutPort):
                 'SAME_UPPER', 'SAME_LOWER') else 'VALID',
             data_format='NDHWC',
             dilations=[1] + self.dilations + [1]).numpy()
-        if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
-            self.pads, _ = OpHasPaddingStrides.cal_pads(
-                inp.shape[1:-1],
-                out_tensor.shape[1:-1],
-                self.strides,
-                self.kernel_shape,
-                self.auto_pad,
-                dilations=self.dilations,
-                is_transpose=False,
-                zero_minimum=True
-            )
-            self.auto_pad = 'NOTSET'
         if self.data_format == 'NCDHW':
             out_tensor = np.transpose(out_tensor, [0, 4, 1, 2, 3])
         self.set_out_tensor(out_tensor)
@@ -495,25 +437,6 @@ class TfDepthwiseConv2dNativeOp(TfHasPaddingStrides, OpHasWeights, OpHasOneOutPo
                                                              padding=padding,
                                                              dilations=[1] + self.dilations + [1],
                                                              data_format='NHWC').numpy()
-        if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
-            self.pads, _ = OpHasPaddingStrides.cal_pads(
-                inp.shape[1:3],
-                out_tensor.shape[1:3],
-                self.strides,
-                self.kernel_shape,
-                self.auto_pad,
-                dilations=self.dilations,
-                is_transpose=False,
-                zero_minimum=True
-            )
-            self.auto_pad = 'NOTSET'
-        elif self.auto_pad == 'NOTSET':
-            pad_slice = slice(
-                1, 3) if self.data_format == 'NHWC' else slice(2, 4)
-            self.pads = np.transpose(
-                np.reshape(np.array(self.explicit_paddings), (4, 2))[
-                    pad_slice, :]
-            ).flatten().tolist()
         if self.data_format == 'NCHW':
             out_tensor = np.transpose(out_tensor, [0, 3, 1, 2])
         self.set_out_tensor(out_tensor)
@@ -690,25 +613,6 @@ class TfMaxPoolOp(TfHasPaddingStrides, OpHasOneOutPort):
                                     strides=[1] + self.strides + [1],
                                     padding=padding,
                                     data_format='NHWC').numpy()
-        if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
-            self.pads, _ = OpHasPaddingStrides.cal_pads(
-                inp.shape[1:3],
-                out_tensor.shape[1:3],
-                self.strides,
-                self.kernel_shape,
-                self.auto_pad,
-                dilations=self.dilations,
-                is_transpose=False,
-                zero_minimum=True
-            )
-            self.auto_pad = 'NOTSET'
-        elif self.auto_pad == 'NOTSET':
-            pad_slice = slice(
-                1, 3) if self.data_format == 'NHWC' else slice(2, 4)
-            self.pads = np.transpose(
-                np.reshape(np.array(self.explicit_paddings), (4, 2))[
-                    pad_slice, :]
-            ).flatten().tolist()
         if self.data_format == 'NCHW':
             out_tensor = np.transpose(out_tensor, [0, 3, 1, 2])
         self.set_out_tensor(out_tensor)
@@ -742,16 +646,6 @@ class TfMaxPool3DOp(TfHasPaddingStrides, OpHasOneOutPort):
             padding='SAME' if self.auto_pad in (
                 'SAME_UPPER', 'SAME_LOWER') else 'VALID',
             data_format='NDHWC').numpy()
-        if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
-            self.pads, _ = OpHasPaddingStrides.cal_pads(
-                inp.shape[1:-1],
-                out_tensor.shape[1:-1],
-                self.strides,
-                self.kernel_shape,
-                self.auto_pad,
-                zero_minimum=True
-            )
-            self.auto_pad = 'NOTSET'
         if self.data_format == 'NCDHW':
             out_tensor = np.transpose(out_tensor, [0, 4, 1, 2, 3])
         self.set_out_tensor(out_tensor)
@@ -788,15 +682,6 @@ class TfMaxPoolWithArgmaxOp(TfHasPaddingStrides, OpHasMultipleOutPorts):
                                                  include_batch_in_index=self.include_batch_in_index)
         out_tensors = [t.numpy() for t in out_tensors]
         self.set_out_tensor(out_tensors)
-        if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
-            self.pads, _ = OpHasPaddingStrides.cal_pads(inputs[0].shape[1:3],
-                                                        out_tensors[0].shape[1:3],
-                                                        self.strides,
-                                                        self.kernel_shape,
-                                                        self.auto_pad,
-                                                        zero_minimum=True
-                                                        )
-            self.auto_pad = 'NOTSET'
 
 
 class TfReluOp(BaseReluOp, TfOp):

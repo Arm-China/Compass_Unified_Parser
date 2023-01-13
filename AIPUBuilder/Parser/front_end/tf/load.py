@@ -230,15 +230,19 @@ def parse_pb(graph, model_path, params, anchor_tensors):
             feed_dict.update({tensor_name: np_tensor})
 
         for n in nodes:
+            n_type = n.get('type', '')
             for i, out in enumerate(n['output']):
-                if n.get('type', '') in ('FusedBatchNorm', 'FusedBatchNormV3') and i > 0:
+                if n_type in ('FusedBatchNorm', 'FusedBatchNormV3') and i > 0:
                     continue
-                elif n.get('type', '') in ('Enter', 'Merge', 'TensorArrayReadV3',):
+                elif n.get('type', '') in ('Enter', 'Merge',):
                     continue
                 elif n.get('from_function', False):
                     continue
-                tensors.update(
-                    {out[0]: default_graph.get_tensor_by_name(out[0])})
+                if n['name'] in graph._attr['input_names'] \
+                        or n_type.startswith('TensorArray') \
+                        or n_type in ('Range', 'Shape', ):
+                    tensors.update(
+                        {out[0]: default_graph.get_tensor_by_name(out[0])})
 
         for anchor_tensor in anchor_tensors:
             if anchor_tensor not in tensors:

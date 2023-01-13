@@ -6,7 +6,7 @@ import math
 import numpy as np
 import re
 import copy
-from ....ops.op import TfOp, Op, OpHasWeights, OpHasPaddingStrides
+from ....ops.op import TfOp, Op, OpHasWeights, OpHasPaddingStrides, TfHasPaddingStrides
 from ....graph.node_wrap import NodeWrap
 from ....graph.graph_algo import get_valid_node_name, clear_redundant_nodes, cal_path_length, has_path
 from ....graph.pattern_match import matched_patterns, single_node_matcher, two_nodes_matcher
@@ -67,6 +67,12 @@ def convert_conv_backpropinput(graph):
             # be re-calculated in function update_pads.
             if conv_back_obj.auto_pad != 'NOTSET':
                 conv_attr.update({'output_shape': output_shape})
+            else:
+                full_len = len(input_shape) + 2
+                pad_slice = slice(1, full_len - 1) if data_format == 'NHWC' else slice(2, full_len)
+                pads = np.transpose(np.reshape(np.array(self.explicit_paddings),
+                                    (full_len, 2))[pad_slice, :]).flatten().tolist()
+                conv_attr.update({'pads': pads})
             conv_attr.update({'opset_version': 11,
                               'weights': new_weights,
                               'strides': conv_back_obj.strides,
@@ -170,11 +176,18 @@ def convert_maxpoolwithargmax(graph):
         argmaxpool_obj = NodeWrap(graph, argmaxpool)['object']
         in_edges = graph.sorted_in_edges(argmaxpool, data=True)
         out_edges = graph.sorted_out_edges(argmaxpool, keys=True, data=True)
-        if argmaxpool_obj is None or len(in_edges) < 1 or len(out_edges) < 1 or \
-                len(argmaxpool_obj.get_input_shapes()) < 1 or len(argmaxpool_obj.get_output_shapes()) < 1:
+        if argmaxpool_obj is None \
+                or len(in_edges) < 1 \
+                or len(out_edges) < 1 \
+                or len(argmaxpool_obj.get_input_shapes()) < 1 \
+                or len(argmaxpool_obj.get_output_shapes()) < 1 \
+                or any(s is None for s in argmaxpool_obj.get_input_shapes()[0]) \
+                or any(s is None for s in argmaxpool_obj.get_output_shapes()[0]):
             WARN(
                 '[Parser]: Meets invalid Node(%s) in convert_maxpoolwithargmax!' % argmaxpool)
             continue
+        argmaxpool_obj.update_pads(argmaxpool_obj.get_input_shapes()[0],
+                                   argmaxpool_obj.get_output_shapes()[0])
         if not bool(argmaxpool_obj.include_batch_in_index):
             # Convert output indices from NHWC to HWC
             sub = get_valid_node_name(graph, argmaxpool + '_indices_sub')
@@ -1186,20 +1199,21 @@ def merge_gru(graph):
             init = init_match['init_state']
             merge = init_match['merge']
             transpose = inputs_match['transpose']
+            range_name = inputs_match['range']
             scatter = inputs_match['scatter']
             sequence_out = sequence_match.get('transpose', '')
             state_out = state_match.get('exit_3', '')
 
-            init_obj, trans_obj, seq_out_obj, state_out_obj \
-                = [NodeWrap(graph, name)['object'] if name else None for name in [init, transpose, sequence_out, state_out]]
+            init_obj, trans_obj, range_obj, seq_out_obj, state_out_obj \
+                = [NodeWrap(graph, name)['object'] if name else None for name in [init, transpose, range_name, sequence_out, state_out]]
             init_out_edges = graph.sorted_out_edges(init, data=True)
             trans_in_edges = graph.sorted_in_edges(transpose, data=True)
             trans_out_edges = graph.sorted_out_edges(transpose, keys=True)
             scatter_in_edges = graph.sorted_in_edges(scatter)
-            sequence_out_edges = graph.sorted_out_edges(
-                sequence_out, data=True) if sequence_out else []
+
             if init_obj is not None \
                     and trans_obj is not None \
+                    and range_obj is not None \
                     and (seq_out_obj is not None or state_out_obj is not None) \
                     and len(init_out_edges) >= 1 \
                     and len(trans_in_edges) == 2 \
@@ -1208,11 +1222,19 @@ def merge_gru(graph):
                     and len(trans_obj.get_input_shapes()) >= 1 \
                     and trans_obj.get_input_shapes()[0] is not None \
                     and len(trans_obj.get_input_shapes()[0]) == 3 \
-                    and all([s is not None for s in trans_obj.get_input_shapes()[0][1:]]):
-                matched = True
+                    and trans_obj.get_input_shapes()[0][2] is not None:
                 trans_in_shape = trans_obj.get_input_shapes()[0]
                 batch_size, time_steps, input_size = trans_in_shape
+                if time_steps is None:
+                    range_out_edges = graph.sorted_out_edges(range_name, data=True)
+                    if len(range_out_edges) < 1 \
+                            or range_out_edges[0][2]['tensor'].value is None \
+                            or np.ndim(range_out_edges[0][2]['tensor'].value) != 1:
+                        continue
+                    else:
+                        time_steps = int(range_out_edges[0][2]['tensor'].value.size)
 
+                matched = True
                 gate_weights = np.transpose(
                     NodeWrap(graph, cell['gate_weights'])['object'].value)
                 gate_biases = NodeWrap(graph, cell['gate_biases'])[
@@ -2803,29 +2825,14 @@ def merge_keras_maskrcnn(graph, params):
     if any([v is None for v in obj_dict.values()]):
         WARN('[Parser]: Meets invalid node in merge_keras_maskrcnn!')
         return
-
-    out_tensors, in_tensors = {}, {}
-    for n in all_out_names:
-        for _, _, out_attr in graph.sorted_out_edges(n, data=True):
-            p = out_attr['src_out_port']
-            if (n, p) not in out_tensors and out_attr['tensor'].value is not None:
-                out_tensors[(n, p)] = out_attr['tensor']
-    for n in all_in_names:
-        for _, _, in_attr in graph.sorted_in_edges(n, data=True):
-            p = in_attr['dst_in_port']
-            if (n, p) not in in_tensors and in_attr['tensor'].value is not None:
-                in_tensors[(n, p)] = in_attr['tensor']
-
-    if len(out_tensors[(mrcnn_class_reshape, 0)].value.shape) != 3:
-        WARN('[Parser]: Meets invalid shape of Node(%s) in merge_keras_maskrcnn!' %
-             mrcnn_class_reshape)
-        return
-    batch = out_tensors[(mrcnn_class_reshape, 0)].value.shape[0]
-    if batch != 1:
-        WARN('[Parser]: Only support batch=1 in merge_keras_maskrcnn!')
+    if len(obj_dict[mrcnn_class_reshape].get_input_tensors()) != 2 \
+            or obj_dict[mrcnn_class_reshape].get_input_tensors()[1] is None \
+            or obj_dict[mrcnn_class_reshape].get_input_tensors()[1].size != 3:
+        WARN('[Parser]: Meets Reshape node(%s) in merge_keras_maskrcnn!' % mrcnn_class_reshape)
         return
 
-    N, class_num = out_tensors[(mrcnn_class_reshape, 0)].value.shape[1:3]
+    mrcnn_class_reshape_shape = obj_dict[mrcnn_class_reshape].get_input_tensors()[1].tolist()
+    N, class_num = mrcnn_class_reshape_shape[1:3]
     score_threshold = params.get('score_threshold', 0.7)
     model_name = 'mrcnn_detection'
 
@@ -3007,22 +3014,18 @@ def merge_keras_maskrcnn(graph, params):
     gather4 = get_valid_node_name(graph, model_name + '_gather_output_classid')
     gather4_out = get_valid_node_name(graph, gather4 + '_out')
 
-    graph.add_edge(rpn_probs, rpn_probs_post_reshape, **
-                   {'tensor': out_tensors[(rpn_probs, 0)]})
+    graph.add_edge(rpn_probs, rpn_probs_post_reshape)
     graph.add_edge(rpn_probs_post_reshape, rpn_probs_split)
     graph.add_edge(rpn_probs_split, rpn_probs_split_0_out)
-    graph.add_edge(rpn_probs_split, rpn_probs_split_1_reshape,
-                   **{'src_out_port': 1})
+    graph.add_edge(rpn_probs_split, rpn_probs_split_1_reshape, **{'src_out_port': 1})
     graph.add_edge(rpn_probs_split_1_reshape, topk)
     graph.add_edge(topk, topk_0_out)
     graph.add_edge(topk, topk_indices_reshape, **{'src_out_port': 1})
 
-    graph.add_edge(rpn_boxes, box_gather, **
-                   {'tensor': out_tensors[(rpn_boxes, 0)]})
+    graph.add_edge(rpn_boxes, box_gather)
     graph.add_edge(topk_indices_reshape, box_gather, **{'dst_in_port': 1})
 
-    graph.add_edge(topk, anchor_gather, **
-                   {'src_out_port': 1, 'dst_in_port': 1})
+    graph.add_edge(topk, anchor_gather, **{'src_out_port': 1, 'dst_in_port': 1})
     insert_constant(graph, model_name + '_anchor', anchor_value,
                     anchor_gather, data_format='NHWC')
 
@@ -3062,17 +3065,12 @@ def merge_keras_maskrcnn(graph, params):
     graph.add_edge(post_nms1, post_nms1_1_out, **{'src_out_port': 1})
     for i, conv in enumerate(special_out_convs):
         graph.add_edge(conv, pyramid_roi_proposal, **
-                       {'dst_in_port': i + 1, 'tensor': out_tensors[(conv, 0)]})
+                       {'dst_in_port': i + 1})
 
-    graph.add_edge(pyramid_roi_proposal,
-                   special_in_convs[0],
-                   **{'tensor': in_tensors[(special_in_convs[0], 0)]})
-    graph.add_edge(mrcnn_box_reshape,
-                   deltas_reshape,
-                   **{'tensor': out_tensors[(mrcnn_box_reshape, 0)]})
+    graph.add_edge(pyramid_roi_proposal, special_in_convs[0])
+    graph.add_edge(mrcnn_box_reshape, deltas_reshape)
 
-    graph.add_edge(mrcnn_class_reshape,
-                   argmax, **{'tensor': out_tensors[(mrcnn_class_reshape, 0)]})
+    graph.add_edge(mrcnn_class_reshape, argmax)
     graph.add_edge(argmax, argmax_reshape)
 
     graph.add_edge(argmax_reshape, deltas_gathernd_indices_concat,
@@ -3093,9 +3091,7 @@ def merge_keras_maskrcnn(graph, params):
     graph.add_edge(deltas_gathernd_post_reshape,
                    bounding_box2, **{'dst_in_port': 1})
 
-    graph.add_edge(mrcnn_class_reshape,
-                   mrcnn_class_reshape_post_reshape,
-                   **{'tensor': out_tensors[(mrcnn_class_reshape, 0)]})
+    graph.add_edge(mrcnn_class_reshape, mrcnn_class_reshape_post_reshape)
     graph.add_edge(mrcnn_class_reshape_post_reshape, score_gathernd)
 
     graph.add_edge(score_gathernd, score_mul, **{'dst_in_port': 1})
@@ -3157,11 +3153,8 @@ def merge_keras_maskrcnn(graph, params):
     graph.add_edge(topk_final_1_reshape, gather3, **{'dst_in_port': 1})
     graph.add_edge(gather3, pyramid_roi_mask)
     for i, conv in enumerate(special_out_convs):
-        graph.add_edge(conv, pyramid_roi_mask, **
-                       {'dst_in_port': i + 1, 'tensor': out_tensors[(conv, 0)]})
-    graph.add_edge(pyramid_roi_mask,
-                   special_in_convs[1],
-                   **{'tensor': in_tensors[(special_in_convs[1], 0)]})
+        graph.add_edge(conv, pyramid_roi_mask, **{'dst_in_port': i + 1})
+    graph.add_edge(pyramid_roi_mask, special_in_convs[1])
 
     graph.add_edge(nms2_1_reshape, repeat, **{'dst_in_port': 1})
     insert_constant(graph, repeat + '_const',
@@ -3392,10 +3385,23 @@ def convert_to_onnx(graph):
         node_obj = NodeWrap(graph, node_name)['object']
         if node_obj is not None:
             in_edges = graph.sorted_in_edges(node_name, data=True)
-            new_node_attr = node_obj.copied_attr()
             node_data_format = 'NCHW' if node_obj.data_format.startswith('NC') else 'NHWC'
             pure_type = re.sub(r'^Tf', '', node_obj.type)
             if getattr(node_obj, 'correspond_onnx_op', None) is not None:
+                if isinstance(node_obj, TfHasPaddingStrides):
+                    input_shapes = node_obj.get_input_shapes()
+                    output_shapes = node_obj.get_output_shapes()
+                    if len(input_shapes) < 1 \
+                            or len(input_shapes[0]) < 3 \
+                            or any(s is None for s in input_shapes[0]) \
+                            or len(output_shapes) < 1 \
+                            or len(output_shapes[0]) < 3 \
+                            or any(s is None for s in output_shapes[0]):
+                        WARN('[Parser]: Invalid TfHasPaddingStrides Node(%s) in convert_to_onnx!' % node_name)
+                        continue
+                    node_obj.update_pads(input_shapes[0], output_shapes[0])
+                new_node_attr = node_obj.copied_attr()
+
                 if isinstance(node_obj, OpHasWeights):
                     if node_obj.weights is None:
                         WARN('[Parser]: Node(%s) does not contain weights!' %
@@ -3408,13 +3414,6 @@ def convert_to_onnx(graph):
                     new_weights = np.transpose(
                         new_weights, axes=type(node_obj).perm_tf_to_onnx())
                     new_node_attr.update({'weights': new_weights})
-                if isinstance(node_obj, OpHasPaddingStrides):
-                    if hasattr(node_obj, 'strides') and len(node_obj.strides) == 4:
-                        new_node_attr.update(
-                            {'strides': node_obj.strides[1:3]})
-                    if hasattr(node_obj, 'dilations') and len(node_obj.dilations) == 4:
-                        new_node_attr.update(
-                            {'dilations': node_obj.dilations[1:3]})
 
                 if pure_type in ('All', 'Any', 'Max', 'Min', 'Prod'):
                     graph.remove_edges_from(in_edges[1:])
