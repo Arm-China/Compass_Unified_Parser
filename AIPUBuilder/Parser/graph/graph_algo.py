@@ -12,6 +12,7 @@ from .node_wrap import NodeWrap
 from .graph import Graph, SubGraph
 from .pattern_match import single_node_matcher
 from ..ops.op import InputLikeOp
+from ..ops.common_ops import UndefinedOp
 from ..common.defs import Tensor
 from ..logger import INFO, DEBUG, WARN, ERROR, FATAL
 
@@ -231,6 +232,8 @@ def infer(graph, partial=False, chosen_list=None):
 
                         infer_data = graph._attr['input_tensors'][node_name].value
                         node_obj.infer_shape(infer_data)
+                    elif isinstance(node_obj, UndefinedOp):
+                        WARN('[Parser]: Meet unsupported op type %s in Node(%s)!' % (node_obj.type, node_name))
                     else:
                         node_obj.infer_shape()
                 except Exception as e:

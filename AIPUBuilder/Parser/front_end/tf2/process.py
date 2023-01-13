@@ -28,6 +28,9 @@ def process_tf2(model_path, params):
 
         infer(graph)
 
+        from ..tf.passes.front_passes import convert_depth_to_space
+        convert_depth_to_space(graph, op_type='Tfdepth_to_space')
+
         process_keras_op_after_infer(graph)
 
         convert_to_onnx(graph)

@@ -101,6 +101,19 @@ class Tfconv2dOp(TfHasPaddingStrides, Tf2Op, OpHasWeights, OpHasOneOutPort):
         return {'type': 'Conv', 'version': 1}
 
 
+class Tfdepth_to_spaceOp(LayoutConcernedOp, OpHasOneOutPort, Tf2Op):
+    def infer_shape(self):
+        super(Tfdepth_to_spaceOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        assert len(inputs) >= 3, 'Tfdepth_to_spaceOp expects 3 inputs, but got %d.' % len(inputs)
+        self.block_size = inputs[1].item(0)
+        self.data_format = inputs[2].item(0)
+
+        from ..tf_ops.nn_ops import TfDepthToSpaceOp
+        out_tensor = TfDepthToSpaceOp.cal_out_tensor(inputs[0], self.block_size, self.data_format)
+        self.set_out_tensor(out_tensor)
+
+
 class Tffractional_avg_poolOp(OpHasMultipleOutPorts, Tf2Op):
     @classmethod
     def attributes(cls):

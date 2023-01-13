@@ -96,7 +96,10 @@ def ERROR(msg, *args, **kwargs):
 
 def FATAL(msg, *args, **kwargs):
     LOGGER.fatal(msg, *args, **kwargs)
-    LOGGER.fatal(traceback.format_exc())
+    exc = traceback.format_exc()
+    if exc != 'NoneType: None\n':
+        LOGGER.fatal(exc)
+    INFO('Parser Failed!')
     sys.exit(-1)
 
 

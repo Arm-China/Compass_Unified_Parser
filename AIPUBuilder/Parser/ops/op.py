@@ -2351,6 +2351,16 @@ class TfOp(Op):
         '''Get the value of the parameter dtype.'''
         return self.get_attr_by_key('dtype')
 
+    @classmethod
+    def perm_nchw_vect_c_to_nhwc(cls):
+        '''Calculate the perm required to convert nchw_vect_c to nhwc.'''
+        return [0, 2, 3, 1, 4]
+
+    @classmethod
+    def perm_nhwc_to_nchw_vect_c(cls):
+        '''Calculate the perm required to convert nhwc to nchw_vect_c.'''
+        return Op.cal_inverse_perm(cls.perm_nchw_vect_c_to_nhwc())
+
 
 class TfHasN(TfOp):
     '''
