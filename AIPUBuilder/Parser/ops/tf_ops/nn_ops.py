@@ -751,31 +751,6 @@ class TfSeluOp(LayoutUnawareOp, ActivationOnlyOp, TfOp):
         return {'type': 'Selu', 'version': 6}
 
 
-class TfSiluOp(LayoutUnawareOp, ActivationOnlyOp, TfOp):
-    @classmethod
-    def attributes(cls):
-        return {2: {'beta': {'type': AttrType.FLOAT, 'default': 1.0}}
-                }
-
-    def __init__(self, graph, attr_dict=None):
-        super(TfSiluOp, self).__init__(graph, attr_dict)
-        self.update_attributes(TfSiluOp, attr_dict)
-        assert self.check_required(), 'TfSiluOp is missing a required parameter.'
-
-    def infer_shape(self):
-        super(TfSiluOp, self).infer_shape()
-        inputs = self.get_input_tensors()
-        out_tensor = tf.nn.silu(inputs[0]).numpy()
-        self.set_out_tensor(out_tensor)
-
-    @property
-    def correspond_onnx_op(self):
-        if FLOAT_EQUAL(self.beta, 1):
-            return {'type': 'Silu', 'version': 1}
-        else:
-            return {'type': 'Swish', 'version': 1}
-
-
 class TfSoftmaxOp(OpHasAxis, OpHasOneOutPort, TfOp):
     @classmethod
     def attributes(cls):

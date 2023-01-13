@@ -818,16 +818,12 @@ class SegmentReduceOp(OpHasMethod, OpHasOneOutPort, CommonOp):
         self.set_out_tensor(out_tensor)
 
 
-class SiluOp(OpHasOneOutPort, CommonOp):
-
+class SiluOp(LayoutUnawareOp, ActivationOnlyOp, CommonOp):
     def infer_shape(self):
         super(SiluOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        tor_arr = torch.from_numpy(inputs[0])
-        m = torch.nn.SiLU()
-        out_tensor = m(tor_arr)
-        tor2numpy = out_tensor.numpy()
-        self.set_out_tensor(tor2numpy)
+        out_tensor = (inputs[0]) * tf.sigmoid(inputs[0]).numpy()
+        self.set_out_tensor(out_tensor)
 
 
 class UndefinedOp(OpHasVariableOutPorts, CommonOp):

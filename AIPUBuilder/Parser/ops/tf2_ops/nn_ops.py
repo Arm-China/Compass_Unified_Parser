@@ -99,3 +99,28 @@ class Tfconv2dOp(TfHasPaddingStrides, Tf2Op, OpHasWeights, OpHasOneOutPort):
     @property
     def correspond_onnx_op(self):
         return {'type': 'Conv', 'version': 1}
+
+
+class TfsiluOp(LayoutUnawareOp, ActivationOnlyOp, Tf2Op):
+    @classmethod
+    def attributes(cls):
+        return {2: {'beta': {'type': AttrType.FLOAT, 'default': 1.0},
+                    }}
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfsiluOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfsiluOp, attr_dict)
+        assert self.check_required(), 'TfsiluOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(TfsiluOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = (inputs[0]) * tf.sigmoid(self.beta * inputs[0]).numpy()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        if FLOAT_EQUAL(self.beta, 1):
+            return {'type': 'Silu', 'version': 1}
+        else:
+            return {'type': 'Swish', 'version': 1}
