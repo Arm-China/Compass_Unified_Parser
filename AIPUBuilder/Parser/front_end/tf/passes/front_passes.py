@@ -70,7 +70,7 @@ def convert_conv_backpropinput(graph):
             else:
                 full_len = len(input_shape) + 2
                 pad_slice = slice(1, full_len - 1) if data_format == 'NHWC' else slice(2, full_len)
-                pads = np.transpose(np.reshape(np.array(self.explicit_paddings),
+                pads = np.transpose(np.reshape(np.array(conv_back_obj.explicit_paddings),
                                     (full_len, 2))[pad_slice, :]).flatten().tolist()
                 conv_attr.update({'pads': pads})
             conv_attr.update({'opset_version': 11,

@@ -2481,7 +2481,6 @@ class TfHasPaddingStrides(OpHasPaddingStrides, TfOp):
             self.auto_pad = 'NOTSET'
         elif self.auto_pad == 'NOTSET':
             full_len = len(input_shape)
-            spatial_len = len(in_spatial_shape)
             if not getattr(self, 'explicit_paddings', []):
                 self.pads = [0] * (full_len * 2)
             else:
@@ -2489,10 +2488,10 @@ class TfHasPaddingStrides(OpHasPaddingStrides, TfOp):
                         and all(p == 0 for p in self.explicit_paddings):
                     self.explicit_paddings = [0] * (full_len * 2)
                 if self.data_format.startswith('NC'):
-                    pad_slice = slice(2, spatial_len)
+                    pad_slice = slice(2, full_len)
                 else:
-                    pad_slice = slice(1, spatial_len - 1)
-                pads = np.transpose(np.reshape(np.array(self.explicit_paddings), (spatial_len, 2))[pad_slice, :])
+                    pad_slice = slice(1, full_len - 1)
+                pads = np.transpose(np.reshape(np.array(self.explicit_paddings), (full_len, 2))[pad_slice, :])
                 self.pads = pads.flatten().tolist()
 
 
