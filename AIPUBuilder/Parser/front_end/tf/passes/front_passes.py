@@ -56,19 +56,19 @@ def convert_conv_backpropinput(graph):
             new_weights = np.transpose(
                 conv_back_obj.weights, axes=type(conv_back_obj).perm_tf_to_onnx())
             if conv_back_obj.data_format[:2] == 'NC':
-                input_shape = in_tensors[1].shape[2:]
-                output_shape = const_obj.value.tolist()[2:]
+                input_spatial_shape = in_tensors[1].shape[2:]
+                output_spatial_shape = const_obj.value.tolist()[2:]
                 data_format = 'NCHW'
             else:
-                input_shape = in_tensors[1].shape[1:-1]
-                output_shape = const_obj.value.tolist()[1:-1]
+                input_spatial_shape = in_tensors[1].shape[1:-1]
+                output_spatial_shape = const_obj.value.tolist()[1:-1]
                 data_format = 'NHWC'
             # When padding is explictly provided, do not set output_shape so that pads won't
             # be re-calculated in function update_pads.
             if conv_back_obj.auto_pad != 'NOTSET':
-                conv_attr.update({'output_shape': output_shape})
+                conv_attr.update({'output_shape': output_spatial_shape})
             else:
-                full_len = len(input_shape) + 2
+                full_len = len(input_spatial_shape) + 2
                 pad_slice = slice(1, full_len - 1) if data_format == 'NHWC' else slice(2, full_len)
                 pads = np.transpose(np.reshape(np.array(conv_back_obj.explicit_paddings),
                                     (full_len, 2))[pad_slice, :]).flatten().tolist()
@@ -80,7 +80,7 @@ def convert_conv_backpropinput(graph):
                               'data_format': data_format
                               })
             NodeWrap(graph, conv_back).replace_obj('ConvTranspose', conv_attr)
-            NodeWrap(graph, conv_back)['object'].update_pads(input_shape)
+            NodeWrap(graph, conv_back)['object'].update_pads(input_spatial_shape)
         else:
             WARN(
                 '[Parser]: Meets invalid Conv2DBackpropInput/Conv3DBackpropInputV2 Op (%s) in convert_conv_backpropinput!' % conv_back)
