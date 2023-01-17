@@ -2882,6 +2882,43 @@ class ArmMVNOp(OpHasOneOutPort, OpHasAxis, ArmOp):
         return ret
 
 
+class ArmNormalizedMomentsOp(OpHasMultipleOutPorts, ArmOp):
+    @classmethod
+    def num_in_ports(cls):
+        return 3
+
+    @classmethod
+    def cast_in_ports(cls):
+        return {0: 'float32', 1: 'float32', 2: 'float32'}
+
+    @classmethod
+    def attributes(cls):
+        return {'counts': {'type': AttrType.FLOAT, 'required': True},
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(ArmNormalizedMomentsOp, self).__init__(graph, attr_dict)
+        self.update_attributes(ArmNormalizedMomentsOp, attr_dict)
+        assert self.check_required(), 'ArmNormalizedMomentsOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(ArmNormalizedMomentsOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        count = np.array(self.counts).astype(np.float32)
+        out_tensors = tf.nn.normalize_moments(counts=count,
+                                              mean_ss=inputs[0],
+                                              variance_ss=inputs[1],
+                                              shift=inputs[2])
+        out_tensors = [out_tensor.numpy() for out_tensor in out_tensors]
+        self.set_out_tensor(out_tensors)
+
+    def write_attrs(self, txt_file):
+        ret = super(ArmNormalizedMomentsOp, self).write_attrs(txt_file)
+        if ret:
+            txt_file.write('counts=%f\n' % self.counts)
+        return ret
+
+
 class ArmNegativeOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):

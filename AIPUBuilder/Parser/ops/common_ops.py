@@ -522,6 +522,29 @@ class MomentsOp(OpHasMultipleOutPorts, OpHasAxis, CommonOp):
         self.set_out_tensor(out_tensors)
 
 
+class NormalizedMomentsOp(OpHasMultipleOutPorts, CommonOp):
+    @classmethod
+    def attributes(cls):
+        return {'counts': {'type': AttrType.FLOAT, 'required': True},
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(NormalizedMomentsOp, self).__init__(graph, attr_dict)
+        self.update_attributes(NormalizedMomentsOp, attr_dict)
+        assert self.check_required(), 'NormalizedMomentsOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(NormalizedMomentsOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        count = np.array(self.counts).astype(np.float32)
+        out_tensors = tf.nn.normalize_moments(counts=count,
+                                              mean_ss=inputs[0],
+                                              variance_ss=inputs[1],
+                                              shift=inputs[2])
+        out_tensors = [out_tensor.numpy() for out_tensor in out_tensors]
+        self.set_out_tensor(out_tensors)
+
+
 class OutOp(OpHasOneOutPort, CommonOp):
     def __init__(self, graph, attr_dict=None):
         super(OutOp, self).__init__(graph, attr_dict)

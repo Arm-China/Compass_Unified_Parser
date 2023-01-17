@@ -3883,6 +3883,129 @@ def merge_reduce_unbiased_variance(graph):
         clear_redundant_nodes(graph)
 
 
+def merge_normalized_moments(graph):
+    normalized_moments_matches1 = matched_patterns(graph,
+                                                   nodes=[
+                                                       ('mul1', {'op': 'Mul'}),
+                                                       ('mul2', {'op': 'Mul'}),
+                                                       ('pow', {'op': 'Pow'}),
+                                                       ('sub', {'op': 'Sub'}),
+                                                       ('mul1_out'),
+                                                   ],
+                                                   edges=[
+                                                       ('mul1', 'pow'),
+                                                       ('mul1', 'mul1_out'),
+                                                       ('pow', 'sub', {
+                                                           'src_out_port': 0, 'dst_in_port': 1}),
+                                                       ('mul2', 'sub'),
+                                                   ])
+
+    normalized_moments_matches2 = matched_patterns(graph,
+                                                   nodes=[
+                                                       ('mul1', {'op': 'Mul'}),
+                                                       ('mul2', {'op': 'Mul'}),
+                                                       ('pow', {'op': 'Pow'}),
+                                                       ('sub', {'op': 'Sub'}),
+                                                   ],
+                                                   edges=[
+                                                       ('mul1', 'pow'),
+                                                       ('pow', 'sub', {
+                                                           'src_out_port': 0, 'dst_in_port': 1}),
+                                                       ('mul2', 'sub'),
+                                                   ])
+
+    normalized_moments_matches2 = list(filter(None, list(map(lambda y: y if sum(list(map(lambda x: len(
+        x.items() & y.items()) > 0, normalized_moments_matches1))) == 0 else None, normalized_moments_matches2))))
+    normalized_moments_matches = normalized_moments_matches1 + normalized_moments_matches2
+
+    matched = False
+    for m in normalized_moments_matches:
+        key_names = ['mul1', 'mul2', 'pow', 'sub', 'mul1_out'] if 'mul1_out' in m else [
+            'mul1', 'mul2', 'pow', 'sub']
+        node_objs = {k: NodeWrap(graph, m[k])['object'] for k in key_names}
+        if any([obj is None for obj in node_objs.values()]):
+            WARN('[Parser]: Meets invalid nodes in merge_normalized_moments!')
+            continue
+
+        mul_1_in_edges = graph.sorted_in_edges(m['mul1'], data=True)
+        mul_2_in_edges = graph.sorted_in_edges(m['mul2'], data=True)
+        sub_in_edges = graph.sorted_in_edges(m['sub'], data=True)
+        pow_out_edges = graph.sorted_out_edges(m['pow'], data=True)
+        mul_1_out_edges = graph.sorted_out_edges(m['mul1'], data=True)
+        mul_2_out_edges = graph.sorted_out_edges(m['mul2'], data=True)
+
+        if len(pow_out_edges) != 1\
+                or len(mul_2_out_edges) != 1\
+                or len(node_objs['pow'].sorted_in_consts()) != 1\
+                or len(node_objs['mul1'].sorted_in_consts()) != 1\
+                or len(node_objs['mul2'].sorted_in_consts()) != 1\
+                or FLOAT_EQUAL(node_objs['mul1'].sorted_in_consts()[0][2], node_objs['mul2'].sorted_in_consts()[0][2]) is False:
+            continue
+
+        count_value = round(1/node_objs['mul1'].sorted_in_consts()[0][2], 5)
+
+        have_add = False
+        have_add = True if len(
+            mul_1_out_edges) == 2 and node_objs['mul1_out'].type == 'Add' else False
+
+        # has_shift = False(2 inputs) or has_shift = True(3 inputs)
+        if have_add is True:
+            add_name = m['mul1_out']
+            add_in_edges = graph.sorted_in_edges(add_name, data=True)
+            add_out_edges = graph.sorted_out_edges(add_name, data=True)
+            if len(add_in_edges) != 2:
+                continue
+
+            matched = True
+            inp3_src, _, inp_attr3 = add_in_edges[1] if add_in_edges[0][0] == m['mul1'] else add_in_edges[0]
+            graph.remove_edge(inp3_src, add_name)
+            nor_moments_inp3_attr = copy.deepcopy(inp_attr3)
+            nor_moments_inp3_attr.update({'dst_in_port': 2})
+            graph.remove_edges_from(sub_in_edges)
+            graph.add_edge(inp3_src, m['sub'], **nor_moments_inp3_attr)
+            for _, dst, out_attr in add_out_edges:
+                graph.remove_edge(add_name, dst)
+                out_attr['src_out_port'] = 1
+                graph.add_edge(m['sub'], dst, **out_attr)
+
+            if add_name in graph._attr['output_names']:
+                index = graph._attr['output_names'].index(add_name)
+                graph._attr['output_names'].pop(index)
+
+        else:
+            matched = True
+            inp_shape = node_objs['mul1'].get_input_shapes()[0]
+            shift_name = get_valid_node_name(graph, 'NormalizedMoments_shift')
+            shift_value = np.zeros(inp_shape).astype(np.float32)
+            graph._attr['input_tensors'][shift_name] = Tensor(
+                value=shift_value)
+            graph.remove_edges_from(sub_in_edges)
+            insert_constant(graph, shift_name, shift_value,
+                            m['sub'], in_port=2)
+            for _, dst, out_attr in mul_1_out_edges:
+                graph.remove_edge(m['mul1'], dst)
+                out_attr['src_out_port'] = 1
+                graph.add_edge(m['sub'], dst, **out_attr)
+
+        inp1_src, _, inp_attr1 = mul_1_in_edges[0]
+        inp2_src, _, inp_attr2 = mul_2_in_edges[0]
+        inp_attr2['dst_in_port'] = 1
+        graph.remove_edge(inp1_src, m['mul1'])
+        graph.remove_edge(inp2_src, m['mul2'])
+        graph.add_edge(inp1_src, m['sub'], **inp_attr1)
+        graph.add_edge(inp2_src, m['sub'], **inp_attr2)
+        moment_attr = node_objs['sub'].copied_attr()
+        moment_attr.update({'counts': count_value})
+        NodeWrap(graph, m['sub']).replace_obj('NormalizedMoments', moment_attr)
+
+        if m['mul1'] in graph._attr['output_names']:
+            index = graph._attr['output_names'].index(m['mul1'])
+            graph._attr['output_names'].pop(index)
+
+    if matched:
+        clear_redundant_nodes(graph)
+
+
 def merge_moments(graph):
     moments_matches = matched_patterns(graph,
                                        nodes=[
@@ -7066,6 +7189,7 @@ def middle_passes(graph, params):
     merge_reduce_variance(graph)
     merge_reduce_unbiased_variance(graph)
     merge_moments(graph)
+    merge_normalized_moments(graph)
 
     convert_gemm_to_fc(graph)
     convert_special_matmul_to_fc(graph)
