@@ -2688,16 +2688,16 @@ def merge_dilated_conv(graph):
 
         if isinstance(obj_dict['conv'], BaseDeconvOp):
             obj_dict['conv'].pads_updated = False
-            if true_in_shape is not None:
-                conv_sptial_in_shape = true_in_shape[1:-1] \
-                    if data_format == 'NHWC' \
-                    else true_in_shape[2:]
-                obj_dict['conv'].update_pads(conv_sptial_in_shape)
             if hasattr(obj_dict['conv'], 'output_shape') \
                     and true_out_shape is not None:
                 obj_dict['conv'].output_shape = true_out_shape[1:-1] \
                     if data_format == 'NHWC' \
                     else true_out_shape[2:]
+            if true_in_shape is not None:
+                conv_sptial_in_shape = true_in_shape[1:-1] \
+                    if data_format == 'NHWC' \
+                    else true_in_shape[2:]
+                obj_dict['conv'].update_pads(conv_sptial_in_shape)
         else:
             obj_dict['conv'].auto_pad = 'NOTSET'
 
