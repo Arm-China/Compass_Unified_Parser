@@ -428,7 +428,7 @@ def convert_nms(graph):
                 score_shape = nms_obj.get_input_shapes()[1]
                 if box_shape is not None and score_shape is not None and len(box_shape) <= 2 or len(score_shape) <= 1:
                     WARN(
-                        '[Parser]: box_shape or score_shape is None.')
+                        '[Parser]: box_shape or score_shape of node (%s) is None.' % nms)
                     continue
 
                 onnx_batch = box_shape[0]
@@ -437,7 +437,7 @@ def convert_nms(graph):
                 max_output_boxes_per_class = nms_obj.max_output_boxes_per_class
                 if class_num > 1 or onnx_batch > 1:
                     ERROR(
-                        '[Parser]: Parser can not support multi_batch & multi_class NMS now.')
+                        '[Parser]: Parser can not support NMS node (%s) with multi_batch or multi_class.' % nms)
                     continue
                 per_class_boxes_num = box_num * np.ones(
                     (onnx_batch, class_num), dtype=np.int32)
@@ -668,9 +668,9 @@ def convert_nms(graph):
                     graph._attr['output_names'].insert(index, post_concatenate)
 
             else:
-                WARN('[Parser]: The length of the in_edge is illegal.')
+                WARN('[Parser]: The in_edge length of the node (%s) is illegal.' % nms)
         else:
-            WARN('[Parser]: Meets invalid node in NonMaxSuppression!')
+            WARN('[Parser]: Meets invalid node (%s) in NonMaxSuppression!' % nms)
 
 
 def convert_sigmoid_mul_to_silu(graph):

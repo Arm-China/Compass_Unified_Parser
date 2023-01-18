@@ -108,7 +108,7 @@ def convert_to_onnx(graph):
                                       })
                 graph.remove_edges_from(in_edges[1:])
             elif pure_type == 'gelu':
-                approximate = 'none' if node_obj.approximate == 0 else 'tanh'
+                approximate = 'tanh' if node_obj.approximate is True else 'none'
                 new_node_attr.update({'approximate': approximate})
             elif pure_type == 'left_shift':
                 new_node_attr.update({'direction': 'LEFT'})

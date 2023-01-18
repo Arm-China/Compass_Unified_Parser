@@ -228,7 +228,7 @@ class Tffractional_max_poolOp(OpHasMultipleOutPorts, Tf2Op):
 class TfgeluOp(ActivationOnlyOp, Tf2Op):
     @classmethod
     def attributes(cls):
-        return {2: {'approximate': {'type': AttrType.INT, 'default': 0, 'options': [0, 1]},
+        return {2: {'approximate': {'type': AttrType.BOOL, 'default': False},
                     }}
 
     def __init__(self, graph, attr_dict=None):
@@ -236,6 +236,22 @@ class TfgeluOp(ActivationOnlyOp, Tf2Op):
         self.update_attributes(TfgeluOp, attr_dict)
         assert self.check_required(), 'TfgeluOp is missing a required parameter.'
         self.activations = 'GELU'
+
+    def __getattr__(self, item):
+        ret = None
+        try:
+            if item == 'approximate':
+                inputs = self.get_input_tensors()
+                if len(inputs) >= 2:
+                    ret = bool(inputs[1])
+                    self.__dict__['_attr'][item].value = ret
+                else:
+                    ret = self.__dict__['_attr'][item].value
+        except:
+            ret = None
+        if ret is None:
+            ret = super(TfgeluOp, self).__getattr__(item)
+        return ret
 
     def infer_shape(self):
         super(TfgeluOp, self).infer_shape()
