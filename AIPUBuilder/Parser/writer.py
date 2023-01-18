@@ -102,12 +102,12 @@ def serialize(graph, params):
                         op_obj = NodeWrap(graph, n)['object']
                         if op_obj is not None:
                             if op_obj.type not in arm_op_types and not isinstance(op_obj, PluginOp):
-                                WARN('[Parser]: Writing %s op(%s) that is not supported in serialize!' % (
+                                ERROR('[Parser]: Writing %s op(%s) that is not supported in serialize!' % (
                                     op_obj.type, op_obj.name))
                             txt_file.write('\nlayer_id=%d\n' % i)
                             op_obj.write_attrs(txt_file)
                         else:
-                            WARN(
+                            ERROR(
                                 '[Parser]: Meets invalid op for Node (%s) in serialize!' % n)
         except IOError as e:
             WARN('[Parser]: Meets IOError (%s) when writing attributes of node (%s) in serialize!' % (

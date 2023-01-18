@@ -1829,6 +1829,47 @@ class ArmFloorOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
         self.set_out_tensor(out_tensor)
 
 
+class ArmFractionalPoolOp(OpHasMethod, OpHasMultipleOutPorts, ArmOp):
+    @classmethod
+    def attributes(cls):
+        return {'method': {'options': ['AVG', 'MAX'], 'required': True},
+                'pooling_ratio': {'type': AttrType.FLOATS, 'required': True},
+                'pseudo': {'type': AttrType.BOOL, 'default': False},
+                'overlap': {'type': AttrType.BOOL, 'default': False},
+                'seed': {'type': AttrType.INT, 'default': 0}
+                }
+
+    @classmethod
+    def cast_in_ports(cls):
+        return {0: 'float32'}
+
+    def __init__(self, graph, attr_dict=None):
+        super(ArmFractionalPoolOp, self).__init__(graph, attr_dict)
+        self.update_attributes(ArmFractionalPoolOp, attr_dict)
+        assert self.check_required(), 'ArmFractionalPoolOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(ArmFractionalPoolOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tuple = tf.nn.fractional_avg_pool(
+            inputs[0],
+            self.pooling_ratio,
+            pseudo_random=self.pseudo,
+            overlapping=self.overlap,
+            seed=self.seed
+        )
+        out_tensors = [t.numpy() if i == 0 else t.numpy().astype(np.int32) for i, t in enumerate(out_tuple)]
+        self.set_out_tensor(out_tensors)
+
+    def write_attrs(self, txt_file):
+        ret = super(ArmFractionalPoolOp, self).write_attrs(txt_file)
+        if ret:
+            txt_file.write('pseudo=%s\n' % str(self.pseudo).lower())
+            txt_file.write('overlap=%s\n' % str(self.overlap).lower())
+            txt_file.write('seed=%d\n' % int(self.seed))
+        return ret
+
+
 class ArmFullyConnectedOp(BaseActivationOp, BaseLinearOp, ArmOp):
     @classmethod
     def cast_in_ports(cls):

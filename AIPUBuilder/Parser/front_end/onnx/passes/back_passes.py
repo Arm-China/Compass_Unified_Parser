@@ -4440,6 +4440,7 @@ def back_passes(graph, params):
     simple_rename(graph, 'Exp', 'ArmExp')
     simple_rename(graph, 'Filter', 'ArmFilter')
     simple_rename(graph, 'Floor', 'ArmFloor')
+    simple_rename(graph, 'FractionalPool', 'ArmFractionalPool')
     simple_rename(graph, 'FullyConnected', 'ArmFullyConnected')
     simple_rename(graph, 'Gather', 'ArmGather')
     simple_rename(graph, 'GatherND', 'ArmGatherND')

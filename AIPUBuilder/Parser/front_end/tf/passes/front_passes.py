@@ -3556,6 +3556,12 @@ def convert_to_onnx(graph):
                         floor_attr = {'name': floor_name, 'opset_version': 13}
                         NodeWrap(graph, floor_name).replace_obj(
                             'Floor', floor_attr)
+                elif pure_type in ('FractionalAvgPool', 'FractionalMaxPool'):
+                    method = 'AVG' if pure_type == 'FractionalAvgPool' else 'MAX'
+                    new_node_attr.update({'method': method,
+                                          'pseudo': node_obj.pseudo_random,
+                                          'overlap': node_obj.overlapping,
+                                          })
                 elif pure_type in ('FusedBatchNorm', 'FusedBatchNormV3'):
                     if node_obj.is_training:
                         if not FLOAT_EQUAL(node_obj.exponential_avg_factor, 1.0):

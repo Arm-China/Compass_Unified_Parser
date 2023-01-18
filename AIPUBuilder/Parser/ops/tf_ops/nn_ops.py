@@ -458,6 +458,80 @@ class TfEluOp(LayoutUnawareOp, ActivationOnlyOp, TfOp):
         return {'type': 'Elu', 'version': 6}
 
 
+class TfFractionalAvgPoolOp(OpHasMultipleOutPorts, TfOp):
+    @classmethod
+    def attributes(cls):
+        return {1: {'pooling_ratio': {'type': AttrType.FLOATS, 'required': True},
+                    'pseudo_random': {'type': AttrType.BOOL, 'default': False},
+                    'overlapping': {'type': AttrType.BOOL, 'default': False},
+                    'deterministic': {'type': AttrType.BOOL, 'default': False},
+                    'seed': {'type': AttrType.INT, 'default': 0},
+                    'seed2': {'type': AttrType.INT, 'default': 0}
+                    }
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfFractionalAvgPoolOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfFractionalAvgPoolOp, attr_dict)
+        assert self.check_required(), 'TfFractionalAvgPoolOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(TfFractionalAvgPoolOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tuple = tf.compat.v1.nn.fractional_avg_pool(
+            inputs[0],
+            self.pooling_ratio,
+            pseudo_random=self.pseudo_random,
+            overlapping=self.overlapping,
+            deterministic=self.deterministic,
+            seed=self.seed,
+            seed2=self.seed2
+        )
+        out_tensors = [t.numpy() for t in out_tuple]
+        self.set_out_tensor(out_tensors)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'FractionalPool', 'version': 1}
+
+
+class TfFractionalMaxPoolOp(OpHasMultipleOutPorts, TfOp):
+    @classmethod
+    def attributes(cls):
+        return {1: {'pooling_ratio': {'type': AttrType.FLOATS, 'required': True},
+                    'pseudo_random': {'type': AttrType.BOOL, 'default': False},
+                    'overlapping': {'type': AttrType.BOOL, 'default': False},
+                    'deterministic': {'type': AttrType.BOOL, 'default': False},
+                    'seed': {'type': AttrType.INT, 'default': 0},
+                    'seed2': {'type': AttrType.INT, 'default': 0}
+                    }
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfFractionalMaxPoolOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfFractionalMaxPoolOp, attr_dict)
+        assert self.check_required(), 'TfFractionalMaxPoolOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(TfFractionalMaxPoolOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tuple = tf.compat.v1.nn.fractional_max_pool(
+            inputs[0],
+            self.pooling_ratio,
+            pseudo_random=self.pseudo_random,
+            overlapping=self.overlapping,
+            deterministic=self.deterministic,
+            seed=self.seed,
+            seed2=self.seed2
+        )
+        out_tensors = [t.numpy() for t in out_tuple]
+        self.set_out_tensor(out_tensors)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'FractionalPool', 'version': 1}
+
+
 class TfFusedBatchNormOp(LayoutConcernedOp, OpHasVariableOutPorts, TfOp):
     @classmethod
     def attributes(cls):

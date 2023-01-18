@@ -101,6 +101,130 @@ class Tfconv2dOp(TfHasPaddingStrides, Tf2Op, OpHasWeights, OpHasOneOutPort):
         return {'type': 'Conv', 'version': 1}
 
 
+class Tffractional_avg_poolOp(OpHasMultipleOutPorts, Tf2Op):
+    @classmethod
+    def attributes(cls):
+        return {2: {'pseudo_random': {'type': AttrType.BOOL, 'default': False},
+                    'overlapping': {'type': AttrType.BOOL, 'default': False},
+                    'seed': {'type': AttrType.INT, 'default': 0}
+                    }
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(Tffractional_avg_poolOp, self).__init__(graph, attr_dict)
+        self.update_attributes(Tffractional_avg_poolOp, attr_dict)
+        assert self.check_required(), 'Tffractional_avg_poolOp is missing a required parameter.'
+
+    def __getattr__(self, item):
+        ret = None
+        try:
+            if item == 'pseudo_random':
+                inputs = self.get_input_tensors()
+                if len(inputs) >= 3:
+                    ret = bool(inputs[2])
+                    self.__dict__['_attr'][item].value = ret
+                else:
+                    ret = self.__dict__['_attr'][item].value
+            elif item == 'overlapping':
+                inputs = self.get_input_tensors()
+                if len(inputs) >= 4:
+                    ret = bool(inputs[3])
+                    self.__dict__['_attr'][item].value = ret
+                else:
+                    ret = self.__dict__['_attr'][item].value
+            elif item == 'seed':
+                inputs = self.get_input_tensors()
+                if len(inputs) >= 5:
+                    ret = int(inputs[4])
+                    self.__dict__['_attr'][item].value = ret
+                else:
+                    ret = self.__dict__['_attr'][item].value
+        except:
+            ret = None
+        if ret is None:
+            ret = super(Tffractional_avg_poolOp, self).__getattr__(item)
+        return ret
+
+    def infer_shape(self):
+        super(Tffractional_avg_poolOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tuple = tf.nn.fractional_avg_pool(
+            inputs[0],
+            inputs[1].tolist(),
+            pseudo_random=self.pseudo_random,
+            overlapping=self.overlapping,
+            seed=self.seed
+        )
+        out_tensors = [t.numpy() for t in out_tuple]
+        self.set_out_tensor(out_tensors)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'FractionalPool', 'version': 1}
+
+
+class Tffractional_max_poolOp(OpHasMultipleOutPorts, Tf2Op):
+    @classmethod
+    def attributes(cls):
+        return {2: {'pseudo_random': {'type': AttrType.BOOL, 'default': False},
+                    'overlapping': {'type': AttrType.BOOL, 'default': False},
+                    'seed': {'type': AttrType.INT, 'default': 0}
+                    }
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(Tffractional_max_poolOp, self).__init__(graph, attr_dict)
+        self.update_attributes(Tffractional_max_poolOp, attr_dict)
+        assert self.check_required(), 'Tffractional_max_poolOp is missing a required parameter.'
+
+    def __getattr__(self, item):
+        ret = None
+        try:
+            if item == 'pseudo_random':
+                inputs = self.get_input_tensors()
+                if len(inputs) >= 3:
+                    ret = bool(inputs[2])
+                    self.__dict__['_attr'][item].value = ret
+                else:
+                    ret = self.__dict__['_attr'][item].value
+            elif item == 'overlapping':
+                inputs = self.get_input_tensors()
+                if len(inputs) >= 4:
+                    ret = bool(inputs[3])
+                    self.__dict__['_attr'][item].value = ret
+                else:
+                    ret = self.__dict__['_attr'][item].value
+            elif item == 'seed':
+                inputs = self.get_input_tensors()
+                if len(inputs) >= 5:
+                    ret = int(inputs[4])
+                    self.__dict__['_attr'][item].value = ret
+                else:
+                    ret = self.__dict__['_attr'][item].value
+        except:
+            ret = None
+        if ret is None:
+            ret = super(Tffractional_max_poolOp, self).__getattr__(item)
+        return ret
+
+    def infer_shape(self):
+        super(Tffractional_max_poolOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tuple = tf.nn.fractional_max_pool(
+            inputs[0],
+            inputs[1].tolist(),
+            pseudo_random=self.pseudo_random,
+            overlapping=self.overlapping,
+            seed=self.seed
+        )
+        out_tensors = [t.numpy() for t in out_tuple]
+        self.set_out_tensor(out_tensors)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'FractionalPool', 'version': 1}
+
+
 class TfgeluOp(ActivationOnlyOp, Tf2Op):
     @classmethod
     def attributes(cls):

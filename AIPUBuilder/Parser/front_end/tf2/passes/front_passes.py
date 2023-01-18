@@ -12,7 +12,7 @@ from ....logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 def convert_to_onnx(graph):
     '''Convert the model to the onnx version.'''
-    def tensors_are_const(edges=[]):
+    def _tensors_are_const(edges=list()):
         assert isinstance(edges, list), 'Expect edges to be list but got %s in tensors_are_const' % type(edges).__name__
         assert len(edges) > 0, 'Expect at least 1 edges but got 0 in tensors_are_const'
         for edge in edges:
@@ -23,8 +23,8 @@ def convert_to_onnx(graph):
                 return False
         return True
 
-    def remove_edges_if_const(node_name, edges=[]):
-        if tensors_are_const(edges):
+    def _remove_edges_if_const(node_name, edges=list()):
+        if _tensors_are_const(edges):
             graph.remove_edges_from(edges)
         else:
             WARN('[Parser]: Meet non-const tensors of Node (%s) in remove_edges_if_const' % node_name)
@@ -64,15 +64,30 @@ def convert_to_onnx(graph):
                         {'dilations': node_obj.dilations[1:3]})
 
             if pure_type in ('argmax', 'argmin'):
-                remove_edges_if_const(node_name, in_edges[1:])
+                _remove_edges_if_const(node_name, in_edges[1:])
                 new_node_attr.update({'keepdims': 0})
             elif pure_type == 'cast':
-                remove_edges_if_const(node_name, in_edges[1:])
+                _remove_edges_if_const(node_name, in_edges[1:])
                 new_node_attr.update({'to': node_obj.dtype})
             elif pure_type in ('conv2d', 'cumsum', 'cumprod'):
-                remove_edges_if_const(node_name, in_edges[2:])
+                _remove_edges_if_const(node_name, in_edges[2:])
             elif pure_type == 'floormod':
                 new_node_attr.update({'fmod': 0})
+            elif pure_type in ('fractional_avg_pool', 'fractional_max_pool'):
+                if len(in_edges) < 5 \
+                        or any(attr['tensor'].value is None for _, _, attr in in_edges) \
+                        or any(not attr['tensor'].is_const for _, _, attr in in_edges[1:]):
+                    WARN('[Parser]: Meets invalid inputs for Node(%s) in convert_to_onnx!' % node_name)
+                    continue
+                pooling_ratio = in_edges[1][2]['tensor'].value.tolist()
+                method = 'AVG' if pure_type == 'fractional_avg_pool' else 'MAX'
+                new_node_attr.update({'method': method,
+                                      'pooling_ratio': pooling_ratio,
+                                      'pseudo': node_obj.pseudo_random,
+                                      'overlap': node_obj.overlapping,
+                                      'seed': node_obj.seed,
+                                      })
+                graph.remove_edges_from(in_edges[1:])
             elif pure_type == 'gelu':
                 approximate = 'none' if node_obj.approximate == 0 else 'tanh'
                 new_node_attr.update({'approximate': approximate})
@@ -83,9 +98,9 @@ def convert_to_onnx(graph):
             elif pure_type == 'segment_sum':
                 new_node_attr.update({'method': 'SUM'})
             elif pure_type == 'split':
-                remove_edges_if_const(node_name, in_edges[1:])
+                _remove_edges_if_const(node_name, in_edges[1:])
             elif pure_type == 'stack':
-                remove_edges_if_const(node_name, in_edges[-1:])
+                _remove_edges_if_const(node_name, in_edges[-1:])
                 new_node_attr.update({'new_axis': True})
 
             new_node_attr.update(

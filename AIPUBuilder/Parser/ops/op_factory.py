@@ -50,7 +50,7 @@ def op_factory(graph, op_type, node_attr=None):
         else:
             ret = eval(op_type + 'Op(graph, node_attr)')
     except Exception as e:
-        WARN('[Parser]: Node(%s) creating operator failed (%s)!' %
+        WARN('[Parser]: Creating operator on Node(%s) failed (%s)!' %
              (node_attr.get('name', ''), str(e)))
         node_attr.update({'type': op_type})
         ret = eval('Undefined' + 'Op(graph, node_attr)')

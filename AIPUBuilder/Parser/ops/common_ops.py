@@ -303,6 +303,35 @@ class FilterOp(OpHasMultipleOutPorts, CommonOp):
         self.set_out_tensor(out_tensors)
 
 
+class FractionalPoolOp(OpHasMethod, OpHasMultipleOutPorts, CommonOp):
+    @classmethod
+    def attributes(cls):
+        return {'method': {'options': ['AVG', 'MAX'], 'required': True},
+                'pooling_ratio': {'type': AttrType.FLOATS, 'required': True},
+                'pseudo': {'type': AttrType.BOOL, 'default': False},
+                'overlap': {'type': AttrType.BOOL, 'default': False},
+                'seed': {'type': AttrType.INT, 'default': 0}
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(FractionalPoolOp, self).__init__(graph, attr_dict)
+        self.update_attributes(FractionalPoolOp, attr_dict)
+        assert self.check_required(), 'FractionalPoolOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(FractionalPoolOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tuple = tf.nn.fractional_avg_pool(
+            inputs[0],
+            self.pooling_ratio,
+            pseudo_random=self.pseudo,
+            overlapping=self.overlap,
+            seed=self.seed
+        )
+        out_tensors = [t.numpy() if i == 0 else t.numpy().astype(np.int32) for i, t in enumerate(out_tuple)]
+        self.set_out_tensor(out_tensors)
+
+
 class FullyConnectedOp(BaseLinearOp, CommonOp):
     @classmethod
     def attributes(cls):
@@ -333,7 +362,7 @@ class FullyConnectedOp(BaseLinearOp, CommonOp):
 class GeluOp(BaseActivationOp, CommonOp):
     @classmethod
     def attributes(cls):
-        return {'approximate': {'type': AttrType.STRINGS, 'default': 'none', 'options': ['none', 'tanh']},
+        return {'approximate': {'type': AttrType.STRING, 'default': 'none', 'options': ['none', 'tanh']},
                 }
 
     def __init__(self, graph, attr_dict=None):
@@ -752,27 +781,27 @@ class RollOp(OpHasAxis, OpHasOneOutPort, CommonOp):
     @staticmethod
     def cal_roll_parm(axis_value, roll_shift, roll_shape):
         if axis_value < 0:
-            axis_value = len(roll_shape)+axis_value
+            axis_value = len(roll_shape) + axis_value
 
         if abs(roll_shift) > roll_shape[axis_value]:
             roll_shift = roll_shift % roll_shape[axis_value]
 
-        roll_shift = roll_shape[axis_value]+roll_shift
-        slice_num = roll_shape[axis_value]-roll_shift
+        roll_shift = roll_shape[axis_value] + roll_shift
+        slice_num = roll_shape[axis_value] - roll_shift
 
-        start1 = np.zeros((axis_value+1)).astype(np.int32).tolist()
+        start1 = np.zeros((axis_value + 1)).astype(np.int32).tolist()
         start1[-1] = slice_num
         end1 = np.array([roll_shape[i]
-                        for i in range(0, axis_value+1)]).tolist()
-        steps1 = np.ones((axis_value+1)).astype(np.int32).tolist()
-        axes1 = np.arange(axis_value+1).astype(np.int32).tolist()
+                        for i in range(0, axis_value + 1)]).tolist()
+        steps1 = np.ones((axis_value + 1)).astype(np.int32).tolist()
+        axes1 = np.arange(axis_value + 1).astype(np.int32).tolist()
 
-        start2 = np.zeros((axis_value+1)).astype(np.int32).tolist()
+        start2 = np.zeros((axis_value + 1)).astype(np.int32).tolist()
         end2 = np.array([roll_shape[i]
-                        for i in range(0, axis_value+1)]).tolist()
+                        for i in range(0, axis_value + 1)]).tolist()
         end2[-1] = slice_num
-        steps2 = np.ones((axis_value+1)).astype(np.int32).tolist()
-        axes2 = np.arange(axis_value+1).astype(np.int32).tolist()
+        steps2 = np.ones((axis_value + 1)).astype(np.int32).tolist()
+        axes2 = np.arange(axis_value + 1).astype(np.int32).tolist()
 
         return roll_shift, start1, end1, steps1, axes1, start2, end2, steps2, axes2
 

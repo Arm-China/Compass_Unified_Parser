@@ -184,8 +184,11 @@ class Op(abc.ABC):
             ret = None
             if self.__dict__['_attr'].get(item, None) is not None:
                 ret = self.__dict__['_attr'][item].value
-                if item in ('quantize',):
+                if self.__dict__['_attr'][item].type.name == 'BOOL':
                     ret = bool(ret)
+                else:
+                    if item in ('quantize',):
+                        ret = bool(ret)
             elif self.cur_version in type(self).attributes() \
                     and 'default' in type(self).attributes()[self.cur_version]:
                 ret = type(self).attributes()[self.cur_version]['default']

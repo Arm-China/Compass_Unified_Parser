@@ -159,18 +159,7 @@ class AttrType(Enum):
     GRAPHS = 10
     SPARSE_TENSOR = 11
     SPARSE_TENSORS = 12
-
-    @staticmethod
-    def type_map(type_str):
-        map = {
-            'UNDEFINED': None,
-            'FLOAT': float,
-            'INT': int,
-            'STRING': str,
-            'FLOATS': np.float32,
-            'INTS': np.int64,
-        }
-        return map.get(type_str, None)
+    BOOL = 13
 
 
 class Attribute(object):
@@ -183,6 +172,8 @@ class Attribute(object):
                 setattr(self, k, key)
             else:
                 setattr(self, k, params.get(k, copy.deepcopy(v)))
+        if 'type' in params and params['type'].name == 'BOOL':
+            setattr(self, 'options', [True, 1, False, 0])
         default_value = getattr(self, 'default', None)
         if getattr(self, 'value', None) is None and default_value is not None:
             setattr(self, 'value', default_value)
