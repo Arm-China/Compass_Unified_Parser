@@ -488,15 +488,10 @@ class Graph(object):
         keys = list(self.nodes._nodes.keys())
         ret = "digraph \"%s\" {\nnode [shape=record];\n" % self._attr["name"]
 
-        available_colors = ["chartreuse", "beige",
-                            "gold", "greenyellow", "purple"]
-
         for i, (n_name, n) in enumerate(self.nodes._nodes.items()):
             id_s = str(i)
-            color = "white"
             label = "node_%d [style=\"filled\",color=\"black\",fillcolor=\"%s\",label=\"{%s %s|%s" % (
-                keys.index(n_name), color, id_s, n_name, n.op)
-
+                keys.index(n_name), "white", id_s, n_name, n.op)
             in_tensor = [str(a["tensor"].shape)
                          for _, _, a in self.sorted_in_edges(n_name, data=True)]
             out_tensor = [str(a["tensor"].shape)
@@ -505,16 +500,6 @@ class Graph(object):
             if len(in_tensor):
                 label += "%s \-\> " % (",".join(in_tensor))
             label += ",".join(out_tensor)
-            label += '|'
-
-            for name, successors in self._adj_dict.items():
-                for s in successors:
-                    if s == n_name:
-                        in_port = successors[s][0]._attr['dst_in_port']
-                        out_port = successors[s][0]._attr['src_out_port']
-                        label += "dst_in: %s " % (out_port)
-                        label += "src_out: %s, " % (in_port)
-
             label_end = "}\" ];\n"
             label += "%s" + label_end
             comment = ""
@@ -524,8 +509,15 @@ class Graph(object):
             p_id = keys.index(name)
             for s in successors:
                 if s in keys:
-                    ret += "node_%d -> {node_%d};\n" % (
+                    label = "node_%d -> {node_%d} [style=\"filled\",color=\"black\",label=\"" % (
                         p_id, keys.index(s))
+                    in_port = successors[s][0]._attr['dst_in_port']
+                    out_port = successors[s][0]._attr['src_out_port']
+                    label += "%s \n\n" % (out_port)
+                    label += "%s " % (in_port)
+                    label_end = "\"];"
+                    label += label_end
+                    ret += label
         ret += "};"
         return ret
 
