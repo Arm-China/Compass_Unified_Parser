@@ -65,6 +65,43 @@ class TfconstantOp(OpHasOneOutPort, ConstLikeOp, Tf2Op):
         return {'type': 'Constant', 'version': 9}
 
 
+class Tfexpand_dimsOp(OpHasOneOutPort, Tf2Op):
+    @classmethod
+    def attributes(cls):
+        return {2: {'axis': {'type': AttrType.INT, 'default': 0}
+                    }
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(Tfexpand_dimsOp, self).__init__(graph, attr_dict)
+        self.update_attributes(Tfexpand_dimsOp, attr_dict)
+        assert self.check_required(), 'Tfexpand_dimsOp is missing a required parameter.'
+
+    def __getattr__(self, item):
+        ret = None
+        try:
+            if item == 'axis':
+                inputs = self.get_input_tensors()
+                if len(inputs) >= 2:
+                    ret = int(np.array(inputs[1]))
+                    self.__dict__['_attr'][item].value = ret
+        except:
+            ret = None
+        if ret is None:
+            ret = super(Tfexpand_dimsOp, self).__getattr__(item)
+        return ret
+
+    def infer_shape(self):
+        super(Tfexpand_dimsOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = tf.expand_dims(inputs[0], axis=self.axis).numpy()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'Reshape', 'version': 5}
+
+
 class TfsplitOp(OpHasAxis, OpHasMultipleOutPorts, Tf2Op):
     @classmethod
     def attributes(cls):

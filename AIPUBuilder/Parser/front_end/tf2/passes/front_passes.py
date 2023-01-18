@@ -6,6 +6,7 @@ import re
 from ....ops.op import *
 from ....graph.node_wrap import NodeWrap
 from ....graph.pattern_match import single_node_matcher
+from ...onnx.passes.common_passes import insert_constant
 from ....common.utils import extend_lists
 from ....logger import INFO, DEBUG, WARN, ERROR, FATAL
 
@@ -71,6 +72,24 @@ def convert_to_onnx(graph):
                 new_node_attr.update({'to': node_obj.dtype})
             elif pure_type in ('conv2d', 'cumsum', 'cumprod'):
                 _remove_edges_if_const(node_name, in_edges[2:])
+            elif pure_type == 'expand_dims':
+                if len(in_edges) >= 2 \
+                        and len(node_obj.get_input_tensors()) >= 2 \
+                        and node_obj.get_input_tensors()[0] is not None:
+                    axis = node_obj.axis
+                    out_tensor = np.expand_dims(
+                        node_obj.get_input_tensors()[0], axis)
+                    graph.remove_edges_from(in_edges[1:])
+                    insert_constant(graph,
+                                    node_name + '_shape',
+                                    np.array(out_tensor.shape, np.int32),
+                                    node_name,
+                                    in_port=1,
+                                    data_format='NHWC')
+                else:
+                    WARN(
+                        '[Parser]: Invalid TF2 expand_dims Node(%s) to convert to Onnx!' % node_name)
+                    continue
             elif pure_type == 'floormod':
                 new_node_attr.update({'fmod': 0})
             elif pure_type in ('fractional_avg_pool', 'fractional_max_pool'):
