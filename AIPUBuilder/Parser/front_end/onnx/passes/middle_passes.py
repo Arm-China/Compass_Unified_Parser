@@ -436,7 +436,7 @@ def convert_nms(graph):
                 class_num = score_shape[1]
                 max_output_boxes_per_class = nms_obj.max_output_boxes_per_class
                 if class_num > 1 or onnx_batch > 1:
-                    WARN(
+                    ERROR(
                         '[Parser]: Parser can not support multi_batch & multi_class NMS now.')
                     continue
                 per_class_boxes_num = box_num * np.ones(
