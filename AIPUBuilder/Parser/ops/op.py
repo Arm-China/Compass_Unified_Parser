@@ -2885,7 +2885,7 @@ class KerasPoolingOp(TfHasPaddingStrides, OpHasOneOutPort, KerasOp):
 
     @classmethod
     def attributes(cls):
-        return {'pool_size': {'required': False, 'default': None},
+        return {'pool_size': {'type': AttrType.INTS, 'required': False, 'default': None},
                 }
 
     def __init__(self, graph, attr_dict=None):
@@ -2896,11 +2896,11 @@ class KerasPoolingOp(TfHasPaddingStrides, OpHasOneOutPort, KerasOp):
         pool_length = 3 if '3D' in op_type_name else (2 if '2D' in op_type_name else 1)
         # Update kernel_shape and strides
         if self.pool_size is None:
-            self.pool_size = 2 if pool_length == 3 else [2] * (pool_length - 2)
-        elif isinstance(self.pool_size, int) and pool_length > 3:
-            self.pool_size = [self.pool_size] * (pool_length - 2)
+            self.pool_size = [2] * pool_length
+        elif isinstance(self.pool_size, int) and pool_length >= 1:
+            self.pool_size = [self.pool_size] * pool_length
         elif isinstance(self.pool_size, tuple):
-            self.pool_size = list(self.pool_size[:])
+            self.pool_size = list(self.pool_size)
         self.kernel_shape = list(self.pool_size)
         if not self.strides:
             self.strides = self.kernel_shape
