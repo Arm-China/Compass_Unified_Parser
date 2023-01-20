@@ -7,7 +7,7 @@ from ....ops.op import *
 from ....graph.node_wrap import NodeWrap
 from ....graph.pattern_match import single_node_matcher
 from ....graph.graph_algo import get_valid_node_name, clear_redundant_nodes
-from ...onnx.passes.common_passes import insert_constant, insert_reshape
+from ...onnx.passes.common_passes import insert_constant, insert_reshape, insert_reshape_after
 from ....common.utils import extend_lists
 from ....logger import INFO, DEBUG, WARN, ERROR, FATAL
 
@@ -241,6 +241,16 @@ def convert_to_onnx(graph):
                 _remove_edges_if_const(node_name, in_edges[-2:])
             elif pure_type in ('conv2d', 'cumsum', 'cumprod', 'gather', 'gather_nd'):
                 _remove_edges_if_const(node_name, in_edges[2:])
+            elif pure_type == 'convert_to_tensor':
+                inputs = node_obj.get_input_tensors()
+                dtype = inputs[0].dtype
+                if node_obj.dtype is not None:
+                    dtype = node_obj.dtype
+                elif node_obj.dtype_hint is not None:
+                    dtype = node_obj.dtype_hint
+                if np.dtype(dtype) != inputs[0].dtype:
+                    new_node_attr.update({'to': to_type})
+                _remove_edges_if_const(node_name, in_edges[1:])
             elif pure_type == 'expand_dims':
                 if len(in_edges) >= 2 \
                         and len(node_obj.get_input_tensors()) >= 2 \
@@ -266,7 +276,8 @@ def convert_to_onnx(graph):
                 if len(in_edges) < 5 \
                         or any(attr['tensor'].value is None for _, _, attr in in_edges) \
                         or any(not attr['tensor'].is_const for _, _, attr in in_edges[1:]):
-                    WARN('[Parser]: Meets invalid inputs for Node(%s) in convert_to_onnx!' % node_name)
+                    WARN(
+                        '[Parser]: Meets invalid inputs for Node(%s) in convert_to_onnx!' % node_name)
                     continue
                 pooling_ratio = in_edges[1][2]['tensor'].value.tolist()
                 method = 'AVG' if pure_type == 'fractional_avg_pool' else 'MAX'
@@ -299,10 +310,6 @@ def convert_to_onnx(graph):
                 graph.remove_edges_from(in_edges[-1:])
             elif pure_type in ('log_softmax', 'split'):
                 _remove_edges_if_const(node_name, in_edges[1:])
-            elif pure_type == 'one_hot':
-                _remove_edges_if_const(node_name, in_edges[2:])
-                values = np.array([node_obj.off_value, node_obj.on_value])
-                insert_constant(graph, node_name + '_values', values, node_name, in_port=2)
             elif pure_type == 'right_shift':
                 new_node_attr.update({'direction': 'RIGHT'})
                 graph.remove_edges_from(in_edges[-1:])

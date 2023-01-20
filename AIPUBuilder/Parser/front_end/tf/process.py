@@ -12,7 +12,7 @@ from .passes.front_passes import merge_gru, merge_gru2, merge_lstm, merge_zero_f
     convert_to_onnx, split_b2s, split_s2b, split_special_floormod, \
     convert_resize_bilinear_nearest, remove_identity_n, convert_conv_backpropinput, \
     convert_special_fakequantminmaxvars, convert_maxpoolwithargmax, convert_nms, convert_fusebatchnormv3, \
-    convert_matmul, convert_invert_permutation, convert_reverse, convert_depth_to_space, \
+    convert_matmul, convert_invert_permutation, convert_reverse, convert_depth_to_space, convert_onehot, \
     remove_isfinite_select, merge_fasterrcnn, merge_keras_maskrcnn, merge_lstm2, \
     merge_embedding_lookup_sparse, merge_embedding_lookup_sparse_with_weights
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
@@ -64,6 +64,7 @@ def process_tf(model_path, params):
         convert_strided_slice(graph, 'TfStridedSlice')
         convert_square(graph, op_type='TfSquare')
         convert_square_diff(graph, op_type='TfSquaredDifference')
+        # convert_onehot(graph, op_type='TfOneHot')
 
         remove_switch(graph)
         remove_merge(graph)

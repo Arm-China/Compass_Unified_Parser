@@ -819,7 +819,7 @@ class OpHasAxis(Op):
         super(OpHasAxis, self).infer_shape()
         if len(self.get_input_shapes()) >= 1 and self.get_input_shapes()[0]:
             need_extend = False
-            if self.type in ('OneHot', 'TfOneHot', 'ConcatFromSequence', 'TfPack'):
+            if self.type in ('OneHot', 'TfOneHot', 'ConcatFromSequence', 'TfPack', 'Tfone_hot'):
                 if self.type == 'ConcatFromSequence' and not self.new_axis:
                     need_extend = False
                 else:

@@ -478,6 +478,64 @@ def convert_resize_bilinear_nearest(graph):
                 '[Parser]: Meets invalid Op (%s) in convert_resize_bilinear_nearest!' % resize_bili_near)
 
 
+def convert_onehot(graph, op_type='Tfone_hot'):
+    # need support Tf1/Tflite onehot
+    if op_type not in ('Tfone_hot',):
+        WARN('[Parser]: Meets invalid Op type (%s) in convert_onehot!' % op_type)
+        return
+    matches = single_node_matcher(graph, op_type)
+    for m in matches:
+        onehot = m['target']
+        onehot_obj = NodeWrap(graph, onehot)['object']
+        in_edges = graph.sorted_in_edges(onehot, data=True)
+        if onehot_obj is None or len(in_edges) < 4:
+            WARN(
+                '[Parser]: Meets invalid Node(%s) in convert_onehot!' % argmaxpool)
+            continue
+        if not in_edges[2][2]['tensor'].is_const \
+                or not in_edges[3][2]['tensor'].is_const:
+            continue
+
+        if len(onehot_obj.get_input_shapes()) < 1 \
+                or len(onehot_obj.get_output_shapes()) < 1 \
+                or len(onehot_obj.get_input_tensors()) < 1:
+            WARN(
+                '[Parser]: Meets invaild Node for Onehot Op(%s)' % onehot)
+            continue
+
+        # about onehot with scalar
+        indices = onehot_obj.get_input_tensors()[0]
+        indices_shape = onehot_obj.get_input_shapes()[0]
+        out_shapes_0 = onehot_obj.get_output_shapes()[0]
+        if np.isscalar(indices) and (any(d is None for d in indices_shape)
+                                     or any(d is None for d in out_shapes_0)):
+            WARN(
+                '[Parser]: Meets invalid Node for Onehot Op(%s)' % onehot)
+            continue
+
+        graph.remove_edges_from(in_edges[2:])
+        values = np.array([onehot_obj.off_value, onehot_obj.on_value])
+        insert_constant(graph, onehot + '_values',
+                        values, onehot, in_port=2)
+
+        if np.isscalar(indices):
+            in_edges = graph.sorted_in_edges(
+                onehot, keys=True, data=True)
+            src, _, k, in_attr = in_edges[0]
+            pre_reshape_dim = [1] + indices_shape
+            insert_reshape(graph, src, onehot,
+                           in_attr, pre_reshape_dim, key=k)
+            post_reshape = insert_reshape_after(
+                graph, onehot, out_shapes_0)
+            if onehot in graph._attr['output_names']:
+                index = graph._attr['output_names'].index(onehot)
+                graph._attr['output_names'][index] = post_reshape
+
+        new_node_attr = onehot_obj.copied_attr()
+        new_node_attr.update({'opset_version': 11})
+        NodeWrap(graph, onehot).replace_obj('OneHot', new_node_attr)
+
+
 def convert_reverse(graph, op_type='TfReverseV2'):
     if op_type not in ('TfReverseV2', 'LiteREVERSE_V2'):
         WARN('[Parser]: Meets invalid Op type (%s) in convert_reverse!' % op_type)

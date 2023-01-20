@@ -22,19 +22,20 @@ def create_one_hot_model(model_path, x_size, axis):
 
 
 TEST_NAME = 'one_hot'
-input_shape = [3, 4, 5]
+input_shapes = [[3], [3, 4, 5]]
 
 # Generate input data
-feed_dict = {}
-feed_dict['X:0'] = np.random.randint(-1, 6, input_shape).astype(np.int32)
-
 for axis in (0, -1):
-    model_path = '-'.join([TEST_NAME, str(axis)]) + '.h5'
-    # Create model
-    create_one_hot_model(
-        model_path, input_shape, axis)
+    for input_shape in input_shapes:
+        feed_dict = {}
+        feed_dict['X:0'] = np.random.randint(-1, 6, input_shape).astype(np.int32)
 
-    # Run tests with parser and compare result with runtime
-    exit_status = run_parser(
-        model_path, feed_dict, model_type='tf', verify=True)
-    assert exit_status
+        model_path = '-'.join([TEST_NAME, str(axis)]) + '.h5'
+        # Create model
+        create_one_hot_model(
+            model_path, input_shape, axis)
+
+        # Run tests with parser and compare result with runtime
+        exit_status = run_parser(
+            model_path, feed_dict, model_type='tf', verify=True)
+        assert exit_status

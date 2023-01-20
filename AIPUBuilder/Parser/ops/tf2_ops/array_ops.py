@@ -56,6 +56,45 @@ class TfconcatOp(OpHasAxis, OpHasOneOutPort, Tf2Op):
         return {'type': 'Concat', 'version': 4}
 
 
+class Tfconvert_to_tensorOp(OpHasOneOutPort, Tf2Op):
+    @classmethod
+    def attributes(cls):
+        return {2: {'dtype': {'default': None},
+                    'dtype_hint': {'type': AttrType.STRING, 'default': None},
+                    },
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(Tfconvert_to_tensorOp, self).__init__(graph, attr_dict)
+        self.update_attributes(Tfconvert_to_tensorOp, attr_dict)
+        assert self.check_required(), 'Tfconvert_to_tensorOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(Tfconvert_to_tensorOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        dtype = np.dtype(
+            self.dtype) if self.dtype is not None else inputs[0].dtype
+        dtype_hint = np.dtype(
+            self.dtype_hint) if self.dtype_hint is not None else inputs[0].dtype
+        out_tensor = tf.convert_to_tensor(
+            value=inputs[0], dtype=dtype, dtype_hint=dtype_hint).numpy()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        inputs = self.get_input_tensors()
+        dtype = inputs[0].dtype
+        if self.dtype is not None:
+            dtype = self.dtype
+        elif self.dtype_hint is not None:
+            dtype = self.dtype_hint
+
+        if np.dtype(dtype) == inputs[0].dtype:
+            return {'type': 'Identity', 'version': 13}
+        else:
+            return {'type': 'Cast', 'version': 1}
+
+
 class TfconstantOp(OpHasOneOutPort, ConstLikeOp, Tf2Op):
     @classmethod
     def attributes(cls):
@@ -123,7 +162,7 @@ class TffillOp(TfFillOp, Tf2Op):
 class TfgatherOp(TfGatherV2Op, Tf2Op):
     @classmethod
     def attributes(cls):
-        return {1: {'axis': {'default': None},
+        return {2: {'axis': {'default': None},
                     'batch_dims': {'type': AttrType.INT, 'default': 0}
                     }
                 }
@@ -157,7 +196,7 @@ class TfgatherOp(TfGatherV2Op, Tf2Op):
 class Tfgather_ndOp(OpHasOneOutPort, Tf2Op):
     @classmethod
     def attributes(cls):
-        return {1: {'batch_dims': {'type': AttrType.INT, 'default': 0}}}
+        return {2: {'batch_dims': {'type': AttrType.INT, 'default': 0}}}
 
     def __init__(self, graph, attr_dict=None):
         super(Tfgather_ndOp, self).__init__(graph, attr_dict)
@@ -241,10 +280,6 @@ class Tfone_hotOp(OpHasAxis, OpHasOneOutPort, Tf2Op):
                                 off_value=self.off_value,
                                 axis=self.axis).numpy()
         self.set_out_tensor(out_tensor)
-
-    @property
-    def correspond_onnx_op(self):
-        return {'type': 'OneHot', 'version': 11}
 
 
 class TfsplitOp(OpHasAxis, OpHasMultipleOutPorts, Tf2Op):
