@@ -101,6 +101,40 @@ class Tfconv2dOp(TfHasPaddingStrides, Tf2Op, OpHasWeights, OpHasOneOutPort):
         return {'type': 'Conv', 'version': 1}
 
 
+class TfcreluOp(OpHasAxis, OpHasOneOutPort, Tf2Op):
+    @classmethod
+    def attributes(cls):
+        return {1: {'axis': {'default': -1}}
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfcreluOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfcreluOp, attr_dict)
+        assert self.check_required(), 'TfcreluOp is missing a required parameter.'
+
+    def __getattr__(self, item):
+        ret = None
+        try:
+            if item == 'axis':
+                inputs = self.get_input_tensors()
+                if len(inputs) >= 3:
+                    ret = int(inputs[2])
+                    self.__dict__['_attr'][item].value = ret
+                else:
+                    ret = self.__dict__['_attr'][item].value
+        except:
+            ret = None
+        if ret is None:
+            ret = super(TfcreluOp, self).__getattr__(item)
+        return ret
+
+    def infer_shape(self):
+        super(TfcreluOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = tf.nn.crelu(inputs[0], axis=self.axis).numpy()
+        self.set_out_tensor(out_tensor)
+
+
 class Tfdepth_to_spaceOp(LayoutConcernedOp, OpHasOneOutPort, Tf2Op):
     def infer_shape(self):
         super(Tfdepth_to_spaceOp, self).infer_shape()

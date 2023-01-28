@@ -6,9 +6,50 @@ import re
 from ....ops.op import *
 from ....graph.node_wrap import NodeWrap
 from ....graph.pattern_match import single_node_matcher
-from ...onnx.passes.common_passes import insert_constant, clear_redundant_nodes
+from ....graph.graph_algo import get_valid_node_name, clear_redundant_nodes
+from ...onnx.passes.common_passes import insert_constant
 from ....common.utils import extend_lists
 from ....logger import INFO, DEBUG, WARN, ERROR, FATAL
+
+
+def convert_crelu(graph):
+    '''Convert Tfcrelu to neg+concat+relu as y = crelu(x, axis) = relu(concat([x, -x], axis)).
+    '''
+    matched = False
+    matches = single_node_matcher(graph, 'Tfcrelu')
+    for m in matches:
+        crelu = m['target']
+        crelu_obj = NodeWrap(graph, crelu)['object']
+        crelu_in_edges = graph.sorted_in_edges(crelu, data=True)
+        if crelu_obj is None or len(crelu_in_edges) < 1:
+            WARN(
+                '[Parser]: Meets invalid Tfcrelu Op (%s) in convert_crelu!' % crelu)
+            continue
+        matched = True
+        crelu_axis = crelu_obj.axis
+        neg = get_valid_node_name(graph, crelu + '_neg')
+        concat = get_valid_node_name(graph, crelu + '_concat')
+        graph.remove_edges_from(crelu_in_edges)
+        src, _, in_attr = crelu_in_edges[0]
+        graph.add_edge(src, neg, **in_attr)
+        graph.add_edge(src, concat, **in_attr)
+        neg_out_attr = copy.deepcopy(in_attr)
+        concat_out_attr = copy.deepcopy(in_attr)
+        if in_attr['tensor'] is not None and in_attr['tensor'].value is not None:
+            neg_out_attr['tensor'].value = -1 * in_attr['tensor'].value
+            concat_out_attr['tensor'].value = np.concatenate(
+                [in_attr['tensor'].value, neg_out_attr['tensor'].value], axis=crelu_axis)
+        neg_out_attr.update({'src_out_port': 0, 'dst_in_port': 1})
+        graph.add_edge(neg, concat, **neg_out_attr)
+        concat_out_attr.update({'src_out_port': 0, 'dst_in_port': 0})
+        graph.add_edge(concat, crelu, **concat_out_attr)
+        NodeWrap(graph, neg).replace_obj('Neg', {'name': neg, 'opset_version': 13})
+        NodeWrap(graph, concat).replace_obj('Concat', {'name': concat, 'axis': crelu_axis, 'opset_version': 13})
+        relu_attr = crelu_obj.copied_attr()
+        relu_attr.update({'opset_version': 13})
+        NodeWrap(graph, crelu).replace_obj('Relu', relu_attr)
+    if matched:
+        clear_redundant_nodes(graph)
 
 
 def convert_to_onnx(graph):
