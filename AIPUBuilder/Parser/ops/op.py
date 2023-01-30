@@ -485,8 +485,8 @@ class Op(abc.ABC):
                               OrderedDict()]
             else:
                 tensor_shape = []
-                WARN('[Parser]: An exception occurred with get_outputs_info. Got invalid output shape for Node(%s)!' %
-                     self.name)
+                ERROR('[Parser]: An exception occurred with get_outputs_info. Got invalid output shape for Node(%s)!' %
+                      self.name)
                 info_value = [re.sub(r' ', '', str(tensor_shape)), '', OrderedDict()]
             if len(d['tensor'].min_max) == 2:
                 min_max_str = '[%f,%f]' % (float(d['tensor'].min_max[0]), float(d['tensor'].min_max[1]))

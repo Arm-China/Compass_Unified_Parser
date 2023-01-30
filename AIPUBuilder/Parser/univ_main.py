@@ -139,43 +139,43 @@ def univ_parser(params):
                 try:
                     preprocess(graph, params)
                 except Exception as e:
-                    WARN(
+                    ERROR(
                         '[Parser]: Meets exception in insert preprocess (%s)!' % str(e))
 
                 try:
                     convert_onnx_version(graph)
                 except Exception as e:
-                    WARN(
+                    ERROR(
                         '[Parser]: Meets exception in convert_onnx_version (%s)!' % str(e))
 
                 try:
                     middle_passes(graph, params)
                 except Exception as e:
-                    WARN('[Parser]: Meets exception in middle_passes (%s)!' % str(e))
+                    ERROR('[Parser]: Meets exception in middle_passes (%s)!' % str(e))
 
                 infer(graph)
 
                 try:
                     transform_to_nhwc(graph, params)
                 except Exception as e:
-                    WARN(
+                    ERROR(
                         '[Parser]: Meets exception in transform_to_nhwc (%s)!' % str(e))
 
                 try:
                     back_passes(graph, params)
                 except Exception as e:
-                    WARN('[Parser]: Meets exception in back_passes (%s)!' % str(e))
+                    ERROR('[Parser]: Meets exception in back_passes (%s)!' % str(e))
 
                 try:
                     gamut_preprocess(graph, params)
                 except Exception as e:
-                    WARN(
+                    ERROR(
                         '[Parser]: Meets exception in insert gamut preprocess (%s)!' % str(e))
 
                 try:
                     special_character_conversion(graph, params)
                 except Exception as e:
-                    WARN(
+                    ERROR(
                         '[Parser]: Meets exception in insert special character conversion (%s)!' % str(e))
 
                 try:
@@ -194,7 +194,7 @@ def univ_parser(params):
                 WARN('[Parser]: Got invalid or empty graph from model!')
                 ret = True
         else:
-            FATAL('[Parser]: Meets invalid model file or invalid output directory!')
+            ERROR('[Parser]: Meets invalid model file or invalid output directory!')
             ret = False
     else:
         ERROR('[Parser]: Meets invalid parameters for universal parser!')
@@ -238,7 +238,7 @@ def main():
             if 'model_type' in common:
                 model_type = common['model_type']
                 if model_type.upper() not in ('ONNX', 'TFLITE', 'CAFFE', 'TENSORFLOW', 'TF', 'TORCH'):
-                    WARN('Unsupport model type!')
+                    ERROR('Unsupport model type!')
                     return -1
 
             model_type = model_type.lower()
@@ -255,11 +255,11 @@ def main():
 
             if get_error_count() > 0:
                 exit_code = -1
-                WARN('Parser Failed!')
+                ERROR('Parser Failed!')
             else:
                 INFO('Parser done!')
         else:
             exit_code = -1
-            WARN('Common section is required in config file.')
+            ERROR('Common section is required in config file.')
 
     return exit_code

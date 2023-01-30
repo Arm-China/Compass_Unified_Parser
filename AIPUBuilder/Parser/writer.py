@@ -110,11 +110,11 @@ def serialize(graph, params):
                             ERROR(
                                 '[Parser]: Meets invalid op for Node (%s) in serialize!' % n)
         except IOError as e:
-            WARN('[Parser]: Meets IOError (%s) when writing attributes of node (%s) in serialize!' % (
+            ERROR('[Parser]: Meets IOError (%s) when writing attributes of node (%s) in serialize!' % (
                 str(e), writing_node))
             ret = False
         except Exception as e:
-            WARN('[Parser]: Meets Exception (%s) when writing attributes of node (%s) in serialize!' % (
+            ERROR('[Parser]: Meets Exception (%s) when writing attributes of node (%s) in serialize!' % (
                 str(e), writing_node))
             ret = False
 
@@ -143,18 +143,18 @@ def serialize(graph, params):
                                     ret = False
                                     break
                         else:
-                            WARN(
+                            ERROR(
                                 '[Parser]: Meets invalid op for Node (%s) in serialize!' % n)
             except IOError as e:
-                WARN('[Parser]: Meets IOError (%s) when writing binary data of node (%s) in serialize!' % (
+                ERROR('[Parser]: Meets IOError (%s) when writing binary data of node (%s) in serialize!' % (
                     str(e), writing_node))
                 ret = False
             except Exception as e:
-                WARN('[Parser]: Meets Exception (%s) when writing binary data of node (%s) in serialize!' % (
+                ERROR('[Parser]: Meets Exception (%s) when writing binary data of node (%s) in serialize!' % (
                     str(e), writing_node))
                 ret = False
 
     else:
-        WARN('[Parser]: Meets invalid output dir in serialize!')
+        ERROR('[Parser]: Meets invalid output dir in serialize!')
         ret = False
     return ret
