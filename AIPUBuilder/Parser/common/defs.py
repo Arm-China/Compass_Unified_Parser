@@ -163,7 +163,7 @@ class AttrType(Enum):
 
 
 class Attribute(object):
-    DEFAULTS = {'key': None, 'type': None, 'value': None,
+    DEFAULTS = {'key': None, 'type': AttrType.UNDEFINED, 'value': None,
                 'options': [], 'default': None, 'required': False}
 
     def __init__(self, key, params):

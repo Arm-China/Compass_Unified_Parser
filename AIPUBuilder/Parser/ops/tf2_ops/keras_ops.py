@@ -158,6 +158,10 @@ class TfKerasBidirectionalOp(OpHasVariableOutPorts, KerasOp):
         if direction not in ('forward', 'backward'):
             WARN('Unsupported direction %s in TfKerasBidirectionalOp (%s)!' % (str(direction), self.name))
             return ret
+        if not isinstance(self.layer, dict):
+            WARN('Expect type of layer is dict but got %s in TfKerasBidirectionalOp (%s)!' %
+                 (type(self.layer).__name__, self.name))
+            return ret
         layer_type = self.layer.get('class_name', None)
         layer_config = self.layer.get('config', {})
         go_backwards = layer_config.get('go_backwards', False)
