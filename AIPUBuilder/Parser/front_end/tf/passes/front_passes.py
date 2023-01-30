@@ -105,7 +105,7 @@ def convert_depth_to_space(graph, op_type='TfDepthToSpace'):
         if d2s_obj is None or len(in_edges) < 1:
             WARN('[Parser]: Meets invalid Op (%s) in convert_depth_to_space!' % d2s)
             continue
-        if d2s_obj.type == 'Tfdepth_to_space' and len(d2s_obj.sorted_in_consts()) != 2:
+        if d2s_obj.type == 'Tfdepth_to_space' and len(d2s_obj.sorted_in_consts()) < 2:
             WARN('[Parser]: Meets non-constant block_size or data_format in Tfdepth_to_space Op (%s) in convert_depth_to_space!' % d2s)
             continue
         block_size = d2s_obj.block_size
@@ -914,18 +914,18 @@ def split_b2s(graph, op_type='TfBatchToSpaceND'):
             continue
         in_edges = graph.sorted_in_edges(b2s, data=True)
         out_edges = graph.sorted_out_edges(b2s, data=True)
-        if len(in_edges) != 3 or len(out_edges) < 1:
+        if len(in_edges) < 3 or len(out_edges) < 1:
             continue
         input_shapes = b2s_obj.get_input_shapes()
         in_consts = b2s_obj.sorted_in_consts()
-        if len(input_shapes) == 3 \
+        if len(input_shapes) >= 3 \
                 and input_shapes[0] is not None \
                 and len(input_shapes[0]) in (3, 4) \
                 and all(s is not None for s in input_shapes[0]) \
-                and len(in_consts) == 2 \
-                and [c[1] for c in in_consts] == [1, 2]:
+                and len(in_consts) >= 2 \
+                and [c[1] for c in in_consts[:2]] == [1, 2]:
             in_shape = input_shapes[0]
-            block_shape, crops = [c[2] for c in in_consts]
+            block_shape, crops = [c[2] for c in in_consts[:2]]
             is_4d = len(in_shape) == 4
             need_slice = np.any(crops != 0)
             spatial_in_shape = in_shape[1:-1]

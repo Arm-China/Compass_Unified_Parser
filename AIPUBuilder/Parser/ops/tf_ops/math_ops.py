@@ -134,7 +134,7 @@ class TfAsinOp(LayoutUnawareOp, OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfAsinOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = np.arcsin(*inputs)
+        out_tensor = np.arcsin(inputs[0])
         self.set_out_tensor(out_tensor)
 
     @property
@@ -146,7 +146,7 @@ class TfAsinhOp(LayoutUnawareOp, OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfAsinhOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = np.arcsinh(*inputs)
+        out_tensor = np.arcsinh(inputs[0])
         self.set_out_tensor(out_tensor)
 
     @property
@@ -422,7 +422,7 @@ class TfCosOp(LayoutUnawareOp, OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfCosOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = np.cos(*inputs)
+        out_tensor = np.cos(inputs[0])
         self.set_out_tensor(out_tensor)
 
     @property
@@ -523,7 +523,7 @@ class TfCoshOp(LayoutUnawareOp, OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfCoshOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = np.cosh(*inputs)
+        out_tensor = np.cosh(inputs[0])
         self.set_out_tensor(out_tensor)
 
     @property

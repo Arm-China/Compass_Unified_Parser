@@ -6,7 +6,7 @@ import re
 from ....ops.op import *
 from ....graph.node_wrap import NodeWrap
 from ....graph.pattern_match import single_node_matcher
-from ...onnx.passes.common_passes import insert_constant
+from ...onnx.passes.common_passes import insert_constant, clear_redundant_nodes
 from ....common.utils import extend_lists
 from ....logger import INFO, DEBUG, WARN, ERROR, FATAL
 
@@ -35,6 +35,7 @@ def convert_to_onnx(graph):
     tf2_non_keras_ops = list(set(tf2_ops).difference(keras_ops))
     matches = extend_lists([single_node_matcher(graph, op_type)
                             for op_type in tf2_non_keras_ops])
+    matched = False
     for m in matches:
         node_name = m['target']
         node_obj = NodeWrap(graph, node_name)['object']
@@ -42,11 +43,11 @@ def convert_to_onnx(graph):
             WARN(
                 '[Parser]: Meets invalid TF2 op for Node(%s) in convert_to_onnx!' % node_name)
             continue
-        in_edges = graph.sorted_in_edges(node_name, data=True)
-        new_node_attr = node_obj.copied_attr()
-        node_data_format = 'NCHW' if node_obj.data_format.startswith('NC') else 'NHWC'
-        pure_type = re.sub(r'^Tf', '', node_obj.type)
         if getattr(node_obj, 'correspond_onnx_op', None) is not None:
+            in_edges = graph.sorted_in_edges(node_name, data=True)
+            new_node_attr = node_obj.copied_attr()
+            node_data_format = 'NCHW' if node_obj.data_format.startswith('NC') else 'NHWC'
+            pure_type = re.sub(r'^Tf', '', node_obj.type)
             if isinstance(node_obj, OpHasWeights):
                 if node_obj.weights is None:
                     WARN('[Parser]: Node(%s) does not contain weights!' %
@@ -92,6 +93,7 @@ def convert_to_onnx(graph):
                     continue
             elif pure_type == 'floormod':
                 new_node_attr.update({'fmod': 0})
+                graph.remove_edges_from(in_edges[-1:])
             elif pure_type in ('fractional_avg_pool', 'fractional_max_pool'):
                 if len(in_edges) < 5 \
                         or any(attr['tensor'].value is None for _, _, attr in in_edges) \
@@ -110,20 +112,29 @@ def convert_to_onnx(graph):
             elif pure_type == 'gelu':
                 approximate = 'tanh' if node_obj.approximate is True else 'none'
                 new_node_attr.update({'approximate': approximate})
+                graph.remove_edges_from(in_edges[-1:])
             elif pure_type == 'left_shift':
                 new_node_attr.update({'direction': 'LEFT'})
+                graph.remove_edges_from(in_edges[-1:])
             elif pure_type == 'right_shift':
                 new_node_attr.update({'direction': 'RIGHT'})
+                graph.remove_edges_from(in_edges[-1:])
             elif pure_type == 'segment_sum':
                 new_node_attr.update({'method': 'SUM'})
+                graph.remove_edges_from(in_edges[-1:])
             elif pure_type == 'split':
                 _remove_edges_if_const(node_name, in_edges[1:])
             elif pure_type == 'stack':
-                _remove_edges_if_const(node_name, in_edges[-1:])
+                _remove_edges_if_const(node_name, in_edges[-2:])
                 new_node_attr.update({'new_axis': True})
+            else:
+                graph.remove_edges_from(in_edges[-1:])
 
+            matched = True
             new_node_attr.update(
                 {'opset_version': node_obj.correspond_onnx_op['version'],
                  'data_format': node_data_format})
             NodeWrap(graph, node_name).replace_obj(
                 node_obj.correspond_onnx_op['type'], new_node_attr)
+    if matched:
+        clear_redundant_nodes(graph)

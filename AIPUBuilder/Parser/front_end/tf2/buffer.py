@@ -157,8 +157,6 @@ def get_node_input(layer, input_info_dict):
     inbound_nodes_cnt = len(layer.inbound_nodes)
 
     for arg_name, arg_pos in arg_pos_dict.items():
-        if arg_name == 'name':
-            continue
         if arg_pos < inbound_nodes_cnt:
             input_tensors = layer.get_input_at(arg_pos)
             if isinstance(input_tensors, (list, tuple)):

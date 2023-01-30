@@ -25,7 +25,11 @@ class TfaddOp(TfAddOp, Tf2Op):
 
 
 class Tfadd_nOp(TfAddNOp, Tf2Op):
-    pass
+    def infer_shape(self):
+        super(TfAddNOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = tf.math.add_n(inputs[:-1]).numpy()
+        self.set_out_tensor(out_tensor)
 
 
 class TfargmaxOp(OpHasAxis, OpHasOneOutPort, Tf2Op):

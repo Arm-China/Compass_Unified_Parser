@@ -162,10 +162,11 @@ class TfstackOp(OpHasAxis, OpHasOneOutPort, Tf2Op):
     def infer_shape(self):
         super(TfstackOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        assert inputs[-1].size == 1, 'Expect axis of Tfstackop (%s) to be an int, but got size %d' % (
-            self.name, inputs[-1].size)
-        self.axis = inputs[-1].item()
-        out_tensor = tf.stack(inputs[:-1], axis=self.axis).numpy()
+        axis_size = inputs[-2].size
+        assert axis_size == 1, 'Expect axis of Tfstackop (%s) to be an int, but got size %d' % (
+            self.name, axis_size)
+        self.axis = inputs[-2].item()
+        out_tensor = tf.stack(inputs[:-2], axis=self.axis).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
