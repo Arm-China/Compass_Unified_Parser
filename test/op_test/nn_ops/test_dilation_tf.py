@@ -47,5 +47,5 @@ model_created = create_dilation_model(model_path, input_shape)
 assert model_created, 'Fail to create model!'
 
 exit_status = run_parser(
-    model_path, feed_dict, model_type='tf', output_names=['Y:0'], save_output=True, verify=False)
+    model_path, feed_dict, model_type='tf', output_names=['Y:0'], save_output=True, verify=True)
 assert exit_status

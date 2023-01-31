@@ -197,7 +197,7 @@ class DilationOp(OpHasPaddingStrides, OpHasWeights, OpHasOneOutPort, LayoutConce
 
         if self.auto_pad == 'VALID':
             padding = 'VALID'
-        elif self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
+        else:  # 'SAME_UPPER', 'SAME_LOWER', 'NOTSET'
             padding = 'SAME'
         inp = np.transpose(inputs[0], [0, 2, 3, 1]
                            ) if self.data_format == 'NCHW' else inputs[0]
