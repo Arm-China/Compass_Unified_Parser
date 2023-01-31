@@ -11,7 +11,7 @@ from ....graph.node_wrap import NodeWrap
 from ....graph.graph_algo import get_valid_node_name, clear_redundant_nodes
 from ....graph.pattern_match import matched_patterns, single_node_matcher
 from ...onnx.passes.common_passes import insert_constant, insert_reshape, insert_reshape_after, \
-    insert_slice, insert_tile, insert_transpose, insert_transpose_after
+    insert_slice, insert_tile, insert_transpose, insert_transpose_after, remove_useless_op
 from ....common.defs import Tensor, FLOAT_EQUAL
 from ....common.utils import extend_lists
 from ....logger import INFO, DEBUG, WARN, ERROR, FATAL
@@ -881,6 +881,8 @@ def process_keras_op_before_infer(graph):
 def process_keras_op_after_infer(graph):
     if not graph._attr['is_keras_model']:
         return
+
+    remove_useless_op(graph, ['TfKerasDropout'])
 
     convert_batchnorm(graph)
     convert_global_pooling(graph)

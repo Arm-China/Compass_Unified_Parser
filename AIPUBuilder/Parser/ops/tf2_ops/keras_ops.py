@@ -7,6 +7,7 @@ import copy
 import tensorflow as tf
 from ..op import *
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
+from ...common.defs import FLOAT_EQUAL
 
 
 class TfKerasActivationOp(ActivationOnlyOp, KerasOp):
@@ -98,7 +99,7 @@ class TfKerasAveragePooling3DOp(KerasPoolingOp):
 class TfKerasBatchNormalizationOp(KerasNormalizationOp):
     @classmethod
     def attributes(cls):
-        return {2: {'training_mode': {'type': AttrType.INT, 'default': 0}
+        return {2: {'training_mode': {'type': AttrType.BOOL, 'default': False}
                     },
                 }
 
@@ -107,23 +108,13 @@ class TfKerasBatchNormalizationOp(KerasNormalizationOp):
         self.update_attributes(TfKerasBatchNormalizationOp, attr_dict)
         assert self.check_required(), 'TfKerasBatchNormalizationOp is missing a required parameter.'
 
-    def __getattr__(self, item):
-        ret = None
-        try:
-            if item == 'training_mode':
-                ret = bool(self.__dict__['_attr'][item].value)
-        except:
-            ret = None
-        if ret is None:
-            ret = super(TfKerasBatchNormalizationOp, self).__getattr__(item)
-        return ret
-
     def infer_shape(self):
         super(TfKerasBatchNormalizationOp, self).infer_shape()
         inputs = self.get_input_tensors()
         assert len(inputs) >= 1, 'TfKerasBatchNormalizationOp expects at least 1 input, but got %d.' % len(inputs)
         if len(inputs) >= 2 and inputs[1].size == 1:
-            self.training_mode = int(inputs[1].item())
+            training = inputs[1].item()
+            self.training_mode = False if training is None else training
         if self.axes is not None and len(self.axes) == 1:
             self.axis = self.axes[0]
         batchnorm = tf.keras.layers.BatchNormalization(self.axis,
@@ -569,6 +560,33 @@ class TfKerasDepthwiseConv2DOp(KerasBaseConvOp):
     @property
     def correspond_onnx_op(self):
         return {'type': 'Conv', 'version': 1}
+
+
+class TfKerasDropoutOp(OpHasOneOutPort, KerasOp):
+    @classmethod
+    def attributes(cls):
+        return {2: {'rate': {'type': AttrType.FLOAT, 'required': True},
+                    'noise_shape': {'type': AttrType.INTS, 'default': None},
+                    'seed': {'type': AttrType.INT, 'default': None}}
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfKerasDropoutOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfKerasDropoutOp, attr_dict)
+        assert self.check_required(), 'TfKerasDropoutOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(TfKerasDropoutOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        assert len(inputs) >= 2, 'TfKerasDropoutOp expects 2 input, but got %d' % len(inputs)
+        training = inputs[1].item(0)
+        if training and not FLOAT_EQUAL(self.rate, 0.0):
+            WARN('[Parser]: TfKerasDropoutOp (%s) in training mode has inconsistent outputs and this node will be removed!' % self.name)
+        dropout_func = tf.keras.layers.Dropout(self.rate,
+                                               noise_shape=self.noise_shape,
+                                               seed=self.seed)
+        out_tensor = dropout_func(inputs[0], training).numpy()
+        self.set_out_tensor(out_tensor)
 
 
 class TfKerasELUOp(OpHasOneOutPort, KerasOp):

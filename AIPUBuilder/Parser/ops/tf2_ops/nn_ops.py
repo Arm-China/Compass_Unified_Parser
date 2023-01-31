@@ -5,6 +5,7 @@
 import tensorflow as tf
 from ..op import *
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
+from ...common.defs import FLOAT_EQUAL
 
 
 class Tfconv2dOp(TfHasPaddingStrides, Tf2Op, OpHasWeights, OpHasOneOutPort):
