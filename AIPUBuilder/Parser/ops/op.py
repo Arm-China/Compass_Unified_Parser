@@ -2862,9 +2862,13 @@ class KerasNormalizationOp(OpHasAxis, OpHasBiases, OpHasWeights, OpHasOneOutPort
     @abc.abstractmethod
     def infer_shape(self):
         super(KerasNormalizationOp, self).infer_shape()
-        if len(self.weights_list) >= 2:
-            self.weights = self.weights_list[0]
-            self.biases = self.weights_list[1]
+        weights_list_idx = 0
+        if self.scale and len(self.weights_list) > weights_list_idx:
+            self.weights = self.weights_list[weights_list_idx]
+            weights_list_idx += 1
+        if self.center and len(self.weights_list) > weights_list_idx:
+            self.biases = self.weights_list[weights_list_idx]
+            weights_list_idx += 1
         if self.center and self.scale:
             return
         inputs = self.get_input_tensors()

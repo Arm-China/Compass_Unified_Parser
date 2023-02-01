@@ -54,9 +54,10 @@ def convert_batchnorm(graph):
                 or input_shapes[0] is None \
                 or None in input_shapes[0]:
             continue
-        if len(batchnorm_obj.weights_list) >= 4:
-            mean_value = batchnorm_obj.weights_list[2]
-            var_value = batchnorm_obj.weights_list[3]
+        weights_list_idx = int(batchnorm_obj.scale) + int(batchnorm_obj.center)
+        if len(batchnorm_obj.weights_list) >= (weights_list_idx + 2):
+            mean_value = batchnorm_obj.weights_list[weights_list_idx]
+            var_value = batchnorm_obj.weights_list[weights_list_idx + 1]
         else:
             num_output = input_shapes[0][-1]
             mean_value = np.zeros(num_output, np.float32)
