@@ -4,6 +4,7 @@
 
 import tensorflow as tf
 from ..op import *
+from ..tf_ops.array_ops import *
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
@@ -40,6 +41,19 @@ class Tfclip_by_valueOp(ActivationOnlyOp, Tf2Op):
     @property
     def correspond_onnx_op(self):
         return {'type': 'Clip', 'version': 12}
+
+
+class TfconcatOp(OpHasAxis, OpHasOneOutPort, Tf2Op):
+    def infer_shape(self):
+        super(TfconcatOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        self.axis = inputs[-2].item(0)
+        out_tensor = tf.concat(inputs[:-2], axis=self.axis).numpy()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'Concat', 'version': 4}
 
 
 class TfconstantOp(OpHasOneOutPort, ConstLikeOp, Tf2Op):
@@ -100,6 +114,137 @@ class Tfexpand_dimsOp(OpHasOneOutPort, Tf2Op):
     @property
     def correspond_onnx_op(self):
         return {'type': 'Reshape', 'version': 5}
+
+
+class TffillOp(TfFillOp, Tf2Op):
+    pass
+
+
+class TfgatherOp(TfGatherV2Op, Tf2Op):
+    @classmethod
+    def attributes(cls):
+        return {1: {'axis': {'default': None},
+                    'batch_dims': {'type': AttrType.INT, 'default': 0}
+                    }
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfgatherOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfgatherOp, attr_dict)
+        assert self.check_required(), 'TfgatherOp is missing a required parameter.'
+
+    def __getattr__(self, item):
+        ret = None
+        try:
+            item_idx = None
+            if item == 'axis':
+                item_idx = 4 if self.cur_version == 1 else 2
+            elif item == 'batch_dims':
+                item_idx = 5 if self.cur_version == 1 else 3
+            if item_idx is not None:
+                if len(self.get_input_tensors()) > item_idx:
+                    item_value = self.get_input_tensors()[item_idx].item(0)
+                    if item_value is not None:
+                        ret = int(item_value)
+                        self.__dict__['_attr'][item].value = ret
+        except:
+            ret = None
+        if ret is None:
+            ret = super(TfgatherOp, self).__getattr__(item)
+        return ret
+
+
+class Tfgather_ndOp(OpHasOneOutPort, Tf2Op):
+    @classmethod
+    def attributes(cls):
+        return {1: {'batch_dims': {'type': AttrType.INT, 'default': 0}}}
+
+    def __init__(self, graph, attr_dict=None):
+        super(Tfgather_ndOp, self).__init__(graph, attr_dict)
+        self.update_attributes(Tfgather_ndOp, attr_dict)
+        assert self.check_required(), 'Tfgather_ndOp is missing a required parameter.'
+
+    def __getattr__(self, item):
+        ret = None
+        try:
+            if item == 'batch_dims':
+                item_idx = 3 if self.cur_version == 1 else 2
+                if len(self.get_input_tensors()) > item_idx:
+                    item_value = self.get_input_tensors()[item_idx].item(0)
+                    if item_value is not None:
+                        ret = int(item_value)
+                        self.__dict__['_attr'][item].value = ret
+        except:
+            ret = None
+        if ret is None:
+            ret = super(Tfgather_ndOp, self).__getattr__(item)
+        return ret
+
+    def infer_shape(self):
+        super(Tfgather_ndOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = tf.gather_nd(inputs[0], inputs[1], batch_dims=self.batch_dims).numpy()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'GatherND', 'version': 12}
+
+
+class TfidentityOp(TfIdentityOp, Tf2Op):
+    pass
+
+
+class Tfidentity_nOp(TfIdentityNOp, Tf2Op):
+    pass
+
+
+class Tfone_hotOp(OpHasAxis, OpHasOneOutPort, Tf2Op):
+    @classmethod
+    def attributes(cls):
+        return {1: {'axis': {'default': -1},
+                    'on_value': {'type': AttrType.INT, 'default': 1},
+                    'off_value': {'type': AttrType.INT, 'default': 0},
+                    }
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(Tfone_hotOp, self).__init__(graph, attr_dict)
+        self.update_attributes(Tfone_hotOp, attr_dict)
+        assert self.check_required(), 'Tfone_hotOp is missing a required parameter.'
+
+    def __getattr__(self, item):
+        ret = None
+        try:
+            input_args = ['indices', 'depth', 'on_value', 'off_value', 'axis']
+            if item in input_args[1:]:
+                item_idx = input_args.index(item)
+                if len(self.get_input_tensors()) > item_idx:
+                    item_value = self.get_input_tensors()[item_idx].item(0)
+                    if item_value is not None:
+                        ret = item_value
+                        self.__dict__['_attr'][item].value = ret
+        except:
+            ret = None
+        if ret is None:
+            ret = super(Tfone_hotOp, self).__getattr__(item)
+        return ret
+
+    def infer_shape(self):
+        super(Tfone_hotOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        assert len(
+            inputs) >= 2, 'Tfone_hotOp expects at least 2 inputs, but got %d' % len(inputs)
+        out_tensor = tf.one_hot(inputs[0],
+                                inputs[1],
+                                on_value=self.on_value,
+                                off_value=self.off_value,
+                                axis=self.axis).numpy()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'OneHot', 'version': 11}
 
 
 class TfsplitOp(OpHasAxis, OpHasMultipleOutPorts, Tf2Op):

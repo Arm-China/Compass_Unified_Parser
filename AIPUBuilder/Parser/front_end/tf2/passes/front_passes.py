@@ -112,7 +112,9 @@ def convert_to_onnx(graph):
             elif pure_type == 'cast':
                 _remove_edges_if_const(node_name, in_edges[1:])
                 new_node_attr.update({'to': node_obj.dtype})
-            elif pure_type in ('conv2d', 'cumsum', 'cumprod'):
+            elif pure_type == 'concat':
+                _remove_edges_if_const(node_name, in_edges[-2:])
+            elif pure_type in ('conv2d', 'cumsum', 'cumprod', 'gather', 'gather_nd'):
                 _remove_edges_if_const(node_name, in_edges[2:])
             elif pure_type == 'expand_dims':
                 if len(in_edges) >= 2 \
@@ -157,6 +159,10 @@ def convert_to_onnx(graph):
             elif pure_type == 'left_shift':
                 new_node_attr.update({'direction': 'LEFT'})
                 graph.remove_edges_from(in_edges[-1:])
+            elif pure_type == 'one_hot':
+                _remove_edges_if_const(node_name, in_edges[2:])
+                values = np.array([node_obj.off_value, node_obj.on_value])
+                insert_constant(graph, node_name + '_values', values, node_name, in_port=2)
             elif pure_type == 'right_shift':
                 new_node_attr.update({'direction': 'RIGHT'})
                 graph.remove_edges_from(in_edges[-1:])
