@@ -6,7 +6,7 @@ import numpy as np
 import re
 import copy
 import torch
-from ....ops.op import ActivationOnlyOp, BaseActivationOp, OpHasWeights, TfOp, TfliteOp, OpHasPaddingStrides, OpNeedBroadcast
+from ....ops.op import ActivationOnlyOp, BaseActivationOp, OpHasWeights, TfOp, TfliteOp, OpHasPaddingStrides, OpNeedBroadcast, OpHasAxis
 from ....graph.node_wrap import NodeWrap
 from ....graph.graph_algo import get_valid_node_name, clear_redundant_nodes
 from ....graph.pattern_match import matched_patterns, single_node_matcher, two_nodes_matcher
@@ -1173,7 +1173,7 @@ def merge_quantized_instance_norm(graph):
                          'weights': gamma,
                          'weights_scale_zp': list(mul1_in_edges[1][2]['tensor'].scale_zp),
                          'biases': beta,
-                         'biases_scale_zp': list(sub_in_edges[1][2]['tensor'].scale_zp),
+                         'biases_scale_zp': list(sub_in_edges[0][2]['tensor'].scale_zp),
                          })
         NodeWrap(graph, m['add_2']).replace_obj(
             'InstanceNormalization', add_attr)
