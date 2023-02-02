@@ -666,7 +666,7 @@ def convert_dense(graph):
         NodeWrap(graph, dense).replace_obj(
             'FullyConnected', {'name': dense, 'weights': np.transpose(kernel_value, [1, 0]),
                                'biases': biases_value,
-                               'num_output': kernel_value.shape[0]})
+                               'num_output': kernel_value.shape[1]})
 
 
 def convert_softmax(graph):

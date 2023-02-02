@@ -1462,7 +1462,7 @@ class BaseActivationOp(OpHasOneOutPort):
         return {'activations': {'type': AttrType.STRING,
                                 'default': 'NONE',
                                 'options': ['NONE', 'CLIP', 'CELU', 'ELU', 'EXPONENTIAL', 'GELU',
-                                            'HARD_SIGMOID', 'LEAKYRELU',
+                                            'HARD_SIGMOID', 'LEAKYRELU', 'LOG_SOFTMAX',
                                             'PRELU', 'RELU', 'RELU6', 'RELU_N1_TO_1',
                                             'SIGMOID', 'SILU', 'SOFTMAX', 'SOFTPLUS',
                                             'SOFTSIGN', 'SELU', 'SWISH', 'TANH'],

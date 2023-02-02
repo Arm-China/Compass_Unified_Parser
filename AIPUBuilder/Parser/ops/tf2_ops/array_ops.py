@@ -34,7 +34,7 @@ class Tfclip_by_valueOp(ActivationOnlyOp, Tf2Op):
     def infer_shape(self):
         super(Tfclip_by_valueOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        assert len(inputs) == 3, 'Tfclip_by_valueOp expects 3 inputs, but got %d.' % len(inputs)
+        assert len(inputs) == 4, 'Tfclip_by_valueOp expects 4 inputs, but got %d.' % len(inputs)
         out_tensor = tf.clip_by_value(inputs[0], inputs[1], inputs[2]).numpy()
         self.set_out_tensor(out_tensor)
 
