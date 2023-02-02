@@ -1188,6 +1188,23 @@ class TfSoftplusOp(OpHasOneOutPort, TfOp):
         return {'type': 'Softplus', 'version': 1}
 
 
+class TfSparseSegmentMeanOp(OpHasOneOutPort, TfOp):
+    @classmethod
+    def attributes(cls):
+        return {1: {}}
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfSparseSegmentMeanOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfSparseSegmentMeanOp, attr_dict)
+        assert self.check_required(), 'TfSparseSegmentMeanOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(TfSparseSegmentMeanOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = tf.raw_ops.SparseSegmentMean(data=inputs[0], indices=inputs[1], segment_ids=inputs[2]).numpy()
+        self.set_out_tensor(out_tensor)
+
+
 class TfSqrtOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfSqrtOp, self).infer_shape()
@@ -1343,7 +1360,7 @@ class TfUniqueOp(OpHasVariableOutPorts, TfOp):
         super(TfUniqueOp, self).infer_shape()
         inputs = self.get_input_tensors()
         x, out_idx = tf.unique(
-            inputs[0], out_idx=tf.dtypes.astype(self.out_idx))
+            inputs[0], out_idx=tf.dtypes.as_dtype(self.out_idx))
         out_ports = self.get_out_ports()
         if out_ports == [0]:
             out_tensors = [x.numpy()]
