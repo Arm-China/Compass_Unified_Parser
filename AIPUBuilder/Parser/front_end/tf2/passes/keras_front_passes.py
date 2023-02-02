@@ -519,6 +519,34 @@ def convert_relu(graph):
         clear_redundant_nodes(graph)
 
 
+def convert_rescaling(graph):
+    matches = single_node_matcher(graph, 'TfKerasRescaling')
+    for m in matches:
+        rescaling = m['target']
+        rescaling_obj = NodeWrap(graph, rescaling)['object']
+        in_edges = graph.sorted_in_edges(rescaling, data=True)
+        if rescaling_obj is None or len(in_edges) < 1:
+            WARN('[Parser]: Meets invalid Op (%s) in convert_rescaling!' % rescaling)
+            continue
+        mul = get_valid_node_name(graph, rescaling + '_mul')
+        src, _, in_attr = in_edges[0]
+        graph.remove_edges_from(in_edges)
+        graph.add_edge(src, mul, **in_attr)
+        insert_constant(graph, mul + '_scale', np.array(rescaling_obj.scale, np.float32), mul, in_port=1)
+
+        mul_out_attr = copy.deepcopy(in_attr)
+        mul_out_attr.update({'src_out_port': 0})
+        if in_attr['tensor'] is not None and in_attr['tensor'].value is not None:
+            mul_out_attr['tensor'].value = in_attr['tensor'].value * rescaling_obj.scale
+        graph.add_edge(mul, rescaling, **mul_out_attr)
+        insert_constant(graph, rescaling + '_offset', np.array(rescaling_obj.offset, np.float32), rescaling, in_port=1)
+
+        NodeWrap(graph, mul).replace_obj('Mul', {'name': mul, 'opset_version': 13})
+        add_attr = rescaling_obj.copied_attr()
+        add_attr.update({'opset_version': 13})
+        NodeWrap(graph, rescaling).replace_obj('Add', add_attr)
+
+
 def convert_resizing(graph):
     matches = single_node_matcher(graph, ['TfKerasResizing', 'TfKerasUpSampling1D',
                                   'TfKerasUpSampling2D', 'TfKerasUpSampling3D'])
@@ -866,6 +894,7 @@ def process_keras_op_before_infer(graph):
     convert_gru_lstm(graph)
     convert_centercrop(graph)
     convert_relu(graph)
+    convert_rescaling(graph)
     convert_resizing(graph)
     convert_activations(graph)
 

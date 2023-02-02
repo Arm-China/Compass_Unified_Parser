@@ -1005,6 +1005,27 @@ class TfKerasReLUOp(OpHasOneOutPort, KerasOp):
         self.set_out_tensor(out_tensor)
 
 
+class TfKerasRescalingOp(OpHasOneOutPort, KerasOp):
+    @classmethod
+    def attributes(cls):
+        return {2: {'scale': {'type': AttrType.FLOAT, 'required': True},
+                    'offset': {'type': AttrType.FLOAT, 'default': 0.0},
+                    },
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfKerasRescalingOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfKerasRescalingOp, attr_dict)
+        assert self.check_required(), 'TfKerasRescalingOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(TfKerasRescalingOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        rescaling = tf.keras.layers.Rescaling(self.scale, self.offset)
+        out_tensor = rescaling(inputs[0]).numpy()
+        self.set_out_tensor(out_tensor)
+
+
 class TfKerasReshapeOp(OpHasOneOutPort, KerasOp):
     @classmethod
     def attributes(cls):
