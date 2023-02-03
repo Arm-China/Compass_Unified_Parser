@@ -62,6 +62,9 @@ def process_tflite(model_path, params):
         clear_redundant_nodes(graph)
         infer(graph)
 
+        from ..onnx.passes.middle_passes import convert_to_const
+        convert_to_const(graph, ['LiteSHAPE', 'LiteZEROS_LIKE'])
+
         convert_deconv(graph)
         convert_negative_pool_pad(graph)
         remove_redundant_broadcast_to(graph)

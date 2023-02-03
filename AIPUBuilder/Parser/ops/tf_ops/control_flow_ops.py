@@ -85,6 +85,12 @@ class TfLoopCondOp(OpHasOneOutPort, TfOp):
         inputs = self.get_input_tensors()
 
 
+class TfStatelessIfOp(OpHasVariableOutPorts, TfOp):
+    def infer_shape(self):
+        super(TfStatelessIfOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+
+
 class TfSwitchOp(OpHasVariableOutPorts, TfOp):
     def infer_shape(self):
         super(TfSwitchOp, self).infer_shape()

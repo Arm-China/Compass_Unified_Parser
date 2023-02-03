@@ -10,8 +10,9 @@ def create_zeroslike_model(pb_file_path, input_size, zeroslike_input):
     '''
     with tf.Session(graph=tf.Graph()) as sess:
         x = tf.placeholder(tf.float32, shape=input_size, name='X')
-        op1 = tf.zeros_like(zeroslike_input, dtype=tf.float32, name='zeroslike')
-        op2 = tf.math.add(op1, zeroslike_input, name='add')
+        add = tf.add(x, 10.1)
+        op1 = tf.raw_ops.ZerosLike(x=add, name='zeroslike')
+        op2 = tf.math.add(op1, x, name='add')
         y = tf.math.multiply(op2, x, name='Y')
 
         sess.run(tf.global_variables_initializer())

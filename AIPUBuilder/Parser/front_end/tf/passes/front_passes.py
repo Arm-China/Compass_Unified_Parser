@@ -2493,7 +2493,7 @@ def merge_zero_fraction(graph):
     zf_matches = matched_patterns(graph,
                                   nodes=[
                                       ('input', {}),
-                                      ('size', {'op': 'TfConst'}),
+                                      ('size', {'op': ['TfConst', 'Constant']}),
                                       ('le_const', {'op': 'Constant'}),
                                       ('statelessif', {'op': 'TfStatelessIf'}),
                                       ('sub', {'op': 'TfSub'}),
