@@ -932,6 +932,35 @@ class TfKerasMultiplyOp(OpHasOneOutPort, KerasNeedBroadcast):
         self.set_out_tensor(out_tensor)
 
 
+class TfKerasNormalizationOp(OpHasAxis, OpHasOneOutPort, KerasOp):
+    # TODO: Support invert arg after supported tf version >= 2.10
+    @classmethod
+    def attributes(cls):
+        return {2: {'axes': {'default': [-1]},
+                    'mean': {'type': AttrType.TENSOR, 'default': None},
+                    'variance': {'type': AttrType.TENSOR, 'default': None},
+                    },
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfKerasNormalizationOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfKerasNormalizationOp, attr_dict)
+        assert self.check_required(), 'TfKerasNormalizationOp is missing a required parameter.'
+        if self.axis is not None:
+            self.axes = [self.axis]
+        if self.mean is not None:
+            self.mean = np.array(self.mean, np.float32)
+        if self.variance is not None:
+            self.variance = np.array(self.variance, np.float32)
+
+    def infer_shape(self):
+        super(TfKerasNormalizationOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        norm = tf.keras.layers.Normalization(self.axes, self.mean, self.variance)
+        out_tensor = norm(inputs[0]).numpy()
+        self.set_out_tensor(out_tensor)
+
+
 class TfKerasPermuteOp(OpHasOneOutPort, KerasOp):
     @classmethod
     def attributes(cls):

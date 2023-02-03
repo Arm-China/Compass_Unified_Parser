@@ -419,6 +419,48 @@ def convert_gru_lstm(graph):
         NodeWrap(graph, rnn).replace_obj(dst_onnx_type, rnn_attr)
 
 
+def convert_normalization(graph):
+    '''
+    Convert TfKerasNormalization op to sub(x-mean) + mul(*1/sqrt(var)); if mean and var are None or
+    mean is 0 and var is 1, convert to Identity.
+    '''
+    matches = single_node_matcher(graph, 'TfKerasNormalization')
+    for m in matches:
+        norm = m['target']
+        norm_obj = NodeWrap(graph, norm)['object']
+        in_edges = graph.sorted_in_edges(norm, data=True)
+        if norm_obj is None or len(in_edges) < 1:
+            WARN('[Parser]: Meets invalid Op (%s) in convert_normalization!' % norm)
+            continue
+        new_node_attr = norm_obj.copied_attr()
+        mean = norm_obj.mean
+        variance = norm_obj.variance
+        if (mean is None and variance is None) or (FLOAT_EQUAL(mean, 0) and FLOAT_EQUAL(variance, 1)):
+            new_node_attr.update({'opset_version': 13})
+            NodeWrap(graph, norm).replace_obj('Identity', new_node_attr)
+        else:
+            if mean is None:
+                mean = np.zeros_like(variance, np.float32)
+            if variance is None:
+                variance = np.ones_like(mean, np.float32)
+            sub = get_valid_node_name(graph, norm + '_sub')
+            src, _, in_attr = in_edges[0]
+            graph.remove_edges_from(in_edges)
+            graph.add_edge(src, sub, **in_attr)
+            insert_constant(graph, sub + '_mean', mean, sub, in_port=1)
+            sub_out_attr = copy.deepcopy(in_attr)
+            sub_out_attr.update({'src_out_port': 0})
+            if in_attr['tensor'] is not None and in_attr['tensor'].value is not None:
+                sub_out_attr['tensor'].value = in_attr['tensor'].value - mean
+            graph.add_edge(sub, norm, **sub_out_attr)
+            mul_value = np.array(1 / np.sqrt(variance))
+            insert_constant(graph, norm + '_mul', mul_value, norm, in_port=1)
+
+            NodeWrap(graph, sub).replace_obj('Sub', {'name': sub, 'opset_version': 13})
+            new_node_attr.update({'opset_version': 13})
+            NodeWrap(graph, norm).replace_obj('Mul', new_node_attr)
+
+
 def convert_relu(graph):
     matched = False
     matches = single_node_matcher(graph, 'TfKerasReLU')
@@ -893,6 +935,7 @@ def process_keras_op_before_infer(graph):
     convert_bidirectional(graph)
     convert_gru_lstm(graph)
     convert_centercrop(graph)
+    convert_normalization(graph)
     convert_relu(graph)
     convert_rescaling(graph)
     convert_resizing(graph)

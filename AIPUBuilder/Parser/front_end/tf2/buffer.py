@@ -67,12 +67,19 @@ def get_nodes_input_and_attr(configs):
 
 def get_node_attr(layer):
     ret = {}
+    try:
+        layer_config = layer.get_config()
+        if isinstance(layer_config, dict):
+            ret.update(layer_config)
+    except Exception as e:
+        DEBUG('[Parser]: Fail to get config for layer (%s) because %s' % (layer.name, str(e)))
+
     for key in layer.__dir__():
         if key.startswith('_'):
             # Ignore internal attributes
             continue
         if key in ('activity_regularizer', 'build', 'built', 'call', 'compute_dtype', 'count_params',
-                   'dynamic', 'dtype_policy', 'finalize_state',
+                   'dynamic', 'dtype_policy', 'finalize_state', 'get_config',
                    'inbound_nodes', 'input', 'input_mask', 'input_spec',
                    'losses', 'metric', 'metrics', 'name_scope', 'non_trainable_variables', 'non_trainable_weights',
                    'outbound_nodes', 'output', 'output_mask', 'OVERLOADABLE_OPERATORS',
@@ -84,11 +91,6 @@ def get_node_attr(layer):
         try:
             value = eval('layer.' + key)
             if eval('callable(layer.' + key + ')'):
-                if key == 'get_config':
-                    value = layer.get_config()
-                    if isinstance(value, dict):
-                        ret.update(value)
-                    continue
                 if any(key.startswith(func) for func in ('add_', 'apply', 'compute_', 'from_', 'get_', 'reset_', 'set_')) \
                         or any(key.endswith(func) for func in ('_initializer', '_constraint')) \
                         or '__name__' not in dir(value):
