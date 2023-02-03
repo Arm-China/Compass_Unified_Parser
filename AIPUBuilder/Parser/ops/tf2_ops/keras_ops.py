@@ -510,6 +510,8 @@ class TfKerasDenseOp(BaseLinearOp, BaseActivationOp, KerasOp):
         super(TfKerasDenseOp, self).__init__(graph, attr_dict)
         self.update_attributes(TfKerasDenseOp, attr_dict)
         assert self.check_required(), 'TfKerasDenseOp is missing a required parameter.'
+        if self.activations == 'LEAKYRELU' and 'alpha' in attr_dict:
+            self.negative_slope = float(attr_dict['alpha'])
 
     def infer_shape(self):
         super(TfKerasDenseOp, self).infer_shape()

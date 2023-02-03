@@ -1674,7 +1674,8 @@ class BaseActivationOp(OpHasOneOutPort):
                 ret_onnx_op_dict.update({'min': 0., 'max': 6.})
             elif activations == 'RELU_N1_TO_1':
                 ret_onnx_op_dict.update({'min': -1., 'max': 1.})
-            ret_onnx_op_dict.update({'type': op_type, 'opset_version': opset_version})
+            ret_onnx_op_dict.update(
+                {'type': op_type, 'opset_version': opset_version})
         return ret_onnx_op_dict
 
 

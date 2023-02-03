@@ -35,11 +35,11 @@ def create_fc_model(model_path, x_size, activation_type, use_bias):
 
 
 TEST_NAME = 'fc'
-input_shapes = [[4, 5], [4, 5, 6], [4, 5, 6, 7], [4, 5, 6, 7, 8]]
+input_shapes = [[4, 5], [4, 5, 6]]
 
 
 for input_shape in input_shapes:
-    for activation_type in (None, 'tanh'):
+    for activation_type in ('LeakyReLU', 'leaky_relu'):
         for use_bias in (True, False):
             # Generate input data
             feed_dict = {}

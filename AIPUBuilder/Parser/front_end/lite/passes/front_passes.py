@@ -1437,11 +1437,13 @@ def remove_sub_equal_select(graph):
 
 
 def split_op_has_activation(graph, is_tf_op=False):
-    op_subclass_names = TfOp.get_concrete_subclass_names() if is_tf_op else TfliteOp.get_concrete_subclass_names()
+    op_subclass_names = TfOp.get_concrete_subclass_names(
+    ) if is_tf_op else TfliteOp.get_concrete_subclass_names()
     op_has_activations = list(set(BaseActivationOp.get_concrete_subclass_names(
     )).intersection(op_subclass_names))
     activation_types = ActivationOnlyOp.get_concrete_subclass_names()
-    op_has_activations = list(set(op_has_activations).difference(activation_types))
+    op_has_activations = list(
+        set(op_has_activations).difference(activation_types))
 
     matches = [single_node_matcher(graph, op_type)
                for op_type in op_has_activations]
@@ -1452,7 +1454,8 @@ def split_op_has_activation(graph, is_tf_op=False):
         node_obj = node['object']
         if node_obj.activations == 'NONE':
             continue
-        onnx_op_dict = BaseActivationOp.activation_to_onnx_op(node_obj.activations)
+        onnx_op_dict = BaseActivationOp.activation_to_onnx_op(
+            node_obj.activations)
         onnx_op_type = onnx_op_dict.get('type', None)
         opset_version = onnx_op_dict.get('opset_version', None)
         if onnx_op_type is None or opset_version is None:
@@ -1466,6 +1469,11 @@ def split_op_has_activation(graph, is_tf_op=False):
         activation_node = NodeWrap(graph, activation_name)
         activation_attr = {'name': activation_name,
                            'activations': node_obj.activations}
+
+        if is_tf_op is True and node_obj.activations == 'LEAKYRELU':
+            alpha = node_obj.negative_slope if node_obj.negative_slope is not None else 0.2
+            activation_attr.update({'alpha': alpha})
+
         activation_attr.update(onnx_op_dict)
         activation_node.replace_obj(onnx_op_type, activation_attr)
         node_out_edges = graph.sorted_out_edges(node_name, data=True)

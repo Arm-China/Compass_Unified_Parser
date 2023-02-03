@@ -76,12 +76,22 @@ def convert_keras_attr_to_onnx(attr_dict):
     for k, v in attr_dict.items():
         updated_attr = {}
         if k == 'activation' and 'recurrent_activation' not in attr_dict:
-            v = 'NONE' if v is None or v == 'linear' else v.upper()
-            if v == 'LEAKY_RELU':
-                v = 'LEAKYRELU'
-            elif v.endswith('_V2'):
-                v = v[:-3]
-            updated_attr = attr_rename(k, v)
+            if isinstance(v, dict):
+                activation_name = v.get('class_name', None)
+                if activation_name == 'LeakyReLU':
+                    updated_attr = attr_rename(k, activation_name.upper())
+                    try:
+                        alpha = v['config']['alpha']
+                    except:
+                        alpha = 0.3
+                    updated_attr.update({'alpha': alpha})
+            else:
+                v = 'NONE' if v is None or v == 'linear' else v.upper()
+                if v == 'LEAKY_RELU':
+                    v = 'LEAKYRELU'
+                elif v.endswith('_V2'):
+                    v = v[:-3]
+                updated_attr = attr_rename(k, v)
         elif k == 'axis' and isinstance(v, (list, tuple)):
             updated_attr = {k: None, 'axes': list(v[:])}
         elif k in ('bias', 'groups'):
