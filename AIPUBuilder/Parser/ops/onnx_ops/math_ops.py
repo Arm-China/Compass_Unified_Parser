@@ -853,7 +853,8 @@ class LpNormalizationOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
     @classmethod
     def attributes(cls):
         return {1: {'axis': {'default': -1},
-                    'p': {'type': AttrType.INT, 'default': 2, 'options': [1, 2]}
+                    'p': {'type': AttrType.INT, 'default': 2, 'options': [1, 2]},
+                    'epsilon': {'type': AttrType.FLOAT, 'default': 0.0},
                     }
                 }
 
@@ -861,13 +862,19 @@ class LpNormalizationOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
         super(LpNormalizationOp, self).__init__(graph, attr_dict)
         self.update_attributes(LpNormalizationOp, attr_dict)
         assert self.check_required(), 'LpNormalizationOp is missing a required parameter.'
+        if self.axes is None and self.axis is not None:
+            self.axes = [self.axis]
+            self.axis = None
 
     def infer_shape(self):
         super(LpNormalizationOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = inputs[0] / \
-            np.linalg.norm(inputs[0], ord=self.p,
-                           axis=self.axis, keepdims=True)
+        if self.axes is None:
+            self.axes = list(range(len(inputs[0].shape)))
+        if self.p == 2:
+            out_tensor = tf.math.l2_normalize(inputs[0], self.axes, self.epsilon).numpy()
+        else:
+            out_tensor = inputs[0] / np.sum(np.abs(inputs[0]), axis=tuple(self.axes), keepdims=True)
         self.set_out_tensor(out_tensor)
 
 

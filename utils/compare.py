@@ -24,6 +24,9 @@ def compare_data(data1, data2):
     if data2.dtype != np.float32:
         data2 = data2.astype(np.float32)
     if data1.shape == data2.shape:
+        # Convert nan to num -1
+        data1 = np.nan_to_num(data1, nan=-1)
+        data2 = np.nan_to_num(data2, nan=-1)
         cos = torch.nn.CosineSimilarity(dim=1)
         sim = cos(torch.from_numpy(data2.reshape([1, -1])),
                   torch.from_numpy(data1.reshape([1, -1]))).numpy()

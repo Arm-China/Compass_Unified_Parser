@@ -7,7 +7,7 @@ from ....ops.op import *
 from ....graph.node_wrap import NodeWrap
 from ....graph.pattern_match import single_node_matcher
 from ....graph.graph_algo import get_valid_node_name, clear_redundant_nodes
-from ...onnx.passes.common_passes import insert_constant
+from ...onnx.passes.common_passes import insert_constant, insert_reshape
 from ....common.utils import extend_lists
 from ....logger import INFO, DEBUG, WARN, ERROR, FATAL
 
@@ -48,6 +48,131 @@ def convert_crelu(graph):
         relu_attr = crelu_obj.copied_attr()
         relu_attr.update({'opset_version': 13})
         NodeWrap(graph, crelu).replace_obj('Relu', relu_attr)
+    if matched:
+        clear_redundant_nodes(graph)
+
+
+def convert_l2_normalize(graph):
+    '''
+    Convert Tfl2_normalize to onnx LpNormalization op if epsilon is not 0; Otherwise, convert to
+    ReduceL2+Div.
+    '''
+    matched = False
+    matches = single_node_matcher(graph, 'Tfl2_normalize')
+    for m in matches:
+        norm = m['target']
+        norm_obj = NodeWrap(graph, norm)['object']
+        norm_in_edges = graph.sorted_in_edges(norm, data=True)
+        if norm_obj is None or len(norm_in_edges) < 1:
+            ERROR(
+                '[Parser]: Meets invalid Tfnorm Op (%s) in convert_l2_normalize!' % norm)
+            continue
+        input_shapes = norm_obj.get_input_shapes()
+        if len(input_shapes) < 1 or input_shapes[0] is None:
+            ERROR(
+                '[Parser]: Meets invalid input shape of Tfnorm Op (%s) in convert_l2_normalize!' % norm)
+            continue
+        matched = True
+        graph.remove_edges_from(norm_in_edges[1:])
+        epsilon = norm_obj.epsilon
+        norm_axes = norm_obj.axes
+        if norm_axes is None:
+            norm_axes = list(range(len(input_shapes[0])))
+        if not np.isnan(tf.math.l2_normalize(0., epsilon=epsilon).numpy()):  # epsilon != 0
+            lp_norm_attr = norm_obj.copied_attr()
+            lp_norm_attr.update({'axes': norm_axes, 'p': 2, 'opset_version': 1, 'epsilon': epsilon})
+            NodeWrap(graph, norm).replace_obj('LpNormalization', lp_norm_attr)
+        else:
+            reduce_l2 = get_valid_node_name(graph, norm + '_redule_l2')
+            src, _, in_attr = norm_in_edges[0]
+            graph.add_edge(src, reduce_l2, **in_attr)
+            reduce_l2_out_attr = copy.deepcopy(in_attr)
+            reduce_l2_out_attr.update({'src_out_port': 0, 'dst_in_port': 1})
+            if in_attr['tensor'] is not None and in_attr['tensor'].value is not None:
+                reduce_l2_out_attr['tensor'].value = np.sqrt(np.sum(np.square(in_attr['tensor'].value),
+                                                                    axis=tuple(norm_axes),
+                                                                    keepdims=True))
+            graph.add_edge(reduce_l2, norm, **reduce_l2_out_attr)
+            NodeWrap(graph, reduce_l2).replace_obj('ReduceL2',
+                                                   {'name': reduce_l2,
+                                                    'keepdims': True,
+                                                    'axes': norm_axes,
+                                                    'opset_version': 13})
+            div_attr = norm_obj.copied_attr()
+            div_attr.update({'opset_version': 13})
+            NodeWrap(graph, norm).replace_obj('Div', div_attr)
+    if matched:
+        clear_redundant_nodes(graph)
+
+
+def convert_lp_norm(graph):
+    '''
+    Convert Tfnorm to onnx ReduceL1/ReduceL2 op for vector norm; convert to onnx ReduceL1+ReduceMax
+    for matrix 1-norm; raise error for unsupported order and matrix 2-norm.
+    '''
+    matched = False
+    matches = single_node_matcher(graph, 'Tfnorm')
+    for m in matches:
+        norm = m['target']
+        norm_obj = NodeWrap(graph, norm)['object']
+        norm_in_edges = graph.sorted_in_edges(norm, data=True)
+        if norm_obj is None or len(norm_in_edges) < 1:
+            ERROR(
+                '[Parser]: Meets invalid Tfnorm Op (%s) in convert_lp_norm!' % norm)
+            continue
+        input_shapes = norm_obj.get_input_shapes()
+        if len(input_shapes) < 1 or input_shapes[0] is None or None in input_shapes[0]:
+            ERROR(
+                '[Parser]: Meets invalid input shape of Tfnorm Op (%s) in convert_lp_norm!' % norm)
+            continue
+        input_shape = input_shapes[0]
+        norm_axes = norm_obj.axes
+        norm_order = norm_obj.ord
+        norm_keepdims = norm_obj.keepdims
+        is_matrix_norm = (norm_axes is not None and len(norm_axes) == 2)
+        if norm_order not in (1, 2):
+            if norm_order == 'euclidean' and not is_matrix_norm:
+                norm_order = 2
+            elif len(input_shape) == 2 and norm_order in ('euclidean', 'fro') and is_matrix_norm:
+                norm_order = 2
+                is_matrix_norm = False
+            else:
+                WARN('[Parser]: Meets unsupported ord (%s) of Tfnorm Op (%s) in convert_lp_norm!' % (str(norm_order), norm))
+                continue
+        if is_matrix_norm and norm_order == 2:
+            WARN('[Parser]: Matrix 2-norm in Tfnorm Op (%s) is not supported for now!' % norm)
+            continue
+        if norm_axes is None:
+            norm_axes = list(range(len(input_shape)))
+        else:
+            norm_axes = OpHasAxis.make_axes_non_negative(norm_axes, len(input_shape))
+        matched = True
+        graph.remove_edges_from(norm_in_edges)
+        src, _, in_attr = norm_in_edges[0]
+        node_attr = norm_obj.copied_attr()
+        if not is_matrix_norm:
+            graph.add_edge(src, norm, **in_attr)
+            node_attr.update({'axes': norm_axes, 'opset_version': 13})
+            node_type = 'ReduceL1' if norm_order == 1 else 'ReduceL2'
+            NodeWrap(graph, norm).replace_obj(node_type, node_attr)
+        else:  # is_matrix_norm and norm_order == 1
+            reduce_l1 = get_valid_node_name(graph, norm + '_reduce_l1')
+            graph.add_edge(src, reduce_l1, **in_attr)
+            reduce_l1_out_attr = copy.deepcopy(in_attr)
+            reduce_l1_out_attr.update({'src_out_port': 0})
+            if in_attr['tensor'] is not None and in_attr['tensor'].value is not None:
+                reduce_l1_out_attr['tensor'].value = np.linalg.norm(
+                    in_attr['tensor'].value, ord=norm_order, axis=tuple(norm_axes), keepdims=norm_keepdims)
+            graph.add_edge(reduce_l1, norm, **reduce_l1_out_attr)
+            NodeWrap(graph, reduce_l1).replace_obj('ReduceL1',
+                                                   {'name': reduce_l1,
+                                                    'keepdims': norm_keepdims,
+                                                    'axes': [norm_axes[0]],
+                                                    'opset_version': 13})
+            reduce_max_axis = (norm_axes[1]-1) if not bool(norm_keepdims) \
+                and norm_axes[0] < norm_axes[1] else norm_axes[1]
+            node_attr.update({'axes': [reduce_max_axis], 'opset_version': 13})
+            NodeWrap(graph, norm).replace_obj('ReduceMax', node_attr)
     if matched:
         clear_redundant_nodes(graph)
 

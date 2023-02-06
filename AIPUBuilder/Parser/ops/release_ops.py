@@ -3034,15 +3034,29 @@ class ArmNMSOp(OpHasMethod, OpHasMultipleOutPorts, ArmOp):
 class ArmNormalizationOp(OpHasMethod, OpHasAxis, OpHasOneOutPort, ArmOp):
     @classmethod
     def attributes(cls):
-        return {'method': {'options': ['L1', 'L2'], 'default': 'L2'}}
+        return {'method': {'options': ['L1', 'L2'], 'default': 'L2'},
+                'epsilon': {'type': AttrType.FLOAT, 'default': 0.0}}
+
+    def __init__(self, graph, attr_dict=None):
+        super(ArmNormalizationOp, self).__init__(graph, attr_dict)
+        self.update_attributes(ArmNormalizationOp, attr_dict)
+        assert self.check_required(), 'ArmNormalizationOp is missing a required parameter.'
 
     def infer_shape(self):
         super(ArmNormalizationOp, self).infer_shape()
         inputs = self.get_input_tensors()
         ord = 1 if self.method == 'L1' else 2
-        out_tensor = inputs[0] / \
-            np.linalg.norm(inputs[0], ord=ord, axis=self.axis, keepdims=True)
+        if ord == 2:
+            out_tensor = tf.math.l2_normalize(inputs[0], self.axes, self.epsilon).numpy()
+        else:
+            out_tensor = inputs[0] / np.sum(np.abs(inputs[0]), axis=tuple(self.axes), keepdims=True)
         self.set_out_tensor(out_tensor)
+
+    def write_attrs(self, txt_file):
+        ret = super(ArmNormalizationOp, self).write_attrs(txt_file)
+        if ret:
+            txt_file.write('epsilon=%.8e\n' % self.epsilon)
+        return ret
 
 
 class ArmOneHotOp(OpHasOneOutPort, OpHasAxis, ArmOp):

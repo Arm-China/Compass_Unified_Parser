@@ -188,6 +188,47 @@ class Tfin_top_kOp(OpHasOneOutPort, Tf2Op):
         return {'type': 'InTopK', 'version': 1}
 
 
+class Tfl2_normalizeOp(OpHasAxis, OpHasOneOutPort, Tf2Op):
+    @classmethod
+    def attributes(cls):
+        return {2: {'epsilon': {'type': AttrType.FLOAT, 'default': 1e-12},
+                    'dim': {'default': None},
+                    },
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(Tfl2_normalizeOp, self).__init__(graph, attr_dict)
+        self.update_attributes(Tfl2_normalizeOp, attr_dict)
+        assert self.check_required(), 'Tfl2_normalizeOp is missing a required parameter.'
+
+    def __getattr__(self, item):
+        ret = None
+        try:
+            input_args = ['x', 'axes', 'epsilon', 'name', 'dim']
+            if item != 'name' and item in input_args[1:]:
+                inputs = self.get_input_tensors()
+                item_idx = input_args.index(item)
+                if len(inputs) > item_idx:
+                    ret = inputs[item_idx].item() if inputs[item_idx].size == 1 else list(inputs[item_idx])
+                    if item in ('axes', 'dim') and ret is not None:
+                        ret = ret if isinstance(ret, list) else [ret]
+                    if ret is not None:
+                        self.__dict__['_attr'][item].value = ret
+        except:
+            ret = None
+        if ret is None:
+            ret = super(Tfl2_normalizeOp, self).__getattr__(item)
+        return ret
+
+    def infer_shape(self):
+        super(Tfl2_normalizeOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        if self.axes is None:
+            self.axes = self.dim
+        out_tensor = tf.math.l2_normalize(inputs[0], self.axes, self.epsilon).numpy()
+        self.set_out_tensor(out_tensor)
+
+
 class TflessOp(TfLessOp, Tf2Op):
     pass
 
@@ -226,6 +267,55 @@ class TfmultiplyOp(TfMulOp, Tf2Op):
 
 class TfnegativeOp(TfNegOp, Tf2Op):
     pass
+
+
+class TfnormOp(OpHasAxis, OpHasOneOutPort, Tf2Op):
+    @classmethod
+    def attributes(cls):
+        return {1: {'ord': {'default': 'euclidean'},
+                    'keepdims': {'default': 0},
+                    },
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfnormOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfnormOp, attr_dict)
+        assert self.check_required(), 'TfnormOp is missing a required parameter.'
+
+    def __getattr__(self, item):
+        ret = None
+        try:
+            input_args = ['tensor', 'ord', 'axes', 'keepdims']
+            if item in input_args[1:]:
+                inputs = self.get_input_tensors()
+                item_idx = input_args.index(item)
+                if len(inputs) > item_idx:
+                    ret = inputs[item_idx].item() if inputs[item_idx].size == 1 else list(inputs[item_idx])
+                    if item == 'keepdims':
+                        ret = 1 if ret else 0
+                    if item == 'axes' and ret is not None:
+                        # By default axes value's type is int64, so here need convert axes to int type
+                        # because tf runtime will raise error if axes is not int type.
+                        ret = [int(axis) for axis in ret] if isinstance(ret, list) else [int(ret)]
+                    if ret is not None:
+                        self.__dict__['_attr'][item].value = ret
+        except:
+            ret = None
+        if ret is None:
+            ret = super(TfnormOp, self).__getattr__(item)
+        return ret
+
+    def infer_shape(self):
+        super(TfnormOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        norm_axis = None
+        if self.axes is not None:
+            norm_axis = tuple(self.axes) if len(self.axes) > 1 else self.axes[0]
+        out_tensor = tf.linalg.norm(inputs[0],
+                                    ord=self.ord,
+                                    axis=norm_axis,
+                                    keepdims=bool(self.keepdims)).numpy()
+        self.set_out_tensor(out_tensor)
 
 
 class Tfnot_equalOp(TfNotEqualOp, Tf2Op):
