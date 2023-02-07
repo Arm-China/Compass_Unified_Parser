@@ -1099,6 +1099,73 @@ def convert_special_resize(graph):
                 '[Parser]: Meets invalid Resize Op (%s) in convert_special_resize!' % resize)
 
 
+def convert_special_scatternd(graph):
+    matched = False
+    matches = matched_patterns(graph,
+                               nodes=[('indices', {'op': 'Constant'}),
+                                      ('updates', {}),
+                                      ('scatternd', {'op': 'ScatterND'})],
+                               edges=[('indices', 'scatternd', {'src_out_port': 0, 'dst_in_port': 1}),
+                                      ('updates', 'scatternd', {'dst_in_port': 2})])
+    for m in matches:
+        indices, scatternd, updates = m['indices'], m['scatternd'], m['updates']
+        indices_obj, scatternd_obj = [NodeWrap(graph, name)['object'] for name in [indices, scatternd]]
+        scatternd_in_edges = graph.sorted_in_edges(scatternd, data=True)
+        if indices_obj is None or scatternd_obj is None or len(scatternd_in_edges) < 3:
+            ERROR('[Parser]: Meet invalid node in convert_special_scatternd!')
+            continue
+        if scatternd_obj.reduction != 'none':
+            continue
+        input_shapes = scatternd_obj.get_input_shapes()
+        if len(input_shapes) < 0 or input_shapes[0] is None or None in input_shapes[0] \
+                or len(input_shapes[0]) < 1 \
+                or len(indices_obj.value.shape) < 2:
+            continue
+        input_last_dim = input_shapes[0][-1]
+        indices_value = indices_obj.value
+        indices_len_at_axis = indices_value.shape[-2]
+        start_indice = indices_value.item(indices_value.shape[-1]-1)
+        start_indices = np.array([0] * (indices_value.shape[-1]-1) + [start_indice])
+        exp_shape = indices_value.shape[:-1]
+        indices_exp_value = list(np.ndindex(*exp_shape))
+        indices_exp_value = np.reshape(np.array(indices_exp_value) + start_indices, indices_value.shape)
+        if not np.array_equal(indices_exp_value, indices_value) \
+                or (indices_len_at_axis + start_indice) > input_last_dim:
+            continue
+        matched = True
+        graph.remove_edges_from(scatternd_in_edges)
+        src, _, src_out_attr = scatternd_in_edges[0]
+        _, _, updates_out_attr = scatternd_in_edges[2]
+        split_node = get_valid_node_name(graph, scatternd + '_split')
+        graph.add_edge(src, split_node, **src_out_attr)
+        if start_indice == 0:
+            split_out_attr = {'src_out_port': 1, 'dst_in_port': 1}
+            graph.add_edge(split_node, scatternd, **split_out_attr)
+            updates_out_attr.update({'dst_in_port': 0})
+            split = [indices_len_at_axis, input_last_dim-indices_len_at_axis]
+        else:
+            split_out_0_attr = {'src_out_port': 0, 'dst_in_port': 0}
+            graph.add_edge(split_node, scatternd, **split_out_0_attr)
+            split_mid_len = indices_len_at_axis
+            split_end_len = input_last_dim - start_indice - split_mid_len
+            if split_end_len != 0:
+                split_out_2_attr = {'src_out_port': 2, 'dst_in_port': 2}
+                graph.add_edge(split_node, scatternd, **split_out_2_attr)
+                split = [start_indice, split_mid_len, split_end_len]
+            else:
+                split = [start_indice, split_mid_len]
+            updates_out_attr.update({'dst_in_port': 1})
+        graph.add_edge(updates, scatternd, **updates_out_attr)
+
+        NodeWrap(graph, split_node).replace_obj(
+            'Split', {'name': split_node, 'opset_version': 11, 'axis': -1, 'split': split})
+        concat_attr = scatternd_obj.copied_attr()
+        concat_attr.update({'opset_version': 13, 'axis': -1})
+        NodeWrap(graph, scatternd).replace_obj('Concat', concat_attr)
+    if matched:
+        clear_redundant_nodes(graph)
+
+
 def convert_special_transpose(graph):
     matches = single_node_matcher(graph, 'Transpose')
     for m in matches:
@@ -7148,6 +7215,7 @@ def middle_passes(graph, params):
     split_roll(graph)
     convert_upsample_to_resize(graph)
     convert_special_resize(graph)
+    convert_special_scatternd(graph)
     convert_global_pool(graph)
     # merge_l2pool(graph)
     convert_special_clip_to_relu(graph)
