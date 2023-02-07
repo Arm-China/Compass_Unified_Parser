@@ -3930,6 +3930,7 @@ def merge_normalized_moments(graph):
         mul_1_in_edges = graph.sorted_in_edges(m['mul1'], data=True)
         mul_2_in_edges = graph.sorted_in_edges(m['mul2'], data=True)
         sub_in_edges = graph.sorted_in_edges(m['sub'], data=True)
+        sub_out_edges = graph.sorted_out_edges(m['sub'], data=True)
         pow_out_edges = graph.sorted_out_edges(m['pow'], data=True)
         mul_1_out_edges = graph.sorted_out_edges(m['mul1'], data=True)
         mul_2_out_edges = graph.sorted_out_edges(m['mul2'], data=True)
@@ -3965,7 +3966,7 @@ def merge_normalized_moments(graph):
             graph.add_edge(inp3_src, m['sub'], **nor_moments_inp3_attr)
             for _, dst, out_attr in add_out_edges:
                 graph.remove_edge(add_name, dst)
-                out_attr['src_out_port'] = 1
+                out_attr['src_out_port'] = 0
                 graph.add_edge(m['sub'], dst, **out_attr)
 
             if add_name in graph._attr['output_names']:
@@ -3984,7 +3985,7 @@ def merge_normalized_moments(graph):
                             m['sub'], in_port=2)
             for _, dst, out_attr in mul_1_out_edges:
                 graph.remove_edge(m['mul1'], dst)
-                out_attr['src_out_port'] = 1
+                out_attr['src_out_port'] = 0
                 graph.add_edge(m['sub'], dst, **out_attr)
 
         inp1_src, _, inp_attr1 = mul_1_in_edges[0]
@@ -3994,6 +3995,9 @@ def merge_normalized_moments(graph):
         graph.remove_edge(inp2_src, m['mul2'])
         graph.add_edge(inp1_src, m['sub'], **inp_attr1)
         graph.add_edge(inp2_src, m['sub'], **inp_attr2)
+        for _, dst, out_attr in sub_out_edges:
+            out_attr['src_out_port'] = 1
+
         moment_attr = node_objs['sub'].copied_attr()
         moment_attr.update({'counts': count_value})
         NodeWrap(graph, m['sub']).replace_obj('NormalizedMoments', moment_attr)
