@@ -3991,6 +3991,36 @@ def sink_double_transpose(graph):
         clear_redundant_nodes(graph)
 
 
+def sink_reshape_through_cast(graph):
+    matches = two_nodes_matcher(graph, 'ArmReshape', 'ArmCast')
+    for m in matches:
+        reshape, cast = m['begin'], m['end']
+        cast_obj = NodeWrap(graph, cast)['object']
+        reshape_in_edges = graph.sorted_in_edges(reshape, data=True)
+        if cast_obj is None or len(reshape_in_edges) < 1:
+            WARN('[Parser]: Meets invalid Node object in sink_reshape_through_cast!')
+            continue
+        reshape_out_edges = graph.sorted_out_edges(reshape)
+        if len(reshape_out_edges) != 1:
+            continue
+        cast_out_edges = graph.sorted_out_edges(cast, data=True)
+        graph.remove_edges_from(reshape_in_edges + cast_out_edges)
+        graph.remove_edge(reshape, cast)
+        src, _, in_attr = reshape_in_edges[0]
+        graph.add_edge(src, cast, **in_attr)
+        reshape_in_attr = copy.deepcopy(in_attr)
+        reshape_in_attr.update({'src_out_port': 0})
+        if in_attr['tensor'] is not None and in_attr['tensor'].value is not None:
+            reshape_in_attr['tensor'].value = in_attr['tensor'].value.astype(np.dtype(cast_obj.to_dtype))
+        graph.add_edge(cast, reshape, **reshape_in_attr)
+        for _, dst, out_attr in cast_out_edges:
+            graph.add_edge(reshape, dst, **out_attr)
+
+        if cast in graph._attr['output_names']:
+            index = graph._attr['output_names'].index(cast)
+            graph._attr['output_names'][index] = reshape
+
+
 def sink_transpose_with_const(graph):
     unaware_types = set(ArmOp.get_concrete_subclass_names()).intersection(
         LayoutUnawareOp.get_concrete_subclass_names())
@@ -4506,6 +4536,7 @@ def back_passes(graph, params):
                           sink_transpose_through_concat,
                           sink_transpose_through_special_reshape,
                           sink_transpose_through_tile,
+                          sink_reshape_through_cast,
                           sink_single_transpose,
                           sink_double_transpose,
                           sink_transpose_with_const
@@ -4513,7 +4544,7 @@ def back_passes(graph, params):
                     f(graph)
                     remove_redundant_transpose_pro(graph, 'ArmTranspose')
                     remove_redundant_transpose(graph)
-                    remove_useless_op(graph, ['ArmTranspose'])
+                    remove_useless_op(graph, ['ArmReshape', 'ArmTranspose'])
             except Exception as e:
                 WARN(
                     '[Parser]: Meets exception (%s) in remove redundant Transpose! But will proceed!', str(e))
