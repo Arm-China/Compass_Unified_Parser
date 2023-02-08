@@ -4010,7 +4010,12 @@ def merge_normalized_moments(graph):
                 or FLOAT_EQUAL(node_objs['mul1'].sorted_in_consts()[0][2], node_objs['mul2'].sorted_in_consts()[0][2]) is False:
             continue
 
-        count_value = round(1/node_objs['mul1'].sorted_in_consts()[0][2], 5)
+        count_value = np.round(1/node_objs['mul1'].sorted_in_consts()[0][2], 5)
+        if type(count_value) is np.ndarray:
+            if np.all(count_value == np.mean(count_value)):
+                count_value = np.mean(count_value)
+            else:
+                continue
 
         have_add = False
         have_add = True if len(
