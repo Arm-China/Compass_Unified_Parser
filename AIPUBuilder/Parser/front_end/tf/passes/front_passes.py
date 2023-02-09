@@ -133,8 +133,9 @@ def convert_depth_to_space(graph, op_type='TfDepthToSpace'):
             nhwc_shape = [input_shape[idx] for idx in pre_perm[:-1]]
             nhwc_shape[-1] *= input_shape[-1]
             insert_reshape(graph, pre_trans, d2s, pre_trans_out_attr, nhwc_shape, data_format='NHWC')
-            post_dim = [batch, height*block_size, width*block_size, -1, 4]
-            post_old_dim = [batch, height*block_size, width*block_size, int(channels_div_4*4/(block_size*block_size))]
+            post_dim = [batch, height * block_size, width * block_size, -1, 4]
+            post_old_dim = [batch, height * block_size, width * block_size,
+                            int(channels_div_4 * 4 / (block_size * block_size))]
             post_reshape = insert_reshape_after(graph, d2s, post_dim, post_old_dim)
             post_perm = TfOp.perm_nhwc_to_nchw_vect_c()
             post_trans = insert_transpose_after(graph, post_reshape, post_perm)
@@ -3436,6 +3437,66 @@ def merge_keras_maskrcnn(graph, params):
     graph._attr['output_names'] = [
         gather3, mrcnn_mask_reshape, topk_final, gather4]
     clear_redundant_nodes(graph)
+
+
+def merge_embedding_lookup_sparse(graph):
+    matched = False
+    matches = matched_patterns(graph,
+                               nodes=[
+                                   ('unique', {'op': 'TfUnique'}),
+                                   ('indices', {'op': ['TfConst', 'Constant']}),
+                                   ('gather', {'op': 'TfGatherV2'}),
+                                   ('segment_ids', {'op': ['TfConst', 'Constant']}),
+                                   ('segment_mean', {'op': 'TfSparseSegmentMean'}),
+                               ],
+                               edges=[
+                                   ('unique', 'gather', {'src_out_port': 0, 'dst_in_port': 1}),
+                                   ('indices', 'gather', {'dst_in_port': 2}),
+                                   ('gather', 'segment_mean', {'src_out_port': 0, 'dst_in_port': 0}),
+                                   ('unique', 'segment_mean', {'src_out_port': 1, 'dst_in_port': 1}),
+                                   ('segment_ids', 'segment_mean', {'dst_in_port': 2}),
+                               ])
+    for m in matches:
+        names = ['unique', 'indices', 'gather', 'segment_ids', 'segment_mean']
+        objs_dict = {n: NodeWrap(graph, m[n])['object'] for n in names}
+        if any(obj is None for obj in objs_dict.values()):
+            ERROR('[Parser]: Meets invalid Op in merge_embedding_lookup_sparse!')
+            continue
+        if objs_dict['gather'].batch_dims != 0 \
+                or objs_dict['gather'].axis != 0:
+            continue
+        unique_in_edges = graph.sorted_in_edges(m['unique'], data=True)
+        gather_in_edges = graph.sorted_in_edges(m['gather'], data=True)
+        segment_mean_in_edges = graph.sorted_in_edges(m['segment_mean'], data=True)
+        unique_out_edges = graph.sorted_out_edges(m['unique'])
+        gather_out_edges = graph.sorted_out_edges(m['gather'])
+        if len(unique_in_edges) != 1 \
+                or len(gather_in_edges) != 3 \
+                or len(segment_mean_in_edges) != 3 \
+                or len(unique_out_edges) != 2 \
+                or len(gather_out_edges) != 1:
+            continue
+        unique_inputs = objs_dict['unique'].get_input_tensors()
+        if len(unique_inputs) != 1 \
+                or unique_inputs[0] is None:
+            continue
+        matched = True
+        weights = np.ones_like(unique_inputs[0], np.float32)
+        src, _, in_attr = gather_in_edges[0]
+        ids, _, ids_in_attr = segment_mean_in_edges[2]
+        value, _, value_in_attr = unique_in_edges[0]
+        graph.remove_edges_from(segment_mean_in_edges)
+        graph.add_edge(src, m['segment_mean'], **in_attr)
+        ids_in_attr['dst_in_port'] = 1
+        graph.add_edge(ids, m['segment_mean'], **ids_in_attr)
+        value_in_attr['dst_in_port'] = 2
+        graph.add_edge(value, m['segment_mean'], **value_in_attr)
+        insert_constant(graph, m['segment_mean'] + '_weights', weights,
+                        m['segment_mean'], in_port=3, data_format='NHWC')
+        segment_mean_attr = objs_dict['segment_mean'].copied_attr()
+        NodeWrap(graph, m['segment_mean']).replace_obj('ArmEmbeddingLookupSparse', segment_mean_attr)
+    if matched:
+        clear_redundant_nodes(graph)
 
 
 def convert_to_onnx(graph):

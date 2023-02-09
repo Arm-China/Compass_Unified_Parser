@@ -1653,6 +1653,48 @@ class ArmEltwiseOp(LayoutUnawareOp, OpHasMethod, BaseActivationOp, ArmOp):
         self.set_out_tensor(out_tensor)
 
 
+class ArmEmbeddingLookupSparseOp(OpHasOneOutPort, ArmOp):
+    @classmethod
+    def num_in_ports(cls):
+        return 4
+
+    @classmethod
+    def cast_in_ports(cls):
+        return {1: 'int32', 2: 'int32', 3: 'float32'}
+
+    @classmethod
+    def attributes(cls):
+        return {'combiner': {'type': AttrType.STRING, 'default': 'MEAN', 'options': ['MEAN', 'SQRTN', 'SUM']},
+                'max_norm': {'type': AttrType.FLOAT, 'default': 'NONE'}
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(ArmEmbeddingLookupSparseOp, self).__init__(graph, attr_dict)
+        self.update_attributes(ArmEmbeddingLookupSparseOp, attr_dict)
+        assert self.check_required(), 'ArmEmbeddingLookupSparseOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(ArmEmbeddingLookupSparseOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        data, ids, values, weights = inputs[:4]
+        ids = np.expand_dims(ids, -1)
+        sp_ids = tf.sparse.SparseTensor(ids, values, [ids.shape[-1]])
+        sp_weights = tf.sparse.SparseTensor(ids, weights, [ids.shape[-1]])
+        out_tensor = tf.nn.embedding_lookup_sparse(data,
+                                                   sp_ids,
+                                                   sp_weights,
+                                                   combiner=self.combiner.lower(),
+                                                   max_norm=None if self.max_norm == 'NONE' else float(self.max_norm)).numpy()
+        self.set_out_tensor(out_tensor)
+
+    def write_attrs(self, txt_file):
+        ret = super(ArmEmbeddingLookupSparseOp, self).write_attrs(txt_file)
+        if ret:
+            txt_file.write('combiner=%s\n' % self.combiner.upper())
+            txt_file.write('max_norm=%s\n' % str(self.max_norm))
+        return ret
+
+
 class ArmErfOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):

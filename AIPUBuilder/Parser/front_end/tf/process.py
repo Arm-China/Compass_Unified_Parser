@@ -13,7 +13,7 @@ from .passes.front_passes import merge_gru, merge_gru2, merge_lstm, merge_zero_f
     convert_resize_bilinear_nearest, remove_identity_n, convert_conv_backpropinput, \
     convert_special_fakequantminmaxvars, convert_maxpoolwithargmax, convert_nms, convert_fusebatchnormv3, \
     convert_matmul, convert_invert_permutation, convert_reverse, convert_depth_to_space, \
-    remove_isfinite_select, merge_fasterrcnn, merge_keras_maskrcnn, merge_lstm2
+    remove_isfinite_select, merge_fasterrcnn, merge_keras_maskrcnn, merge_lstm2, merge_embedding_lookup_sparse
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
@@ -46,6 +46,8 @@ def process_tf(model_path, params):
 
         from ..onnx.passes.middle_passes import convert_to_const
         convert_to_const(graph, ['TfPlaceholderWithDefault', 'TfShape', 'TfSize', 'TfZerosLike'])
+
+        merge_embedding_lookup_sparse(graph)
 
         merge_zero_fraction(graph)
         convert_depth_to_space(graph, op_type='TfDepthToSpace')
