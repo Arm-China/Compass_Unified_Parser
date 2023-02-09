@@ -167,7 +167,7 @@ def get_node_content(node_proto):
     output = []
     for i, o in enumerate(node_proto.output):
         meta_info = parse_proto_name(o)
-        if i > 0 and meta_info.get('out_port', 0) != i:
+        if meta_info.get('out_port', 0) != i:
             meta_info['out_port'] = i
         output.append(meta_info)
 

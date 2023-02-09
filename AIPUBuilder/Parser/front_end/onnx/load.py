@@ -46,6 +46,20 @@ def build_subgraph(params, root_graph_info, opset_ver):
     for oi, op_info in enumerate(all_nodes):
         out_tensor_operator_map.update({k: oi for k in [(
             out_info['name'], out_info['out_port']) for out_info in op_info['output']]})
+    const_tensor_operator_map = {}
+    for oi, op_info in enumerate(consts):
+        const_node_name = op_info['name']
+        const_node_out_port = op_info['out_port']
+        const_tensor_operator_map.update({(const_node_name, const_node_out_port): oi})
+        if not root_graph.has_node(const_node_name):
+            root_graph.add_node(const_node_name)
+            const_node = NodeWrap(root_graph, const_node_name)
+            const_attr = {'name': const_node_name,
+                          'value': op_info['tensor'],
+                          'data_format': params.get('input_data_format', 'NCHW'),
+                          'opset_version': opset_ver}
+            const_node.replace_obj('Constant', const_attr)
+            filter_nodes.append(const_node_name)
 
     for n in nodes:
         n.update({'opset_version': opset_ver})
@@ -73,17 +87,38 @@ def build_subgraph(params, root_graph_info, opset_ver):
                 if pre_op_name in nodes_names and name in nodes_names:
                     filter_edges.append((pre_op_name, name, {
                                         'src_out_port': edge_attr['src_out_port'], 'dst_in_port': edge_attr['dst_in_port']}))
+            elif (in_tensor_name, in_tensor_out_port) in const_tensor_operator_map:
+                const_index = const_tensor_operator_map[(
+                    in_tensor_name, in_tensor_out_port)]
+                edge_attr = {'src_out_port': in_tensor_out_port,
+                             'dst_in_port': in_port,
+                             'tensor': Tensor(name=in_tensor_name,
+                                              value=consts[const_index]['tensor'],
+                                              is_const=True)
+                             }
+                root_graph.add_edge(in_tensor_name, name, **edge_attr)
+                if in_tensor_name in nodes_names and name in nodes_names:
+                    filter_edges.append((in_tensor_name, name, {
+                                        'src_out_port': edge_attr['src_out_port'], 'dst_in_port': edge_attr['dst_in_port']}))
             else:
                 pass
 
     ret = SubGraph(root_graph, filter_nodes, filter_edges)
 
     for out_index, output in enumerate(outputs):
-        op_index_has_output = out_tensor_operator_map[(
-            output['name'], output['out_port'])]
-        out_node_name = nodes[op_index_has_output]['name']
-        if not out_node_name:
+        output_info = (output['name'], output['out_port'])
+        if output_info in out_tensor_operator_map:
+            op_index_has_output = out_tensor_operator_map[output_info]
+            assert op_index_has_output < len(
+                all_nodes), 'Meet invalid op_index_has_output (%d) in build_subgraph' % op_index_has_output
+            out_node_name = all_nodes[op_index_has_output]['name']
+            if not out_node_name:
+                out_node_name = output['name']
+        elif output_info in const_tensor_operator_map:
             out_node_name = output['name']
+        else:
+            ERROR('[Parser]: Meets error in build_subgraph: Key %s is not in tensor_operator_map!' % str(output_info))
+            continue
         assert ret.has_node(
             out_node_name), 'Node does not exist in build_subgraph.'
         ret._attr['output_names'].append(out_node_name)
