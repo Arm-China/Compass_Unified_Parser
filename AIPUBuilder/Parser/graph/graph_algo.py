@@ -213,6 +213,7 @@ def infer(graph, partial=False, chosen_list=None):
     ret = {}
     if len(graph) > 0:
         nodes_list = determined_sort(graph, graph._attr['output_names'])
+        log_func = DEBUG if partial else WARN
         for node_name in nodes_list:
             if chosen_list and node_name not in chosen_list:
                 continue
@@ -233,12 +234,12 @@ def infer(graph, partial=False, chosen_list=None):
                         infer_data = graph._attr['input_tensors'][node_name].value
                         node_obj.infer_shape(infer_data)
                     elif isinstance(node_obj, UndefinedOp):
-                        WARN('[Parser]: Meet unsupported op type %s in Node(%s)!' % (node_obj.type, node_name))
+                        log_func('[Parser]: Meet unsupported op type %s in Node(%s)!' % (node_obj.type, node_name))
                     else:
                         node_obj.infer_shape()
                 except Exception as e:
-                    WARN('[Parser]: Infer of Node(%s) meets issues: %s!' %
-                         (node_name, str(e)))
+                    log_func('[Parser]: Infer of Node(%s) meets issues: %s!' %
+                             (node_name, str(e)))
 
                 msg = ', '.join([node_obj.type,
                                  node_obj.name,

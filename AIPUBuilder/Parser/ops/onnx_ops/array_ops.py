@@ -610,7 +610,9 @@ class PadOp(OpHasOneOutPort, OnnxOp):
 class RangeOp(OpHasOneOutPort, ConstLikeOp, OnnxOp):
     @classmethod
     def attributes(cls):
-        return {11: {}}
+        return {11: {'start': {'default': None},
+                     'limit': {'default': None},
+                     'delta': {'default': None}}}
 
     def __init__(self, graph, attr_dict=None):
         super(RangeOp, self).__init__(graph, attr_dict)

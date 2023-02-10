@@ -3688,9 +3688,12 @@ def remove_const(graph):
                                 'ArmConstant', const_attr)
                         else:
                             removing_const.append(node_name)
-                    elif len(const_out_edges) == 1 and const_child_obj.type == 'Out':
+                    elif len(const_out_edges) == 1 and const_child_obj.type == 'Out' \
+                            and (node_name not in graph._attr['output_names']
+                                 or len(graph._attr['output_names']) > 1):
                         removing_const.append(node_name)
                         if node_name in graph._attr['output_names']:
+                            WARN('[Parser]: Remove isolated Constant Node(%s) from output in remove_const!' % node_name)
                             graph._attr['output_names'].remove(node_name)
                     else:
                         const_attr = node_obj.copied_attr()
@@ -3698,7 +3701,7 @@ def remove_const(graph):
                         NodeWrap(graph, node_name).replace_obj(
                             'ArmConstant', const_attr)
                 else:
-                    WARN('[Parser] Meets invalid Constant Node(%s) in remove_const!' %
+                    WARN('[Parser]: Meets invalid Constant Node(%s) in remove_const!' %
                          const_child)
             else:
                 removing_const.append(node_name)
