@@ -31,20 +31,23 @@ def create_scatternd_model(pb_file_path, input_size, indices_start_from, update_
 
 
 TEST_NAME = 'scatternd'
-input_shape = [1, 3, 10, 16]
-update_shape = [1, 3, 10, 3]
+input_shape = [2, 3, 10, 16]
+update_shapes = [[1, 3, 10, 3], [2, 3, 10, 3], ]
 
 # Generate input data
 feed_dict = dict()
 feed_dict['X0:0'] = np.random.ranf(input_shape).astype(np.float32)
-feed_dict['X1:0'] = (np.random.ranf(update_shape).astype(np.float32) * 100)
+for update_shape in update_shapes:
+    feed_dict['X1:0'] = (np.random.ranf(update_shape).astype(np.float32) * 100)
+    update_shape_expected = (input_shape[:-1] == update_shape[:-1])
+    expected_keywords = ['Split', 'Concat'] if update_shape_expected else ['ScatterND']
+    unexpected_keywords = ['ScatterND'] if update_shape_expected else ['Split', 'Concat']
+    for indices_start_from in (13, 7, 0):
+        model_path = '-'.join([TEST_NAME, str(indices_start_from)]) + '.pb'
+        # Create model
+        create_scatternd_model(model_path, input_shape, indices_start_from, update_shape)
 
-for indices_start_from in (13, 7, 0):
-    model_path = '-'.join([TEST_NAME, str(indices_start_from)]) + '.pb'
-    # Create model
-    create_scatternd_model(model_path, input_shape, indices_start_from, update_shape)
-
-    # Run tests with parser and compare result with runtime
-    exit_status = run_parser(model_path, feed_dict, verify=True,
-                             expected_keywords=['Split', 'Concat'], unexpected_keywords=['ScatterND'])
-    assert exit_status
+        # Run tests with parser and compare result with runtime
+        exit_status = run_parser(model_path, feed_dict, verify=True,
+                                 expected_keywords=expected_keywords, unexpected_keywords=unexpected_keywords)
+        assert exit_status

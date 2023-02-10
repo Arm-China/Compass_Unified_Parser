@@ -1117,11 +1117,17 @@ def convert_special_scatternd(graph):
         if scatternd_obj.reduction != 'none':
             continue
         input_shapes = scatternd_obj.get_input_shapes()
-        if len(input_shapes) < 0 or input_shapes[0] is None or None in input_shapes[0] \
+        if len(input_shapes) < 3 or input_shapes[0] is None or None in input_shapes[0] \
                 or len(input_shapes[0]) < 1 \
                 or len(indices_obj.value.shape) < 2:
             continue
-        input_last_dim = input_shapes[0][-1]
+        input_shape = input_shapes[0]
+        update_shape = input_shapes[2]
+        if update_shape is None or None in update_shape \
+                or len(input_shape) != len(update_shape) \
+                or input_shape[:-1] != update_shape[:-1]:
+            continue
+        input_last_dim = input_shape[-1]
         indices_value = indices_obj.value
         indices_len_at_axis = indices_value.shape[-2]
         start_indice = indices_value.item(indices_value.shape[-1]-1)
