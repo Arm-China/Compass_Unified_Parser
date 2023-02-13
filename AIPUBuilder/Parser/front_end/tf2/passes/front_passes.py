@@ -174,7 +174,8 @@ def convert_to_onnx(graph):
             elif pure_type == 'stack':
                 _remove_edges_if_const(node_name, in_edges[-2:])
                 new_node_attr.update({'new_axis': True})
-            else:
+            elif len(in_edges) > 1:
+                # Some ops like silu do not have 'name' input so cannot remove in_edges
                 graph.remove_edges_from(in_edges[-1:])
 
             matched = True
