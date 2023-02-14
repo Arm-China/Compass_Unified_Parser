@@ -32,7 +32,7 @@ class TfAcosOp(LayoutUnawareOp, OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfAcosOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = np.arccos(*inputs)
+        out_tensor = np.arccos(inputs[0])
         self.set_out_tensor(out_tensor)
 
     @property
@@ -44,7 +44,7 @@ class TfAcoshOp(LayoutUnawareOp, OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfAcoshOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = np.arccosh(*inputs)
+        out_tensor = np.arccosh(inputs[0])
         self.set_out_tensor(out_tensor)
 
     @property
@@ -742,7 +742,7 @@ class TfLogOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfLogOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = np.log(*inputs)
+        out_tensor = np.log(inputs[0])
         self.set_out_tensor(out_tensor)
 
     @property
