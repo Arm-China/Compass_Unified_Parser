@@ -841,30 +841,40 @@ def convert_gather_to_slice(graph):
                     and input_shapes[0] is not None \
                     and len(in_consts) == 1 \
                     and in_consts[0][2] is not None \
+                    and np.ndim(in_consts[0][2]) == 0 \
                     and in_consts[0][2].size == 1:
                 graph.remove_edges_from(in_edges[1:])
                 in_shape = input_shapes[0]
-                gather_axis = (gather_obj.axis + len(in_shape)) if gather_obj.axis < 0 else gather_obj.axis
-                indices = np.array(in_consts[0][2]).item()
-                indices = (indices + in_shape[gather_axis]) if indices < 0 else indices
+                indices = in_consts[0][2]
+
+                reshape = get_valid_node_name(graph, gather + '_post_reshape')
+                for _, dst, out_attr in graph.sorted_out_edges(gather, data=True):
+                    graph.remove_edge(gather, dst)
+                    graph.add_edge(reshape, dst, **out_attr)
+                graph.add_edge(gather, reshape)
 
                 starts = [0] * len(in_shape)
                 ends = in_shape
-                starts[gather_axis] = int(indices)
-                ends[gather_axis] = starts[gather_axis] + 1
+                starts[gather_obj.axis] = int(indices)
+                ends[gather_obj.axis] = starts[gather_obj.axis] + 1
                 axes = list(range(len(in_shape)))
                 slice_attr = gather_obj.copied_attr()
                 slice_attr.update(
                     {'name': gather, 'opset_version': 1, 'axes': axes, 'starts': starts, 'ends': ends})
                 NodeWrap(graph, gather).replace_obj('Slice', slice_attr)
 
-                if np.ndim(in_consts[0][2]) == 0:
-                    old_dim = (np.array(ends, np.int64) - np.array(starts, np.int64)).tolist()
-                    reshape_dim = old_dim[:gather_axis] + old_dim[(gather_axis+1):]
-                    reshape = insert_reshape_after(graph, gather, reshape_dim, old_dim)
-                    if gather in graph._attr['output_names']:
-                        index = graph._attr['output_names'].index(gather)
-                        graph._attr['output_names'][index] = reshape
+                reshape_dim = np.array(ends, np.int64) - np.array(starts, np.int64)
+                reshape_dim = np.delete(reshape_dim, gather_obj.axis)
+                reshape_attr = gather_obj.copied_attr()
+                reshape_attr.update({'name': reshape, 'opset_version': 5})
+                NodeWrap(graph, reshape).replace_obj('Reshape', reshape_attr)
+                const = get_valid_node_name(graph, reshape + '_shape')
+                insert_constant(graph, const, reshape_dim,
+                                reshape, in_port=1, data_format='NHWC')
+                if gather in graph._attr['output_names']:
+                    index = graph._attr['output_names'].index(gather)
+                    graph._attr['output_names'].remove(gather)
+                    graph._attr['output_names'].insert(index, reshape)
 
 
 def convert_gemm_to_fc(graph):
@@ -1130,8 +1140,8 @@ def convert_special_scatternd(graph):
         input_last_dim = input_shape[-1]
         indices_value = indices_obj.value
         indices_len_at_axis = indices_value.shape[-2]
-        start_indice = indices_value.item(indices_value.shape[-1]-1)
-        start_indices = np.array([0] * (indices_value.shape[-1]-1) + [start_indice])
+        start_indice = indices_value.item(indices_value.shape[-1] - 1)
+        start_indices = np.array([0] * (indices_value.shape[-1] - 1) + [start_indice])
         exp_shape = indices_value.shape[:-1]
         indices_exp_value = list(np.ndindex(*exp_shape))
         indices_exp_value = np.reshape(np.array(indices_exp_value) + start_indices, indices_value.shape)
@@ -1148,7 +1158,7 @@ def convert_special_scatternd(graph):
             split_out_attr = {'src_out_port': 1, 'dst_in_port': 1}
             graph.add_edge(split_node, scatternd, **split_out_attr)
             updates_out_attr.update({'dst_in_port': 0})
-            split = [indices_len_at_axis, input_last_dim-indices_len_at_axis]
+            split = [indices_len_at_axis, input_last_dim - indices_len_at_axis]
         else:
             split_out_0_attr = {'src_out_port': 0, 'dst_in_port': 0}
             graph.add_edge(split_node, scatternd, **split_out_0_attr)
@@ -4016,7 +4026,7 @@ def merge_normalized_moments(graph):
                 or FLOAT_EQUAL(node_objs['mul1'].sorted_in_consts()[0][2], node_objs['mul2'].sorted_in_consts()[0][2]) is False:
             continue
 
-        count_value = np.round(1/node_objs['mul1'].sorted_in_consts()[0][2], 5)
+        count_value = np.round(1 / node_objs['mul1'].sorted_in_consts()[0][2], 5)
         if type(count_value) is np.ndarray:
             if np.all(count_value == np.mean(count_value)):
                 count_value = np.mean(count_value)
