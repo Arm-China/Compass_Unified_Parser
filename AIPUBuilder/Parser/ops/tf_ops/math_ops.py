@@ -1205,6 +1205,40 @@ class TfSparseSegmentMeanOp(OpHasOneOutPort, TfOp):
         self.set_out_tensor(out_tensor)
 
 
+class TfSparseSegmentSqrtNOp(OpHasOneOutPort, TfOp):
+    @classmethod
+    def attributes(cls):
+        return {1: {}}
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfSparseSegmentSqrtNOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfSparseSegmentSqrtNOp, attr_dict)
+        assert self.check_required(), 'TfSparseSegmentSqrtNOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(TfSparseSegmentSqrtNOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = tf.raw_ops.SparseSegmentSqrtN(data=inputs[0], indices=inputs[1], segment_ids=inputs[2]).numpy()
+        self.set_out_tensor(out_tensor)
+
+
+class TfSparseSegmentSumOp(OpHasOneOutPort, TfOp):
+    @classmethod
+    def attributes(cls):
+        return {1: {}}
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfSparseSegmentSumOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfSparseSegmentSumOp, attr_dict)
+        assert self.check_required(), 'TfSparseSegmentSumOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(TfSparseSegmentSumOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = tf.raw_ops.SparseSegmentSum(data=inputs[0], indices=inputs[1], segment_ids=inputs[2]).numpy()
+        self.set_out_tensor(out_tensor)
+
+
 class TfSqrtOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfSqrtOp, self).infer_shape()

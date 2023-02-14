@@ -3447,17 +3447,18 @@ def merge_embedding_lookup_sparse(graph):
                                    ('indices', {'op': ['TfConst', 'Constant']}),
                                    ('gather', {'op': 'TfGatherV2'}),
                                    ('segment_ids', {'op': ['TfConst', 'Constant']}),
-                                   ('segment_mean', {'op': 'TfSparseSegmentMean'}),
+                                   ('segment', {'op': ['TfSparseSegmentMean',
+                                    'TfSparseSegmentSum', 'TfSparseSegmentSqrtN']}),
                                ],
                                edges=[
                                    ('unique', 'gather', {'src_out_port': 0, 'dst_in_port': 1}),
                                    ('indices', 'gather', {'dst_in_port': 2}),
-                                   ('gather', 'segment_mean', {'src_out_port': 0, 'dst_in_port': 0}),
-                                   ('unique', 'segment_mean', {'src_out_port': 1, 'dst_in_port': 1}),
-                                   ('segment_ids', 'segment_mean', {'dst_in_port': 2}),
+                                   ('gather', 'segment', {'src_out_port': 0, 'dst_in_port': 0}),
+                                   ('unique', 'segment', {'src_out_port': 1, 'dst_in_port': 1}),
+                                   ('segment_ids', 'segment', {'dst_in_port': 2}),
                                ])
     for m in matches:
-        names = ['unique', 'indices', 'gather', 'segment_ids', 'segment_mean']
+        names = ['unique', 'indices', 'gather', 'segment_ids', 'segment']
         objs_dict = {n: NodeWrap(graph, m[n])['object'] for n in names}
         if any(obj is None for obj in objs_dict.values()):
             ERROR('[Parser]: Meets invalid Op in merge_embedding_lookup_sparse!')
@@ -3467,12 +3468,12 @@ def merge_embedding_lookup_sparse(graph):
             continue
         unique_in_edges = graph.sorted_in_edges(m['unique'], data=True)
         gather_in_edges = graph.sorted_in_edges(m['gather'], data=True)
-        segment_mean_in_edges = graph.sorted_in_edges(m['segment_mean'], data=True)
+        segment_in_edges = graph.sorted_in_edges(m['segment'], data=True)
         unique_out_edges = graph.sorted_out_edges(m['unique'])
         gather_out_edges = graph.sorted_out_edges(m['gather'])
         if len(unique_in_edges) != 1 \
                 or len(gather_in_edges) != 3 \
-                or len(segment_mean_in_edges) != 3 \
+                or len(segment_in_edges) != 3 \
                 or len(unique_out_edges) != 2 \
                 or len(gather_out_edges) != 1:
             continue
@@ -3483,18 +3484,19 @@ def merge_embedding_lookup_sparse(graph):
         matched = True
         weights = np.ones_like(unique_inputs[0], np.float32)
         src, _, in_attr = gather_in_edges[0]
-        ids, _, ids_in_attr = segment_mean_in_edges[2]
+        ids, _, ids_in_attr = segment_in_edges[2]
         value, _, value_in_attr = unique_in_edges[0]
-        graph.remove_edges_from(segment_mean_in_edges)
-        graph.add_edge(src, m['segment_mean'], **in_attr)
+        graph.remove_edges_from(segment_in_edges)
+        graph.add_edge(src, m['segment'], **in_attr)
         ids_in_attr['dst_in_port'] = 1
-        graph.add_edge(ids, m['segment_mean'], **ids_in_attr)
+        graph.add_edge(ids, m['segment'], **ids_in_attr)
         value_in_attr['dst_in_port'] = 2
-        graph.add_edge(value, m['segment_mean'], **value_in_attr)
-        insert_constant(graph, m['segment_mean'] + '_weights', weights,
-                        m['segment_mean'], in_port=3, data_format='NHWC')
-        segment_mean_attr = objs_dict['segment_mean'].copied_attr()
-        NodeWrap(graph, m['segment_mean']).replace_obj('ArmEmbeddingLookupSparse', segment_mean_attr)
+        graph.add_edge(value, m['segment'], **value_in_attr)
+        insert_constant(graph, m['segment'] + '_weights', weights,
+                        m['segment'], in_port=3, data_format='NHWC')
+        segment_attr = objs_dict['segment'].copied_attr()
+        segment_attr.update({'combiner': re.sub('^TfSparseSegment', '', objs_dict['segment'].type).upper()})
+        NodeWrap(graph, m['segment']).replace_obj('ArmEmbeddingLookupSparse', segment_attr)
     if matched:
         clear_redundant_nodes(graph)
 
