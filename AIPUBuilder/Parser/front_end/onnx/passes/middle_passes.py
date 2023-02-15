@@ -4187,6 +4187,99 @@ def merge_erosion(graph):
         clear_redundant_nodes(graph)
 
 
+def merge_reducel1(graph):
+    '''
+    ReduceL1(x)=reducesum(abs(x))
+    Merge Abs+ReduceSum to ReduceL1.
+    '''
+    matched = False
+    matches = two_nodes_matcher(graph, begin_op='Abs', end_op='ReduceSum')
+    for m in matches:
+        abs_node, sum_node = m['begin'], m['end']
+        sum_obj = NodeWrap(graph, sum_node)['object']
+        if sum_obj is None:
+            WARN('[Parser]: Meets invalid ReduceSum Node (%s) in merge_reducel1!' % sum_node)
+            continue
+        abs_in_edges = graph.sorted_in_edges(abs_node, data=True)
+        if len(abs_in_edges) < 1:
+            WARN('[Parser]: Meets invalid in_edges of Abs Node (%s) in merge_reducel1!' % abs_node)
+            continue
+        matched = True
+        sum_in_edges = graph.sorted_in_edges(sum_node)
+        graph.remove_edges_from(sum_in_edges)
+        src, _, in_attr = abs_in_edges[0]
+        graph.add_edge(src, sum_node, **in_attr)
+        reduce_l1_attr = sum_obj.copied_attr()
+        reduce_l1_attr.update({'opset_version': 13})
+        NodeWrap(graph, sum_node).replace_obj('ReduceL1', reduce_l1_attr)
+    if matched:
+        clear_redundant_nodes(graph)
+
+
+def merge_reducel2(graph):
+    '''
+    ReduceL2(x)=sqrt(reducesum(pow(x, 2)))
+    Merge Mul(or Pow)+ReduceSum+Sqrt to ReduceL2.
+    '''
+    matched = False
+    matches = matched_patterns(graph,
+                               nodes=[
+                                   ('mul', {'op': 'Mul'}),
+                                   ('sum', {'op': 'ReduceSum'}),
+                                   ('sqrt', {'op': 'Sqrt'}),
+                               ],
+                               edges=[
+                                   ('mul', 'sum'),
+                                   ('sum', 'sqrt'),
+                               ])
+    matches2 = matched_patterns(graph,
+                                nodes=[
+                                    ('pow_y', {'op': 'Constant'}),
+                                    ('pow', {'op': 'Pow'}),
+                                    ('sum', {'op': 'ReduceSum'}),
+                                    ('sqrt', {'op': 'Sqrt'}),
+                                ],
+                                edges=[
+                                    ('pow_y', 'pow', {'dst_in_port': 1}),
+                                    ('pow', 'sum'),
+                                    ('sum', 'sqrt'),
+                                ])
+    for m in matches + matches2:
+        sum_node, sqrt_node = m['sum'], m['sqrt']
+        if 'mul' in m:
+            square_in_edges = graph.sorted_in_edges(m['mul'], data=True)
+            if len(square_in_edges) != 2 \
+                    or square_in_edges[0][0] != square_in_edges[1][0] \
+                    or square_in_edges[0][2]['src_out_port'] != square_in_edges[1][2]['src_out_port']:
+                continue
+        else:
+            pow_y_obj = NodeWrap(graph, m['pow_y'])['object']
+            if not FLOAT_EQUAL(pow_y_obj.value, 2):
+                continue
+            square_in_edges = graph.sorted_in_edges(m['pow'], data=True)
+            if len(square_in_edges) < 1:
+                WARN('[Parser]: Meets invalid Pow Node (%s) in merge_reducel2!' % m['pow'])
+                continue
+        sum_obj = NodeWrap(graph, sum_node)['object']
+        if sum_obj is None:
+            WARN('[Parser]: Meets invalid ReduceSum Node (%s) in merge_reducel2!' % sum_node)
+            continue
+        sqrt_obj = NodeWrap(graph, sqrt_node)['object']
+        if sqrt_obj is None:
+            WARN('[Parser]: Meets invalid Sqrt Node (%s) in merge_reducel2!' % sqrt_node)
+            continue
+        matched = True
+        src, _, in_attr = square_in_edges[0]
+        sqrt_in_edges = graph.sorted_in_edges(sqrt_node)
+        graph.remove_edges_from(sqrt_in_edges)
+        graph.add_edge(src, sqrt_node, **in_attr)
+        reduce_l2_attr = sqrt_obj.copied_attr()
+        reduce_l2_attr.update({'opset_version': 13, 'axes': sum_obj.axes, 'keepdims': sum_obj.keepdims})
+        NodeWrap(graph, sqrt_node).replace_obj('ReduceL2', reduce_l2_attr)
+    if matched:
+        clear_redundant_nodes(graph)
+
+
 def merge_l2norm(graph):
     matched = False
     matches = matched_patterns(graph,
@@ -7281,6 +7374,8 @@ def middle_passes(graph, params):
 
     merge_logical_xor(graph)
     merge_erosion(graph)
+    merge_reducel1(graph)
+    merge_reducel2(graph)
     merge_l2norm(graph)
     merge_hardswish(graph)
     merge_hardswish2(graph)
