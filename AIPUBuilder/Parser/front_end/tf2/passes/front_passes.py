@@ -172,6 +172,8 @@ def convert_to_onnx(graph):
             elif pure_type == 'left_shift':
                 new_node_attr.update({'direction': 'LEFT'})
                 graph.remove_edges_from(in_edges[-1:])
+            elif pure_type in ('log_softmax', 'split'):
+                _remove_edges_if_const(node_name, in_edges[1:])
             elif pure_type == 'one_hot':
                 _remove_edges_if_const(node_name, in_edges[2:])
                 values = np.array([node_obj.off_value, node_obj.on_value])
@@ -182,8 +184,6 @@ def convert_to_onnx(graph):
             elif pure_type == 'segment_sum':
                 new_node_attr.update({'method': 'SUM'})
                 graph.remove_edges_from(in_edges[-1:])
-            elif pure_type == 'split':
-                _remove_edges_if_const(node_name, in_edges[1:])
             elif pure_type == 'stack':
                 _remove_edges_if_const(node_name, in_edges[-2:])
                 new_node_attr.update({'new_axis': True})

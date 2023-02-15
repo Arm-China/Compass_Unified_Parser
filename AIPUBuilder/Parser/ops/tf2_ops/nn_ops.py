@@ -312,6 +312,43 @@ class TfgeluOp(ActivationOnlyOp, Tf2Op):
         return {'type': 'Gelu', 'version': 1}
 
 
+class Tflog_softmaxOp(OpHasAxis, OpHasOneOutPort, Tf2Op):
+    @classmethod
+    def attributes(cls):
+        return {1: {'axis': {'default': -1}}
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(Tflog_softmaxOp, self).__init__(graph, attr_dict)
+        self.update_attributes(Tflog_softmaxOp, attr_dict)
+        assert self.check_required(), 'Tflog_softmaxOp is missing a required parameter.'
+
+    def __getattr__(self, item):
+        ret = None
+        try:
+            if item == 'axis':
+                inputs = self.get_input_tensors()
+                if len(inputs) >= 2:
+                    ret = inputs[1].item(0)
+                    if ret is not None:
+                        self.__dict__['_attr'][item].value = ret
+        except:
+            ret = None
+        if ret is None:
+            ret = super(Tflog_softmaxOp, self).__getattr__(item)
+        return ret
+
+    def infer_shape(self):
+        super(Tflog_softmaxOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = tf.nn.log_softmax(inputs[0], axis=self.axis).numpy()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'LogSoftmax', 'version': 13}
+
+
 class TfsiluOp(LayoutUnawareOp, ActivationOnlyOp, Tf2Op):
     @classmethod
     def attributes(cls):
