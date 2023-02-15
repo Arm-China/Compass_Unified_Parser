@@ -156,6 +156,19 @@ def convert_to_onnx(graph):
                 approximate = 'tanh' if node_obj.approximate is True else 'none'
                 new_node_attr.update({'approximate': approximate})
                 graph.remove_edges_from(in_edges[-1:])
+            elif pure_type == 'in_top_k':
+                _remove_edges_if_const(node_name, in_edges[2:])
+                if node_obj.cur_version != 1:
+                    if len(in_edges) < 2:
+                        WARN('[Parser]: Meets invalid in_edges for Node(%s) in convert_to_onnx!' % node_name)
+                        continue
+                    graph.remove_edges_from(in_edges)
+                    target_src, _, target_out_attr = in_edges[0]
+                    predict_src, _, predict_out_attr = in_edges[1]
+                    predict_out_attr.update({'dst_in_port': 0})
+                    graph.add_edge(predict_src, node_name, **predict_out_attr)
+                    target_out_attr.update({'dst_in_port': 1})
+                    graph.add_edge(target_src, node_name, **target_out_attr)
             elif pure_type == 'left_shift':
                 new_node_attr.update({'direction': 'LEFT'})
                 graph.remove_edges_from(in_edges[-1:])

@@ -160,6 +160,34 @@ class Tfgreater_equalOp(TfGreaterEqualOp, Tf2Op):
     pass
 
 
+class Tfin_top_kOp(OpHasOneOutPort, Tf2Op):
+    @classmethod
+    def attributes(cls):
+        return {1: {'k': {'type': AttrType.INT}}
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(Tfin_top_kOp, self).__init__(graph, attr_dict)
+        self.update_attributes(Tfin_top_kOp, attr_dict)
+        assert self.check_required(), 'Tfin_top_kOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(Tfin_top_kOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        assert len(inputs) >= 3, 'Tfin_top_kOp expects at least 3 inputs, but got %d' % len(inputs)
+        if self.cur_version == 1:
+            predictions, targets = inputs[0:2]
+        else:
+            targets, predictions = inputs[0:2]
+        self.k = inputs[2].item(0)
+        out_tensor = tf.math.in_top_k(targets, predictions, k=self.k).numpy()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'InTopK', 'version': 1}
+
+
 class TflessOp(TfLessOp, Tf2Op):
     pass
 
