@@ -28,6 +28,9 @@ def process_tf2(model_path, params):
         from ..tf.passes.front_passes import split_b2s
         split_b2s(graph, op_type='Tfbatch_to_space_nd')
 
+        from ..lite.passes.front_passes import split_not_equal
+        split_not_equal(graph, op_type='Tfnot_equal')
+
         infer(graph)
 
         from ..tf.passes.front_passes import convert_depth_to_space

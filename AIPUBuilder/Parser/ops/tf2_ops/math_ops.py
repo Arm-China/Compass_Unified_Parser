@@ -200,6 +200,10 @@ class TfnegativeOp(TfNegOp, Tf2Op):
     pass
 
 
+class Tfnot_equalOp(TfNotEqualOp, Tf2Op):
+    pass
+
+
 class TfpowOp(TfPowOp, Tf2Op):
     pass
 

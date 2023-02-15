@@ -1900,9 +1900,10 @@ def split_greater_or_less_equal(graph):
 
 
 def split_not_equal(graph, op_type='TfNotEqual'):
-    if op_type not in ('TfNotEqual', 'LiteNOT_EQUAL'):
+    if op_type not in ('TfNotEqual', 'Tfnot_equal', 'LiteNOT_EQUAL'):
         WARN('[Parser]: Meets invalid Op type (%s) in split_not_equal!' % op_type)
         return
+    need_clear = False
     matches = single_node_matcher(graph, op_type)
     for m in matches:
         not_equal = m['target']
@@ -1912,6 +1913,10 @@ def split_not_equal(graph, op_type='TfNotEqual'):
                 '[Parser]: Meets invalid NotEqual Op (%s) in split_not_equal!' % not_equal)
             continue
         in_edges = graph.sorted_in_edges(not_equal, data=True)
+        if op_type == 'Tfnot_equal':
+            graph.remove_edges_from(in_edges[2:])
+            in_edges = in_edges[:2]
+            need_clear = True
         equal = get_valid_node_name(graph, not_equal + '_equal')
         for src, _, in_attr in in_edges:
             graph.remove_edge(src, not_equal)
@@ -1924,6 +1929,8 @@ def split_not_equal(graph, op_type='TfNotEqual'):
         not_attr = not_equal_obj.copied_attr()
         not_attr.update({'opset_version': 1})
         NodeWrap(graph, not_equal).replace_obj('Not', not_attr)
+    if need_clear:
+        clear_redundant_nodes(graph)
 
 
 def split_quatized_mean(graph):
