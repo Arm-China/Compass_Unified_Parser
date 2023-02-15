@@ -6978,6 +6978,36 @@ def adjust_scalar_to_1d(graph):
                     '[Parser]: Meets invalid Node (%) in adjust_scalar_to_1d!' % broadcast)
 
 
+def adjust_1d_to_4d(graph):
+    convert_types = ['BatchNormalization']
+    for op_type in convert_types:
+        matches = single_node_matcher(graph, op_type)
+        for m in matches:
+            node_name = m['target']
+            node_obj = NodeWrap(graph, node_name)['object']
+            if node_obj is None:
+                WARN('[Parser]: Meets invalid node(%s) in adjust_1d_to_4d!' % node_name)
+                continue
+            in_edges = graph.sorted_in_edges(node_name, keys=True, data=True)
+            in_shapes = node_obj.get_input_shapes()
+            out_shapes = node_obj.get_output_shapes()
+            if len(in_edges) < 1 \
+                    or len(in_shapes) < 1 \
+                    or len(in_shapes[0]) != 1 \
+                    or len(out_shapes) < 1 \
+                    or out_shapes[0] is None \
+                    or None in out_shapes[0]:
+                continue
+            src, _, k, in_attr = in_edges[0]
+            pre_reshape_dim = [1, 1, 1] + in_shapes[0]
+            insert_reshape(graph, src, node_name, in_attr, pre_reshape_dim, key=k)
+            post_reshape = insert_reshape_after(graph, node_name, out_shapes[0], pre_reshape_dim)
+
+            if node_name in graph._attr['output_names']:
+                index = graph._attr['output_names'].index(node_name)
+                graph._attr['output_names'][index] = post_reshape
+
+
 def adjust_2d_to_4d(graph):
     pure_inputs_types = ['MatMul']
     mixed_inputs_types = []
@@ -7313,6 +7343,7 @@ def middle_passes(graph, params):
     convert_nms(graph)
     align_matmul_input(graph)
     adjust_scalar_to_1d(graph)
+    adjust_1d_to_4d(graph)
     adjust_2d_to_4d(graph)
     adjust_3d_to_4d(graph)
 
