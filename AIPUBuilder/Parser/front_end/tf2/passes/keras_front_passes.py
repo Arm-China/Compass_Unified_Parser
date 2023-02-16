@@ -54,14 +54,13 @@ def convert_batchnorm(graph):
                 or input_shapes[0] is None \
                 or None in input_shapes[0]:
             continue
-        weights_list_idx = int(batchnorm_obj.scale) + int(batchnorm_obj.center)
-        if len(batchnorm_obj.weights_list) >= (weights_list_idx + 2):
-            mean_value = batchnorm_obj.weights_list[weights_list_idx]
-            var_value = batchnorm_obj.weights_list[weights_list_idx + 1]
-        else:
-            num_output = input_shapes[0][-1]
-            mean_value = np.zeros(num_output, np.float32)
-            var_value = np.ones(num_output, np.float32)
+
+        m_v_index = int(batchnorm_obj.scale)+int(batchnorm_obj.center)
+        mean_value = batchnorm_obj.weights_list[m_v_index] if m_v_index < len(
+            batchnorm_obj.weights_list) else np.zeros_like(batchnorm_obj.weights, np.float32)
+        var_value = batchnorm_obj.weights_list[m_v_index+1] if m_v_index < (len(
+            batchnorm_obj.weights_list)-1) else np.ones_like(batchnorm_obj.biases, np.float32)
+
         graph.remove_edges_from(in_edges[1:])
         insert_constant(graph, batchnorm + '_scale',
                         batchnorm_obj.weights, batchnorm, in_port=1, data_format='NHWC')

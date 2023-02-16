@@ -2864,15 +2864,6 @@ class KerasNormalizationOp(OpHasAxis, OpHasBiases, OpHasWeights, OpHasOneOutPort
     @abc.abstractmethod
     def infer_shape(self):
         super(KerasNormalizationOp, self).infer_shape()
-        weights_list_idx = 0
-        if self.scale and len(self.weights_list) > weights_list_idx:
-            self.weights = self.weights_list[weights_list_idx]
-            weights_list_idx += 1
-        if self.center and len(self.weights_list) > weights_list_idx:
-            self.biases = self.weights_list[weights_list_idx]
-            weights_list_idx += 1
-        if self.center and self.scale:
-            return
         inputs = self.get_input_tensors()
         if len(inputs) < 1 \
                 or len(self.get_input_shapes()) < 1 \
@@ -2882,11 +2873,11 @@ class KerasNormalizationOp(OpHasAxis, OpHasBiases, OpHasWeights, OpHasOneOutPort
         input_shape = self.get_input_shapes()[0]
         axes = self.axes if self.axes is not None else [self.axis]
         axes.sort()
-        weights_biases_shape = [input_shape[axis] for axis in axes]
-        if not self.scale:
-            self.weights = np.ones(weights_biases_shape, dtype=inputs[0].dtype)
-        if not self.center:
-            self.biases = np.zeros(weights_biases_shape, dtype=inputs[0].dtype)
+        w_b_shape = [input_shape[axis] for axis in axes]
+        self.weights = self.weights_list[0] if self.scale and len(
+            self.weights_list) > 0 else np.ones(w_b_shape, dtype=inputs[0].dtype)
+        self.biases = self.weights_list[int(self.scale)] if self.center and len(
+            self.weights_list) > int(self.scale) else np.zeros(w_b_shape, dtype=inputs[0].dtype)
 
 
 class KerasPoolingOp(TfHasPaddingStrides, OpHasOneOutPort, KerasOp):
