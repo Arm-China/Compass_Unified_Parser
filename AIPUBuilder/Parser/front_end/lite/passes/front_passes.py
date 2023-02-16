@@ -1083,6 +1083,389 @@ def merge_quantized_lstm(graph):
         clear_redundant_nodes(graph)
 
 
+def merge_quantized_lstm2(graph):
+    '''
+    Merge quantized lstm. The cell matches are different with merge_quantized_lstm.
+    And the first cell merges the initial hidden state(H0) to biases, which may introduce
+    errors if trying to calculate H0. Therefore, only merge the latter timesteps to lstm,
+    and the first timestep is not merged.
+    '''
+    first_cell_matches = matched_patterns(graph,
+                                          nodes=[('fc', {'op': 'LiteFULLY_CONNECTED'}),
+                                                 ('split', {'op': 'LiteSPLIT'}),
+                                                 ('sigmoid_sp0', {'op': 'LiteLOGISTIC'}),
+                                                 ('sigmoid_sp1', {'op': 'LiteLOGISTIC'}),
+                                                 ('tanh_sp2', {'op': 'LiteTANH'}),
+                                                 ('sigmoid_sp3', {'op': 'LiteLOGISTIC'}),
+                                                 ('mul_sp01', {'op': 'LiteMUL'}),
+                                                 ('mul_sp2', {'op': 'LiteMUL'}),
+                                                 ('add_cout', {'op': 'LiteADD'}),
+                                                 ('tanh_c', {'op': 'LiteTANH'}),
+                                                 ('mul_hout', {'op': 'LiteMUL'}),
+                                                 ],
+                                          edges=[('fc', 'split'),
+                                                 ('split', 'sigmoid_sp0', {'src_out_port': 0}),
+                                                 ('split', 'sigmoid_sp1', {'src_out_port': 1}),
+                                                 ('split', 'tanh_sp2', {'src_out_port': 2}),
+                                                 ('split', 'sigmoid_sp3', {'src_out_port': 3}),
+                                                 ('sigmoid_sp0', 'mul_sp01'),
+                                                 ('tanh_sp2', 'mul_sp01'),
+                                                 ('sigmoid_sp1', 'mul_sp2'),
+                                                 ('mul_sp01', 'add_cout'),
+                                                 ('mul_sp2', 'add_cout'),
+                                                 ('add_cout', 'tanh_c'),
+                                                 ('tanh_c', 'mul_hout'),
+                                                 ('sigmoid_sp3', 'mul_hout'),
+                                                 ])
+    other_cell_matches = matched_patterns(graph,
+                                          nodes=[('fc1', {'op': 'LiteFULLY_CONNECTED'}),
+                                                 ('fc2', {'op': 'LiteFULLY_CONNECTED'}),
+                                                 ('add_fc', {'op': 'LiteADD'}),
+                                                 ('bias', {'op': 'Constant'}),
+                                                 ('add_bias', {'op': 'LiteADD'}),
+                                                 ('split', {'op': 'LiteSPLIT'}),
+                                                 ('sigmoid_sp0', {'op': 'LiteLOGISTIC'}),
+                                                 ('sigmoid_sp1', {'op': 'LiteLOGISTIC'}),
+                                                 ('tanh_sp2', {'op': 'LiteTANH'}),
+                                                 ('sigmoid_sp3', {'op': 'LiteLOGISTIC'}),
+                                                 ('mul_sp01', {'op': 'LiteMUL'}),
+                                                 ('mul_sp2', {'op': 'LiteMUL'}),
+                                                 ('add_cout', {'op': 'LiteADD'}),
+                                                 ('tanh_c', {'op': 'LiteTANH'}),
+                                                 ('mul_hout', {'op': 'LiteMUL'}),
+                                                 ],
+                                          edges=[('fc1', 'add_fc'),
+                                                 ('fc2', 'add_fc'),
+                                                 ('add_fc', 'add_bias'),
+                                                 ('bias', 'add_bias'),
+                                                 ('add_bias', 'split'),
+                                                 ('split', 'sigmoid_sp0', {'src_out_port': 0}),
+                                                 ('split', 'sigmoid_sp1', {'src_out_port': 1}),
+                                                 ('split', 'tanh_sp2', {'src_out_port': 2}),
+                                                 ('split', 'sigmoid_sp3', {'src_out_port': 3}),
+                                                 ('sigmoid_sp0', 'mul_sp01'),
+                                                 ('tanh_sp2', 'mul_sp01'),
+                                                 ('sigmoid_sp1', 'mul_sp2'),
+                                                 ('mul_sp01', 'add_cout'),
+                                                 ('mul_sp2', 'add_cout'),
+                                                 ('add_cout', 'tanh_c'),
+                                                 ('tanh_c', 'mul_hout'),
+                                                 ('sigmoid_sp3', 'mul_hout'),
+                                                 ])
+    lstm_matches_dict = {}
+    for m in first_cell_matches + other_cell_matches:
+        if 'fc' in m:
+            fc = m['fc']
+            fc_obj = NodeWrap(graph, fc)['object']
+            if fc_obj is None or fc_obj.weights is None:
+                WARN('[Parser]: Meets invalid node (%s) in merge_quantized_lstm2!' % fc)
+                continue
+            fc_in_edges = graph.sorted_in_edges(fc, data=True)
+            if len(fc_in_edges) < 1:
+                continue
+        else:
+            fc1 = m['fc1']
+            fc2 = m['fc2']
+            fc_in_edges = graph.sorted_in_edges(fc1, data=True)[:1] + graph.sorted_in_edges(fc2, data=True)[:1]
+            if len(fc_in_edges) < 2:
+                continue
+        mul_in_edges = graph.sorted_in_edges(m['mul_sp2'])
+        mul_inputs = [src for src,
+                      _ in mul_in_edges if src != m['sigmoid_sp1']]
+        if len(mul_inputs) != 1:
+            continue
+        last_cout = mul_inputs[0]
+        unpack_out_port, unpack, last_hout = None, None, None
+        match_dict = copy.deepcopy(m)
+        for idx, (fc_input_node, fc_node, in_attr) in enumerate(fc_in_edges):
+            node_obj = NodeWrap(graph, fc_input_node)['object']
+            if node_obj is None:
+                continue
+            if node_obj.type == 'LiteUNPACK':
+                unpack = fc_input_node
+                unpack_out_port = in_attr['src_out_port']
+                match_dict.update({'fc_after_unpack': fc_node})
+            else:
+                last_hout = fc_input_node
+                match_dict.update({'fc_after_hstate': fc_node})
+        if unpack_out_port is None or unpack is None:
+            continue
+        mul_hout_out_edges = graph.sorted_out_edges(m['mul_hout'])
+        pack = None
+        for _, dst in mul_hout_out_edges:
+            dst_obj = NodeWrap(graph, dst)['object']
+            if dst_obj is None:
+                WARN('[Parser]: Meets invalid node %s in merge_quantized_lstm2!' % dst)
+                continue
+            if dst_obj.type == 'LitePACK':
+                pack = dst
+                break
+        if pack is None:
+            WARN('[Parser]: No pack node found in merge_quantized_lstm2!')
+            continue
+
+        match_dict.update({'last_cout': last_cout, 'last_hout': last_hout})
+        lstm_matches_dict_key = (unpack, pack)
+        if lstm_matches_dict_key not in lstm_matches_dict:
+            lstm_matches_dict.update({lstm_matches_dict_key: [(unpack_out_port, match_dict)]})
+        else:
+            matches_list = lstm_matches_dict[lstm_matches_dict_key]
+            matches_list.append((unpack_out_port, match_dict))
+            lstm_matches_dict.update({lstm_matches_dict_key: matches_list})
+
+    matched = False
+    for (unpack, pack), cell_matches in lstm_matches_dict.items():
+        if not cell_matches:
+            continue
+
+        # Check whether unpack node is valid
+        unpack_obj = NodeWrap(graph, unpack)['object']
+        unpack_in_edges = graph.sorted_in_edges(unpack, data=True)
+        if unpack_obj.type != 'LiteUNPACK' \
+                or unpack_obj.axis != 0 \
+                or unpack_obj.num != len(cell_matches) \
+                or len(unpack_in_edges) < 1:
+            continue
+        unpack_in_shapes = unpack_obj.get_input_shapes()
+        if len(unpack_in_shapes) < 1 \
+                or unpack_in_shapes[0] is None \
+                or len(unpack_in_shapes[0]) != 3:
+            continue
+        seq_length, batch_size, input_size = unpack_in_shapes[0]
+
+        # Sort cell matches by out ports of pack, and check whether it's reversed lstm
+        cell_matches.sort()
+        is_reverse_lstm = False
+        final_yout = pack
+        if cell_matches[-1][1]['last_hout'] is None:
+            cell_matches.reverse()
+            is_reverse_lstm = True
+            pack_out_edges = graph.sorted_out_edges(pack, data=True)
+            if len(pack_out_edges) != 1:
+                # TODO: Support the case that len(pack_out_edges) != 1
+                continue
+            reverse_node = pack_out_edges[0][1]
+            reverse_node_obj = NodeWrap(graph, reverse_node)['object']
+            if reverse_node_obj is None or reverse_node_obj.type != 'LiteREVERSE_V2':
+                continue
+            final_yout = reverse_node
+
+        _, first_cell_match = cell_matches[0]
+        first_cell_fc = first_cell_match['fc']
+        first_fc_obj = NodeWrap(graph, first_cell_fc)['object']
+        first_cell_fc_in_attr = graph.sorted_in_edges(first_cell_fc, data=True)[0][2]
+        # Check whether weights are valid. The weights of first cell should be same as others.
+        # No need to check biases here because it is different with other cells and won't be used.
+        weights = first_fc_obj.weights
+        if len(weights.shape) != 2 or weights.shape[1] != input_size:
+            continue
+        hidden_size = int(first_fc_obj.biases.shape[0] / 4)
+        weights_scale_zp = first_fc_obj.weights_scale_zp
+        if len(weights_scale_zp) == 2:
+            dequant_weights = (
+                weights - first_fc_obj.weights_scale_zp[1]) * first_fc_obj.weights_scale_zp[0]
+        else:
+            dequant_weights = weights
+
+        # Check whether all the cell_matches belong to one lstm opeartion
+        final_hout_list = [first_cell_match['mul_hout']]
+        dequant_recurrent_weights, recurrent_weights, recurrent_weights_scale_zp = None, None, None
+        dequant_biases, biases, biases_scale_zp = None, None, None
+        is_same_lstm = True
+        for idx, (parent_out_port, cell_match) in enumerate(cell_matches):
+            exp_out_port = (len(cell_matches) - 1 - idx) if is_reverse_lstm else idx
+            if parent_out_port != exp_out_port:
+                is_same_lstm = False
+                break
+            if idx == 0:
+                continue
+            fc1, fc2 = cell_match['fc_after_unpack'], cell_match['fc_after_hstate']
+            fc1_obj, fc2_obj = NodeWrap(graph, fc1)['object'], NodeWrap(graph, fc2)['object']
+            if fc1_obj is None or fc2_obj is None:
+                is_same_lstm = False
+                break
+            if len(fc1_obj.weights_scale_zp) == 2:
+                fc_weights = ((fc1_obj.weights - fc1_obj.weights_scale_zp[1]) * fc1_obj.weights_scale_zp[0])
+            else:
+                fc_weights = fc1_obj.weights
+            if fc_obj is None \
+                    or not np.allclose(dequant_weights, fc_weights):
+                is_same_lstm = False
+                break
+            if len(fc2_obj.weights_scale_zp) == 2:
+                current_recurrent_weights = (
+                    fc2_obj.weights - fc2_obj.weights_scale_zp[1]) * fc2_obj.weights_scale_zp[0]
+            else:
+                current_recurrent_weights = fc2_obj.weights
+            if dequant_recurrent_weights is None:
+                recurrent_weights = fc2_obj.weights
+                dequant_recurrent_weights = current_recurrent_weights
+                recurrent_weights_scale_zp = fc2_obj.weights_scale_zp
+            elif not np.allclose(dequant_recurrent_weights, current_recurrent_weights):
+                is_same_lstm = False
+                break
+            bias = cell_match['bias']
+            bias_obj = NodeWrap(graph, bias)['object']
+            bias_out_edges = graph.sorted_out_edges(bias, data=True)
+            if bias_obj is None or bias_obj.value is None or len(bias_out_edges) < 1 \
+                    or bias_out_edges[0][2]['tensor'] is None:
+                is_same_lstm = False
+                break
+            current_bias_value = bias_obj.value
+            current_bias_scale, current_bias_zp = bias_out_edges[0][2]['tensor'].scale_zp
+            if current_bias_scale and current_bias_zp:
+                current_bias_value = (current_bias_value - current_bias_zp) * current_bias_scale
+            if dequant_biases is None:
+                biases = bias_obj.value
+                dequant_biases = current_bias_value
+                biases_scale_zp = bias_out_edges[0][2]['tensor'].scale_zp
+            elif not np.allclose(dequant_biases, current_bias_value):
+                is_same_lstm = False
+                break
+            if cell_match['last_hout'] != cell_matches[idx - 1][1]['mul_hout'] \
+                    or cell_match['last_cout'] != cell_matches[idx - 1][1]['add_cout']:
+                is_same_lstm = False
+                break
+            final_hout_list.append(cell_match['mul_hout'])
+        if not is_same_lstm:
+            continue
+
+        # Check whether pack node to concat all the intermediate outputs of the hidden is valid
+        pack_in_edges = graph.sorted_in_edges(pack)
+        if len(pack_in_edges) != unpack_obj.num \
+                or any(pack_src != final_hout_list[idx] for idx, (pack_src, _) in enumerate(pack_in_edges)):
+            continue
+
+        # The outputs of the first cell will be the inputs of merged lstm
+        initial_h = first_cell_match['mul_hout']
+        initial_c = first_cell_match['add_cout']
+        initial_h_out_edges = graph.sorted_out_edges(initial_h, data=True)
+        initial_c_out_edges = graph.sorted_out_edges(initial_c, data=True)
+        if len(initial_h_out_edges) < 1 or len(initial_c_out_edges) < 1:
+            continue
+
+        # Get the final outputs of the hidden and the cell
+        final_hout = cell_matches[-1][1]['mul_hout']
+        final_hout_out_edges = graph.sorted_out_edges(final_hout, data=True)
+        final_cout = cell_matches[-1][1]['add_cout']
+        final_cout_out_edges = graph.sorted_out_edges(final_cout, data=True)
+
+        matched = True
+        # Reconnect inputs and outputs
+        # Add split node to split input into 2 parts
+        split = get_valid_node_name(graph, unpack + '_split')
+        inp, _, in_attr = unpack_in_edges[0]
+        graph.add_edge(inp, split, **in_attr)
+        lstm_timestep_num = unpack_obj.num - 1
+        NodeWrap(graph, split).replace_obj('Split',
+                                           {'name': split,
+                                            'opset_version': 11,
+                                            'axis': 0,
+                                            'split': [lstm_timestep_num, 1] if is_reverse_lstm else [1, lstm_timestep_num]})
+        # Connect split with fc from the first cell and merged lstm
+        lstm = get_valid_node_name(graph, initial_h + '_lstm')
+        graph.remove_edge(unpack, first_cell_fc)
+        split_to_fc_out_attr = copy.deepcopy(first_cell_fc_in_attr)
+        split_to_fc_out_attr.update({'src_out_port': 1 if is_reverse_lstm else 0})
+        if first_cell_fc_in_attr['tensor'] is not None and first_cell_fc_in_attr['tensor'].value is not None:
+            split_to_fc_out_attr['tensor'].value = np.expand_dims(first_cell_fc_in_attr['tensor'].value, 0)
+        graph.add_edge(split, first_cell_fc, **split_to_fc_out_attr)
+        split_to_lstm_out_attr = {'src_out_port': 0 if is_reverse_lstm else 1}
+        graph.add_edge(split, lstm, **split_to_lstm_out_attr)
+        insert_reshape(graph, split, first_cell_fc, split_to_fc_out_attr, [batch_size, input_size])
+        # Add concat node to concat the output of the first cell and the merged lstm
+        concat = get_valid_node_name(graph, lstm + '_concat')
+        # Connect lstm and initial_h(which is also the output of the first cell) to concat
+        lstm_y_out_attr = {'src_out_port': 0, 'dst_in_port': 0 if is_reverse_lstm else 1}
+        graph.add_edge(lstm, concat, **lstm_y_out_attr)
+        first_cell_h_out_attr = {'dst_in_port': 1 if is_reverse_lstm else 0}
+        graph.add_edge(initial_h, concat, **first_cell_h_out_attr)
+        insert_reshape(graph, initial_h, concat, first_cell_h_out_attr, [1, batch_size, hidden_size])
+        NodeWrap(graph, concat).replace_obj('Concat', {'name': concat, 'opset_version': 13, 'axis': 0})
+        # Connect the dst nodes of pack/reverse with concat/lstm
+        final_yout_out_edges = graph.sorted_out_edges(final_yout, data=True)
+        for _, dst, out_attr in final_yout_out_edges:
+            graph.remove_edge(final_yout, dst)
+            new_attr = copy.deepcopy(out_attr)
+            new_attr.update({'src_out_port': 0})
+            graph.add_edge(concat, dst, **new_attr)
+        for _, dst, out_attr in final_hout_out_edges:
+            if dst == pack:
+                continue
+            graph.remove_edge(final_hout, dst)
+            new_attr = copy.deepcopy(out_attr)
+            new_attr.update({'src_out_port': 1})
+            graph.add_edge(lstm, dst, **new_attr)
+        for _, dst, out_attr in final_cout_out_edges:
+            graph.remove_edge(final_cout, dst)
+            new_attr = copy.deepcopy(out_attr)
+            new_attr.update({'src_out_port': 2})
+            graph.add_edge(lstm, dst, **new_attr)
+
+        # Reset output names
+        for idx, node in enumerate([final_yout, final_hout, final_cout]):
+            if node == final_yout:
+                old_dim = [seq_length-1, 1, batch_size, hidden_size]
+                new_dim = [seq_length-1, batch_size, hidden_size]
+            else:
+                old_dim = [1, batch_size, hidden_size]
+                new_dim = [batch_size, hidden_size]
+            post_reshape = insert_reshape_after(
+                graph, lstm, new_dim, old_dim, out_port=idx)
+            if node in graph._attr['output_names']:
+                index = graph._attr['output_names'].index(node)
+                out_node = post_reshape if node != final_yout else concat
+                graph._attr['output_names'][index] = out_node
+
+        # Prepare inputs for onnx lstm
+        input_w, forget_w, cell_w, output_w = np.split(
+            weights, 4, axis=0)
+        input_r, forget_r, cell_r, output_r = np.split(
+            recurrent_weights, 4, axis=0)
+        input_wb, forget_wb, cell_wb, output_wb = np.split(biases, 4, axis=0)
+        W_value = np.stack([np.concatenate(
+            [input_w, output_w, forget_w, cell_w], axis=0)])
+        R_value = np.stack([np.concatenate(
+            [input_r, output_r, forget_r, cell_r], axis=0)])
+        biases_w = np.concatenate([input_wb, output_wb, forget_wb, cell_wb])
+        biases_r = np.zeros_like(biases_w)
+        B_value = np.stack([np.concatenate([biases_w, biases_r])])
+        seq_length = np.array([seq_length-1] * batch_size, np.int64)
+        initial_hc_shape = [1, batch_size, hidden_size]
+
+        # Convert to onnx lstm
+        insert_constant(graph, lstm + '_W', W_value, lstm,
+                        in_port=1, data_format='NHWC')
+        insert_constant(graph, lstm + '_R', R_value, lstm,
+                        in_port=2, data_format='NHWC')
+        insert_constant(graph, lstm + '_B', B_value, lstm,
+                        in_port=3, data_format='NHWC')
+        insert_constant(graph, lstm + '_seq_length', seq_length, lstm,
+                        in_port=4, data_format='NHWC')
+        initial_h_out_attr = copy.deepcopy(initial_h_out_edges[0][2])
+        initial_h_out_attr.update({'dst_in_port': 5})
+        initial_c_out_attr = copy.deepcopy(initial_c_out_edges[0][2])
+        initial_c_out_attr.update({'dst_in_port': 6})
+        graph.add_edge(initial_c, lstm, **initial_h_out_attr)
+        graph.add_edge(initial_h, lstm, **initial_h_out_attr)
+        insert_reshape(graph, initial_c, lstm,
+                       initial_c_out_attr, initial_hc_shape)
+        insert_reshape(graph, initial_h, lstm,
+                       initial_h_out_attr, initial_hc_shape)
+        lstm_attr = {'name': lstm,
+                     'opset_version': 14,
+                     'layout': False,
+                     'hidden_size': hidden_size,
+                     'direction': 'reverse' if is_reverse_lstm else 'forward',
+                     'weights_scale_zp': [[weights_scale_zp[0], recurrent_weights_scale_zp[0]],
+                                          [weights_scale_zp[1], recurrent_weights_scale_zp[1]]],
+                     'biases_scale_zp': biases_scale_zp}
+        NodeWrap(graph, lstm).replace_obj('LSTM', lstm_attr)
+
+    if matched:
+        clear_redundant_nodes(graph)
+
+
 def merge_quantized_instance_norm(graph):
     matched = False
     matches = matched_patterns(graph,
