@@ -4284,7 +4284,6 @@ def merge_l2norm(graph):
     matched = False
     matches = matched_patterns(graph,
                                nodes=[
-                                   ('input', {}),
                                    ('square', {'op': 'Mul'}),
                                    ('l2norm', {'op': 'Mul'}),
                                    ('sum', {'op': 'ReduceSum'}),
@@ -4293,21 +4292,14 @@ def merge_l2norm(graph):
                                    ('recip', {'op': 'Reciprocal'}),
                                ],
                                edges=[
-                                   ('input', 'square', {
-                                    'src_out_port': 0, 'dst_in_port': 0}),
-                                   ('input', 'square', {
-                                    'src_out_port': 0, 'dst_in_port': 1}),
-                                   ('input', 'l2norm'),
                                    ('square', 'sum'),
                                    ('sum', 'max'),
                                    ('max', 'sqrt'),
                                    ('sqrt', 'recip'),
-                                   ('recip', 'l2norm', {
-                                    'src_out_port': 0, 'dst_in_port': 1}),
+                                   ('recip', 'l2norm'),
                                ])
     matches2 = matched_patterns(graph,
                                 nodes=[
-                                    ('input', {}),
                                     ('pow_y', {'op': 'Constant'}),
                                     ('pow', {'op': 'Pow'}),
                                     ('l2norm', {'op': 'Mul'}),
@@ -4317,45 +4309,54 @@ def merge_l2norm(graph):
                                     ('recip', {'op': 'Reciprocal'}),
                                 ],
                                 edges=[
-                                    ('input', 'pow'),
-                                    ('pow_y', 'pow'),
-                                    ('input', 'l2norm'),
+                                    ('pow_y', 'pow', {'dst_in_port': 1}),
                                     ('pow', 'sum'),
                                     ('sum', 'max'),
                                     ('max', 'sqrt'),
                                     ('sqrt', 'recip'),
-                                    ('recip', 'l2norm', {
-                                        'src_out_port': 0, 'dst_in_port': 1}),
+                                    ('recip', 'l2norm'),
                                 ])
     for m in matches + matches2:
-        inp, sum, l2norm = m['input'], m['sum'], m['l2norm']
-        if 'square' in m:
-            square = m['square']
-        else:
-            square = m['pow']
+        if 'pow' in m:
             pow_y_obj = NodeWrap(graph, m['pow_y'])['object']
-            if pow_y_obj is None or not FLOAT_EQUAL(pow_y_obj.value, 2.):
+            if pow_y_obj is None:
+                WARN('[Parser]: Meets invalid node (%s) in merge_l2norm!' % m['pow_y'])
                 continue
-        sum_obj = NodeWrap(graph, sum)['object']
-        if len(sum_obj.axes) == 1:
-            matched = True
-            axis = sum_obj.axes[0]
-            square_in_edges = graph.sorted_in_edges(square)
-            l2norm_in_edges = graph.sorted_in_edges(l2norm, data=True)
-            graph.remove_edges_from(square_in_edges)
-            for src, _, in_attr in l2norm_in_edges:
-                if src == inp:
-                    new_in_attr = copy.deepcopy(in_attr)
-                    new_in_attr.update({'dst_in_port': 0})
-                    graph.remove_edge(src, l2norm)
-                    graph.add_edge(src, l2norm, **new_in_attr)
-                else:
-                    graph.remove_edge(src, l2norm)
-            l2norm_attr = NodeWrap(graph, l2norm)['object'].copied_attr()
-            l2norm_attr.update({'opset_version': 1, 'p': 2, 'axis': axis})
-            NodeWrap(graph, l2norm).replace_obj('LpNormalization', l2norm_attr)
+            if not FLOAT_EQUAL(pow_y_obj.value, 2.):
+                continue
+            square_in_edges = graph.sorted_in_edges(m['pow'], data=True)
+            if len(square_in_edges) < 1:
+                continue
         else:
-            WARN('[Parser]: Invalid ReduceSum axes for node(%s) in merge_l2norm!' % sum)
+            square_in_edges = graph.sorted_in_edges(m['square'], data=True)
+            if len(square_in_edges) != 2 \
+                    or square_in_edges[0][0] != square_in_edges[1][0] \
+                    or square_in_edges[0][2]['src_out_port'] != square_in_edges[1][2]['src_out_port']:
+                continue
+        inp, _, in_attr = square_in_edges[0]
+        l2norm = m['l2norm']
+        sum_obj = NodeWrap(graph, m['sum'])['object']
+        l2norm_obj = NodeWrap(graph, l2norm)['object']
+        if sum_obj is None or l2norm_obj is None:
+            WARN('[Parser]: Meets invalid node in merge_l2norm!')
+            continue
+        l2norm_in_edges = graph.sorted_in_edges(l2norm, data=True)
+        if len(l2norm_in_edges) != 2 \
+                or inp not in (l2norm_in_edges[0][0], l2norm_in_edges[1][0]):
+            continue
+        matched = True
+        axes = sum_obj.axes
+        for src, _, in_attr in l2norm_in_edges:
+            if src == inp:
+                new_in_attr = copy.deepcopy(in_attr)
+                new_in_attr.update({'dst_in_port': 0})
+                graph.remove_edge(src, l2norm)
+                graph.add_edge(src, l2norm, **new_in_attr)
+            else:
+                graph.remove_edge(src, l2norm)
+        l2norm_attr = l2norm_obj.copied_attr()
+        l2norm_attr.update({'opset_version': 1, 'p': 2, 'axes': axes})
+        NodeWrap(graph, l2norm).replace_obj('LpNormalization', l2norm_attr)
     if matched:
         clear_redundant_nodes(graph)
 
