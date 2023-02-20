@@ -1222,6 +1222,8 @@ class LSTMOp(BaseRnnOp, OpHasBiases, OpHasWeights, OnnxOp):
                 # input_gate_res = i * j
                 # forget_gate_res = f * c_state_per_direction
                 # input_add_forget = input_gate_res + forget_gate_res
+                # if cell_gate > 0:
+                #    input_add_forget = np.clip(input_add_forget, -cell_clip, cell_clip)
                 # output_gate_res = o * tf.nn.tanh(input_add_forget)
                 '''
 

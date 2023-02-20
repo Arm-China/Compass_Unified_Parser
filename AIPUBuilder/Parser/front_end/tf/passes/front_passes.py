@@ -3501,6 +3501,170 @@ def merge_embedding_lookup_sparse(graph):
         clear_redundant_nodes(graph)
 
 
+def merge_embedding_lookup_sparse_with_weights(graph):
+    matched = False
+    const_types = ['TfConst', 'Constant']
+    elsw_sum_matches = matched_patterns(graph,
+                                        nodes=[
+                                            ('unique', {'op': 'TfUnique'}),
+                                            ('gather1', {'op': 'TfGatherV2'}),
+                                            ('gather1_axis', {'op': const_types}),
+                                            ('gather2', {'op': 'TfGatherV2'}),
+                                            ('gather2_axis', {'op': const_types}),
+                                            ('reshape', {'op': 'TfReshape'}),
+                                            ('reshape_shape', {'op': const_types}),
+                                            ('mul', {'op': 'TfMul'}),
+                                            ('segment_sum', {'op': 'TfSegmentSum'}),
+                                            ('segment_ids', {'op': const_types}),
+                                        ],
+                                        edges=[
+                                            ('unique', 'gather1', {'src_out_port': 0, 'dst_in_port': 1}),
+                                            ('gather1_axis', 'gather1', {'dst_in_port': 2}),
+                                            ('unique', 'gather2', {'src_out_port': 1, 'dst_in_port': 1}),
+                                            ('gather2_axis', 'gather2', {'dst_in_port': 2}),
+                                            ('reshape_shape', 'reshape', {'dst_in_port': 1}),
+                                            ('gather2', 'mul', {'dst_in_port': 0}),
+                                            ('reshape', 'mul', {'dst_in_port': 1}),
+                                            ('mul', 'segment_sum', {'dst_in_port': 0}),
+                                            ('segment_ids', 'segment_sum', {'dst_in_port': 1})
+                                        ])
+    for m in elsw_sum_matches:
+        names = ['unique', 'gather1', 'gather1_axis', 'gather2', 'gather2_axis',
+                 'reshape', 'reshape_shape', 'mul', 'segment_sum', 'segment_ids']
+        obj_dict = {k: NodeWrap(graph, m[k])['object'] for k in names}
+        if any(obj is None for obj in obj_dict.values()):
+            ERROR('[Parser]: Meets invalid op in merge_embedding_lookup_sparse_with_weights!')
+            continue
+        if obj_dict['gather1'].axis != 0 \
+                or obj_dict['gather1'].batch_dims != 0 \
+                or obj_dict['gather2'].axis != 0 \
+                or obj_dict['gather2'].batch_dims != 0:
+            continue
+
+        gather1_in_edges = graph.sorted_in_edges(m['gather1'], data=True)
+        unique_in_edges = graph.sorted_in_edges(m['unique'], data=True)
+        reshape_in_edges = graph.sorted_in_edges(m['reshape'], data=True)
+        segment_sum_in_edges = graph.sorted_in_edges(m['segment_sum'], data=True)
+
+        if len(gather1_in_edges) != 3 \
+                or len(unique_in_edges) != 1 \
+                or len(reshape_in_edges) != 2 \
+                or len(segment_sum_in_edges) != 2:
+            continue
+
+        reshape_dim = obj_dict['reshape_shape'].value
+        indices = obj_dict['segment_ids'].value
+        if reshape_dim is None or indices is None:
+            ERROR('[Parser]: Meets invalid Constant op in merge_embedding_lookup_sparse_with_weights!')
+            continue
+        if reshape_dim.item(0) != indices.size or int(np.product(reshape_dim)) != indices.size:
+            continue
+
+        mean_matches = matched_patterns(graph,
+                                        nodes=[
+                                            ('segment_sum', {'op': 'TfSegmentSum'}),
+                                            ('segment_ids', {'op': const_types}),
+                                            ('reshape', {'op': 'TfReshape'}),
+                                            ('segment_sum2', {'op': 'TfSegmentSum'}),
+                                            ('div', {'op': 'TfDivNoNan'})
+                                        ],
+                                        edges=[
+                                            ('segment_ids', 'segment_sum', {'dst_in_port': 1}),
+                                            ('segment_ids', 'segment_sum2', {'dst_in_port': 1}),
+                                            ('reshape', 'segment_sum2', {'dst_in_port': 0}),
+                                            ('segment_sum', 'div', {'dst_in_port': 0}),
+                                            ('segment_sum2', 'div', {'dst_in_port': 1})
+                                        ])
+        mean_matches = [m1 for m1 in mean_matches
+                        if m1['segment_sum'] == m['segment_sum'] and m1['segment_ids'] == m['segment_ids'] and m1['reshape'] == m['reshape']]
+        if len(mean_matches) > 1:
+            ERROR('[Parser]: Pattern error in merge_embedding_lookup_sparse_with_weights!')
+            continue
+        if mean_matches:
+            mean_names = ['segment_sum2', 'div']
+            mean_obj_dict = {k: NodeWrap(graph, mean_matches[0][k])['object'] for k in mean_names}
+            if any(obj is None for obj in mean_obj_dict.values()):
+                ERROR('[Parser]: Meets invalid op in merge_embedding_lookup_sparse_with_weights!')
+                continue
+
+        sqrtn_matches = matched_patterns(graph,
+                                         nodes=[
+                                             ('segment_sum', {'op': 'TfSegmentSum'}),
+                                             ('segment_ids', {'op': const_types}),
+                                             ('reshape', {'op': 'TfReshape'}),
+                                             ('pow', {'op': 'TfPower'}),
+                                             ('pow_y', {'op': const_types}),
+                                             ('segment_sum2', {'op': 'TfSegmentSum'}),
+                                             ('sqrt', {'op': 'TfSqrt'}),
+                                             ('div', {'op': 'TfDivNoNan'})
+                                         ],
+                                         edges=[
+                                             ('segment_ids', 'segment_sum', {'dst_in_port': 1}),
+                                             ('segment_ids', 'segment_sum2', {'dst_in_port': 1}),
+                                             ('reshape', 'pow', {'dst_in_port': 0}),
+                                             ('pow_y', 'pow', {'dst_in_port': 1}),
+                                             ('pow', 'segment_sum2', {'dst_in_port': 0}),
+                                             ('segment_sum', 'div', {'dst_in_port': 0}),
+                                             ('segment_sum2', 'sqrt', {'dst_in_port': 0}),
+                                             ('sqrt', 'div', {'dst_in_port': 1})
+                                         ])
+        sqrtn_matches = [m2 for m2 in sqrtn_matches
+                         if m2['segment_sum'] == m['segment_sum']
+                         and m2['segment_ids'] == m['segment_ids']
+                         and m2['reshape'] == m['reshape']
+                         and NodeWrap(graph, m2['pow_y'])['object'] is not None
+                         and FLOAT_EQUAL(NodeWrap(graph, m2['pow_y'])['object'].value, 2)]
+        if len(sqrtn_matches) > 1:
+            ERROR('[Parser]: Pattern error in merge_embedding_lookup_sparse_with_weights!')
+            continue
+        if sqrtn_matches:
+            sqrtn_names = ['pow', 'pow_y', 'segment_sum2', 'sqrt', 'div']
+            sqrtn_obj_dict = {k: NodeWrap(graph, sqrtn_matches[0][k])['object'] for k in sqrtn_names}
+            if any(obj is None for obj in sqrtn_obj_dict.values()):
+                ERROR('[Parser]: Meets invalid op in merge_embedding_lookup_sparse_with_weights!')
+                continue
+        if len(mean_matches) == 1 and len(sqrtn_matches) == 1:
+            ERROR('[Parser]: Pattern error in merge_embedding_lookup_sparse_with_weights!')
+            continue
+
+        matched = True
+        second_matched = False
+        src, _, in_attr = gather1_in_edges[0]
+        indices_name, _, indices_in_attr = segment_sum_in_edges[1]
+        ids_name, _, unique_in_attr = unique_in_edges[0]
+        weights_name, _, reshape_in_attr = reshape_in_edges[0]
+        if mean_matches:
+            second_matched = True
+            last_name = mean_matches[0]['div']
+            combiner = 'MEAN'
+        elif sqrtn_matches:
+            second_matched = True
+            last_name = sqrtn_matches[0]['div']
+            combiner = 'SQRTN'
+        else:
+            last_name = m['segment_sum']
+            combiner = 'SUM'
+
+        last_in_edges = graph.sorted_in_edges(last_name)
+        graph.remove_edges_from(last_in_edges)
+        graph.add_edge(src, last_name, **in_attr)
+        graph.add_edge(indices_name, last_name, **indices_in_attr)
+        ids_in_attr = copy.deepcopy(unique_in_attr)
+        ids_in_attr['dst_in_port'] = 2
+        graph.add_edge(ids_name, last_name, **ids_in_attr)
+        weights_in_attr = copy.deepcopy(reshape_in_attr)
+        weights_in_attr['dst_in_port'] = 3
+        graph.add_edge(weights_name, last_name, **weights_in_attr)
+        embedding_lookup_attr = NodeWrap(graph, last_name)['object'].copied_attr()
+        embedding_lookup_attr.update({'combiner': combiner})
+        NodeWrap(graph, last_name).replace_obj('ArmEmbeddingLookupSparse', embedding_lookup_attr)
+        if second_matched:
+            clear_redundant_nodes(graph)
+
+    if matched:
+        clear_redundant_nodes(graph)
+
+
 def convert_to_onnx(graph):
     '''Convert the model to the onnx version.'''
     tf_ops = TfOp.get_concrete_subclass_names()
