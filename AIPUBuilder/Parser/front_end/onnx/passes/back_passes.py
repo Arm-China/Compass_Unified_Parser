@@ -600,6 +600,8 @@ def convert_uni_lstm(graph):
                         {'activation_beta': lstm_obj.activation_beta})
                 if lstm_obj.clip:
                     lstm_attr.update({'threshold': float(lstm_obj.clip)})
+                if lstm_obj.cell_clip:
+                    lstm_attr.update({'cell_clip': float(lstm_obj.cell_clip)})
                 NodeWrap(graph, lstm).replace_obj('ArmBasicLSTM', lstm_attr)
 
                 last_names = []
@@ -925,6 +927,9 @@ def convert_bi_lstm(graph):
                 if lstm_obj.clip:
                     fw_lstm_attr.update({'threshold': float(lstm_obj.clip)})
                     bw_lstm_attr.update({'threshold': float(lstm_obj.clip)})
+                if lstm_obj.cell_clip:
+                    fw_lstm_attr.update({'cell_clip': float(lstm_obj.cell_clip)})
+                    bw_lstm_attr.update({'cell_clip': float(lstm_obj.cell_clip)})
                 NodeWrap(graph, fw_lstm).replace_obj(
                     'ArmBasicLSTM', fw_lstm_attr)
                 NodeWrap(graph, bw_lstm).replace_obj(

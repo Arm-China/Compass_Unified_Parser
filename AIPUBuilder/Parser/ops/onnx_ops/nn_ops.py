@@ -1092,6 +1092,7 @@ class LSTMOp(BaseRnnOp, OpHasBiases, OpHasWeights, OnnxOp):
                     'activation_beta': {'type': AttrType.FLOATS, 'required': False},
                     'activations': {'type': AttrType.STRINGS, 'required': False, 'default': ['SIGMOID', 'TANH', 'TANH']},
                     'clip': {'type': AttrType.FLOAT, 'required': False},
+                    'cell_clip': {'type': AttrType.FLOAT, 'required': False},
                     'direction': {'type': AttrType.STRING, 'default': 'forward', 'options': ['forward', 'reverse', 'bidirectional']},
                     'hidden_size': {'type': AttrType.INT, 'required': True},
                     'output_sequence': {'type': AttrType.INT, 'default': 0, 'required': False},
@@ -1102,6 +1103,7 @@ class LSTMOp(BaseRnnOp, OpHasBiases, OpHasWeights, OnnxOp):
                     'activation_beta': {'type': AttrType.FLOATS, 'required': False},
                     'activations': {'type': AttrType.STRINGS, 'required': False, 'default': ['SIGMOID', 'TANH', 'TANH']},
                     'clip': {'type': AttrType.FLOAT, 'required': False},
+                    'cell_clip': {'type': AttrType.FLOAT, 'required': False},
                     'direction': {'type': AttrType.STRING, 'default': 'forward', 'options': ['forward', 'reverse', 'bidirectional']},
                     'hidden_size': {'type': AttrType.INT, 'required': True},
                     'input_forget': {'type': AttrType.INT, 'default': 0, 'options': [0, 1], 'required': False},
@@ -1111,6 +1113,7 @@ class LSTMOp(BaseRnnOp, OpHasBiases, OpHasWeights, OnnxOp):
                      'activation_beta': {'type': AttrType.FLOATS, 'required': False},
                      'activations': {'type': AttrType.STRINGS, 'required': False, 'default': ['SIGMOID', 'TANH', 'TANH']},
                      'clip': {'type': AttrType.FLOAT, 'required': False},
+                     'cell_clip': {'type': AttrType.FLOAT, 'required': False},
                      'direction': {'type': AttrType.STRING, 'default': 'forward',
                                    'options': ['forward', 'reverse', 'bidirectional']},
                      'hidden_size': {'type': AttrType.INT, 'required': True},
@@ -1222,7 +1225,7 @@ class LSTMOp(BaseRnnOp, OpHasBiases, OpHasWeights, OnnxOp):
                 # input_gate_res = i * j
                 # forget_gate_res = f * c_state_per_direction
                 # input_add_forget = input_gate_res + forget_gate_res
-                # if cell_gate > 0:
+                # if cell_clip > 0:
                 #    input_add_forget = np.clip(input_add_forget, -cell_clip, cell_clip)
                 # output_gate_res = o * tf.nn.tanh(input_add_forget)
                 '''

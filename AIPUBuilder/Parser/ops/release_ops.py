@@ -366,6 +366,7 @@ class ArmBasicLSTMOp(BaseRnnOp, OpHasBiases, OpHasWeights, ArmOp):
         return {'method': {'default': 'Y', 'options': ['Y', 'H', 'C', 'YHC', 'YH', 'YC', 'HC']},
                 'activations': {'default': ['SIGMOID', 'TANH', 'TANH']},
                 'threshold': {'type': AttrType.FLOAT, 'default': None},
+                'cell_clip': {'type': AttrType.FLOAT, 'default': None},
                 'activation_alpha': {'type': AttrType.FLOATS, 'default': []},
                 'activation_beta': {'type': AttrType.FLOATS, 'default': []}
                 }
@@ -448,6 +449,8 @@ class ArmBasicLSTMOp(BaseRnnOp, OpHasBiases, OpHasWeights, ArmOp):
                            string_list_to_string(list(self.method)))
             if self.threshold is not None:
                 txt_file.write('threshold=%.12f\n' % self.threshold)
+            if self.cell_clip is not None:
+                txt_file.write('cell_clip=%.12f\n' % self.cell_clip)
             if self.activation_alpha:
                 txt_file.write('activation_alpha=[%s]\n' % num_list_to_string(
                     self.activation_alpha))

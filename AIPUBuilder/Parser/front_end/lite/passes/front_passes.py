@@ -613,8 +613,7 @@ def convert_special_uni_seq_lstm(graph):
                               'direction': 'forward',
                               'activations': ['SIGMOID', lstm_obj.activations, lstm_obj.activations],
                               'method': 'Y',
-                              'layout': layout,
-                              'clip': lstm_obj.cell_clip
+                              'layout': layout
                               })
             NodeWrap(graph, lstm).replace_obj('LSTM', lstm_attr)
 
