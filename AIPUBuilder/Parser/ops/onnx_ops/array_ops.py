@@ -1176,7 +1176,8 @@ class SpaceToDepthOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
         super(SpaceToDepthOp, self).infer_shape()
         inputs = self.get_input_tensors()
         if self.data_format == 'NHWC':
-            out_tensor = tf.nn.space_to_depth(inputs[0], self.blocksize).numpy()
+            out_tensor = tf.nn.space_to_depth(
+                inputs[0], self.blocksize).numpy()
         else:
             torch_input = torch.from_numpy(inputs[0])
             n, c, h, w = torch_input.size()

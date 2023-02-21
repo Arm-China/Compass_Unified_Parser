@@ -20,7 +20,8 @@ class TfcastOp(OpHasOneOutPort, Tf2Op):
     def infer_shape(self):
         super(TfcastOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        assert len(inputs) >= 2, 'TfcastOp expects 2 inputs, but got %d.' % len(inputs)
+        assert len(
+            inputs) >= 2, 'TfcastOp expects 2 inputs, but got %d.' % len(inputs)
         self.dtype = inputs[1].item(0)
         out_tensor = inputs[0].astype(self.dtype)
         self.set_out_tensor(out_tensor)
@@ -34,7 +35,8 @@ class Tfclip_by_valueOp(ActivationOnlyOp, Tf2Op):
     def infer_shape(self):
         super(Tfclip_by_valueOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        assert len(inputs) == 4, 'Tfclip_by_valueOp expects 4 inputs, but got %d.' % len(inputs)
+        assert len(
+            inputs) == 4, 'Tfclip_by_valueOp expects 4 inputs, but got %d.' % len(inputs)
         out_tensor = tf.clip_by_value(inputs[0], inputs[1], inputs[2]).numpy()
         self.set_out_tensor(out_tensor)
 
@@ -222,7 +224,8 @@ class Tfgather_ndOp(OpHasOneOutPort, Tf2Op):
     def infer_shape(self):
         super(Tfgather_ndOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.gather_nd(inputs[0], inputs[1], batch_dims=self.batch_dims).numpy()
+        out_tensor = tf.gather_nd(
+            inputs[0], inputs[1], batch_dims=self.batch_dims).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -241,9 +244,9 @@ class Tfidentity_nOp(TfIdentityNOp, Tf2Op):
 class Tfone_hotOp(OpHasAxis, OpHasOneOutPort, Tf2Op):
     @classmethod
     def attributes(cls):
-        return {1: {'axis': {'default': -1},
-                    'on_value': {'type': AttrType.INT, 'default': 1},
-                    'off_value': {'type': AttrType.INT, 'default': 0},
+        return {2: {'axis': {'default': -1},
+                    'on_value': {'type': AttrType.FLOAT, 'default': 1},
+                    'off_value': {'type': AttrType.FLOAT, 'default': 0},
                     }
                 }
 
@@ -305,7 +308,8 @@ class TfsplitOp(OpHasAxis, OpHasMultipleOutPorts, Tf2Op):
                 item_idx = input_args.index(item)
                 inputs = self.get_input_tensors()
                 if len(inputs) > item_idx:
-                    ret = list(inputs[item_idx]) if (np.ndim(inputs[item_idx]) != 0) else inputs[item_idx].item()
+                    ret = list(inputs[item_idx]) if (
+                        np.ndim(inputs[item_idx]) != 0) else inputs[item_idx].item()
                     if ret is not None:
                         self.__dict__['_attr'][item].value = ret
         except:
@@ -352,3 +356,45 @@ class TfstackOp(OpHasAxis, OpHasOneOutPort, Tf2Op):
     @property
     def correspond_onnx_op(self):
         return {'type': 'ConcatFromSequence', 'version': 11}
+
+
+class TfsqueezeOp(OpHasAxis, OpHasOneOutPort, Tf2Op):
+    @classmethod
+    def attributes(cls):
+        return {1: {'axes': {'default': []}
+                    }
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfsqueezeOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfsqueezeOp, attr_dict)
+        assert self.check_required(), 'TfsqueezeOp is missing a required parameter.'
+
+    def __getattr__(self, item):
+        ret = None
+        try:
+            if item == 'axes':
+                inputs = self.get_input_tensors()
+                if len(inputs) >= 2:
+                    ret = []
+                    if inputs[1].size == 1 and inputs[1] != np.array(None):
+                        ret = [inputs[1].item()]
+                    elif inputs[1] != np.array(None):
+                        ret = list(inputs[1])
+
+                    self.__dict__['_attr'][item].value = ret
+        except:
+            ret = None
+        if ret is None:
+            ret = super(TfsqueezeOp, self).__getattr__(item)
+        return ret
+
+    def infer_shape(self):
+        super(TfsqueezeOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = tf.squeeze(inputs[0], axis=self.axes).numpy()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'Squeeze', 'version': 1}

@@ -409,6 +409,8 @@ class TfOneHotOp(OpHasAxis, OpHasOneOutPort, TfOp):
     @classmethod
     def attributes(cls):
         return {1: {'axis': {'default': -1},
+                    'on_value': {'type': AttrType.FLOAT, 'default': 1},
+                    'off_value': {'type': AttrType.FLOAT, 'default': 0},
                     }
                 }
 
@@ -417,6 +419,26 @@ class TfOneHotOp(OpHasAxis, OpHasOneOutPort, TfOp):
         self.update_attributes(TfOneHotOp, attr_dict)
         assert self.check_required(), 'TfOneHotOp is missing a required parameter.'
 
+    def __getattr__(self, item):
+        ret = None
+        try:
+            if item == 'on_value':
+                inputs = self.get_input_tensors()
+                if len(inputs) >= 2:
+                    ret = float(inputs[2].item())
+                    self.__dict__['_attr'][item].value = ret
+
+            elif item == 'off_value':
+                inputs = self.get_input_tensors()
+                if len(inputs) >= 3:
+                    ret = float(inputs[3].item())
+                    self.__dict__['_attr'][item].value = ret
+        except:
+            ret = None
+        if ret is None:
+            ret = super(TfOneHotOp, self).__getattr__(item)
+        return ret
+
     def infer_shape(self):
         super(TfOneHotOp, self).infer_shape()
         inputs = self.get_input_tensors()
@@ -424,14 +446,10 @@ class TfOneHotOp(OpHasAxis, OpHasOneOutPort, TfOp):
             inputs) == 4, 'TfOneHotOp expects 4 inputs, but got %d.' % len(inputs)
         out_tensor = tf.one_hot(inputs[0],
                                 inputs[1],
-                                on_value=inputs[2],
-                                off_value=inputs[3],
+                                on_value=self.on_value,
+                                off_value=self.off_value,
                                 axis=self.axis).numpy()
         self.set_out_tensor(out_tensor)
-
-    @property
-    def correspond_onnx_op(self):
-        return {'type': 'OneHot', 'version': 11}
 
 
 class TfPadOp(OpHasOneOutPort, TfOp):

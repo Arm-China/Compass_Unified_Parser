@@ -64,7 +64,7 @@ def process_tf(model_path, params):
         convert_strided_slice(graph, 'TfStridedSlice')
         convert_square(graph, op_type='TfSquare')
         convert_square_diff(graph, op_type='TfSquaredDifference')
-        # convert_onehot(graph, op_type='TfOneHot')
+        convert_onehot(graph, op_type='TfOneHot')
 
         remove_switch(graph)
         remove_merge(graph)

@@ -2418,20 +2418,31 @@ def rename_onehot(graph):
         onehot = m['target']
         onehot_obj = NodeWrap(graph, onehot)['object']
         in_edges = graph.sorted_in_edges(onehot, data=True)
-        if onehot_obj is not None \
-                and len(in_edges) == 3:
-            if in_edges[1][2]['tensor'].is_const \
-                    and in_edges[1][2]['tensor'].value is not None \
-                    and in_edges[2][2]['tensor'].is_const \
-                    and in_edges[2][2]['tensor'].value is not None \
-                    and in_edges[2][2]['tensor'].value.size == 2:
-                matched = True
-                graph.remove_edges_from(in_edges[1:])
-                depth = int(in_edges[1][2]['tensor'].value)
-                values = in_edges[2][2]['tensor'].value
-                onehot_attr = onehot_obj.copied_attr()
-                onehot_attr.update({'depth': depth, 'values': values})
-                NodeWrap(graph, onehot).replace_obj('ArmOneHot', onehot_attr)
+        if onehot_obj is None \
+                or len(in_edges) != 3:
+            WARN(
+                '[Parser]: invalid Onehot Node(%s) in rename_onehot!' % onehot)
+            continue
+
+        is_const_node = np.all(list(map(lambda node: node.type == 'Constant', list(
+            map(lambda in_edge: NodeWrap(graph, in_edge[0])['object'], in_edges[1:])))))
+
+        if in_edges[1][2]['tensor'].is_const \
+                and in_edges[1][2]['tensor'].value is not None \
+                and in_edges[2][2]['tensor'].is_const \
+                and in_edges[2][2]['tensor'].value is not None \
+                and in_edges[2][2]['tensor'].value.size == 2 \
+                and is_const_node:
+            matched = True
+            graph.remove_edges_from(in_edges[1:])
+            depth = int(in_edges[1][2]['tensor'].value)
+            values = in_edges[2][2]['tensor'].value
+            values = np.array(values).astype(
+                np.float32) if values.dtype == 'float64' or values.dtype == 'int64' else values
+
+            onehot_attr = onehot_obj.copied_attr()
+            onehot_attr.update({'depth': depth, 'values': values})
+            NodeWrap(graph, onehot).replace_obj('ArmOneHot', onehot_attr)
         else:
             WARN(
                 '[Parser]: invalid Onehot Node(%s) in rename_onehot!' % onehot)

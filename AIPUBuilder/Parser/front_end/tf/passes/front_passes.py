@@ -480,7 +480,7 @@ def convert_resize_bilinear_nearest(graph):
 
 def convert_onehot(graph, op_type='Tfone_hot'):
     # need support Tf1/Tflite onehot
-    if op_type not in ('Tfone_hot',):
+    if op_type not in ('Tfone_hot', 'TfOneHot'):
         WARN('[Parser]: Meets invalid Op type (%s) in convert_onehot!' % op_type)
         return
     matches = single_node_matcher(graph, op_type)
@@ -507,8 +507,8 @@ def convert_onehot(graph, op_type='Tfone_hot'):
         indices = onehot_obj.get_input_tensors()[0]
         indices_shape = onehot_obj.get_input_shapes()[0]
         out_shapes_0 = onehot_obj.get_output_shapes()[0]
-        if np.isscalar(indices) and (any(d is None for d in indices_shape)
-                                     or any(d is None for d in out_shapes_0)):
+        if np.ndim(indices) == 0 and (any(d is None for d in indices_shape)
+                                      or any(d is None for d in out_shapes_0)):
             WARN(
                 '[Parser]: Meets invalid Node for Onehot Op(%s)' % onehot)
             continue
@@ -518,7 +518,7 @@ def convert_onehot(graph, op_type='Tfone_hot'):
         insert_constant(graph, onehot + '_values',
                         values, onehot, in_port=2)
 
-        if np.isscalar(indices):
+        if np.ndim(indices) == 0:
             in_edges = graph.sorted_in_edges(
                 onehot, keys=True, data=True)
             src, _, k, in_attr = in_edges[0]
@@ -3942,19 +3942,6 @@ def convert_to_onnx(graph):
                         WARN(
                             '[Parser]: Invalid TF Mean Node(%s) to convert to Onnx!' % node_name)
                         continue
-                elif pure_type == 'OneHot':
-                    in_consts = node_obj.sorted_in_consts()
-                    if len(in_consts) != 3 or len(in_edges) != 4:
-                        WARN(
-                            '[Parser]: Invalid TF OneHot Node(%s) to convert to Onnx!' % node_name)
-                        continue
-                    on_value = node_obj.sorted_in_consts()[1][2]
-                    off_value = node_obj.sorted_in_consts()[2][2]
-                    values = np.array([off_value, on_value])
-                    const_name = node_obj.sorted_in_consts()[1][0]
-                    NodeWrap(graph, const_name)['object'].value = values
-                    in_edges[2][2]['tensor'].value = values
-                    graph.remove_edges_from(in_edges[3:])
                 elif pure_type == 'Pack':
                     new_node_attr.update({'new_axis': True})
                 elif pure_type in ('Pad', 'PadV2', 'MirrorPad'):
