@@ -203,6 +203,8 @@ def univ_parser(params):
 
 
 def main():
+    tf.config.set_visible_devices([], 'GPU')
+
     import sys
     import argparse
     import configparser
