@@ -773,6 +773,22 @@ def convert_strided_slice(graph, op_type='TfStridedSlice'):
 
 
 def merge_quantized_lstm(graph):
+    def _get_forget_bias(node_name, node_obj):
+        '''
+        Return float_forget_bias, quant_forget_bias, forget_bias_scale_zp of the node.
+        '''
+        node_out_edges = graph.sorted_out_edges(node_name, data=True)
+        if node_obj is None or len(node_out_edges) < 1:
+            WARN('[Parser]: Meet invalid node (%s) in _get_forget_bias of merge_quantized_lstm!' % node_name)
+            return (None, None, None)
+        quant_forget_bias = node_obj.value
+        forget_bias_scale_zp = node_out_edges[0][2]['tensor'].scale_zp
+        if len(forget_bias_scale_zp) == 2:
+            float_forget_bias = (quant_forget_bias - forget_bias_scale_zp[1]) * forget_bias_scale_zp[0]
+        else:
+            float_forget_bias = None
+        return (float_forget_bias, quant_forget_bias, forget_bias_scale_zp)
+
     matches = matched_patterns(graph,
                                nodes=[('concat', {'op': 'LiteCONCATENATION'}),
                                       ('fc', {'op': 'LiteFULLY_CONNECTED'}),
@@ -886,6 +902,11 @@ def merge_quantized_lstm(graph):
         cell_matches.sort()
         _, first_cell_match = cell_matches[0]
 
+        # Get the value of forget_bias
+        first_adder_obj = NodeWrap(graph, first_cell_match['adder'])['object']
+        float_forget_bias, quant_forget_bias, forget_bias_scale_zp = _get_forget_bias(
+            first_cell_match['adder'], first_adder_obj)
+
         # Check whether weights and biases are valid
         first_fc_obj = NodeWrap(graph, first_cell_match['fc'])['object']
         weights = first_fc_obj.weights
@@ -942,6 +963,12 @@ def merge_quantized_lstm(graph):
                 break
             if cell_match['last_hout'] != cell_matches[idx - 1][1]['mul_hout'] \
                     or cell_match['last_cout'] != cell_matches[idx - 1][1]['add_cout']:
+                is_same_lstm = False
+                break
+            # Get the value of forget_bias
+            current_forget_bias = _get_forget_bias(
+                cell_match['adder'], NodeWrap(graph, cell_match['adder'])['object'])[0]
+            if current_forget_bias is None or not FLOAT_EQUAL(current_forget_bias, float_forget_bias):
                 is_same_lstm = False
                 break
             final_hout_list.append(cell_match['mul_hout'])
@@ -1044,8 +1071,11 @@ def merge_quantized_lstm(graph):
                        initial_c_in_attr, initial_hc_shape)
         lstm_attr = {'name': lstm,
                      'opset_version': 14,
+                     'quantize': 1,
                      'layout': False,
                      'hidden_size': hidden_size,
+                     'forget_bias': quant_forget_bias,
+                     'forget_bias_scale_zp': forget_bias_scale_zp,
                      'weights_scale_zp': weights_scale_zp,
                      'biases_scale_zp': biases_scale_zp}
         NodeWrap(graph, lstm).replace_obj('LSTM', lstm_attr)

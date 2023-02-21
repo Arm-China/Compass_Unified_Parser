@@ -418,11 +418,11 @@ class ArmBasicLSTMOp(BaseRnnOp, OpHasBiases, OpHasWeights, ArmOp):
         # Y_h = tf.stack(Y_h, axis=1).numpy()
         # Y_c = tf.stack(Y_c, axis=1).numpy()
         '''
-
+        input_dtype = inputs[0].dtype
         Y = np.random.ranf((batch_size, self.time_steps,
-                            self.hidden_size)).astype(np.float32)
-        Y_h = np.random.ranf((batch_size, self.hidden_size)).astype(np.float32)
-        Y_c = np.random.ranf((batch_size, self.hidden_size)).astype(np.float32)
+                            self.hidden_size)).astype(input_dtype)
+        Y_h = np.random.ranf((batch_size, self.hidden_size)).astype(input_dtype)
+        Y_c = np.random.ranf((batch_size, self.hidden_size)).astype(input_dtype)
 
         if self.method == 'Y':
             self.set_out_tensor([Y])

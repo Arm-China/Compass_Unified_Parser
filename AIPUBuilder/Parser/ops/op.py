@@ -1711,7 +1711,9 @@ class BaseRnnOp(OpHasMethod, OpHasVariableOutPorts):
             'time_steps': {'type': AttrType.INT, 'default': 0},
             'direction': {'type': AttrType.STRING, 'default': 'forward', 'options': ['forward', 'reverse', 'bidirectional']},
             'activations': {'type': AttrType.STRINGS, 'required': False, 'default': []},
-            'method': {'required': False, 'default': 'Y', 'options': ['Y', 'C', 'H', 'YH', 'YC', 'CH', 'YCH']}
+            'method': {'required': False, 'default': 'Y', 'options': ['Y', 'C', 'H', 'YH', 'YC', 'CH', 'YCH']},
+            'forget_bias': {'type': AttrType.INT, 'required': False, 'default': None},
+            'forget_bias_scale_zp': {'type': AttrType.FLOATS, 'required': False, 'default': [np.array([1.0]), np.array([0])]},
         }
 
     def __init__(self, graph, attr_dict=None):
@@ -1732,6 +1734,16 @@ class BaseRnnOp(OpHasMethod, OpHasVariableOutPorts):
                 txt_file.write('activations=[%s]\n' %
                                string_list_to_string(self.activations))
             txt_file.write('direction=%s\n' % self.direction)
+            if self.quantize \
+                    and self.forget_bias is not None \
+                    and len(self.forget_bias_scale_zp) == 2:
+                txt_file.write('forget_bias=%d\n' % int(self.forget_bias))
+                forget_bias_scale = np.array(self.forget_bias_scale_zp[0]).tolist()
+                forget_bias_zp = np.array(self.forget_bias_scale_zp[1]).tolist()
+                txt_file.write('forget_bias_scale=[%s]\n' %
+                               num_list_to_string(forget_bias_scale))
+                txt_file.write('forget_bias_zp=[%s]\n' %
+                               num_list_to_string(forget_bias_zp))
         return ret
 
 
