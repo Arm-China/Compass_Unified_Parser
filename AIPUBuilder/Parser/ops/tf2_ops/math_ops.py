@@ -318,6 +318,50 @@ class TfnormOp(OpHasAxis, OpHasOneOutPort, Tf2Op):
         self.set_out_tensor(out_tensor)
 
 
+class TfnormalizeOp(OpHasAxis, OpHasMultipleOutPorts, Tf2Op):
+    @classmethod
+    def attributes(cls):
+        return {2: {'ord': {'default': 'euclidean'},
+                    },
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfnormalizeOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfnormalizeOp, attr_dict)
+        assert self.check_required(), 'TfnormalizeOp is missing a required parameter.'
+
+    def __getattr__(self, item):
+        ret = None
+        try:
+            input_args = ['tensor', 'ord', 'axes']
+            if item in input_args[1:]:
+                inputs = self.get_input_tensors()
+                item_idx = input_args.index(item)
+                if len(inputs) > item_idx:
+                    ret = inputs[item_idx].item() if inputs[item_idx].size == 1 else list(inputs[item_idx])
+                    if item == 'axes' and ret is not None:
+                        ret = [int(axis) for axis in ret] if isinstance(ret, list) else [int(ret)]
+                    if ret is not None:
+                        self.__dict__['_attr'][item].value = ret
+        except:
+            ret = None
+        if ret is None:
+            ret = super(TfnormalizeOp, self).__getattr__(item)
+        return ret
+
+    def infer_shape(self):
+        super(TfnormalizeOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        norm_axis = None
+        if self.axes is not None:
+            norm_axis = tuple(self.axes) if len(self.axes) > 1 else self.axes[0]
+        out_tensors = tf.linalg.normalize(inputs[0],
+                                          ord=self.ord,
+                                          axis=norm_axis)
+        out_tensors = [out.numpy() for out in out_tensors]
+        self.set_out_tensor(out_tensors)
+
+
 class Tfnot_equalOp(TfNotEqualOp, Tf2Op):
     pass
 

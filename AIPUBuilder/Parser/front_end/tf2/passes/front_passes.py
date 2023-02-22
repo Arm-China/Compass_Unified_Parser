@@ -109,9 +109,11 @@ def convert_lp_norm(graph):
     '''
     Convert Tfnorm to onnx ReduceL1/ReduceL2 op for vector norm; convert to onnx ReduceL1+ReduceMax
     for matrix 1-norm; raise error for unsupported order and matrix 2-norm.
+    Tfnormalize has 2 outputs: the first output is x/norm so Div node is needed; the second output
+    is same as Tfnorm.
     '''
     matched = False
-    matches = single_node_matcher(graph, 'Tfnorm')
+    matches = single_node_matcher(graph, ['Tfnorm', 'Tfnormalize'])
     for m in matches:
         norm = m['target']
         norm_obj = NodeWrap(graph, norm)['object']
@@ -128,7 +130,8 @@ def convert_lp_norm(graph):
         input_shape = input_shapes[0]
         norm_axes = norm_obj.axes
         norm_order = norm_obj.ord
-        norm_keepdims = norm_obj.keepdims
+        norm_has_two_outputs = (norm_obj.type == 'Tfnormalize')
+        norm_keepdims = 1 if norm_has_two_outputs else norm_obj.keepdims
         is_matrix_norm = (norm_axes is not None and len(norm_axes) == 2)
         if norm_order not in (1, 2):
             if norm_order == 'euclidean' and not is_matrix_norm:
@@ -152,7 +155,7 @@ def convert_lp_norm(graph):
         node_attr = norm_obj.copied_attr()
         if not is_matrix_norm:
             graph.add_edge(src, norm, **in_attr)
-            node_attr.update({'axes': norm_axes, 'opset_version': 13})
+            node_attr.update({'axes': norm_axes, 'keepdims': norm_keepdims, 'opset_version': 13})
             node_type = 'ReduceL1' if norm_order == 1 else 'ReduceL2'
             NodeWrap(graph, norm).replace_obj(node_type, node_attr)
         else:  # is_matrix_norm and norm_order == 1
@@ -173,6 +176,24 @@ def convert_lp_norm(graph):
                 and norm_axes[0] < norm_axes[1] else norm_axes[1]
             node_attr.update({'axes': [reduce_max_axis], 'opset_version': 13})
             NodeWrap(graph, norm).replace_obj('ReduceMax', node_attr)
+        if norm_has_two_outputs:
+            norm_out_edges = graph.sorted_out_edges(norm, data=True)
+            graph.remove_edges_from(norm_out_edges)
+            div = get_valid_node_name(graph, norm + '_div')
+            graph.add_edge(src, div, **in_attr)
+            lp_norm_out_attr = {'dst_in_port': 1}
+            graph.add_edge(norm, div, **lp_norm_out_attr)
+            for _, dst, out_attr in norm_out_edges:
+                if out_attr['src_out_port'] == 0:
+                    graph.add_edge(div, dst, **out_attr)
+                else:
+                    norm_out_attr = copy.deepcopy(out_attr)
+                    norm_out_attr.update({'src_out_port': 0})
+                    graph.add_edge(norm, dst, **norm_out_attr)
+            NodeWrap(graph, div).replace_obj('Div', {'name': div, 'opset_version': 13})
+            if norm in graph._attr['output_names']:
+                index = graph._attr['output_names'].index(norm)
+                graph._attr['output_names'].insert(index, div)
     if matched:
         clear_redundant_nodes(graph)
 
