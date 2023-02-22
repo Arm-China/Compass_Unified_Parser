@@ -2530,6 +2530,58 @@ class Tf2Op(TfOp):
     pass
 
 
+class Tf2ReduceOp(OpHasAxis, OpHasOneOutPort, Tf2Op):
+    '''
+    Class Tf2ReduceOp inherited from OpHasAxis, OpHasOneOutPort, Tf2Op class.
+    All reduce ops under the tf2 framework must inherit Tf2ReduceOp.
+    '''
+    @classmethod
+    def ufunc(cls):
+        return None
+
+    @classmethod
+    def attributes(cls):
+        '''return attributes of TfliteReduceOp class.'''
+        return {1: {'keepdims': {'default': 0}},
+                2: {'keepdims': {'default': 0}}}
+
+    def __init__(self, graph, attr_dict=None):
+        super(Tf2ReduceOp, self).__init__(graph, attr_dict)
+        self.update_attributes(Tf2ReduceOp, attr_dict)
+        assert self.check_required(), 'Tf2ReduceOp is missing a required parameter.'
+
+    def __getattr__(self, item):
+        '''Returns the OP object property value.'''
+        ret = None
+        if item in ('axes', 'keepdims'):
+            try:
+                inputs = self.get_input_tensors()
+                input_index = 1 if item == 'axes' else 2
+                if len(inputs) > input_index:
+                    ret = inputs[input_index]
+                if item == 'axes':
+                    ret = [ret.item()] if ret.size == 1 else ret.tolist()
+                elif item == 'keepdims' and ret.size == 1:
+                    ret = bool(ret)
+                if ret is not None:
+                    self.__dict__['_attr'][item].value = ret
+            except:
+                ret = None
+        else:
+            ret = super(Tf2ReduceOp, self).__getattr__(item)
+        return ret
+
+    @abc.abstractmethod
+    def infer_shape(self):
+        '''An abstract method for shape inference.'''
+        super(Tf2ReduceOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        axes = None if self.axes is None else tuple(self.axes)
+        out_tensor = type(self).ufunc()(
+            inputs[0], axis=axes, keepdims=self.keepdims).numpy()
+        self.set_out_tensor(out_tensor)
+
+
 class KerasOp(Tf2Op):
     '''
     Class KerasOp inherited from Tf2Op class.

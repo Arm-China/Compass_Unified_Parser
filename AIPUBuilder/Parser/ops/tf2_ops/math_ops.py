@@ -330,6 +330,123 @@ class TfreciprocalOp(TfReciprocalOp, Tf2Op):
     pass
 
 
+class Tfreduce_allOp(Tf2ReduceOp):
+    @classmethod
+    def ufunc(cls):
+        return tf.math.reduce_all
+
+    def infer_shape(self):
+        super(Tfreduce_allOp, self).infer_shape()
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'ReduceAll', 'version': 1}
+
+
+class Tfreduce_anyOp(Tf2ReduceOp):
+    @classmethod
+    def ufunc(cls):
+        return tf.math.reduce_any
+
+    def infer_shape(self):
+        super(Tfreduce_anyOp, self).infer_shape()
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'ReduceAny', 'version': 1}
+
+
+class Tfreduce_logsumexpOp(Tf2ReduceOp):
+    @classmethod
+    def ufunc(cls):
+        return tf.math.reduce_logsumexp
+
+    def infer_shape(self):
+        super(Tfreduce_logsumexpOp, self).infer_shape()
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'ReduceLogSumExp', 'version': 13}
+
+
+class Tfreduce_maxOp(Tf2ReduceOp):
+    @classmethod
+    def ufunc(cls):
+        return tf.math.reduce_max
+
+    def infer_shape(self):
+        super(Tfreduce_maxOp, self).infer_shape()
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'ReduceMax', 'version': 13}
+
+
+class Tfreduce_meanOp(Tf2ReduceOp):
+    @classmethod
+    def ufunc(cls):
+        return tf.math.reduce_mean
+
+    def infer_shape(self):
+        super(Tfreduce_meanOp, self).infer_shape()
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'ReduceMean', 'version': 13}
+
+
+class Tfreduce_minOp(Tf2ReduceOp):
+    @classmethod
+    def ufunc(cls):
+        return tf.math.reduce_min
+
+    def infer_shape(self):
+        super(Tfreduce_minOp, self).infer_shape()
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'ReduceMin', 'version': 13}
+
+
+class Tfreduce_prodOp(Tf2ReduceOp):
+    @classmethod
+    def ufunc(cls):
+        return tf.math.reduce_prod
+
+    def infer_shape(self):
+        super(Tfreduce_prodOp, self).infer_shape()
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'ReduceProd', 'version': 13}
+
+
+class Tfreduce_sumOp(Tf2ReduceOp):
+    @classmethod
+    def ufunc(cls):
+        return tf.math.reduce_sum
+
+    def infer_shape(self):
+        super(Tfreduce_sumOp, self).infer_shape()
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'ReduceSum', 'version': 13}
+
+
+class Tfreduce_varianceOp(Tf2ReduceOp):
+    @classmethod
+    def ufunc(cls):
+        return tf.math.reduce_variance
+
+    def infer_shape(self):
+        super(Tfreduce_varianceOp, self).infer_shape()
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'ReduceVariance', 'version': 1}
+
+
 class TfroundOp(TfRoundOp, Tf2Op):
     pass
 
