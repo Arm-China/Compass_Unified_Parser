@@ -3650,7 +3650,7 @@ def merge_embedding_lookup_sparse_with_weights(graph):
                                              ('segment_sum', {'op': 'TfSegmentSum'}),
                                              ('segment_ids', {'op': const_types}),
                                              ('reshape', {'op': 'TfReshape'}),
-                                             ('pow', {'op': 'TfPower'}),
+                                             ('pow', {'op': 'TfPow'}),
                                              ('pow_y', {'op': const_types}),
                                              ('segment_sum2', {'op': 'TfSegmentSum'}),
                                              ('sqrt', {'op': 'TfSqrt'}),
