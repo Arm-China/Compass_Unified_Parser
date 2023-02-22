@@ -4280,6 +4280,44 @@ def merge_reducel2(graph):
         clear_redundant_nodes(graph)
 
 
+def merge_l1norm(graph):
+    matched = False
+    matches = matched_patterns(graph,
+                               nodes=[('reduce_l1', {'op': 'ReduceL1'}),
+                                      ('div', {'op': 'Div'}),
+                                      ],
+                               edges=[('reduce_l1', 'div', {'dst_in_port': 1}),
+                                      ])
+    for m in matches:
+        reduce_l1, div = m['reduce_l1'], m['div']
+        reduce_l1_obj, div_obj = [NodeWrap(graph, name)['object'] for name in [reduce_l1, div]]
+        reduce_l1_in_edges = graph.sorted_in_edges(reduce_l1, data=True)
+        div_in_edges = graph.sorted_in_edges(div, data=True)
+        if reduce_l1_obj is None \
+                or div_obj is None \
+                or len(reduce_l1_in_edges) < 1 \
+                or len(div_in_edges) < 2:
+            WARN('[Parser]: Meets invalid node in merge_l1norm!')
+            continue
+        if not reduce_l1_obj.keepdims:
+            continue
+        div_inp0, _, div0_in_attr = div_in_edges[0]
+        reduce_inp, _, reduce_in_attr = reduce_l1_in_edges[0]
+        if div_inp0 != reduce_inp \
+                or div0_in_attr['dst_in_port'] != 0 \
+                or reduce_in_attr['dst_in_port'] != 0 \
+                or reduce_in_attr['src_out_port'] != div0_in_attr['src_out_port']:
+            continue
+        matched = True
+        graph.remove_edges_from(div_in_edges)
+        graph.add_edge(reduce_inp, div, **reduce_in_attr)
+        l1norm_attr = div_obj.copied_attr()
+        l1norm_attr.update({'opset_version': 1, 'p': 1, 'axes': reduce_l1_obj.axes})
+        NodeWrap(graph, div).replace_obj('LpNormalization', l1norm_attr)
+    if matched:
+        clear_redundant_nodes(graph)
+
+
 def merge_l2norm(graph):
     matched = False
     matches = matched_patterns(graph,
@@ -4344,7 +4382,9 @@ def merge_l2norm(graph):
         if sum_obj is None or l2norm_obj is None or eps_obj is None or max_obj is None:
             WARN('[Parser]: Meets invalid node in merge_l2norm!')
             continue
-        if max_obj.get_in_ports() != [0, 1] or eps_obj.value.size != 1:
+        if not sum_obj.keepdims \
+                or max_obj.get_in_ports() != [0, 1] \
+                or eps_obj.value.size != 1:
             continue
         l2norm_in_edges = graph.sorted_in_edges(l2norm, data=True)
         if len(l2norm_in_edges) != 2 \
@@ -7383,6 +7423,7 @@ def middle_passes(graph, params):
     merge_erosion(graph)
     merge_reducel1(graph)
     merge_reducel2(graph)
+    merge_l1norm(graph)
     merge_l2norm(graph)
     merge_hardswish(graph)
     merge_hardswish2(graph)
