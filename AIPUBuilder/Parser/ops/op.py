@@ -2170,7 +2170,7 @@ class TfliteReduceOp(OpHasAxis, OpHasOneOutPort, TfliteOp):
                     item, {'type': AttrType.INTS, 'value': ret})
             except:
                 ret = None
-        else:
+        if ret is None:
             ret = super(TfliteReduceOp, self).__getattr__(item)
         return ret
 
@@ -2563,9 +2563,8 @@ class Tf2ReduceOp(OpHasAxis, OpHasOneOutPort, Tf2Op):
 
     @classmethod
     def attributes(cls):
-        '''return attributes of TfliteReduceOp class.'''
-        return {1: {'keepdims': {'default': 0}},
-                2: {'keepdims': {'default': 0}}}
+        '''return attributes of Tf2ReduceOp class.'''
+        return {'keepdims': {'default': 0}}
 
     def __init__(self, graph, attr_dict=None):
         super(Tf2ReduceOp, self).__init__(graph, attr_dict)
@@ -2578,18 +2577,21 @@ class Tf2ReduceOp(OpHasAxis, OpHasOneOutPort, Tf2Op):
         if item in ('axes', 'keepdims'):
             try:
                 inputs = self.get_input_tensors()
-                input_index = 1 if item == 'axes' else 2
-                if len(inputs) > input_index:
-                    ret = inputs[input_index]
                 if item == 'axes':
-                    ret = [ret.item()] if ret.size == 1 else ret.tolist()
-                elif item == 'keepdims' and ret.size == 1:
-                    ret = bool(ret)
-                if ret is not None:
-                    self.__dict__['_attr'][item].value = ret
+                    if len(inputs) > 1:
+                        ret = inputs[1].item() if inputs[1].size == 1 else list(inputs[1])
+                        if ret is not None:
+                            ret = [int(axis) for axis in ret] if isinstance(ret, list) else [int(ret)]
+                            self.__dict__['_attr'][item].value = ret
+                elif item == 'keepdims':
+                    if len(inputs) > 2 and inputs[2].size == 1:
+                        ret = inputs[2].item()
+                        if ret is not None:
+                            self.__dict__['_attr'][item].value = ret
+                    ret = bool(self.__dict__['_attr'][item].value)
             except:
                 ret = None
-        else:
+        if ret is None:
             ret = super(Tf2ReduceOp, self).__getattr__(item)
         return ret
 
@@ -2598,9 +2600,10 @@ class Tf2ReduceOp(OpHasAxis, OpHasOneOutPort, Tf2Op):
         '''An abstract method for shape inference.'''
         super(Tf2ReduceOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        axes = None if self.axes is None else tuple(self.axes)
+        if self.axes is None:
+            self.axes = list(range(len(inputs[0].shape)))
         out_tensor = type(self).ufunc()(
-            inputs[0], axis=axes, keepdims=self.keepdims).numpy()
+            inputs[0], axis=tuple(self.axes), keepdims=self.keepdims).numpy()
         self.set_out_tensor(out_tensor)
 
 
