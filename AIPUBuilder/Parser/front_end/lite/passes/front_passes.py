@@ -27,10 +27,12 @@ def convert_broadcast_to(graph):
         if bt_obj is None or \
                 len(bt_obj.get_input_shapes()) < 2 or \
                 len(bt_obj.get_input_tensors()) < 2 or \
-                len(in_edges) < 2 or \
-                not in_edges[1][2]['tensor'].is_const:
-            WARN(
-                '[Parser]: Meets invalid LiteBROADCAST_TO(%s) in remove_broadcast_to!' % bt)
+                len(in_edges) < 2:
+            ERROR(
+                '[Parser]: Meets invalid LiteBROADCAST_TO(%s) in convert_broadcast_to!' % bt)
+            continue
+        if not in_edges[1][2]['tensor'].is_const:
+            WARN('[Parser]: Meets unsupported non-constant shape of LiteBROADCAST_TO(%s) in convert_broadcast_to!' % bt)
             continue
         matched = True
         bt_in_shape = bt_obj.get_input_shapes()[0]
@@ -71,7 +73,7 @@ def convert_onehot(graph):
         obj_dict = {name: NodeWrap(graph, m[name])['object']
                     for name in ['depth', 'on_value', 'off_value', 'one_hot']}
         if any(obj is None for obj in obj_dict.values()):
-            WARN('[Parser]: Meets invalid Node in convert_onehot!')
+            ERROR('[Parser]: Meets invalid Node in convert_onehot!')
             continue
         matched = True
         obj_dict['on_value'].value = np.append(obj_dict['off_value'].value, obj_dict['on_value'].value)
@@ -113,7 +115,7 @@ def convert_negative_pool_pad(graph):
 
 def convert_square(graph, op_type='TfSquare'):
     if op_type not in ('TfSquare', 'LiteSQUARE'):
-        WARN('[Parser]: Meets invalid Op type (%s) in convert_square_diff!' % op_type)
+        ERROR('[Parser]: Meets invalid Op type (%s) in convert_square_diff!' % op_type)
         return
     matches = single_node_matcher(graph, op_type)
     for m in matches:
@@ -129,7 +131,7 @@ def convert_square(graph, op_type='TfSquare'):
 def convert_square_diff(graph, op_type='TfSquaredDifference'):
     matched = False
     if op_type not in ('TfSquaredDifference', 'LiteSQUARED_DIFFERENCE'):
-        WARN('[Parser]: Meets invalid Op type (%s) in convert_square_diff!' % op_type)
+        ERROR('[Parser]: Meets invalid Op type (%s) in convert_square_diff!' % op_type)
         return
     matches = single_node_matcher(graph, op_type)
     for m in matches:
@@ -163,7 +165,7 @@ def convert_square_diff(graph, op_type='TfSquaredDifference'):
                 graph._attr['output_names'].remove(squd)
                 graph._attr['output_names'].insert(index, s_pow)
         else:
-            WARN(
+            ERROR(
                 '[Parser]: Meets invalid Node(%s) in convert_square_diff!'
                 % (squd))
     if matched:
@@ -172,7 +174,7 @@ def convert_square_diff(graph, op_type='TfSquaredDifference'):
 
 def convert_scatternd(graph, op_type='TfScatterNd'):
     if op_type not in ('TfScatterNd', 'LiteSCATTER_ND'):
-        WARN('[Parser]: Meets invalid Op type (%s) in convert_scatternd!' % op_type)
+        ERROR('[Parser]: Meets invalid Op type (%s) in convert_scatternd!' % op_type)
         return
     matches = matched_patterns(graph,
                                nodes=[
@@ -325,7 +327,7 @@ def convert_scatternd(graph, op_type='TfScatterNd'):
 
 def convert_reverse_sequence(graph, op_type='TfReverseSequence'):
     if op_type not in ('TfReverseSequence', 'LiteREVERSE_SEQUENCE'):
-        WARN('[Parser]: Meets invalid Op type (%s) in convert_reverse_sequence!' % op_type)
+        ERROR('[Parser]: Meets invalid Op type (%s) in convert_reverse_sequence!' % op_type)
         return
     matches = single_node_matcher(graph, op_type)
     for m in matches:
@@ -393,7 +395,7 @@ def convert_reverse_sequence(graph, op_type='TfReverseSequence'):
 
 def convert_unpack(graph, op_type='LiteUNPACK'):
     if op_type not in ('TfUnpack', 'LiteUNPACK'):
-        WARN('[Parser]: Meets invalid Op type (%s) in convert_unpack!' % op_type)
+        ERROR('[Parser]: Meets invalid Op type (%s) in convert_unpack!' % op_type)
         return
     matches = single_node_matcher(graph, op_type)
     for m in matches:
@@ -442,7 +444,7 @@ def convert_unpack(graph, op_type='LiteUNPACK'):
                     graph._attr['output_names'].insert(index, name)
                     index += 1
         else:
-            WARN(
+            ERROR(
                 '[Parser]: Meets invalid LiteUNPACK Node(%s) in convert_unpack!' % unpack)
 
 
@@ -455,22 +457,22 @@ def convert_special_uni_seq_lstm(graph):
         if lstm_obj is not None and len(in_edges) == 24:
             if not FLOAT_EQUAL(lstm_obj.proj_clip, 0.0):
                 WARN(
-                    '[Parser]: Cannot convert TFLite UNIDIRECTIONAL_SEQUENCE_LSTM (%s) with non-zero proj_clip to Onnx!' % lstm)
+                    '[Parser]: Meets unsupported non-zero proj_clip of UNIDIRECTIONAL_SEQUENCE_LSTM (%s) in convert_special_uni_seq_lstm!' % lstm)
                 continue
             inputs = lstm_obj.get_input_tensors()
             if inputs[0] is None:
-                WARN(
+                ERROR(
                     '[Parser]: Meets invalid input for TFLite UNIDIRECTIONAL_SEQUENCE_LSTM (%s)!' % lstm)
                 continue
             if any([inp is None for inp in inputs[1:9]]):
-                WARN('[Parser]: Cannot convert TFLite UNIDIRECTIONAL_SEQUENCE_LSTM (%s) with empty parameter/recurrent weights to Onnx!' % lstm)
+                ERROR('[Parser]: Cannot convert TFLite UNIDIRECTIONAL_SEQUENCE_LSTM (%s) with empty parameter/recurrent weights to Onnx!' % lstm)
                 continue
             if any([inp is not None for inp in inputs[16:18]]):
-                WARN(
+                ERROR(
                     '[Parser]: Cannot convert TFLite UNIDIRECTIONAL_SEQUENCE_LSTM (%s) with projection mode to Onnx!' % lstm)
                 continue
             if any([inp is not None for inp in inputs[20:24]]):
-                WARN(
+                ERROR(
                     '[Parser]: Cannot convert TFLite UNIDIRECTIONAL_SEQUENCE_LSTM (%s) with layer_norm mode to Onnx!' % lstm)
                 continue
 
@@ -619,13 +621,13 @@ def convert_special_uni_seq_lstm(graph):
 
             clear_redundant_nodes(graph)
         else:
-            WARN(
+            ERROR(
                 '[Parser]: Meets invalid LiteUNIDIRECTIONAL_SEQUENCE_LSTM Node(%s)!' % lstm)
 
 
 def convert_strided_slice(graph, op_type='TfStridedSlice'):
     if op_type not in ('TfStridedSlice', 'LiteSTRIDED_SLICE'):
-        WARN('[Parser]: Meets invalid Op type (%s) in convert_strided_slice!' % op_type)
+        ERROR('[Parser]: Meets invalid Op type (%s) in convert_strided_slice!' % op_type)
         return
     matches = single_node_matcher(graph, op_type)
     for m in matches:
@@ -642,7 +644,7 @@ def convert_strided_slice(graph, op_type='TfStridedSlice'):
             begin, end, strides = [c[2] for c in in_consts[:3]]
             input_shape = slice_obj.get_input_shapes()[0]
             if input_shape is None or any([s is None for s in input_shape]):
-                WARN(
+                ERROR(
                     '[Parser]: Invalid StridedSlice (%s) input shape in convert_strided_slice!' % strided_slice)
                 continue
             axes_shape = slice_obj.get_input_shapes()[0]
@@ -768,8 +770,8 @@ def convert_strided_slice(graph, op_type='TfStridedSlice'):
                 index = graph._attr['output_names'].index(strided_slice)
                 graph._attr['output_names'][index] = last_name
         else:
-            WARN('[Parser]: Meets invalid TFLite STRIDED_SLICE (%s) in convert_strided_slice!' %
-                 strided_slice)
+            ERROR('[Parser]: Meets invalid TFLite STRIDED_SLICE (%s) in convert_strided_slice!' %
+                  strided_slice)
 
 
 def merge_quantized_lstm(graph):
@@ -779,7 +781,7 @@ def merge_quantized_lstm(graph):
         '''
         node_out_edges = graph.sorted_out_edges(node_name, data=True)
         if node_obj is None or len(node_out_edges) < 1:
-            WARN('[Parser]: Meet invalid node (%s) in _get_forget_bias of merge_quantized_lstm!' % node_name)
+            ERROR('[Parser]: Meet invalid node (%s) in _get_forget_bias of merge_quantized_lstm!' % node_name)
             return (None, None, None)
         quant_forget_bias = node_obj.value
         forget_bias_scale_zp = node_out_edges[0][2]['tensor'].scale_zp
@@ -835,7 +837,7 @@ def merge_quantized_lstm(graph):
         names = ['concat', 'fc', 'adder', 'mul_sp2']
         objs_dict = {n: NodeWrap(graph, m[n])['object'] for n in names}
         if any(obj is None for obj in objs_dict.values()):
-            WARN('[Parser]: Meets invalid node in merge_quantized_lstm!')
+            ERROR('[Parser]: Meets invalid node in merge_quantized_lstm!')
             continue
         if objs_dict['adder'].value is None \
                 or objs_dict['adder'].value != 127 \
@@ -986,7 +988,7 @@ def merge_quantized_lstm(graph):
         for _, dst, _ in final_hout_out_edges:
             dst_obj = NodeWrap(graph, dst)['object']
             if dst_obj is None:
-                WARN('[Parser]: Meets invalid node %s in merge_quantized_lstm!' % dst)
+                ERROR('[Parser]: Meets invalid node %s in merge_quantized_lstm!' % dst)
                 continue
             if dst_obj.type == 'LitePACK':
                 pack_in_edges = graph.sorted_in_edges(dst)
@@ -1506,7 +1508,7 @@ def merge_quantized_instance_norm(graph):
                  'gamma', 'mul_1', 'mul_2', 'mul_3', 'beta', 'sub', 'add_2']
         obj_dict = {n: NodeWrap(graph, m[n])['object'] for n in names}
         if any([obj is None or not obj.quantize for obj in obj_dict.values()]):
-            WARN('[Parser]: Meets invalid Op in merge_quantized_instance_norm!')
+            ERROR('[Parser]: Meets invalid Op in merge_quantized_instance_norm!')
             continue
         mean1_in_edges = graph.sorted_in_edges(m['mean_1'], data=True)
         squared_diff_in_edges = graph.sorted_in_edges(
@@ -1611,15 +1613,15 @@ def merge_quantized_mul_add(graph):
         names = ['mul', 'multiplier', 'add', 'adder']
         objs_dict = {n: NodeWrap(graph, m[n])['object'] for n in names}
         if any([obj is None for obj in objs_dict.values()]):
-            WARN('[Parser]: Meets invalid node in merge_quantized_mul_add!')
+            ERROR('[Parser]: Meets invalid node in merge_quantized_mul_add!')
             continue
         if objs_dict['multiplier'].value is None \
                 or objs_dict['adder'].value is None:
-            WARN('[Parser]: Meets invalid node in merge_quantized_mul_add!')
+            ERROR('[Parser]: Meets invalid node in merge_quantized_mul_add!')
             continue
         in_edges = graph.sorted_in_edges(m['mul'], data=True)
         if len(in_edges) != 2:
-            WARN('[Parser]: Meets invalid inputs in merge_quantized_mul_add!')
+            ERROR('[Parser]: Meets invalid inputs in merge_quantized_mul_add!')
             continue
         out_edges = graph.sorted_out_edges(m['add'], data=True)
         if len(out_edges) < 1:
@@ -1627,7 +1629,7 @@ def merge_quantized_mul_add(graph):
         input_shapes = objs_dict['mul'].get_input_shapes()
         if len(input_shapes) < 1 \
                 or any(s is None for s in input_shapes[0]):
-            WARN('[Parser]: Meets invalid inputs in merge_quantized_mul_add!')
+            ERROR('[Parser]: Meets invalid inputs in merge_quantized_mul_add!')
             continue
         if not objs_dict['mul'].quantize \
                 or not objs_dict['add'].quantize:
@@ -1683,7 +1685,7 @@ def merge_special_cast_quantize(graph):
         cast_obj = NodeWrap(graph, cast)['object']
         quantize_obj = NodeWrap(graph, quantize)['object']
         if cast_obj is None or quantize_obj is None:
-            WARN('[Parser]: Meets invalid op in merge_special_cast_quantize!')
+            ERROR('[Parser]: Meets invalid op in merge_special_cast_quantize!')
             continue
         if not cast_obj.quantize or not quantize_obj.quantize:
             continue
@@ -1718,7 +1720,7 @@ def convert_special_quantize(graph):
         quantize = m['target']
         quantize_obj = NodeWrap(graph, quantize)['object']
         if quantize_obj is None:
-            WARN(
+            ERROR(
                 '[Parser]: Meets invalid LiteQUANTIZE(%s) in convert_special_quantize!' % quantize)
             continue
         if not quantize_obj.quantize:
@@ -1748,7 +1750,7 @@ def convert_special_quantize(graph):
                 node_attr.update({'opset_version': 1, 'to': to_dtype})
                 NodeWrap(graph, quantize).replace_obj('Cast', node_attr)
         else:
-            WARN(
+            ERROR(
                 '[Parser]: Meets invalid LiteQUANTIZE(%s) in convert_special_quantize!' % quantize)
 
 
@@ -1758,7 +1760,7 @@ def convert_special_dequantize(graph):
         dequantize = m['target']
         dequantize_obj = NodeWrap(graph, dequantize)['object']
         if dequantize_obj is None:
-            WARN(
+            ERROR(
                 '[Parser]: Meets invalid LiteDEQUANTIZE(%s) in convert_special_dequantize!' % dequantize)
             continue
         if not dequantize_obj.quantize:
@@ -1805,7 +1807,7 @@ def remove_sub_equal_select(graph):
         names = ['sub', 'equal_to', 'zeros_like', 'select']
         obj_dict = {n: NodeWrap(graph, m[n])['object'] for n in names}
         if any([obj is None for obj in obj_dict.values()]):
-            WARN('[Parser]: Meets invalid Op in remove_sub_equal_select!')
+            ERROR('[Parser]: Meets invalid Op in remove_sub_equal_select!')
             continue
         sub_in_edges = graph.sorted_in_edges(
             m['sub'], keys=True, data=True)
@@ -1963,7 +1965,7 @@ def split_fc(graph):
                 graph.remove_edges_from(fc_in_edges[2:])
             else:
                 last_name = None
-                WARN(
+                ERROR(
                     '[Parser]: Meets invalid pattern of LiteFULLY_CONNECTED Node(%s) in split_fc!' % fc)
                 continue
             if fc in graph._attr['output_names'] \
@@ -1972,7 +1974,7 @@ def split_fc(graph):
                 index = graph._attr['output_names'].index(fc)
                 graph._attr['output_names'][index] = last_name
         else:
-            WARN('[Parser]: Meets invalid LiteFULLY_CONNECTED Node(%s) in split_fc!' % fc)
+            ERROR('[Parser]: Meets invalid LiteFULLY_CONNECTED Node(%s) in split_fc!' % fc)
 
 
 def split_l2_norm(graph):
@@ -2149,7 +2151,7 @@ def split_s2b(graph):
                 index = graph._attr['output_names'].index(s2b)
                 graph._attr['output_names'][index] = last_name
         else:
-            WARN(
+            ERROR(
                 '[Parser]: Meets invalid LiteSPACE_TO_BATCH_ND Node(%s) in split_s2b!' % s2b)
 
 
@@ -2270,11 +2272,11 @@ def split_b2s(graph):
                         NodeWrap(graph, slice).replace_obj('Slice', slice_attr)
 
             else:
-                WARN(
+                ERROR(
                     '[Parser]: LiteBATCH_TO_SPACE_ND Node(%s) has invalid attributes to split in split_b2s!' % b2s_obj.name)
         else:
-            WARN('[Parser]: Meets invalid LiteBATCH_TO_SPACE_ND Node(%s) in split_b2s!' %
-                 b2s_obj.name)
+            ERROR('[Parser]: Meets invalid LiteBATCH_TO_SPACE_ND Node(%s) in split_b2s!' %
+                  b2s_obj.name)
 
 
 def split_greater_or_less_equal(graph):
@@ -2313,7 +2315,7 @@ def split_greater_or_less_equal(graph):
 
 def split_not_equal(graph, op_type='TfNotEqual'):
     if op_type not in ('TfNotEqual', 'Tfnot_equal', 'LiteNOT_EQUAL'):
-        WARN('[Parser]: Meets invalid Op type (%s) in split_not_equal!' % op_type)
+        ERROR('[Parser]: Meets invalid Op type (%s) in split_not_equal!' % op_type)
         return
     need_clear = False
     matches = single_node_matcher(graph, op_type)
@@ -2321,7 +2323,7 @@ def split_not_equal(graph, op_type='TfNotEqual'):
         not_equal = m['target']
         not_equal_obj = NodeWrap(graph, not_equal)['object']
         if not_equal_obj is None:
-            WARN(
+            ERROR(
                 '[Parser]: Meets invalid NotEqual Op (%s) in split_not_equal!' % not_equal)
             continue
         in_edges = graph.sorted_in_edges(not_equal, data=True)
@@ -2402,7 +2404,7 @@ def split_quatized_mean(graph):
 
 def split_rsqrt(graph, op_type='LiteRSQRT'):
     if op_type not in ('TfRsqrt', 'Tfrsqrt', 'LiteRSQRT'):
-        WARN('[Parser]: Meets invalid Op type (%s) in split_rsqrt!' % op_type)
+        ERROR('[Parser]: Meets invalid Op type (%s) in split_rsqrt!' % op_type)
         return
     matched = False
     matches = single_node_matcher(graph, op_type)
@@ -2429,6 +2431,7 @@ def split_rsqrt(graph, op_type='LiteRSQRT'):
 
 
 def remove_detection_postprocess(graph):
+    matched = False
     matches = single_node_matcher(graph, 'LiteCUSTOM')
     for m in matches:
         custom = m['target']
@@ -2436,6 +2439,7 @@ def remove_detection_postprocess(graph):
             custom_in_edges = graph.sorted_in_edges(custom, data=True)
             assert len(
                 custom_in_edges) >= 2, 'The length of in_edges of custom op is invalid in remove_detection_postprocess.'
+            matched = True
             for i, (src, _, in_attr) in enumerate(custom_in_edges):
                 if i < 2:
                     out = get_valid_node_name(graph, src + '_out')
@@ -2444,8 +2448,8 @@ def remove_detection_postprocess(graph):
                     graph.add_edge(src, out, **new_in_attr)
                     NodeWrap(graph, out).replace_obj('Out', {'name': out})
                     graph._attr['output_names'].append(src)
-            graph.remove_node(custom)
-    clear_redundant_nodes(graph)
+    if matched:
+        clear_redundant_nodes(graph)
 
 
 def remove_redundant_broadcast_to(graph):
@@ -2464,15 +2468,17 @@ def remove_redundant_broadcast_to(graph):
         mdst_obj = NodeWrap(graph, mdst)['object']
         if bt_obj is None or \
                 len(bt_obj.get_input_tensors()) < 2 or \
-                len(graph.sorted_in_edges(bt)) < 2 or \
-                not graph.sorted_in_edges(bt, data=True)[1][2]['tensor'].is_const:
-            WARN(
-                '[Parser]: Meets invalid LiteBROADCAST_TO(%s) in remove_broadcast_to!' % bt)
+                len(graph.sorted_in_edges(bt)) < 2:
+            ERROR(
+                '[Parser]: Meets invalid LiteBROADCAST_TO(%s) in remove_redundant_broadcast_to!' % bt)
+            continue
+        if not graph.sorted_in_edges(bt, data=True)[1][2]['tensor'].is_const:
+            WARN('[Parser]: Meets unsupported non-constant shape of LiteBROADCAST_TO(%s) in remove_redundant_broadcast_to!' % bt)
             continue
         if mdst_obj is None or \
                 len(mdst_obj.get_input_shapes()) != 2:
-            WARN(
-                '[Parser]: Meets invalid node(%s) in remove_broadcast_to!' % mdst)
+            ERROR(
+                '[Parser]: Meets invalid node(%s) in remove_redundant_broadcast_to!' % mdst)
             continue
         bt_out_shape = bt_obj.get_input_tensors()[1]
         inp, _, bt_in_attr = graph.sorted_in_edges(bt, data=True)[0]
@@ -2509,8 +2515,8 @@ def convert_to_onnx(graph):
             if getattr(node_obj, 'correspond_onnx_op', None) is not None:
                 if isinstance(node_obj, OpHasWeights):
                     if node_obj.weights is None:
-                        WARN('[Parser]: Node(%s) dosenot contain weights in convert_to_onnx!' %
-                             node_name)
+                        ERROR('[Parser]: Node(%s) dosenot contain weights in convert_to_onnx!' %
+                              node_name)
                         continue
                     new_weights = np.transpose(
                         node_obj.weights, axes=type(node_obj).perm_lite_to_onnx())
@@ -2530,7 +2536,7 @@ def convert_to_onnx(graph):
                     if len(in_edges) < 1 \
                             or len(node_obj.get_input_tensors()) < 1 \
                             or node_obj.get_input_tensors()[0] is None:
-                        WARN(
+                        ERROR(
                             '[Parser]: Invalid TFlite ExpandDims Node(%s) to convert to Onnx!' % node_name)
                         continue
                     axis = node_obj.axis
@@ -2623,7 +2629,7 @@ def convert_to_onnx(graph):
                     in_edges = graph.sorted_in_edges(
                         node_name, keys=True, data=True)
                     if len(dims_and_reps) != len(in_edges):
-                        WARN(
+                        ERROR(
                             '[Parser]: Fail to calculate LITESELECT op (%s) broadcast in convert_to_onnx!' % node_name)
                         continue
                     for i, dr in enumerate(dims_and_reps):
@@ -2652,8 +2658,8 @@ def convert_to_onnx(graph):
                             split += [0] * (out_port - len(split) + 1)
                         split[out_port] = e['tensor'].shape[node_obj.axis]
                     if not(node_obj.num_splits and (len(split) == node_obj.num_splits)):
-                        WARN('[Parser]: Invalid split nums of node %s in convert_to_onnx!' %
-                             (node_name))
+                        ERROR('[Parser]: Invalid split nums of node %s in convert_to_onnx!' %
+                              (node_name))
                     new_node_attr.update({'split': split})
                     in_edges = graph.sorted_in_edges(node_name)
                     if pure_type == 'SPLIT':
@@ -2671,7 +2677,7 @@ def convert_to_onnx(graph):
                 NodeWrap(graph, node_name).replace_obj(
                     node_obj.correspond_onnx_op['type'], new_node_attr)
             else:
-                WARN('[Parser]: TFLite op %s cannot be converted to Onnx' % pure_type)
+                ERROR('[Parser]: TFLite op %s cannot be converted to Onnx' % pure_type)
         else:
-            WARN(
+            ERROR(
                 '[Parser]: Meets invalid TFLite op for Node(%s) in convert_to_onnx!' % node_name)
