@@ -577,8 +577,8 @@ class PluginOp(OpHasVariableOutPorts, CommonOp):
                 self._plugin._nest_inputs = nest_input
         except Exception as e:
             self._plugin = None
-            WARN('[Parser]: Creating plugin type (%s) meets error %s! ' %
-                 (self.type, str(e)))
+            ERROR('[Parser]: Creating plugin type (%s) meets error %s! ' %
+                  (self.type, str(e)))
             import traceback
             print(traceback.format_exc())
 
@@ -620,25 +620,25 @@ class PluginOp(OpHasVariableOutPorts, CommonOp):
                 DEBUG('[Parser]: Call plugin infer_shape!')
                 out_tensors = self._plugin.infer_shape(inputs)
             except Exception as e:
-                WARN('[Parser]: plugin type (%s) infer shape meets error %s! ' %
-                     (self.type, str(e)))
+                ERROR('[Parser]: plugin type (%s) infer shape meets error %s! ' %
+                      (self.type, str(e)))
                 import traceback
                 print(traceback.format_exc())
             try:
                 self.remove_inputs(nest_input_index, inputs)
             except Exception as e:
-                WARN('[Parser]: plugin type (%s) meets error in removing input tensors: %s!' %
-                     (self.type, str(e)))
+                ERROR('[Parser]: plugin type (%s) meets error in removing input tensors: %s!' %
+                      (self.type, str(e)))
         else:
-            WARN('[Parser]: Invalid Plugin op (%s) for infer_shape!' % self.name)
+            ERROR('[Parser]: Invalid Plugin op (%s) for infer_shape!' % self.name)
         self.set_out_tensor(out_tensors)
         self.shape_infered = True
         # self.constants could be used in self._plugin.infer_shape, so check constants here
         self.constants = getattr(self._plugin, 'constants', {})
         if not all((isinstance(key, str) and isinstance(val, np.ndarray))
                    for key, val in self.constants.items()):
-            WARN('[Parser]: Invalid constants in Plugin op (%s). Expect key is string and value is numpy array!' % self.name)
-            WARN('constants: %s' % str(self.constants))
+            ERROR('[Parser]: Invalid constants in Plugin op (%s). Expect key is string and value is numpy array!' % self.name)
+            ERROR('constants: %s' % str(self.constants))
 
     def write_attrs(self, txt_file):
         ret = super(PluginOp, self).write_attrs(txt_file)
@@ -651,8 +651,8 @@ class PluginOp(OpHasVariableOutPorts, CommonOp):
                         try:
                             v = str(v).replace(' ', '')
                         except Exception as e:
-                            WARN('[Parser]: Node(%s) meets error for write_attrs: %s' %
-                                 (self.name, str(e)))
+                            ERROR('[Parser]: Node(%s) meets error for write_attrs: %s' %
+                                  (self.name, str(e)))
                             continue
                     elif isinstance(v, (int, float)):
                         v = str(v)
@@ -662,13 +662,13 @@ class PluginOp(OpHasVariableOutPorts, CommonOp):
                         try:
                             v = str(v)
                         except Exception as e:
-                            WARN('[Parser]: Node(%s) meets error for write_attrs: %s' %
-                                 (self.name, str(e)))
+                            ERROR('[Parser]: Node(%s) meets error for write_attrs: %s' %
+                                  (self.name, str(e)))
                             continue
                     txt_file.write('%s=%s\n' % (k, v))
                 for key, np_array in self.constants.items():
                     if key not in self.constants_offset_dict:
-                        WARN('[Parser]: Fail to save constants (%s) for unknown offset in write_attrs!' % key)
+                        ERROR('[Parser]: Fail to save constants (%s) for unknown offset in write_attrs!' % key)
                         continue
                     txt_file.write('%s_type=%s\n' % (key, str(np_array.dtype)))
                     txt_file.write('%s_offset=%d\n' % (key, self.constants_offset_dict[key]))
@@ -677,8 +677,8 @@ class PluginOp(OpHasVariableOutPorts, CommonOp):
                     txt_file.write('%s_shape=[%s]\n' % (key, num_list_to_string(
                         list(np_array.shape))))
             else:
-                WARN('[Parser]: Invalid Plugin op(%s) for write_attrs!' %
-                     self.name)
+                ERROR('[Parser]: Invalid Plugin op(%s) for write_attrs!' %
+                      self.name)
                 ret = False
         return ret
 

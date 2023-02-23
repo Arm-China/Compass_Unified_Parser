@@ -1377,7 +1377,7 @@ class TfTopKV2Op(OpHasVariableOutPorts, TfOp):
         elif out_ports == [0, 1]:
             out_tensors = [values.numpy(), indices.numpy()]
         else:
-            WARN('[Parser]: Meets invalid out_ports of TfTopKV2Op(%s)!' % self.name)
+            ERROR('[Parser]: Meets invalid out_ports of TfTopKV2Op(%s)!' % self.name)
             out_tensors = []
         self.set_out_tensor(out_tensors)
 
@@ -1411,6 +1411,6 @@ class TfUniqueOp(OpHasVariableOutPorts, TfOp):
         elif out_ports == [0, 1]:
             out_tensors = [x.numpy(), out_idx.numpy()]
         else:
-            WARN('[Parser]: Meets invalid out_ports of TfUniqueOp(%s)!' % self.name)
+            ERROR('[Parser]: Meets invalid out_ports of TfUniqueOp(%s)!' % self.name)
             out_tensors = []
         self.set_out_tensor(out_tensors)

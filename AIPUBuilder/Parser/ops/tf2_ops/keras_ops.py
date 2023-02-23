@@ -147,11 +147,11 @@ class TfKerasBidirectionalOp(OpHasVariableOutPorts, KerasOp):
         '''
         ret = None
         if direction not in ('forward', 'backward'):
-            WARN('Unsupported direction %s in TfKerasBidirectionalOp (%s)!' % (str(direction), self.name))
+            ERROR('Unsupported direction %s in TfKerasBidirectionalOp (%s)!' % (str(direction), self.name))
             return ret
         if not isinstance(self.layer, dict):
-            WARN('Expect type of layer is dict but got %s in TfKerasBidirectionalOp (%s)!' %
-                 (type(self.layer).__name__, self.name))
+            ERROR('Expect type of layer is dict but got %s in TfKerasBidirectionalOp (%s)!' %
+                  (type(self.layer).__name__, self.name))
             return ret
         layer_type = self.layer.get('class_name', None)
         layer_config = self.layer.get('config', {})
@@ -160,14 +160,14 @@ class TfKerasBidirectionalOp(OpHasVariableOutPorts, KerasOp):
             layer_type = self.backward_layer.get('class_name', None)
             layer_config = self.backward_layer.get('config', {})
         if layer_type is None or layer_type not in ('GRU', 'LSTM'):
-            WARN('Meet unsupported layer type (%s) in TfKerasBidirectionalOp (%s)!' % (str(layer_type), self.name))
+            ERROR('Meet unsupported layer type (%s) in TfKerasBidirectionalOp (%s)!' % (str(layer_type), self.name))
             return ret
         if not layer_config:
-            WARN('Meet empty layer config in TfKerasBidirectionalOp (%s)!' % self.name)
+            ERROR('Meet empty layer config in TfKerasBidirectionalOp (%s)!' % self.name)
             return ret
         if len(self.weights_list) != 6:
-            WARN('Expect weights length == 6, but got %d in TfKerasBidirectionalOp (%s)!' %
-                 (len(self.weights_list), self.name))
+            ERROR('Expect weights length == 6, but got %d in TfKerasBidirectionalOp (%s)!' %
+                  (len(self.weights_list), self.name))
             return ret
 
         from ...graph.graph_algo import get_valid_node_name

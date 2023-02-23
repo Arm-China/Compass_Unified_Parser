@@ -105,8 +105,8 @@ class AddOp(OpNeedBroadcast, OpHasAxis, OpHasOneOutPort, OnnxOp):
                 if cur_ver <= 6:
                     ret = bool(self.__dict__['_attr'][item].value)
                 else:
-                    WARN('[Parser]: Unsupported op version [%s] for %s!' %
-                         (cur_ver, type(self).__name__))
+                    ERROR('[Parser]: Unsupported op version [%s] for %s!' %
+                          (cur_ver, type(self).__name__))
         except:
             ret = None
         if ret is None:
@@ -760,7 +760,7 @@ class HardmaxOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
                             self.name)
                         self._graph._attr['output_names'][index] = post_reshape
                 else:
-                    WARN(
+                    ERROR(
                         '[Parser}: Meets invalid Hardmax (%s) in convert_version!' % self.name)
             self.cur_version = max_ver
 
@@ -844,7 +844,7 @@ class LogSoftmaxOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
                                 self.name)
                             self._graph._attr['output_names'][index] = post_reshape
                 else:
-                    WARN(
+                    ERROR(
                         '[Parser}: Meets invalid LogSoftmax (%s) in convert_version!' % self.name)
             self.cur_version = max_ver
 
@@ -1089,8 +1089,8 @@ class MulOp(OpNeedBroadcast, OpHasAxis, OpHasOneOutPort, OnnxOp):
                 if cur_ver <= 6:
                     ret = bool(self.__dict__['_attr'][item].value)
                 else:
-                    WARN('[Parser]: Unsupported op version [%s] for %s!' %
-                         (cur_ver, type(self).__name__))
+                    ERROR('[Parser]: Unsupported op version [%s] for %s!' %
+                          (cur_ver, type(self).__name__))
         except:
             ret = None
         if ret is None:
@@ -1179,8 +1179,8 @@ class PowOp(OpNeedBroadcast, OpHasAxis, OpHasOneOutPort, OnnxOp):
                 if cur_ver == 1:
                     ret = bool(self.__dict__['_attr'][item].value)
                 else:
-                    WARN('[Parser]: Unsupported op version [%s] for %s!' %
-                         (cur_ver, type(self).__name__))
+                    ERROR('[Parser]: Unsupported op version [%s] for %s!' %
+                          (cur_ver, type(self).__name__))
         except:
             ret = None
         if ret is None:
@@ -1586,7 +1586,7 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
                        exclude_outside=False, extrapolation_value=0.0, is_nchw=True):
         input_shape = list(x_data.shape)
         if len(input_shape) != 4:
-            WARN('[Parser]: Resize op only supports cubic mode with 4d input, but got %dd!' % len(input_shape))
+            ERROR('[Parser]: Resize op only supports cubic mode with 4d input, but got %dd!' % len(input_shape))
             return None
         if not is_nchw:
             x_data = np.transpose(x_data, [0, 3, 1, 2])
@@ -1684,7 +1684,7 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
         super(ResizeOp, self).infer_shape()
         inputs = self.get_input_tensors()
         if not np.all(self.scales) and not np.all(self.sizes):
-            WARN('[Parser]: At least one of scales and sizes of Resize Op (%s) should be valid!' % (
+            ERROR('[Parser]: At least one of scales and sizes of Resize Op (%s) should be valid!' % (
                 self.name))
         input_dim_np = np.array(inputs[0].shape, np.float32)
         if self.scales is None or self.scales.size == 0 or not np.all(self.scales):
@@ -2046,8 +2046,8 @@ class SubOp(OpNeedBroadcast, OpHasAxis, OpHasOneOutPort, OnnxOp):
                 if cur_ver <= 6:
                     ret = bool(self.__dict__['_attr'][item].value)
                 else:
-                    WARN('[Parser]: Unsupported op version [%s] for %s!' %
-                         (cur_ver, type(self).__name__))
+                    ERROR('[Parser]: Unsupported op version [%s] for %s!' %
+                          (cur_ver, type(self).__name__))
         except:
             ret = None
         if ret is None:

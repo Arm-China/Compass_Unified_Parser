@@ -914,7 +914,7 @@ class TfStridedSliceOp(OpHasOneOutPort, TfOp):
                     shrink_seen = True
 
                 if (new_axis_mask >> idx) & 1:
-                    WARN(
+                    ERROR(
                         '[Parser]: new_axis_mask should be processed to 0 (%s) in convert_strided_slice!' % strided_slice)
                 if (ellipsis_mask >> idx) & 1:
                     ellipsis_size = min(

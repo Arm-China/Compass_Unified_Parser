@@ -338,12 +338,12 @@ class TfDepthToSpaceOp(LayoutConcernedOp, OpHasOneOutPort, TfOp):
     def cal_out_tensor(input_data, block_size, data_format):
         ret = None
         if data_format not in ('NHWC', 'NCHW', 'NCHW_VECT_C'):
-            WARN('[Parser]: Meet unsupported data_format %s in cal_out_tensor of TfDepthToSpaceOp!' % data_format)
+            ERROR('[Parser]: Meet unsupported data_format %s in cal_out_tensor of TfDepthToSpaceOp!' % data_format)
             return ret
         if data_format == 'NCHW_VECT_C':
             input_shape = list(input_data.shape)
             if len(input_shape) != 5 or input_shape[1] % 4 != 0 or input_shape[-1] != 4:
-                WARN('[Parser]: Meet invalid shape %s of input_data in cal_out_tensor of TfDepthToSpaceOp!' % str(input_shape))
+                ERROR('[Parser]: Meet invalid shape %s of input_data in cal_out_tensor of TfDepthToSpaceOp!' % str(input_shape))
                 return ret
             pre_perm = TfOp.perm_nchw_vect_c_to_nhwc()
             nhwc_shape = [input_shape[idx] for idx in pre_perm[:-1]]

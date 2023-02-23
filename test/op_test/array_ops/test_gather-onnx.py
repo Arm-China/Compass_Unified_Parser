@@ -66,10 +66,11 @@ for indices in (-5, -3, 0, 2):
     model_name = '-'.join([OP_NAME, str(indices)])
     model_path = model_name + '.onnx'
     # Create model
-    create_gather_model(
-        model_path, input_shape, output_shape, indices, 14)
+    for opset_version in (13, 14):
+        create_gather_model(
+            model_path, input_shape, output_shape, indices, opset_version)
 
-    # Run tests with parser and compare result with runtime
-    exit_status = run_parser(
-        model_path, feed_dict, model_type=None, save_output=True, verify=True)
-    assert exit_status
+        # Run tests with parser and compare result with runtime
+        exit_status = run_parser(
+            model_path, feed_dict, model_type=None, save_output=True, verify=True)
+        assert exit_status

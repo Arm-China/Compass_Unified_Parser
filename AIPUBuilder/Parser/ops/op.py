@@ -287,8 +287,8 @@ class Op(abc.ABC):
                     else:
                         self._attr[k] = Attribute(k, attr_param)
             else:
-                WARN('[Parser]: Node(%s) attributes are not updated, because there is an unsupported OP!' %
-                     (self.name))
+                ERROR('[Parser]: Node(%s) attributes are not updated, because there is an unsupported OP!' %
+                      (self.name))
 
     def copied_attr(self):
         '''Returns the copied attr of this Op.'''
@@ -301,11 +301,11 @@ class Op(abc.ABC):
         for attr_key, v in self._attr.items():
             if isinstance(v, Attribute):
                 if getattr(v, 'required', False) is True and getattr(v, 'value', None) is None:
-                    WARN('[Parser]: Required fields [%s] not exists!' % attr_key)
+                    ERROR('[Parser]: Required fields [%s] not exists!' % attr_key)
                     return False
                 if getattr(v, 'options', []) and getattr(v, 'value', None) not in getattr(v, 'options'):
-                    WARN('[Parser]: Value [%s] not in options of [%s]!' %
-                         (str(getattr(v, 'value', None)), attr_key))
+                    ERROR('[Parser]: Value [%s] not in options of [%s]!' %
+                          (str(getattr(v, 'value', None)), attr_key))
                     return False
         return True
 
@@ -385,7 +385,7 @@ class Op(abc.ABC):
             return [d['tensor'].value if d['tensor'] is not None else None
                     for _, _, _, d in self._graph.sorted_in_edges(self.name, keys=True, data=True)]
         except Exception as e:
-            WARN('[Parser]: An exception occurred with get_input_tensors. Node(%s) %s' % (
+            ERROR('[Parser]: An exception occurred with get_input_tensors. Node(%s) %s' % (
                 self.name, str(e)))
 
     def get_output_tensors(self):
@@ -394,7 +394,7 @@ class Op(abc.ABC):
             return [d['tensor'].value if d['tensor'] is not None else None
                     for _, _, _, d in self._graph.sorted_out_edges(self.name, keys=True, data=True)]
         except Exception as e:
-            WARN('[Parser]: An exception occurred with get_input_tensors. Node(%s) %s' % (
+            ERROR('[Parser]: An exception occurred with get_input_tensors. Node(%s) %s' % (
                 self.name, str(e)))
 
     def is_all_inputs_const(self):
@@ -421,8 +421,8 @@ class Op(abc.ABC):
             return [list(d['tensor'].value.shape) if d['tensor'].value is not None else d['tensor'].shape
                     for _, _, _, d in self._graph.sorted_in_edges(self.name, keys=True, data=True)]
         except Exception as e:
-            WARN('[Parser]: Node(%s) get_input_shapes meets error: %s' %
-                 (self.name, str(e)))
+            ERROR('[Parser]: Node(%s) get_input_shapes meets error: %s' %
+                  (self.name, str(e)))
             return []
 
     def get_output_shapes(self):
@@ -431,8 +431,8 @@ class Op(abc.ABC):
             return [list(d['tensor'].value.shape) if d['tensor'].value is not None else None
                     for _, _, _, d in self._graph.sorted_out_edges(self.name, keys=True, data=True)]
         except Exception as e:
-            WARN('[Parser]: Node(%s) get_output_shapes meets error:%s' %
-                 (self.name, str(e)))
+            ERROR('[Parser]: Node(%s) get_output_shapes meets error:%s' %
+                  (self.name, str(e)))
             return []
 
     def sorted_in_consts(self):
@@ -540,11 +540,11 @@ class OpHasOneOutPort(Op):
                 else:
                     d['tensor'] = Tensor(value=tensor_data)
         except KeyError as e:
-            WARN('[Parser]: Node(%s) meets key error in set_out_tensor (%s)!' %
-                 (self.name, str(e)))
+            ERROR('[Parser]: Node(%s) meets key error in set_out_tensor (%s)!' %
+                  (self.name, str(e)))
         except Exception as e:
-            WARN('[Parser]: Node(%s) meets exception in set_out_tensor (%s)!' %
-                 (self.name, str(e)))
+            ERROR('[Parser]: Node(%s) meets exception in set_out_tensor (%s)!' %
+                  (self.name, str(e)))
 
 
 class OpHasMultipleOutPorts(Op):
@@ -589,11 +589,11 @@ class OpHasMultipleOutPorts(Op):
                         else:
                             d['tensor'] = Tensor(value=t, is_const=is_const)
         except KeyError as e:
-            WARN('[Parser]: Node(%s) meets key error in set_out_tensor (%s)!' %
-                 (self.name, str(e)))
+            ERROR('[Parser]: Node(%s) meets key error in set_out_tensor (%s)!' %
+                  (self.name, str(e)))
         except Exception as e:
-            WARN('[Parser]: Node(%s) meets exception in set_out_tensor (%s)!' %
-                 (self.name, str(e)))
+            ERROR('[Parser]: Node(%s) meets exception in set_out_tensor (%s)!' %
+                  (self.name, str(e)))
 
 
 class OpHasVariableOutPorts(Op):
@@ -646,11 +646,11 @@ class OpHasVariableOutPorts(Op):
                     else:
                         d['tensor'] = Tensor(value=tensor_data_list[0])
         except KeyError as e:
-            WARN('[Parser]: Node(%s) meets key error in set_out_tensor (%s)! ' %
-                 (self.name, str(e)))
+            ERROR('[Parser]: Node(%s) meets key error in set_out_tensor (%s)! ' %
+                  (self.name, str(e)))
         except Exception as e:
-            WARN('[Parser]: Node(%s) meets exception in set_out_tensor (%s)!' %
-                 (self.name, str(e)))
+            ERROR('[Parser]: Node(%s) meets exception in set_out_tensor (%s)!' %
+                  (self.name, str(e)))
 
 
 class OpHasMethod(Op):
@@ -1039,8 +1039,8 @@ class OpHasPaddingStrides(LayoutConcernedOp):
                 if len(self.kernel_shape) == 3:
                     txt_file.write('kernel_z=%d\n' % self.kernel_shape[-3])
             else:
-                WARN('[Parser]: Invalid kernel_shape for %s Op (%s) in write_attrs!' %
-                     (self.type, self.name))
+                ERROR('[Parser]: Invalid kernel_shape for %s Op (%s) in write_attrs!' %
+                      (self.type, self.name))
 
             if self.strides is not None:
                 txt_file.write('stride_x=%d\n' % self.strides[-1])
@@ -1048,8 +1048,8 @@ class OpHasPaddingStrides(LayoutConcernedOp):
                 if len(self.strides) == 3:
                     txt_file.write('stride_z=%d\n' % self.strides[-3])
             else:
-                WARN('[Parser]: Invalid strides for %s Op (%s) in write_attrs!' %
-                     (self.type, self.name))
+                ERROR('[Parser]: Invalid strides for %s Op (%s) in write_attrs!' %
+                      (self.type, self.name))
 
             if self.tf_pads is not None:
                 if self.tf_pads.shape[0] == 4:
@@ -1065,8 +1065,8 @@ class OpHasPaddingStrides(LayoutConcernedOp):
                     txt_file.write('pad_z_begin=%d\n' % self.tf_pads[1, 0])
                     txt_file.write('pad_z_end=%d\n' % self.tf_pads[1, 1])
             else:
-                WARN('[Parser]: Invalid pads for %s Op (%s) in write_attrs!' %
-                     (self.type, self.name))
+                ERROR('[Parser]: Invalid pads for %s Op (%s) in write_attrs!' %
+                      (self.type, self.name))
 
             if self.dilations is not None:
                 txt_file.write('dilation_x=%d\n' % self.dilations[-1])
@@ -1074,8 +1074,8 @@ class OpHasPaddingStrides(LayoutConcernedOp):
                 if len(self.dilations) == 3:
                     txt_file.write('dilation_z=%d\n' % self.dilations[-3])
             else:
-                WARN('[Parser]: Invalid dilations for %s Op (%s) in write_attrs!' %
-                     (self.type, self.name))
+                ERROR('[Parser]: Invalid dilations for %s Op (%s) in write_attrs!' %
+                      (self.type, self.name))
         return ret
 
     @property
@@ -1198,7 +1198,7 @@ class OpHasWeights(Op):
                     if self.weights_zp_offset >= 0:
                         Op.numpy_to_bin(bin_file, self.weights_scale_zp[1], self.weights_zp_offset, self.name)
             else:
-                WARN(
+                ERROR(
                     '[Parser]: Invalid weights for Node %s in write_weights!' % self.name)
         else:
             FATAL('[Parser]: Invalid file to write weights for Node(%s) in write_weights!' %
@@ -1361,7 +1361,7 @@ class BaseConvOp(OpHasPaddingStrides, BaseLinearOp, LayoutConcernedOp):
                         (in_shape - dilations * (kernel_shape - 1) - 1) / strides + 1).astype(np.int64)
             ret = out_shape.tolist()
         else:
-            WARN('[Parser]: Invalid pads len %s in cal_out_shape!' % (str(pads)))
+            ERROR('[Parser]: Invalid pads len %s in cal_out_shape!' % (str(pads)))
             ret = []
         return ret
 
@@ -1541,7 +1541,7 @@ class BaseActivationOp(OpHasOneOutPort):
                     elif self.activations == 'RELU6':
                         pass
                 else:
-                    WARN(
+                    ERROR(
                         '[Parser]: Node(%s) Meets invalid activation type in write_attrs!' % self.name)
         return ret
 
@@ -1831,7 +1831,7 @@ class OpNeedBroadcast(Op):
                                 offset = o
                                 break
                         if offset == -1:
-                            WARN(
+                            ERROR(
                                 '[Parser]: Meets invalid input shape for broadcasting in cal_reshape_and_tile!')
                             break
                         else:
@@ -1850,7 +1850,7 @@ class OpNeedBroadcast(Op):
                 elif i in new_dims_dict:
                     reshape_dims.append(new_dims_dict[i])
                 else:
-                    WARN('[Parser]: Meets error when calculating broadcast!')
+                    ERROR('[Parser]: Meets error when calculating broadcast!')
                     break
 
             max_dims = np.max(np.array([list(s) for s in reshape_dims if len(
@@ -1886,7 +1886,7 @@ class OpNeedBroadcast(Op):
                         value = np.tile(value, params['tile'])
                     ret[i] = value
             else:
-                WARN(
+                ERROR(
                     '[Parser]: Number of broadcast params shoud be equal to number of inputs!')
         return ret
 
@@ -1948,7 +1948,7 @@ class OpNeedUniBroadcast(Op):
                         new_dim = list(in_shape) + \
                             [1] * (max_rank - len(in_shape))
                     if len(new_dim) > max_rank:
-                        WARN('[Parser]: Meets error when calculating broadcast!')
+                        ERROR('[Parser]: Meets error when calculating broadcast!')
                     reshape_dims.append(new_dim)
 
             reps = [(np.array(max_dims) // np.array(dim)).tolist()
@@ -1982,7 +1982,7 @@ class OpNeedUniBroadcast(Op):
                         value = np.tile(value, params['tile'])
                     ret[i + 1] = value
             else:
-                WARN(
+                ERROR(
                     '[Parser]: Number of broadcast params shoud be equal to number of inputs!')
         return ret
 
@@ -2467,10 +2467,10 @@ class TfHasPaddingStrides(OpHasPaddingStrides, TfOp):
                             and self.strides[-1] == 1:
                         self.strides = self.strides[1:-1]
                     else:
-                        WARN(
+                        ERROR(
                             '[Parser]: Meets invalid strides for Node(%s) in infer_shape!' % self.name)
             else:
-                WARN(
+                ERROR(
                     '[Parser]: Meets invalid strides for Node(%s) in infer_shape!' % self.name)
 
             if len(self.dilations) in (1, spatial_len, spatial_len + 2):
@@ -2490,10 +2490,10 @@ class TfHasPaddingStrides(OpHasPaddingStrides, TfOp):
                             and self.dilations[-1] == 1:
                         self.dilations = self.dilations[1:-1]
                     else:
-                        WARN(
+                        ERROR(
                             '[Parser]: Meets invalid dilations for Node(%s) in infer_shape!' % self.name)
             else:
-                WARN(
+                ERROR(
                     '[Parser]: Meets invalid dilations for Node(%s) in infer_shape!' % self.name)
 
             if not isinstance(self, OpHasWeights):
@@ -2507,10 +2507,10 @@ class TfHasPaddingStrides(OpHasPaddingStrides, TfOp):
                                 self.kernel_shape[0] == 1 and self.kernel_shape[-1] == 1:
                             self.kernel_shape = self.kernel_shape[1:-1]
                         else:
-                            WARN(
+                            ERROR(
                                 '[Parser]: Meets invalid kernel_shape for Node(%s) in infer_shape!' % self.name)
                 else:
-                    WARN(
+                    ERROR(
                         '[Parser]: Meets invalid kernel_shape for Node(%s) in infer_shape!' % self.name)
 
     def update_pads(self, input_shape, output_shape):
@@ -2666,8 +2666,8 @@ class KerasRecurrentOp(OpHasVariableOutPorts, KerasOp):
     def create_func(self, extra_args_dict=None):
         ret = None
         if len(self.weights_list) < 2:
-            WARN('Expect weights_list length >= 2, but got %d in KerasRecurrentOp (%s)!' %
-                 (len(self.weights_list), self.name))
+            ERROR('Expect weights_list length >= 2, but got %d in KerasRecurrentOp (%s)!' %
+                  (len(self.weights_list), self.name))
             return ret
         self.kernel = self.weights_list[0]
         self.recurrent_kernel = self.weights_list[1]
@@ -2909,7 +2909,7 @@ class KerasNeedBroadcast(KerasOp):
         batch_size = input_shapes[0][0] if len(input_shapes[0]) >= 1 else None
         if batch_size is None \
                 or any((len(shape) < 1 or shape[0] != batch_size) for shape in input_shapes[1:]):
-            WARN('Parser: Meet different batch sizes in cal_reshape_and_tile of KerasNeedBroadcast!')
+            ERROR('Parser: Meet different batch sizes in cal_reshape_and_tile of KerasNeedBroadcast!')
             return ret
         input_shapes_without_batch = [shape[1:] for shape in input_shapes[:]]
         reshape_and_tile_lists = OpNeedBroadcast.cal_reshape_and_tile(input_shapes_without_batch)

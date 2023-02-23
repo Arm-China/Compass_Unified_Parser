@@ -5,6 +5,7 @@
 import tensorflow as tf
 from .op import *
 from ..common.defs import FLOAT_EQUAL
+from ..logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
 class LiteADDOp(BaseActivationOp, TfliteOp):
@@ -2834,24 +2835,24 @@ class LiteUNIDIRECTIONAL_SEQUENCE_LSTMOp(OpHasOneOutPort, TfliteOp):
 
         inputs = self.get_input_tensors()
         if len(inputs) != 24:
-            WARN(
+            ERROR(
                 '[Parser]: TFLite UNIDIRECTIONAL_SEQUENCE_LSTM (%s) should have 24 inputs!' % self.name)
             return
         if inputs[0] is None:
-            WARN(
+            ERROR(
                 '[Parser]: Meets invalid input for TFLite UNIDIRECTIONAL_SEQUENCE_LSTM (%s)!' % self.name)
             return
         if any([inp is None for inp in inputs[1:9]]):
-            WARN('[Parser]: TFLite UNIDIRECTIONAL_SEQUENCE_LSTM (%s) dose not support empty input/recurrent weights!' % self.name)
+            ERROR('[Parser]: TFLite UNIDIRECTIONAL_SEQUENCE_LSTM (%s) dose not support empty input/recurrent weights!' % self.name)
             return
         if any([inp is not None for inp in inputs[16:18]]):
-            WARN('[Parser]: TFLite UNIDIRECTIONAL_SEQUENCE_LSTM (%s) dose not support projection mode yet!' % self.name)
+            ERROR('[Parser]: TFLite UNIDIRECTIONAL_SEQUENCE_LSTM (%s) dose not support projection mode yet!' % self.name)
             return
         if any([inp is None for inp in inputs[18:20]]):
-            WARN('[Parser]: TFLite UNIDIRECTIONAL_SEQUENCE_LSTM (%s) dose not support empty initial state!' % self.name)
+            ERROR('[Parser]: TFLite UNIDIRECTIONAL_SEQUENCE_LSTM (%s) dose not support empty initial state!' % self.name)
             return
         if any([inp is not None for inp in inputs[20:24]]):
-            WARN('[Parser]: TFLite UNIDIRECTIONAL_SEQUENCE_LSTM (%s) dose not support layer_norm mode yet!' % self.name)
+            ERROR('[Parser]: TFLite UNIDIRECTIONAL_SEQUENCE_LSTM (%s) dose not support layer_norm mode yet!' % self.name)
             return
 
         inp = inputs[0]

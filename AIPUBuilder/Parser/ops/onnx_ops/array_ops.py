@@ -117,8 +117,7 @@ class ConstantOp(OpHasOneOutPort, ConstLikeOp, OnnxOp):
         return {1: {'value': {'type': AttrType.TENSOR, 'required': True}},
                 9: {'value': {'type': AttrType.TENSOR, 'required': True}},
                 11: {'sparse_value': {'type': AttrType.SPARSE_TENSOR},
-                     'value': {'type': AttrType.TENSOR}
-                     },
+                     'value': {'type': AttrType.TENSOR}},
                 12: {
                     'sparse_value': {'type': AttrType.SPARSE_TENSOR},
                     'value': {'type': AttrType.TENSOR},
@@ -127,9 +126,17 @@ class ConstantOp(OpHasOneOutPort, ConstLikeOp, OnnxOp):
                     'value_int': {'type': AttrType.INT},
                     'value_ints': {'type': AttrType.INTS},
                     'value_string': {'type': AttrType.STRING},
-                    'value_strings': {'type': AttrType.STRINGS},
-        }
-        }
+                    'value_strings': {'type': AttrType.STRINGS}},
+                13: {
+                    'sparse_value': {'type': AttrType.SPARSE_TENSOR},
+                    'value': {'type': AttrType.TENSOR},
+                    'value_float': {'type': AttrType.FLOAT},
+                    'value_floats': {'type': AttrType.FLOATS},
+                    'value_int': {'type': AttrType.INT},
+                    'value_ints': {'type': AttrType.INTS},
+                    'value_string': {'type': AttrType.STRING},
+                    'value_strings': {'type': AttrType.STRINGS}},
+                }
 
     def __init__(self, graph, attr_dict=None):
         super(ConstantOp, self).__init__(graph, attr_dict)
@@ -148,15 +155,15 @@ class ConstantOp(OpHasOneOutPort, ConstLikeOp, OnnxOp):
             if item == 'value':
                 if cur_ver in (1, 9):
                     return self._attr['value'].value
-                elif cur_ver in (11, 12):
+                elif cur_ver in (11, 12, 13):
                     values = np.asarray([self._attr[k].value for k, _ in type(
                         self).attributes()[cur_ver].items() if self._attr[k].value is not None])
                     assert len(
                         values) == 1, 'The length of value is invalid in ConstantOp.'
                     return values[0]
                 else:
-                    WARN('[Parser]: Unsupported op version [%s] for %s!' %
-                         (cur_ver, type(self).__name__))
+                    ERROR('[Parser]: Unsupported op version [%s] for %s!' %
+                          (cur_ver, type(self).__name__))
         except:
             ret = None
         if ret is None:
@@ -166,11 +173,11 @@ class ConstantOp(OpHasOneOutPort, ConstLikeOp, OnnxOp):
     def __setattr__(self, item, value):
         if item == 'value':
             cur_ver = self.__dict__['_attr']['cur_version'].value
-            if cur_ver in (1, 9, 11, 12):
+            if cur_ver in (1, 9, 11, 12, 13):
                 self._attr['value'].value = value
             else:
-                WARN('[Parser]: Unsupported op version [%s] for %s!' %
-                     (cur_ver, type(self).__name__))
+                ERROR('[Parser]: Unsupported op version [%s] for %s!' %
+                      (cur_ver, type(self).__name__))
         else:
             super(ConstantOp, self).__setattr__(item, value)
 
@@ -679,7 +686,7 @@ class ReshapeOp(OpHasOneOutPort, OnnxOp):
                             shape = np.array(
                                 in_edges[1][2]['tensor'].value, np.int32).tolist()
                         except:
-                            WARN(
+                            ERROR(
                                 '[Parser]: Meets exception when obtaining shape of Reshape(%s) for %s!' % self.name)
                             shape = None
                     try:
@@ -691,7 +698,7 @@ class ReshapeOp(OpHasOneOutPort, OnnxOp):
                                     shape[idx] = self.get_input_tensors()[
                                         0].shape[idx]
                     except:
-                        WARN(
+                        ERROR(
                             '[Parser]: Meets exception when obtaining shape of Reshape(%s) for %s!' % self.name)
                         shape = None
                     if shape is not None:
@@ -1040,11 +1047,11 @@ class SliceOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
         inputs = self.get_input_tensors()
         cur_ver = self.cur_version
         if cur_ver not in list(SliceOp.attributes().keys()):
-            WARN('[Parser]: Unsupported op version [%s] for %s!' %
-                 (cur_ver, type(self).__name__))
+            ERROR('[Parser]: Unsupported op version [%s] for %s!' %
+                  (cur_ver, type(self).__name__))
 
         if inputs[0] is None or inputs[0].size == 0:
-            WARN(
+            ERROR(
                 '[Parser]: Meets invalid input tensor in Slice(%s) infer_shape!' % self.name)
             return
 
@@ -1287,7 +1294,7 @@ class SqueezeOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
                         self.__dict__['_attr'][item] \
                             = Attribute(item, {'type': AttrType.INTS, 'value': ret})
                     else:
-                        WARN(
+                        ERROR(
                             '[Parser]: Invalid inputs number of Squeeze(%s)!' % self.name)
         return ret
 

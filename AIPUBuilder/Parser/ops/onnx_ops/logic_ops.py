@@ -3,6 +3,7 @@
 
 
 from ..op import *
+from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
 class AndOp(OpNeedBroadcast, OpHasOneOutPort, OnnxOp):
@@ -44,8 +45,8 @@ class AndOp(OpNeedBroadcast, OpHasOneOutPort, OnnxOp):
                 if cur_ver == 1:
                     ret = bool(self.__dict__['_attr'][item].value)
                 else:
-                    WARN('[Parser]: Unsupported op version [%s] for %s!' %
-                         (cur_ver, type(self).__name__))
+                    ERROR('[Parser]: Unsupported op version [%s] for %s!' %
+                          (cur_ver, type(self).__name__))
         except:
             ret = None
         if ret is None:
@@ -94,8 +95,8 @@ class EqualOp(OpNeedBroadcast, OpHasAxis, OpHasOneOutPort, OnnxOp):
                 if cur_ver == 1:
                     ret = bool(self.__dict__['_attr'][item].value)
                 else:
-                    WARN('[Parser]: Unsupported op version [%s] for %s!' %
-                         (cur_ver, type(self).__name__))
+                    ERROR('[Parser]: Unsupported op version [%s] for %s!' %
+                          (cur_ver, type(self).__name__))
         except:
             ret = None
         if ret is None:
@@ -144,8 +145,8 @@ class GreaterOp(OpNeedBroadcast, OpHasAxis, OpHasOneOutPort, OnnxOp):
                 if cur_ver == 1:
                     ret = bool(self.__dict__['_attr'][item].value)
                 else:
-                    WARN('[Parser]: Unsupported op version [%s] for %s!' %
-                         (cur_ver, type(self).__name__))
+                    ERROR('[Parser]: Unsupported op version [%s] for %s!' %
+                          (cur_ver, type(self).__name__))
         except:
             ret = None
         if ret is None:
@@ -213,8 +214,8 @@ class LessOp(OpNeedBroadcast, OpHasAxis, OpHasOneOutPort, OnnxOp):
                 if cur_ver == 1:
                     ret = bool(self.__dict__['_attr'][item].value)
                 else:
-                    WARN('[Parser]: Unsupported op version [%s] for %s!' %
-                         (cur_ver, type(self).__name__))
+                    ERROR('[Parser]: Unsupported op version [%s] for %s!' %
+                          (cur_ver, type(self).__name__))
         except:
             ret = None
         if ret is None:
@@ -297,8 +298,8 @@ class OrOp(OpNeedBroadcast, OpHasOneOutPort, OnnxOp):
                 if cur_ver == 1:
                     ret = bool(self.__dict__['_attr'][item].value)
                 else:
-                    WARN('[Parser]: Unsupported op version [%s] for %s!' %
-                         (cur_ver, type(self).__name__))
+                    ERROR('[Parser]: Unsupported op version [%s] for %s!' %
+                          (cur_ver, type(self).__name__))
         except:
             ret = None
         if ret is None:

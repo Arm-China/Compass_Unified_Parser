@@ -439,8 +439,8 @@ class ArmBasicLSTMOp(BaseRnnOp, OpHasBiases, OpHasWeights, ArmOp):
         elif self.method == 'YHC':
             self.set_out_tensor([Y, Y_h, Y_c])
         else:
-            WARN('[Parser]: BasicLSTM (%s) out-sequence type (%s) not supported!' %
-                 (self.name, self.method))
+            ERROR('[Parser]: BasicLSTM (%s) out-sequence type (%s) not supported!' %
+                  (self.name, self.method))
 
     def write_attrs(self, txt_file):
         ret = super(ArmBasicLSTMOp, self).write_attrs(txt_file)
@@ -575,7 +575,7 @@ class ArmBitwiseOp(OpHasOneOutPort, OpHasMethod, ArmOp):
         inputs = self.get_input_tensors()
         if len(inputs) != 2 \
                 or any([inp is None for inp in inputs]) is None:
-            WARN(
+            ERROR(
                 '[Parser]: Meets invalid inputs of Bitwise Op(%s) in infer_shape!' % self.name)
 
         bitwise_func = ArmBitwiseOp.FUNC_MAP[self.method]
@@ -1197,7 +1197,7 @@ class ArmDecodeBoxOp(OpHasWeights, OpHasMultipleOutPorts, ArmOp):
     def convert_to_center_coordinate(anchors):
         # Convert from [y1, x1, y2, x2] to [y_center, x_center, height, width]
         if len(anchors.shape) != 2 or anchors.shape[1] != 4:
-            WARN('[Parser]: Meet invalid anchor shape in convert_to_center_coordinate!')
+            ERROR('[Parser]: Meet invalid anchor shape in convert_to_center_coordinate!')
             return anchors
         y_min, x_min, y_max, x_max = anchors[:,
                                              0], anchors[:, 1], anchors[:, 2], anchors[:, 3]
@@ -1646,10 +1646,10 @@ class ArmEltwiseOp(LayoutUnawareOp, OpHasMethod, BaseActivationOp, ArmOp):
         inputs = self.get_input_tensors()
         if len(inputs) != 2 \
                 or any([inp is None for inp in inputs]) is None:
-            WARN(
+            ERROR(
                 '[Parser]: Meets invalid inputs of Eltwise Op(%s) in infer_shape!' % self.name)
         if list(inputs[0].shape) != list(inputs[1].shape):
-            WARN(
+            ERROR(
                 '[Parser]: Shapes of two inputs of Eltwise Op(%s) should be equal in infer_shape!' % self.name)
         eltwise_func = ArmEltwiseOp.FUNC_MAP[self.method]
         out_tensor = eltwise_func(*inputs)
@@ -2644,7 +2644,7 @@ class ArmMatMulOp(OpHasOneOutPort, ArmOp):
         super(ArmMatMulOp, self).infer_shape()
         inputs = self.get_input_tensors()
         if len(inputs[0].shape) != 4 or len(inputs[1].shape) != 4:
-            WARN('[Parser]: Currently only 4 dim input are supported in ArmMatMulOp.!')
+            ERROR('[Parser]: Currently only 4 dim input are supported in ArmMatMulOp.!')
         A = inputs[0] if not bool(self.trans_a) else np.transpose(
             inputs[0], (0, 1, 3, 2))
         B = inputs[1] if not bool(self.trans_b) else np.transpose(
@@ -2870,7 +2870,7 @@ class ArmModOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
         super(ArmModOp, self).infer_shape()
         inputs = self.get_input_tensors()
         if str(inputs[0].dtype) == 'float32' and not bool(self.fmod):
-            WARN(
+            ERROR(
                 '[Parser]: Mod Op(%s) with fmod=0 does not comply with float inputs!' % self.name)
         with np.errstate(divide='ignore'):
             out_tensor = np.mod(
@@ -3008,7 +3008,7 @@ class ArmNMSOp(OpHasMethod, OpHasMultipleOutPorts, ArmOp):
         # proposal_boxes, box_num_per_class, total_class_num, proposal_scores
         inputs = self.get_input_tensors()
         if len(inputs) != 4:
-            WARN('[Parser]: NMS (%s) inputs number error, not equal to 4!' % self.name)
+            ERROR('[Parser]: NMS (%s) inputs number error, not equal to 4!' % self.name)
         batch_size = inputs[0].shape[0]
         num_classes = inputs[1].shape[1]
         out_tensor1 = np.random.ranf(
@@ -3774,7 +3774,7 @@ class ArmReverseSequenceOp(OpHasOneOutPort, ArmOp):
         super(ArmReverseSequenceOp, self).infer_shape()
         inputs = self.get_input_tensors()
         if len(inputs) != 2:
-            WARN('[Parser]: Invalid inputs number of ReverseSequence (%s)!' % self.name)
+            ERROR('[Parser]: Invalid inputs number of ReverseSequence (%s)!' % self.name)
         out_tensor = tf.reverse(inputs[0], axis=np.array(
             [self.time_axis], np.int64)).numpy()
         self.set_out_tensor(out_tensor)
@@ -4265,7 +4265,7 @@ class ArmTileOp(OpHasOneOutPort, ArmOp):
         super(ArmTileOp, self).infer_shape()
         inputs = self.get_input_tensors()
         if len(inputs[0].shape) != len(self.reps):
-            WARN(
+            ERROR(
                 '[Parser]: Input shape of ArmTile(%s) does not comply with repeats!' % self.name)
         out_tensors = np.tile(inputs[0], self.reps)
         self.set_out_tensor(out_tensors)

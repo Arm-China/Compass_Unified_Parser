@@ -225,7 +225,7 @@ class ConvOp(BaseConvOp, OnnxOp):
         if self.biases is None:
             self.biases = np.zeros(self.num_output, np.float32)
         if self.weights.shape[1] * self.group != (inputs[0].shape[-1] if self.data_format == 'NHWC' else inputs[0].shape[1]):
-            WARN(
+            ERROR(
                 '[Parser]: Meets invalid weights shape or input shape for Conv (%s)!' % self.name)
         if self.kernel_shape is None:
             self.kernel_shape = list(self.weights.shape[2:])
@@ -476,10 +476,9 @@ class DropoutOp(OpHasVariableOutPorts, OnnxOp):
     def convert_version(self):
         max_ver = type(self).max_ver()
         cur_ver = self.cur_version
-        if bool(self.training_mode) \
-                or len(self.get_input_shapes()) < 1 \
+        if len(self.get_input_shapes()) < 1 \
                 or any([s is None for s in self.get_input_shapes()[0]]):
-            WARN(
+            ERROR(
                 '[Parser]: Meets invalid Dropout Node (%s) in convert_version!' % self.name)
             return
 
@@ -601,8 +600,8 @@ class GridSampleOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
         super(GridSampleOp, self).infer_shape()
         inputs = self.get_input_tensors()
         if self.cur_version == 16 and len(inputs[0].shape) != 4:
-            WARN('[Parser]: GridSampleOp (%s) only supports spatial (4-D) inputs in Op version [%s]!' %
-                 (self.name, self.cur_version))
+            ERROR('[Parser]: GridSampleOp (%s) only supports spatial (4-D) inputs in Op version [%s]!' %
+                  (self.name, self.cur_version))
         input_tensor = np.transpose(
             inputs[0], [0, 3, 1, 2]) if self.data_format == 'NHWC' else inputs[0]
         out_tensor = torch.nn.functional.grid_sample(torch.from_numpy(input_tensor),
@@ -1471,7 +1470,7 @@ class MaxUnpoolOp(OpHasPaddingStrides, OpHasOneOutPort, OnnxOp):
                         self.__dict__['_attr'][item] = Attribute(
                             item, {'type': AttrType.INTS, 'value': ret})
                 else:
-                    WARN(
+                    ERROR(
                         '[Parser]: Meets invalid input number of MaxUnpool Op(%s)!' % self.name)
         except:
             ret = None
