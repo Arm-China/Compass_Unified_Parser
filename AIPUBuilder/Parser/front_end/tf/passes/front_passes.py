@@ -446,7 +446,7 @@ def convert_resize_bilinear_nearest(graph):
             if len(input_tensors) != 2 or input_tensors[0] is None or input_tensors[1] is None or \
                     len(input_tensors[0].shape) != 4 or len(input_tensors[1].shape) != 1 or \
                     input_tensors[1].size != 2:
-                WARN(
+                ERROR(
                     '[Parser]: Meets invalid inputs for Op (%s) in convert_resize_bilinear_nearest!' % resize_bili_near)
                 continue
 
@@ -481,14 +481,14 @@ def convert_resize_bilinear_nearest(graph):
             NodeWrap(graph, resize_bili_near).replace_obj(
                 'Resize', resize_attr)
         else:
-            WARN(
+            ERROR(
                 '[Parser]: Meets invalid Op (%s) in convert_resize_bilinear_nearest!' % resize_bili_near)
 
 
 def convert_onehot(graph, op_type='Tfone_hot'):
     # need support Tf1/Tflite onehot
     if op_type not in ('Tfone_hot', 'TfOneHot'):
-        WARN('[Parser]: Meets invalid Op type (%s) in convert_onehot!' % op_type)
+        ERROR('[Parser]: Meets invalid Op type (%s) in convert_onehot!' % op_type)
         return
     matches = single_node_matcher(graph, op_type)
     for m in matches:
@@ -496,7 +496,7 @@ def convert_onehot(graph, op_type='Tfone_hot'):
         onehot_obj = NodeWrap(graph, onehot)['object']
         in_edges = graph.sorted_in_edges(onehot, data=True)
         if onehot_obj is None or len(in_edges) < 4:
-            WARN(
+            ERROR(
                 '[Parser]: Meets invalid Node(%s) in convert_onehot!' % argmaxpool)
             continue
         if not in_edges[2][2]['tensor'].is_const \
@@ -506,7 +506,7 @@ def convert_onehot(graph, op_type='Tfone_hot'):
         if len(onehot_obj.get_input_shapes()) < 1 \
                 or len(onehot_obj.get_output_shapes()) < 1 \
                 or len(onehot_obj.get_input_tensors()) < 1:
-            WARN(
+            ERROR(
                 '[Parser]: Meets invaild Node for Onehot Op(%s)' % onehot)
             continue
 
@@ -516,7 +516,7 @@ def convert_onehot(graph, op_type='Tfone_hot'):
         out_shapes_0 = onehot_obj.get_output_shapes()[0]
         if np.ndim(indices) == 0 and (any(d is None for d in indices_shape)
                                       or any(d is None for d in out_shapes_0)):
-            WARN(
+            ERROR(
                 '[Parser]: Meets invalid Node for Onehot Op(%s)' % onehot)
             continue
 
@@ -545,7 +545,7 @@ def convert_onehot(graph, op_type='Tfone_hot'):
 
 def convert_reverse(graph, op_type='TfReverseV2'):
     if op_type not in ('TfReverseV2', 'LiteREVERSE_V2'):
-        WARN('[Parser]: Meets invalid Op type (%s) in convert_reverse!' % op_type)
+        ERROR('[Parser]: Meets invalid Op type (%s) in convert_reverse!' % op_type)
         return
     matches = single_node_matcher(graph, op_type)
     for m in matches:
@@ -554,7 +554,7 @@ def convert_reverse(graph, op_type='TfReverseV2'):
         in_edges = graph.sorted_in_edges(rev, data=True)
         if rev_obj is None or len(in_edges) < 1 \
                 or len(rev_obj.get_input_shapes()) < 1:
-            WARN(
+            ERROR(
                 '[Parser]: Meets invalid Op (%s) in convert_reverse!' % rev)
             continue
         input_shape = rev_obj.get_input_shapes()[0]
@@ -658,7 +658,7 @@ def remove_switch(graph):
         switch_obj = NodeWrap(graph, switch)['object']
         switch_in_edges = graph.sorted_in_edges(switch, data=True)
         if switch_obj is None or len(switch_in_edges) != 2:
-            WARN('[Parser]: Meets invalid Node(%s) in remove_switch!' % switch)
+            ERROR('[Parser]: Meets invalid Node(%s) in remove_switch!' % switch)
             continue
         data_src, _, data_in_attr = switch_in_edges[0]
         _, _, pred_in_attr = switch_in_edges[1]
@@ -692,7 +692,7 @@ def remove_merge(graph):
         merge_in_edges = graph.sorted_in_edges(merge, data=True)
         if merge_obj is None or merge_obj.value_index is None or \
                 len(merge_in_edges) < merge_obj.value_index:
-            WARN('[Parser]: Meets invalid Node(%s) in remove_merge!' % merge)
+            ERROR('[Parser]: Meets invalid Node(%s) in remove_merge!' % merge)
             continue
         matched = True
         src, _, in_attr = merge_in_edges[merge_obj.value_index]
@@ -722,7 +722,7 @@ def remove_isfinite_select(graph):
         names = ['is_finite', 'zeros_like', 'select']
         obj_dict = {n: NodeWrap(graph, m[n])['object'] for n in names}
         if any([obj is None for obj in obj_dict.values()]):
-            WARN('[Parser]: Meets invalid Op in remove_isfinite_select!')
+            ERROR('[Parser]: Meets invalid Op in remove_isfinite_select!')
             continue
         is_finite_in_edges = graph.sorted_in_edges(
             m['is_finite'], keys=True, data=True)
@@ -792,7 +792,7 @@ def convert_special_fakequantminmaxvars(graph):
                 NodeWrap(graph, fake_quant).replace_obj(
                     'ArmFakeQuantWithMinMaxVars', fake_quant_attr)
         else:
-            WARN(
+            ERROR(
                 '[Parser]: Meets invalid Node(%s) in remove_special_fakequantminmaxvars!'
                 % (fake_quant))
     if matched:
@@ -809,11 +809,10 @@ def convert_fusebatchnormv3(graph):
         if fusebnv3_obj is not None\
                 and len(fusebnv3_in_edges) == 5 \
                 and len(fusebnv3_obj.get_input_tensors()) == 5 \
-                and all([inp is not None for inp in fusebnv3_obj.get_input_tensors()]) \
-                and fusebnv3_in_edges[1][2]['tensor'].is_const \
-                and fusebnv3_in_edges[2][2]['tensor'].is_const \
-                and fusebnv3_in_edges[3][2]['tensor'].is_const \
-                and fusebnv3_in_edges[4][2]['tensor'].is_const:
+                and all(inp is not None for inp in fusebnv3_obj.get_input_tensors()):
+            if not all(fusebnv3_in_edges[idx][2]['tensor'].is_const for idx in range(1, 5)):
+                WARN('[Parser]: Meets unsupported non-constant inputs(1-4) of Node(%s) in convert_fusebatchnormv3!' % fusebnv3)
+                continue
             if fusebnv3_obj.is_training \
                     or fusebnv3_in_edges[3][2]['tensor'].value.size != 0 \
                     or fusebnv3_in_edges[4][2]['tensor'].value.size != 0:
@@ -832,7 +831,7 @@ def convert_fusebatchnormv3(graph):
             NodeWrap(graph, fusebnv3).replace_obj(
                 'BatchNormalization', fusebnv3_attr)
         else:
-            WARN(
+            ERROR(
                 '[Parser]: Meets invalid Node(%s) in convert_fusebatchnormv3!'
                 % (fusebnv3))
     if matched:
@@ -962,13 +961,13 @@ def split_s2b(graph):
                 index = graph._attr['output_names'].index(s2b)
                 graph._attr['output_names'][index] = last_name
         else:
-            WARN(
+            ERROR(
                 '[Parser]: Meets invalid TfSpaceToBatchND Node(%s) in split_s2b!' % s2b)
 
 
 def split_b2s(graph, op_type='TfBatchToSpaceND'):
     if op_type not in ('TfBatchToSpaceND', 'Tfbatch_to_space_nd'):
-        WARN('[Parser]: Meets invalid Op type (%s) in split_b2s!' % op_type)
+        ERROR('[Parser]: Meets invalid Op type (%s) in split_b2s!' % op_type)
         return
     transpose_version, d2s_version, slice_version, reshape_version = 1, 1, 1, 5
     matches = single_node_matcher(graph, op_type)
@@ -976,7 +975,7 @@ def split_b2s(graph, op_type='TfBatchToSpaceND'):
         b2s = m['target']
         b2s_obj = NodeWrap(graph, b2s)['object']
         if b2s_obj is None:
-            WARN('[Parser]: Meets invalid TfBatchToSpaceND Node(%s) in split_b2s!' % b2s)
+            ERROR('[Parser]: Meets invalid TfBatchToSpaceND Node(%s) in split_b2s!' % b2s)
             continue
         in_edges = graph.sorted_in_edges(b2s, data=True)
         out_edges = graph.sorted_out_edges(b2s, data=True)
@@ -1089,7 +1088,7 @@ def split_b2s(graph, op_type='TfBatchToSpaceND'):
 
 def split_special_floormod(graph, op_type='TfFloorMod'):
     if op_type not in ('TfFloorMod', 'LiteFLOOR_MOD'):
-        WARN('[Parser]: Meets invalid Op type (%s) in split_special_floormod!' % op_type)
+        ERROR('[Parser]: Meets invalid Op type (%s) in split_special_floormod!' % op_type)
         return
     matches = single_node_matcher(graph, op_type)
     for m in matches:
@@ -1103,7 +1102,7 @@ def split_special_floormod(graph, op_type='TfFloorMod'):
                     or inputs[0] is None \
                     or inputs[1] is None \
                     or str(inputs[0].dtype) != str(inputs[1].dtype):
-                WARN(
+                ERROR(
                     '[Parser]: Meets invalid inputs for Node (%s) in split_special_floormod!' % floor_mod)
                 continue
 
@@ -1186,7 +1185,7 @@ def split_special_floormod(graph, op_type='TfFloorMod'):
                     index = graph._attr['output_names'].index(floor_mod)
                     graph._attr['output_names'][index] = where
         else:
-            WARN('[Parser]: Meets invalid %s Node(%s) in split_special_floormod!' % (
+            ERROR('[Parser]: Meets invalid %s Node(%s) in split_special_floormod!' % (
                 op_type, floor_mod))
 
 
@@ -2589,7 +2588,7 @@ def merge_zero_fraction(graph):
         if any([obj is None for obj in node_objs.values()]) or \
                 len(node_objs['input'].get_output_shapes()) < 1 or \
                 len(graph.sorted_in_edges(m['statelessif'])) < 2:
-            WARN('[Parser]: Meets invalid nodes in merge_zero_fraction!')
+            ERROR('[Parser]: Meets invalid nodes in merge_zero_fraction!')
             continue
         sli_in_edges = graph.sorted_in_edges(m['statelessif'], data=True)
         input_shape = node_objs['input'].get_output_shapes()[0]
@@ -2671,11 +2670,11 @@ def merge_fasterrcnn(graph):
     if any([not graph.has_node(name) for name in check_names]):
         return
     if any([name not in graph._attr['output_names'] for name in outputs]):
-        WARN('[Parser]: Please check output names in cfg file!')
+        ERROR('[Parser]: Please check output names in cfg file!')
         return
     obj_dict = {n: NodeWrap(graph, n)['object'] for n in check_names}
     if any([obj is None for obj in obj_dict.values()]):
-        WARN('[Parser]: Meets invalid Op in merge_fasterrcnn!')
+        ERROR('[Parser]: Meets invalid Op in merge_fasterrcnn!')
         return
     input_shapes = obj_dict[inp].get_output_shapes()
     if len(input_shapes) < 1 \
@@ -2953,12 +2952,12 @@ def merge_keras_maskrcnn(graph, params):
         return
     obj_dict = {n: NodeWrap(graph, n)['object'] for n in all_names}
     if any([v is None for v in obj_dict.values()]):
-        WARN('[Parser]: Meets invalid node in merge_keras_maskrcnn!')
+        ERROR('[Parser]: Meets invalid node in merge_keras_maskrcnn!')
         return
     if len(obj_dict[mrcnn_class_reshape].get_input_tensors()) != 2 \
             or obj_dict[mrcnn_class_reshape].get_input_tensors()[1] is None \
             or obj_dict[mrcnn_class_reshape].get_input_tensors()[1].size != 3:
-        WARN('[Parser]: Meets Reshape node(%s) in merge_keras_maskrcnn!' % mrcnn_class_reshape)
+        ERROR('[Parser]: Meets Reshape node(%s) in merge_keras_maskrcnn!' % mrcnn_class_reshape)
         return
 
     mrcnn_class_reshape_shape = obj_dict[mrcnn_class_reshape].get_input_tensors()[1].tolist()
@@ -3753,15 +3752,15 @@ def convert_to_onnx(graph):
                             or len(output_shapes) < 1 \
                             or len(output_shapes[0]) < 3 \
                             or any(s is None for s in output_shapes[0]):
-                        WARN('[Parser]: Invalid TfHasPaddingStrides Node(%s) in convert_to_onnx!' % node_name)
+                        ERROR('[Parser]: Invalid TfHasPaddingStrides Node(%s) in convert_to_onnx!' % node_name)
                         continue
                     node_obj.update_pads(input_shapes[0], output_shapes[0])
                 new_node_attr = node_obj.copied_attr()
 
                 if isinstance(node_obj, OpHasWeights):
                     if node_obj.weights is None:
-                        WARN('[Parser]: Node(%s) does not contain weights!' %
-                             node_name)
+                        ERROR('[Parser]: Node(%s) does not contain weights!' %
+                              node_name)
                         continue
                     new_weights = node_obj.weights
                     if pure_type == 'DepthwiseConv2dNative':
@@ -3818,7 +3817,7 @@ def convert_to_onnx(graph):
                         {'axis': int(in_edges[-1][2]['tensor'].value)})
                 elif pure_type == 'CropAndResize':
                     if len(in_edges) < 4 or not in_edges[3][2]['tensor'].is_const:
-                        WARN(
+                        ERROR(
                             '[Parser]: Invalid TF CropAndResize Node(%s) to convert to Onnx!' % node_name)
                         continue
                     crop_size = in_edges[3][2]['tensor'].value.tolist()
@@ -3833,7 +3832,7 @@ def convert_to_onnx(graph):
                         insert_transpose(graph, src, node_name,
                                          in_attr, [1, 0, 2])
                     else:
-                        WARN(
+                        ERROR(
                             '[Parser]: Invalid TF CTCGreedyDecoder Node(%s) to convert to Onnx!' % node_name)
                         continue
 
@@ -3857,7 +3856,7 @@ def convert_to_onnx(graph):
                                         in_port=1,
                                         data_format='NHWC')
                     else:
-                        WARN(
+                        ERROR(
                             '[Parser]: Invalid TF ExpandDims Node(%s) to convert to Onnx!' % node_name)
                         continue
                 elif pure_type == 'FloorMod':
@@ -3919,7 +3918,7 @@ def convert_to_onnx(graph):
                     if node_obj.is_training:
                         if not FLOAT_EQUAL(node_obj.exponential_avg_factor, 1.0):
                             WARN(
-                                '[Parser]: Invalid TF FusedBatchNorm/FusedBatchNormV3 Node(%s) to convert to Onnx!' % node_name)
+                                '[Parser]: Meets unsupported exponential_avg_factor in TF FusedBatchNorm/FusedBatchNormV3 Node(%s) to convert to Onnx!' % node_name)
                             continue
                         new_node_attr.update({'training_mode': 1})
                     else:
@@ -3947,7 +3946,7 @@ def convert_to_onnx(graph):
                                 {'axes': (in_edges[1][2]['tensor'].value).tolist()})
                         graph.remove_edges_from(in_edges[1:])
                     else:
-                        WARN(
+                        ERROR(
                             '[Parser]: Invalid TF Mean Node(%s) to convert to Onnx!' % node_name)
                         continue
                 elif pure_type == 'Pack':
@@ -3955,7 +3954,11 @@ def convert_to_onnx(graph):
                 elif pure_type in ('Pad', 'PadV2', 'MirrorPad'):
                     if pure_type == 'MirrorPad':
                         new_node_attr.update({'mode': node_obj.mode.lower()})
-                    if len(in_edges) > 1 and in_edges[1][2]['tensor'].is_const:
+                    if len(in_edges) > 1:
+                        if not in_edges[1][2]['tensor'].is_const:
+                            WARN(
+                                '[Parser]: Meets unsupported non-constant padding in Node(%s) to convert to Onnx!' % node_name)
+                            continue
                         if len(node_obj.get_input_shapes()) > 1:
                             input_shape = node_obj.get_input_shapes()[1]
                             trans_shape = list(
@@ -3965,7 +3968,7 @@ def convert_to_onnx(graph):
                                 insert_transpose(graph, src1, node_name,
                                                  in_attr1, trans_shape)
                     else:
-                        WARN(
+                        ERROR(
                             '[Parser]: Invalid TF Pad Node(%s) to convert to Onnx!' % node_name)
                         continue
                 elif pure_type == 'Relu6':
@@ -3975,20 +3978,23 @@ def convert_to_onnx(graph):
                 elif pure_type == 'Roll':
                     if len(in_edges) == 3 \
                             and in_edges[1][2]['tensor'].value is not None \
-                            and in_edges[2][2]['tensor'].value is not None \
-                            and in_edges[1][2]['tensor'].is_const \
-                            and in_edges[2][2]['tensor'].is_const:
+                            and in_edges[2][2]['tensor'].value is not None:
+                        if not in_edges[1][2]['tensor'].is_const \
+                                or not in_edges[2][2]['tensor'].is_const:
+                            WARN(
+                                '[Parser]: Meets unsupported non-constant shift/axis in TF Roll Node(%s) to convert to Onnx!' % node_name)
+                            continue
                         shift = np.atleast_1d(in_edges[1][2]['tensor'].value).tolist()
                         axes = np.atleast_1d(in_edges[2][2]['tensor'].value).tolist()
                         new_node_attr.update({'shift': shift, 'axes': axes})
                         graph.remove_edges_from(in_edges[1:])
                     else:
-                        WARN('[Parser]: Meets invalid TF Roll(%s) that cannot be converted to Onnx!' % node_name)
+                        ERROR('[Parser]: Meets invalid TF Roll(%s) that cannot be converted to Onnx!' % node_name)
                         continue
                 elif pure_type == 'ScatterNd':
                     # TfScatterNd should be converted in convert_scatternd.
                     # If not, then indices or shape is not constant.
-                    WARN(
+                    ERROR(
                         '[Parser]: Expect indices and shape to be constant in TF ScatterNd Node(%s) to convert to Onnx!' % node_name)
                     continue
                 elif pure_type == 'SegmentSum':
@@ -4013,7 +4019,7 @@ def convert_to_onnx(graph):
                                         in_port=2,
                                         data_format='NHWC')
                     else:
-                        WARN(
+                        ERROR(
                             '[Parser]: Invalid TF Slice Node(%s) to convert to Onnx!' % node_name)
                         continue
                 elif pure_type == 'SpaceToDepth':
@@ -4034,7 +4040,7 @@ def convert_to_onnx(graph):
                         new_node_attr.update(
                             {'split': node_obj.split})
                     else:
-                        WARN(
+                        ERROR(
                             '[Parser]: Invalid TF Split Node(%s) to convert to Onnx!' % node_name)
                         continue
                 elif pure_type == 'SplitV':
@@ -4056,7 +4062,7 @@ def convert_to_onnx(graph):
                     elif len(in_edges) == 1:
                         new_node_attr.update({'perm': []})
                     else:
-                        WARN(
+                        ERROR(
                             '[Parser]: Invalid TF Transpose Node(%s) to convert to Onnx!' % node_name)
                         continue
                     graph.remove_edges_from(in_edges[1:])
@@ -4067,5 +4073,5 @@ def convert_to_onnx(graph):
                 NodeWrap(graph, node_name).replace_obj(
                     node_obj.correspond_onnx_op['type'], new_node_attr)
         else:
-            WARN(
+            ERROR(
                 '[Parser]: Meets invalid TF op for Node(%s) in convert_to_onnx!' % node_name)

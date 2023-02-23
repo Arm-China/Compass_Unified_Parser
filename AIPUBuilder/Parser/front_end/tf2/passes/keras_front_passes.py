@@ -23,7 +23,7 @@ def convert_activations(graph):
         act = m['target']
         act_obj = NodeWrap(graph, act)['object']
         if act_obj is None:
-            WARN(
+            ERROR(
                 '[Parser]: Meets invalid TfKerasActivation Op (%s) in convert_activations!' % act)
             continue
         act_name = act_obj.activations
@@ -44,7 +44,7 @@ def convert_batchnorm(graph):
         batchnorm = m['target']
         batchnorm_obj = NodeWrap(graph, batchnorm)['object']
         if batchnorm_obj is None:
-            WARN(
+            ERROR(
                 '[Parser]: Meets invalid TfKerasBatchNormalization Op (%s) in convert_batchnorm!' % batchnorm)
             continue
         input_shapes = batchnorm_obj.get_input_shapes()
@@ -93,19 +93,19 @@ def convert_bidirectional(graph):
         in_edges = graph.sorted_in_edges(bidir, data=True)
         out_edges = graph.sorted_out_edges(bidir, data=True)
         if bidir_obj is None or len(in_edges) < 1:
-            WARN('[Parser]: Meets invalid Op (%s) in convert_bidirectional!' % bidir)
+            ERROR('[Parser]: Meets invalid Op (%s) in convert_bidirectional!' % bidir)
             continue
         forward_node_obj = bidir_obj.create_node('forward')
         if forward_node_obj is None:
-            WARN('[Parser]: Meet invalid layer of Op (%s) in convert_bidirectional!' % bidir)
+            ERROR('[Parser]: Meet invalid layer of Op (%s) in convert_bidirectional!' % bidir)
             continue
         backward_node_obj = bidir_obj.create_node('backward')
         if backward_node_obj is None:
-            WARN('[Parser]: Meet invalid backward_layer of Op (%s) in convert_bidirectional!' % bidir)
+            ERROR('[Parser]: Meet invalid backward_layer of Op (%s) in convert_bidirectional!' % bidir)
             continue
         in_shapes = bidir_obj.get_input_shapes()
         if len(in_shapes) < 1 or in_shapes[0] is None or len(in_shapes[0]) != 3:
-            WARN('[Parser]: Meets invalid input shapes of Op (%s) in convert_bidirectional!' % bidir)
+            ERROR('[Parser]: Meets invalid input shapes of Op (%s) in convert_bidirectional!' % bidir)
             continue
         matched = True
         time_dim = 0 if forward_node_obj.time_major else 1
@@ -189,7 +189,7 @@ def convert_bidirectional(graph):
             graph.remove_edge(bidir, dst)
             src_out_port = out_attr['src_out_port']
             if src_out_port >= len(output_info_list):
-                WARN('[Parser]: Meet invalid src_out_port (%d) of Op (%s) in convert_bidirectional!' % (src_out_port, bidir))
+                ERROR('[Parser]: Meet invalid src_out_port (%d) of Op (%s) in convert_bidirectional!' % (src_out_port, bidir))
                 continue
             new_src_node, new_src_out_port = output_info_list[src_out_port]
             out_attr.update({'src_out_port': new_src_out_port})
@@ -215,7 +215,7 @@ def convert_centercrop(graph):
         crop_obj = NodeWrap(graph, crop)['object']
         in_edges = graph.sorted_in_edges(crop, data=True)
         if crop_obj is None or len(in_edges) < 1 or len(crop_obj.get_input_shapes()) < 1:
-            WARN('[Parser]: Meets invalid TfKerasCenterCrop Op (%s) in convert_centercrop!' % crop)
+            ERROR('[Parser]: Meets invalid TfKerasCenterCrop Op (%s) in convert_centercrop!' % crop)
             continue
         input_shape = crop_obj.get_input_shapes()[0]
         if input_shape is None or len(input_shape) < 3 or None in input_shape:
@@ -229,8 +229,8 @@ def convert_centercrop(graph):
         diff_width = input_width - target_width
         new_node_attr = crop_obj.copied_attr()
         if diff_height < 0 or diff_width < 0:
-            WARN('[Parser]: The crop height(%d)/width(%d) should not be greater than input height(%d)/width(%d)!' %
-                 (target_height, target_width, input_height, input_width))
+            ERROR('[Parser]: The crop height(%d)/width(%d) should not be greater than input height(%d)/width(%d)!' %
+                  (target_height, target_width, input_height, input_width))
             continue
         starts = [0] * (input_rank - 3) + [int(diff_height / 2), int(diff_width / 2), 0]
         sizes = input_shape[:-3] + [target_height, target_width] + input_shape[-1:]
@@ -246,7 +246,7 @@ def convert_global_pooling(graph):
         global_pool = m['target']
         global_pool_obj = NodeWrap(graph, global_pool)['object']
         if global_pool_obj is None:
-            WARN(
+            ERROR(
                 '[Parser]: Meets invalid Op (%s) in convert_global_pooling!' % global_pool)
             continue
         if getattr(global_pool_obj, 'correspond_onnx_op', None) is None:
@@ -293,7 +293,7 @@ def convert_gru_lstm(graph):
                 or rnn_obj.get_input_shapes()[0] is None \
                 or len(rnn_obj.get_input_shapes()[0]) != 3 \
                 or len(in_edges) < 1:
-            WARN(
+            ERROR(
                 '[Parser]: Meets invalid Op (%s) in convert_gru_lstm!' % rnn)
             continue
         rnn_type = rnn_obj.type
@@ -429,7 +429,7 @@ def convert_normalization(graph):
         norm_obj = NodeWrap(graph, norm)['object']
         in_edges = graph.sorted_in_edges(norm, data=True)
         if norm_obj is None or len(in_edges) < 1:
-            WARN('[Parser]: Meets invalid Op (%s) in convert_normalization!' % norm)
+            ERROR('[Parser]: Meets invalid Op (%s) in convert_normalization!' % norm)
             continue
         new_node_attr = norm_obj.copied_attr()
         mean = norm_obj.mean
@@ -469,7 +469,7 @@ def convert_relu(graph):
         in_edges = graph.sorted_in_edges(relu, data=True)
         out_edges = graph.sorted_out_edges(relu, data=True)
         if relu_obj is None or len(in_edges) < 1:
-            WARN('[Parser]: Meets invalid Op (%s) in convert_relu!' % relu)
+            ERROR('[Parser]: Meets invalid Op (%s) in convert_relu!' % relu)
             continue
         matched = True
         threshold = np.array(relu_obj.threshold)
@@ -567,7 +567,7 @@ def convert_rescaling(graph):
         rescaling_obj = NodeWrap(graph, rescaling)['object']
         in_edges = graph.sorted_in_edges(rescaling, data=True)
         if rescaling_obj is None or len(in_edges) < 1:
-            WARN('[Parser]: Meets invalid Op (%s) in convert_rescaling!' % rescaling)
+            ERROR('[Parser]: Meets invalid Op (%s) in convert_rescaling!' % rescaling)
             continue
         mul = get_valid_node_name(graph, rescaling + '_mul')
         src, _, in_attr = in_edges[0]
@@ -596,7 +596,7 @@ def convert_resizing(graph):
         resize_obj = NodeWrap(graph, resize)['object']
         in_edges = graph.sorted_in_edges(resize, data=True)
         if resize_obj is None or len(in_edges) < 1:
-            WARN('[Parser]: Meets invalid Op (%s) in convert_resizing!' % resize)
+            ERROR('[Parser]: Meets invalid Op (%s) in convert_resizing!' % resize)
             continue
         if resize_obj.interpolation not in ('bilinear', 'nearest', 'bicubic'):
             WARN('[Parser]: Meet unsupported interpolation method (%s) in convert_resizing!' % resize_obj.interpolation)
@@ -672,7 +672,7 @@ def convert_dense(graph):
         biases_value = dense_obj.biases
 
         if dense_obj is None:
-            WARN('[Parser]: Meets invalid Op (%s) in convert_dense!' % dense)
+            ERROR('[Parser]: Meets invalid Op (%s) in convert_dense!' % dense)
             continue
 
         in_shapes = dense_obj.get_input_shapes()[0]
@@ -681,7 +681,7 @@ def convert_dense(graph):
                 or len(kernel_value.shape) != 2 \
                 or len(in_shapes) < 2 \
                 or in_shapes[-1] != kernel_value.shape[0]:
-            WARN('[Parser]: Meets invalid Op (%s) in convert_dense!' % dense)
+            ERROR('[Parser]: Meets invalid Op (%s) in convert_dense!' % dense)
             continue
 
         inp_value = dense_obj.get_input_tensors()[0]
@@ -721,7 +721,7 @@ def convert_softmax(graph):
         softmax_obj = NodeWrap(graph, softmax)['object']
         in_edges = graph.sorted_in_edges(softmax, data=True)
         if softmax_obj is None or len(in_edges) < 1:
-            WARN('[Parser]: Meets invalid Op (%s) in convert_softmax!' % softmax)
+            ERROR('[Parser]: Meets invalid Op (%s) in convert_softmax!' % softmax)
             continue
         if len(in_edges) >= 2:
             _, _, mask_in_attr = in_edges[1]
@@ -750,7 +750,7 @@ def convert_softmax(graph):
         else:
             in_shapes = softmax_obj.get_input_shapes()
             if len(in_shapes) < 1 or in_shapes[0] is None or None in in_shapes[0]:
-                WARN('[Parser]: Meets input shape for Op (%s) in convert_softmax!' % softmax)
+                ERROR('[Parser]: Meets input shape for Op (%s) in convert_softmax!' % softmax)
                 continue
             in_shape = in_shapes[0]
             in_length = len(in_shape)
@@ -785,8 +785,8 @@ def convert_softmax(graph):
 def convert_to_onnx(graph):
     '''Convert keras op to the onnx version.'''
     def warn_invalid_node(op_type, node_name):
-        WARN('[Parser]: Meets invalid Keras op(%s) for Node(%s) in convert_to_onnx!' %
-             (str(op_type), str(node_name)))
+        ERROR('[Parser]: Meets invalid Keras op(%s) for Node(%s) in convert_to_onnx!' %
+              (str(op_type), str(node_name)))
 
     def is_first_input_valid(in_edges, in_shapes, min_length=None):
         if len(in_edges) < 1 \
@@ -819,7 +819,7 @@ def convert_to_onnx(graph):
             continue
         if isinstance(node_obj, OpHasWeights) and type(node_obj).perm_tf_to_onnx():
             if node_obj.weights is None:
-                WARN('[Parser]: Node(%s) does not contain weights!' % node_name)
+                ERROR('[Parser]: Node(%s) does not contain weights!' % node_name)
                 continue
             if pure_type == 'DepthwiseConv2D':
                 # Tf fliter:[f_h,f_w,in_channel,channel_multiper]
@@ -840,7 +840,7 @@ def convert_to_onnx(graph):
             spatial_rank = len(input_shape) - 2
             cropping = np.array(node_obj.cropping)
             if cropping.size != spatial_rank * 2:
-                WARN('[Parser]: Meets invalid Cropping op for Node(%s) in convert_to_onnx!' % node_name)
+                ERROR('[Parser]: Meets invalid Cropping op for Node(%s) in convert_to_onnx!' % node_name)
                 continue
             cropping = np.reshape(cropping, [spatial_rank, 2])
             begin_crops = cropping[:, 0].tolist()
@@ -881,7 +881,7 @@ def convert_to_onnx(graph):
             spatial_rank = len(input_shapes[0]) - 2
             padding = np.array(node_obj.padding)
             if padding.size != spatial_rank * 2:
-                WARN('[Parser]: Meets invalid ZeroPadding op for Node(%s) in convert_to_onnx!' % node_name)
+                ERROR('[Parser]: Meets invalid ZeroPadding op for Node(%s) in convert_to_onnx!' % node_name)
                 continue
             padding = np.reshape(padding, [spatial_rank, 2])
             begin_pads = padding[:, 0].tolist()
@@ -907,13 +907,13 @@ def multidirectional_broadcasting(graph):
         broadcast_obj = NodeWrap(graph, broadcast)['object']
         in_edges = graph.sorted_in_edges(broadcast, keys=True, data=True)
         if broadcast_obj is None or len(in_edges) < 2:
-            WARN(
+            ERROR(
                 '[Parser]: Meets Invalid broadcast Op (%s) in multidirectional_broadcasting!' % broadcast)
             continue
         in_shapes = broadcast_obj.get_input_shapes()
         dims_and_reps = KerasNeedBroadcast.cal_reshape_and_tile(in_shapes)
         if len(dims_and_reps) not in (0, len(in_edges)):
-            WARN(
+            ERROR(
                 '[Parser]: Failed to calculate broadcast for Broadcast op (%s) in multidirectional_broadcasting!' % broadcast)
             continue
         for i, dr in enumerate(dims_and_reps):

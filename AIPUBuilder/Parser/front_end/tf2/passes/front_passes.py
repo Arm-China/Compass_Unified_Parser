@@ -22,7 +22,7 @@ def convert_crelu(graph):
         crelu_obj = NodeWrap(graph, crelu)['object']
         crelu_in_edges = graph.sorted_in_edges(crelu, data=True)
         if crelu_obj is None or len(crelu_in_edges) < 1:
-            WARN(
+            ERROR(
                 '[Parser]: Meets invalid Tfcrelu Op (%s) in convert_crelu!' % crelu)
             continue
         matched = True
@@ -264,7 +264,7 @@ def convert_to_onnx(graph):
         if _tensors_are_const(edges):
             graph.remove_edges_from(edges)
         else:
-            WARN('[Parser]: Meet non-const tensors of Node (%s) in remove_edges_if_const' % node_name)
+            ERROR('[Parser]: Meet non-const tensors of Node (%s) in remove_edges_if_const' % node_name)
 
     tf2_ops = Tf2Op.get_concrete_subclass_names()
     keras_ops = KerasOp.get_concrete_subclass_names()
@@ -276,7 +276,7 @@ def convert_to_onnx(graph):
         node_name = m['target']
         node_obj = NodeWrap(graph, node_name)['object']
         if node_obj is None:
-            WARN(
+            ERROR(
                 '[Parser]: Meets invalid TF2 op for Node(%s) in convert_to_onnx!' % node_name)
             continue
         if getattr(node_obj, 'correspond_onnx_op', None) is not None:
@@ -298,8 +298,8 @@ def convert_to_onnx(graph):
             pure_type = re.sub(r'^Tf', '', node_obj.type)
             if isinstance(node_obj, OpHasWeights):
                 if node_obj.weights is None:
-                    WARN('[Parser]: Node(%s) does not contain weights!' %
-                         node_name)
+                    ERROR('[Parser]: Node(%s) does not contain weights!' %
+                          node_name)
                     continue
                 new_weights = node_obj.weights
                 new_weights = np.transpose(
@@ -348,7 +348,7 @@ def convert_to_onnx(graph):
                                     in_port=1,
                                     data_format='NHWC')
                 else:
-                    WARN(
+                    ERROR(
                         '[Parser]: Invalid TF2 expand_dims Node(%s) to convert to Onnx!' % node_name)
                     continue
             elif pure_type == 'floormod':
@@ -358,7 +358,7 @@ def convert_to_onnx(graph):
                 if len(in_edges) < 5 \
                         or any(attr['tensor'].value is None for _, _, attr in in_edges) \
                         or any(not attr['tensor'].is_const for _, _, attr in in_edges[1:]):
-                    WARN(
+                    ERROR(
                         '[Parser]: Meets invalid inputs for Node(%s) in convert_to_onnx!' % node_name)
                     continue
                 pooling_ratio = in_edges[1][2]['tensor'].value.tolist()
@@ -378,7 +378,7 @@ def convert_to_onnx(graph):
                 _remove_edges_if_const(node_name, in_edges[2:])
                 if node_obj.cur_version != 1:
                     if len(in_edges) < 2:
-                        WARN('[Parser]: Meets invalid in_edges for Node(%s) in convert_to_onnx!' % node_name)
+                        ERROR('[Parser]: Meets invalid in_edges for Node(%s) in convert_to_onnx!' % node_name)
                         continue
                     graph.remove_edges_from(in_edges)
                     target_src, _, target_out_attr = in_edges[0]

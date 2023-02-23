@@ -5,7 +5,7 @@ import tensorflow.compat.v1 as tf
 from utils.run import run_parser
 
 
-def create_fused_batch_norm_model(pb_file_path, input_size, data_format):
+def create_fused_batch_norm_model(pb_file_path, input_size, data_format, is_training):
     ''' Create tensorflow model for fused_batch_norm op.
     '''
     try:
@@ -14,8 +14,12 @@ def create_fused_batch_norm_model(pb_file_path, input_size, data_format):
             channel_size = input_size[-1] if data_format == 'NHWC' else input_size[1]
             scale = (np.random.ranf([channel_size]) * 10).astype(np.float32)
             offset = (np.random.ranf([channel_size]) * 20).astype(np.float32)
-            op1 = tf.compat.v1.nn.fused_batch_norm(
-                x, scale, offset, data_format=data_format, is_training=True, name='fused_bn')
+            if is_training:
+                op1 = tf.compat.v1.nn.fused_batch_norm(
+                    x, scale, offset, data_format=data_format, is_training=True, name='fused_bn')
+            else:
+                op1 = tf.compat.v1.nn.fused_batch_norm(
+                    x, scale, offset, mean=scale, variance=offset, data_format=data_format, is_training=False, name='fused_bn')
             y = tf.math.multiply(op1[0], 1.1, name='Y')
 
             sess.run(tf.global_variables_initializer())
@@ -37,12 +41,13 @@ feed_dict = dict()
 feed_dict['X:0'] = np.random.ranf(input_shape).astype(np.float32)
 
 for data_format in ['NCHW', 'NHWC', ]:
-    model_name = TEST_NAME + '-' + data_format
-    model_path = model_name + '.pb'
-    # Create model
-    model_created = create_fused_batch_norm_model(model_path, input_shape, data_format)
-    assert model_created, 'Fail to create model!'
+    for is_training in [False, True, ]:
+        model_name = TEST_NAME + '-' + data_format + '-' + str(is_training)
+        model_path = model_name + '.pb'
+        # Create model
+        model_created = create_fused_batch_norm_model(model_path, input_shape, data_format, is_training)
+        assert model_created, 'Fail to create model!'
 
-    exit_status = run_parser(
-        model_path, feed_dict, model_type='tf', output_names=['Y:0'], save_output=True, verify=True)
-    assert exit_status
+        exit_status = run_parser(
+            model_path, feed_dict, model_type='tf', output_names=['Y:0'], save_output=True, verify=True)
+        assert exit_status
