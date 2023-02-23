@@ -76,7 +76,7 @@ def adjust_5d_to_4d(graph):
                     index = graph._attr['output_names'].index(node_name)
                     graph._attr['output_names'][index] = post_reshape
         else:
-            WARN(
+            ERROR(
                 '[Parser]: Meets invalid Activation Node (%s) in adjust_5d_activation_to_4d!' % node_name)
 
 
@@ -100,7 +100,7 @@ def adjust_pow(graph):
                 in_edges[1][2]['tensor'] = Tensor(
                     value=exp_const_obj.value, shape=exp_const_obj.value.shape, is_const=True)
         else:
-            WARN('[Parser]: Meets invalid Pow Node (%s) in adjust_pow!' % pow)
+            ERROR('[Parser]: Meets invalid Pow Node (%s) in adjust_pow!' % pow)
 
 
 def convert_uni_gru(graph):
@@ -227,7 +227,7 @@ def convert_uni_gru(graph):
                 gru_type = 'ArmGRUv1' if gru_obj.linear_before_reset else 'ArmGRUv3'
                 NodeWrap(graph, gru).replace_obj(gru_type, new_gru_attr)
         else:
-            WARN('[Parser]: Meets invalid GRU Node (%s) in convert_gru!' % gru)
+            ERROR('[Parser]: Meets invalid GRU Node (%s) in convert_gru!' % gru)
     if matched:
         clear_redundant_nodes(graph)
 
@@ -517,9 +517,9 @@ def convert_bi_gru(graph):
                             graph._attr['output_names'].insert(index, name)
                             index += 1
             else:
-                WARN('[Parser]: Meets invalid GRU Node (%s) in convert_bi_gru!' % gru)
+                ERROR('[Parser]: Meets invalid GRU Node (%s) in convert_bi_gru!' % gru)
         else:
-            WARN('[Parser]: Meets invalid GRU Node (%s) in convert_bi_gru!' % gru)
+            ERROR('[Parser]: Meets invalid GRU Node (%s) in convert_bi_gru!' % gru)
 
     if matched:
         clear_redundant_nodes(graph)
@@ -647,7 +647,7 @@ def convert_uni_lstm(graph):
                         graph._attr['output_names'].insert(index, name)
                         index += 1
         else:
-            WARN('[Parser]: Meets invalid Node in convert_lstm!')
+            ERROR('[Parser]: Meets invalid Node in convert_lstm!')
 
     if matched:
         clear_redundant_nodes(graph)
@@ -696,7 +696,7 @@ def rename_dilation_erosion(graph):
         ero_dila = m['target']
         ero_dila_obj = NodeWrap(graph, ero_dila)['object']
         if ero_dila_obj is None:
-            WARN('[Parser]: Meets invalid node(%s) in convert_ero_dila_weights!' % ero_dila)
+            ERROR('[Parser]: Meets invalid node(%s) in convert_ero_dila_weights!' % ero_dila)
             continue
         ero_dila_attr = ero_dila_obj.copied_attr()
         if len(ero_dila_obj.weights.shape) == 3:
@@ -707,7 +707,7 @@ def rename_dilation_erosion(graph):
             elif ero_dila_obj.type == 'Dilation':
                 NodeWrap(graph, ero_dila).replace_obj('ArmDilation', ero_dila_attr)
         else:
-            WARN('[Parser]: Meets invalid weights(%s) in convert_ero_dila_weights!' % ero_dila)
+            ERROR('[Parser]: Meets invalid weights(%s) in convert_ero_dila_weights!' % ero_dila)
 
 
 def convert_bi_lstm(graph):
@@ -1043,7 +1043,7 @@ def merge_b2s(graph):
                 or d2s_obj is None \
                 or transpose2_obj is None \
                 or out_obj is None:
-            WARN('[Parser]: Meets invalid node in merge_b2s!')
+            ERROR('[Parser]: Meets invalid node in merge_b2s!')
             continue
         if d2s_obj.mode != 'DCR':
             continue
@@ -1162,7 +1162,7 @@ def merge_square(graph):
         names = ['const', 'pow']
         node_objs = {n: NodeWrap(graph, m[n])['object'] for n in names}
         if any([obj is None for obj in node_objs.values()]):
-            WARN('[Parser]: Meets invalid node in merge_square!')
+            ERROR('[Parser]: Meets invalid node in merge_square!')
             continue
 
         power = node_objs['const'].value
@@ -1183,7 +1183,7 @@ def merge_square2(graph):
         mul = m['target']
         mul_obj = NodeWrap(graph, mul)['object']
         if mul_obj is None or len(mul_obj.get_input_shapes()) != 2:
-            WARN('[Parser]: Meets invalid node(%s) in merge_square2!' % mul)
+            ERROR('[Parser]: Meets invalid node(%s) in merge_square2!' % mul)
             continue
 
         mul_in_edges = graph.sorted_in_edges(mul, keys=True, data=True)
@@ -1227,7 +1227,7 @@ def merge_squared_diff(graph):
                 NodeWrap(graph, m['pow']).replace_obj(
                     'ArmSquaredDifference', {'name': m['pow']})
         else:
-            WARN('[Parser]: Meets invalid node in merge_squared_diff!')
+            ERROR('[Parser]: Meets invalid node in merge_squared_diff!')
     if matched:
         clear_redundant_nodes(graph)
 
@@ -1391,7 +1391,7 @@ def merge_s2b_nd(graph):
                 NodeWrap(graph, reshape2).replace_obj(
                     'ArmSpaceToBatch', s2b_attr)
         else:
-            WARN('[Parser]: Meets invalid Node in merge_s2b_nd!')
+            ERROR('[Parser]: Meets invalid Node in merge_s2b_nd!')
     if matched:
         clear_redundant_nodes(graph)
 
@@ -1414,7 +1414,7 @@ def merge_s2b_pool_b2s(graph):
         pool_obj = NodeWrap(graph, pool)['object']
         b2s_obj = NodeWrap(graph, b2s)['object']
         if s2b_obj is None or pool_obj is None or b2s_obj is None:
-            WARN('[Parser]: Meets invalid Op in merge_s2b_avgpool_b2s!')
+            ERROR('[Parser]: Meets invalid Op in merge_s2b_avgpool_b2s!')
             continue
         in_edges = graph.sorted_in_edges(s2b, data=True)
         pool_out_edges = graph.sorted_out_edges(pool, data=True)
@@ -1609,9 +1609,10 @@ def merge_nhwc_maxpoolargmax(graph):
         names = ['argmaxpool', 'cast1', 'sub', 'div',
                  'add', 'cast2', 'const1', 'const2', 'const3']
         obj_dict = {n: NodeWrap(graph, m[n])['object'] for n in names}
-        if all([obj is not None for obj in obj_dict.values()]) \
-                and obj_dict['sub'].method == 'SUB' \
-                and obj_dict['add'].method == 'ADD':
+        if all([obj is not None for obj in obj_dict.values()]):
+            if obj_dict['sub'].method != 'SUB' \
+                    or obj_dict['add'].method != 'ADD':
+                continue
             out_edges_need_check = [graph.sorted_out_edges(m[n])
                                     for n in ['cast1', 'sub', 'div', 'add', 'const1', 'const2', 'const3']]
             if all([len(out_edges) == 1 for out_edges in out_edges_need_check]):
@@ -1659,7 +1660,7 @@ def merge_nhwc_maxpoolargmax(graph):
                             else:
                                 graph._attr['output_names'].remove(m['cast2'])
         else:
-            WARN('[Parser]: Meets invalid Node in merge_nhwc_maxpoolargmax!')
+            ERROR('[Parser]: Meets invalid Node in merge_nhwc_maxpoolargmax!')
 
     if matched:
         clear_redundant_nodes(graph)
@@ -1682,7 +1683,7 @@ def merge_hwc_maxpoolargmax(graph):
         names = ['argmaxpool', 'const', 'sub']
         obj_dict = {n: NodeWrap(graph, m[n])['object'] for n in names}
         if any([obj is None for obj in obj_dict.values()]):
-            WARN('[Parser]: Meets invalid node in merge_hwc_maxpoolargmax!')
+            ERROR('[Parser]: Meets invalid node in merge_hwc_maxpoolargmax!')
             continue
         if obj_dict['sub'].method != 'SUB' \
                 or obj_dict['argmaxpool'].flatten_dim != 'NHWC':
@@ -1696,7 +1697,7 @@ def merge_hwc_maxpoolargmax(graph):
         output_shapes = argmaxpool_obj.get_output_shapes()
         if len(input_shapes) < 1 or len(input_shapes[0]) != 4 or \
                 len(output_shapes) < 1 or len(output_shapes[0]) != 4:
-            WARN('[Parser]: Meets invalid input/output shapes for node (%s) in merge_hwc_maxpoolargmax!' % m['argmaxpool'])
+            ERROR('[Parser]: Meets invalid input/output shapes for node (%s) in merge_hwc_maxpoolargmax!' % m['argmaxpool'])
             continue
         in_n, in_h, in_w, in_c = input_shapes[0]
         sub_oprand = np.reshape(
@@ -1749,9 +1750,10 @@ def merge_hw_maxpoolargmax(graph):
     for m in matches:
         names = ['argmaxpool', 'transpose', 'cast', 'const', 'tile', 'sub']
         obj_dict = {n: NodeWrap(graph, m[n])['object'] for n in names}
-        if all([obj is not None for obj in obj_dict.values()]) \
-                and obj_dict['sub'].method == 'SUB' \
-                and obj_dict['argmaxpool'].flatten_dim == 'NCHW':
+        if all([obj is not None for obj in obj_dict.values()]):
+            if obj_dict['sub'].method != 'SUB' \
+                    or obj_dict['argmaxpool'].flatten_dim != 'NCHW':
+                continue
             out_edges_need_check = [graph.sorted_out_edges(m[n])
                                     for n in ['const', 'tile']]
             if all([len(out_edges) == 1 for out_edges in out_edges_need_check]):
@@ -1784,7 +1786,7 @@ def merge_hw_maxpoolargmax(graph):
                             else:
                                 graph._attr['output_names'].remove(m['sub'])
         else:
-            WARN('[Parser]: Meets invalid Node in merge_hw_maxpoolargmax!')
+            ERROR('[Parser]: Meets invalid Node in merge_hw_maxpoolargmax!')
     if matched:
         clear_redundant_nodes(graph)
 
@@ -1807,9 +1809,10 @@ def merge_hw_maxunpool(graph):
     for m in matches:
         names = ['const', 'add', 'cast', 'transpose', 'maxunpool']
         obj_dict = {n: NodeWrap(graph, m[n])['object'] for n in names}
-        if all([obj is not None for obj in obj_dict.values()]) \
-                and obj_dict['add'].method == 'ADD' \
-                and obj_dict['maxunpool'].flatten_dim == 'NCHW':
+        if all([obj is not None for obj in obj_dict.values()]):
+            if obj_dict['add'].method != 'ADD' \
+                    or obj_dict['maxunpool'].flatten_dim != 'NCHW':
+                continue
             out_edges_need_check = [graph.sorted_out_edges(m[n])
                                     for n in ['const', 'add']]
             if any([len(out_edges) != 1 for out_edges in out_edges_need_check]):
@@ -1839,7 +1842,7 @@ def merge_hw_maxunpool(graph):
                     graph.add_edge(src, m['cast'], **in_attr)
             maxunpool_obj.flatten_dim = 'HW'
         else:
-            WARN('[Parser]: Meets invalid Node in merge_hw_maxunpool!')
+            ERROR('[Parser]: Meets invalid Node in merge_hw_maxunpool!')
     if matched:
         clear_redundant_nodes(graph)
 
@@ -1856,7 +1859,7 @@ def rename_activations(graph):
         act = m['target']
         act_obj = NodeWrap(graph, act)['object']
         if act_obj is None:
-            WARN('[Parser]: Meets invalid node(%s) in rename_activations!' % act)
+            ERROR('[Parser]: Meets invalid node(%s) in rename_activations!' % act)
             continue
         act_attr = act_obj.copied_attr()
         if act_obj.type == 'Sigmoid':
@@ -1880,7 +1883,7 @@ def rename_activations(graph):
         elif act_obj.type == 'PRelu':
             in_edges = graph.sorted_in_edges(act, data=True)
             if len(in_edges) != 2:
-                WARN(
+                ERROR(
                     '[Parser]: Meets invalid PRelu node(%s) in rename_activations!' % act)
                 continue
             method = 'PRELU'
@@ -1955,7 +1958,7 @@ def rename_bitwise(graph):
         bit = m['target']
         bit_obj = NodeWrap(graph, bit)['object']
         if bit_obj is None:
-            WARN('[Parser]: Meets invalid node(%s) in rename_bitwises!' % bit)
+            ERROR('[Parser]: Meets invalid node(%s) in rename_bitwises!' % bit)
             continue
         bit_attr = bit_obj.copied_attr()
         if bit_obj.type == 'BitwiseAnd':
@@ -1977,13 +1980,15 @@ def rename_cum(graph):
         cum = m['target']
         cum_obj = NodeWrap(graph, cum)['object']
         if cum_obj is None:
-            WARN('[Parser]: Meets invalid node(%s) in rename_cum!' % cum)
+            ERROR('[Parser]: Meets invalid node(%s) in rename_cum!' % cum)
             continue
         in_edges = graph.sorted_in_edges(cum, data=True)
         if cum_obj.type == 'CumSum' \
-                and len(in_edges) < 2 \
-                and not in_edges[1][2]['tensor'].is_const:
-            WARN('[Parser]: Meets invalid in_edge for cumlative Op(%s)' % cum)
+                and len(in_edges) < 2:
+            ERROR('[Parser]: Meets invalid in_edge for cumlative Op(%s) in rename_cum!' % cum)
+            continue
+        if not in_edges[1][2]['tensor'].is_const:
+            WARN('[Parser]: Meets unsupported non-constant axis for cumlative Op(%s) in rename_cum!' % cum)
             continue
 
         cum_attr = cum_obj.copied_attr()
@@ -2062,7 +2067,7 @@ def rename_cast(graph):
                 cast_attr.update({'to_dtype': 'uint8'})
                 NodeWrap(graph, cast).replace_obj('ArmCast', cast_attr)
             else:
-                WARN('[Parser]: Meets Cast Op (%s) with invalid dtype (%s) that cannot be converted in rename_cast!' % (
+                ERROR('[Parser]: Meets Cast Op (%s) with invalid dtype (%s) that cannot be converted in rename_cast!' % (
                     cast, cast_obj.to))
 
 
@@ -2076,7 +2081,7 @@ def rename_compress(graph):
         if compress_obj is not None and len(in_edges) == 2:
             if not in_edges[1][2]['tensor'].is_const:
                 WARN(
-                    '[Parser]: Meets non-constant condition for Compress Op(%s)' % compress)
+                    '[Parser]: Meets unsupported non-constant condition for Compress Op(%s) in rename_compress!' % compress)
                 continue
             inputs = compress_obj.get_input_tensors()
             if len(inputs) != 2 \
@@ -2084,7 +2089,7 @@ def rename_compress(graph):
                     or inputs[1] is None \
                     or np.ndim(inputs[0]) < 1 \
                     or np.ndim(inputs[1]) != 1:
-                WARN('[Parser]: Meets invalid inputs for Compress Op(%s)' % compress)
+                ERROR('[Parser]: Meets invalid inputs for Compress Op(%s)' % compress)
                 continue
             inp, condition = inputs
             if compress_obj.axis is None and condition.size < inp.size:
@@ -2118,12 +2123,12 @@ def rename_compress(graph):
                     in_edges[1][2]['tensor'].value = condition
                     in_edges[1][2]['tensor'].shape = condition.shape
                 else:
-                    WARN(
+                    ERROR(
                         '[Parser]: Meets invalid condition of Compress Op(%s) in rename_compress!' % compress)
             NodeWrap(graph, compress).replace_obj(
                 'ArmCompress', compress_obj.copied_attr())
         else:
-            WARN('[Parser]: Meets invalid Compress Op(%s) in rename_compress!' % compress)
+            ERROR('[Parser]: Meets invalid Compress Op(%s) in rename_compress!' % compress)
     if need_clear:
         clear_redundant_nodes(graph)
 
@@ -2137,7 +2142,7 @@ def rename_conv(graph):
         conv_node = NodeWrap(graph, conv)
         conv_obj = conv_node['object']
         if conv_obj is None or len(conv_obj.get_input_shapes()) < 1:
-            WARN(
+            ERROR(
                 '[Parser]: Meets invalid Conv/ConvTranspose Op(%s) in rename_conv!' % conv)
             continue
         conv_attr = conv_obj.copied_attr()
@@ -2181,8 +2186,8 @@ def rename_conv(graph):
                               })
             conv_node.replace_obj('ArmConvInteger', conv_attr)
         else:
-            WARN('[Parser]: Conv type %s is not implemented in rename_conv!' %
-                 conv_obj.type)
+            ERROR('[Parser]: Conv type %s is not implemented in rename_conv!' %
+                  conv_obj.type)
 
 
 def rename_gemm(graph):
@@ -2221,7 +2226,7 @@ def rename_gemm(graph):
                             insert_tile(
                                 graph, in_edges[2][0], gemm, in_edges[2][2], reps)
                     else:
-                        WARN(
+                        ERROR(
                             '[Parser]: Invalid pattern of Node(%s) for Gemm broadcasting in rename_gemm!' % gemm)
             gemm_attr = gemm_obj.copied_attr()
             gemm_attr.update({'trans_a': gemm_obj.transA,
@@ -2231,7 +2236,7 @@ def rename_gemm(graph):
                               })
             NodeWrap(graph, gemm).replace_obj('ArmGemm', gemm_attr)
         else:
-            WARN(
+            ERROR(
                 '[Parser]: Meets Invalid Gemm Op (%s) that cannot be converted in rename_gemm!' % gemm)
 
 
@@ -2290,7 +2295,7 @@ def rename_logical(graph):
                     pass
                 else:
                     meta_ret = False
-                    WARN(
+                    ERROR(
                         '[Parser]: Invalid inputs of Node(%s) for broadcasting in rename_logical!' % logical)
             if meta_ret:
                 method = logical_map[logical_obj.type]
@@ -2299,7 +2304,7 @@ def rename_logical(graph):
                 NodeWrap(graph, logical).replace_obj(
                     'ArmLogical', logical_attr)
         else:
-            WARN(
+            ERROR(
                 '[Parser]: Meets invalid Logical Op (%s) that cannot be converted in rename_logical!' % logical)
 
 
@@ -2311,9 +2316,7 @@ def rename_matmulinteger(graph):
         in_edges = graph.sorted_in_edges(matmul)
         if matmul_obj is not None and 2 <= len(in_edges) <= 4:
             inputs = matmul_obj.get_input_tensors()
-            if (inputs[0].dtype == np.int8 and inputs[1].dtype == np.int8) \
-                    or (inputs[0].dtype == np.uint8 and inputs[1].dtype == np.uint8) \
-                    or (inputs[0].dtype == np.uint8 and inputs[1].dtype == np.int8):
+            if inputs[0].dtype in (np.int8, np.uint8) and inputs[1].dtype in (np.int8, np.uint8):
                 a_zp = matmul_obj.a_zero_point
                 b_zp = matmul_obj.b_zero_point
                 graph.remove_edges_from(in_edges[2:])
@@ -2323,10 +2326,10 @@ def rename_matmulinteger(graph):
                 NodeWrap(graph, matmul).replace_obj(
                     'ArmMatMulInteger', matmul_attr)
             else:
-                WARN(
+                ERROR(
                     '[Parser]: Meets invalid dtype of MatMulInteger Op (%s) in rename_matmulinteger!' % matmul)
         else:
-            WARN(
+            ERROR(
                 '[Parser]: Meets invalid MatMulInteger Op (%s) in rename_matmulinteger!' % matmul)
 
 
@@ -2340,10 +2343,13 @@ def rename_maxunpool(graph):
         if mup_obj is not None and len(in_edges) == 3:
             _, _, out_shape_in_attr = in_edges[2]
             if out_shape_in_attr['tensor'] is None \
-                    or out_shape_in_attr['tensor'].value is None \
-                    or not out_shape_in_attr['tensor'].is_const:
-                WARN(
+                    or out_shape_in_attr['tensor'].value is None:
+                ERROR(
                     '[Parser]: Meets MaxUnpool Node(%s) with invalid output shape in rename_maxunpool!' % mup)
+                continue
+            if not out_shape_in_attr['tensor'].is_const:
+                WARN(
+                    '[Parser]: Meets unsupported non-constant output_shape of MaxUnpool Node(%s) in rename_maxunpool!' % mup)
                 continue
             matched = True
             output_shape = out_shape_in_attr['tensor'].value.tolist()
@@ -2353,7 +2359,7 @@ def rename_maxunpool(graph):
                 {'output_shape': output_shape, 'flatten_dim': 'NCHW'})
             NodeWrap(graph, mup).replace_obj('ArmMaxUnpool', mup_attr)
         else:
-            WARN('[Parser]: Meets invalid MaxUnpool Node(%s) in rename_maxunpool!' % mup)
+            ERROR('[Parser]: Meets invalid MaxUnpool Node(%s) in rename_maxunpool!' % mup)
     if matched:
         clear_redundant_nodes(graph)
 
@@ -2364,7 +2370,7 @@ def rename_moments(graph):
         moments = m['target']
         moments_obj = NodeWrap(graph, moments)['object']
         if moments_obj is None:
-            WARN('[Parser]: Meets invalid Moments Node(%s) in rename_moments!' % moments)
+            ERROR('[Parser]: Meets invalid Moments Node(%s) in rename_moments!' % moments)
             continue
         moments_attr = moments_obj.copied_attr()
         moments_attr.update({'keepdims': True})
@@ -2391,7 +2397,7 @@ def rename_moments(graph):
                         graph._attr['output_names'][index] = reshape
                         index += 1
             else:
-                WARN(
+                ERROR(
                     '[Parser]: Meets invalid Moments Node(%s) in rename_moments!' % moments)
 
 
@@ -2422,7 +2428,7 @@ def rename_mul_add_max_min(graph):
                     pass
                 else:
                     meta_ret = False
-                    WARN(
+                    ERROR(
                         '[Parser]: Invalid pattern of Node(%s) to convert into Eltwise in rename_mul_add_max_min!' % eltwise)
                 if meta_ret:
                     eltwise_attr = eltwise_obj.copied_attr()
@@ -2454,7 +2460,7 @@ def rename_onehot(graph):
         in_edges = graph.sorted_in_edges(onehot, data=True)
         if onehot_obj is None \
                 or len(in_edges) != 3:
-            WARN(
+            ERROR(
                 '[Parser]: invalid Onehot Node(%s) in rename_onehot!' % onehot)
             continue
 
@@ -2479,7 +2485,7 @@ def rename_onehot(graph):
             NodeWrap(graph, onehot).replace_obj('ArmOneHot', onehot_attr)
         else:
             WARN(
-                '[Parser]: invalid Onehot Node(%s) in rename_onehot!' % onehot)
+                '[Parser]: Meets unsupported non-constant depth/values of Onehot Node(%s) in rename_onehot!' % onehot)
     if matched:
         clear_redundant_nodes(graph)
 
@@ -2500,7 +2506,7 @@ def rename_pad(graph):
             if len(in_edges) > 1:
                 graph.remove_edges_from(in_edges[1:])
         else:
-            WARN('[Parser]: invalid Pad op for Node(%s) in rename_pad!' % pad)
+            ERROR('[Parser]: invalid Pad op for Node(%s) in rename_pad!' % pad)
 
 
 def rename_pool(graph):
@@ -2521,7 +2527,10 @@ def rename_pool(graph):
                     pool_obj.kernel_shape) == 3 else 'ArmPooling', pool_attr)
             else:
                 input_shapes = pool_obj.get_input_shapes()
-                if len(input_shapes) < 1 or len(input_shapes[0]) != 4:
+                if len(input_shapes) < 1:
+                    ERROR('[Parser]: Meets invalid MaxPool Node (%s) in rename_pool!' % pool)
+                    continue
+                if len(input_shapes[0]) != 4:
                     WARN(
                         '[Parser]: Only 4D MaxPool (%s) can be converted to MaxPoolingWithArgMax in rename_pool!' % pool)
                     continue
@@ -2567,7 +2576,7 @@ def rename_reduce(graph):
                     index = graph._attr['output_names'].index(reduce)
                     graph._attr['output_names'][index] = reshape
             else:
-                WARN(
+                ERROR(
                     '[Parser]: Meets invalid Reduce Node(%s) in rename_reduce!' % reduce)
 
 
@@ -2585,7 +2594,7 @@ def rename_reshape(graph):
                         and all([(s == d or d == -1) for (s, d) in zip(out_shapes[0], dim)]):
                     dim = out_shapes[0][:]
                 else:
-                    WARN(
+                    ERROR(
                         '[Parser]: Dim of Reshape (%s) does not equal to output shape!' % reshape)
             cur_ver = reshape_obj.cur_version
             if cur_ver >= 5:
@@ -2596,7 +2605,7 @@ def rename_reshape(graph):
             reshape_attr.update({'dim': dim})
             NodeWrap(graph, reshape).replace_obj('ArmReshape', reshape_attr)
         else:
-            WARN('[Parser]: Meets invalid Reshape Node(%s) in rename_reshape!' % reshape)
+            ERROR('[Parser]: Meets invalid Reshape Node(%s) in rename_reshape!' % reshape)
 
 
 def rename_resize(graph):
@@ -2625,7 +2634,7 @@ def rename_resize(graph):
                         or resize_obj.roi.size != 8 \
                         or np.any(np.reshape(resize_obj.roi, (2, -1))[:, 0] != np.array([0, 1], np.float32)) \
                         or np.any(np.reshape(resize_obj.roi, (2, -1))[:, 3] != np.array([0, 1], np.float32)):
-                    WARN(
+                    ERROR(
                         '[Parser]: Meets invalid ROI for Resize Op (%s) in rename_resize!' % resize)
                     continue
                 else:
@@ -2744,7 +2753,7 @@ def rename_scatternd(graph):
             scatter_attr.update({'reduction': scatter_obj.reduction.upper()})
             NodeWrap(graph, scatter).replace_obj('ArmScatterND', scatter_attr)
         else:
-            WARN('[Parser]: Meets invalid ScatterND Op (%s) in rename_scatternd!' % slice)
+            ERROR('[Parser]: Meets invalid ScatterND Op (%s) in rename_scatternd!' % slice)
 
 
 def rename_scatterel(graph):
@@ -2759,7 +2768,7 @@ def rename_scatterel(graph):
             NodeWrap(graph, scatterel).replace_obj(
                 'ArmScatterElements', scatterel_attr)
         else:
-            WARN(
+            ERROR(
                 '[Parser]: Meets invalid ScatterElementsOp Op (%s) in rename_scatterel!' % slice)
 
 
@@ -2782,7 +2791,7 @@ def rename_slice(graph):
                 slice_attr.update({'steps': slice_obj.steps})
             NodeWrap(graph, slice).replace_obj('ArmSlice', slice_attr)
         else:
-            WARN('[Parser]: Meets invalid Slice Op (%s) in rename_slice!' % slice)
+            ERROR('[Parser]: Meets invalid Slice Op (%s) in rename_slice!' % slice)
 
 
 def rename_tile(graph):
@@ -2870,7 +2879,7 @@ def split_crd_d2s(graph):
                 out_reshape_attr.update({'name': d2s, 'opset_version': 5})
                 NodeWrap(graph, d2s).replace_obj('Reshape', out_reshape_attr)
             else:
-                WARN(
+                ERROR(
                     '[Parser]: Invalid DepthToSpace Node (%s) to split in split_crd_d2s!' % d2s)
 
 
@@ -2915,10 +2924,10 @@ def split_expand(graph):
                 NodeWrap(graph, expand).replace_obj(
                     'Tile', {'name': expand, 'opset_version': 6})
             else:
-                WARN(
+                ERROR(
                     '[Parser]: Meets invalid shape of Expand Node (%s) in split_expand!' % expand)
         else:
-            WARN('[Parser]: Meets invalid Expand Node (%s) or Constant Node (%s) in split_expand!' % (
+            ERROR('[Parser]: Meets invalid Expand Node (%s) or Constant Node (%s) in split_expand!' % (
                 expand, shape))
 
 
@@ -3025,13 +3034,13 @@ def detection_post_process(graph, params):
             out1_obj, out2_obj = NodeWrap(
                 graph, out1)['object'], NodeWrap(graph, out2)['object']
             if out1_obj is None or out2_obj is None:
-                WARN('[Parser]: Invalid output nodes (%s or %s) for detection_post_process!' % (
+                ERROR('[Parser]: Invalid output nodes (%s or %s) for detection_post_process!' % (
                     out1, out2))
                 return
             out1_out_shapes = out1_obj.get_output_shapes()
             out2_out_shapes = out2_obj.get_output_shapes()
             if not out1_out_shapes or out1_out_shapes[0] is None or not out2_out_shapes or out2_out_shapes[0] is None:
-                WARN('[Parser]: Invalid params for detection_post_process!')
+                ERROR('[Parser]: Invalid params for detection_post_process!')
                 return
             if len(out1_out_shapes[0]) == 3 \
                     and len(out2_out_shapes[0]) == 3 \
@@ -3066,7 +3075,7 @@ def detection_post_process(graph, params):
             out1_obj, out2_obj = NodeWrap(
                 graph, out1)['object'], NodeWrap(graph, out2)['object']
             if out1_obj is None or out2_obj is None:
-                WARN('[Parser]: Invalid output nodes (%s or %s) for detection_post_process!' % (
+                ERROR('[Parser]: Invalid output nodes (%s or %s) for detection_post_process!' % (
                     out1, out2))
                 return
             out1_out_shapes = out1_obj.get_output_shapes()
@@ -3184,8 +3193,8 @@ def detection_post_process(graph, params):
                     'anchor_tensor_format', 'center').upper()
                 supported_anchor_format = ['CENTER', 'CORNER']
                 if anchor_tensor_format not in supported_anchor_format:
-                    WARN('[Parser]: Meet invalid value of anchor_tensor_format! Supported values are %s!' %
-                         str(supported_anchor_format)[1:-1])
+                    ERROR('[Parser]: Meet invalid value of anchor_tensor_format! Supported values are %s!' %
+                          str(supported_anchor_format)[1:-1])
                 elif anchor_tensor_format == 'CORNER':
                     weights = ArmDecodeBoxOp.convert_to_center_coordinate(
                         weights)
@@ -3239,8 +3248,8 @@ def detection_post_process(graph, params):
             graph._attr['output_names'].clear()
             graph._attr['output_names'] = [decode_box, nms]
         else:
-            WARN('[Parser]: Invalid outputs number (%d) before post process in detection_post_process!' %
-                 len(graph._attr['output_names']))
+            ERROR('[Parser]: Invalid outputs number (%d) before post process in detection_post_process!' %
+                  len(graph._attr['output_names']))
 
     elif params.get('detection_postprocess', '').upper() == 'YOLO2':
         if len(graph._attr['output_names']) == 1:
@@ -3340,11 +3349,11 @@ def detection_post_process(graph, params):
                 graph._attr['output_names'].clear()
                 graph._attr['output_names'] = [region, nms]
             else:
-                WARN(
+                ERROR(
                     '[Parser]: Yolo2 preprocess output shape error in detection_post_process!')
         else:
-            WARN('[Parser]: Invalid outputs number (%d) before post process in detection_post_process!' %
-                 len(graph._attr['output_names']))
+            ERROR('[Parser]: Invalid outputs number (%d) before post process in detection_post_process!' %
+                  len(graph._attr['output_names']))
 
     elif params.get('detection_postprocess', '').upper() in ('YOLO3_TINY', 'YOLO3_FULL'):
         mode = params.get('detection_postprocess', '').upper()
@@ -3431,12 +3440,12 @@ def detection_post_process(graph, params):
                             NodeWrap(graph, region).replace_obj(
                                 'ArmRegion', region_attr)
                         else:
-                            WARN(
+                            ERROR(
                                 '[Parser]: invalid Reshape was inserted for Yolo3-tiny in detection_post_process!')
                             meta_ret = False
                     else:
-                        WARN('[Parser]: Invalid out edges for output name: %s in detection_post_process' %
-                             graph._attr['output_names'][n])
+                        ERROR('[Parser]: Invalid out edges for output name: %s in detection_post_process' %
+                              graph._attr['output_names'][n])
                         meta_ret = False
 
                 if meta_ret and len(region_list) in (2, 3):
@@ -3511,14 +3520,14 @@ def detection_post_process(graph, params):
                     graph._attr['output_names'].clear()
                     graph._attr['output_names'] = [final_region_fuse, nms]
                 else:
-                    WARN(
+                    ERROR(
                         '[Parser]: Yolo3-tiny post-process cannot proceed in detection_post_process!')
             else:
-                WARN(
+                ERROR(
                     '[Parser]: Yolo3-tiny preprocess output shape error in detection_post_process!')
         else:
-            WARN('[Parser]: Invalid outputs number (%d) before post process in detection_post_process!' %
-                 len(graph._attr['output_names']))
+            ERROR('[Parser]: Invalid outputs number (%d) before post process in detection_post_process!' %
+                  len(graph._attr['output_names']))
 
     elif params.get('detection_postprocess', '').upper() == 'CAFFE_FASTERRCNN':
         if len(graph._attr['output_names']) == 2:
@@ -3650,14 +3659,14 @@ def detection_post_process(graph, params):
                                  type='ArmSlice')
 
                 else:
-                    WARN(
+                    ERROR(
                         '[Parser]: Invalid detection_postprocess parameters in detection_post_process!')
             else:
-                WARN(
+                ERROR(
                     '[Parser]: Invalid detection_postprocess parameters in detection_post_process!')
         else:
-            WARN('[Parser]: Invalid outputs number (%d) before post process in detection_post_process!' %
-                 len(graph._attr['output_names']))
+            ERROR('[Parser]: Invalid outputs number (%d) before post process in detection_post_process!' %
+                  len(graph._attr['output_names']))
 
 
 def remove_redundant_reshape_transpose(graph):
@@ -3677,7 +3686,7 @@ def remove_redundant_reshape_transpose(graph):
         if any(obj is None for obj in obj_dict.values()) \
                 or len(obj_dict['reshape_1'].get_input_shapes()) < 1 \
                 or len(reshape_1_in_edges) < 1:
-            WARN('[Parser]: Meets invalid Node in remove_redundant_reshape_transpose!')
+            ERROR('[Parser]: Meets invalid Node in remove_redundant_reshape_transpose!')
             continue
         reshape_1_out_edges = graph.sorted_out_edges(m['reshape_1'], data=True)
         transpose_out_edges = graph.sorted_out_edges(m['transpose'], data=True)
@@ -3755,8 +3764,8 @@ def remove_const(graph):
                         NodeWrap(graph, node_name).replace_obj(
                             'ArmConstant', const_attr)
                 else:
-                    WARN('[Parser]: Meets invalid Constant Node(%s) in remove_const!' %
-                         const_child)
+                    ERROR('[Parser]: Meets invalid Constant Node(%s) in remove_const!' %
+                          const_child)
             else:
                 removing_const.append(node_name)
     graph.remove_nodes_from(removing_const)
@@ -3770,12 +3779,12 @@ def trim_weights(graph):
 
         to_supported_dtype = get_converted_dtype(data_dtype)
         if to_supported_dtype is None:
-            WARN('[Parser]: Meets invalid dtype %s in %s of Node (%s) in trim_weights!' %
-                 (data_dtype, attr_name, node_name))
+            ERROR('[Parser]: Meets invalid dtype %s in %s of Node (%s) in trim_weights!' %
+                  (data_dtype, attr_name, node_name))
             return np_data
 
-        DEBUG('[Parser]: Convert unsupported dtype %s to %s for %s of Node (%s)' %
-              (data_dtype, to_supported_dtype.__name__, attr_name, node_name))
+        WARN('[Parser]: Convert unsupported dtype %s to %s for %s of Node (%s)' %
+             (data_dtype, to_supported_dtype.__name__, attr_name, node_name))
         return np_data.astype(to_supported_dtype)
 
     offset = 0
@@ -3802,8 +3811,8 @@ def trim_weights(graph):
                         node_obj.weights_zp_offset = offset
                         offset += node_obj.weights_scale_zp[1].size * node_obj.weights_scale_zp[1].dtype.itemsize
                 else:
-                    WARN('[Parser]: Meets invalid weights for Node %s in trim_weights!' %
-                         node_name)
+                    ERROR('[Parser]: Meets invalid weights for Node %s in trim_weights!' %
+                          node_name)
             if isinstance(node_obj, OpHasBiases):
                 if node_obj.biases is not None:
                     node_obj.biases = _data_in_supported_dtype(
@@ -3822,8 +3831,8 @@ def trim_weights(graph):
                         node_obj.biases_zp_offset = offset
                         offset += node_obj.biases_scale_zp[1].size * node_obj.biases_scale_zp[1].dtype.itemsize
                 else:
-                    WARN('[Parser]: Meets invalid biases for Node %s in trim_weights!' %
-                         node_name)
+                    ERROR('[Parser]: Meets invalid biases for Node %s in trim_weights!' %
+                          node_name)
             if isinstance(node_obj, (BaseActivationOp, ArmActivationOp)) \
                     and hasattr(node_obj, 'negative_slope') \
                     and hasattr(node_obj, 'negative_slope_offset') \
@@ -3847,7 +3856,7 @@ def trim_weights(graph):
                     node_obj.constants_offset_dict.update({key: offset})
                     offset += np_array.size * np_array.dtype.itemsize
         else:
-            WARN(
+            ERROR(
                 '[Parser]: Meets invalid Op object for Node %s in trim_weights!' % node_name)
 
 
@@ -3884,9 +3893,9 @@ def insert_preprocess(graph):
 
                     cur_base_port += len(in_obj.get_out_ports())
             else:
-                WARN('[Parser]: Not all Input nodes is valid in insert_preprocess!')
+                ERROR('[Parser]: Not all Input nodes is valid in insert_preprocess!')
         else:
-            WARN('[Parser]: Invalid parameters for insert_preprocess !')
+            ERROR('[Parser]: Invalid parameters for insert_preprocess !')
 
 
 def insert_cast_if_must(graph):
@@ -3930,7 +3939,7 @@ def insert_cast_if_must(graph):
                                             break
 
             else:
-                WARN('[Parser]: Meets invalid Node (%s) in insert_cast_if_must!' % n)
+                ERROR('[Parser]: Meets invalid Node (%s) in insert_cast_if_must!' % n)
     return happened
 
 
@@ -3954,7 +3963,7 @@ def sink_single_transpose(graph):
                 unaware_input_shape = unaware_obj.get_input_shapes()[0]
                 if unaware_input_shape is None \
                         or any([s is None for s in unaware_input_shape]):
-                    WARN(
+                    ERROR(
                         '[Parser]: Meets invalid input shape of Node(%s) in sink_single_transpose!' % unaware)
                     continue
                 trans_in_edges = graph.sorted_in_edges(transpose, data=True)
@@ -3989,7 +3998,7 @@ def sink_single_transpose(graph):
                     index = graph._attr['output_names'].index(unaware)
                     graph._attr['output_names'][index] = transpose
         else:
-            WARN('[Parser]: Meets invalid Node(%s) or Node(%s) in sink_single_transpose!' % (
+            ERROR('[Parser]: Meets invalid Node(%s) or Node(%s) in sink_single_transpose!' % (
                 transpose, unaware))
 
 
@@ -4023,7 +4032,7 @@ def sink_double_transpose(graph):
                 trans1_in_edges = graph.sorted_in_edges(trans1, data=True)
                 trans2_in_edges = graph.sorted_in_edges(trans2, data=True)
                 if len(trans1_in_edges) < 1 or len(trans2_in_edges) < 1:
-                    WARN('[Parser]: Meets invalid Node(%s) or Node(%s) in sink_double_transposes!' % (
+                    ERROR('[Parser]: Meets invalid Node(%s) or Node(%s) in sink_double_transposes!' % (
                         trans1, trans2))
                     continue
                 matched = True
@@ -4070,7 +4079,7 @@ def sink_double_transpose(graph):
                     graph._attr['output_names'][index] = post_trans
 
         else:
-            WARN('[Parser]: Meets invalid Node(%s) or Node(%s) or Node(%s) in sink_double_transposes!' % (
+            ERROR('[Parser]: Meets invalid Node(%s) or Node(%s) or Node(%s) in sink_double_transposes!' % (
                 trans1, trans2, unaware))
 
     if matched:
@@ -4084,7 +4093,7 @@ def sink_reshape_through_cast(graph):
         cast_obj = NodeWrap(graph, cast)['object']
         reshape_in_edges = graph.sorted_in_edges(reshape, data=True)
         if cast_obj is None or len(reshape_in_edges) < 1:
-            WARN('[Parser]: Meets invalid Node object in sink_reshape_through_cast!')
+            ERROR('[Parser]: Meets invalid Node object in sink_reshape_through_cast!')
             continue
         reshape_out_edges = graph.sorted_out_edges(reshape)
         if len(reshape_out_edges) != 1:
@@ -4187,7 +4196,7 @@ def sink_transpose_with_const(graph):
 
                 clear_redundant_nodes(graph)
         else:
-            WARN('[Parser]: Meets invalid Node(%s) or Node(%s) or Node(%s) in sink_transpose_with_const!' % (
+            ERROR('[Parser]: Meets invalid Node(%s) or Node(%s) or Node(%s) in sink_transpose_with_const!' % (
                 trans, const, unaware))
 
 
@@ -4202,14 +4211,14 @@ def sink_transpose_through_concat(graph, max_branches=8):
             concat = m['concat']
             in_trans_names = [m['in_trans_%s' % str(i + 1)] for i in range(b)]
             if any([not graph.has_node(name) for name in [concat] + in_trans_names]):
-                WARN(
+                ERROR(
                     '[Parser]: Meets invalid name that does not exist in graph in sink_transpose_through_concat!')
                 continue
             concat_obj = NodeWrap(graph, concat)['object']
             in_trans_objs = {name: NodeWrap(
                 graph, name)['object'] for name in in_trans_names}
             if concat_obj is None or any([obj is None for obj in in_trans_objs.values()]):
-                WARN(
+                ERROR(
                     '[Parser]: Meets invalid Node object in sink_transpose_through_concat!')
                 continue
             concat_in_edges = graph.sorted_in_edges(concat, data=True)
@@ -4274,14 +4283,14 @@ def sink_transpose_through_special_reshape(graph, max_branches=6):
             trans = m['trans']
             trans_out_names = [m['trans_out_%s' % str(i + 1)] for i in range(b)]
             if any([not graph.has_node(name) for name in [trans] + trans_out_names]):
-                WARN(
+                ERROR(
                     '[Parser]: Meets invalid name that does not exist in graph in sink_transpose_through_special_reshape!')
                 continue
             trans_obj = NodeWrap(graph, trans)['object']
             trans_out_objs = [NodeWrap(graph, name)['object']
                               for name in trans_out_names]
             if trans_obj is None or any([out_obj is None for out_obj in trans_out_objs]):
-                WARN(
+                ERROR(
                     '[Parser]: Meets invalid Node(%s) object in sink_transpose_through_special_reshape!' % trans)
                 continue
             out_reshape_objs = {
@@ -4430,7 +4439,7 @@ def sink_transpose_through_split(graph):
             if need_clear:
                 clear_redundant_nodes(graph)
         else:
-            WARN(
+            ERROR(
                 '[Parser]: Meets invalid Node(%s) object in sink_transpose_through_split!' % (trans))
 
 
@@ -4467,7 +4476,7 @@ def sink_transpose_through_tile(graph):
                     index = graph._attr['output_names'].index(tile)
                     graph._attr['output_names'][index] = tr
         else:
-            WARN('[Parser]: Meets invalid Node object in sink_transpose_through_tile!')
+            ERROR('[Parser]: Meets invalid Node object in sink_transpose_through_tile!')
 
 
 def back_passes(graph, params):

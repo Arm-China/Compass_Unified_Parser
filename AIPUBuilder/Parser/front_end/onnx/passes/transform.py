@@ -145,7 +145,7 @@ def insert_transpose_for_layoutconcern(graph):
                     if node_obj.type == 'MaxPool' and len(out_ports) == 2:
                         if len(input_shape) != 4 or len(output_shape) != 4:
                             WARN(
-                                '[Parser]: Meets invalid Maxpool Op (%s) with indices in insert_transpose_for_layoutconcern!' % node)
+                                '[Parser]: Meets unsupport non-4d input of Maxpool Op (%s) in insert_transpose_for_layoutconcern!' % node)
                             continue
                         indices_transpose = post_trans_list[-1]
 
@@ -232,7 +232,7 @@ def insert_transpose_for_layoutconcern(graph):
                                           [0] + list(range(2, len(input_shape))) + [1], np.int32),
                                       edge_attr=in_attr_2)
                     else:
-                        WARN(
+                        ERROR(
                             '[Parser]: Meets invalid MaxUnpool Node (%s) in insert_transpose_for_layoutconcern!' % node)
                 elif node_obj.type == 'Resize':
                     input_tensors = node_obj.get_input_tensors()
@@ -267,7 +267,7 @@ def insert_transpose_for_layoutconcern(graph):
                         insert_transpose(
                             graph, src2, node, in_attr2, [0, 2, 3, 1])
                     else:
-                        WARN('[Parser]: Meets invalid %s Op (%s) in insert_transpose_for_layoutconcern!' % (
+                        ERROR('[Parser]: Meets invalid %s Op (%s) in insert_transpose_for_layoutconcern!' % (
                             node_obj.type, node))
                 if node in graph._attr['output_names'] and post_trans_list and node not in post_trans_list:
                     index = graph._attr['output_names'].index(node)
@@ -277,10 +277,10 @@ def insert_transpose_for_layoutconcern(graph):
                         graph._attr['output_names'].insert(
                             index, post_trans_list[1 + i])
             else:
-                WARN(
+                ERROR(
                     '[Parser]: Meets invalid Node (%s) in insert_transpose_for_layoutconcern!' % node)
         else:
-            WARN(
+            ERROR(
                 '[Parser]: Meets invalid Node (%s) in insert_transpose_for_layoutconcern!' % node)
 
 
@@ -301,7 +301,7 @@ def nhwc_for_other(graph):
                         insert_transpose(graph, src, node, in_attr, [1, 0, 2])
                 node_obj.data_format = 'NHWC'
         else:
-            WARN('[Parser]: Meets invalid Op (%s) in nhwc_for_other!' % node)
+            ERROR('[Parser]: Meets invalid Op (%s) in nhwc_for_other!' % node)
 
 
 def transform_to_nhwc(graph, params):

@@ -127,7 +127,7 @@ def remove_useless_op(graph, op_type_list):
                 in_shapes = node_obj.get_input_shapes()
                 out_shapes = node_obj.get_output_shapes()
                 if in_shapes[0] is None or out_shapes[0] is None:
-                    WARN(
+                    ERROR(
                         '[Parser]: Meets invalid input/output shape for node (%s) in remove_useless_op.' % node_name)
                     continue
                 if (node_obj.data_format == 'NCHW' and in_shapes[0][2:] == [1, 1] and out_shapes[0][2:] == [1, 1]) \
@@ -139,7 +139,7 @@ def remove_useless_op(graph, op_type_list):
             elif op_type in ('Transpose', 'ArmTranspose'):
                 trans_in_edges = graph.sorted_in_edges(node_name, data=True)
                 if len(trans_in_edges) != 1:
-                    WARN(
+                    ERROR(
                         '[Parser]: Meets invalid Transpose(%s) to remove in remove_useless_op!' % node_name)
                     continue
                 trans_in_tensor = trans_in_edges[0][2]['tensor'].value
@@ -271,7 +271,7 @@ def remove_redundant_bn(graph, max_branches=6):
                     continue
                 pre_bn_in_edges = graph.sorted_in_edges(pre_bn, data=True)
                 if len(pre_bn_in_edges) < 1:
-                    WARN(
+                    ERROR(
                         '[Parser]: Meets invalid BatchNorm Op (%s) in remove_redundant_bn!' % pre_bn)
                     continue
                 src, _, in_attr = pre_bn_in_edges[0]
@@ -287,7 +287,7 @@ def remove_redundant_bn(graph, max_branches=6):
                     obj_dict[name].biases = new_biases
                 remove_node_safely(graph, pre_bn)
             else:
-                WARN('[Parser]: Meets invalid BatchNorm Op in remove_redundant_bn!')
+                ERROR('[Parser]: Meets invalid BatchNorm Op in remove_redundant_bn!')
 
 
 def remove_redundant_reshape(graph, type='Reshape'):
@@ -330,8 +330,8 @@ def remove_redundant_transpose(graph):
                     trans1_obj.perm, trans2_obj.perm)
                 remove_node_safely(graph, trans1)
         else:
-            WARN('[Parser]: Meets invalid Transpose (%s or %s) in remove_redundant_transpose!'
-                 % (trans1, trans2))
+            ERROR('[Parser]: Meets invalid Transpose (%s or %s) in remove_redundant_transpose!'
+                  % (trans1, trans2))
 
 
 def remove_redundant_transpose_pro(graph, trans_type='Transpose', max_branches=6):
@@ -347,14 +347,14 @@ def remove_redundant_transpose_pro(graph, trans_type='Transpose', max_branches=6
             trans = m['trans']
             trans_out_names = [m['trans_out_%s' % str(i + 1)] for i in range(b)]
             if any([not graph.has_node(name) for name in [trans] + trans_out_names]):
-                WARN(
+                ERROR(
                     '[Parser]: Meets invalid name that does not exist in graph in remove_redundant_transpose_pro!')
                 continue
             trans_obj = NodeWrap(graph, trans)['object']
             trans_out_objs = [NodeWrap(graph, name)['object']
                               for name in trans_out_names]
             if trans_obj is None or any([out_obj is None for out_obj in trans_out_objs]):
-                WARN(
+                ERROR(
                     '[Parser]: Meets invalid Node object in remove_redundant_transpose_pro!')
                 continue
             out_trans_objs = {
@@ -401,7 +401,7 @@ def remove_redundant_cast(graph):
                 if len(cast1_out_edges) == 1:
                     remove_node_safely(graph, cast1)
             else:
-                WARN('[Parser]: Meets invalid Cast Node (%s or %s) in remove_redundant_cast!' % (
+                ERROR('[Parser]: Meets invalid Cast Node (%s or %s) in remove_redundant_cast!' % (
                     cast1, cast2))
 
 
@@ -436,7 +436,7 @@ def insert_cast(graph, src, dst, dst_type, in_attr=None, key=None, type='Cast'):
         NodeWrap(graph, cast).replace_obj(type, cast_attr)
         ret = cast
     else:
-        WARN('[Parser]: Invalid params for insert_cast!')
+        ERROR('[Parser]: Invalid params for insert_cast!')
     return ret
 
 
@@ -474,7 +474,7 @@ def insert_cast_after(graph, src, from_dtype, to_dtype, out_port=0, type='Cast')
         NodeWrap(graph, cast).replace_obj(type, cast_attr)
         ret = cast
     else:
-        WARN('[Parser]: Invalid params for insert_cast_after!')
+        ERROR('[Parser]: Invalid params for insert_cast_after!')
     return ret
 
 
@@ -496,7 +496,7 @@ def insert_constant(graph, name, value, dst, in_port=0, data_format='NCHW', cons
             edge_attr['tensor'].dtype = str(value.dtype)
         graph.add_edge(const_name, dst, **edge_attr)
     else:
-        WARN('[Parser]: Invalid params for insert_constant (%s)!' % name)
+        ERROR('[Parser]: Invalid params for insert_constant (%s)!' % name)
 
 
 def insert_gather(graph, src, dst, indices, axis=0, edge_attr=None, key=None, type='Gather'):
@@ -528,7 +528,7 @@ def insert_gather(graph, src, dst, indices, axis=0, edge_attr=None, key=None, ty
         NodeWrap(graph, gather).replace_obj(type, gather_attr)
         ret = gather
     else:
-        WARN('[Parser]: Invalid params for insert_gather!')
+        ERROR('[Parser]: Invalid params for insert_gather!')
     return ret
 
 
@@ -569,7 +569,7 @@ def insert_reshape(graph, src, dst, in_attr, dim, key=None, type='Reshape', data
         graph.add_edge(reshape, dst, **reshape_out_attr)
         ret = reshape
     else:
-        WARN('[Parser]: Invalid params for insert_reshape!')
+        ERROR('[Parser]: Invalid params for insert_reshape!')
     return ret
 
 
@@ -627,7 +627,7 @@ def insert_reshape_after(graph, src, new_dim, old_dim=None, out_port=0, type='Re
         graph.add_edge(src, reshape, **src_out_attr)
         ret = reshape
     else:
-        WARN('[Parser]: Invalid params for insert_reshape_after!')
+        ERROR('[Parser]: Invalid params for insert_reshape_after!')
     return ret
 
 
@@ -680,14 +680,14 @@ def insert_slice(graph, src, dst, in_attr, begin, size, key=None, type='Slice', 
         graph.add_edge(slice, dst, **slice_out_attr)
         ret = slice
     else:
-        WARN('[Parser]: Invalid params for insert_slice!')
+        ERROR('[Parser]: Invalid params for insert_slice!')
     return ret
 
 
 def insert_slice_after(graph, src, begin, size, out_port=0, type='Slice', data_format='NHWC'):
     ret = None
     if not (graph.has_node(src) and begin and size and type in ('Slice', 'ArmSlice')):
-        WARN('[Parser]: Invalid params for insert_slice_after!')
+        ERROR('[Parser]: Invalid params for insert_slice_after!')
         return ret
     if out_port == 0:
         name = src + '_post_slice'
@@ -778,7 +778,7 @@ def insert_tile(graph, src, dst, in_attr, reps, key=None, type='Tile', data_form
 
         ret = tile
     else:
-        WARN('[Parser]: Invalid params for insert_tile!')
+        ERROR('[Parser]: Invalid params for insert_tile!')
     return ret
 
 
@@ -814,7 +814,7 @@ def insert_transpose(graph, src, dst, in_attr, perm, key=None):
         graph.add_edge(transpose, dst, **transpose_out_attr)
         ret = transpose
     else:
-        WARN('[Parser]: Invalid params for insert_transpose!')
+        ERROR('[Parser]: Invalid params for insert_transpose!')
     return ret
 
 
@@ -850,9 +850,9 @@ def insert_transpose_after(graph, src, perm, port=0):
                                                     })
             ret = transpose
         else:
-            WARN('[Parser]: Cannot find port=%d in insert_transpose_after!' % port)
+            ERROR('[Parser]: Cannot find port=%d in insert_transpose_after!' % port)
     else:
-        WARN('[Parser]: Invalid params for insert_transpose_after!')
+        ERROR('[Parser]: Invalid params for insert_transpose_after!')
     return ret
 
 
@@ -862,7 +862,7 @@ def apply_subgraph_plugin(graph):
         apply_pattern_subgraph_plugin(graph)
     except Exception as e:
         import traceback
-        WARN('Applying Subgraph plugin Failed. %s' % (str(e)))
+        ERROR('Applying Subgraph plugin Failed. %s' % (str(e)))
         print(traceback.format_exc())
 
 

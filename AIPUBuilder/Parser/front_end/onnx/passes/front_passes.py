@@ -59,7 +59,7 @@ def fuse_weights_const(graph):
                         matched = True
                         graph.remove_edge(src_name, node_name, key=k)
                 except Exception as e:
-                    WARN('[Parser]: Node(%s) meets error (%s) in fuse_weights_const!' % (
+                    ERROR('[Parser]: Node(%s) meets error (%s) in fuse_weights_const!' % (
                         node_name, str(e)))
         elif isinstance(node_obj, OpHasWeights):
             for i, edge_info in enumerate(in_edges):
@@ -86,13 +86,13 @@ def convert_special_prelu(graph):
         prelu = m['target']
         prelu_obj = NodeWrap(graph, prelu)['object']
         if prelu_obj is None:
-            WARN(
+            ERROR(
                 '[Parser]: Meets invalid PRelu Op (%s) in convert_special_prelu!' % prelu)
             continue
         inputs = prelu_obj.get_input_tensors()
         in_edges = graph.sorted_in_edges(prelu, data=True)
         if len(inputs) != 2 or inputs[1] is None or len(in_edges) != 2:
-            WARN(
+            ERROR(
                 '[Parser]: Meets invalid PRelu Op (%s) in convert_special_prelu!' % prelu)
             continue
         if in_edges[1][2]['tensor'] is not None \
@@ -114,7 +114,7 @@ def convert_deconv(graph):
         deconv = m['target']
         deconv_obj = NodeWrap(graph, deconv)['object']
         if deconv_obj is None:
-            WARN('[Parser]: Meets invalid Deconv Op(%s) in convert_deconv!' % deconv)
+            ERROR('[Parser]: Meets invalid Deconv Op(%s) in convert_deconv!' % deconv)
             continue
         main_in_port = type(deconv_obj).main_in_port()
         input_shapes = deconv_obj.get_input_shapes()
