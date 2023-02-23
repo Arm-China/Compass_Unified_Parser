@@ -35,7 +35,7 @@ def adjust_filter(graph):
             out_edge_attr = {'src_out_port': 2, 'dst_in_port': 0}
             graph.add_edge(filter_name, valid_num_out, **out_edge_attr)
         else:
-            WARN(
+            ERROR(
                 '[Parser]: Meets invalid CaffeFILTER Op (%s) in adjust_filter!' % filter_name)
 
 
@@ -124,7 +124,7 @@ def convert_proposal_roipooling(graph, params):
                 NodeWrap(graph, roipooling).replace_obj(
                     'MaxRoiPool', roipooling_attr)
             else:
-                WARN('[Parser]: Invalid CaffePROPOSAL Op(%s) or CaffeROIPOOLING Op(%s) in convert_proposal_roipooling!' % (
+                ERROR('[Parser]: Invalid CaffePROPOSAL Op(%s) or CaffeROIPOOLING Op(%s) in convert_proposal_roipooling!' % (
                     proposal, roipooling))
 
 
@@ -150,7 +150,7 @@ def convert_bias(graph):
             NodeWrap(graph, bias).replace_obj(
                 'Add', {'name': bias, 'opset_version': 7})
         else:
-            WARN('[Parser]: Meets invalid CaffeBIAS Op (%s) in convert_bias!' % bias)
+            ERROR('[Parser]: Meets invalid CaffeBIAS Op (%s) in convert_bias!' % bias)
 
 
 def convert_channel_shuffle(graph):
@@ -163,7 +163,7 @@ def convert_channel_shuffle(graph):
             sc_attr.update({'splits': 1})
             NodeWrap(graph, sc).replace_obj('ChannelShuffle', sc_attr)
         else:
-            WARN(
+            ERROR(
                 '[Parser]: Meets invalid CaffeSHUFFLECHANNEL Op (%s) in convert_channel_shuffle!' % sc)
 
 
@@ -175,9 +175,17 @@ def convert_lstm(graph):
         lstm_obj = NodeWrap(graph, lstm)['object']
         in_edges = graph.sorted_in_edges(lstm, data=True)
         out_edges = graph.sorted_out_edges(lstm, data=True)
-        if lstm_obj is not None \
-                and ((not lstm_obj.expose_hidden and len(in_edges) == 2 and len(out_edges) == 1)
-                     or (lstm_obj.expose_hidden and len(in_edges) == 4 and len(out_edges) == 3)):
+        if lstm_obj is not None:
+            if lstm_obj.expose_hidden:
+                if len(in_edges) != 4 or len(out_edges) != 3:
+                    WARN(
+                        '[Parser]: Only supports 4 inputs and 3 out edges of CaffeLSTM(%s) when expose_hidden is True in convert_lstm!' % lstm)
+                    continue
+            else:
+                if len(in_edges) != 2 or len(out_ports) != 1:
+                    WARN(
+                        '[Parser]: Only supports 2 inputs and 1 out edge of CaffeLSTM(%s) when expose_hidden is False in convert_lstm!' % lstm)
+                    continue
             matched = True
             input_shapes = lstm_obj.get_input_shapes()
             hidden_size = lstm_obj.num_output
@@ -248,7 +256,7 @@ def convert_lstm(graph):
                               })
             NodeWrap(graph, lstm).replace_obj('LSTM', lstm_attr)
         else:
-            WARN('[Parser]: Invalid CaffeLSTM(%s) to convert in convert_lstm!' % lstm)
+            ERROR('[Parser]: Invalid CaffeLSTM(%s) to convert in convert_lstm!' % lstm)
     if matched:
         clear_redundant_nodes(graph)
 
@@ -258,7 +266,10 @@ def convert_pool(graph):
     for m in matches:
         pool = m['target']
         pool_obj = NodeWrap(graph, pool)['object']
-        if pool_obj is not None and pool_obj.method in ('AVE', 'MAX'):
+        if pool_obj is not None:
+            if pool_obj.method not in ('AVE', 'MAX'):
+                WARN('[Parser]: Meets unsupported method (%s) of CaffePOOLING (%s) in convert_pool!' % (pool_obj.method, pool))
+                continue
             pool_tpye = 'AveragePool' if pool_obj.method == 'AVE' else 'MaxPool'
             new_node_attr = pool_obj.copied_attr()
             new_node_attr.update(
@@ -311,11 +322,11 @@ def convert_pool(graph):
                         index = graph._attr['output_names'].index(pool)
                         graph._attr['output_names'].insert(index + 1, sub)
                 else:
-                    WARN(
+                    ERROR(
                         '[Parser]: Invalid CaffePOOLING (%s) to convert to MaxPoolWithArgmax in convert_pool!' % pool)
             NodeWrap(graph, pool).replace_obj(pool_tpye, new_node_attr)
         else:
-            WARN('[Parser]: Invalid CaffePOOLING (%s) to convert in convert_pool!' % pool)
+            ERROR('[Parser]: Invalid CaffePOOLING (%s) to convert in convert_pool!' % pool)
 
 
 def convert_scale(graph):
@@ -371,7 +382,7 @@ def convert_scale(graph):
                 NodeWrap(graph, scale).replace_obj(
                     'Mul', {'name': scale, 'opset_version': 7})
         else:
-            WARN('[Parser]: Meets invalid CaffeSCALE Op (%s) in convert_scale!' % scale)
+            ERROR('[Parser]: Meets invalid CaffeSCALE Op (%s) in convert_scale!' % scale)
 
 
 def convert_scale_to_bn(graph):
@@ -451,7 +462,7 @@ def convert_slice(graph):
                     slice_num = len(slice_obj.slice_point) + 1
                     in_edges = graph.sorted_in_edges(slice, data=True)
                     out_edges = graph.sorted_out_edges(slice, data=True)
-                    if len(in_edges) == 1 and len(out_edges) > 1:
+                    if len(in_edges) == 1 and len(out_edges) >= 1:
                         src, _, in_attr = in_edges[0]
                         src_out_ports = NodeWrap(graph, src)[
                             'object'].get_out_ports()
@@ -499,13 +510,13 @@ def convert_slice(graph):
 
                         remove_node_safely(graph, slice)
                     else:
-                        WARN(
+                        ERROR(
                             '[Parser]: Meets invalid Caffe Slice Op (%s) edges in convert_slice!' % slice)
             else:
-                WARN(
+                ERROR(
                     '[Parser]: Meets invalid Caffe Slice Op (%s) shapes in convert_slice!' % slice)
         else:
-            WARN('[Parser]: Meets invalid Caffe Slice Op (%s) in convert_slice!' % slice)
+            ERROR('[Parser]: Meets invalid Caffe Slice Op (%s) in convert_slice!' % slice)
 
 
 def convert_upsample(graph):
@@ -517,7 +528,7 @@ def convert_upsample(graph):
         if upsample_obj is not None and len(in_edges) == 2:
             input_shapes = upsample_obj.get_input_shapes()
             if len(input_shapes[0]) != 4:
-                WARN(
+                ERROR(
                     '[Parser]: Meets invalid input length for CaffeUPSAMPLE Node(%s) in convert_upsample!' % upsample)
                 continue
 
@@ -559,7 +570,7 @@ def convert_upsample(graph):
                                    'kernel_shape': [1, 1]})
             NodeWrap(graph, upsample).replace_obj('MaxUnpool', maxunpool_attr)
         else:
-            WARN(
+            ERROR(
                 '[Parser]: Meets invalid CaffeUPSAMPLE Node(%s) in convert_upsample!' % upsample)
 
 
@@ -608,7 +619,7 @@ def merge_bn_scale(graph):
                 bn_attr.update({'opset_version': 9, 'epsilon': 0})
                 NodeWrap(graph, bn).replace_obj('BatchNormalization', bn_attr)
         else:
-            WARN(
+            ERROR(
                 '[Parser]: Meets invalid CaffeBATCHNORM (%s) /CaffeSCALE (%s) in merge_bn_scale!' % (bn, scale))
 
     if matched:
@@ -658,8 +669,8 @@ def split_argmax(graph):
         if argmax_obj is not None:
             input_shapes = argmax_obj.get_input_shapes()
             output_shapes = argmax_obj.get_output_shapes()
-            if len(input_shapes) == 1 and input_shapes[0]\
-                    and len(output_shapes) >= 1\
+            if len(input_shapes) == 1 and input_shapes[0] \
+                    and len(output_shapes) >= 1 \
                     and output_shapes[0] is not None:
                 in_shape = input_shapes[0]
                 new_attr = argmax_obj.copied_attr()
@@ -761,10 +772,10 @@ def split_argmax(graph):
                     index = graph._attr['output_names'].index(argmax)
                     graph._attr['output_names'][index] = last
             else:
-                WARN(
+                ERROR(
                     '[Parser]: Meets invalid input shapes of CaffeARGMAX Node(%s) in split_argmax!' % argmax)
         else:
-            WARN('[Parser]: Meets invalid CaffeARGMAX Node(%s) in split_argmax!' % argmax)
+            ERROR('[Parser]: Meets invalid CaffeARGMAX Node(%s) in split_argmax!' % argmax)
 
 
 def split_axpy(graph):
@@ -797,7 +808,7 @@ def split_axpy(graph):
                 index = graph._attr['output_names'].index(axpy)
                 graph._attr['output_names'][index] = add
         else:
-            WARN(
+            ERROR(
                 '[Parser]: Meets invalid Caffe AXPY (%s) for splitting in split_axpy!' % axpy)
 
 
@@ -840,7 +851,7 @@ def split_exp(graph):
             exp_attr = {'name': exp, 'opset_version': 6}
             NodeWrap(graph, exp).replace_obj('Exp', exp_attr)
         else:
-            WARN('[Parser]: Meets invalid CaffeEXP node(%s) in split_exp!' % exp)
+            ERROR('[Parser]: Meets invalid CaffeEXP node(%s) in split_exp!' % exp)
 
 
 def split_inner_product(graph):
@@ -879,7 +890,7 @@ def split_inner_product(graph):
                     {'biases': np.zeros((ip_obj.num_output,), np.float32)})
             NodeWrap(graph, ip).replace_obj('FullyConnected', matmul_attr)
         else:
-            WARN(
+            ERROR(
                 '[Parser]: Meets invalid INNER_PRODUCT(%s) to convert to Onnx in split_inner_product!' % ip)
 
 
@@ -951,9 +962,9 @@ def split_log(graph):
                         graph._attr['output_names'][index] = div
             else:
                 WARN(
-                    '[Parser]: Dose not support splitting of CaffeLOG node(%s) in split_log!' % log)
+                    '[Parser]: Does not support splitting of CaffeLOG node(%s) in split_log!' % log)
         else:
-            WARN('[Parser]: Meets invalid CaffeLOG node(%s) in split_log!' % log)
+            ERROR('[Parser]: Meets invalid CaffeLOG node(%s) in split_log!' % log)
 
 
 def split_mvn_special(graph):
@@ -991,7 +1002,7 @@ def split_mvn_special(graph):
                     index = graph._attr['output_names'].index(mvn)
                     graph._attr['output_names'][index] = sub
         else:
-            WARN('[Parser]: Invalid CaffeMVN (%s) to split in split_mvn_special!' % mvn)
+            ERROR('[Parser]: Invalid CaffeMVN (%s) to split in split_mvn_special!' % mvn)
 
 
 def split_normalize(graph):
@@ -1029,9 +1040,9 @@ def split_normalize(graph):
                 NodeWrap(graph, bn).replace_obj('BatchNormalization', bn_attr)
             else:
                 WARN(
-                    '[Parser]: Dose not support splitting of CaffeNORMALIZE (across_spatial=true) in split_normalize!')
+                    '[Parser]: Does not support splitting of CaffeNORMALIZE (across_spatial=true) in split_normalize!')
         else:
-            WARN(
+            ERROR(
                 '[Parser]: Meets invalid CaffeNORMALIZE node(%s) in split_normalize!' % normalize)
 
 
@@ -1070,9 +1081,9 @@ def split_power(graph):
                 new_attr.update({'name': pow, 'opset_version': 7})
                 NodeWrap(graph, pow).replace_obj('Pow', new_attr)
             else:
-                WARN('[Parser]:Meets invalid CaffePOWER node(%s) in split_power!' % pow)
+                ERROR('[Parser]:Meets invalid CaffePOWER node(%s) in split_power!' % pow)
         else:
-            WARN('[Parser]: Meets invalid CaffePOWER node(%s) in split_power!' % pow)
+            ERROR('[Parser]: Meets invalid CaffePOWER node(%s) in split_power!' % pow)
 
 
 def split_reduce_asum(graph):
@@ -1103,7 +1114,10 @@ def split_spp(graph):
         spp = m['target']
         spp_obj = NodeWrap(graph, spp)['object']
         in_edges = graph.sorted_in_edges(spp, data=True)
-        if spp_obj is not None and spp_obj.method in ('AVE', 'MAX') and len(in_edges) == 1:
+        if spp_obj is not None and len(in_edges) == 1:
+            if spp_obj.method not in ('AVE', 'MAX'):
+                WARN('[Parser]: Meets unsupported method (%s) of CaffeSPP (%s) in split_spp!' % (spp_obj.method, spp))
+                continue
             input_shape = spp_obj.get_input_shapes()[0]
             batch, channel = input_shape[0:2]
             src, _, in_attr = in_edges[0]
@@ -1159,7 +1173,7 @@ def split_spp(graph):
             concat_attr.update({'opset_version': 4, 'axis': 1})
             NodeWrap(graph, spp).replace_obj('Concat', concat_attr)
         else:
-            WARN('[Parser]: Invalid CaffeSPP (%s) to split in split_spp!' % spp)
+            ERROR('[Parser]: Invalid CaffeSPP (%s) to split in split_spp!' % spp)
 
 
 def remove_detection_postprocess(graph):
@@ -1305,7 +1319,7 @@ def refinedet_postprocess(graph, params):
                     'ArmRefineDetDetection', refinedet_attr)
                 clear_redundant_nodes(graph)
         else:
-            WARN(
+            ERROR(
                 '[Parser]: Meets invalid CaffeREFINEDETECTIONOUTPUT Node in refinedet_postprocess (%s)!' % detection)
 
 
@@ -1417,7 +1431,7 @@ def convert_to_onnx(graph):
                                     NodeWrap(graph, mul).replace_obj(
                                         'Mul', mul_attr)
                         else:
-                            WARN(
+                            ERROR(
                                 '[Parser]: Converting ELTWISE Op %s meets error in convert_to_onnx.' % node_name)
                             continue
                 elif pure_type == 'FLATTEN':
@@ -1428,7 +1442,7 @@ def convert_to_onnx(graph):
                         insert_constant(
                             graph, node_name + '_shape', np.array(dim, np.int64), node_name, in_port=1)
                     except Exception as e:
-                        WARN('[Parser]: Converting Flatten Op %s meets error: %s!' % (
+                        ERROR('[Parser]: Converting Flatten Op %s meets error: %s!' % (
                             node_name, str(e)))
                         continue
                 elif pure_type == 'INTERP':
@@ -1489,7 +1503,7 @@ def convert_to_onnx(graph):
                         insert_constant(graph, node_name + '_threshold',
                                         np.array([node_obj.threshold]), node_name, in_port=1)
                     except Exception as e:
-                        WARN('[Parser]: Converting Threshold Op %s meets error: %s!' % (
+                        ERROR('[Parser]: Converting Threshold Op %s meets error: %s!' % (
                             node_name, str(e)))
                         continue
                 elif pure_type == 'UPSAMPLEDARKNET':
@@ -1504,8 +1518,8 @@ def convert_to_onnx(graph):
                 NodeWrap(graph, node_name).replace_obj(
                     node_obj.correspond_onnx_op['type'], new_node_attr)
             else:
-                WARN('[Parser]: Caffe Op %s (%s) cannot be converted to Onnx' % (
+                ERROR('[Parser]: Caffe Op %s (%s) cannot be converted to Onnx' % (
                     pure_type, node_name))
         else:
-            WARN(
+            ERROR(
                 '[Parser]: Meets invalid Caffe op for Node(%s) in convert_to_onnx!' % node_name)
