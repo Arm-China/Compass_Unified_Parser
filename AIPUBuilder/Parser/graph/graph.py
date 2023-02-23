@@ -266,7 +266,7 @@ class Graph(object):
                     {k: i for (i, k) in enumerate(self._attr['output_names'])})
                 self._attr['output_names'] = list(outname_dict.keys())
             else:
-                WARN(
+                DEBUG(
                     '[Parser]: Removing output node (%s) does not have preceding node in remove_node!' % node_for_removing)
                 self._attr['output_names'].remove(node_for_removing)
 
@@ -279,8 +279,8 @@ class Graph(object):
                 if node_for_removing in v:
                     v.pop(node_for_removing)
         else:
-            WARN('[Parser]: The removing node (%s) does not exist in graph!' %
-                 str(node_for_removing))
+            DEBUG('[Parser]: The removing node (%s) does not exist in graph!' %
+                  str(node_for_removing))
 
     def remove_nodes_from(self, nodes_for_removing):
         for n in nodes_for_removing:
@@ -350,7 +350,7 @@ class Graph(object):
             try:
                 self.remove_edge(*e[:3])
             except Exception as e:
-                WARN('[Parser]: Meets error (%s) in remove_edges_from!' % str(e))
+                DEBUG('[Parser]: Meets error (%s) in remove_edges_from!' % str(e))
 
     def sorted_in_edges(self, n, keys=False, data=False):
         '''Arrange in_edges in the order of dst_in_port.'''
@@ -598,7 +598,7 @@ class SubGraph(ReadOnlyGraph, Graph):
                 src_out_port = d.get('src_out_port', 0)
                 dst_in_port = d.get('dst_in_port', 0)
             else:
-                WARN('[Parser]: Meets invalid Subgraph edge!')
+                DEBUG('[Parser]: Meets invalid Subgraph edge!')
                 continue
 
             if u in self._filter_node \

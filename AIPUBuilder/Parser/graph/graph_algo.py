@@ -195,7 +195,7 @@ def clear_redundant_nodes(g, outputs=None):
         removing_nodes = set(g.nodes).difference(valid_nodes)
         g.remove_nodes_from(removing_nodes)
     else:
-        WARN('[Parser]: Can not proceed without output names in clear_redundant_nodes!')
+        ERROR('[Parser]: Can not proceed without output names in clear_redundant_nodes!')
 
 
 def infer(graph, partial=False, chosen_list=None):
@@ -252,7 +252,7 @@ def infer(graph, partial=False, chosen_list=None):
                                  ])
                 DEBUG(msg)
             else:
-                WARN('[Parser]: Meet invalid Node (%s) in infer!' % node_name)
+                ERROR('[Parser]: Meet invalid Node (%s) in infer!' % node_name)
 
         for out_name in graph._attr['output_names']:
             out_edges = graph.sorted_out_edges(out_name, data=True)
@@ -260,5 +260,5 @@ def infer(graph, partial=False, chosen_list=None):
                 ret.update(
                     {(out_name, out_attr['src_out_port']): out_attr['tensor'].value})
     else:
-        WARN('[Parser]: Meets empty graph when inferring!')
+        ERROR('[Parser]: Meets empty graph when inferring!')
     return ret

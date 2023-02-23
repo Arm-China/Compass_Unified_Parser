@@ -850,6 +850,8 @@ class OpHasAxis(Op):
         ret = super(OpHasAxis, self).write_attrs(txt_file)
         if ret:
             if 'axes' in self._attr and self.axes:
+                if None in self.axes:
+                    ERROR('[Parser]: Meet invalid axes for %s Op (%s) in write_attrs!' % (self.type, self.name))
                 self.axes = sorted(self.axes.tolist() if isinstance(
                     self.axes, np.ndarray) else list(self.axes))
                 txt_file.write('axis=[%s]\n' % num_list_to_string(self.axes))

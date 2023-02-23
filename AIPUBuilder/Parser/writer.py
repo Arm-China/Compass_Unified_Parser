@@ -22,7 +22,7 @@ def write_net_attrs(txt_file, attr):
             else:
                 txt_file.write('%s=%s\n' % (k, v))
     else:
-        WARN('[Parser]: Can not write net attr!')
+        ERROR('[Parser]: Can not write net attr!')
         ret = False
     return ret
 
@@ -46,7 +46,7 @@ def serialize(graph, params):
         for i, n in enumerate(sorted_list):
             node_obj = NodeWrap(graph, n)['object']
             if node_obj is None:
-                WARN(
+                ERROR(
                     '[Parser]: Node (%s) has invalid op that cannot be written to IR in serialize!' % n)
                 continue
             if node_obj.type == 'ArmInput' and len(node_obj.get_output_shapes()[0]) > 2 and i != 0:

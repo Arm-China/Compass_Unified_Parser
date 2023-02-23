@@ -39,7 +39,7 @@ def gen_gamut_params(params):
             preprocess_type = 'RgbToYuv'
             shape = params.get('rgb_shape', None)
             if shape is None:
-                WARN('RgbToYuv must provide origin RGB shape. Ingore gamut_preprocess!')
+                ERROR('RgbToYuv must provide origin RGB shape. Ingore gamut_preprocess!')
                 return ret
             ret['shape'] = shape
         else:
@@ -92,7 +92,7 @@ def gen_gamut_params(params):
         ret['coefficient_dtype'] = coefficient_dtype
         ret['coefficient_shift'] = coefficient_shift
     else:
-        WARN('Meet unsupported preprocess type (%s). Ingore it!' % preprocess)
+        ERROR('Meet unsupported preprocess type (%s). Ingore it!' % preprocess)
     return ret
 
 
@@ -192,30 +192,30 @@ def gamut_preprocess(graph, params):
 def standardization_preprocess(graph, params, hooking_node):
     ret = hooking_node
     if not graph.has_node(hooking_node):
-        WARN('[Parser]: Invalid hooking Node(%s) that dose not exist in graph in standardization_preprocess!', hooking_node)
+        ERROR('[Parser]: Invalid hooking Node(%s) that dose not exist in graph in standardization_preprocess!', hooking_node)
         return ret
     hooking_obj = NodeWrap(graph, hooking_node)['object']
     if hooking_obj is None:
-        WARN(
+        ERROR(
             '[Parser]: Meets invalid hooking Node(%s) in standardization_preprocess!' % hooking_node)
         return ret
     if len(hooking_obj.get_out_ports()) != 1:
-        WARN(
+        ERROR(
             '[Parser]: Only support hooking Node(%s) with 1 out port in standardization_preprocess!' % hooking_node)
         return ret
     out_tensors = hooking_obj.get_output_tensors()
     if len(out_tensors) == 0:
-        WARN(
+        ERROR(
             '[Parser]: Meets invalid hooking output tensor(%s) in standardization_preprocess!' % hooking_node)
         return ret
     input_tensor_value = out_tensors[0]
     if input_tensor_value is None or input_tensor_value.dtype != 'float32':
-        WARN(
+        ERROR(
             '[Parser]: Only support float32 input tensor for standardization_preprocess!')
         return ret
     input_tensor_shape = list(input_tensor_value.shape)
     if any([s is None for s in input_tensor_shape]):
-        WARN(
+        ERROR(
             '[Parser]: Invalid tensor shape in standardization_preprocess!')
         return ret
 
@@ -227,14 +227,14 @@ def standardization_preprocess(graph, params, hooking_node):
             axes = list_string_to_list(axes_matched[0])[0]
 
     if len(input_tensor_shape) < len(axes):
-        WARN('[Parser]: Length of axes exceeds the length of tensor shape in resize_preprocess! Please check config file.')
+        ERROR('[Parser]: Length of axes exceeds the length of tensor shape in resize_preprocess! Please check config file.')
 
     input_dim = len(input_tensor_shape)
     np_axes = np.array(axes, np.int32)
     negative_mask = np_axes < 0
     np_axes[negative_mask] = (np_axes + input_dim)[negative_mask]
     if np.any(np_axes >= input_dim):
-        WARN(
+        ERROR(
             '[Parser]: Invalid axes in standardization_preprocess! Please check config file.')
         return ret
     axes = sorted(np_axes.tolist())
@@ -269,35 +269,35 @@ def resize_preprocess(graph, params, hooking_node):
                     shape = list_string_to_list(shape_matched[0])[0]
 
                     if method.upper() not in ('BILINEAR', 'NEAREST'):
-                        WARN(
+                        ERROR(
                             '[Parser]: Meets invalid Resize method (%s) in resize_preprocess! Please check config file.' % method)
                         return ret
 
                     if not shape or len(shape) < 3:
-                        WARN(
+                        ERROR(
                             '[Parser]: Meets invalid Resize input shape (%s) in resize_preprocess! Please check config file.' % str(shape))
                         return ret
 
                     hooking_obj = NodeWrap(graph, hooking_node)['object']
                     if hooking_obj is None:
-                        WARN(
+                        ERROR(
                             '[Parser]: Meets invalid hooking Node(%s) in resize_preprocess!' % hooking_node)
                         return ret
 
                     if len(hooking_obj.get_out_ports()) != 1:
-                        WARN(
+                        ERROR(
                             '[Parser]: Only support hooking Node(%s) with 1 out port in resize_preprocess!' % hooking_node)
                         return ret
 
                     out_tensors = hooking_obj.get_output_tensors()
                     if len(out_tensors) == 0:
-                        WARN(
+                        ERROR(
                             '[Parser]: Meets invalid hooking output tensor(%s) in resize_preprocess!' % hooking_node)
                         return ret
 
                     input_tensor_value = out_tensors[0]
                     if input_tensor_value is None or input_tensor_value.dtype != 'float32':
-                        WARN(
+                        ERROR(
                             '[Parser]: Only support float32 input tensor for resize_preprocess!')
                         return ret
 
@@ -306,7 +306,7 @@ def resize_preprocess(graph, params, hooking_node):
                             or not (input_tensor_shape[0:2] == shape[0:2]
                                     or (input_tensor_shape[0] == shape[0]
                                         and input_tensor_shape[-1] == shape[-1])):
-                        WARN(
+                        ERROR(
                             '[Parser]: Resize input shape (%s) does not match the model input in resize_preprocess! Please check config file.' % str(shape))
                         return ret
 
@@ -356,16 +356,16 @@ def resize_preprocess(graph, params, hooking_node):
 
                     ret = resize
                 else:
-                    WARN('[Parser]: Resize Preprocees was set in config file, but got invalid parameters (%s)!'
-                         ' Please check config file!' % params['preprocess_params'])
+                    ERROR('[Parser]: Resize Preprocees was set in config file, but got invalid parameters (%s)!'
+                          ' Please check config file!' % params['preprocess_params'])
             else:
-                WARN('[Parser]: Resize Preprocees was set in config file, but got invalid parameters (%s)!'
-                     ' Please check config file!' % params['preprocess_params'])
+                ERROR('[Parser]: Resize Preprocees was set in config file, but got invalid parameters (%s)!'
+                      ' Please check config file!' % params['preprocess_params'])
         else:
-            WARN(
+            ERROR(
                 '[Parser]: Meets invalid preprocess_params in resize_preprocess, please check config file.')
     else:
-        WARN('[Parser]: Invalid hooking Node(%s) that dosenot exist in graph in resize_preprocess!', hooking_node)
+        ERROR('[Parser]: Invalid hooking Node(%s) that dosenot exist in graph in resize_preprocess!', hooking_node)
     return ret
 
 
@@ -373,18 +373,18 @@ def rgb2bgr_preprocess(graph, method, hooking_node):
     ret = hooking_node
     if graph.has_node(hooking_node):
         if method.upper() not in ['RGB2BGR', 'BGR2RGB']:
-            WARN('[Parser]: Meets invalid method (%s) in rgb2bgr_preprocess!' %
-                 method.upper())
+            ERROR('[Parser]: Meets invalid method (%s) in rgb2bgr_preprocess!' %
+                  method.upper())
             return ret
 
         hooking_obj = NodeWrap(graph, hooking_node)['object']
         if hooking_obj is None:
-            WARN(
+            ERROR(
                 '[Parser]: Meets invalid hooking Node(%s) in rgb2bgr_preprocess!' % hooking_node)
             return ret
 
         if len(hooking_obj.get_out_ports()) != 1:
-            WARN(
+            ERROR(
                 '[Parser]: Only support hooking Node(%s) with 1 out port in rgb2bgr_preprocess!' % hooking_node)
             return ret
 
@@ -393,7 +393,7 @@ def rgb2bgr_preprocess(graph, method, hooking_node):
                 or out_tensors[0] is None \
                 or len(out_tensors[0].shape) < 3 \
                 or (out_tensors[0].shape[-1] != 3 and out_tensors[0].shape[1] != 3):
-            WARN(
+            ERROR(
                 '[Parser]: Meets invalid hooking output tensor(%s) in rgb2bgr_preprocess!' % hooking_node)
             return ret
         inp_shape = list(out_tensors[0].shape)
@@ -492,7 +492,7 @@ def rgb2bgr_preprocess(graph, method, hooking_node):
 
         ret = current_node
     else:
-        WARN('[Parser]: Invalid hooking Node(%s) that dosenot exist in graph in rgb2bgr_preprocess!', hooking_node)
+        ERROR('[Parser]: Invalid hooking Node(%s) that does not exist in graph in rgb2bgr_preprocess!', hooking_node)
     return ret
 
 
@@ -500,49 +500,49 @@ def rgb2gray_preprocess(graph, method, hooking_node):
     ret = hooking_node
 
     if not graph.has_node(hooking_node):
-        WARN('[Parser]: Invalid hooking Node(%s) that dose not exist in graph in rgb2gray_preprocess!', hooking_node)
+        ERROR('[Parser]: Invalid hooking Node(%s) that does not exist in graph in rgb2gray_preprocess!', hooking_node)
         return ret
 
     hooking_obj = NodeWrap(graph, hooking_node)['object']
     if hooking_obj is None:
-        WARN(
+        ERROR(
             '[Parser]: Meets invalid hooking Node(%s) in rgb2gray_preprocess!' % hooking_node)
         return ret
 
     if len(hooking_obj.get_out_ports()) != 1:
-        WARN(
+        ERROR(
             '[Parser]: Only support hooking Node(%s) with 1 out port in rgb2gray_preprocess!' % hooking_node)
         return ret
 
     out_tensors = hooking_obj.get_output_tensors()
     if len(out_tensors) == 0:
-        WARN(
+        ERROR(
             '[Parser]: Meets invalid hooking output tensor(%s) in rgb2gray_preprocess!' % hooking_node)
         return ret
 
     input_tensor_value = out_tensors[0]
     if input_tensor_value is None or input_tensor_value.dtype != 'float32':
-        WARN(
+        ERROR(
             '[Parser]: Only support float32 input tensor for rgb2gray_preprocess!')
         return ret
 
     input_tensor_shape = list(input_tensor_value.shape)
     if len(input_tensor_shape) < 3:
-        WARN(
+        ERROR(
             '[Parser]: Meets invalid input shape in rgb2gray_preprocess! Please check config file.')
         return ret
 
     if hooking_obj.type == 'Input' \
             and input_tensor_shape[-1] not in (1, 3) \
             and input_tensor_shape[1] not in (1, 3):
-        WARN(
+        ERROR(
             '[Parser]: Meets invalid input shape in rgb2gray_preprocess! Please check config file.')
         return ret
 
     if hooking_obj.type != 'Input' \
             and input_tensor_shape[-1] != 3 \
             and input_tensor_shape[1] != 3:
-        WARN(
+        ERROR(
             '[Parser]: Meets invalid input shape in rgb2gray_preprocess! Please check config file.')
         return ret
 
@@ -636,7 +636,7 @@ def preprocess(graph, params):
         input_nodes = [m['target']
                        for m in single_node_matcher(graph, 'Input')]
         if len(input_nodes) != 1:
-            WARN('[Parser]: Only support one input for preprocess!')
+            ERROR('[Parser]: Only support one input for preprocess!')
             return
         if params.get('preprocess_params', None) is not None:
             types_pattern = re.compile(r'^[\s*\w+\s*,]*\s*\w+\s*$')
@@ -665,13 +665,13 @@ def preprocess(graph, params):
                         elif t.upper() == 'STANDARDIZATION':
                             hooking = standardization_preprocess(graph, p, hooking)
                         else:
-                            WARN(
+                            ERROR(
                                 '[Parser]: Meets invalid preprocess type(%s) set in config file!' % t)
                 else:
-                    WARN(
+                    ERROR(
                         '[Parser]: Meets invalid preprocess_type/params, please check config file.')
             else:
-                WARN(
+                ERROR(
                     '[Parser]: Meets invalid preprocess_type/params, please check config file.')
         else:
-            WARN('[Parser]: Meets invalid preprocess_params when preprocess_type was set, please check config file.')
+            ERROR('[Parser]: Meets invalid preprocess_params when preprocess_type was set, please check config file.')
