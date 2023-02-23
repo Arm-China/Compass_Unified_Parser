@@ -61,6 +61,7 @@ def serialize(graph, params):
         net_attr['model_domain'] = model_domain
         net_attr['layer_number'] = str(len(sorted_list))
         net_attr['precision'] = 'int8' if graph._attr.get('quantize', False) else 'float32'
+        net_attr['compat_quantized_model'] = 'true' if graph._attr.get('quantize', False) else 'false'
         net_attr['model_bin'] = './' + os.path.basename(bin_path)
 
         input_names = params['input_names']

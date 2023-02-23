@@ -3725,7 +3725,7 @@ def remove_const(graph):
 
 
 def trim_weights(graph):
-    def data_in_supported_dtype(np_data, attr_name, node_name):
+    def _data_in_supported_dtype(np_data, attr_name, node_name):
         data_dtype = str(np_data.dtype)
         if data_dtype in ArmCastOp.attributes()['to_dtype']['options']:
             return np_data
@@ -3748,19 +3748,37 @@ def trim_weights(graph):
         if node_obj is not None:
             if isinstance(node_obj, OpHasWeights):
                 if node_obj.weights is not None:
-                    node_obj.weights = data_in_supported_dtype(
+                    node_obj.weights = _data_in_supported_dtype(
                         node_obj.weights, 'weights', node_name)
                     node_obj.weights_offset = offset
                     offset += node_obj.weights.size * node_obj.weights.dtype.itemsize
+                    if node_obj.quantize and len(node_obj.weights_scale_zp) == 2:
+                        node_obj.weights_scale_zp[0] = _data_in_supported_dtype(
+                            node_obj.weights_scale_zp[0], 'weights_scale', node_name)
+                        node_obj.weights_scale_offset = offset
+                        offset += node_obj.weights_scale_zp[0].size * node_obj.weights_scale_zp[0].dtype.itemsize
+                        node_obj.weights_scale_zp[1] = _data_in_supported_dtype(
+                            node_obj.weights_scale_zp[1], 'weights_zp', node_name)
+                        node_obj.weights_zp_offset = offset
+                        offset += node_obj.weights_scale_zp[1].size * node_obj.weights_scale_zp[1].dtype.itemsize
                 else:
                     WARN('[Parser]: Meets invalid weights for Node %s in trim_weights!' %
                          node_name)
             if isinstance(node_obj, OpHasBiases):
                 if node_obj.biases is not None:
-                    node_obj.biases = data_in_supported_dtype(
+                    node_obj.biases = _data_in_supported_dtype(
                         node_obj.biases, 'biases', node_name)
                     node_obj.biases_offset = offset
                     offset += node_obj.biases.size * node_obj.biases.dtype.itemsize
+                    if node_obj.quantize and len(node_obj.biases_scale_zp) == 2:
+                        node_obj.biases_scale_zp[0] = _data_in_supported_dtype(
+                            node_obj.biases_scale_zp[0], 'biases_scale', node_name)
+                        node_obj.biases_scale_offset = offset
+                        offset += node_obj.biases_scale_zp[0].size * node_obj.biases_scale_zp[0].dtype.itemsize
+                        node_obj.biases_scale_zp[1] = _data_in_supported_dtype(
+                            node_obj.biases_scale_zp[1], 'biases_zp', node_name)
+                        node_obj.biases_zp_offset = offset
+                        offset += node_obj.biases_scale_zp[1].size * node_obj.biases_scale_zp[1].dtype.itemsize
                 else:
                     WARN('[Parser]: Meets invalid biases for Node %s in trim_weights!' %
                          node_name)
@@ -3769,7 +3787,7 @@ def trim_weights(graph):
                     and hasattr(node_obj, 'negative_slope_offset') \
                     and node_obj.negative_slope is not None \
                     and np.ndim(node_obj.negative_slope) > 0:
-                node_obj.negative_slope = data_in_supported_dtype(
+                node_obj.negative_slope = _data_in_supported_dtype(
                     node_obj.negative_slope, 'negative_slope', node_name)
                 node_obj.negative_slope_offset = offset
                 offset += node_obj.negative_slope.size * node_obj.negative_slope.dtype.itemsize

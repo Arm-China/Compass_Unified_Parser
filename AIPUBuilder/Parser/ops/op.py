@@ -88,6 +88,33 @@ class Op(abc.ABC):
         out_shape = in_shape[index].tolist()
         return out_shape
 
+    @staticmethod
+    def framework_op_types(fw, extend=False):
+        assert isinstance(fw, Framework), ('%s is not a valid framework type!' % str(fw))
+        opsets = set()
+        if fw == Framework.ONNX:
+            opsets.add(OnnxOp)
+        elif fw == Framework.TFLITE:
+            opsets.add(TfliteOp)
+        elif fw == Framework.CAFFE:
+            opsets.add(CaffeOp)
+        elif fw == Framework.TENSORFLOW:
+            opsets.add(TfOp)
+        if extend:
+            opsets.update([OnnxOp, CommonOp])
+        opsets = list(opsets)
+        return list(set([name for s in opsets for name in s.get_concrete_subclass_names()]))
+
+    @staticmethod
+    def numpy_to_bin(bin, ndarray, offset, name):
+        start = bin.tell()
+        assert start == offset, 'Offset not matches when writing data to bin (Node name: %s, %d)!' % (name, offset)
+        ndarray.tofile(bin)
+        end = bin.tell()
+        if not (ndarray.dtype.itemsize * int(np.prod(ndarray.shape)) == end - start):
+            ERROR(
+                '[Parser]: Meets error when writing data to bin for Node(%s)!' % name)
+
     @classmethod
     def perm_nchw_to_nhwc(cls):
         '''Calculate the perm required to convert nchw to nhwc.'''
@@ -144,23 +171,6 @@ class Op(abc.ABC):
     def get_parent_class_types(cls):
         '''Get parent class types of OP class.'''
         return [t for t in inspect.getmro(cls) if re.search(r'^Op|Op$', t.__name__)]
-
-    @staticmethod
-    def framework_op_types(fw, extend=False):
-        assert isinstance(fw, Framework), ('%s is not a valid framework type!' % str(fw))
-        opsets = set()
-        if fw == Framework.ONNX:
-            opsets.add(OnnxOp)
-        elif fw == Framework.TFLITE:
-            opsets.add(TfliteOp)
-        elif fw == Framework.CAFFE:
-            opsets.add(CaffeOp)
-        elif fw == Framework.TENSORFLOW:
-            opsets.add(TfOp)
-        if extend:
-            opsets.update([OnnxOp, CommonOp])
-        opsets = list(opsets)
-        return list(set([name for s in opsets for name in s.get_concrete_subclass_names()]))
 
     @classmethod
     def cast_in_ports(cls):
@@ -1088,7 +1098,9 @@ class OpHasWeights(Op):
         return {'weights': {'type': AttrType.TENSOR, 'default': None},
                 'weights_offset': {'type': AttrType.INT, 'default': -1},
                 'weights_min_max': {'type': AttrType.FLOATS, 'default': []},
-                'weights_scale_zp': {'type': AttrType.FLOATS, 'default': [np.array([1.0]), np.array([0])]}
+                'weights_scale_zp': {'type': AttrType.FLOATS, 'default': [np.array([1.0]), np.array([0])]},
+                'weights_scale_offset': {'type': AttrType.INT, 'default': -1},
+                'weights_zp_offset': {'type': AttrType.INT, 'default': -1}
                 }
 
     @classmethod
@@ -1156,12 +1168,18 @@ class OpHasWeights(Op):
             if self._graph._attr.get('quantize', False) \
                     and np.issubdtype(self.weights.dtype, np.integer) \
                     and len(self.weights_scale_zp) == 2:
-                weights_scale = np.array(self.weights_scale_zp[0]).tolist()
-                weights_zp = np.array(self.weights_scale_zp[1]).tolist()
-                txt_file.write('weights_scale=[%s]\n' %
-                               num_list_to_string(weights_scale))
-                txt_file.write('weights_zp=[%s]\n' %
-                               num_list_to_string(weights_zp))
+                txt_file.write('weights_scale_type=%s\n' % str(self.weights_scale_zp[0].dtype))
+                txt_file.write('weights_scale_offset=%d\n' % self.weights_scale_offset)
+                txt_file.write('weights_scale_size=%d\n' %
+                               (self.weights_scale_zp[0].size * self.weights_scale_zp[0].dtype.itemsize))
+                txt_file.write('weights_scale_shape=[%s]\n' % num_list_to_string(
+                    list(self.weights_scale_zp[0].shape)))
+                txt_file.write('weights_zp_type=%s\n' % str(self.weights_scale_zp[1].dtype))
+                txt_file.write('weights_zp_offset=%d\n' % self.weights_zp_offset)
+                txt_file.write('weights_zp_size=%d\n' %
+                               (self.weights_scale_zp[1].size * self.weights_scale_zp[1].dtype.itemsize))
+                txt_file.write('weights_zp_shape=[%s]\n' % num_list_to_string(
+                    list(self.weights_scale_zp[1].shape)))
         return ret
 
     def write_weights(self, bin_file):
@@ -1169,14 +1187,12 @@ class OpHasWeights(Op):
         ret = True
         if not bin_file.closed and bin_file.mode == 'wb':
             if self.weights is not None and self.weights_offset >= 0:
-                start = bin_file.tell()
-                assert start == self.weights_offset, 'weights offset not match! layer name: %s, %d' % (
-                    self.name, self.weights_offset)
-                self.weights.tofile(bin_file)
-                end = bin_file.tell()
-                if not (self.weights.dtype.itemsize * int(np.prod(self.weights.shape)) == end - start):
-                    ERROR(
-                        '[Parser]: Node(%s) write weights to bin error in write_weights!' % self.name)
+                Op.numpy_to_bin(bin_file, self.weights, self.weights_offset, self.name)
+                if self.quantize:
+                    if self.weights_scale_offset >= 0:
+                        Op.numpy_to_bin(bin_file, self.weights_scale_zp[0], self.weights_scale_offset, self.name)
+                    if self.weights_zp_offset >= 0:
+                        Op.numpy_to_bin(bin_file, self.weights_scale_zp[1], self.weights_zp_offset, self.name)
             else:
                 WARN(
                     '[Parser]: Invalid weights for Node %s in write_weights!' % self.name)
@@ -1196,7 +1212,9 @@ class OpHasBiases(Op):
         '''return attributes of OpHasBiases class.'''
         return {'biases': {'type': AttrType.TENSOR, 'default': None},
                 'biases_offset': {'type': AttrType.INT, 'default': -1},
-                'biases_scale_zp': {'type': AttrType.FLOATS, 'default': [np.array([1.0]), np.array([0])]}
+                'biases_scale_zp': {'type': AttrType.FLOATS, 'default': [np.array([1.0]), np.array([0])]},
+                'biases_scale_offset': {'type': AttrType.INT, 'default': -1},
+                'biases_zp_offset': {'type': AttrType.INT, 'default': -1}
                 }
 
     def __init__(self, graph, attr_dict=None):
@@ -1216,12 +1234,18 @@ class OpHasBiases(Op):
             if self._graph._attr.get('quantize', False) \
                     and np.issubdtype(self.biases.dtype, np.integer) \
                     and len(self.biases_scale_zp) == 2:
-                biases_scale = np.array(self.biases_scale_zp[0]).tolist()
-                biases_zp = np.array(self.biases_scale_zp[1]).tolist()
-                txt_file.write('biases_scale=[%s]\n' %
-                               num_list_to_string(biases_scale))
-                txt_file.write('biases_zp=[%s]\n' %
-                               num_list_to_string(biases_zp))
+                txt_file.write('biases_scale_type=%s\n' % str(self.biases_scale_zp[0].dtype))
+                txt_file.write('biases_scale_offset=%d\n' % self.biases_scale_offset)
+                txt_file.write('biases_scale_size=%d\n' %
+                               (self.biases_scale_zp[0].size * self.biases_scale_zp[0].dtype.itemsize))
+                txt_file.write('biases_scale_shape=[%s]\n' % num_list_to_string(
+                    list(self.biases_scale_zp[0].shape)))
+                txt_file.write('biases_zp_type=%s\n' % str(self.biases_scale_zp[1].dtype))
+                txt_file.write('biases_zp_offset=%d\n' % self.biases_zp_offset)
+                txt_file.write('biases_zp_size=%d\n' %
+                               (self.biases_scale_zp[1].size * self.biases_scale_zp[1].dtype.itemsize))
+                txt_file.write('biases_zp_shape=[%s]\n' % num_list_to_string(
+                    list(self.biases_scale_zp[1].shape)))
         return ret
 
     def write_biases(self, bin_file):
@@ -1229,14 +1253,12 @@ class OpHasBiases(Op):
         ret = True
         if not bin_file.closed and bin_file.mode == 'wb':
             if self.biases is not None and self.biases_offset >= 0:
-                start = bin_file.tell()
-                assert start == self.biases_offset, 'biases offset not match! layer name: %s, %d' % (
-                    self.name, self.biases_offset)
-                self.biases.tofile(bin_file)
-                end = bin_file.tell()
-                if not (self.biases.dtype.itemsize * int(np.prod(self.biases.shape)) == end - start):
-                    ERROR('[Parser]: Node(%s) write biases to bin error in write_biases!' %
-                          self.name)
+                Op.numpy_to_bin(bin_file, self.biases, self.biases_offset, self.name)
+                if self.quantize:
+                    if self.biases_scale_offset >= 0:
+                        Op.numpy_to_bin(bin_file, self.biases_scale_zp[0], self.biases_scale_offset, self.name)
+                    if self.biases_zp_offset >= 0:
+                        Op.numpy_to_bin(bin_file, self.biases_scale_zp[1], self.biases_zp_offset, self.name)
         else:
             FATAL('[Parser]: Invalid file to write biases for Node(%s) in write_biases!' %
                   (self.name))
