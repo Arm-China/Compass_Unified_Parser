@@ -7,7 +7,7 @@ from ....ops.op import *
 from ....graph.node_wrap import NodeWrap
 from ....graph.pattern_match import single_node_matcher
 from ....graph.graph_algo import get_valid_node_name, clear_redundant_nodes
-from ...onnx.passes.common_passes import insert_constant, insert_reshape, insert_reshape_after
+from ...onnx.passes.common_passes import insert_constant, insert_reshape, insert_reshape_after, remove_node_safely
 from ....common.utils import extend_lists
 from ....logger import INFO, DEBUG, WARN, ERROR, FATAL
 
@@ -48,6 +48,55 @@ def convert_crelu(graph):
         relu_attr = crelu_obj.copied_attr()
         relu_attr.update({'opset_version': 13})
         NodeWrap(graph, crelu).replace_obj('Relu', relu_attr)
+    if matched:
+        clear_redundant_nodes(graph)
+
+
+def convert_squeeze(graph, op_type='Tfsqueeze'):
+    if op_type not in ('Tfsqueeze', 'TfSqueeze'):
+        ERROR('[Parser]: Meets invalid Op type (%s) in convert_squeeze!' % op_type)
+        return
+    matched = False
+    matches = single_node_matcher(graph, op_type)
+    for m in matches:
+        squeeze = m['target']
+        squeeze_obj = NodeWrap(graph, squeeze)['object']
+        squeeze_in_edges = graph.sorted_in_edges(squeeze, data=True)
+        if squeeze_obj is None \
+                or (op_type == 'Tfsqueeze' and len(squeeze_in_edges) != 4)\
+                or (op_type == 'TfSqueeze' and len(squeeze_in_edges) != 1):
+            ERROR(
+                '[Parser]: Meets invalid Tfsqueeze/TfSqueeze Op (%s) in convert_squeeze!' % squeeze)
+            continue
+
+        input_shapes = squeeze_obj.get_input_shapes()
+        if input_shapes[0] is None \
+                or any(d is None for d in input_shapes[0])\
+                or (len(input_shapes) < 4 and op_type == 'Tfsqueeze') \
+                or (len(input_shapes) != 1 and op_type == 'TfSqueeze'):
+            ERROR(
+                '[Parser]: Meets invalid input shape of Tfsqueeze/TfSqueeze Op (%s) in convert_squeeze!' % squeeze)
+            continue
+
+        if op_type == 'Tfsqueeze' \
+                and squeeze_in_edges[1][2]['tensor'].is_const is False:
+            ERROR(
+                '[Parser]: Meets invalid non-const of Tfsqueeze Op (%s) in convert_squeeze!' % squeeze)
+            continue
+
+        matched = True
+        new_axes = [index for index, item in enumerate(
+            input_shapes[0]) if item == 1] if squeeze_obj.axes == [] else squeeze_obj.axes
+
+        if new_axes == []:  # delete unnecessary squeeze
+            remove_node_safely(graph, squeeze)
+        else:
+            if op_type == 'Tfsqueeze':
+                graph.remove_edges_from(squeeze_in_edges[1:])
+            squeeze_attr = squeeze_obj.copied_attr()
+            squeeze_attr.update({'axes': new_axes, 'opset_version': 1})
+            NodeWrap(graph, squeeze).replace_obj('Squeeze', squeeze_attr)
+
     if matched:
         clear_redundant_nodes(graph)
 
@@ -342,8 +391,6 @@ def convert_to_onnx(graph):
             elif pure_type == 'stack':
                 _remove_edges_if_const(node_name, in_edges[-2:])
                 new_node_attr.update({'new_axis': True})
-            elif pure_type == 'squeeze':
-                _remove_edges_if_const(node_name, in_edges[-2:])
             elif len(in_edges) > 1:
                 # Some ops like silu do not have 'name' input so cannot remove in_edges
                 graph.remove_edges_from(in_edges[-1:])

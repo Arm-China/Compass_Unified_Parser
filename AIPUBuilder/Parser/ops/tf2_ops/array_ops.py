@@ -394,7 +394,3 @@ class TfsqueezeOp(OpHasAxis, OpHasOneOutPort, Tf2Op):
         inputs = self.get_input_tensors()
         out_tensor = tf.squeeze(inputs[0], axis=self.axes).numpy()
         self.set_out_tensor(out_tensor)
-
-    @property
-    def correspond_onnx_op(self):
-        return {'type': 'Squeeze', 'version': 1}

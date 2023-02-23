@@ -847,10 +847,6 @@ class TfSqueezeOp(OpHasAxis, OpHasOneOutPort, TfOp):
         out_tensor = tf.squeeze(inputs[0], axis=self.axes).numpy()
         self.set_out_tensor(out_tensor)
 
-    @property
-    def correspond_onnx_op(self):
-        return {'type': 'Squeeze', 'version': 1}
-
 
 class TfStridedSliceOp(OpHasOneOutPort, TfOp):
     @classmethod

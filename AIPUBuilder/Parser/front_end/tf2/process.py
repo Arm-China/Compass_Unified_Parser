@@ -6,7 +6,7 @@ from .load import convert_tf2_to_graph
 from ...graph.graph_algo import infer
 from ..onnx.passes.front_passes import fuse_weights_const
 from ..onnx.passes.common_passes import fuse_const, record_output_tensors, apply_subgraph_plugin
-from .passes.front_passes import convert_to_onnx, convert_crelu, convert_l2_normalize, convert_lp_norm
+from .passes.front_passes import convert_to_onnx, convert_crelu, convert_l2_normalize, convert_lp_norm, convert_squeeze
 from .passes.keras_front_passes import process_keras_op_before_infer, process_keras_op_after_infer
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 
@@ -35,6 +35,7 @@ def process_tf2(model_path, params):
 
         convert_depth_to_space(graph, op_type='Tfdepth_to_space')
         convert_onehot(graph, op_type='Tfone_hot')
+        convert_squeeze(graph, op_type='Tfsqueeze')
 
         process_keras_op_after_infer(graph)
 

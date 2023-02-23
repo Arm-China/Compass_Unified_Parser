@@ -46,6 +46,7 @@ def process_tf(model_path, params):
         fuse_const(graph)
 
         from ..onnx.passes.middle_passes import convert_to_const
+        from ..tf2.passes.front_passes import convert_squeeze
         convert_to_const(graph, ['TfPlaceholderWithDefault', 'TfShape', 'TfSize', 'TfZerosLike'])
 
         merge_embedding_lookup_sparse(graph)
@@ -64,6 +65,7 @@ def process_tf(model_path, params):
         convert_strided_slice(graph, 'TfStridedSlice')
         convert_square(graph, op_type='TfSquare')
         convert_square_diff(graph, op_type='TfSquaredDifference')
+        convert_squeeze(graph, op_type='TfSqueeze')
         convert_onehot(graph, op_type='TfOneHot')
 
         remove_switch(graph)
