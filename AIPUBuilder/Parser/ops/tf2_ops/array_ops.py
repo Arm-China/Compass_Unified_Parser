@@ -361,8 +361,7 @@ class TfstackOp(OpHasAxis, OpHasOneOutPort, Tf2Op):
 class TfsqueezeOp(OpHasAxis, OpHasOneOutPort, Tf2Op):
     @classmethod
     def attributes(cls):
-        return {1: {'axes': {'default': []}
-                    }
+        return {1: {'axes': {'default': []}, }
                 }
 
     def __init__(self, graph, attr_dict=None):
@@ -375,14 +374,19 @@ class TfsqueezeOp(OpHasAxis, OpHasOneOutPort, Tf2Op):
         try:
             if item == 'axes':
                 inputs = self.get_input_tensors()
-                if len(inputs) >= 2:
-                    ret = []
-                    if inputs[1].size == 1 and inputs[1] != np.array(None):
+                ret = []
+                if len(inputs) > 1 and inputs[1] is not None:
+                    if inputs[1].size == 1 and np.ndim(inputs[1]) == 0 and np.all(inputs[1] != None):
                         ret = [inputs[1].item()]
-                    elif inputs[1] != np.array(None):
+                    elif np.all(inputs[1] != None):
                         ret = list(inputs[1])
+                    elif len(inputs) > 3 and np.all(inputs[3] != None):
+                        if inputs[3].size == 1 and np.ndim(inputs[3]) == 0:
+                            ret = [inputs[3].item()]
+                        elif np.all(inputs[3] != None):
+                            ret = list(inputs[3])
 
-                    self.__dict__['_attr'][item].value = ret
+                self.__dict__['_attr'][item].value = ret
         except:
             ret = None
         if ret is None:
