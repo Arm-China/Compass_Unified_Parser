@@ -772,6 +772,14 @@ class ArmConstantOp(OpHasWeights, OpHasOneOutPort, ConstLikeOp, ArmOp):
 
     def infer_shape(self):
         super(ArmConstantOp, self).infer_shape()
+        if self._graph._attr.get('quantize', False):
+            out_edges = self._graph.sorted_out_edges(self.name, data=True)
+            if len(out_edges) > 0:
+                _, _, out_attr = out_edges[0]
+                if out_attr.get('tensor', None) is not None \
+                        and len(out_attr['tensor'].scale_zp) == 2:
+                    self.quantize = True
+                    self.weights_scale_zp = list(out_attr['tensor'].scale_zp)
         if self.weights.dtype == 'int64':
             self.weights = np.array(self.weights).astype(np.int32)
         elif self.weights.dtype == 'uint64':
