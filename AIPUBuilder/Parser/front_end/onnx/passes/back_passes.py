@@ -3700,6 +3700,8 @@ def remove_const(graph):
                         if op_in_ports_num < 0 or (op_in_ports_num >= 0 and in_port < op_in_ports_num):
                             const_attr = node_obj.copied_attr()
                             const_attr.update({'weights': node_obj.value})
+                            if node_obj.quantize and const_out_edges[0][2]['tensor'].scale_zp:
+                                const_attr.update({'weights_scale_zp': list(const_out_edges[0][2]['tensor'].scale_zp)})
                             NodeWrap(graph, node_name).replace_obj(
                                 'ArmConstant', const_attr)
                         else:
@@ -3714,6 +3716,8 @@ def remove_const(graph):
                     else:
                         const_attr = node_obj.copied_attr()
                         const_attr.update({'weights': node_obj.value})
+                        if node_obj.quantize and const_out_edges[0][2]['tensor'].scale_zp:
+                            const_attr.update({'weights_scale_zp': list(const_out_edges[0][2]['tensor'].scale_zp)})
                         NodeWrap(graph, node_name).replace_obj(
                             'ArmConstant', const_attr)
                 else:
@@ -3736,8 +3740,8 @@ def trim_weights(graph):
                  (data_dtype, attr_name, node_name))
             return np_data
 
-        WARN('[Parser]: Convert unsupported dtype %s to %s for %s of Node (%s)' %
-             (data_dtype, to_supported_dtype.__name__, attr_name, node_name))
+        DEBUG('[Parser]: Convert unsupported dtype %s to %s for %s of Node (%s)' %
+              (data_dtype, to_supported_dtype.__name__, attr_name, node_name))
         return np_data.astype(to_supported_dtype)
 
     offset = 0

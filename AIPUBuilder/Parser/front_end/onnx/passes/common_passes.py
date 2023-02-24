@@ -478,14 +478,15 @@ def insert_cast_after(graph, src, from_dtype, to_dtype, out_port=0, type='Cast')
     return ret
 
 
-def insert_constant(graph, name, value, dst, in_port=0, data_format='NCHW', const_ver=9, scale_zp=None):
+def insert_constant(graph, name, value, dst, in_port=0, data_format='NCHW', const_ver=9, scale_zp=None, quantize=False):
     if graph.has_node(dst) and value is not None and isinstance(value, np.ndarray):
         const_name = get_valid_node_name(graph, name)
         graph.add_node(const_name)
         const_attr = {'name': const_name,
                       'value': value,
                       'data_format': data_format,
-                      'opset_version': const_ver}
+                      'opset_version': const_ver,
+                      'quantize': quantize}
         NodeWrap(graph, const_name).replace_obj('Constant', const_attr)
         edge_attr = {'src_out_port': 0, 'dst_in_port': in_port,
                      'tensor': Tensor(value=value, is_const=True)}
