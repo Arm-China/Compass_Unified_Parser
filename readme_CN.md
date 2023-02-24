@@ -95,8 +95,12 @@ python3 main.py -c my_config.ini
 * `detection_postprocess`  [__required__ 当 `model_domain` 是  `object_detection`]
 
     如果你的模型是`object_detection`，并且你使用的是官方的模型，你可以选择如下两种后处理方式，我们将在结束出添加相应的后处理节点：
-    * `yolo`
+    * `caffe_fasterrcnn`
     * `ssd`
+    * `ssd_resnet`
+    * `yolo2`
+    * `yolo3_tiny`
+    * `yolo3_full`
 
 * `input_model`  [__required__]
 

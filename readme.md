@@ -102,8 +102,12 @@ All options are under the `Common` section:
 
     If your model_domain is `object_detection`, and if you are using the official detection model, please specify your detection post process. Now it only supports two types of post process:
 
-    * `yolo`
+    * `caffe_fasterrcnn`
     * `ssd`
+    * `ssd_resnet`
+    * `yolo2`
+    * `yolo3_tiny`
+    * `yolo3_full`
 
 * `input_model`  [__required__]
 
