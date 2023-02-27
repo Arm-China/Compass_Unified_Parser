@@ -100,7 +100,7 @@ class ArmActivationOp(LayoutUnawareOp, OpHasMethod, OpHasOneOutPort, ArmOp):
               'ELU': tf.nn.elu,
               'GELU': lambda x: (x),
               'HARDSWISH': lambda x: (x * tf.nn.relu6(x + 3) / 6),
-              'HARDSIGMOID': lambda x, alpha, beta, cmi, cma: tf.math.maximum(cmi, tf.math.minimum(cma, alpha * x + beta)) / cma,
+              'HARDSIGMOID': lambda x, alpha, beta, cmi, cma: tf.math.maximum(cmi, tf.math.minimum(cma, alpha * x + beta)),
               'LEAKYRELU': lambda x, y: tf.nn.leaky_relu(x, y),
               'MISH': lambda x: (x * tf.math.tanh(tf.math.log(tf.math.exp(x) + 1))),
               'PRELU': lambda x, y: tf.clip_by_value(x, 0, float('inf')) + tf.clip_by_value(x, float('-inf'), 0) * y,

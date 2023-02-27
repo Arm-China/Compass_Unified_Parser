@@ -3135,6 +3135,9 @@ def merge_hardsigmoid(graph):
 
 def merge_hargsigmoid2(graph):
     # max(clip_min, min(clip_max, alpha * x + beta)) / clip_max
+    # = max(clip_min', min(1, alpha' * x + beta')), in which
+    # clip_min' = clip_min/clip_max, alpha' = alpha/clip_max, beta' = beta/clip_max
+    # According to IR def, the latter format is used.
     matched = False
     matches = matched_patterns(graph,
                                nodes=[
@@ -3161,9 +3164,11 @@ def merge_hargsigmoid2(graph):
                 and mul_div_in_edges[1][0] != m['const_2']:
             continue
         c1 = obj_dict['const_1'].value
-        c2 = obj_dict['const_2'].value \
-            if obj_dict['mul_or_div'].type == 'Div' \
-            else (1 / obj_dict['const_2'].value)
+        c2 = obj_dict['const_2'].value
+        if FLOAT_EQUAL(c2, 0):
+            continue
+        if obj_dict['mul_or_div'].type == 'Mul':
+            c2 = 1 / c2
         clip_min, clip_max = obj_dict['clip'].min, obj_dict['clip'].max
         if not FLOAT_EQUAL(c2, clip_max):
             continue
@@ -3186,10 +3191,10 @@ def merge_hargsigmoid2(graph):
         graph.remove_edges_from(add_in_edges + mul_div_in_edges)
         graph.add_edge(inp, m['mul_or_div'], **in_attr)
         hs_attr = obj_dict['mul_or_div'].copied_attr()
-        hs_attr.update({'alpha': 1.,
-                        'beta': float(c1),
-                        'clip_min': float(clip_min),
-                        'clip_max': float(clip_max),
+        hs_attr.update({'alpha': 1. / c2,
+                        'beta': float(c1) / c2,
+                        'clip_min': float(clip_min) / c2,
+                        'clip_max': 1.,
                         })
         NodeWrap(graph, m['mul_or_div']).replace_obj('HardSigmoid', hs_attr)
     if matched:

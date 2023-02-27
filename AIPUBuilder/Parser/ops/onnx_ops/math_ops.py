@@ -686,8 +686,7 @@ class HardSigmoidOp(LayoutUnawareOp, BaseActivationOp, OnnxOp):
         inputs = self.get_input_tensors()
         out_tensor = np.maximum(self.clip_min,
                                 np.minimum(self.clip_max,
-                                           self.alpha * inputs[0] + self.beta)) \
-            / self.clip_max
+                                           self.alpha * inputs[0] + self.beta))
         self.set_out_tensor(out_tensor)
 
 
