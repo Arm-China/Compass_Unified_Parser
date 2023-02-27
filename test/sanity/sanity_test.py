@@ -112,6 +112,34 @@ CAFFE_BENCHMARK = {
     ]
 }
 
+AIB_MODELS = {
+    '1_15': [
+        'mobilebert_quant',
+        'lstm_quant',
+        'crnn_quant',
+        'deeplab_v3_plus_quant',
+        'dped_instance_quant',
+        'dped_quant',
+        'efficientnet_b4_quant',
+        'esrgan_quant',
+        'imdn_quant',
+        'inception_v3_quant',
+        'mobilenet_v2_b8_quant',
+        'mobilenet_v2_quant',
+        'mobilenet_v3_b4_quant',
+        'mobilenet_v3_quant',
+        'mv3_depth_quant',
+        'punet_quant',
+        'pynet_quant',
+        'srgan_quant',
+        'unet_quant',
+        'vgg_quant',
+        'vsr_quant',
+        'xlsr_quant',
+        'yolo_v4_tiny_quant'
+    ]
+}
+
 SANITY_MODELS = []
 
 for k, models in TF_BENCHMARK.items():
@@ -130,6 +158,10 @@ for k, models in CAFFE_BENCHMARK.items():
     for m in models:
         SANITY_MODELS.append(f"caffe-{k}-{m}")
 
+for k, models in AIB_MODELS.items():
+    for m in models:
+        SANITY_MODELS.append(f"tflite-{k}-{m}")
+
 
 def parser_auto_fast_test(name):
     framework = name.split('-')[0]
@@ -139,8 +171,12 @@ def parser_auto_fast_test(name):
     if not os.path.exists(dir_path):
         os.makedirs(dir_path, exist_ok=True)
     # use shared cfg in Model
-    cfg = os.path.join(MODEL_DIR, model_name, framework, ver,
-                       "config", f"{model_name}_parser.cfg")
+    if model_name in AIB_MODELS['1_15']:  # AIB model
+        cfg = os.path.join(MODEL_DIR, "AI_Benchmark", model_name, framework, ver,
+                           "config", f"{model_name}_parser.cfg")
+    else:
+        cfg = os.path.join(MODEL_DIR, model_name, framework, ver,
+                           "config", f"{model_name}_parser.cfg")
     if not os.path.exists(cfg):
         print(f"Cannot find {cfg}")
         cfg = os.path.join(dir_path, model_name + ".cfg")
