@@ -31,7 +31,7 @@ def process_tflite(model_path, params):
             convert_special_quantize(graph)
             convert_special_dequantize(graph)
             # merge_quantized_lstm(graph)
-            merge_quantized_lstm2(graph)
+            # merge_quantized_lstm2(graph)
             # merge_quantized_instance_norm(graph)
             split_quatized_mean(graph)
 
