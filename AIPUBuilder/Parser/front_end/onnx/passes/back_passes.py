@@ -3756,7 +3756,9 @@ def trim_weights(graph):
                         node_obj.weights, 'weights', node_name)
                     node_obj.weights_offset = offset
                     offset += node_obj.weights.size * node_obj.weights.dtype.itemsize
-                    if node_obj.quantize and len(node_obj.weights_scale_zp) == 2:
+                    if node_obj._graph._attr.get('quantize', False) \
+                            and np.issubdtype(node_obj.weights.dtype, np.integer) \
+                            and len(node_obj.weights_scale_zp) == 2:
                         node_obj.weights_scale_zp[0] = _data_in_supported_dtype(
                             node_obj.weights_scale_zp[0], 'weights_scale', node_name)
                         node_obj.weights_scale_offset = offset
@@ -3774,7 +3776,9 @@ def trim_weights(graph):
                         node_obj.biases, 'biases', node_name)
                     node_obj.biases_offset = offset
                     offset += node_obj.biases.size * node_obj.biases.dtype.itemsize
-                    if node_obj.quantize and len(node_obj.biases_scale_zp) == 2:
+                    if node_obj._graph._attr.get('quantize', False) \
+                            and np.issubdtype(node_obj.biases.dtype, np.integer) \
+                            and len(node_obj.biases_scale_zp) == 2:
                         node_obj.biases_scale_zp[0] = _data_in_supported_dtype(
                             node_obj.biases_scale_zp[0], 'biases_scale', node_name)
                         node_obj.biases_scale_offset = offset

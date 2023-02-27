@@ -1188,7 +1188,9 @@ class OpHasWeights(Op):
         if not bin_file.closed and bin_file.mode == 'wb':
             if self.weights is not None and self.weights_offset >= 0:
                 Op.numpy_to_bin(bin_file, self.weights, self.weights_offset, self.name)
-                if self.quantize:
+                if self._graph._attr.get('quantize', False) \
+                        and np.issubdtype(self.weights.dtype, np.integer) \
+                        and len(self.weights_scale_zp) == 2:
                     if self.weights_scale_offset >= 0:
                         Op.numpy_to_bin(bin_file, self.weights_scale_zp[0], self.weights_scale_offset, self.name)
                     if self.weights_zp_offset >= 0:
@@ -1254,7 +1256,9 @@ class OpHasBiases(Op):
         if not bin_file.closed and bin_file.mode == 'wb':
             if self.biases is not None and self.biases_offset >= 0:
                 Op.numpy_to_bin(bin_file, self.biases, self.biases_offset, self.name)
-                if self.quantize:
+                if self._graph._attr.get('quantize', False) \
+                        and np.issubdtype(self.biases.dtype, np.integer) \
+                        and len(self.biases_scale_zp) == 2:
                     if self.biases_scale_offset >= 0:
                         Op.numpy_to_bin(bin_file, self.biases_scale_zp[0], self.biases_scale_offset, self.name)
                     if self.biases_zp_offset >= 0:
