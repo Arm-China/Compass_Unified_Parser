@@ -7178,21 +7178,7 @@ def adjust_2d_to_4d(graph):
                         insert_reshape(graph, src, node_name,
                                        in_attr, pre_reshape_dim, key=k)
                     post_reshape_dim = out_shapes[0]
-                    post_reshape = get_valid_node_name(
-                        graph, node_name + '_post_reshape')
-                    for _, dst, out_attr in out_edges:
-                        graph.remove_edge(node_name, dst)
-                        graph.add_edge(post_reshape, dst, **out_attr)
-                    graph.add_edge(node_name, post_reshape)
-
-                    post_reshape_attr = node_obj.copied_attr()
-                    post_reshape_attr.update(
-                        {'name': post_reshape, 'opset_version': 5})
-                    NodeWrap(graph, post_reshape).replace_obj(
-                        'Reshape', post_reshape_attr)
-                    const = get_valid_node_name(graph, post_reshape + '_shape')
-                    insert_constant(graph, const, np.array(
-                        post_reshape_dim, np.int64), post_reshape, in_port=1, data_format='NHWC')
+                    post_reshape = insert_reshape_after(graph, node_name, post_reshape_dim)
 
                     if node_name in graph._attr['output_names']:
                         index = graph._attr['output_names'].index(node_name)

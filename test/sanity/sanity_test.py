@@ -114,7 +114,7 @@ CAFFE_BENCHMARK = {
 
 AIB_MODELS = {
     '1_15': [
-        # 'mobilebert_quant', # FIXME: Enable this model after fixing
+        'mobilebert_quant',
         'lstm_quant',
         'crnn_quant',
         'deeplab_v3_plus_quant',

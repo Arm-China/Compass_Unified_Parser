@@ -12,7 +12,7 @@ def run_ir_forward(txt_path, bin_path, input_data, forward_type='float'):
 
     # input_data should be a dict and data order should be same with input tensors
     try:
-        outputs = opt_forward.forward(input_data)
+        outputs = opt_forward.forward(input_data, transfer_to_float=(forward_type == 'float'))
     except Exception as e:
         print(e)
         raise RuntimeError("Error happened during IR forward...")
