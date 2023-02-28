@@ -1922,7 +1922,7 @@ def convert_dequantizelinear(graph):
             NodeWrap(graph, mean).replace_obj('Constant', mean_attr)
             NodeWrap(graph, var).replace_obj('Constant', var_attr)
 
-            cast = insert_cast(graph, inp, dequant, 'float32')
+            cast = insert_cast(graph, inp, dequant, 'float32', inp_in_attr)
 
             if dequant_axis != len(input_shapes[0]) - 1:
                 pre_perm = [idx for idx in range(
