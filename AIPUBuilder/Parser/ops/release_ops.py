@@ -152,7 +152,7 @@ class ArmActivationOp(LayoutUnawareOp, OpHasMethod, OpHasOneOutPort, ArmOp):
                 inp = inputs[0].astype(np.float32)
             else:
                 inp = inputs[0]
-            out_tensor = func(inp).numpy().astype(inputs[0].dtype)
+            out_tensor = func(inp).numpy().astype(np.float32)
         elif self.method == 'SILU':
             out_tensor = self.silu()
         elif self.method == 'SWISH':
@@ -838,7 +838,7 @@ class ArmConvolutionOp(BaseActivationOp, BaseConvOp, ArmOp):
                                              dilations=self.dilations,
                                              data_format='NHWC')
         out_shape = [inputs[0].shape[0]] + out_shape + [self.num_output]
-        out_tensor = np.random.ranf(size=out_shape).astype(inputs[0].dtype)
+        out_tensor = np.random.ranf(size=out_shape).astype(np.float32)
         self.set_out_tensor(out_tensor)
 
 
@@ -1947,7 +1947,7 @@ class ArmFullyConnectedOp(BaseActivationOp, BaseLinearOp, ArmOp):
                                 np.transpose(self.weights, axes=type(
                                     self).perm_onnx_to_tf())
                                 ) + self.biases).numpy()
-        out_tensor = self.cal_activation(out_tensor).astype(inputs[0].dtype)
+        out_tensor = self.cal_activation(out_tensor)
         self.set_out_tensor(out_tensor)
 
 
@@ -3502,8 +3502,6 @@ class ArmReduceOp(OpHasMethod, OpHasAxis, OpHasOneOutPort, ArmOp):
             inputs[0], tuple(self.axes), bool(self.keepdims))
         if out_tensor.dtype == bool:
             out_tensor = out_tensor.astype(np.uint8)
-        else:
-            out_tensor = out_tensor.astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
 

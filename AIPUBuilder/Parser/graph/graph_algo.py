@@ -125,10 +125,8 @@ def all_simple_paths(graph, source, target):
         return []
 
     def _all_simple_paths_multigraph(G, source, target):
-        queue = []
-        queue.append(source)
-        seen = []
-        seen.append(source)
+        queue = [source]
+        seen = [source]
         while(len(queue) > 0):
             vertex = queue.pop(0)
             nodes = G._adj_dict[vertex].keys()
