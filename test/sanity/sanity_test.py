@@ -186,9 +186,9 @@ def parser_auto_fast_test(name):
     config["Common"]["output_dir"] = dir_path
     IR_dir = os.path.abspath(os.path.join(
         config["Common"]["input_model"], "../../IR/release"))
-    ref_ir = os.path.join(IR_dir, model_name + "_float32.txt")
+    ref_ir = os.path.join(IR_dir, model_name + "_parser.txt")
     bk_ref_ir = os.path.join(dir_path, model_name + "_ref.def2")
-    ref_w = os.path.join(IR_dir, model_name + "_float32.bin")
+    ref_w = os.path.join(IR_dir, model_name + "_parser.bin")
     log = os.path.join(dir_path, f"{model_name}_parser.log")
     cfg = os.path.join(dir_path, model_name + ".cfg")
     with open(cfg, "w") as f:
