@@ -1107,7 +1107,7 @@ class TfRsqrtOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfRsqrtOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.math.rsqrt(*inputs).numpy()
+        out_tensor = tf.math.rsqrt(inputs[0]).numpy()
         self.set_out_tensor(out_tensor)
 
 

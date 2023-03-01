@@ -826,21 +826,10 @@ class TfRelu6Op(BaseReluOp, TfOp):
 
 
 class TfSeluOp(LayoutUnawareOp, ActivationOnlyOp, TfOp):
-    @classmethod
-    def attributes(cls):
-        return {1: {'features': {'type': AttrType.FLOAT},
-                    },
-                }
-
-    def __init__(self, graph, attr_dict=None):
-        super(TfSeluOp, self).__init__(graph, attr_dict)
-        self.update_attributes(TfSeluOp, attr_dict)
-        assert self.check_required(), 'TfSeluOp is missing a required parameter.'
-
     def infer_shape(self):
         super(TfSeluOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.nn.selu(*inputs)
+        out_tensor = tf.nn.selu(inputs[0])
         self.set_out_tensor(out_tensor)
 
     @property

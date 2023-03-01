@@ -2401,18 +2401,20 @@ def split_quatized_mean(graph):
 
 
 def split_rsqrt(graph, op_type='LiteRSQRT'):
-    if op_type not in ('TfRsqrt', 'LiteRSQRT'):
+    if op_type not in ('TfRsqrt', 'Tfrsqrt', 'LiteRSQRT'):
         WARN('[Parser]: Meets invalid Op type (%s) in split_rsqrt!' % op_type)
         return
+    matched = False
     matches = single_node_matcher(graph, op_type)
     for m in matches:
         rsqrt = m['target']
         rsqrt_obj = NodeWrap(graph, rsqrt)['object']
         if rsqrt_obj is not None:
+            matched = True
             in_edges = graph.sorted_in_edges(rsqrt, data=True)
+            graph.remove_edges_from(in_edges)
             sqrt = get_valid_node_name(graph, rsqrt + '_sqrt')
-            for src, _, in_attr in in_edges:
-                graph.remove_edge(src, rsqrt)
+            for src, _, in_attr in in_edges[:1]:
                 graph.add_edge(src, sqrt, **in_attr)
             graph.add_edge(sqrt, rsqrt)
 
@@ -2422,6 +2424,8 @@ def split_rsqrt(graph, op_type='LiteRSQRT'):
             recip_attr = rsqrt_obj.copied_attr()
             recip_attr.update({'opset_version': 6})
             NodeWrap(graph, rsqrt).replace_obj('Reciprocal', recip_attr)
+    if matched and op_type == 'Tfrsqrt':
+        clear_redundant_nodes(graph)
 
 
 def remove_detection_postprocess(graph):

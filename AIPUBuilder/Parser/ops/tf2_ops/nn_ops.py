@@ -4,6 +4,8 @@
 
 import tensorflow as tf
 from ..op import *
+from ..tf_ops.math_ops import TfSoftsignOp
+from ..tf_ops.nn_ops import TfSeluOp
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 from ...common.defs import FLOAT_EQUAL
 
@@ -312,6 +314,52 @@ class TfgeluOp(ActivationOnlyOp, Tf2Op):
         return {'type': 'Gelu', 'version': 1}
 
 
+class Tflocal_response_normalizationOp(OpHasOneOutPort, Tf2Op):
+    @classmethod
+    def attributes(cls):
+        return {2: {'alpha': {'type': AttrType.FLOAT, 'default': 1.0},
+                    'beta': {'type': AttrType.FLOAT, 'default': 0.5},
+                    'bias': {'type': AttrType.FLOAT, 'default': 1.0},
+                    'depth_radius': {'type': AttrType.INT, 'default': 5}},
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(Tflocal_response_normalizationOp, self).__init__(graph, attr_dict)
+        self.update_attributes(Tflocal_response_normalizationOp, attr_dict)
+        assert self.check_required(), 'Tflocal_response_normalizationOp is missing a required parameter.'
+
+    def __getattr__(self, item):
+        ret = None
+        try:
+            input_args = ['input', 'depth_radius', 'bias', 'alpha', 'beta']
+            if item in input_args[1:]:
+                inputs = self.get_input_tensors()
+                item_idx = input_args.index(item)
+                if len(inputs) > item_idx:
+                    ret = inputs[item_idx].item(0)
+                    if ret is not None:
+                        self.__dict__['_attr'][item].value = ret
+        except:
+            ret = None
+        if ret is None:
+            ret = super(Tflocal_response_normalizationOp, self).__getattr__(item)
+        return ret
+
+    def infer_shape(self):
+        super(Tflocal_response_normalizationOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = tf.nn.local_response_normalization(input=inputs[0],
+                                                        depth_radius=self.depth_radius,
+                                                        bias=self.bias,
+                                                        alpha=self.alpha,
+                                                        beta=self.beta).numpy()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'LRN', 'version': 1}
+
+
 class Tflog_softmaxOp(OpHasAxis, OpHasOneOutPort, Tf2Op):
     @classmethod
     def attributes(cls):
@@ -349,6 +397,10 @@ class Tflog_softmaxOp(OpHasAxis, OpHasOneOutPort, Tf2Op):
         return {'type': 'LogSoftmax', 'version': 13}
 
 
+class TfseluOp(TfSeluOp, Tf2Op):
+    pass
+
+
 class TfsiluOp(LayoutUnawareOp, ActivationOnlyOp, Tf2Op):
     @classmethod
     def attributes(cls):
@@ -372,3 +424,7 @@ class TfsiluOp(LayoutUnawareOp, ActivationOnlyOp, Tf2Op):
             return {'type': 'Silu', 'version': 1}
         else:
             return {'type': 'Swish', 'version': 1}
+
+
+class TfsoftsignOp(TfSoftsignOp, Tf2Op):
+    pass

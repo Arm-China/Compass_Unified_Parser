@@ -495,6 +495,10 @@ class TfroundOp(TfRoundOp, Tf2Op):
     pass
 
 
+class TfrsqrtOp(TfRsqrtOp, Tf2Op):
+    pass
+
+
 class Tfsegment_sumOp(TfSegmentSumOp, Tf2Op):
     pass
 
