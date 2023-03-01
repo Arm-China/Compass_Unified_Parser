@@ -2445,8 +2445,8 @@ def merge_lstm2(graph):
             biases_value_name_obj = NodeWrap(
                 graph, biases_value_name)['object']
 
-            initial_h_name = h_init_match[0]["h_init"]
-            initial_c_name = c_init_match[0]["c_init"]
+            initial_h_name = h_init_match[0]['h_init']
+            initial_c_name = c_init_match[0]['c_init']
             h_init_obj = NodeWrap(graph, initial_h_name)['object']
             c_init_obj = NodeWrap(graph, initial_c_name)['object']
             h_init_out_edge = graph.sorted_out_edges(initial_h_name, data=True)
@@ -2475,8 +2475,9 @@ def merge_lstm2(graph):
                 recurrent_weights, 4, axis=0)
             input_wb, cell_wb, forget_wb, output_wb = np.split(
                 biases, 4, axis=0)
-            forget_wb = np.full(forget_wb.shape, float(
-                const_b_obj.value)).astype(np.float32)
+            forget_wb = forget_wb + \
+                np.full(forget_wb.shape, float(
+                    const_b_obj.value)).astype(np.float32)
             W_value = np.stack(
                 [np.concatenate([input_w, output_w, forget_w, cell_w], axis=0)])
             R_value = np.stack(
