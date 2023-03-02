@@ -339,6 +339,8 @@ class TfBatchMatMulV2Op(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfBatchMatMulV2Op, self).infer_shape()
         inputs = self.get_input_tensors()
+        if 'complex' in str(inputs[0].dtype) and (self.adj_x or self.adj_y):
+            WARN('[Parser]: Complex dtype is not supported so adj_x/y in Op (%s) means transpose only!' % self.name)
         out_tensor = tf.raw_ops.BatchMatMulV2(x=inputs[0],
                                               y=inputs[1],
                                               adj_x=self.adj_x,

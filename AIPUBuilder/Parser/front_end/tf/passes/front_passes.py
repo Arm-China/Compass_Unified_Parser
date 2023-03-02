@@ -11,7 +11,8 @@ from ....graph.node_wrap import NodeWrap
 from ....graph.graph_algo import get_valid_node_name, clear_redundant_nodes, cal_path_length, has_path
 from ....graph.pattern_match import matched_patterns, single_node_matcher, two_nodes_matcher
 from ...onnx.passes.common_passes import insert_constant, insert_reshape, insert_reshape_after, \
-    insert_transpose, insert_transpose_after, remove_node_safely, insert_cast, place_reshape
+    insert_transpose, insert_transpose_after, remove_node_safely, insert_cast, place_reshape, \
+    insert_cast_after
 from ....common.defs import Tensor, FLOAT_EQUAL, INT_MAX
 from ....common.utils import extend_lists
 from ....logger import INFO, DEBUG, WARN, ERROR, FATAL
@@ -192,10 +193,11 @@ def convert_invert_permutation(graph):
 
 
 def convert_matmul(graph):
+    need_clear = False
     matches = matched_patterns(graph,
                                nodes=[
                                    ('matmul', {
-                                    'op': ['TfMatMul', 'TfBatchMatMulV2', 'TfBatchMatMul']}),
+                                    'op': ['TfMatMul', 'TfBatchMatMulV2', 'TfBatchMatMul', 'Tfmatmul']}),
                                ],
                                edges=[])
     for m in matches:
@@ -205,19 +207,41 @@ def convert_matmul(graph):
             WARN('[Parser]: Meets invalid MatMul Op (%s) in convert_matmul!' % matmul)
             continue
         in_edges = graph.sorted_in_edges(matmul, keys=True, data=True)
-        if len(in_edges) != 2:
-            WARN('[Parser]: Meets invalid MatMul Op (%s) in convert_matmul!' % matmul)
-            continue
         input_shapes = matmul_obj.get_input_shapes()
-        if len(input_shapes) != 2 \
-                or input_shapes[0] is None \
+        output_type = None
+        if matmul_obj.type == 'Tfmatmul':
+            output_type = matmul_obj.output_type
+            if len(in_edges) < 2 or len(input_shapes) < 2 \
+                    or in_edges[0][3]['tensor'] is None \
+                    or in_edges[0][3]['tensor'].value is None:
+                ERROR('[Parser]: Meets invalid inputs of Tfmatmul Op (%s) in convert_matmul!' % matmul)
+                continue
+        elif len(in_edges) != 2 or len(input_shapes) != 2 \
+                or in_edges[0][3]['tensor'] is None \
+                or in_edges[0][3]['tensor'].value is None:
+            ERROR('[Parser]: Meets invalid inputs of MatMul Op (%s) in convert_matmul!' % matmul)
+            continue
+        input_type = str(in_edges[0][3]['tensor'].value.dtype)
+        if 'complex' in input_type:
+            WARN('[Parser]: Meets unsupported complex input type of MatMul Op (%s) in convert_matmul!' % matmul)
+            continue
+        if input_shapes[0] is None \
                 or len(input_shapes[0]) < 2 \
                 or input_shapes[1] is None \
                 or len(input_shapes[1]) < 2:
-            WARN('[Parser]: Meets invalid MatMul Op (%s) in convert_matmul!' % matmul)
+            ERROR('[Parser]: Meets invalid MatMul Op (%s) in convert_matmul!' % matmul)
             continue
-        transpose_a = matmul_obj.transpose_a if matmul_obj.type == 'TfMatMul' else matmul_obj.adj_x
-        transpose_b = matmul_obj.transpose_b if matmul_obj.type == 'TfMatMul' else matmul_obj.adj_y
+        if matmul_obj.type == 'TfMatMul':
+            transpose_a = matmul_obj.transpose_a
+            transpose_b = matmul_obj.transpose_b
+        elif matmul_obj.type == 'Tfmatmul':
+            need_clear = True
+            graph.remove_edges_from(in_edges[2:])
+            transpose_a = (matmul_obj.transpose_a or matmul_obj.adjoint_a)
+            transpose_b = (matmul_obj.transpose_b or matmul_obj.adjoint_b)
+        else:
+            transpose_a = matmul_obj.adj_x
+            transpose_b = matmul_obj.adj_y
         if transpose_a:
             in_dim1 = len(input_shapes[0])
             perm1 = list(range(in_dim1 - 2)) + [in_dim1 - 1, in_dim1 - 2]
@@ -231,6 +255,13 @@ def convert_matmul(graph):
         matmul_attr = matmul_obj.copied_attr()
         matmul_attr.update({'opset_version': 9})
         NodeWrap(graph, matmul).replace_obj('MatMul', matmul_attr)
+        if input_type is not None and output_type is not None and input_type != output_type:
+            post_cast = insert_cast_after(graph, matmul, input_type, output_type)
+            if matmul in graph._attr['output_names']:
+                index = graph._attr['output_names'].index(matmul)
+                graph._attr['output_names'][index] = post_cast
+    if need_clear:
+        clear_redundant_nodes(graph)
 
 
 def convert_maxpoolwithargmax(graph, op_type='TfMaxPoolWithArgmax'):

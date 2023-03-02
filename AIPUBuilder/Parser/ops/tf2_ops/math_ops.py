@@ -253,6 +253,60 @@ class Tflogical_orOp(TfLogicalOrOp, Tf2Op):
     pass
 
 
+class TfmatmulOp(OpHasOneOutPort, TfOp):
+    @classmethod
+    def attributes(cls):
+        return {2: {'transpose_a': {'type': AttrType.BOOL, 'default': False},
+                    'transpose_b': {'type': AttrType.BOOL, 'default': False},
+                    'adjoint_a': {'type': AttrType.BOOL, 'default': False},
+                    'adjoint_b': {'type': AttrType.BOOL, 'default': False},
+                    'output_type': {'type': AttrType.STRING, 'default': None},
+                    }
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfmatmulOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfmatmulOp, attr_dict)
+        assert self.check_required(), 'TfmatmulOp is missing a required parameter.'
+
+    def __getattr__(self, item):
+        ret = None
+        try:
+            input_args = ['a', 'b', 'transpose_a', 'transpose_b', 'adjoint_a', 'adjoint_b',
+                          'a_is_sparse', 'b_is_sparse', 'output_type']
+            if item in input_args[2:]:
+                inputs = self.get_input_tensors()
+                item_idx = input_args.index(item)
+                if len(inputs) > item_idx and inputs[item_idx].size == 1:
+                    ret = inputs[item_idx].item()
+            if ret is not None:
+                self.__dict__['_attr'][item].value = ret
+        except:
+            ret = None
+        if ret is None:
+            ret = super(TfmatmulOp, self).__getattr__(item)
+        return ret
+
+    def infer_shape(self):
+        super(TfmatmulOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        adjoint_a, adjoint_b = self.adjoint_a, self.adjoint_b
+        if 'complex' in str(inputs[0].dtype) and (adjoint_a or adjoint_b):
+            WARN('[Parser]: Complex dtype is not supported so adjoint_a/b in TfmatmulOp (%s) will be treated as transpose_a/b!' % self.name)
+        out_tensor = tf.linalg.matmul(inputs[0],
+                                      inputs[1],
+                                      transpose_a=self.transpose_a,
+                                      transpose_b=self.transpose_b,
+                                      adjoint_a=adjoint_a,
+                                      adjoint_b=adjoint_b,
+                                      output_type=self.output_type).numpy()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'MatMul', 'version': 9}
+
+
 class TfmaximumOp(TfMaximumOp, Tf2Op):
     pass
 
