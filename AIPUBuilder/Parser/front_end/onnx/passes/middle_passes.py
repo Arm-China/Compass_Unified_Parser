@@ -1854,8 +1854,16 @@ def convert_dequantizelinear(graph):
             WARN(
                 '[Parser]: Meets invalid DequantizeLinear Op(%s) in convert_dequantizelinear!' % dequant)
             continue
+        scale, _, scale_in_attr = dequant_in_edges[1]
+        zp, _, zp_in_attr = dequant_in_edges[2]
+        if scale_in_attr['tensor'].is_const and zp_in_attr['tensor'].is_const:
+            continue
+
         input_shapes = dequant_obj.get_input_shapes()
-        dequant_axis = dequant_obj.axis if len(input_shapes[1]) == 1 else -1
+        if dequant_obj.axis and len(input_shapes[1]) == 1:
+            dequant_axis = dequant_obj.axis
+        else:
+            dequant_axis = -1
         dequant_axis = OpHasAxis.make_axes_non_negative(
             dequant_axis, len(input_shapes[0]))
         if len(input_shapes[0]) <= dequant_axis:
@@ -1871,72 +1879,8 @@ def convert_dequantizelinear(graph):
             continue
         inp, _, inp_in_attr = dequant_in_edges[0]
         scale, _, scale_in_attr = dequant_in_edges[1]
-        scale_is_const = scale_in_attr['tensor'].is_const
         zp, _, zp_in_attr = dequant_in_edges[2]
-        zp_is_const = zp_in_attr['tensor'].is_const
         graph.remove_edges_from(dequant_in_edges)
-        if scale_is_const and zp_is_const:
-            scale_value = scale_in_attr['tensor'].value
-            zp_value = zp_in_attr['tensor'].value if zp else np.array(
-                0, np.int32)
-            tiled_const_scale = np.tile(
-                scale_value, axis_dim) if scale_value.size == 1 else scale_value
-            tiled_const_zp = np.tile(zp_value,
-                                     axis_dim) if zp_value.size == 1 else zp_value
-            gamma_value = tiled_const_scale.astype(np.float32)
-            beta_value = (-(tiled_const_zp * tiled_const_scale)
-                          ).astype(np.float32)
-            mean_value = np.zeros((axis_dim, ), np.float32)
-            var_value = np.ones((axis_dim,), np.float32)
-            gamma = get_valid_node_name(graph, dequant + '_gamma')
-            beta = get_valid_node_name(graph, dequant + '_beta')
-            mean = get_valid_node_name(graph, dequant + '_mean')
-            var = get_valid_node_name(graph, dequant + '_var')
-
-            graph.add_edge(inp, dequant, **inp_in_attr)
-            graph.add_edge(
-                gamma, dequant, **{'src_out_port': 0, 'dst_in_port': 1, 'tensor': Tensor(value=gamma_value)})
-            graph.add_edge(
-                beta, dequant, **{'src_out_port': 0, 'dst_in_port': 2, 'tensor': Tensor(value=beta_value)})
-            graph.add_edge(
-                mean, dequant, **{'src_out_port': 0, 'dst_in_port': 3, 'tensor': Tensor(value=mean_value)})
-            graph.add_edge(
-                var, dequant, **{'src_out_port': 0, 'dst_in_port': 4, 'tensor': Tensor(value=var_value)})
-
-            batchnorm_attr = dequant_obj.copied_attr()
-            batchnorm_attr.update(
-                {'opset_version': 9, 'epsilon': 0, 'data_format': 'NHWC'})
-            NodeWrap(graph, dequant).replace_obj(
-                'BatchNormalization', batchnorm_attr)
-
-            gamma_attr = {'name': gamma, 'value': gamma_value,
-                          'data_format': 'NHWC', 'opset_version': 1}
-            beta_attr = {'name': beta, 'value': beta_value,
-                         'data_format': 'NHWC', 'opset_version': 1}
-            mean_attr = {'name': mean, 'value': mean_value,
-                         'data_format': 'NHWC', 'opset_version': 1}
-            var_attr = {'name': var, 'value': var_value,
-                        'data_format': 'NHWC', 'opset_version': 1}
-            NodeWrap(graph, gamma).replace_obj('Constant', gamma_attr)
-            NodeWrap(graph, beta).replace_obj('Constant', beta_attr)
-            NodeWrap(graph, mean).replace_obj('Constant', mean_attr)
-            NodeWrap(graph, var).replace_obj('Constant', var_attr)
-
-            cast = insert_cast(graph, inp, dequant, 'float32', inp_in_attr)
-
-            if dequant_axis != len(input_shapes[0]) - 1:
-                pre_perm = [idx for idx in range(
-                    len(input_shapes[0])) if idx != dequant_axis] + [dequant_axis]
-                _, _, dequant_in_attr = graph.sorted_in_edges(dequant, data=True)[
-                    0]
-                insert_transpose(graph, cast, dequant,
-                                 dequant_in_attr, pre_perm)
-                post_trans = insert_transpose_after(
-                    graph, dequant, Op.cal_inverse_perm(pre_perm))
-                if dequant in graph._attr['output_names']:
-                    index = graph._attr['output_names'].index(dequant)
-                    graph._attr['output_names'][index] = post_trans
-            continue
 
         sub = get_valid_node_name(graph, dequant + '_sub')
         graph.add_node(sub)

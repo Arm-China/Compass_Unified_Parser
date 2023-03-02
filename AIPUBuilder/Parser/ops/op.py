@@ -855,7 +855,7 @@ class OpHasAxis(Op):
                 self.axes = sorted(self.axes.tolist() if isinstance(
                     self.axes, np.ndarray) else list(self.axes))
                 txt_file.write('axis=[%s]\n' % num_list_to_string(self.axes))
-            elif 'axis' in self._attr:
+            elif 'axis' in self._attr and self.axis is not None:
                 txt_file.write('axis=%s\n' % num_list_to_string(self.axis.tolist()
                                                                 if isinstance(self.axis, np.ndarray)
                                                                 else self.axis))

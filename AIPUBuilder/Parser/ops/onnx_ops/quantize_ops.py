@@ -10,7 +10,7 @@ class DequantizeLinearOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
     @classmethod
     def attributes(cls):
         return {10: {'axis': {'default': None, 'required': False}},
-                13: {'axis': {'default': 1, 'required': False}}
+                13: {'axis': {'default': None, 'required': False}}
                 }
 
     def __init__(self, graph, attr_dict=None):
@@ -21,24 +21,33 @@ class DequantizeLinearOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
     def __getattr__(self, item):
         ret = None
         try:
-            ret = self.__dict__['_attr'][item].value
-        except:
-            pass
-        try:
-            if ret is None:
-                if item == 'x_scale':
+            if item == 'axis':
+                if self.cur_version == 10:
+                    ret = None
+                else:
                     inputs = self.get_input_tensors()
-                    ret = np.array(inputs[1]).astype(np.float32)
-                    self.__dict__['_attr'][item] = Attribute(
-                        item, {'type': AttrType.TENSOR, 'value': ret})
-                elif item == 'x_zero_point':
-                    inputs = self.get_input_tensors()
-                    try:
-                        ret = np.array(inputs[2])
-                    except:
-                        ret = np.array(0, inputs[0].dtype)
-                    self.__dict__['_attr'][item] = Attribute(
-                        item, {'type': AttrType.TENSOR, 'value': ret})
+                    if self.__dict__['_attr'][item].value is None:
+                        if len(inputs[1].shape) != 0:
+                            if len(inputs[0].shape) == 1:
+                                ret = 0
+                            else:
+                                ret = 1
+                            self.__dict__['_attr'][item].value = ret
+                    else:
+                        ret = self.__dict__['_attr'][item].value
+            elif item == 'x_scale':
+                inputs = self.get_input_tensors()
+                ret = np.array(inputs[1]).astype(np.float32)
+                self.__dict__['_attr'][item] = Attribute(
+                    item, {'type': AttrType.TENSOR, 'value': ret})
+            elif item == 'x_zero_point':
+                inputs = self.get_input_tensors()
+                try:
+                    ret = np.array(inputs[2])
+                except:
+                    ret = np.array(0, inputs[0].dtype)
+                self.__dict__['_attr'][item] = Attribute(
+                    item, {'type': AttrType.TENSOR, 'value': ret})
         except:
             ret = None
         if ret is None:
@@ -51,9 +60,10 @@ class DequantizeLinearOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
         assert len(inputs) in (2, 3), 'DequantizeLinearOp expects 2 or 3 inputs, but got %d.' % len(inputs)
         if len(inputs) > 2:
             assert self.x_scale.shape == self.x_zero_point.shape, 'x_scale and x_zero_point in DequantizeLinearOp must have same shape.'
-        if self.x_scale.ndim == 0:
+        if self.axis is None:
             out_tensor = ((inputs[0] - self.x_zero_point) * self.x_scale).astype(np.float32)
         else:
+            self.axis = OpHasAxis.make_axes_non_negative(self.axis, len(inputs[0].shape))
             axis_dim = inputs[0].shape[self.axis]
             if self.x_scale.size == 1:
                 self.x_scale = np.tile(self.x_scale, axis_dim)
@@ -75,8 +85,6 @@ class DequantizeLinearOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
                             zero_point, self.name, in_port=2, data_format='NHWC')
         max_ver = type(self).max_ver()
         cur_ver = self.cur_version
-        if cur_ver < 13:
-            self.axis = -1
         if cur_ver < max_ver:
             self.cur_version = max_ver
 

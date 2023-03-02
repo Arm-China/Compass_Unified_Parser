@@ -1498,11 +1498,11 @@ class ArmDepthwiseConvOp(BaseActivationOp, BaseConvOp, ArmOp):
         return ret
 
 
-class ArmDeQuantizeOp(OpHasOneOutPort, ArmOp):
+class ArmDeQuantizeOp(OpHasAxis, OpHasOneOutPort, ArmOp):
     @classmethod
     def attributes(cls):
         return {'scale': {'type': AttrType.TENSOR, 'default': np.array([1], np.float32)},
-                'zero_point': {'type': AttrType.TENSOR, 'default': np.array([0], np.int64)},
+                'zero_point': {'type': AttrType.TENSOR, 'default': np.array([0], np.int32)},
                 'from_dtype': {'type': AttrType.STRING,
                                'required': True,
                                'options': ['int8', 'uint8', 'int32', 'uint32']}

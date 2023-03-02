@@ -653,6 +653,40 @@ def convert_uni_lstm(graph):
         clear_redundant_nodes(graph)
 
 
+def rename_dequantize(graph):
+    matches = single_node_matcher(graph, 'DequantizeLinear')
+    for m in matches:
+        dequantize = m['target']
+        dequantize_obj = NodeWrap(graph, dequantize)['object']
+        in_edges = graph.sorted_in_edges(dequantize, keys=True, data=True)
+        if dequantize_obj is None or len(in_edges) != 3:
+            ERROR('[Parser]: Meets invalid Dequatize Op(%s) in rename_dequantize!' % dequantize)
+            continue
+        input_tensors = dequantize_obj.get_input_tensors()
+        if len(input_tensors) != 3 \
+                or any(t is None for t in input_tensors):
+            ERROR('[Parser]: Meets invalid Dequatize Op(%s) in rename_dequantize!' % dequantize)
+            continue
+        scale_name, _, k1, scale_in_attr = in_edges[1]
+        zp_name, _, k2, zp_in_attr = in_edges[2]
+        if not scale_in_attr['tensor'].is_const \
+                or not zp_in_attr['tensor'].is_const:
+            WARN('[Parser]: Dequatize Op(%s) with non-constant scale/zp should has been split before in rename_dequantize!' % dequantize)
+            continue
+        if scale_in_attr['tensor'].value is None \
+                or zp_in_attr['tensor'].value is None \
+                or list(scale_in_attr['tensor'].value.shape) != list(zp_in_attr['tensor'].value.shape):
+            ERROR('[Parser]: Dequatize Op(%s) with invalid scale/zp in rename_dequantize!' % dequantize)
+            continue
+        scale = scale_in_attr['tensor'].value
+        zp = zp_in_attr['tensor'].value
+        graph.remove_edge(scale_name, dequantize, key=k1)
+        graph.remove_edge(zp_name, dequantize, key=k2)
+        dequantize_attr = dequantize_obj.copied_attr()
+        dequantize_attr.update({'scale': scale, 'zero_point': zp, 'from_dtype': str(input_tensors[0].dtype)})
+        NodeWrap(graph, dequantize).replace_obj('ArmDeQuantize', dequantize_attr)
+
+
 def rename_dilation_erosion(graph):
     ero_dila = ['Erosion', 'Dilation']
     matches = [single_node_matcher(graph, ero_dila_type)
@@ -4468,6 +4502,7 @@ def back_passes(graph, params):
     rename_cast(graph)
     rename_compress(graph)
     rename_conv(graph)
+    rename_dequantize(graph)
     rename_dilation_erosion(graph)
     rename_gemm(graph)
     rename_generate_proposals(graph)
