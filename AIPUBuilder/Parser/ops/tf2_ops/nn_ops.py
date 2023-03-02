@@ -10,7 +10,7 @@ from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 from ...common.defs import FLOAT_EQUAL
 
 
-class Tfconv2dOp(TfHasPaddingStrides, Tf2Op, OpHasWeights, OpHasOneOutPort):
+class Tfconv2dOp(Tf2HasPaddingStrides, OpHasWeights, OpHasOneOutPort):
     @classmethod
     def attributes(cls):
         return {1: {'padding': {'default': None},
@@ -38,15 +38,11 @@ class Tfconv2dOp(TfHasPaddingStrides, Tf2Op, OpHasWeights, OpHasOneOutPort):
                 input_args = ['input', 'weights', 'strides', 'padding', 'use_cudnn_on_gpu', 'data_format', 'dilations']
             else:
                 input_args = ['input', 'weights', 'strides', 'padding', 'data_format', 'dilations']
-            if item in input_args[1:]:
+            if item in input_args[3:]:
                 inputs = self.get_input_tensors()
                 item_idx = input_args.index(item)
                 if len(inputs) > item_idx:
-                    if item_idx == 1:
-                        ret = inputs[item_idx]
-                    else:
-                        ret = inputs[item_idx].item() if inputs[item_idx].size == 1 else list(
-                            inputs[item_idx])
+                    ret = inputs[item_idx].item() if inputs[item_idx].size == 1 else list(inputs[item_idx])
                     if item == 'use_cudnn_on_gpu':
                         ret = int(ret)
                     if ret is not None:
@@ -60,6 +56,9 @@ class Tfconv2dOp(TfHasPaddingStrides, Tf2Op, OpHasWeights, OpHasOneOutPort):
     def infer_shape(self):
         super(Tfconv2dOp, self).infer_shape()
         inputs = self.get_input_tensors()
+        assert len(inputs) >= 4, 'Tfconv2dOp expects 4 inputs, but got %d' % len(inputs)
+        self.weights = inputs[1]
+        self.strides = [inputs[2].item()] if inputs[2].size == 1 else list(inputs[2])
         self.kernel_shape = self.weights.shape[0:2]
         padding = self.padding
         if isinstance(padding, str):
@@ -76,25 +75,6 @@ class Tfconv2dOp(TfHasPaddingStrides, Tf2Op, OpHasWeights, OpHasOneOutPort):
                                   padding=padding,
                                   dilations=self.dilations,
                                   data_format='NHWC').numpy()
-        if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
-            self.pads, _ = OpHasPaddingStrides.cal_pads(
-                inp.shape[1:3],
-                out_tensor.shape[1:3],
-                self.strides,
-                self.kernel_shape,
-                self.auto_pad,
-                dilations=self.dilations,
-                is_transpose=False,
-                zero_minimum=True,
-            )
-            self.auto_pad = 'NOTSET'
-        elif self.auto_pad == 'NOTSET':
-            pad_slice = slice(
-                1, 3) if self.data_format == 'NHWC' else slice(2, 4)
-            self.pads = np.transpose(
-                np.reshape(np.array(self.explicit_paddings), (4, 2))[
-                    pad_slice, :]
-            ).flatten().tolist()
         if self.data_format == 'NCHW':
             out_tensor = np.transpose(out_tensor, [0, 3, 1, 2])
         self.set_out_tensor(out_tensor)
@@ -395,6 +375,61 @@ class Tflog_softmaxOp(OpHasAxis, OpHasOneOutPort, Tf2Op):
     @property
     def correspond_onnx_op(self):
         return {'type': 'LogSoftmax', 'version': 13}
+
+
+class Tfmax_pool_with_argmaxOp(Tf2HasPaddingStrides, OpHasMultipleOutPorts):
+    @classmethod
+    def attributes(cls):
+        return {2: {'padding': {'type': AttrType.STRING},
+                    'data_format': {'default': 'NHWC', 'options': ['NHWC']},
+                    'output_dtype': {'type': AttrType.STRING, 'default': 'int64', 'options': ['int64', 'int32']},
+                    'include_batch_in_index': {'type': AttrType.BOOL, 'default': False},
+                    },
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(Tfmax_pool_with_argmaxOp, self).__init__(graph, attr_dict)
+        self.update_attributes(Tfmax_pool_with_argmaxOp, attr_dict)
+        assert self.check_required(), 'Tfmax_pool_with_argmaxOp is missing a required parameter.'
+
+    def __getattr__(self, item):
+        ret = None
+        try:
+            input_args = ['input', 'ksize', 'strides', 'padding',
+                          'data_format', 'output_dtype', 'include_batch_in_index']
+            if item in input_args[3:]:
+                inputs = self.get_input_tensors()
+                item_idx = input_args.index(item)
+                if len(inputs) > item_idx and inputs[item_idx].size == 1:
+                    ret = inputs[item_idx].item()
+                    if ret is not None:
+                        self.__dict__['_attr'][item].value = ret
+        except:
+            ret = None
+        if ret is None:
+            ret = super(Tfmax_pool_with_argmaxOp, self).__getattr__(item)
+        return ret
+
+    def infer_shape(self):
+        super(Tfmax_pool_with_argmaxOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        assert len(inputs) >= 4, 'Tfmax_pool_with_argmaxOp expects at least 4 inputs, but got %d' % len(inputs)
+        self.kernel_shape = [inputs[1].item()] if inputs[1].size == 1 else list(inputs[1])
+        self.strides = [inputs[2].item()] if inputs[2].size == 1 else list(inputs[2])
+        padding = self.padding
+        self.auto_pad = 'SAME_UPPER' if padding == 'SAME' else 'VALID'
+        output_dtype = self.output_dtype
+        if output_dtype == 'int64':
+            WARN('[Parser]: Output dtype int64 in Tfmax_pool_with_argmaxOp (%s) is not supported and will be set to int32!' % self.name)
+        out_tensors = tf.nn.max_pool_with_argmax(inputs[0],
+                                                 ksize=self.kernel_shape,
+                                                 strides=self.strides,
+                                                 padding=padding,
+                                                 data_format=self.data_format,
+                                                 output_dtype=output_dtype,
+                                                 include_batch_in_index=self.include_batch_in_index)
+        out_tensors = [t.numpy() for t in out_tensors]
+        self.set_out_tensor(out_tensors)
 
 
 class TfseluOp(TfSeluOp, Tf2Op):

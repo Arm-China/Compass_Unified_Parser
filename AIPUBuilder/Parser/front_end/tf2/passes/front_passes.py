@@ -280,8 +280,20 @@ def convert_to_onnx(graph):
                 '[Parser]: Meets invalid TF2 op for Node(%s) in convert_to_onnx!' % node_name)
             continue
         if getattr(node_obj, 'correspond_onnx_op', None) is not None:
-            in_edges = graph.sorted_in_edges(node_name, data=True)
+            if isinstance(node_obj, Tf2HasPaddingStrides):
+                input_shapes = node_obj.get_input_shapes()
+                output_shapes = node_obj.get_output_shapes()
+                if len(input_shapes) < 1 \
+                        or len(input_shapes[0]) < 3 \
+                        or None in input_shapes[0] \
+                        or len(output_shapes) < 1 \
+                        or len(output_shapes[0]) < 3 \
+                        or None in output_shapes[0]:
+                    ERROR('[Parser]: Invalid Tf2HasPaddingStrides Node(%s) in convert_to_onnx!' % node_name)
+                    continue
+                node_obj.update_pads(input_shapes[0], output_shapes[0])
             new_node_attr = node_obj.copied_attr()
+            in_edges = graph.sorted_in_edges(node_name, data=True)
             node_data_format = 'NCHW' if node_obj.data_format.startswith('NC') else 'NHWC'
             pure_type = re.sub(r'^Tf', '', node_obj.type)
             if isinstance(node_obj, OpHasWeights):
@@ -293,7 +305,7 @@ def convert_to_onnx(graph):
                 new_weights = np.transpose(
                     new_weights, axes=type(node_obj).perm_tf_to_onnx())
                 new_node_attr.update({'weights': new_weights})
-            if isinstance(node_obj, OpHasPaddingStrides):
+            if isinstance(node_obj, OpHasPaddingStrides) and not isinstance(node_obj, Tf2HasPaddingStrides):
                 if hasattr(node_obj, 'strides') and len(node_obj.strides) == 4:
                     new_node_attr.update(
                         {'strides': node_obj.strides[1:3]})

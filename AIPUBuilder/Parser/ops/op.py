@@ -2558,6 +2558,88 @@ class Tf2Op(TfOp):
     pass
 
 
+class Tf2HasPaddingStrides(OpHasPaddingStrides, Tf2Op):
+    '''
+    Class Tf2HasPaddingStrides inherited from OpHasPaddingStrides and Tf2Op class.
+    Tf2 OPs that contain pad and stride parameters need to inherit from this class.
+    Usually these ops are related to convolutional layers.
+    '''
+    @classmethod
+    def attributes(cls):
+        return {'explicit_paddings': {'type': AttrType.INTS, 'default': [0] * 8}}
+
+    def __init__(self, graph, attr_dict=None):
+        super(Tf2HasPaddingStrides, self).__init__(graph, attr_dict)
+        self.update_attributes(Tf2HasPaddingStrides, attr_dict)
+        assert self.check_required(), 'Tf2HasPaddingStrides is missing a required parameter.'
+
+    @abc.abstractmethod
+    def infer_shape(self):
+        ''' An abstract method for shape inference. '''
+        super(Tf2HasPaddingStrides, self).infer_shape()
+
+    @staticmethod
+    def align_spatial_length(tensor, spatial_len, data_format='NHWC'):
+        '''Reduce/extend tensor to length spatial_len according to data_format.'''
+        ret = None
+        if not isinstance(tensor, list) or len(tensor) not in (1, spatial_len, spatial_len + 2):
+            ERROR('[Parser]: Meet invalid tensor in align_spatial_length!')
+            return ret
+        if len(tensor) == 1:
+            ret = tensor * spatial_len
+        elif len(tensor) == spatial_len + 2:
+            if not isinstance(data_format, str) or len(data_format) < 3:
+                ERROR('[Parser]: Meet invalid data_format (%s) in align_spatial_length!' % str(data_format))
+            if data_format[:2] == 'NC' and tensor[0] == 1 and tensor[1] == 1:
+                ret = tensor[2:]
+            elif data_format[0] == 'N' and data_format[-1] == 'C' and tensor[0] == 1 and tensor[-1] == 1:
+                ret = tensor[1:-1]
+            else:
+                ERROR('[Parser]: Meets invalid args in align_spatial_length!')
+        else:  # len(tensor) == spatial_len
+            ret = tensor
+        return ret
+
+    def update_pads(self, input_shape, output_shape):
+        assert len(input_shape) == len(output_shape)
+        if self.data_format.startswith('NC'):
+            in_spatial_shape = input_shape[2:]
+            out_spatial_shape = output_shape[2:]
+        else:
+            in_spatial_shape = input_shape[1:-1]
+            out_spatial_shape = output_shape[1:-1]
+        spatial_len = len(in_spatial_shape)
+        self.strides = self.align_spatial_length(self.strides, spatial_len, self.data_format)
+        self.kernel_shape = self.align_spatial_length(self.kernel_shape, spatial_len, self.data_format)
+        self.dilations = self.align_spatial_length(self.dilations, spatial_len, self.data_format)
+        if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
+            self.pads, _ = OpHasPaddingStrides.cal_pads(
+                in_spatial_shape,
+                out_spatial_shape,
+                self.strides,
+                self.kernel_shape,
+                self.auto_pad,
+                dilations=self.dilations,
+                is_transpose=False,
+                zero_minimum=True
+            )
+            self.auto_pad = 'NOTSET'
+        elif self.auto_pad == 'NOTSET':
+            full_len = len(input_shape)
+            if not self.explicit_paddings:
+                self.pads = [0] * (full_len * 2)
+            else:
+                if len(self.explicit_paddings) != full_len * 2 \
+                        and all(p == 0 for p in self.explicit_paddings):
+                    self.explicit_paddings = [0] * (full_len * 2)
+                if self.data_format.startswith('NC'):
+                    pad_slice = slice(2, full_len)
+                else:
+                    pad_slice = slice(1, full_len - 1)
+                pads = np.transpose(np.reshape(np.array(self.explicit_paddings), (full_len, 2))[pad_slice, :])
+                self.pads = pads.flatten().tolist()
+
+
 class Tf2ReduceOp(OpHasAxis, OpHasOneOutPort, Tf2Op):
     '''
     Class Tf2ReduceOp inherited from OpHasAxis, OpHasOneOutPort, Tf2Op class.

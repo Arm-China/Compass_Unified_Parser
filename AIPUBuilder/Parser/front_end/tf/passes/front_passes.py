@@ -233,8 +233,12 @@ def convert_matmul(graph):
         NodeWrap(graph, matmul).replace_obj('MatMul', matmul_attr)
 
 
-def convert_maxpoolwithargmax(graph):
-    matches = single_node_matcher(graph, 'TfMaxPoolWithArgmax')
+def convert_maxpoolwithargmax(graph, op_type='TfMaxPoolWithArgmax'):
+    if op_type not in ('TfMaxPoolWithArgmax', 'Tfmax_pool_with_argmax'):
+        ERROR('[Parser]: Meets invalid Op type (%s) in convert_maxpoolwithargmax!' % op_type)
+        return
+    matched = False
+    matches = single_node_matcher(graph, op_type)
     for m in matches:
         argmaxpool = m['target']
         argmaxpool_obj = NodeWrap(graph, argmaxpool)['object']
@@ -250,6 +254,7 @@ def convert_maxpoolwithargmax(graph):
             WARN(
                 '[Parser]: Meets invalid Node(%s) in convert_maxpoolwithargmax!' % argmaxpool)
             continue
+        matched = True
         argmaxpool_obj.update_pads(argmaxpool_obj.get_input_shapes()[0],
                                    argmaxpool_obj.get_output_shapes()[0])
         if not bool(argmaxpool_obj.include_batch_in_index):
@@ -289,6 +294,8 @@ def convert_maxpoolwithargmax(graph):
         maxpool_attr = argmaxpool_obj.copied_attr()
         maxpool_attr.update({'opset_version': 12})
         NodeWrap(graph, argmaxpool).replace_obj('MaxPool', maxpool_attr)
+    if matched:
+        clear_redundant_nodes(graph)
 
 
 def convert_nms(graph, params):
