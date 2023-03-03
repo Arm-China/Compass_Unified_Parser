@@ -6972,6 +6972,44 @@ def split_hardmax(graph):
         NodeWrap(graph, hardmax).replace_obj('OneHot', onehot_attr)
 
 
+def adjust_1d_matmul(graph):
+    matches = single_node_matcher(graph, ['MatMul'])
+    for m in matches:
+        matmul = m['target']
+        node_obj = NodeWrap(graph, matmul)['object']
+        in_edges = graph.sorted_in_edges(matmul, keys=True, data=True)
+
+        if node_obj is None \
+                or len(in_edges) != 2:
+            ERROR('[Parser]: Meets invalid Matmul Op(%s) in adjust_1d_matmul!' % matmul)
+            continue
+
+        in_shapes = node_obj.get_input_shapes()
+        out_shapes = node_obj.get_output_shapes()
+
+        if len(in_shapes) != 2 \
+                or any((shape is None for shape in in_shapes)) \
+                or len(out_shapes) < 1 \
+                or any((shape is None for shape in out_shapes))\
+                or any((shape is None for shape in out_shapes[0])):
+            ERROR('[Parser]: Meets invalid Matmul Op(%s) in adjust_1d_matmul!' % matmul)
+            continue
+
+        if len(in_shapes[0]) != 1 or len(in_shapes[1]) != 1:
+            continue
+
+        for in_port, (src, _, k, in_attr) in enumerate(in_edges):
+            pre_reshape_dim = [1]*(1-in_port) + \
+                in_shapes[in_port] + [1]*(in_port)
+            insert_reshape(graph, src, matmul, in_attr, pre_reshape_dim, key=k)
+
+        post_reshape = insert_reshape_after(
+            graph, matmul, old_dim=[1, 1], new_dim=out_shapes[0])
+        if matmul in graph._attr['output_names']:
+            index = graph._attr['output_names'].index(matmul)
+            graph._attr['output_names'][index] = post_reshape
+
+
 def align_matmul_input(graph):
     matches = single_node_matcher(graph, ['MatMul', 'MatMulInteger'])
     for m in matches:
@@ -7424,6 +7462,7 @@ def middle_passes(graph, params):
     convert_einsum(graph)
     convert_nms(graph)
     align_matmul_input(graph)
+    adjust_1d_matmul(graph)
     adjust_scalar_to_1d(graph)
     adjust_1d_to_4d(graph)
     adjust_2d_to_4d(graph)

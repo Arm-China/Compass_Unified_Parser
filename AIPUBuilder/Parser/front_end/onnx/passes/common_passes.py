@@ -345,7 +345,8 @@ def remove_redundant_transpose_pro(graph, trans_type='Transpose', max_branches=6
         matches = matched_patterns(graph, nodes, edges)
         for m in matches:
             trans = m['trans']
-            trans_out_names = [m['trans_out_%s' % str(i + 1)] for i in range(b)]
+            trans_out_names = [m['trans_out_%s' %
+                                 str(i + 1)] for i in range(b)]
             if any([not graph.has_node(name) for name in [trans] + trans_out_names]):
                 ERROR(
                     '[Parser]: Meets invalid name that does not exist in graph in remove_redundant_transpose_pro!')
@@ -599,7 +600,8 @@ def insert_reshape_after(graph, src, new_dim, old_dim=None, out_port=0, type='Re
             reshape_attr.update({'dim': new_dim})
         NodeWrap(graph, reshape).replace_obj(type, reshape_attr)
 
-        src_out_attr = {'src_out_port': out_port, 'dst_in_port': 0, 'tensor': Tensor()}
+        src_out_attr = {'src_out_port': out_port,
+                        'dst_in_port': 0, 'tensor': Tensor()}
         out_edges = graph.sorted_out_edges(src, keys=True, data=True)
         for _, dst, key, out_attr in out_edges:
             if out_attr.get('src_out_port', 0) == out_port:
