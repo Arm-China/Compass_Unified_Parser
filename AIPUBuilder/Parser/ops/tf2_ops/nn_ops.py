@@ -5,7 +5,7 @@
 import tensorflow as tf
 from ..op import *
 from ..tf_ops.math_ops import TfSoftsignOp
-from ..tf_ops.nn_ops import TfSeluOp
+from ..tf_ops.nn_ops import TfSeluOp, TfRelu6Op
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 from ...common.defs import FLOAT_EQUAL
 
@@ -430,6 +430,10 @@ class Tfmax_pool_with_argmaxOp(Tf2HasPaddingStrides, OpHasMultipleOutPorts):
                                                  include_batch_in_index=self.include_batch_in_index)
         out_tensors = [t.numpy() for t in out_tensors]
         self.set_out_tensor(out_tensors)
+
+
+class Tfrelu6Op(TfRelu6Op, Tf2Op):
+    pass
 
 
 class TfseluOp(TfSeluOp, Tf2Op):

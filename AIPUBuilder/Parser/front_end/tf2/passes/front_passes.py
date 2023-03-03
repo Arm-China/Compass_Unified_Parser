@@ -402,6 +402,9 @@ def convert_to_onnx(graph):
             elif pure_type == 'right_shift':
                 new_node_attr.update({'direction': 'RIGHT'})
                 graph.remove_edges_from(in_edges[-1:])
+            elif pure_type == 'relu6':
+                new_node_attr.update({'min': 0., 'max': 6.})
+                graph.remove_edges_from(in_edges[1:])
             elif pure_type == 'segment_sum':
                 new_node_attr.update({'method': 'SUM'})
                 graph.remove_edges_from(in_edges[-1:])
