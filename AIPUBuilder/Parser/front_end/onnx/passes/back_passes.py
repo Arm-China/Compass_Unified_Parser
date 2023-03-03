@@ -13,7 +13,7 @@ from ....graph.node_wrap import NodeWrap
 from ....graph.graph_algo import determined_sort, get_valid_node_name, clear_redundant_nodes, has_path, infer
 from ....graph.pattern_match import matched_patterns, single_node_matcher, two_nodes_matcher
 from ....ops.op import Op, LayoutUnawareOp, BaseLinearOp, BaseActivationOp, BaseReluOp, OpHasWeights, OpHasBiases, \
-    ArmOp, OpHasAxis
+    ArmOp, OpHasAxis, BaseQuantizeDequantizeOp
 from ....ops.onnx_ops.array_ops import ReshapeOp
 from ....ops.release_ops import ArmCastOp, ArmConvolutionOp, ArmConvolution3DOp, ArmConvIntegerOp, ArmDecodeBoxOp, \
     ArmDepthwiseConvOp, ArmConvTransposeOp, ArmConvTranspose3DOp, ArmActivationOp
@@ -3833,6 +3833,13 @@ def trim_weights(graph):
                     node_obj.negative_slope, 'negative_slope', node_name)
                 node_obj.negative_slope_offset = offset
                 offset += node_obj.negative_slope.size * node_obj.negative_slope.dtype.itemsize
+            if isinstance(node_obj, BaseQuantizeDequantizeOp):
+                node_obj.scale = _data_in_supported_dtype(node_obj.scale, 'scale', node_name)
+                node_obj.scale_offset = offset
+                offset += node_obj.scale.size * node_obj.scale.dtype.itemsize
+                node_obj.zero_point = _data_in_supported_dtype(node_obj.zero_point, 'zero_point', node_name)
+                node_obj.zero_point_offset = offset
+                offset += node_obj.zero_point.size * node_obj.zero_point.dtype.itemsize
             if isinstance(node_obj, PluginOp) \
                     and node_obj.constants:
                 # Keep the original dtype for constants in Plugin

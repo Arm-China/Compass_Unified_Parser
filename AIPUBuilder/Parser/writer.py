@@ -6,7 +6,7 @@ import os
 from collections import OrderedDict
 from .graph.graph_algo import determined_sort
 from .graph.node_wrap import NodeWrap
-from .ops.op import ArmOp, OpHasWeights, OpHasBiases, BaseActivationOp
+from .ops.op import ArmOp, OpHasWeights, OpHasBiases, BaseActivationOp, BaseQuantizeDequantizeOp
 from .ops.release_ops import ArmActivationOp
 from .ops.common_ops import PluginOp
 from .common.utils import is_dir, list_list_to_string, string_list_to_string
@@ -137,6 +137,10 @@ def serialize(graph, params):
                                     break
                             if isinstance(op_obj, (BaseActivationOp, ArmActivationOp)):
                                 if not op_obj.write_negative_slope(bin_file):
+                                    ret = False
+                                    break
+                            if isinstance(op_obj, BaseQuantizeDequantizeOp):
+                                if not op_obj.write_scale_zp(bin_file):
                                     ret = False
                                     break
                             if isinstance(op_obj, PluginOp):

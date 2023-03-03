@@ -1775,6 +1775,53 @@ class BaseRnnOp(OpHasMethod, OpHasVariableOutPorts):
         return ret
 
 
+class BaseQuantizeDequantizeOp(Op):
+    @classmethod
+    def attributes(cls):
+        return {'scale': {'type': AttrType.TENSOR, 'default': np.array([1], np.float32)},
+                'zero_point': {'type': AttrType.TENSOR, 'default': np.array([0], np.int32)},
+                'scale_offset': {'type': AttrType.INT, 'default': -1},
+                'zero_point_offset': {'type': AttrType.INT, 'default': -1}
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(BaseQuantizeDequantizeOp, self).__init__(graph, attr_dict)
+        self.update_attributes(BaseQuantizeDequantizeOp, attr_dict)
+        assert self.check_required(), 'BaseQuantizeDequantizeOp is missing a required parameter.'
+
+    @abc.abstractmethod
+    def infer_shape(self):
+        '''An abstract method for shape inference.'''
+        super(BaseQuantizeDequantizeOp, self).infer_shape()
+
+    def write_attrs(self, txt_file):
+        ret = super(BaseQuantizeDequantizeOp, self).write_attrs(txt_file)
+        if ret:
+            txt_file.write('quantize_scale_type=%s\n' % str(self.scale.dtype))
+            txt_file.write('quantize_scale_offset=%d\n' % self.scale_offset)
+            txt_file.write('quantize_scale_size=%d\n' % (self.scale.size * self.scale.dtype.itemsize))
+            txt_file.write('quantize_scale_shape=[%s]\n' % num_list_to_string(list(self.scale.shape)))
+            txt_file.write('quantize_zp_type=%s\n' % str(self.zero_point.dtype))
+            txt_file.write('quantize_zp_offset=%d\n' % self.zero_point_offset)
+            txt_file.write('quantize_zp_size=%d\n' % (self.zero_point.size * self.zero_point.dtype.itemsize))
+            txt_file.write('quantize_zp_shape=[%s]\n' % num_list_to_string(list(self.zero_point.shape)))
+        return ret
+
+    def write_scale_zp(self, bin_file):
+        ret = True
+        if not bin_file.closed and bin_file.mode == 'wb':
+            if self.scale is not None and self.scale_offset >= 0 \
+                    and self.zero_point is not None and self.zero_point_offset >= 0:
+                Op.numpy_to_bin(bin_file, self.scale, self.scale_offset, self.name)
+                Op.numpy_to_bin(bin_file, self.zero_point, self.zero_point_offset, self.name)
+            else:
+                ERROR('[Parser]: Invalid scale/zp for Node %s in write_scale_zp!' % self.name)
+        else:
+            FATAL('[Parser]: Invalid file to write scale/zp for Node(%s) in write_scale_zp!' %
+                  (self.name))
+        return ret
+
+
 class OpHasSubGraph(OpHasVariableOutPorts):
     '''
     Class OpHasSubGraph inherited from OpHasVariableOutPorts class.

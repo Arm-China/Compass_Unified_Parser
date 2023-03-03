@@ -1498,12 +1498,10 @@ class ArmDepthwiseConvOp(BaseActivationOp, BaseConvOp, ArmOp):
         return ret
 
 
-class ArmDeQuantizeOp(OpHasAxis, OpHasOneOutPort, ArmOp):
+class ArmDeQuantizeOp(OpHasAxis, BaseQuantizeDequantizeOp, OpHasOneOutPort, ArmOp):
     @classmethod
     def attributes(cls):
-        return {'scale': {'type': AttrType.TENSOR, 'default': np.array([1], np.float32)},
-                'zero_point': {'type': AttrType.TENSOR, 'default': np.array([0], np.int32)},
-                'from_dtype': {'type': AttrType.STRING,
+        return {'from_dtype': {'type': AttrType.STRING,
                                'required': True,
                                'options': ['int8', 'uint8', 'int32', 'uint32']}
                 }
@@ -1516,7 +1514,13 @@ class ArmDeQuantizeOp(OpHasAxis, OpHasOneOutPort, ArmOp):
     def infer_shape(self):
         super(ArmDeQuantizeOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = ((inputs[0].astype(self.zero_point.dtype) - self.zero_point) * self.scale).astype(np.float32)
+        if self.axis is None:
+            out_tensor = ((inputs[0].astype(self.zero_point.dtype) - self.zero_point) * self.scale).astype(np.float32)
+        else:
+            expand_len = len(inputs[0].shape) - self.axis - 1
+            scale = np.reshape(self.scale, list(self.scale.shape) + [1] * expand_len)
+            zero_point = np.reshape(self.zero_point, list(self.zero_point.shape) + [1] * expand_len)
+            out_tensor = ((inputs[0].astype(zero_point.dtype) - zero_point) * scale).astype(np.float32)
         self.set_out_tensor(out_tensor)
 
 
