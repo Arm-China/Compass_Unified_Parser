@@ -2166,16 +2166,17 @@ class TfliteReduceOp(OpHasAxis, OpHasOneOutPort, TfliteOp):
 
     def __getattr__(self, item):
         '''Returns the OP object property value.'''
-        if item == 'axes':
-            try:
+        ret = None
+        try:
+            if item == 'axes':
                 inputs = self.get_input_tensors()
                 ret = np.array(inputs[1]).tolist()
                 if not isinstance(ret, list):
                     ret = [ret]
                 self.__dict__['_attr'][item] = Attribute(
                     item, {'type': AttrType.INTS, 'value': ret})
-            except:
-                ret = None
+        except:
+            ret = None
         if ret is None:
             ret = super(TfliteReduceOp, self).__getattr__(item)
         return ret
