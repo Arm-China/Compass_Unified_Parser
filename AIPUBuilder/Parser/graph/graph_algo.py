@@ -183,14 +183,17 @@ def clear_redundant_nodes(g, outputs=None):
     '''Delete redundant nodes in the graph.'''
     noop_names = [n for n in g.nodes if g.get_node(n)._attr['op'] == 'Out'
                   and g.pred[n]
-                  and (any([p in g._attr.get('output_names', []) for p in g.pred[n]])
-                       or len(g.succ[g.pred[n][0]]) > 1)
+                  and any([p in g._attr.get('output_names', []) for p in g.pred[n]])
                   ]
     output_names = outputs if outputs else (
         noop_names if noop_names else g._attr.get('output_names', []))
     if output_names:
         valid_nodes = determined_sort(g, output_names)
         removing_nodes = set(g.nodes).difference(valid_nodes)
+        valid_out_nodes = [n for n in removing_nodes if g.get_node(n)._attr['op'] == 'Out'
+                           and len(g.pred[n]) == 1
+                           and g.pred[n][0] not in removing_nodes]
+        removing_nodes = set(removing_nodes).difference(valid_out_nodes)
         g.remove_nodes_from(removing_nodes)
     else:
         ERROR('[Parser]: Can not proceed without output names in clear_redundant_nodes!')
