@@ -3153,8 +3153,6 @@ def detection_post_process(graph, params):
                 class_predict, data=True)
             box_predict_out_edges = graph.sorted_out_edges(
                 box_predict, data=True)
-            graph.remove_edges_from(
-                class_predict_out_edges + box_predict_out_edges)
 
             class_pred_obj = NodeWrap(graph, class_predict)['object']
             class_pred_parent = class_predict_in_edges[0][0]
@@ -3270,6 +3268,7 @@ def detection_post_process(graph, params):
                 NodeWrap(graph, nms_out).replace_obj('Out', nms_out_attr)
 
             graph._attr['output_names'].clear()
+            graph._attr['output_nodes'].clear()
             graph._attr['output_names'] = [decode_box, nms]
         else:
             ERROR('[Parser]: Invalid outputs number (%d) before post process in detection_post_process!' %

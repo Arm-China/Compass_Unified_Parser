@@ -186,7 +186,7 @@ def parse_pb(graph, model_path, params, anchor_tensors):
 
         with tfv1.Session() as sess:
             graph_def = tfv1.graph_util.convert_variables_to_constants(
-                sess, graph_def, params['output_names'])
+                sess, graph_def, params['output_names'] + [trim_tensor_name(name) for name in anchor_tensors])
 
         tfv1.graph_util.remove_training_nodes(graph_def)
         tfv1.import_graph_def(graph_def, name='')
