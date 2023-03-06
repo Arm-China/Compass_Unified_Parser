@@ -118,7 +118,7 @@ class QuantizeLinearOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
     @classmethod
     def attributes(cls):
         return {10: {'axis': {'default': None, 'required': False}},
-                13: {'axis': {'default': 1, 'required': False}}
+                13: {'axis': {'default': None, 'required': False}}
                 }
 
     def __init__(self, graph, attr_dict=None):
@@ -129,24 +129,33 @@ class QuantizeLinearOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
     def __getattr__(self, item):
         ret = None
         try:
-            ret = self.__dict__['_attr'][item].value
-        except:
-            pass
-        try:
-            if ret is None:
-                if item == 'y_scale':
+            if item == 'axis':
+                if self.cur_version == 10:
+                    ret = None
+                else:
                     inputs = self.get_input_tensors()
-                    ret = np.array(inputs[1]).astype(np.float32)
-                    self.__dict__['_attr'][item] = Attribute(
-                        item, {'type': AttrType.TENSOR, 'value': ret})
-                elif item == 'y_zero_point':
-                    inputs = self.get_input_tensors()
-                    try:
-                        ret = np.array(inputs[2])
-                    except:
-                        ret = np.array(0, dtype=np.uint8)
-                    self.__dict__['_attr'][item] = Attribute(
-                        item, {'type': AttrType.TENSOR, 'value': ret})
+                    if self.__dict__['_attr'][item].value is None:
+                        if len(inputs[1].shape) != 0:
+                            if len(inputs[0].shape) == 1:
+                                ret = 0
+                            else:
+                                ret = 1
+                            self.__dict__['_attr'][item].value = ret
+                    else:
+                        ret = self.__dict__['_attr'][item].value
+            elif item == 'y_scale':
+                inputs = self.get_input_tensors()
+                ret = np.array(inputs[1]).astype(np.float32)
+                self.__dict__['_attr'][item] = Attribute(
+                    item, {'type': AttrType.TENSOR, 'value': ret})
+            elif item == 'y_zero_point':
+                inputs = self.get_input_tensors()
+                try:
+                    ret = np.array(inputs[2])
+                except:
+                    ret = np.array(0, dtype=np.uint8)
+                self.__dict__['_attr'][item] = Attribute(
+                    item, {'type': AttrType.TENSOR, 'value': ret})
         except:
             ret = None
         if ret is None:
@@ -159,7 +168,7 @@ class QuantizeLinearOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
         assert len(inputs) in (2, 3), 'QuantizeLinearOp expects 2 or 3 inputs, but got %d.' % len(inputs)
         if len(inputs) > 2:
             assert self.y_scale.shape == self.y_zero_point.shape, 'y_scale and y_zero_point in QuantizeLinearOp must have same shape.'
-        if self.y_scale.ndim == 0:
+        if self.axis is None:
             out_tensor = np.round(inputs[0] / self.y_scale) + self.y_zero_point
         else:
             axis_dim = inputs[0].shape[self.axis]
@@ -186,7 +195,5 @@ class QuantizeLinearOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
                             zp_value, self.name, in_port=2, data_format='NHWC')
         max_ver = type(self).max_ver()
         cur_ver = self.cur_version
-        if cur_ver < 13:
-            self.axis = -1
         if cur_ver < max_ver:
             self.cur_version = max_ver

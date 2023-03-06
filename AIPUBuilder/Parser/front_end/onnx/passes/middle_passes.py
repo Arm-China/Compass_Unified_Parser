@@ -1923,6 +1923,11 @@ def convert_quantizelinear(graph):
             ERROR(
                 '[Parser]: Meets invalid QuantizeLinear Op(%s) in convert_quantizelinear!' % quant)
             continue
+        scale, _, scale_in_attr = quant_in_edges[1]
+        zp, _, zp_in_attr = quant_in_edges[2]
+        if scale_in_attr['tensor'].is_const and zp_in_attr['tensor'].is_const:
+            continue
+
         input_shapes = quant_obj.get_input_shapes()
         quant_axis = OpHasAxis.make_axes_non_negative(
             quant_obj.axis, len(input_shapes[0]))
@@ -1933,8 +1938,6 @@ def convert_quantizelinear(graph):
                 '[Parser]: Meets different shapes of y_scale and y_zero_point in QuantizeLinear Op(%s) in convert_quantizelinear!' % quant)
             continue
         inp, _, inp_in_attr = quant_in_edges[0]
-        scale, _, scale_in_attr = quant_in_edges[1]
-        zp, _, zp_in_attr = quant_in_edges[2]
         graph.remove_edges_from(quant_in_edges)
 
         div = get_valid_node_name(graph, quant + '_div')
