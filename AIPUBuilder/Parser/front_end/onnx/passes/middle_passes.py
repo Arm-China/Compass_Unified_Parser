@@ -1032,7 +1032,7 @@ def convert_upsample_to_resize(graph):
         upsample = m['target']
         upsample_obj = NodeWrap(graph, upsample)['object']
         in_edges = graph.sorted_in_edges(upsample, data=True)
-        if upsample_obj is not None and upsample_obj.cur_version == 9 and len(in_edges) == 2:
+        if upsample_obj is not None and len(in_edges) == 2:
             scales_inp, _, scales_in_attr = in_edges[1]
             graph.remove_edges_from(in_edges[1:])
             insert_constant(graph, upsample + '_roi',
@@ -1051,8 +1051,7 @@ def convert_upsample_to_resize(graph):
                     {'nearest_mode': 'simple'})
             NodeWrap(graph, upsample).replace_obj('Resize', resize_attr)
         else:
-            # FIXME: Consider more opset version and change warn to error after fixing.
-            WARN(
+            ERROR(
                 '[Parser]: Meets invalid Upsample Op (%s) in convert_upsample_to_resize!' % upsample)
 
 
