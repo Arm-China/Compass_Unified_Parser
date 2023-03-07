@@ -163,6 +163,10 @@ def convert_onnx_to_graph(model_path, params):
     graph = Graph(name=params.get('model_name', ''))
     graph._attr['framework'] = Framework.ONNX
     graph._attr['output_tensor_names'] = params.get('output_tensor_names', [])
+    quantize = True \
+        if params.get('compat_quantized_model', 'false').lower() == 'true' \
+        else False
+    graph._attr['quantize'] = quantize
 
     meta_ret = True
     consumer_ver = get_version(onnx)

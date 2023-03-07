@@ -176,13 +176,14 @@ def convert_lstm(graph):
         in_edges = graph.sorted_in_edges(lstm, data=True)
         out_edges = graph.sorted_out_edges(lstm, data=True)
         if lstm_obj is not None:
+            out_ports = lstm_obj.get_out_ports()
             if lstm_obj.expose_hidden:
-                if len(in_edges) != 4 or len(out_edges) != 3:
+                if len(in_edges) != 4 or out_ports != [0, 1, 2]:
                     WARN(
                         '[Parser]: Only supports 4 inputs and 3 out edges of CaffeLSTM(%s) when expose_hidden is True in convert_lstm!' % lstm)
                     continue
             else:
-                if len(in_edges) != 2 or len(out_ports) != 1:
+                if len(in_edges) != 2 or out_ports != [0]:
                     WARN(
                         '[Parser]: Only supports 2 inputs and 1 out edge of CaffeLSTM(%s) when expose_hidden is False in convert_lstm!' % lstm)
                     continue
