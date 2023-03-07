@@ -3848,7 +3848,7 @@ def convert_to_onnx(graph):
                                       'opset_version': 9}
                         NodeWrap(graph, const_name).replace_obj(
                             'Constant', const_attr)
-                elif pure_type == 'ConcatV2':
+                elif pure_type in ('ConcatV2', 'GatherV2'):
                     graph.remove_edges_from(in_edges[-1:])
                     new_node_attr.update(
                         {'axis': int(in_edges[-1][2]['tensor'].value)})

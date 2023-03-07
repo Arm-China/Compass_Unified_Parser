@@ -846,6 +846,7 @@ def convert_gather_to_slice(graph):
                 graph.remove_edges_from(in_edges[1:])
                 in_shape = input_shapes[0]
                 indices = in_consts[0][2]
+                indices = in_shape[gather_obj.axis] + indices if indices < 0 else indices
 
                 reshape = get_valid_node_name(graph, gather + '_post_reshape')
                 for _, dst, out_attr in graph.sorted_out_edges(gather, data=True):
@@ -854,7 +855,7 @@ def convert_gather_to_slice(graph):
                 graph.add_edge(gather, reshape)
 
                 starts = [0] * len(in_shape)
-                ends = in_shape
+                ends = copy.deepcopy(in_shape)
                 starts[gather_obj.axis] = int(indices)
                 ends[gather_obj.axis] = starts[gather_obj.axis] + 1
                 axes = list(range(len(in_shape)))
