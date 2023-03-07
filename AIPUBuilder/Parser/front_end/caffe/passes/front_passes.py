@@ -174,7 +174,6 @@ def convert_lstm(graph):
         lstm = m['target']
         lstm_obj = NodeWrap(graph, lstm)['object']
         in_edges = graph.sorted_in_edges(lstm, data=True)
-        out_edges = graph.sorted_out_edges(lstm, data=True)
         if lstm_obj is not None:
             out_ports = lstm_obj.get_out_ports()
             if lstm_obj.expose_hidden:
@@ -187,11 +186,17 @@ def convert_lstm(graph):
                     WARN(
                         '[Parser]: Only supports 2 inputs and 1 out edge of CaffeLSTM(%s) when expose_hidden is False in convert_lstm!' % lstm)
                     continue
+            _, _, cond_in_attr = in_edges[1]
+            if cond_in_attr['tensor'] is None \
+                    or cond_in_attr['tensor'].value is None \
+                    or not cond_in_attr['tensor'].is_const \
+                    or not FLOAT_EQUAL(cond_in_attr['tensor'].value, 1):
+                WARN('[Parser]: Only supports cond==ones of CaffeLSTM(%s) in convert_lstm!' % lstm)
+                continue
             matched = True
             input_shapes = lstm_obj.get_input_shapes()
             hidden_size = lstm_obj.num_output
             src, _, in_attr = in_edges[0]
-            _, dst, out_attr = out_edges[0]
             graph.remove_edges_from(in_edges[1:])
 
             if len(input_shapes[0]) > 3:
@@ -238,8 +243,10 @@ def convert_lstm(graph):
                 new_init_c_attr['dst_in_port'] = 6
                 graph.add_edge(init_c, lstm, **new_init_c_attr)
 
-            post_reshape = insert_reshape(graph, lstm, dst, out_attr, dim=[
-                                          time_steps, batch_size, hidden_size], data_format='NHWC')
+            new_dim = [time_steps, batch_size, hidden_size]
+            old_dim = [time_steps, 1, batch_size, hidden_size]
+            post_reshape = insert_reshape_after(graph, lstm, new_dim, old_dim)
+
             if lstm in graph._attr['output_names']:
                 index = graph._attr['output_names'].index(lstm)
                 if not lstm_obj.expose_hidden:

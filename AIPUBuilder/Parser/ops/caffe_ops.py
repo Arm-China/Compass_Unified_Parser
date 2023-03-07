@@ -506,7 +506,7 @@ class CaffeDROPOUTOp(OpHasOneOutPort, CaffeOp):
         self.set_out_tensor(out_tensor)
 
 
-class CaffeDUMMYDATAOp(OpHasOneOutPort, CaffeOp):
+class CaffeDUMMYDATAOp(OpHasOneOutPort, ConstLikeOp, CaffeOp):
     @classmethod
     def attributes(cls):
         return {1: {'data_filler': {'type': AttrType.UNDEFINED, 'default': []},

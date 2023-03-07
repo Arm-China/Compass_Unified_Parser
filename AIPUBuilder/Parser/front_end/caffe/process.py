@@ -5,7 +5,8 @@
 from .load import convert_caffe_to_graph
 from ...graph.graph_algo import infer, clear_redundant_nodes
 from ..onnx.passes.front_passes import fuse_weights_const
-from ..onnx.passes.common_passes import remove_useless_op, remove_redundant_reshape, apply_subgraph_plugin, record_output_tensors
+from ..onnx.passes.common_passes import remove_useless_op, remove_redundant_reshape, apply_subgraph_plugin, \
+    record_output_tensors, convert_to_const
 from .passes.front_passes import *
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 
@@ -21,6 +22,7 @@ def process_caffe(graph, model_path, params):
         fuse_weights_const(graph)
         clear_redundant_nodes(graph)
         infer(graph)
+        convert_to_const(graph, ['CaffeDUMMYDATA'])
 
         remove_redundant_reshape(graph, 'CaffeRESHAPE')
         remove_useless_reshape(graph)
