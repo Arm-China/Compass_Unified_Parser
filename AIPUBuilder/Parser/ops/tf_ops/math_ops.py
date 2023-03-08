@@ -1273,7 +1273,7 @@ class TfSquaredDifferenceOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfSquaredDifferenceOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.math.squared_difference(*inputs).numpy()
+        out_tensor = tf.math.squared_difference(inputs[0], inputs[1]).numpy()
         self.set_out_tensor(out_tensor)
 
 

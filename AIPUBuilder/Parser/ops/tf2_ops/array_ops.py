@@ -358,6 +358,10 @@ class TfstackOp(OpHasAxis, OpHasOneOutPort, Tf2Op):
         return {'type': 'ConcatFromSequence', 'version': 11}
 
 
+class Tfstop_gradientOp(TfStopGradientOp, Tf2Op):
+    pass
+
+
 class TfsqueezeOp(OpHasAxis, OpHasOneOutPort, Tf2Op):
     @classmethod
     def attributes(cls):

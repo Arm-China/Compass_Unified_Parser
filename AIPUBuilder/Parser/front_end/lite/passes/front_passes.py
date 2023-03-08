@@ -130,7 +130,7 @@ def convert_square(graph, op_type='TfSquare'):
 
 def convert_square_diff(graph, op_type='TfSquaredDifference'):
     matched = False
-    if op_type not in ('TfSquaredDifference', 'LiteSQUARED_DIFFERENCE'):
+    if op_type not in ('TfSquaredDifference', 'Tfsquared_difference', 'LiteSQUARED_DIFFERENCE'):
         ERROR('[Parser]: Meets invalid Op type (%s) in convert_square_diff!' % op_type)
         return
     matches = single_node_matcher(graph, op_type)
@@ -140,8 +140,9 @@ def convert_square_diff(graph, op_type='TfSquaredDifference'):
         squd_in_edges = graph.sorted_in_edges(squd, data=True)
         squd_out_edges = graph.sorted_out_edges(squd, data=True)
         if squd_obj is not None \
-                and len(squd_in_edges) == 2:
+                and len(squd_in_edges) >= 2:
             matched = True
+            graph.remove_edges_from(squd_in_edges[2:])
             s_pow = get_valid_node_name(graph, squd + '_pow')
             graph.add_edge(squd, s_pow)
             for _, dst, out_attr in squd_out_edges:

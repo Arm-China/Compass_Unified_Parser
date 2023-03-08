@@ -5,7 +5,7 @@
 from .load import convert_tf2_to_graph
 from ...graph.graph_algo import infer
 from ..onnx.passes.front_passes import fuse_weights_const
-from ..onnx.passes.common_passes import fuse_const, record_output_tensors, apply_subgraph_plugin
+from ..onnx.passes.common_passes import fuse_const, record_output_tensors, apply_subgraph_plugin, remove_useless_op
 from .passes.front_passes import convert_to_onnx, convert_crelu, convert_l2_normalize, convert_lp_norm, convert_squeeze
 from .passes.keras_front_passes import process_keras_op_before_infer, process_keras_op_after_infer
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
@@ -18,6 +18,7 @@ def process_tf2(model_path, params):
 
     if graph is not None and len(graph) > 0:
         apply_subgraph_plugin(graph)
+        remove_useless_op(graph, ['Tfstop_gradient'])
         infer(graph, partial=True)
         fuse_const(graph)
 
@@ -28,9 +29,10 @@ def process_tf2(model_path, params):
         from ..tf.passes.front_passes import split_b2s, convert_depth_to_space, convert_onehot, convert_matmul, convert_maxpoolwithargmax
         split_b2s(graph, op_type='Tfbatch_to_space_nd')
 
-        from ..lite.passes.front_passes import split_not_equal, split_rsqrt
+        from ..lite.passes.front_passes import split_not_equal, split_rsqrt, convert_square_diff
         split_not_equal(graph, op_type='Tfnot_equal')
         split_rsqrt(graph, op_type='Tfrsqrt')
+        convert_square_diff(graph, op_type='Tfsquared_difference')
 
         infer(graph)
 
