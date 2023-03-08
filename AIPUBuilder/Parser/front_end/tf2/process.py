@@ -26,7 +26,8 @@ def process_tf2(model_path, params):
 
         convert_crelu(graph)
 
-        from ..tf.passes.front_passes import split_b2s, convert_depth_to_space, convert_onehot, convert_matmul, convert_maxpoolwithargmax
+        from ..tf.passes.front_passes import split_b2s, convert_depth_to_space, convert_onehot, \
+            convert_matmul, convert_maxpoolwithargmax, split_special_floormod
         split_b2s(graph, op_type='Tfbatch_to_space_nd')
 
         from ..lite.passes.front_passes import split_not_equal, split_rsqrt, convert_square_diff
@@ -41,6 +42,7 @@ def process_tf2(model_path, params):
         convert_squeeze(graph, op_type='Tfsqueeze')
         convert_matmul(graph)
         convert_maxpoolwithargmax(graph, op_type='Tfmax_pool_with_argmax')
+        split_special_floormod(graph, op_type='Tffloormod')
 
         process_keras_op_after_infer(graph)
 

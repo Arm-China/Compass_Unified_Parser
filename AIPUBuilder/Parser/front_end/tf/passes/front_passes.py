@@ -1118,9 +1118,10 @@ def split_b2s(graph, op_type='TfBatchToSpaceND'):
 
 
 def split_special_floormod(graph, op_type='TfFloorMod'):
-    if op_type not in ('TfFloorMod', 'LiteFLOOR_MOD'):
+    if op_type not in ('TfFloorMod', 'Tffloormod', 'LiteFLOOR_MOD'):
         ERROR('[Parser]: Meets invalid Op type (%s) in split_special_floormod!' % op_type)
         return
+    need_clear = False
     matches = single_node_matcher(graph, op_type)
     for m in matches:
         floor_mod = m['target']
@@ -1128,8 +1129,8 @@ def split_special_floormod(graph, op_type='TfFloorMod'):
         if floor_mod_obj is not None:
             in_edges = graph.sorted_in_edges(floor_mod, data=True)
             inputs = floor_mod_obj.get_input_tensors()
-            if len(in_edges) != 2 \
-                    or len(inputs) != 2 \
+            if len(in_edges) < 2 \
+                    or len(inputs) < 2 \
                     or inputs[0] is None \
                     or inputs[1] is None \
                     or str(inputs[0].dtype) != str(inputs[1].dtype):
@@ -1138,6 +1139,9 @@ def split_special_floormod(graph, op_type='TfFloorMod'):
                 continue
 
             if 'float' in str(inputs[0].dtype):
+                if len(in_edges) > 2:
+                    need_clear = True
+                    graph.remove_edges_from(in_edges[2:])
                 y, _, y_in_attr = in_edges[1]
                 zero_value = np.zeros_like(inputs[0])
                 zero = get_valid_node_name(graph, floor_mod + '_zero')
@@ -1218,6 +1222,8 @@ def split_special_floormod(graph, op_type='TfFloorMod'):
         else:
             ERROR('[Parser]: Meets invalid %s Node(%s) in split_special_floormod!' % (
                 op_type, floor_mod))
+    if need_clear:
+        clear_redundant_nodes(graph)
 
 
 def merge_gru(graph):
