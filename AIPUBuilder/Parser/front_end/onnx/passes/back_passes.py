@@ -675,7 +675,10 @@ def rename_quantize_dequantize(graph):
                     or any(t is None for t in input_tensors):
                 ERROR('[Parser]: Meets invalid QuantizeLinear/DequantizeLinear Op(%s) in rename_quantize_dequantize!' % quantize)
                 continue
-            dtype_str = str(input_tensors[0].dtype)
+            if in_edges[0][3]['tensor'].dtype is not None:
+                dtype_str = str(in_edges[0][3]['tensor'].dtype)
+            else:
+                dtype_str = str(input_tensors[0].dtype)
         scale_name, _, k1, scale_in_attr = in_edges[1]
         zp_name, _, k2, zp_in_attr = in_edges[2]
         if not scale_in_attr['tensor'].is_const \

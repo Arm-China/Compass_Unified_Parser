@@ -459,6 +459,7 @@ class Op(abc.ABC):
     def get_inputs_info(self):
         '''Get inputs info about name,value shape,value dtype.'''
         ret = []
+        quantize = self._graph._attr.get('quantize', False)
         for u, v, k, d in self._graph.sorted_in_edges(self.name, keys=True, data=True):
             pred_node_obj = self._graph.nodes[u]._attr.get('object', None)
             if pred_node_obj is not None:
@@ -467,7 +468,7 @@ class Op(abc.ABC):
                 pre_name_suffix = '' if isinstance(
                     pred_node_obj, OpHasOneOutPort) else '_' + str(d['src_out_port'])
                 if d['tensor'].value is not None:
-                    if d['tensor'].dtype is not None:
+                    if quantize and d['tensor'].dtype is not None:
                         dtype = d['tensor'].dtype
                     else:
                         dtype = str(d['tensor'].value.dtype)
@@ -480,6 +481,7 @@ class Op(abc.ABC):
     def get_outputs_info(self):
         '''Get outputs info about name,value shape,value dtype.'''
         ret = []
+        quantize = self._graph._attr.get('quantize', False)
         info = OrderedDict()
         for u, v, k, d in self._graph.sorted_out_edges(self.name, keys=True, data=True):
             name_suffix = '' if isinstance(
@@ -501,9 +503,9 @@ class Op(abc.ABC):
             if len(d['tensor'].min_max) == 2:
                 min_max_str = '[%f,%f]' % (float(d['tensor'].min_max[0]), float(d['tensor'].min_max[1]))
                 info_value[2].update({'min_max': min_max_str})
-            if d['tensor'].dtype is not None:
+            if quantize and d['tensor'].dtype is not None:
                 info_value[2].update({'dtype': str(d['tensor'].dtype)})
-            if len(d['tensor'].scale_zp) == 2:
+            if quantize and len(d['tensor'].scale_zp) == 2:
                 scale_zp = (np.array(d['tensor'].scale_zp[0]), np.array(d['tensor'].scale_zp[1]))
                 info_value[2].update({'scale_zp': scale_zp})
             info.update({u + name_suffix: info_value})

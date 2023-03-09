@@ -730,25 +730,40 @@ class LiteDEPTHWISE_CONV_2DOp(BaseActivationOp, BaseConvOp, TfliteOp):
 class LiteDEQUANTIZEOp(OpHasOneOutPort, TfliteOp):
     @classmethod
     def attributes(cls):
-        return {1: {}, 2: {}}
+        return {1: {'scale': {'type': AttrType.TENSOR, 'default': np.array([1.], np.float32)},
+                    'zero_point': {'type': AttrType.TENSOR, 'default': np.array([0], np.int32)}},
+                2: {'scale': {'type': AttrType.TENSOR, 'default': np.array([1.], np.float32)},
+                    'zero_point': {'type': AttrType.TENSOR, 'default': np.array([0], np.int32)}}
+                }
 
     def __init__(self, graph, attr_dict=None):
         super(LiteDEQUANTIZEOp, self).__init__(graph, attr_dict)
         self.update_attributes(LiteDEQUANTIZEOp, attr_dict)
         assert self.check_required(), 'LiteDEQUANTIZEOp is missing a required parameter.'
 
+    def __getattr__(self, item):
+        ret = None
+        try:
+            if item == 'scale':
+                in_edges = self._graph.sorted_in_edges(self.name, data=True)
+                ret, _ = in_edges[0][2]['tensor'].scale_zp
+                self.__dict__['_attr'][item].value = ret
+            elif item == 'zero_point':
+                in_edges = self._graph.sorted_in_edges(self.name, data=True)
+                _, ret = in_edges[0][2]['tensor'].scale_zp
+                self.__dict__['_attr'][item].value = ret
+        except:
+            ret = None
+        if ret is None:
+            ret = super(LiteDEQUANTIZEOp, self).__getattr__(item)
+        return ret
+
     def infer_shape(self):
         super(LiteDEQUANTIZEOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = inputs[0].copy()
+        x = inputs[0].astype(np.int32)
+        out_tensor = (self.scale * (x - self.zero_point)).astype(np.float32)
         self.set_out_tensor(out_tensor)
-
-    @property
-    def correspond_onnx_op(self):
-        if not self.quantize:
-            return {'type': 'DequantizeLinear', 'version': 10}
-        else:
-            return None
 
 
 class LiteDIVOp(BaseActivationOp, TfliteOp):

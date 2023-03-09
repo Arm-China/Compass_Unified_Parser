@@ -1408,8 +1408,8 @@ def merge_quantized_lstm2(graph):
         # Reset output names
         for idx, node in enumerate([final_yout, final_hout, final_cout]):
             if node == final_yout:
-                old_dim = [seq_length-1, 1, batch_size, hidden_size]
-                new_dim = [seq_length-1, batch_size, hidden_size]
+                old_dim = [seq_length - 1, 1, batch_size, hidden_size]
+                new_dim = [seq_length - 1, batch_size, hidden_size]
             else:
                 old_dim = [1, batch_size, hidden_size]
                 new_dim = [batch_size, hidden_size]
@@ -1433,7 +1433,7 @@ def merge_quantized_lstm2(graph):
         biases_w = np.concatenate([input_wb, output_wb, forget_wb, cell_wb])
         biases_r = np.zeros_like(biases_w)
         B_value = np.stack([np.concatenate([biases_w, biases_r])])
-        seq_length = np.array([seq_length-1] * batch_size, np.int64)
+        seq_length = np.array([seq_length - 1] * batch_size, np.int64)
         initial_hc_shape = [1, batch_size, hidden_size]
 
         # Convert to onnx lstm
@@ -1786,6 +1786,61 @@ def convert_special_dequantize(graph):
                               'zero_point': in_attr['tensor'].scale_zp[1],
                               'from_dtype': from_dtype})
             NodeWrap(graph, dequantize).replace_obj('ArmDeQuantize', node_attr)
+
+
+def convert_dequantize(graph):
+    matches = single_node_matcher(graph, 'LiteDEQUANTIZE')
+    for m in matches:
+        dequantize = m['target']
+        dequantize_obj = NodeWrap(graph, dequantize)['object']
+        in_edges = graph.sorted_in_edges(dequantize, data=True)
+        out_edges = graph.sorted_out_edges(dequantize, data=True)
+        if dequantize_obj is None or len(in_edges) != 1 or len(out_edges) < 1:
+            ERROR(
+                '[Parser]: Meets invalid LiteDEQUANTIZE(%s) in convert_dequantize!' % dequantize)
+            continue
+        src, _, in_attr = in_edges[0]
+        _, dst, out_attr = out_edges[0]
+        if in_attr['tensor'].value is None \
+                or out_attr['tensor'].value is None:
+            ERROR(
+                '[Parser]: Meets invalid LiteDEQUANTIZE(%s) in convert_dequantize!' % dequantize)
+            continue
+        if in_attr['tensor'].dtype is None \
+                or out_attr['tensor'].dtype is None:
+            ERROR('[Parser]: Meets invalid dtype of LiteDEQUANTIZE(%s) in convert_dequantize! Should set compat_quantized_model=true in cfg!' % dequantize)
+            continue
+        src_dtype = np.dtype(in_attr['tensor'].dtype)
+        dst_dtype = np.dtype(out_attr['tensor'].dtype)
+        if not np.issubdtype(src_dtype, np.integer) or not np.issubdtype(dst_dtype, np.floating):
+            continue
+        scale = dequantize_obj.scale
+        zero_point = dequantize_obj.zero_point
+        if scale.dtype == np.float64:
+            scale = scale.astype(np.float32)
+        if zero_point.dtype == np.int64:
+            zero_point = zero_point.astype(np.int32)
+        insert_constant(graph,
+                        dequantize + '_scale',
+                        scale,
+                        dequantize,
+                        in_port=1,
+                        data_format='NHWC',
+                        const_ver=9,
+                        scale_zp=None,
+                        quantize=dequantize_obj.quantize)
+        insert_constant(graph,
+                        dequantize + '_zero_point',
+                        zero_point,
+                        dequantize,
+                        in_port=2,
+                        data_format='NHWC',
+                        const_ver=9,
+                        scale_zp=None,
+                        quantize=dequantize_obj.quantize)
+        node_attr = dequantize_obj.copied_attr()
+        node_attr.update({'opset_version': 10})
+        NodeWrap(graph, dequantize).replace_obj('DequantizeLinear', node_attr)
 
 
 def remove_sub_equal_select(graph):
