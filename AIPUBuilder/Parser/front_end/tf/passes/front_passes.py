@@ -347,7 +347,8 @@ def convert_nms(graph, params):
         'TfNonMaxSuppressionV4': 2,
         'TfNonMaxSuppressionV5': 3,
         'LiteNON_MAX_SUPPRESSION_V4': 2,
-        'LiteNON_MAX_SUPPRESSION_V5': 3
+        'LiteNON_MAX_SUPPRESSION_V5': 3,
+        'Tfnon_max_suppression': 1,
     }
     matched = False
     for nms_type in nms_output_num_dict.keys():
@@ -410,7 +411,7 @@ def convert_nms(graph, params):
             for _, dst, out_attr in out_edges:
                 if out_attr['src_out_port'] == 0:
                     graph.add_edge(nms, dst, **{'src_out_port': 3})
-            if nms_type == 'TfNonMaxSuppressionV3':
+            if nms_type in ('TfNonMaxSuppressionV3', 'Tfnon_max_suppression'):
                 # Tf NMSV3 outputs: selected_indices
                 graph.add_edge(nms, out_boxes, **{'src_out_port': 0})
                 graph.add_edge(nms, out_box_num_per_class,

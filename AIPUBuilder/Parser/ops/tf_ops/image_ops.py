@@ -90,12 +90,16 @@ class TfNonMaxSuppressionV3Op(OpHasOneOutPort, TfOp):
         super(TfNonMaxSuppressionV3Op, self).infer_shape()
         inputs = self.get_input_tensors()
         assert len(
-            inputs) == 5, 'The length of inputs is invalid in TfNonMaxSuppressionV3Op.'
+            inputs) >= 5, 'The length of inputs is invalid in TfNonMaxSuppressionV3Op.'
         self.max_output_size, self.iou_threshold, self.score_threshold = [
             np.asscalar(inp) for inp in inputs[2:5]]
         # Do not use tf.image.non_max_suppression because the actual output shape is different
         # with the inferred output shape.
-        out_tensors = tf.image.non_max_suppression_padded(*inputs, pad_to_max_output_size=True)
+        out_tensors = tf.image.non_max_suppression_padded(*(inputs[:2]),
+                                                          self.max_output_size,
+                                                          self.iou_threshold,
+                                                          self.score_threshold,
+                                                          pad_to_max_output_size=True)
         out_tensor = out_tensors[0].numpy()
         self.set_out_tensor(out_tensor)
 
