@@ -10,7 +10,7 @@ from .passes.front_passes import split_op_has_activation, split_fc, split_s2b, s
     merge_special_cast_quantize, convert_special_quantize, convert_special_dequantize, split_quatized_mean, \
     merge_quantized_instance_norm, merge_quantized_lstm2, convert_dequantize
 from ..onnx.passes.front_passes import fuse_weights_const, convert_deconv
-from ..onnx.passes.common_passes import apply_subgraph_plugin, record_output_tensors
+from ..onnx.passes.common_passes import apply_subgraph_plugin, record_output_tensors, remove_useless_op
 from ...graph.graph_algo import infer, clear_redundant_nodes
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 
@@ -35,7 +35,7 @@ def process_tflite(model_path, params):
             # merge_quantized_instance_norm(graph)
             split_quatized_mean(graph)
         else:
-            convert_dequantize(graph)
+            remove_useless_op(graph, ['LiteDEQUANTIZE'])
 
         split_fc(graph)
         split_s2b(graph)
