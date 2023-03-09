@@ -158,23 +158,38 @@ def convert_attr_to_onnx(attr_dict, is_keras_op=False):
     return new_attr
 
 
-def parse_pb(graph, model_path, params, anchor_tensors):
+def get_tfgraph_and_nodes(graph_def):
+    tfv1.graph_util.remove_training_nodes(graph_def)
+    tfv1.import_graph_def(graph_def, name='')
+    default_graph = tfv1.get_default_graph()
+
+    nodes = list(parse_proto(
+        default_graph.get_operations(), get_op_content))
+    for func in graph_def.library.function:
+        func_name = func.signature.name
+        if any((node['type'] == func_name) for node in nodes):
+            nodes = get_function_node_content(func, nodes)
+    return default_graph, nodes
+
+
+def get_possible_outputs(graph_def):
+    output_names = []
+
+    def _children(op_name, g):
+        op = g.get_operation_by_name(op_name)
+        return set(op for out in op.outputs for op in out.consumers())
+    g = tfv1.Graph()
+    with g.as_default():
+        tfv1.import_graph_def(graph_def, name='')
+        for node in g.as_graph_def().node:
+            if len(_children(node.name, g)) == 0:
+                output_names.append(node.name)
+    return output_names
+
+
+def parse_pb(model_path, params, anchor_tensors):
 
     tfv1.reset_default_graph()
-
-    def _get_possible_outputs(gf):
-        output_names = []
-
-        def _children(op_name, g):
-            op = g.get_operation_by_name(op_name)
-            return set(op for out in op.outputs for op in out.consumers())
-        g = tfv1.Graph()
-        with g.as_default():
-            tfv1.import_graph_def(gf, name='')
-            for node in g.as_graph_def().node:
-                if len(_children(node.name, g)) == 0:
-                    output_names.append(node.name)
-        return output_names
 
     if not is_file(model_path):
         FATAL('[Parser]: Invalid pb file %s in parse_pb!' %
@@ -185,22 +200,19 @@ def parse_pb(graph, model_path, params, anchor_tensors):
             graph_def.ParseFromString(f.read())
 
         if not params['output_names']:
-            params['output_names'] = _get_possible_outputs(graph_def)
+            params['output_names'] = get_possible_outputs(graph_def)
 
         with tfv1.Session() as sess:
             graph_def = tfv1.graph_util.convert_variables_to_constants(
                 sess, graph_def, params['output_names'] + [trim_tensor_name(name) for name in anchor_tensors])
+    except Exception as e:
+        FATAL('[Parser]: Meet error in parse_pb: %s' % str(e))
+    return parse_graph_def(graph_def, params, anchor_tensors)
 
-        tfv1.graph_util.remove_training_nodes(graph_def)
-        tfv1.import_graph_def(graph_def, name='')
-        default_graph = tfv1.get_default_graph()
 
-        nodes = list(parse_proto(
-            default_graph.get_operations(), get_op_content))
-        for func in graph_def.library.function:
-            func_name = func.signature.name
-            if any((node['type'] == func_name) for node in nodes):
-                nodes = get_function_node_content(func, nodes)
+def parse_graph_def(graph_def, params, anchor_tensors=[]):
+    try:
+        default_graph, nodes = get_tfgraph_and_nodes(graph_def)
 
         for anchor_tensor in anchor_tensors:
             anchor_node = [n for n in nodes if n['name'] == trim_tensor_name(anchor_tensor)]
@@ -262,8 +274,8 @@ def parse_pb(graph, model_path, params, anchor_tensors):
                     continue
                 elif n.get('from_function', False):
                     continue
-                if n['name'] in graph._attr['input_names'] \
-                        or (not graph._attr['input_names'] and n['name'] in input_shapes) \
+                if n['name'] in params['input_names'] \
+                        or (not params['input_names'] and n['name'] in input_shapes) \
                         or n_type.startswith('TensorArray') \
                         or n_type in ('ConcatV2', 'Range', 'Reshape', 'ReverseV2', 'Shape', 'StatelessIf'):
                     tensors.update(
@@ -364,7 +376,7 @@ def convert_tf_to_graph(model_path, params):
         try:
             if not is_keras_model:
                 nodes, nodes_dict, tensors, np_tensors, input_shapes \
-                    = parse_pb(graph, model_path, params, anchor_tensors)
+                    = parse_pb(model_path, params, anchor_tensors)
             else:
                 nodes, nodes_dict, tensors, np_tensors, input_shapes \
                     = parse_keras(model_path, params)
