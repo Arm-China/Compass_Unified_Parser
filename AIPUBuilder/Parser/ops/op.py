@@ -146,7 +146,7 @@ class Op(abc.ABC):
         return {'name': {'type': AttrType.STRING, 'default': '', 'required': True},
                 'data_format': {'type': AttrType.STRING,
                                 'default': 'NHWC',
-                                'options': ['NWC', 'NCW', 'NHWC', 'NCHW', 'NDHWC', 'NCDHW'],
+                                'options': ['NWC', 'NCW', 'NHWC', 'NCHW', 'NDHWC', 'NCDHW', 'NCHW_VECT_C'],
                                 'required': True},
                 'cur_version': {'type': AttrType.INT, 'default': 0, 'required': False},
                 'quantize': {'type': AttrType.INT, 'default': 0, 'options': [0, 1]}
@@ -2452,6 +2452,56 @@ class TfOp(Op):
     def perm_nhwc_to_nchw_vect_c(cls):
         '''Calculate the perm required to convert nhwc to nchw_vect_c.'''
         return Op.cal_inverse_perm(cls.perm_nchw_vect_c_to_nhwc())
+
+    @staticmethod
+    def convert_to_nhwc(input_data, data_format):
+        ret = None
+        if data_format not in ('NHWC', 'NCHW', 'NCHW_VECT_C'):
+            ERROR('[Parser]: Meet unsupported data_format %s in convert_to_nhwc of TfOp!' % data_format)
+            return ret
+        input_dims = len(input_data.shape)
+        if data_format == 'NCHW_VECT_C':
+            input_shape = list(input_data.shape)
+            if input_dims != 5 or input_shape[1] % 4 != 0 or input_shape[-1] != 4:
+                ERROR('[Parser]: Meet invalid shape %s of input_data in convert_to_nhwc of TfOp!' % str(input_shape))
+                return ret
+            pre_perm = TfOp.perm_nchw_vect_c_to_nhwc()
+            nhwc_shape = [input_shape[idx] for idx in pre_perm[:-1]]
+            nhwc_shape[-1] *= input_shape[-1]
+            ret = np.reshape(np.transpose(input_data, pre_perm), nhwc_shape)
+        elif data_format == 'NCHW':
+            if input_dims < 3:
+                ERROR('[Parser]: Expect input_data is at least 3d, but got %dd in convert_to_nhwc of TfOp!' % input_dims)
+                return ret
+            perm = [idx for idx in range(input_dims) if idx != 1] + [1]
+            ret = np.transpose(input_data, perm)
+        else:
+            ret = input_data
+        return ret
+
+    @staticmethod
+    def convert_from_nhwc(input_data, data_format):
+        ret = None
+        if data_format not in ('NHWC', 'NCHW', 'NCHW_VECT_C'):
+            ERROR('[Parser]: Meet unsupported data_format %s in convert_from_nhwc of TfOp!' % data_format)
+            return ret
+        input_dims = len(input_data.shape)
+        if data_format == 'NCHW_VECT_C':
+            if input_dims != 4 or input_data.shape[-1] % 4 != 0:
+                ERROR('[Parser]: Meet invalid shape %s of input_data in convert_from_nhwc of TfOp!' % str(input_shape))
+                return ret
+            post_perm = TfOp.perm_nhwc_to_nchw_vect_c()
+            out_shape = list(input_data.shape)
+            ret = np.transpose(np.reshape(input_data, out_shape[:-1] + [-1, 4]), post_perm)
+        elif data_format == 'NCHW':
+            if input_dims < 3:
+                ERROR('[Parser]: Expect input_data is at least 3d, but got %dd in convert_from_nhwc of TfOp!' % input_dims)
+                return ret
+            perm = [0, (input_dims-1)] + [idx for idx in range(1, (input_dims-1))]
+            ret = np.transpose(input_data, perm)
+        else:
+            ret = input_data
+        return ret
 
 
 class TfHasN(TfOp):

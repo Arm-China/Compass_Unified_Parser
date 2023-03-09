@@ -89,43 +89,41 @@ def convert_conv_backpropinput(graph):
         clear_redundant_nodes(graph)
 
 
-def convert_depth_to_space(graph, op_type='TfDepthToSpace'):
-    '''Convert tf DepthToSpace/depth_to_space to onnx DepthToSpace.
-    For data format NCHW_VECT_C, convert it to NHWC by inserting
-    transpose and reshape nodes before and after onnx DepthToSpace.
+def convert_d2s_or_s2d(graph):
+    '''Convert tf DepthToSpace/depth_to_space to onnx DepthToSpace, and convert tf SpaceToDepth/space_to_depth to
+    onnx SpaceToDepth.
+    For data format NCHW_VECT_C, convert it to NHWC by inserting transpose and reshape nodes before and after the
+    corresponding onnx op.
     '''
-    if op_type not in ('TfDepthToSpace', 'Tfdepth_to_space'):
-        WARN('[Parser]: Meets invalid Op type (%s) in convert_depth_to_space!' % op_type)
-        return
     matched = False
-    matches = single_node_matcher(graph, op_type)
+    matches = single_node_matcher(graph, ['TfDepthToSpace', 'Tfdepth_to_space', 'TfSpaceToDepth', 'Tfspace_to_depth'])
     for m in matches:
-        d2s = m['target']
-        d2s_obj = NodeWrap(graph, d2s)['object']
-        in_edges = graph.sorted_in_edges(d2s, data=True)
-        if d2s_obj is None or len(in_edges) < 1:
-            WARN('[Parser]: Meets invalid Op (%s) in convert_depth_to_space!' % d2s)
+        d2s_or_s2d = m['target']
+        d2s_or_s2d_obj = NodeWrap(graph, d2s_or_s2d)['object']
+        in_edges = graph.sorted_in_edges(d2s_or_s2d, data=True)
+        if d2s_or_s2d_obj is None or len(in_edges) < 1:
+            WARN('[Parser]: Meets invalid Op (%s) in convert_d2s_or_s2d!' % d2s_or_s2d)
             continue
-        if d2s_obj.type == 'Tfdepth_to_space' and len(d2s_obj.sorted_in_consts()) < 2:
-            WARN('[Parser]: Meets non-constant block_size or data_format in Tfdepth_to_space Op (%s) in convert_depth_to_space!' % d2s)
+        if d2s_or_s2d_obj.type == 'Tfdepth_to_space' and len(d2s_or_s2d_obj.sorted_in_consts()) < 2:
+            WARN('[Parser]: Meets non-constant block_size or data_format in Tfdepth_to_space Op (%s) in convert_d2s_or_s2d!' % d2s_or_s2d)
             continue
-        block_size = d2s_obj.block_size
-        data_format = d2s_obj.data_format
+        block_size = d2s_or_s2d_obj.block_size
+        data_format = d2s_or_s2d_obj.data_format
         if data_format == 'NCHW_VECT_C':
-            input_shapes = d2s_obj.get_input_shapes()
+            input_shapes = d2s_or_s2d_obj.get_input_shapes()
             if len(input_shapes) < 1 \
                     or input_shapes[0] is None \
                     or None in input_shapes[0] \
                     or len(input_shapes[0]) != 5 \
                     or input_shapes[0][-1] != 4:
-                WARN('[Parser]: Meets invalid input shape in Tfdepth_to_space Op (%s) in convert_depth_to_space!' % d2s)
+                WARN('[Parser]: Meets invalid input shape in Tfdepth_to_space Op (%s) in convert_d2s_or_s2d!' % d2s_or_s2d)
                 continue
             data_format = 'NHWC'
             input_shape = input_shapes[0]
             batch, channels_div_4, height, width, _ = input_shape
             src, _, in_attr = in_edges[0]
             pre_perm = TfOp.perm_nchw_vect_c_to_nhwc()
-            pre_trans = insert_transpose(graph, src, d2s, in_attr, pre_perm)
+            pre_trans = insert_transpose(graph, src, d2s_or_s2d, in_attr, pre_perm)
             pre_trans_out_attr = copy.deepcopy(in_attr)
             pre_trans_out_attr.update({'src_out_port': 0})
             if pre_trans_out_attr['tensor'] is not None:
@@ -133,22 +131,29 @@ def convert_depth_to_space(graph, op_type='TfDepthToSpace'):
                 pre_trans_out_attr['tensor'].value = None if val is None else np.transpose(val, pre_perm)
             nhwc_shape = [input_shape[idx] for idx in pre_perm[:-1]]
             nhwc_shape[-1] *= input_shape[-1]
-            insert_reshape(graph, pre_trans, d2s, pre_trans_out_attr, nhwc_shape, data_format='NHWC')
-            post_dim = [batch, height * block_size, width * block_size, -1, 4]
-            post_old_dim = [batch, height * block_size, width * block_size,
-                            int(channels_div_4 * 4 / (block_size * block_size))]
-            post_reshape = insert_reshape_after(graph, d2s, post_dim, post_old_dim)
+            insert_reshape(graph, pre_trans, d2s_or_s2d, pre_trans_out_attr, nhwc_shape, data_format='NHWC')
+            if d2s_or_s2d_obj.type in ('TfDepthToSpace', 'Tfdepth_to_space'):
+                post_dim = [batch, height * block_size, width * block_size, -1, 4]
+                post_old_dim = post_dim[:3] + [int(channels_div_4 * 4 / (block_size * block_size))]
+            else:
+                post_dim = [batch, int(height / block_size), int(width / block_size), -1, 4]
+                post_old_dim = post_dim[:3] + [int(channels_div_4 * 4 * block_size * block_size)]
+            post_reshape = insert_reshape_after(graph, d2s_or_s2d, post_dim, post_old_dim)
             post_perm = TfOp.perm_nhwc_to_nchw_vect_c()
             post_trans = insert_transpose_after(graph, post_reshape, post_perm)
-            if d2s in graph._attr['output_names']:
-                index = graph._attr['output_names'].index(d2s)
+            if d2s_or_s2d in graph._attr['output_names']:
+                index = graph._attr['output_names'].index(d2s_or_s2d)
                 graph._attr['output_names'][index] = post_trans
         matched = True
         graph.remove_edges_from(in_edges[1:])
-        new_node_attr = d2s_obj.copied_attr()
-        new_node_attr.update({'blocksize': block_size, 'mode': 'DCR',
-                              'data_format': data_format, 'opset_version': 13})
-        NodeWrap(graph, d2s).replace_obj('DepthToSpace', new_node_attr)
+        new_node_attr = d2s_or_s2d_obj.copied_attr()
+        new_node_attr.update({'blocksize': block_size, 'data_format': data_format, 'opset_version': 13})
+        if d2s_or_s2d_obj.type in ('TfDepthToSpace', 'Tfdepth_to_space'):
+            new_node_attr.update({'mode': 'DCR'})
+            new_node_type = 'DepthToSpace'
+        else:
+            new_node_type = 'SpaceToDepth'
+        NodeWrap(graph, d2s_or_s2d).replace_obj(new_node_type, new_node_attr)
     if matched:
         clear_redundant_nodes(graph)
 

@@ -12,7 +12,7 @@ from .passes.front_passes import merge_gru, merge_gru2, merge_lstm, merge_zero_f
     convert_to_onnx, split_b2s, split_s2b, split_special_floormod, \
     convert_resize_bilinear_nearest, remove_identity_n, convert_conv_backpropinput, \
     convert_special_fakequantminmaxvars, convert_maxpoolwithargmax, convert_nms, convert_fusebatchnormv3, \
-    convert_matmul, convert_invert_permutation, convert_reverse, convert_depth_to_space, convert_onehot, \
+    convert_matmul, convert_invert_permutation, convert_reverse, convert_d2s_or_s2d, convert_onehot, \
     remove_isfinite_select, merge_fasterrcnn, merge_keras_maskrcnn, merge_lstm2, \
     merge_embedding_lookup_sparse, merge_embedding_lookup_sparse_with_weights
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
@@ -53,7 +53,7 @@ def process_tf(model_path, params):
         merge_embedding_lookup_sparse_with_weights(graph)
 
         merge_zero_fraction(graph)
-        convert_depth_to_space(graph, op_type='TfDepthToSpace')
+        convert_d2s_or_s2d(graph)
         convert_reverse_sequence(graph, op_type='TfReverseSequence')
         convert_scatternd(graph, op_type='TfScatterNd')
         split_b2s(graph)

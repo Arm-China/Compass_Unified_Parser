@@ -337,31 +337,9 @@ class TfDepthToSpaceOp(LayoutConcernedOp, OpHasOneOutPort, TfOp):
     @staticmethod
     def cal_out_tensor(input_data, block_size, data_format):
         ret = None
-        if data_format not in ('NHWC', 'NCHW', 'NCHW_VECT_C'):
-            ERROR('[Parser]: Meet unsupported data_format %s in cal_out_tensor of TfDepthToSpaceOp!' % data_format)
-            return ret
-        if data_format == 'NCHW_VECT_C':
-            input_shape = list(input_data.shape)
-            if len(input_shape) != 5 or input_shape[1] % 4 != 0 or input_shape[-1] != 4:
-                ERROR('[Parser]: Meet invalid shape %s of input_data in cal_out_tensor of TfDepthToSpaceOp!' % str(input_shape))
-                return ret
-            pre_perm = TfOp.perm_nchw_vect_c_to_nhwc()
-            nhwc_shape = [input_shape[idx] for idx in pre_perm[:-1]]
-            nhwc_shape[-1] *= input_shape[-1]
-            inp = np.reshape(np.transpose(input_data, pre_perm), nhwc_shape)
-        elif data_format == 'NCHW':
-            inp = np.transpose(input_data, [0, 2, 3, 1])
-        else:
-            inp = input_data
+        inp = TfOp.convert_to_nhwc(input_data, data_format)
         out_tensor = tf.nn.depth_to_space(inp, block_size, 'NHWC').numpy()
-        if data_format == 'NCHW_VECT_C':
-            post_perm = TfOp.perm_nhwc_to_nchw_vect_c()
-            out_shape = list(out_tensor.shape)
-            ret = np.transpose(np.reshape(out_tensor, out_shape[:-1] + [-1, 4]), post_perm)
-        elif data_format == 'NCHW':
-            ret = np.transpose(out_tensor, [0, 3, 1, 2])
-        else:
-            ret = out_tensor
+        ret = TfOp.convert_from_nhwc(out_tensor, data_format)
         return ret
 
     def infer_shape(self):
@@ -861,7 +839,8 @@ class TfSoftmaxOp(OpHasAxis, OpHasOneOutPort, TfOp):
 class TfSpaceToDepthOp(LayoutConcernedOp, OpHasOneOutPort, TfOp):
     @classmethod
     def attributes(cls):
-        return {1: {'block_size': {'type': AttrType.INT, 'required': True}}
+        return {1: {'block_size': {'type': AttrType.INT, 'required': True},
+                    'data_format': {'options': ['NHWC', 'NCHW', 'NCHW_VECT_C']}},
                 }
 
     def __init__(self, graph, attr_dict=None):
@@ -872,14 +851,8 @@ class TfSpaceToDepthOp(LayoutConcernedOp, OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfSpaceToDepthOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        inp = np.transpose(inputs[0], [0, 2, 3, 1]
-                           ) if self.data_format == 'NCHW' else inputs[0]
+        inp = TfOp.convert_to_nhwc(inputs[0], self.data_format)
         out_tensor = tf.nn.space_to_depth(
             inp, self.block_size, data_format='NHWC').numpy()
-        if self.data_format == 'NCHW':
-            out_tensor = np.transpose(out_tensor, [0, 3, 1, 2])
+        out_tensor = TfOp.convert_from_nhwc(out_tensor, self.data_format)
         self.set_out_tensor(out_tensor)
-
-    @property
-    def correspond_onnx_op(self):
-        return {'type': 'SpaceToDepth', 'version': 1}

@@ -467,3 +467,45 @@ class TfsiluOp(LayoutUnawareOp, ActivationOnlyOp, Tf2Op):
 
 class TfsoftsignOp(TfSoftsignOp, Tf2Op):
     pass
+
+
+class Tfspace_to_depthOp(LayoutConcernedOp, OpHasOneOutPort, Tf2Op):
+    @classmethod
+    def attributes(cls):
+        return {1: {'block_size': {'type': AttrType.INT, 'required': False},
+                    'data_format': {'options': ['NHWC', 'NCHW', 'NCHW_VECT_C']}},
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(Tfspace_to_depthOp, self).__init__(graph, attr_dict)
+        self.update_attributes(Tfspace_to_depthOp, attr_dict)
+        assert self.check_required()
+
+    def __getattr__(self, item):
+        ret = None
+        try:
+            if item in ('block_size', 'data_format'):
+                if self.cur_version == 1:
+                    input_args = ['input', 'block_size', 'name', 'data_format']
+                else:
+                    input_args = ['input', 'block_size', 'data_format', 'name']
+                inputs = self.get_input_tensors()
+                item_idx = input_args.index(item)
+                if len(inputs) > item_idx and inputs[item_idx].size == 1:
+                    ret = inputs[item_idx].item()
+                    if ret is not None:
+                        self.__dict__['_attr'][item].value = ret
+        except:
+            ret = None
+        if ret is None:
+            ret = super(Tfspace_to_depthOp, self).__getattr__(item)
+        return ret
+
+    def infer_shape(self):
+        super(Tfspace_to_depthOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        inp = TfOp.convert_to_nhwc(inputs[0], self.data_format)
+        out_tensor = tf.nn.space_to_depth(
+            inp, self.block_size, data_format='NHWC').numpy()
+        out_tensor = TfOp.convert_from_nhwc(out_tensor, self.data_format)
+        self.set_out_tensor(out_tensor)
