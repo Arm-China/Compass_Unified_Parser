@@ -431,6 +431,89 @@ def convert_gru_lstm(graph):
         NodeWrap(graph, rnn).replace_obj(dst_onnx_type, rnn_attr)
 
 
+def decompose_lambda(graph):
+    matched = False
+    matches = single_node_matcher(graph, 'TfKerasLambda')
+    for m in matches:
+        lamb = m['target']
+        lamb_obj = NodeWrap(graph, lamb)['object']
+        in_edges = graph.sorted_in_edges(lamb, data=True)
+        if lamb_obj is None or len(in_edges) < 3:
+            ERROR('[Parser]: Meets invalid op(%s) in decompose_lambda!' % lamb)
+            continue
+        training_tensor = in_edges[-1][2]['tensor']
+        if training_tensor is None or not training_tensor.is_const \
+                or training_tensor.value.size != 1 \
+                or training_tensor.value.item() not in (None, False):
+            WARN('[Parser]: Meets unsupported training input of TfKerasLambda op(%s) in decompose_lambda!' % lamb)
+            continue
+        mask_tensor = in_edges[-2][2]['tensor']
+        if mask_tensor is None or not mask_tensor.is_const \
+                or mask_tensor.value.size != 1 \
+                or mask_tensor.value.item() not in (None, False):
+            WARN('[Parser]: Meets unsupported mask input of TfKerasLambda op(%s) in decompose_lambda!' % lamb)
+            continue
+        inputs_num = len(in_edges) - 2
+        out_edges = graph.sorted_out_edges(lamb, data=True)
+        out_ports = lamb_obj.get_out_ports()
+        subgraph_output_names = lamb_obj.subgraph_output_names
+        if len(out_edges) < 1 or out_ports > list(range(len(subgraph_output_names))):
+            continue
+        subgraph_nodes = lamb_obj.subgraph_nodes
+        if not subgraph_nodes or not subgraph_output_names:
+            continue
+        matched = True
+        inputs_count = 0
+        node_prefix = lamb + '_'  # to avoid duplicate node name
+        nodes_outputs = {n['name']: n['output'] for n in subgraph_nodes}
+        for n in subgraph_nodes:
+            node_name = node_prefix + n['name']
+            graph.add_node(node_name)
+            attr_dict = n.get('attr', {})
+            node_type = n['type']
+            for in_port, (src_name, src_out_port, is_control) in enumerate(n.get('input', [])):
+                if is_control:
+                    continue
+                tensor_name, tensor_shape = '', tuple()
+                if src_name in nodes_outputs \
+                        and len(nodes_outputs[src_name]) > src_out_port \
+                        and len(nodes_outputs[src_name][src_out_port]) == 2:
+                    tensor_name, tensor_shape = nodes_outputs[src_name][src_out_port]
+                    tensor_shape = [] if tensor_shape is None else tensor_shape
+                edge_tensor = Tensor(name=node_prefix+tensor_name, shape=tensor_shape)
+                if node_type == 'Const' and attr_dict.get('value', None) is not None:
+                    edge_tensor.value = np.array(attr_dict['value'])
+                    edge_tensor.is_const = True
+                graph.add_edge(node_prefix+src_name, node_name,
+                               **{'src_out_port': src_out_port, 'dst_in_port': in_port,
+                                  'tensor': edge_tensor})
+            if node_type == 'Placeholder':
+                assert inputs_num > inputs_count, 'Meets invalid inputs of TfKerasLambda op(%s) in decompose_lambda!' % lamb
+                src, _, in_attr = in_edges[inputs_count]
+                identity_in_attr = copy.deepcopy(in_attr)
+                identity_in_attr.update({'dst_in_port': 0})
+                graph.add_edge(src, node_name, **identity_in_attr)
+                node_type = 'Identity'
+                inputs_count = inputs_count + 1
+            attr_dict.update({'name': node_name, 'opcode_version': n.get('opcode_version', 1)})
+            NodeWrap(graph, node_name).replace_obj('Tf' + node_type, attr_dict)
+        graph.remove_edges_from(in_edges + out_edges)
+        for _, dst, out_attr in out_edges:
+            src = node_prefix + subgraph_output_names[out_attr['src_out_port']]
+            new_out_attr = copy.deepcopy(out_attr)
+            # The output node of subgraph is Identity so src_out_port is 0
+            new_out_attr.update({'src_out_port': 0})
+            graph.add_edge(src, dst, **new_out_attr)
+        if lamb in graph._attr['output_names']:
+            index = graph._attr['output_names'].index(lamb)
+            graph._attr['output_names'].pop(index)
+            for out_name in subgraph_output_names:
+                graph._attr['output_names'].insert(index, node_prefix + out_name)
+                index = index + 1
+    if matched:
+        clear_redundant_nodes(graph)
+
+
 def convert_normalization(graph):
     '''
     Convert TfKerasNormalization op to sub(x-mean) + mul(*1/sqrt(var)); if mean and var are None or
@@ -1082,6 +1165,7 @@ def process_keras_op_before_infer(graph):
     convert_rescaling(graph)
     convert_resizing(graph)
     convert_activations(graph)
+    decompose_lambda(graph)
 
     from ...lite.passes.front_passes import split_op_has_activation
     split_op_has_activation(graph, is_tf_op=True)

@@ -58,6 +58,11 @@ def process_tf2(model_path, params):
 
         convert_to_onnx(graph)
 
+        # To support lambda op in tf2 model, need convert tf op to onnx as well.
+        # FIXME: Other passes in tf front passes may be needed as well.
+        from ..tf.passes.front_passes import convert_to_onnx as convert_tf_op_to_onnx
+        convert_tf_op_to_onnx(graph)
+
     else:
         WARN('[Parser]: Got empty graph for TF2 model %s in process_tf2!' %
              params['model_name'])

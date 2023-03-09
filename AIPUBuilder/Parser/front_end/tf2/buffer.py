@@ -5,6 +5,7 @@
 import copy
 import numpy as np
 import tensorflow as tf
+import tensorflow.compat.v1 as tfv1
 from tensorflow.keras import backend as K
 from collections import OrderedDict
 from ...common.defs import FLOAT_EQUAL
@@ -73,6 +74,15 @@ def get_node_attr(layer):
             ret.update(layer_config)
     except Exception as e:
         DEBUG('[Parser]: Fail to get config for layer (%s) because %s' % (layer.name, str(e)))
+
+    if type(layer).__name__ == 'Lambda':
+        from ..tf.load import get_possible_outputs, parse_graph_def
+        graph_def = get_lambda_graph_def(layer)
+        output_names = get_possible_outputs(graph_def)
+        params = {'input_names': [], 'input_shapes': {},
+                  'output_names': output_names}
+        ret.update({'subgraph_nodes': parse_graph_def(graph_def, params)[0],
+                    'subgraph_output_names': output_names})
 
     for key in layer.__dir__():
         if key.startswith('_'):
@@ -212,6 +222,26 @@ def get_const_node_content(node_name, const_value):
     return ret
 
 
+def get_lambda_graph_def(layer):
+    def _get_input_tensor(layer_input):
+        input_shape = list(layer_input.shape)
+        input_dtype = layer_input.dtype.as_numpy_dtype
+        func_input = np.random.ranf(input_shape).astype(input_dtype)
+        return func_input
+
+    lambda_func = tf.function(layer)
+    layer_input = layer.input
+    if isinstance(layer_input, (list, tuple)):
+        func_input = []
+        for inp in layer_input:
+            func_input.append(_get_input_tensor(inp))
+    else:
+        func_input = _get_input_tensor(layer_input)
+    tfv1.reset_default_graph()
+    graph_def = lambda_func.get_concrete_function(func_input).graph.as_graph_def()
+    return graph_def
+
+
 def get_node_content(layer):
     layer_outputs = layer.output if isinstance(
         layer.output, (list, tuple)) else [layer.output]
@@ -233,9 +263,6 @@ def get_nodes_content(layers, model_configs):
     inputs_info_dict = get_nodes_input_and_attr(model_configs)
     nodes_content = []
     for layer in layers:
-        # if hasattr(layer, 'layers'):
-        #     nodes_content.extend(get_nodes_content(layer.layers, exp_input_names))
-        #     continue
         node_content = get_node_content(layer)
         input_info_dict = inputs_info_dict.get(layer.name, {})
         node_input_info = get_node_input(layer, input_info_dict)
