@@ -3056,8 +3056,14 @@ def detection_post_process(graph, params):
                 return
             out1_out_shapes = out1_obj.get_output_shapes()
             out2_out_shapes = out2_obj.get_output_shapes()
-            if not out1_out_shapes or out1_out_shapes[0] is None or not out2_out_shapes or out2_out_shapes[0] is None:
-                ERROR('[Parser]: Invalid params for detection_post_process!')
+            if not out1_out_shapes \
+                    or out1_out_shapes[0] is None \
+                    or any((shape is None for shape in out1_out_shapes[0])) \
+                    or not out2_out_shapes \
+                    or out2_out_shapes[0] is None \
+                    or any((shape is None for shape in out2_out_shapes[0])):
+                ERROR('[Parser]: Invalid params of output nodes (%s or %s) for detection_post_process!' % (
+                    out1, out2))
                 return
             if len(out1_out_shapes[0]) == 3 \
                     and len(out2_out_shapes[0]) == 3 \
@@ -3088,21 +3094,15 @@ def detection_post_process(graph, params):
 
                 graph._attr['output_names'] = [reshape1, reshape2]
 
-            out1, out2 = graph._attr['output_names']
-            out1_obj, out2_obj = NodeWrap(
-                graph, out1)['object'], NodeWrap(graph, out2)['object']
-            if out1_obj is None or out2_obj is None:
-                ERROR('[Parser]: Invalid output nodes (%s or %s) for detection_post_process!' % (
-                    out1, out2))
-                return
-            out1_out_shapes = out1_obj.get_output_shapes()
-            out2_out_shapes = out2_obj.get_output_shapes()
+            vaild_box_num = None
             if out2_out_shapes and out2_out_shapes[0][-1] == 4:
                 class_predict, box_predict = out1, out2
                 class_num = out1_out_shapes[0][-1]
+                vaild_box_num = out2_out_shapes[0][1]
             else:
                 class_predict, box_predict = out2, out1
                 class_num = out2_out_shapes[0][-1]
+                vaild_box_num = out1_out_shapes[0][1]
 
             weights = None
             if graph._attr['framework'].name == 'CAFFE' or \
@@ -3216,7 +3216,8 @@ def detection_post_process(graph, params):
                     weights = ArmDecodeBoxOp.convert_to_center_coordinate(
                         weights)
 
-            max_box_num = int(params.get('max_box_num', 5000))
+            max_box_num = max(
+                int(params.get('max_box_num', 5000)), vaild_box_num)
             decodebox_attr = {'name': decode_box,
                               'feature_map': feature_map,
                               'image_width': image_width,
