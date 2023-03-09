@@ -872,14 +872,18 @@ def convert_fusebatchnormv3(graph):
 
 def split_s2b(graph):
     pad_version, transpose_version, s2d_version, reshape_version = 2, 1, 1, 5
-    matches = single_node_matcher(graph, 'TfSpaceToBatchND')
+    matches = single_node_matcher(graph, ['TfSpaceToBatchND', 'Tfspace_to_batch_nd'])
     for m in matches:
         s2b = m['target']
         s2b_obj = NodeWrap(graph, s2b)['object']
         in_edges = graph.sorted_in_edges(s2b, data=True)
         out_edges = graph.sorted_out_edges(s2b, data=True)
         if s2b_obj is not None and len(in_edges) >= 1 and len(out_edges) >= 1:
-            block_shape, paddings = [c[2] for c in s2b_obj.sorted_in_consts()]
+            s2b_in_consts = s2b_obj.sorted_in_consts()[:2]
+            if len(s2b_in_consts) != 2:
+                WARN('[Parser]: Only support constant block_shape and paddings for Op (%s) in split_s2b!' % s2b)
+                continue
+            block_shape, paddings = [c[2] for c in s2b_in_consts]
             in_shape = s2b_obj.get_input_shapes()[0]
             if in_shape is None or None in in_shape:
                 continue
@@ -888,7 +892,7 @@ def split_s2b(graph):
                     or (len(in_shape) == 4 and block_shape.size != 2):
                 WARN(
                     '[Parser]: Only support 4D inputs(block_shape shape=[2]) or 3D inputs(block_shape shape=[1])'
-                    ' for TfSpaceToBatchND Op (%s) for now!' % s2b)
+                    ' for Op (%s) for now!' % s2b)
                 continue
             pads = OpHasPaddingStrides.tf_to_onnx(paddings, as_full=True)
             half_pads_len = int(len(pads) / 2)
@@ -994,7 +998,7 @@ def split_s2b(graph):
                 graph._attr['output_names'][index] = last_name
         else:
             ERROR(
-                '[Parser]: Meets invalid TfSpaceToBatchND Node(%s) in split_s2b!' % s2b)
+                '[Parser]: Meets invalid TfSpaceToBatchND/Tfspace_to_batch_nd Node(%s) in split_s2b!' % s2b)
 
 
 def split_b2s(graph, op_type='TfBatchToSpaceND'):

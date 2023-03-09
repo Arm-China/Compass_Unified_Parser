@@ -285,6 +285,10 @@ class Tfone_hotOp(OpHasAxis, OpHasOneOutPort, Tf2Op):
         self.set_out_tensor(out_tensor)
 
 
+class Tfspace_to_batch_ndOp(TfSpaceToBatchNDOp, Tf2Op):
+    pass
+
+
 class TfsplitOp(OpHasAxis, OpHasMultipleOutPorts, Tf2Op):
     @classmethod
     def attributes(cls):

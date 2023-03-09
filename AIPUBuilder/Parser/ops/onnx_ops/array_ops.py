@@ -1182,19 +1182,22 @@ class SpaceToDepthOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
     def infer_shape(self):
         super(SpaceToDepthOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        if self.data_format == 'NHWC':
-            out_tensor = tf.nn.space_to_depth(
-                inputs[0], self.blocksize).numpy()
+        if self.blocksize == 1:
+            out_tensor = inputs[0]
         else:
-            torch_input = torch.from_numpy(inputs[0])
-            n, c, h, w = torch_input.size()
-            block_size = self.blocksize
-            out_tensor = torch_input.view(
-                n, c, h // block_size, block_size, w // block_size, block_size)
-            out_tensor = out_tensor.permute(0, 3, 5, 1, 2, 4).contiguous()
-            out_tensor = out_tensor.view(
-                n, c * (block_size ** 2), h // block_size, w // block_size)
-            out_tensor = out_tensor.numpy()
+            if self.data_format == 'NHWC':
+                out_tensor = tf.nn.space_to_depth(
+                    inputs[0], self.blocksize).numpy()
+            else:
+                torch_input = torch.from_numpy(inputs[0])
+                n, c, h, w = torch_input.size()
+                block_size = self.blocksize
+                out_tensor = torch_input.view(
+                    n, c, h // block_size, block_size, w // block_size, block_size)
+                out_tensor = out_tensor.permute(0, 3, 5, 1, 2, 4).contiguous()
+                out_tensor = out_tensor.view(
+                    n, c * (block_size ** 2), h // block_size, w // block_size)
+                out_tensor = out_tensor.numpy()
         self.set_out_tensor(out_tensor)
 
 

@@ -1279,6 +1279,7 @@ def merge_rsqrt(graph):
 
 
 def merge_s2b(graph):
+    matched = False
     matches = matched_patterns(graph,
                                nodes=[
                                    ('input', {}),
@@ -1301,6 +1302,7 @@ def merge_s2b(graph):
                 input_rank = len(input_shapes[0])
                 if transpose1_obj.perm == transpose2_obj.perm \
                         and transpose1_obj.perm == [input_rank - 1] + list(range(1, input_rank - 1)) + [0]:
+                    matched = True
                     inp_in_edges = graph.sorted_in_edges(inp)
                     inp_out_edges = graph.sorted_out_edges(inp)
                     if inp_obj.type == 'Pad' and len(inp_out_edges) == 1:
@@ -1336,6 +1338,10 @@ def merge_s2b(graph):
                         {'pads': pads, 'block_size_x': block_size, 'block_size_y': block_size})
                     NodeWrap(graph, s2d).replace_obj(
                         'ArmSpaceToBatch', s2b_attr)
+        else:
+            ERROR('[Parser]: Meets invalid Node in merge_s2b!')
+    if matched:
+        clear_redundant_nodes(graph)
 
 
 def merge_s2b_nd(graph):

@@ -4174,7 +4174,10 @@ class ArmSpaceToDepthOp(OpHasOneOutPort, ArmOp):
     def infer_shape(self):
         super(ArmSpaceToDepthOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.nn.space_to_depth(inputs[0], self.blocksize).numpy()
+        if self.blocksize == 1:
+            out_tensor = inputs[0]
+        else:
+            out_tensor = tf.nn.space_to_depth(inputs[0], self.blocksize).numpy()
         self.set_out_tensor(out_tensor)
 
     def write_attrs(self, txt_file):

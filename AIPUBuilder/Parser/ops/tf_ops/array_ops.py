@@ -753,7 +753,7 @@ class TfSpaceToBatchNDOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfSpaceToBatchNDOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        assert len(inputs) == 3 and len(inputs[0].shape) in (
+        assert len(inputs) >= 3 and len(inputs[0].shape) in (
             3, 4), 'The length of inputs and the shape of inputs are invalid in TfSpaceToBatchNDOp.'
         out_tensor = tf.space_to_batch_nd(*inputs).numpy()
         self.set_out_tensor(out_tensor)
