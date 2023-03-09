@@ -595,3 +595,15 @@ class TftanOp(TfTanOp, Tf2Op):
 
 class TftanhOp(TfTanhOp, Tf2Op):
     pass
+
+
+class Tfzero_fractionOp(OpHasOneOutPort, Tf2Op):
+    def infer_shape(self):
+        super(Tfzero_fractionOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = tf.math.zero_fraction(inputs[0]).numpy()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'ZeroFraction', 'version': 1}
