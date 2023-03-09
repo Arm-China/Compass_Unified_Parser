@@ -597,6 +597,23 @@ class TftanhOp(TfTanhOp, Tf2Op):
     pass
 
 
+class Tftop_kOp(TfTopKV2Op, Tf2Op):
+    def __getattr__(self, item):
+        ret = None
+        try:
+            if item == 'sorted':
+                inputs = self.get_input_tensors()
+                if len(inputs) > 2 and inputs[2].size == 1:
+                    ret = inputs[2].item()
+                    if ret is not None:
+                        self.__dict__['_attr'][item].value = ret
+        except:
+            ret = None
+        if ret is None:
+            ret = super(TfTopKV2Op, self).__getattr__(item)
+        return ret
+
+
 class Tfzero_fractionOp(OpHasOneOutPort, Tf2Op):
     def infer_shape(self):
         super(Tfzero_fractionOp, self).infer_shape()

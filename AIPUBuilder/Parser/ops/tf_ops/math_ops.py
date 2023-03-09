@@ -1358,7 +1358,7 @@ class TfTanhOp(ActivationOnlyOp, TfOp):
 class TfTopKV2Op(OpHasVariableOutPorts, TfOp):
     @classmethod
     def attributes(cls):
-        return {1: {'sorted': {'type': AttrType.INT, 'default': 1, 'options': [0, 1]}
+        return {1: {'sorted': {'type': AttrType.BOOL, 'default': True}
                     }
                 }
 
@@ -1370,7 +1370,7 @@ class TfTopKV2Op(OpHasVariableOutPorts, TfOp):
     def infer_shape(self):
         super(TfTopKV2Op, self).infer_shape()
         inputs = self.get_input_tensors()
-        values, indices = tf.math.top_k(*inputs, sorted=bool(self.sorted))
+        values, indices = tf.math.top_k(inputs[0], inputs[1], sorted=self.sorted)
         out_ports = self.get_out_ports()
         if out_ports == [0]:
             out_tensors = [values.numpy()]

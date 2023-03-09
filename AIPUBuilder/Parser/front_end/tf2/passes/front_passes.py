@@ -321,7 +321,7 @@ def convert_to_onnx(graph):
                 new_node_attr.update({'to': node_obj.dtype})
             elif pure_type == 'concat':
                 _remove_edges_if_const(node_name, in_edges[-2:])
-            elif pure_type in ('conv2d', 'cumsum', 'cumprod', 'gather', 'gather_nd'):
+            elif pure_type in ('conv2d', 'cumsum', 'cumprod', 'gather', 'gather_nd', 'top_k'):
                 _remove_edges_if_const(node_name, in_edges[2:])
             elif pure_type == 'convert_to_tensor':
                 inputs = node_obj.get_input_tensors()

@@ -65,7 +65,7 @@ def keras_forward(model_path, feed_dict, output_names=None, save_output=True):
 
     layer_out_tensors = []
     for layer in model.layers:
-        if isinstance(layer.output, list):
+        if isinstance(layer.output, (list, tuple)):
             layer_out_tensors.extend(layer.output)
         else:
             layer_out_tensors.append(layer.output)
