@@ -2486,13 +2486,34 @@ def split_rsqrt(graph, op_type='LiteRSQRT'):
         clear_redundant_nodes(graph)
 
 
-def remove_detection_postprocess(graph):
+def remove_detection_postprocess(graph, params):
     matched = False
     matches = single_node_matcher(graph, 'LiteCUSTOM')
     for m in matches:
         custom = m['target']
-        if custom in graph._attr['output_names'] and NodeWrap(graph, custom)['object'].method == 'TFLITE_DETECTION_POSTPROCESS':
-            custom_in_edges = graph.sorted_in_edges(custom, data=True)
+        custom_obj = NodeWrap(graph, custom)['object']
+        if custom_obj is None:
+            ERROR('[Parser]: Meets invalid LiteCUSTOM Op (%s) in remove_detection_postprocess!' % custom)
+            continue
+        if custom_obj.method != 'TFLITE_DETECTION_POSTPROCESS' \
+                or custom not in graph._attr['output_names']:
+            continue
+        custom_in_edges = graph.sorted_in_edges(custom, data=True)
+        if not params.get('detection_postprocess', ''):
+            matched = True
+            WARN('[Parser]: Unsupported LiteCUSTOM Op (%s) will be removed from graph and graph outputs will be reset!' % custom)
+            graph.remove_edges_from(custom_in_edges)
+            graph._attr['output_names'].clear()
+            for src, _, in_attr in custom_in_edges:
+                if in_attr['tensor'] is not None and in_attr['tensor'].is_const:
+                    continue
+                out = get_valid_node_name(graph, src + '_out')
+                new_in_attr = copy.deepcopy(in_attr)
+                new_in_attr.update({'dst_in_port': 0})
+                graph.add_edge(src, out, **new_in_attr)
+                NodeWrap(graph, out).replace_obj('Out', {'name': out})
+                graph._attr['output_names'].append(src)
+        else:
             assert len(
                 custom_in_edges) >= 2, 'The length of in_edges of custom op is invalid in remove_detection_postprocess.'
             matched = True

@@ -47,7 +47,7 @@ def process_tflite(model_path, params):
         from ..tf.passes.front_passes import split_special_floormod
         split_special_floormod(graph, 'LiteFLOOR_MOD')
 
-        remove_detection_postprocess(graph)
+        remove_detection_postprocess(graph, params)
         convert_onehot(graph)
 
         convert_square(graph, 'LiteSQUARE')
