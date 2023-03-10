@@ -2006,13 +2006,14 @@ def rename_cum(graph):
             ERROR('[Parser]: Meets invalid node(%s) in rename_cum!' % cum)
             continue
         in_edges = graph.sorted_in_edges(cum, data=True)
-        if cum_obj.type == 'CumSum' \
-                and len(in_edges) < 2:
-            ERROR('[Parser]: Meets invalid in_edge for cumlative Op(%s) in rename_cum!' % cum)
-            continue
-        if not in_edges[1][2]['tensor'].is_const:
-            WARN('[Parser]: Meets unsupported non-constant axis for cumlative Op(%s) in rename_cum!' % cum)
-            continue
+        if cum_obj.type == 'CumSum':
+            if len(in_edges) < 2:
+                ERROR('[Parser]: Meets invalid in_edge for cumlative Op(%s) in rename_cum!' % cum)
+                continue
+            else:
+                if in_edges[1][2]['tensor'] is None or not in_edges[1][2]['tensor'].is_const:
+                    WARN('[Parser]: Meets unsupported non-constant axis for cumlative Op(%s) in rename_cum!' % cum)
+                    continue
 
         cum_attr = cum_obj.copied_attr()
         if cum_obj.type == 'CumProd':
