@@ -736,8 +736,19 @@ class ArmConcatOp(OpHasAxis, OpHasOneOutPort, ArmOp):
     def infer_shape(self):
         super(ArmConcatOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        assert len(
-            inputs) >= 2, 'Invalid inputs number (%d) for Concat!' % len(inputs)
+        shapes_list = self.get_input_shapes()
+
+        if len(inputs) < 2 \
+                or len(shapes_list) < 2 \
+                or any((input_item is None for input_item in inputs))\
+                or any((shape is None for shape in shapes_list))\
+                or any((shape_item is None for shape in shapes_list for shape_item in shape)):
+            ERROR('[Parser]: Invalid inputs shapes for ArmConcatOp!')
+
+        shapes_noaxis = np.delete(shapes_list, self.axis, 1).tolist()
+        if shapes_noaxis.count(shapes_noaxis[0]) != len(shapes_noaxis):  # Compare elements in shapes_list for equality
+            ERROR('[Parser]: Unequal inputs shapes for ArmConcatOp!')
+
         out_tensor = np.concatenate(inputs, self.axis)
         in_type_list = [inp.dtype for inp in inputs]
         if in_type_list.count(in_type_list[0]) == len(in_type_list):
