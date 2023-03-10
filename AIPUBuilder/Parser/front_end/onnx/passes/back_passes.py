@@ -2777,23 +2777,25 @@ def rename_scatternd(graph):
             scatter_attr.update({'reduction': scatter_obj.reduction.upper()})
             NodeWrap(graph, scatter).replace_obj('ArmScatterND', scatter_attr)
         else:
-            ERROR('[Parser]: Meets invalid ScatterND Op (%s) in rename_scatternd!' % slice)
+            ERROR(
+                '[Parser]: Meets invalid ScatterND Op (%s) in rename_scatternd!' % scatter)
 
 
 def rename_scatterel(graph):
-    matches = single_node_matcher(graph, 'ScatterElements')
+    matches = single_node_matcher(graph, ['ScatterElements', 'Scatter'])
     for m in matches:
         scatterel = m['target']
         scatterel_obj = NodeWrap(graph, scatterel)['object']
         if scatterel_obj is not None:
             scatterel_attr = scatterel_obj.copied_attr()
-            scatterel_attr.update(
-                {'reduction': scatterel_obj.reduction.upper()})
+            if scatterel_obj.type == 'ScatterElements':
+                scatterel_attr.update(
+                    {'reduction': scatterel_obj.reduction.upper()})
             NodeWrap(graph, scatterel).replace_obj(
                 'ArmScatterElements', scatterel_attr)
         else:
             ERROR(
-                '[Parser]: Meets invalid ScatterElementsOp Op (%s) in rename_scatterel!' % slice)
+                '[Parser]: Meets invalid ScatterElements/Scatter Op (%s) in rename_scatterel!' % scatterel)
 
 
 def rename_slice(graph):

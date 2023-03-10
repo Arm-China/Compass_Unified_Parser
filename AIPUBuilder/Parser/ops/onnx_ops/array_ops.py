@@ -834,6 +834,31 @@ class ScatterNDOp(OpHasOneOutPort, OnnxOp):
         self.set_out_tensor(out_tensor)
 
 
+class ScatterOp(OpHasOneOutPort, OpHasAxis, OnnxOp):
+    @classmethod
+    def attributes(cls):
+        return {9: {'axis': {'type': AttrType.INT, 'default': 0}},
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(ScatterOp, self).__init__(graph, attr_dict)
+        self.update_attributes(ScatterOp, attr_dict)
+        assert self.check_required(), 'ScatterOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(ScatterOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        data, indices, updates = inputs
+        data_torch = torch.from_numpy(data)
+        indices = GatherElementsOp.make_indices_non_negative(
+            indices, inputs[0].shape[self.axis])
+        index_torch = torch.from_numpy(np.array(indices).astype(np.int64))
+        update_torch = torch.from_numpy(updates)
+        out_tensor = torch.Tensor.scatter_(
+            data_torch, src=update_torch, dim=self.axis, index=index_torch).numpy()
+        self.set_out_tensor(out_tensor)
+
+
 class ScatterElementsOp(OpHasOneOutPort, OpHasAxis, OnnxOp):
     @classmethod
     def attributes(cls):
