@@ -95,11 +95,12 @@ class TfNonMaxSuppressionV3Op(OpHasOneOutPort, TfOp):
             np.asscalar(inp) for inp in inputs[2:5]]
         # Do not use tf.image.non_max_suppression because the actual output shape is different
         # with the inferred output shape.
+        pad_to_max_output_size = False if self.is_all_inputs_const() else True
         out_tensors = tf.image.non_max_suppression_padded(*(inputs[:2]),
                                                           self.max_output_size,
                                                           self.iou_threshold,
                                                           self.score_threshold,
-                                                          pad_to_max_output_size=True)
+                                                          pad_to_max_output_size=pad_to_max_output_size)
         out_tensor = out_tensors[0].numpy()
         self.set_out_tensor(out_tensor)
 
@@ -126,15 +127,19 @@ class TfNonMaxSuppressionV4Op(OpHasMultipleOutPorts, TfOp):
             inputs) == 5, 'The length of inputs is invalid in TfNonMaxSuppressionV4Op.'
         self.max_output_size, self.iou_threshold, self.score_threshold = [
             np.asscalar(inp) for inp in inputs[2:5]]
-        if self.pad_to_max_output_size:
-            WARN('[Parser]: TfNonMaxSuppressionV5Op does not support pad_to_max_output_size=True! Will treat it as False!')
+        pad_to_max_output_size = self.pad_to_max_output_size
+        if not self.is_all_inputs_const():
+            if self.pad_to_max_output_size:
+                WARN('[Parser]: TfNonMaxSuppressionV5Op does not support pad_to_max_output_size=True! Will treat it as False!')
+            else:
+                pad_to_max_output_size = True
         out_tensors = tf.raw_ops.NonMaxSuppressionV4(
             boxes=inputs[0],
             scores=inputs[1],
             max_output_size=self.max_output_size,
             iou_threshold=self.iou_threshold,
             score_threshold=self.score_threshold,
-            pad_to_max_output_size=True)
+            pad_to_max_output_size=pad_to_max_output_size)
         out_tensors = [t.numpy() for t in out_tensors]
         self.set_out_tensor(out_tensors)
 
@@ -159,11 +164,15 @@ class TfNonMaxSuppressionV5Op(OpHasMultipleOutPorts, TfOp):
         super(TfNonMaxSuppressionV5Op, self).infer_shape()
         inputs = self.get_input_tensors()
         assert len(
-            inputs) == 6, 'The length of inputs is invalid in TfNonMaxSuppressionV5Op.'
+            inputs) >= 6, 'The length of inputs is invalid in TfNonMaxSuppressionV5Op.'
         self.max_output_size, self.iou_threshold, self.score_threshold, self.soft_nms_sigma = [
             np.asscalar(inp) for inp in inputs[2:6]]
-        if self.pad_to_max_output_size:
-            WARN('[Parser]: TfNonMaxSuppressionV5Op does not support pad_to_max_output_size=True! Will treat it as False!')
+        pad_to_max_output_size = bool(self.pad_to_max_output_size)
+        if not self.is_all_inputs_const():
+            if pad_to_max_output_size:
+                WARN('[Parser]: TfNonMaxSuppressionV5Op does not support pad_to_max_output_size=True! Will treat it as False!')
+            else:
+                pad_to_max_output_size = True
         out_tensors = tf.raw_ops.NonMaxSuppressionV5(
             boxes=inputs[0],
             scores=inputs[1],
@@ -171,7 +180,7 @@ class TfNonMaxSuppressionV5Op(OpHasMultipleOutPorts, TfOp):
             iou_threshold=self.iou_threshold,
             score_threshold=self.score_threshold,
             soft_nms_sigma=self.soft_nms_sigma,
-            pad_to_max_output_size=True)
+            pad_to_max_output_size=pad_to_max_output_size)
         out_tensors = [t.numpy() for t in out_tensors]
         self.set_out_tensor(out_tensors)
 

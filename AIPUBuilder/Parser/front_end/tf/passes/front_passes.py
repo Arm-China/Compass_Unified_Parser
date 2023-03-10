@@ -349,6 +349,7 @@ def convert_nms(graph, params):
         'LiteNON_MAX_SUPPRESSION_V4': 2,
         'LiteNON_MAX_SUPPRESSION_V5': 3,
         'Tfnon_max_suppression': 1,
+        'Tfnon_max_suppression_with_scores': 2,
     }
     matched = False
     for nms_type in nms_output_num_dict.keys():
@@ -373,8 +374,15 @@ def convert_nms(graph, params):
             iou_threshold = nms_obj.iou_threshold
             score_threshold = nms_obj.score_threshold
             soft_nms_sigma = nms_obj.soft_nms_sigma if nms_type in ('TfNonMaxSuppressionV5',
-                                                                    'LiteNON_MAX_SUPPRESSION_V5') else 0
-            method = 'HARD' if FLOAT_EQUAL(soft_nms_sigma, 0.) else 'GAUSSIAN'
+                                                                    'LiteNON_MAX_SUPPRESSION_V5',
+                                                                    'Tfnon_max_suppression_with_scores') else 0
+            if FLOAT_EQUAL(soft_nms_sigma, 0.):
+                method = 'HARD'
+            else:
+                method = 'GAUSSIAN'
+                if nms_type in ('TfNonMaxSuppressionV5', 'Tfnon_max_suppression_with_scores'):
+                    # For tf, when soft_nms_sigma > 0, iou_threshold is ignored.
+                    iou_threshold = 1.0
 
             # Align with COMPASS inputs: boxes, box_num_per_class, class_num, scores
             # Add reshape node in front of boxes and scores, move scores to input3, and add const nodes.
@@ -430,6 +438,16 @@ def convert_nms(graph, params):
                 graph.add_edge(nms, out_scores, **{'src_out_port': 2})
                 NodeWrap(graph, out_scores).replace_obj(
                     'Out', {'name': out_scores})
+            elif nms_type == 'Tfnon_max_suppression_with_scores':
+                # Tf2 non_max_suppression_with_scores outputs: selected_indices, selected_scores
+                for _, dst, out_attr in out_edges:
+                    if out_attr['src_out_port'] == 1:
+                        graph.add_edge(nms, dst, **{'src_out_port': 2})
+                graph.add_edge(nms, out_boxes, **{'src_out_port': 0})
+                graph.add_edge(nms, out_box_num_per_class,
+                               **{'src_out_port': 1})
+                NodeWrap(graph, out_box_num_per_class).replace_obj(
+                    'Out', {'name': out_box_num_per_class})
             else:
                 # Tf NMSV5 outputs: selected_indices, selected_scores, valid_outputs
                 for _, dst, out_attr in out_edges:

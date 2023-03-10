@@ -41,12 +41,6 @@ def create_nms_model(pb_file_path, input_size, scores, max_output_size, iou_thre
 
 
 TEST_NAME = 'nms'
-#input_shape = [20, 4]
-
-# Generate input data
-#feed_dict = dict()
-#feed_dict['X:0'] = np.random.ranf(input_shape).astype(np.int32) * 300
-#scores = np.random.ranf([input_shape[0]]).astype(np.float32)
 
 # For the following example, tf nms output shape is [2] while opt output shape is [3] if
 # pad_to_max_output_size is False. For tf nms v4 and v5, we can set pad_to_max_output_size
