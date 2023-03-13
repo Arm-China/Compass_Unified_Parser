@@ -1861,7 +1861,7 @@ def convert_dequantizelinear(graph):
             continue
 
         input_shapes = dequant_obj.get_input_shapes()
-        if dequant_obj.axis and len(input_shapes[1]) == 1:
+        if dequant_obj.axis is not None and len(input_shapes[1]) == 1:
             dequant_axis = dequant_obj.axis
         else:
             dequant_axis = -1
@@ -1929,8 +1929,12 @@ def convert_quantizelinear(graph):
             continue
 
         input_shapes = quant_obj.get_input_shapes()
+        if quant_obj.axis is not None and len(input_shapes[1]) == 1:
+            quant_axis = quant_obj.axis
+        else:
+            quant_axis = -1
         quant_axis = OpHasAxis.make_axes_non_negative(
-            quant_obj.axis, len(input_shapes[0]))
+            quant_axis, len(input_shapes[0]))
         if input_shapes[1] != input_shapes[2] \
                 or len(input_shapes[1]) not in (0, 1) \
                 or (len(input_shapes[1]) == 1 and input_shapes[1][0] != input_shapes[0][quant_axis]):
