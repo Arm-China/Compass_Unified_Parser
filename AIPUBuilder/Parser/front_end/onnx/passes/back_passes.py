@@ -1555,6 +1555,7 @@ def merge_not_equal(graph):
 
 
 def merge_greater_less_equal_or(graph):
+    matched = False
     matches = [matched_patterns(graph,
                                 nodes=[
                                     ('inp1', {}),
@@ -1583,12 +1584,14 @@ def merge_greater_less_equal_or(graph):
         equal_out_edges = graph.sorted_out_edges(equal)
         greater_less_obj = NodeWrap(graph, greater_less)['object']
         or_obj = NodeWrap(graph, or_name)['object']
+        if greater_less_obj is None or or_obj is None:
+            ERROR('[Parser]: Meets invalid Node in merge_greater_less_equal_or!')
+            continue
         if len(greater_less_in_edges) == 2 \
                 and len(greater_less_out_edges) == 1 \
                 and len(equal_in_edges) == 2 \
-                and len(equal_out_edges) == 1 \
-                and greater_less_obj is not None \
-                and or_obj is not None:
+                and len(equal_out_edges) == 1:
+            matched = True
             _, _, in_attr1 = greater_less_in_edges[0]
             _, _, in_attr2 = greater_less_in_edges[1]
             graph.remove_edges_from(
@@ -1599,6 +1602,8 @@ def merge_greater_less_equal_or(graph):
             logical_attr = or_obj.copied_attr()
             logical_attr.update({'name': or_name, 'method': op_method})
             NodeWrap(graph, or_name).replace_obj('ArmLogical', logical_attr)
+    if matched:
+        clear_redundant_nodes(graph)
 
 
 def merge_nhwc_maxpoolargmax(graph):
