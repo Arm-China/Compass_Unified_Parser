@@ -178,16 +178,6 @@ def remove_useless_op(graph, op_type_list):
                         and len(out_shapes) >= 1 \
                         and in_shapes[0] == out_shapes[0]:
                     removing_nodes.append(node_name)
-                elif len(in_shapes) >= 1 \
-                        and in_shapes[0] is not None \
-                        and len(in_shapes[0]) == 2 \
-                        and len(out_shapes) == 1 \
-                        and out_shapes[0] is not None \
-                        and len(out_shapes[0]) == 4 \
-                        and in_shapes[0] == out_shapes[0][2:] \
-                        and out_shapes[0][0:2] == [1, 1] \
-                        and NodeWrap(graph, graph.succ[node_name][0])['object'].type == 'Out':
-                    remove_node_safely(graph, node_name)
             elif op_type == 'Resize':
                 in_shapes = node_obj.get_input_shapes()
                 if node_obj.cur_version == 10:

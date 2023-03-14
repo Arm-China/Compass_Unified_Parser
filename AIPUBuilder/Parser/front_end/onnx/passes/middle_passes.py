@@ -1006,9 +1006,18 @@ def convert_special_matmul_to_fc(graph):
     for m in matches:
         matmul = m['target']
         matmul_obj = NodeWrap(graph, matmul)['object']
-        if matmul_obj is not None \
-                and len(graph.sorted_in_edges(matmul)) == 2 \
-                and all([t is not None and len(t.shape) == 2 for t in matmul_obj.get_input_tensors()]) \
+        if matmul_obj is None or len(graph.sorted_in_edges(matmul)) != 2:
+            ERROR('[Parser]: Meets invalid MatMul Node (%s) in convert_special_matmul_to_fc!' % matmul)
+            continue
+        input_shapes = matmul_obj.get_input_shapes()
+        if len(input_shapes) != 2 or any(shape is None or None in shape for shape in input_shapes):
+            continue
+        output_shapes = matmul_obj.get_output_shapes()
+        if len(output_shapes) < 1 or output_shapes[0] is None or None in output_shapes[0]:
+            continue
+        if len(input_shapes[0]) >= 2 \
+                and all(shape == 1 for shape in input_shapes[0][:-2]) \
+                and len(input_shapes[1]) == 2 \
                 and len(matmul_obj.sorted_in_consts()) == 1:
             in_edges = graph.sorted_in_edges(matmul, data=True)
             const_index = 0 if NodeWrap(graph, in_edges[0][0])[
@@ -1023,6 +1032,13 @@ def convert_special_matmul_to_fc(graph):
             matmul_attr = matmul_obj.copied_attr()
             matmul_attr.update({'weights': weights, 'biases': biases})
             NodeWrap(graph, matmul).replace_obj('FullyConnected', matmul_attr)
+            if len(input_shapes[0]) > 2:
+                src, _, in_attr = in_edges[0]
+                insert_reshape(graph, src, matmul, in_attr, input_shapes[0][-2:])
+                post_reshape = insert_reshape_after(graph, matmul, output_shapes[0], old_dim=output_shapes[0][-2:])
+                if matmul in graph._attr['output_names']:
+                    index = graph._attr['output_names'].index(matmul)
+                    graph._attr['output_names'][index] = post_reshape
     if matched:
         clear_redundant_nodes(graph)
 

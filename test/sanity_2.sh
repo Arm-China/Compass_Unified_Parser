@@ -65,13 +65,14 @@ then
     done
 fi
 
-# 4 If you provide keyword in commit like: [tf2] ...
+# 4 If you provide keyword in the beginning of commit like: [tf2] ...
 #   If there are multiple keywords, separate them with comma, like [tf2,onnx]
-keyword="`git log --oneline -n 1 --format=%s | grep -o '\[.*\]'`"
+keyword="`git log --oneline -n 1 --format=%s | xargs | grep -o '^\[.*\]'`"
 if [[ -n $keyword ]]
 then
+    keyword=${keyword/\]*/\]} # Remove the back part of ] if multiple [] are matched
     keyword=${keyword:1:-1} # Remove '[' and ']'
-    echo "Find keyword ${keyword} in commit message!"
+    echo "Find keyword [${keyword}] in commit message!"
     lc_keywords=${keyword,,}
     lc_keywords=`echo ${lc_keywords} | sed -e 's/,/ /g'`
     for lc_keyword in ${lc_keywords}
