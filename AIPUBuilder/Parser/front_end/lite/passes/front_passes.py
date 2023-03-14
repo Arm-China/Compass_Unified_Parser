@@ -1843,6 +1843,90 @@ def convert_dequantize(graph):
         NodeWrap(graph, dequantize).replace_obj('DequantizeLinear', node_attr)
 
 
+def merge_min_quant_max_to_clip(graph):
+    quantize = graph._attr.get('quantize', False)
+    if quantize:
+        return
+    matched = False
+    matches = matched_patterns(graph,
+                               nodes=[('min', {'op': 'LiteMINIMUM'}),
+                                      ('quant', {'op': 'LiteQUANTIZE'}),
+                                      ('max', {'op': 'LiteMAXIMUM'})
+                                      ],
+                               edges=[('min', 'quant'),
+                                      ('quant', 'max')
+                                      ]
+                               )
+    for m in matches:
+        names = ['min', 'quant', 'max']
+        obj_dict = {n: NodeWrap(graph, m[n])['object'] for n in names}
+        if any([obj is None for obj in obj_dict.values()]):
+            ERROR('[Parser]: Meets invalid node in merge_min_quant_max_to_clip!')
+            continue
+
+        min_out_edges = graph.sorted_out_edges(m['min'], data=True)
+        quant_out_edges = graph.sorted_out_edges(m['quant'], data=True)
+        max_out_edges = graph.sorted_out_edges(m['max'], data=True)
+        if len(min_out_edges) != 1 or len(quant_out_edges) != 1 or len(max_out_edges) < 1:
+            continue
+        min_in_edges = graph.sorted_in_edges(m['min'], data=True)
+        max_in_edges = graph.sorted_in_edges(m['max'], data=True)
+        if len(min_in_edges) != 2 or len(max_in_edges) != 2:
+            ERROR('[Parser]: Meets invalid node in merge_min_quant_max_to_clip!')
+            continue
+        if min_in_edges[0][2]['tensor'].dtype is None \
+                or min_in_edges[0][2]['tensor'].dtype != min_in_edges[1][2]['tensor'].dtype \
+                or len(min_in_edges[0][2]['tensor'].scale_zp) != 2 \
+                or len(min_in_edges[1][2]['tensor'].scale_zp) != 2 \
+                or not FLOAT_EQUAL(min_in_edges[0][2]['tensor'].scale_zp[0], min_in_edges[1][2]['tensor'].scale_zp[0]) \
+                or not FLOAT_EQUAL(min_in_edges[0][2]['tensor'].scale_zp[1], min_in_edges[1][2]['tensor'].scale_zp[1]):
+            continue
+        if max_in_edges[0][2]['tensor'].dtype is None \
+                or max_in_edges[0][2]['tensor'].dtype != max_in_edges[1][2]['tensor'].dtype \
+                or len(max_in_edges[0][2]['tensor'].scale_zp) != 2 \
+                or len(max_in_edges[1][2]['tensor'].scale_zp) != 2 \
+                or not FLOAT_EQUAL(max_in_edges[0][2]['tensor'].scale_zp[0], max_in_edges[1][2]['tensor'].scale_zp[0]) \
+                or not FLOAT_EQUAL(max_in_edges[0][2]['tensor'].scale_zp[1], max_in_edges[1][2]['tensor'].scale_zp[1]):
+            continue
+        if max_out_edges[0][2]['tensor'].dtype is None \
+                or len(max_out_edges[0][2]['tensor'].scale_zp) != 2 \
+                or max_out_edges[0][2]['tensor'].scale_zp[0] is None \
+                or max_out_edges[0][2]['tensor'].scale_zp[0].size != 1 \
+                or max_out_edges[0][2]['tensor'].scale_zp[1] is None \
+                or max_out_edges[0][2]['tensor'].scale_zp[1].size != 1:
+            continue
+        if min_in_edges[0][2]['tensor'].dtype != max_in_edges[0][2]['tensor'].dtype:
+            continue
+
+        dtype = np.dtype(min_in_edges[0][2]['tensor'].dtype)
+        if not np.issubdtype(dtype, np.integer):
+            continue
+
+        if not max_in_edges[1][2]['tensor'].is_const \
+                or max_in_edges[1][2]['tensor'].value is None \
+                or max_in_edges[1][2]['tensor'].value.size != 1:
+            continue
+
+        src, _, in_attr = min_in_edges[0]
+        graph.remove_edge(src, m['min'])
+        graph.remove_edges_from(max_in_edges)
+        graph.add_edge(src, m['max'], **in_attr)
+
+        max_out_scale, max_out_zp = max_out_edges[0][2]['tensor'].scale_zp
+        clip_min = float(max_in_edges[1][2]['tensor'].value)
+        clip_max = (np.iinfo(dtype).max - int(max_out_zp)) * float(max_out_scale)
+        clip_attr = obj_dict['max'].copied_attr()
+        clip_attr.update({'opset_version': 6,
+                         'quantize': False,
+                          'min': clip_min,
+                          'max': clip_max}
+                         )
+        NodeWrap(graph, m['max']).replace_obj('Clip', clip_attr)
+
+    if matched:
+        clear_redundant_nodes(graph)
+
+
 def remove_sub_equal_select(graph):
     matched = False
     matches = matched_patterns(graph,

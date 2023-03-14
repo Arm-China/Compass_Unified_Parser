@@ -24,9 +24,12 @@ def fuse_weights_const(graph):
     matched = False
     for node_name in graph.nodes:
         node_obj = NodeWrap(graph, node_name)['object']
-        in_edges = graph.sorted_in_edges(node_name, keys=True, data=True)
+        if node_obj is None:
+            ERROR('[Parser]: Meets invalid Op(%s) in fuse_weights_const!' % node_name)
+            continue
         if isinstance(node_obj, KerasOp):
             continue
+        in_edges = graph.sorted_in_edges(node_name, keys=True, data=True)
         if isinstance(node_obj, OpHasWeights) and isinstance(node_obj, OpHasBiases):
             if node_obj.type in ('GRU', 'LSTM'):
                 continue

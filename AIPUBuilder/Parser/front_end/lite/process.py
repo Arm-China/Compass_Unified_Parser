@@ -8,7 +8,7 @@ from .passes.front_passes import split_op_has_activation, split_fc, split_s2b, s
     convert_unpack, convert_negative_pool_pad, convert_scatternd, convert_special_uni_seq_lstm, convert_strided_slice, convert_square_diff, \
     convert_broadcast_to, remove_redundant_broadcast_to, remove_sub_equal_select, \
     merge_special_cast_quantize, convert_special_quantize, convert_special_dequantize, split_quatized_mean, \
-    merge_quantized_instance_norm, merge_quantized_lstm2, convert_dequantize
+    merge_quantized_instance_norm, merge_quantized_lstm2, convert_dequantize, merge_min_quant_max_to_clip
 from ..onnx.passes.front_passes import fuse_weights_const, convert_deconv
 from ..onnx.passes.common_passes import apply_subgraph_plugin, record_output_tensors, remove_useless_op
 from ...graph.graph_algo import infer, clear_redundant_nodes
@@ -35,6 +35,7 @@ def process_tflite(model_path, params):
             # merge_quantized_instance_norm(graph)
             split_quatized_mean(graph)
         else:
+            merge_min_quant_max_to_clip(graph)
             remove_useless_op(graph, ['LiteDEQUANTIZE'])
 
         split_fc(graph)
