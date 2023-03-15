@@ -774,29 +774,23 @@ def remove_isfinite_select(graph):
                                       ]
                                )
     for m in matches:
-        names = ['is_finite', 'zeros_like', 'select']
+        names = ['is_finite', 'select']
         obj_dict = {n: NodeWrap(graph, m[n])['object'] for n in names}
-        if any([obj is None for obj in obj_dict.values()]):
+        if any(obj is None for obj in obj_dict.values()):
             ERROR('[Parser]: Meets invalid Op in remove_isfinite_select!')
             continue
         is_finite_in_edges = graph.sorted_in_edges(
-            m['is_finite'], keys=True, data=True)
-        zeros_like_in_edges = graph.sorted_in_edges(
-            m['zeros_like'], keys=True, data=True)
+            m['is_finite'], data=True)
         select_in_edges = graph.sorted_in_edges(
-            m['select'], keys=True, data=True)
+            m['select'], data=True)
         if len(is_finite_in_edges) != 1 \
-                or len(zeros_like_in_edges) != 1 \
                 or len(select_in_edges) != 3:
             continue
-        is_finite_src, _, k1, in_attr1 = is_finite_in_edges[0]
-        zeros_like_src, _, k2, in_attr2 = zeros_like_in_edges[0]
-        select_src, _, k3, in_attr3 = select_in_edges[1]
-        if is_finite_src != zeros_like_src \
-                or is_finite_src != select_src \
-                or in_attr1['src_out_port'] != in_attr2['src_out_port'] \
-                or in_attr1['src_out_port'] != in_attr3['src_out_port'] \
-                or in_attr3['dst_in_port'] != 1:
+        is_finite_src, _, is_finite_in_attr = is_finite_in_edges[0]
+        select_src, _, select_true_in_attr = select_in_edges[1]
+        if is_finite_src != select_src \
+                or is_finite_in_attr['src_out_port'] != select_true_in_attr['src_out_port'] \
+                or select_true_in_attr['dst_in_port'] != 1:
             continue
         is_finite_out_tensor = obj_dict['is_finite'].get_output_tensors()[0]
         if is_finite_out_tensor is None \
@@ -804,10 +798,7 @@ def remove_isfinite_select(graph):
             continue
         matched = True
         src = is_finite_src
-        src_out_port = in_attr1['src_out_port']
-        graph.remove_edge(src, m['is_finite'], key=k1)
-        graph.remove_edge(src, m['zeros_like'], key=k2)
-        graph.remove_edge(src, m['select'], key=k3)
+        src_out_port = is_finite_in_attr['src_out_port']
         for _, dst, out_attr in graph.sorted_out_edges(m['select'], data=True):
             graph.remove_edge(m['select'], dst)
             new_out_attr = copy.deepcopy(out_attr)

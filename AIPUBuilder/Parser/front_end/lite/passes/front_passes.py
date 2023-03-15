@@ -1944,41 +1944,32 @@ def remove_sub_equal_select(graph):
                                       ]
                                )
     for m in matches:
-        names = ['sub', 'equal_to', 'zeros_like', 'select']
+        names = ['sub', 'equal_to', 'select']
         obj_dict = {n: NodeWrap(graph, m[n])['object'] for n in names}
-        if any([obj is None for obj in obj_dict.values()]):
+        if any(obj is None for obj in obj_dict.values()):
             ERROR('[Parser]: Meets invalid Op in remove_sub_equal_select!')
             continue
         sub_in_edges = graph.sorted_in_edges(
-            m['sub'], keys=True, data=True)
-        zeros_like_in_edges = graph.sorted_in_edges(
-            m['zeros_like'], keys=True, data=True)
+            m['sub'], data=True)
         select_in_edges = graph.sorted_in_edges(
-            m['select'], keys=True, data=True)
+            m['select'], data=True)
         if len(sub_in_edges) != 2 \
                 or sub_in_edges[0][0] != sub_in_edges[1][0] \
-                or sub_in_edges[0][3]['src_out_port'] != sub_in_edges[1][3]['src_out_port'] \
-                or len(zeros_like_in_edges) != 1 \
+                or sub_in_edges[0][2]['src_out_port'] != sub_in_edges[1][2]['src_out_port'] \
                 or len(select_in_edges) != 3 \
                 or not FLOAT_EQUAL(obj_dict['equal_to'].value, 0.):
             continue
-        sub_src, _, k1, in_attr1 = sub_in_edges[0]
-        zeros_like_src, _, k2, in_attr2 = zeros_like_in_edges[0]
-        select_src, _, k3, in_attr3 = select_in_edges[1]
-        if sub_src != zeros_like_src \
-                or sub_src != select_src \
-                or in_attr1['src_out_port'] != in_attr2['src_out_port'] \
-                or in_attr1['src_out_port'] != in_attr3['src_out_port'] \
-                or in_attr3['dst_in_port'] != 1:
+        sub_src, _, sub_in_attr = sub_in_edges[0]
+        select_src, _, select_true_in_attr = select_in_edges[1]
+        if sub_src != select_src \
+                or sub_in_attr['src_out_port'] != select_true_in_attr['src_out_port'] \
+                or select_true_in_attr['dst_in_port'] != 1:
             continue
         matched = True
-        graph.remove_edge(sub_src, m['sub'], key=k1)
-        graph.remove_edge(sub_src, m['zeros_like'], key=k2)
-        graph.remove_edge(sub_src, m['select'], key=k3)
         for _, dst, out_attr in graph.sorted_out_edges(m['select'], data=True):
             graph.remove_edge(m['select'], dst)
             new_out_attr = copy.deepcopy(out_attr)
-            new_out_attr['src_out_port'] = in_attr1['src_out_port']
+            new_out_attr['src_out_port'] = sub_in_attr['src_out_port']
             graph.add_edge(sub_src, dst, **new_out_attr)
         if m['select'] in graph._attr['output_names']:
             index = graph._attr['output_names'].index(m['select'])
