@@ -1002,13 +1002,30 @@ def convert_special_clip_to_relu(graph):
 
 def convert_special_matmul_to_fc(graph):
     matched = False
-    matches = single_node_matcher(graph, 'MatMul')
+    matches = matched_patterns(graph,
+                               nodes=[
+                                   ('w', {'op': 'Constant'}),
+                                   ('matmul', {'op': 'MatMul'})
+                               ],
+                               edges=[
+                                   ('w', 'matmul', {'src_out_port': 0, 'dst_in_port': 1}),
+                               ])
     for m in matches:
-        matmul = m['target']
+        matmul, w = m['matmul'], m['w']
         matmul_obj = NodeWrap(graph, matmul)['object']
-        if matmul_obj is None or len(graph.sorted_in_edges(matmul)) != 2:
+        w_obj = NodeWrap(graph, w)['object']
+        in_edges = graph.sorted_in_edges(matmul, data=True)
+        if matmul_obj is None \
+                or w_obj is None \
+                or w_obj.value is None \
+                or len(in_edges) != 2:
             ERROR('[Parser]: Meets invalid MatMul Node (%s) in convert_special_matmul_to_fc!' % matmul)
             continue
+
+        if len(matmul_obj.sorted_in_consts()) != 1 \
+                or len(w_obj.value.shape) != 2:
+            continue
+
         input_shapes = matmul_obj.get_input_shapes()
         if len(input_shapes) != 2 or any(shape is None or None in shape for shape in input_shapes):
             continue
@@ -1016,19 +1033,11 @@ def convert_special_matmul_to_fc(graph):
         if len(output_shapes) < 1 or output_shapes[0] is None or None in output_shapes[0]:
             continue
         if len(input_shapes[0]) >= 2 \
-                and all(shape == 1 for shape in input_shapes[0][:-2]) \
-                and len(input_shapes[1]) == 2 \
-                and len(matmul_obj.sorted_in_consts()) == 1:
-            in_edges = graph.sorted_in_edges(matmul, data=True)
-            const_index = 0 if NodeWrap(graph, in_edges[0][0])[
-                'object'].type == 'Constant' else 1
-            if const_index == 0:
-                continue
+                and all(shape == 1 for shape in input_shapes[0][:-2]):
             matched = True
-            const = in_edges[const_index][0]
-            weights = np.transpose(NodeWrap(graph, const)['object'].value)
+            weights = np.transpose(w_obj.value)
             biases = np.zeros((weights.shape[0],), np.float32)
-            graph.remove_edge(const, matmul)
+            graph.remove_edge(w, matmul)
             matmul_attr = matmul_obj.copied_attr()
             matmul_attr.update({'weights': weights, 'biases': biases})
             NodeWrap(graph, matmul).replace_obj('FullyConnected', matmul_attr)
@@ -5405,7 +5414,7 @@ def merge_mvn3(graph):
         axes = [x for (i, x) in enumerate(
             obj_dict['mean_1'].axes) if mean1_in_shape[i] != 1]
         if not axes:
-            axes = ['mean_1'].axes[:]
+            axes = obj_dict['mean_1'].axes[:]
         axes = sorted([obj_dict['trans_1'].perm[x] for x in axes])
         eps = float(obj_dict['add_1'].sorted_in_consts()[0][2])
         mvn_attr = obj_dict['trans_2'].copied_attr()
@@ -5929,19 +5938,35 @@ def rearrange_matmul_reshape_bias(graph):
             NodeWrap(graph, name)['object'] for name in [matmul, reshape, bias]]
         if matmul_obj is not None and reshape_obj is not None and bias_obj is not None:
             bias_obj_in_consts = bias_obj.sorted_in_consts()
+            reshape_out_edges = graph.sorted_out_edges(reshape, data=True)
             if len(bias_obj_in_consts) >= 1 \
-                    and len(graph.sorted_out_edges(reshape)) == 1 \
+                    and len(reshape_out_edges) == 1 \
+                    and bias_obj_in_consts[0][2] is not None \
                     and matmul_obj.num_output == bias_obj_in_consts[0][2].size:
+                bias_in_edges = graph.sorted_in_edges(bias, data=True)
                 bias_out_edges = graph.sorted_out_edges(bias, data=True)
                 matmul_out_edges = graph.sorted_out_edges(matmul, data=True)
-                reshape_out_edges = graph.sorted_out_edges(reshape, data=True)
+                if len(bias_in_edges) < 2 or len(bias_out_edges) < 1 or len(matmul_out_edges) < 1:
+                    ERROR('[Parser]: Invalid Add/BatchNormalization(%s) in rearrange_matmul_reshape_bias!' % bias)
+                    continue
+                if bias_obj.type == 'BatchNormalization' and bias_in_edges[0][0] != reshape:
+                    continue
+                bias_main_in_port = 0
+                if bias_obj.type == 'Add' and bias_in_edges[0][0] != reshape:
+                    bias_main_in_port = 1
                 graph.remove_edge(matmul, reshape)
                 graph.remove_edge(reshape, bias)
                 for _, dst, attr in bias_out_edges:
                     graph.remove_edge(bias, dst)
                     graph.add_edge(reshape, dst, **attr)
-                graph.add_edge(matmul, bias, **matmul_out_edges[0][2])
-                graph.add_edge(bias, reshape, **reshape_out_edges[0][2])
+                bias_in_attr = copy.deepcopy(matmul_out_edges[0][2])
+                bias_in_attr['dst_in_port'] = bias_main_in_port
+                graph.add_edge(matmul, bias, **bias_in_attr)
+                bias_out_attr = copy.deepcopy(matmul_out_edges[0][2])
+                bias_out_attr['dst_in_port'] = 0
+                if bias_out_attr['tensor'].value is not None:
+                    bias_out_attr['tensor'].value += bias_obj_in_consts[0][2]
+                graph.add_edge(bias, reshape, **bias_out_attr)
 
 
 def rearrange_linear_concat_relu(graph):
@@ -7019,8 +7044,8 @@ def adjust_1d_matmul(graph):
             continue
 
         for in_port, (src, _, k, in_attr) in enumerate(in_edges):
-            pre_reshape_dim = [1]*(1-in_port) + \
-                in_shapes[in_port] + [1]*(in_port)
+            pre_reshape_dim = [1] * (1 - in_port) + \
+                in_shapes[in_port] + [1] * (in_port)
             insert_reshape(graph, src, matmul, in_attr, pre_reshape_dim, key=k)
 
         post_reshape = insert_reshape_after(
