@@ -565,8 +565,6 @@ class TfReverseV2Op(OpHasAxis, OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfReverseV2Op, self).infer_shape()
         inputs = self.get_input_tensors()
-        if not self.is_all_inputs_const():
-            assert inputs[1].size == 1, 'TfReverseV2Op only supports 1 axis for now, but got %d' % inputs[1].size
         out_tensor = tf.reverse(inputs[0], axis=inputs[1]).numpy()
         self.set_out_tensor(out_tensor)
 

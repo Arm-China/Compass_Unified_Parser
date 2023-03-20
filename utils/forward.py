@@ -125,6 +125,11 @@ def tf_forward(model_path, feed_dict, output_names=None, save_output=True):
         graph_def.ParseFromString(f.read())
         _ = tf.import_graph_def(graph_def, name='')
 
+    valid_feed_dict = {}
+    for name, value in feed_dict.items():
+        tensor_name = (name + ':0') if ':' not in name else name
+        valid_feed_dict.update({tensor_name: value})
+
     with tf.Session() as session:
         if output_names is None:
             all_output_tensors = [op.outputs for op in tf.get_default_graph().get_operations()]
@@ -132,7 +137,7 @@ def tf_forward(model_path, feed_dict, output_names=None, save_output=True):
             output_names = get_default_output_names(all_input_tensors, all_output_tensors)
         output_tensors = [tf.get_default_graph().get_tensor_by_name(out_name)
                           for out_name in output_names]
-        output_data = session.run(output_tensors, feed_dict=feed_dict)
+        output_data = session.run(output_tensors, feed_dict=valid_feed_dict)
 
     output_dict = dict()
     for out_name, out_data in zip(output_names, output_data):

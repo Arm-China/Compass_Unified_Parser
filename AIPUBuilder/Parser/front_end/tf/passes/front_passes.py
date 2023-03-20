@@ -6,7 +6,7 @@ import math
 import numpy as np
 import re
 import copy
-from ....ops.op import TfOp, Op, OpHasWeights, OpHasPaddingStrides, TfHasPaddingStrides
+from ....ops.op import TfOp, Op, OpHasAxis, OpHasWeights, OpHasPaddingStrides, TfHasPaddingStrides
 from ....graph.node_wrap import NodeWrap
 from ....graph.graph_algo import get_valid_node_name, clear_redundant_nodes, cal_path_length, has_path
 from ....graph.pattern_match import matched_patterns, single_node_matcher, two_nodes_matcher
@@ -607,37 +607,58 @@ def convert_reverse(graph, op_type='TfReverseV2'):
         rev = m['target']
         rev_obj = NodeWrap(graph, rev)['object']
         in_edges = graph.sorted_in_edges(rev, data=True)
+        out_edges = graph.sorted_out_edges(rev, data=True)
         if rev_obj is None or len(in_edges) < 1 \
+                or len(out_edges) < 1 \
                 or len(rev_obj.get_input_shapes()) < 1:
             ERROR(
                 '[Parser]: Meets invalid Op (%s) in convert_reverse!' % rev)
             continue
         input_shape = rev_obj.get_input_shapes()[0]
         if input_shape is None \
-                or any(d is None for d in input_shape) \
-                or len(rev_obj.axes) != 1:
+                or any(d is None for d in input_shape):
             continue
         out_node = rev
         src, _, in_attr = in_edges[0]
-        rev_axis = (rev_obj.axes[0] + len(input_shape)) if rev_obj.axes[0] < 0 else rev_obj.axes[0]
+        rev_axes = OpHasAxis.make_axes_non_negative(rev_obj.axes, len(input_shape))
         if len(input_shape) < 2:
             insert_reshape(graph, src, rev, in_attr, [-1, 1])
             out_node = insert_reshape_after(graph, rev, input_shape, input_shape + [1])
             time_axis = 0
             batch = 1
             seq_length = input_shape[0]
-        elif rev_axis in (0, 1):
-            time_axis = rev_axis
+        elif len(rev_axes) == 1 and rev_axes[0] in (0, 1):
+            time_axis = rev_axes[0]
             batch = input_shape[1 - time_axis]
             seq_length = input_shape[time_axis]
         else:
-            pre_perm = [rev_axis] + [idx for idx in range(len(input_shape)) if idx != rev_axis]
-            insert_transpose(graph, src, rev, in_attr, pre_perm)
+            non_rev_axes = [idx for idx in range(len(input_shape)) if idx not in rev_axes]
+            # Insert pre transpose to put axes that need reverse in front and axes that don't need reverse in back
+            pre_perm = rev_axes + non_rev_axes
+            pre_trans = insert_transpose(graph, src, rev, in_attr, pre_perm)
+            # Insert pre reshape after pre transpose to convert input to 2d
+            non_rev_size = np.prod([input_shape[axis] for axis in non_rev_axes])
+            rev_size = np.prod([input_shape[axis] for axis in rev_axes])
+            pre_trans_out_attr = copy.deepcopy(in_attr)
+            pre_trans_out_attr.update({'src_out_port': 0})
+            if in_attr['tensor'] is not None and in_attr['tensor'].value is not None:
+                pre_trans_out_attr['tensor'].value = np.transpose(in_attr['tensor'].value, pre_perm)
+            pre_dim = [rev_size, non_rev_size]
+            insert_reshape(graph, pre_trans, rev, pre_trans_out_attr, pre_dim)
+            # Insert post transpose
             post_perm = Op.cal_inverse_perm(pre_perm)
             out_node = insert_transpose_after(graph, rev, post_perm)
+            # Insert post reshape before post transpose
+            rev_out_attr = copy.deepcopy(out_edges[0][2])
+            rev_out_attr.update({'dst_in_port': 0})
+            if rev_out_attr['tensor'] is not None and rev_out_attr['tensor'].value is not None:
+                rev_out_attr['tensor'].value = np.reshape(np.transpose(rev_out_attr['tensor'].value, pre_perm), pre_dim)
+            post_dim = [input_shape[axis] for axis in pre_perm]
+            insert_reshape(graph, rev, out_node, rev_out_attr, post_dim)
+            # Set time_axis, batch and seq_length for ReverseSequence
             time_axis = 0
-            batch = input_shape[0]
-            seq_length = input_shape[rev_axis]
+            batch = non_rev_size
+            seq_length = rev_size
         seq_len = np.array([seq_length] * batch, np.int32)
         graph.remove_edges_from(in_edges[1:])
         insert_constant(graph, rev + '_seq_len', seq_len, rev, in_port=1)
