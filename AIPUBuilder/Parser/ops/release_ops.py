@@ -1537,12 +1537,17 @@ class ArmDeQuantizeOp(OpHasAxis, BaseQuantizeDequantizeOp, OpHasOneOutPort, ArmO
         super(ArmDeQuantizeOp, self).infer_shape()
         inputs = self.get_input_tensors()
         if self.axis is None:
-            out_tensor = ((inputs[0].astype(self.zero_point.dtype) - self.zero_point) * self.scale).astype(np.float32)
+            out_tensor = ((inputs[0].astype(np.int32) -
+                           self.zero_point) * self.scale).astype(np.float32)
         else:
             expand_len = len(inputs[0].shape) - self.axis - 1
-            scale = np.reshape(self.scale, list(self.scale.shape) + [1] * expand_len)
-            zero_point = np.reshape(self.zero_point, list(self.zero_point.shape) + [1] * expand_len)
-            out_tensor = ((inputs[0].astype(zero_point.dtype) - zero_point) * scale).astype(np.float32)
+            scale = np.reshape(self.scale, list(
+                self.scale.shape) + [1] * expand_len)
+            zero_point = np.reshape(self.zero_point, list(
+                self.zero_point.shape) + [1] * expand_len)
+
+            out_tensor = ((inputs[0].astype(np.int32) -
+                           zero_point) * scale).astype(np.float32)
         self.set_out_tensor(out_tensor)
 
 
@@ -3485,13 +3490,20 @@ class ArmQuantizeOp(OpHasAxis, BaseQuantizeDequantizeOp, OpHasOneOutPort, ArmOp)
     def infer_shape(self):
         super(ArmQuantizeOp, self).infer_shape()
         inputs = self.get_input_tensors()
+        zp_min = np.iinfo(self.zero_point.dtype).min
+        zp_max = np.iinfo(self.zero_point.dtype).max
         if self.axis is None:
-            out_tensor = (inputs[0] / self.scale + self.zero_point).astype(self.to_dtype)
+            out_tensor = np.clip(
+                (inputs[0] / self.scale + self.zero_point), zp_min, zp_max).astype(self.to_dtype)
         else:
             expand_len = len(inputs[0].shape) - self.axis - 1
-            scale = np.reshape(self.scale, list(self.scale.shape) + [1] * expand_len)
-            zero_point = np.reshape(self.zero_point, list(self.zero_point.shape) + [1] * expand_len)
-            out_tensor = (inputs[0] / scale + zero_point).astype(self.to_dtype)
+            scale = np.reshape(self.scale, list(
+                self.scale.shape) + [1] * expand_len)
+            zero_point = np.reshape(self.zero_point, list(
+                self.zero_point.shape) + [1] * expand_len)
+            out_tensor = np.clip(
+                (inputs[0] / scale + zero_point), zp_min, zp_max).astype(self.to_dtype)
+
         self.set_out_tensor(out_tensor)
 
 
