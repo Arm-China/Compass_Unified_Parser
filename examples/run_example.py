@@ -7,7 +7,7 @@ import re
 import argparse
 import numpy as np
 
-sys.path.append("..")  # noqa: E402
+sys.path.insert(0, os.path.realpath(os.path.join(os.path.dirname(os.path.realpath(__file__)), '..')))  # noqa: E402
 from utils.compare import compare_data_dict
 from utils.run_ir_forward import run_ir_forward
 from utils.forward import rt_forward
