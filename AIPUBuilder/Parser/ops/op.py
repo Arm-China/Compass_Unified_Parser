@@ -149,7 +149,7 @@ class Op(abc.ABC):
                                 'options': ['NWC', 'NCW', 'NHWC', 'NCHW', 'NDHWC', 'NCDHW', 'NCHW_VECT_C'],
                                 'required': True},
                 'cur_version': {'type': AttrType.INT, 'default': 0, 'required': False},
-                'quantize': {'type': AttrType.INT, 'default': 0, 'options': [0, 1]}
+                'quantize': {'type': AttrType.BOOL, 'default': False, 'options': [0, 1, False, True]}
                 }
 
     @classmethod
@@ -1318,6 +1318,11 @@ class BaseLinearOp(OpHasBiases, OpHasWeights, OpHasOneOutPort):
                             ret = self.weights.shape[0]
                     elif isinstance(self, OpHasBiases) and self.biases is not None:
                         ret = self.biases.shape[0]
+                    elif self.type == 'QLinearConv':
+                        try:
+                            ret = self.w.shape[0]
+                        except:
+                            ret = None
                     if ret is not None:
                         self.__dict__['_attr'][item].value = ret
         except:
@@ -1377,7 +1382,7 @@ class BaseConvOp(OpHasPaddingStrides, BaseLinearOp, LayoutConcernedOp):
         self.update_attributes(BaseConvOp, attr_dict)
         if self.biases is None \
                 and getattr(self, 'num_output', None) is not None:
-            if 'ConvInteger' in self.type:
+            if 'ConvInteger' in self.type or self.type == 'QLinearConv':
                 self.biases = np.zeros((self.num_output,), np.int32)
             else:
                 self.biases = np.zeros((self.num_output,), np.float32)
@@ -2497,7 +2502,7 @@ class TfOp(Op):
             if input_dims < 3:
                 ERROR('[Parser]: Expect input_data is at least 3d, but got %dd in convert_from_nhwc of TfOp!' % input_dims)
                 return ret
-            perm = [0, (input_dims-1)] + [idx for idx in range(1, (input_dims-1))]
+            perm = [0, (input_dims - 1)] + [idx for idx in range(1, (input_dims - 1))]
             ret = np.transpose(input_data, perm)
         else:
             ret = input_data

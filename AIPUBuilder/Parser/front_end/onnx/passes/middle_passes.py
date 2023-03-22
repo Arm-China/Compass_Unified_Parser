@@ -7398,6 +7398,8 @@ def middle_passes(graph, params):
 
     fuse_const(graph)
 
+    # convert_qconv(graph)
+
     convert_abnormal_reshape(graph)
     convert_fill(graph)
     convert_dequantizelinear(graph)

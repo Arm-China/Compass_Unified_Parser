@@ -114,6 +114,114 @@ class DynamicQuantizeLinearOp(OpHasMultipleOutPorts, OnnxOp):
         self.set_out_tensor(outputs)
 
 
+class QLinearConvOp(BaseConvOp, OnnxOp):
+    @classmethod
+    def attributes(cls):
+        return {10: {}}
+
+    def __init__(self, graph, attr_dict=None):
+        super(QLinearConvOp, self).__init__(graph, attr_dict)
+        self.update_attributes(QLinearConvOp, attr_dict)
+        assert self.check_required(), 'QLinearConvOp is missing a required parameter.'
+
+    def __getattr__(self, item):
+        ret = None
+        try:
+            need_set_attr = False
+            if item == 'x_scale':
+                inputs = self.get_input_tensors()
+                ret = np.array(inputs[1]).astype(np.float32)
+                need_set_attr = True
+            elif item == 'x_zero_point':
+                inputs = self.get_input_tensors()
+                ret = np.array(inputs[2])
+                need_set_attr = True
+            elif item == 'w':
+                inputs = self.get_input_tensors()
+                ret = np.array(inputs[3])
+                need_set_attr = True
+            elif item == 'w_scale':
+                inputs = self.get_input_tensors()
+                ret = np.array(inputs[4]).astype(np.float32)
+                need_set_attr = True
+            elif item == 'w_zero_point':
+                inputs = self.get_input_tensors()
+                ret = np.array(inputs[5])
+                need_set_attr = True
+            elif item == 'y_scale':
+                inputs = self.get_input_tensors()
+                ret = np.array(inputs[6]).astype(np.float32)
+                need_set_attr = True
+            elif item == 'y_zero_point':
+                inputs = self.get_input_tensors()
+                ret = np.array(inputs[7])
+                need_set_attr = True
+            elif item == 'B':
+                inputs = self.get_input_tensors()
+                if len(inputs) == 9:
+                    ret = np.array(inputs[8]).astype(np.int32)
+                else:
+                    ret = np.zeros((self.num_output,), np.int32)
+                need_set_attr = True
+            if need_set_attr:
+                self.__dict__['_attr'][item] = Attribute(item, {'type': AttrType.TENSOR, 'value': ret})
+        except:
+            ret = None
+        if ret is None:
+            ret = super(QLinearConvOp, self).__getattr__(item)
+        return ret
+
+    def infer_shape(self):
+        super(QLinearConvOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        assert len(inputs) in (8, 9), ('Invalid inputs length of QLinearConv(%s)' % self.name)
+        if len(inputs[0].shape) < 3:
+            ERROR('[Parser]: Meets invalid input dimension for QLinearConv(%s)' % self.name)
+            return
+        if len(inputs[0].shape) > 5:
+            WARN('[Parser]: Meets unsupported input dimension for QLinearConv(%s)' % self.name)
+            return
+
+        spatial_len = len(inputs[0].shape) - 2
+        if self.data_format == 'NHWC':
+            inp = inputs[0]
+        else:
+            inp = np.transpose(inputs[0], [0] + list(range(2, spatial_len + 2)) + [1])
+        if self.auto_pad == 'NOTSET' and any(p != 0 for p in self.pads):
+            pads = np.reshape(np.array(self.pads, np.int32), (2, -1))
+            pads = np.transpose(pads)
+            pads = np.concatenate([np.zeros((1, 2), np.int32), pads, np.zeros((1, 2), np.int32)], axis=0)
+            inp = np.pad(inp, pads)
+        float_x = (inp.astype(np.int32) - self.x_zero_point) * self.x_scale
+        float_w = (self.w.astype(np.int32) - np.reshape(self.w_zero_point, [-1] + [1] * (len(self.w.shape) - 1))) \
+            * np.reshape(self.w_scale, [-1] + [1] * (len(self.w.shape) - 1))
+        float_w = np.transpose(float_w, list(range(2, spatial_len + 2)) + [1, 0])
+        float_B = self.B.astype(np.int32) * (self.x_scale * self.w_scale)
+        conv = eval('tf.keras.layers.Conv%sD' % spatial_len)
+        padding = 'valid' if self.auto_pad in ('VALID', 'NOTSET') else 'same'
+        out_tensor = conv(self.num_output,
+                          self.kernel_shape,
+                          strides=self.strides,
+                          padding=padding,
+                          data_format='channels_last',
+                          dilation_rate=self.dilations,
+                          groups=self.group,
+                          activation=None,
+                          use_bias=True,
+                          kernel_initializer=tf.constant_initializer(float_w),
+                          bias_initializer=tf.constant_initializer(float_B))(float_x).numpy()
+        out_min = np.iinfo(self.y_zero_point.dtype).min
+        out_max = np.iinfo(self.y_zero_point.dtype).max
+        out_tensor = np.clip(out_tensor / self.y_scale + self.y_zero_point,
+                             out_min, out_max).astype(self.y_zero_point.dtype)
+        if self.data_format == 'NCHW':
+            out_tensor = np.transpose(out_tensor, [0, spatial_len + 1] + list(range(1, spatial_len + 1)))
+        self.set_out_tensor(out_tensor)
+
+    def convert_version(self):
+        pass
+
+
 class QuantizeLinearOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
     @classmethod
     def attributes(cls):

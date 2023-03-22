@@ -23,6 +23,8 @@ def process_onnx(model_path, params):
         fuse_weights_const(graph)
         convert_special_prelu(graph)
         infer(graph)
+
+        # merge_qconv(graph)
     else:
         WARN('[Parser]: Got empty graph in process_onnx!')
     return graph

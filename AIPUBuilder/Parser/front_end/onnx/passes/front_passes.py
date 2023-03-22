@@ -31,7 +31,7 @@ def fuse_weights_const(graph):
             continue
         in_edges = graph.sorted_in_edges(node_name, keys=True, data=True)
         if isinstance(node_obj, OpHasWeights) and isinstance(node_obj, OpHasBiases):
-            if node_obj.type in ('GRU', 'LSTM'):
+            if node_obj.type in ('GRU', 'LSTM', 'QLinearConv'):
                 continue
             if node_obj.type == 'LiteTRANSPOSE_CONV' \
                     or node_obj.type == 'LiteCONV_3D_TRANSPOSE':
@@ -138,3 +138,12 @@ def convert_deconv(graph):
             attrs = deconv_obj.copied_attr()
             attrs.update({'opset_version': 11, 'weights': new_weights})
             NodeWrap(graph, deconv).replace_obj('ConvTranspose', attrs)
+
+
+def convert_qconv(graph):
+    matches = single_node_matcher(graph, 'QLinearConv')
+    for m in matches:
+        qconv = m['target']
+
+        pass
+    pass
