@@ -6,7 +6,7 @@ import numpy as np
 import re
 import copy
 import torch
-from ....ops.op import BaseActivationOp, Op, OpHasAxis, OpHasWeights, KerasOp, KerasGlobalPoolingOp, KerasNeedBroadcast
+from ....ops.op import BaseActivationOp, Op, OpHasAxis, OpHasWeights, KerasOp, KerasGlobalPoolingOp, KerasNeedBroadcast, Tf2Op
 from ....graph.node_wrap import NodeWrap
 from ....graph.graph_algo import get_valid_node_name, clear_redundant_nodes
 from ....graph.pattern_match import matched_patterns, single_node_matcher
@@ -30,11 +30,24 @@ def convert_activations(graph):
         onnx_op_dict = BaseActivationOp.activation_to_onnx_op(act_name)
         onnx_op_type = onnx_op_dict.get('type', None)
         opset_version = onnx_op_dict.get('opset_version', None)
-        if onnx_op_type is None or opset_version is None:
-            WARN('[Parser]: Meet unsupported activation (%s) in TfKerasActivation Op (%s) in convert_activations!' % (act_name, act))
-            continue
         node_attr = act_obj.copied_attr()
-        node_attr.update(onnx_op_dict)
+        if onnx_op_type is None or opset_version is None:
+            tf_activations_optype_map = {
+                # activations: (onnx op type, onnx opset version, attr_dict)
+                'ABS': ('Abs', 6, {}),
+                'EXP': ('Exp', 13, {}),
+                'REDUCE_LOGSUMEXP': ('ReduceLogSumExp', 13, {'keepdims': 0}),
+            }
+            if act_name in tf_activations_optype_map:
+                onnx_op_type, opset_version, attr_dict = tf_activations_optype_map[act_name]
+                node_attr.update(attr_dict)
+                node_attr.update({'type': onnx_op_type, 'opset_version': opset_version})
+            else:
+                WARN('[Parser]: Meet unsupported activation (%s) in TfKerasActivation Op (%s) in convert_activations!' %
+                     (act_name, act))
+                continue
+        else:
+            node_attr.update(onnx_op_dict)
         NodeWrap(graph, act).replace_obj(onnx_op_type, node_attr)
 
 

@@ -38,11 +38,15 @@ input_shape = [1, 5, 5, 6, 10]
 feed_dict = {}
 feed_dict['X:0'] = np.random.ranf(input_shape).astype(np.float32)
 
-for use_function in (False, True):
-    for function in (tf.nn.softmax, tf.compat.v1.nn.softmax, tf.compat.v1.nn.log_softmax):
-        model_path = '-'.join([TEST_NAME, str(use_function), function.__name__]) + '.h5'
+for use_function in (True, False, ):
+    for function in (tf.math.abs, tf.math.exp, tf.nn.softmax, tf.compat.v1.nn.softmax, tf.compat.v1.nn.log_softmax):  # tf.math.reduce_logsumexp
+        # Some functions cannot be activation functions if model is saved to h5; while they are supported in saved model.
+        # model_path = '-'.join([TEST_NAME, str(use_function), function.__name__]) + '.h5'
+        model_path = '-'.join([TEST_NAME, str(use_function), function.__name__])
         print('------------%s-------------' % model_path)
-        if not use_function and (function.__name__.endswith('_v2') or function.__name__ == 'log_softmax'):
+        if not use_function \
+                and (function.__name__.endswith('_v2')
+                     or function.__name__ in ('abs', 'exp', 'log_softmax')):  # reduce_logsumexp
             # tf raises error for _v2 function and log_softmax function if use function name, for example:
             # ValueError: Unknown activation function: log_softmax_v2
             continue
