@@ -269,6 +269,10 @@ def parse_quantization_info(quant_info):
             if meta_info_length != 0:
                 value = getattr(quant_info, name + 'AsNumpy')()
                 value = value if isinstance(value, np.ndarray) else np.array(value)
+                if str(value.dtype) == 'float64':
+                    value = value.astype(np.float32)
+                elif str(value.dtype) == 'int64':
+                    value = value.astype(np.int32)
                 ret.update({name: value})
     return ret
 

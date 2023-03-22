@@ -1763,7 +1763,29 @@ class LiteQUANTIZEOp(OpHasOneOutPort, TfliteOp):
     def infer_shape(self):
         super(LiteQUANTIZEOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = inputs[0].copy()
+        out_tensors_info = self.get_outputs_info()
+        assert len(out_tensors_info) >= 4, 'Meets invalid output tensors in LiteQUANTIZEOp!'
+        out_tensor_info_dict = out_tensors_info[3][0] if len(out_tensors_info[3]) > 0 else {}
+        output_dtype = out_tensor_info_dict.get('dtype', out_tensors_info[2][0] if len(out_tensors_info[2]) > 0 else '')
+        assert output_dtype, 'Meets empty dtype of output tensor in LiteQUANTIZEOp!'
+        input_dtype = str(inputs[0].dtype)
+        if 'int' in input_dtype and 'int' in output_dtype:  # Requantize
+            input_tensors_info = self.get_inputs_info()
+            assert len(input_tensors_info) >= 4, 'Meets invalid input tensors in LiteQUANTIZEOp!'
+            input_tensor_info_dict = input_tensors_info[3][0] if len(input_tensors_info[3]) > 0 else {}
+            input_scale, input_zp = input_tensor_info_dict.get('scale_zp', (np.array(1.0), np.array(0)))
+            output_scale, output_zp = out_tensor_info_dict.get('scale_zp', (np.array(1.0), np.array(0)))
+            unclamped = np.around((inputs[0] - input_zp.astype(np.int32)) * input_scale / output_scale) + output_zp
+            out_tensor = np.clip(unclamped,
+                                 np.iinfo(output_dtype).min,
+                                 np.iinfo(output_dtype).max).astype(output_dtype)
+        elif 'float' in input_dtype and 'int' in output_dtype:  # Quantize
+            output_scale, output_zp = out_tensor_info_dict.get('scale_zp', (np.array(1.0), np.array(0)))
+            out_tensor = np.clip(np.around(inputs[0] / output_scale) + output_zp,
+                                 np.iinfo(output_dtype).min,
+                                 np.iinfo(output_dtype).max).astype(output_dtype)
+        else:
+            out_tensor = inputs[0].copy()
         self.set_out_tensor(out_tensor)
 
     @property

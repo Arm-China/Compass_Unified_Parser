@@ -319,7 +319,7 @@ class Op(abc.ABC):
         ret = True
         if not txt_file.closed and txt_file.mode == 'w':
             bottom_info, top_info = self.get_inputs_info(), self.get_outputs_info()
-            if self.name in self._graph._attr['duplicate_name']:
+            if self.name in self._graph._attr.get('duplicate_name', {}):
                 newname = self._graph._attr['duplicate_name'][self.name]
                 txt_file.write('layer_name=%s\n' % newname)
             else:
@@ -337,11 +337,11 @@ class Op(abc.ABC):
                 txt_file.write('layer_type=%s\n' %
                                re.sub(r'^Arm', '', self.type))
             txt_file.write('layer_bottom=[%s]\n' % string_list_to_string(
-                bottom_info[0] if len(bottom_info) == 3 else []))
+                bottom_info[0] if len(bottom_info) >= 3 else []))
             txt_file.write('layer_bottom_shape=[%s]\n' % string_list_to_string(
-                bottom_info[1] if len(bottom_info) == 3 else []))
+                bottom_info[1] if len(bottom_info) >= 3 else []))
             txt_file.write('layer_bottom_type=[%s]\n' % string_list_to_string(
-                bottom_info[2] if len(bottom_info) == 3 else []))
+                bottom_info[2] if len(bottom_info) >= 3 else []))
             txt_file.write('layer_top=[%s]\n' % string_list_to_string(
                 top_info[0] if len(top_info) >= 3 else []))
             txt_file.write('layer_top_shape=[%s]\n' % string_list_to_string(
@@ -457,23 +457,34 @@ class Op(abc.ABC):
         return sorted(list(set(ports)))
 
     def get_inputs_info(self):
-        '''Get inputs info about name,value shape,value dtype.'''
+        '''Get inputs info about name, value shape, value dtype, and info dict.'''
         ret = []
         quantize = self._graph._attr.get('quantize', False)
         for u, v, k, d in self._graph.sorted_in_edges(self.name, keys=True, data=True):
             pred_node_obj = self._graph.nodes[u]._attr.get('object', None)
             if pred_node_obj is not None:
-                if u in self._graph._attr['duplicate_name']:
+                if u in self._graph._attr.get('duplicate_name', {}):
                     u = self._graph._attr['duplicate_name'][u]
                 pre_name_suffix = '' if isinstance(
                     pred_node_obj, OpHasOneOutPort) else '_' + str(d['src_out_port'])
-                if d['tensor'].value is not None:
-                    if quantize and d['tensor'].dtype is not None:
+                info_dict = OrderedDict()
+                if len(d['tensor'].min_max) == 2:
+                    min_max_str = '[%f,%f]' % (float(d['tensor'].min_max[0]), float(d['tensor'].min_max[1]))
+                    info_dict.update({'min_max': min_max_str})
+                dtype = ''
+                if quantize:
+                    if len(d['tensor'].scale_zp) == 2:
+                        scale_zp = (np.array(d['tensor'].scale_zp[0]), np.array(d['tensor'].scale_zp[1]))
+                        info_dict.update({'scale_zp': scale_zp})
+                    if d['tensor'].dtype is not None:
                         dtype = d['tensor'].dtype
-                    else:
+                        info_dict.update({'dtype': str(d['tensor'].dtype)})
+                shape = ''
+                if d['tensor'].value is not None:
+                    if not dtype:
                         dtype = str(d['tensor'].value.dtype)
-                    ret.append((u + pre_name_suffix, re.sub(r' ', '',
-                               str(list(d['tensor'].value.shape))), dtype))
+                    shape = re.sub(r' ', '', str(list(d['tensor'].value.shape)))
+                ret.append((u + pre_name_suffix, shape, dtype, info_dict))
         if ret:
             ret = list(zip(*ret))
         return ret
@@ -487,7 +498,7 @@ class Op(abc.ABC):
             name_suffix = '' if isinstance(
                 self, OpHasOneOutPort) else '_' + str(d['src_out_port'])
             info_value = []
-            if u in self._graph._attr['duplicate_name']:
+            if u in self._graph._attr.get('duplicate_name', {}):
                 u = self._graph._attr['duplicate_name'][u]
             if (d['tensor'].value is not None and d['tensor'].value.size > 0) \
                     or (d['tensor'].shape is not None and len(d['tensor'].shape) > 0):

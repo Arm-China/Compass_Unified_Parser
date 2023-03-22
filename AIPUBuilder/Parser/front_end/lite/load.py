@@ -263,10 +263,11 @@ def convert_tflite_to_graph(model_path, params):
                     if re.search(r'Lite', op_type):
                         attr_dict.update(
                             {'opcode_version': op_info['opcode_version']})
-                    activation = get_act_info_from_tensor(
-                        parsed_tensors_table[op_info['outputs'][0]])
-                    if activation and attr_dict.get('FusedActivationFunction', 'NONE') == 'NONE':
-                        attr_dict['FusedActivationFunction'] = activation['act_type']
+                    if not quantize:
+                        activation = get_act_info_from_tensor(
+                            parsed_tensors_table[op_info['outputs'][0]])
+                        if activation and attr_dict.get('FusedActivationFunction', 'NONE') == 'NONE':
+                            attr_dict['FusedActivationFunction'] = activation['act_type']
                     if op_type not in PARSER_OP_DICT:
                         attr_dict = convert_attr_to_onnx(attr_dict)
                     node = NodeWrap(graph, node_name)

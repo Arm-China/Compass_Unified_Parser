@@ -1037,7 +1037,7 @@ def split_s2b(graph):
 
 
 def split_b2s(graph, op_type='TfBatchToSpaceND'):
-    if op_type not in ('TfBatchToSpaceND', 'Tfbatch_to_space_nd'):
+    if op_type not in ('TfBatchToSpaceND', 'Tfbatch_to_space_nd', 'LiteBATCH_TO_SPACE_ND'):
         ERROR('[Parser]: Meets invalid Op type (%s) in split_b2s!' % op_type)
         return
     transpose_version, d2s_version, slice_version, reshape_version = 1, 1, 1, 5
@@ -1078,13 +1078,21 @@ def split_b2s(graph, op_type='TfBatchToSpaceND'):
                 src, _, in_attr = in_edges[0]
                 graph.remove_edges_from(in_edges)
                 graph.add_edge(src, trans1, **in_attr)
-                graph.add_edge(trans1, b2s)
+                trans1_out_attr = copy.deepcopy(in_attr)
+                trans1_out_attr.update({'src_out_port': 0})
+                if in_attr['tensor'] is not None and in_attr['tensor'].value is not None:
+                    trans1_out_attr['tensor'].value = np.transpose(in_attr['tensor'].value, [3, 1, 2, 0])
+                graph.add_edge(trans1, b2s, **trans1_out_attr)
                 for _, dst, out_attr in out_edges:
                     graph.remove_edge(b2s, dst)
                     graph.add_edge(last, dst, **out_attr)
-                graph.add_edge(b2s, trans2)
+                b2s_or_slice_out_attr = copy.deepcopy(out_edges[0][2])
+                b2s_or_slice_out_attr.update({'dst_in_port': 0})
+                if b2s_or_slice_out_attr['tensor'] is not None and b2s_or_slice_out_attr['tensor'].value is not None:
+                    b2s_or_slice_out_attr['tensor'].value = None
+                graph.add_edge(b2s, trans2, **b2s_or_slice_out_attr)
                 if need_slice:
-                    graph.add_edge(trans2, slice)
+                    graph.add_edge(trans2, slice, **b2s_or_slice_out_attr)
 
                 trans1_attr = {'name': trans1, 'opset_version': transpose_version, 'perm': [3, 1, 2, 0]}
                 NodeWrap(graph, trans1).replace_obj('Transpose', trans1_attr)
@@ -1105,13 +1113,24 @@ def split_b2s(graph, op_type='TfBatchToSpaceND'):
                 src, _, in_attr = in_edges[0]
                 graph.remove_edges_from(in_edges)
                 graph.add_edge(src, reshape1, **in_attr)
-                graph.add_edge(reshape1, b2s)
+                reshape1_out_attr = copy.deepcopy(in_attr)
+                reshape1_out_attr.update({'src_out_port': 0})
+                if in_attr['tensor'] is not None and in_attr['tensor'].value is not None:
+                    reshape1_out_attr['tensor'].value = np.reshape(in_attr['tensor'].value, dim1)
+                graph.add_edge(reshape1, b2s, **reshape1_out_attr)
                 for _, dst, out_attr in out_edges:
                     graph.remove_edge(b2s, dst)
                     graph.add_edge(last, dst, **out_attr)
-                graph.add_edge(b2s, reshape2)
+                b2s_out_attr = copy.deepcopy(out_edges[0][2])
+                b2s_out_attr.update({'dst_in_port': 0})
+                if reshape1_out_attr['tensor'] is not None and reshape1_out_attr['tensor'].value is not None:
+                    b2s_out_attr['tensor'].value = np.transpose(reshape1_out_attr['tensor'].value, perm)
+                graph.add_edge(b2s, reshape2, **b2s_out_attr)
                 if need_slice:
-                    graph.add_edge(reshape2, slice)
+                    reshape2_out_attr = copy.deepcopy(b2s_out_attr)
+                    if b2s_out_attr['tensor'] is not None and b2s_out_attr['tensor'].value is not None:
+                        reshape2_out_attr['tensor'].value = np.reshape(b2s_out_attr['tensor'].value, dim2)
+                    graph.add_edge(reshape2, slice, **reshape2_out_attr)
 
                 NodeWrap(graph, reshape1).replace_obj('Reshape',
                                                       {'name': reshape1,
