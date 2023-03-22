@@ -1829,6 +1829,7 @@ def convert_reducemean_to_avgpool(graph):
             need_transpose = True
         kernel_shape = np.array(input_shape)[np.array(axes)].tolist()
         last_name = mean
+        in_edges = graph.sorted_in_edges(mean, data=True)
         if need_transpose:
             if cur_data_format == 'NCHW':
                 perm1 = [0, len(input_shape) - 1] + \
@@ -1836,7 +1837,6 @@ def convert_reducemean_to_avgpool(graph):
             else:
                 perm1 = [0] + list(range(2, len(input_shape))) + [1]
             perm2 = Op.cal_inverse_perm(perm1)
-            in_edges = graph.sorted_in_edges(mean, data=True)
             src, _, in_attr = in_edges[0]
             insert_transpose(graph, src, mean, in_attr, perm1)
             if not mean_obj.keepdims:
@@ -1854,6 +1854,7 @@ def convert_reducemean_to_avgpool(graph):
             if last_name in graph._attr['output_names']:
                 index = graph._attr['output_names'].index(last_name)
                 graph._attr['output_names'][index] = reshape
+        graph.remove_edges_from(in_edges[1:])
         pool_rank = len(input_shape) - 2
         pool_attr_dict = mean_obj.copied_attr()
         pool_attr_dict.update({'opset_version': 11,
