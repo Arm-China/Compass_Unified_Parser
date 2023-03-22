@@ -1032,8 +1032,7 @@ def convert_special_matmul_to_fc(graph):
         output_shapes = matmul_obj.get_output_shapes()
         if len(output_shapes) < 1 or output_shapes[0] is None or None in output_shapes[0]:
             continue
-        if len(input_shapes[0]) >= 2 \
-                and all(shape == 1 for shape in input_shapes[0][:-2]):
+        if len(input_shapes[0]) >= 2:
             matched = True
             weights = np.transpose(w_obj.value)
             biases = np.zeros((weights.shape[0],), np.float32)
@@ -1043,8 +1042,11 @@ def convert_special_matmul_to_fc(graph):
             NodeWrap(graph, matmul).replace_obj('FullyConnected', matmul_attr)
             if len(input_shapes[0]) > 2:
                 src, _, in_attr = in_edges[0]
-                insert_reshape(graph, src, matmul, in_attr, input_shapes[0][-2:])
-                post_reshape = insert_reshape_after(graph, matmul, output_shapes[0], old_dim=output_shapes[0][-2:])
+                insert_reshape(graph, src, matmul, in_attr, [-1, input_shapes[0][-1]])
+                post_reshape = insert_reshape_after(graph,
+                                                    matmul,
+                                                    output_shapes[0],
+                                                    old_dim=[int(np.prod(output_shapes[0][:-1])), output_shapes[0][-1]])
                 if matmul in graph._attr['output_names']:
                     index = graph._attr['output_names'].index(matmul)
                     graph._attr['output_names'][index] = post_reshape
