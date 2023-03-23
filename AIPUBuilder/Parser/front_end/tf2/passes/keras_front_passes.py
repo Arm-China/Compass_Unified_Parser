@@ -885,10 +885,12 @@ def convert_to_onnx(graph):
             end_crops = cropping[:, 1].tolist()
             if node_data_format == 'NCHW':
                 slice_starts = [0, 0] + begin_crops
-                slice_ends = input_shape[:2] + (-np.array(end_crops)).tolist()
+                end_crops = [input_shape[2+idx] if end == 0 else -end for idx, end in enumerate(end_crops)]
+                slice_ends = input_shape[:2] + end_crops
             else:
                 slice_starts = [0] + begin_crops + [0]
-                slice_ends = input_shape[:1] + (-np.array(end_crops)).tolist() + input_shape[-1:]
+                end_crops = [input_shape[1+idx] if end == 0 else -end for idx, end in enumerate(end_crops)]
+                slice_ends = input_shape[:1] + end_crops + input_shape[-1:]
             new_node_attr.update({'starts': slice_starts, 'ends': slice_ends})
         elif pure_type == 'Flatten':
             if node_data_format == 'NCHW':
