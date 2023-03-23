@@ -219,7 +219,11 @@ class QLinearConvOp(BaseConvOp, OnnxOp):
         self.set_out_tensor(out_tensor)
 
     def convert_version(self):
-        pass
+        inputs = self.get_input_tensors()
+        if len(inputs) < 9:
+            from ...front_end.onnx.passes.common_passes import insert_constant
+            insert_constant(self._graph, self.name + '_B',
+                            self.B, self.name, in_port=8, data_format=self.data_format)
 
 
 class QuantizeLinearOp(OpHasAxis, OpHasOneOutPort, OnnxOp):

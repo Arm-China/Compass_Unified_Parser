@@ -138,12 +138,3 @@ def convert_deconv(graph):
             attrs = deconv_obj.copied_attr()
             attrs.update({'opset_version': 11, 'weights': new_weights})
             NodeWrap(graph, deconv).replace_obj('ConvTranspose', attrs)
-
-
-def convert_qconv(graph):
-    matches = single_node_matcher(graph, 'QLinearConv')
-    for m in matches:
-        qconv = m['target']
-
-        pass
-    pass

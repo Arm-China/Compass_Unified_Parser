@@ -59,8 +59,6 @@ def convert_onnx_version(graph):
         node = m['target']
         node_obj = NodeWrap(graph, node)['object']
         if node_obj is not None:
-            if len(type(node_obj).attributes()) <= 1:
-                continue
             node_obj.convert_version()
         else:
             ERROR('[Parser]: Meets invalid node(%s) in convert_onnx_version!' % node)
@@ -2020,6 +2018,113 @@ def convert_quantizelinear(graph):
         post_cast_attr = quant_obj.copied_attr()
         post_cast_attr.update({'opset_version': 1, 'to': str(zp_dtype)})
         NodeWrap(graph, quant).replace_obj('Cast', post_cast_attr)
+
+
+def convert_qconv(graph):
+    matched = False
+    matches = single_node_matcher(graph, 'QLinearConv')
+    for m in matches:
+        qconv = m['target']
+        qconv_obj = NodeWrap(graph, qconv)['object']
+        in_edges = graph.sorted_in_edges(qconv, data=True)
+        if qconv_obj is None or len(in_edges) != 9:
+            ERROR('[Parser]: Meets invalid QLinearConv node(%s) in convert_qconv!' % qconv)
+            continue
+        if any(e[2]['tensor'].value is None for e in in_edges[1:]):
+            ERROR('[Parser]: Meets invalid QLinearConv node(%s) to in convert_qconv!' % qconv)
+            continue
+        if any(not e[2]['tensor'].is_const for e in in_edges[1:]):
+            WARN('[Parser]: Only supports QLinearConv(%s) with constant weights/biases/scale/zp in convert_qconv!' % qconv)
+            continue
+        y_type = qconv_obj.y_zero_point.dtype
+        if str(y_type) not in ('int8', 'uint8'):
+            ERROR('[Parser]: Meets invalid QLinearConv node(%s) in convert_qconv!' % qconv)
+            continue
+        matched = True
+        graph.remove_edges_from(in_edges[1:])
+        conv_attr = qconv_obj.copied_attr()
+        if graph._attr.get('quantize', False):
+            pass
+        else:
+            spatial_len = len(qconv_obj.w.shape) - 2
+            w_scal_zp_reshape_dim = [-1] + [1] * (spatial_len + 1)
+            weights = (qconv_obj.w.astype(np.int32) - np.reshape(qconv_obj.w_zero_point, w_scal_zp_reshape_dim)) \
+                * np.reshape(qconv_obj.w_scale, w_scal_zp_reshape_dim)
+            weights = weights.astype(np.float32)
+            biases = qconv_obj.B.astype(np.int32) * qconv_obj.x_scale * qconv_obj.w_scale
+            biases = biases.astype(np.float32)
+
+            src, _, in_attr = in_edges[0]
+            src_cast = get_valid_node_name(graph, src + '_cast')
+            src_sub = get_valid_node_name(graph, src + '_sub')
+            src_sub_cast = get_valid_node_name(graph, src_sub + '_cast')
+            src_mul = get_valid_node_name(graph, src + '_mul')
+            graph.remove_edge(src, qconv)
+            graph.add_edge(src, src_cast, **in_attr)
+            graph.add_edge(src_cast, src_sub)
+            graph.add_edge(src_sub, src_sub_cast)
+            graph.add_edge(src_sub_cast, src_mul)
+            graph.add_edge(src_mul, qconv)
+            insert_constant(graph,
+                            src + '_zp',
+                            qconv_obj.x_zero_point.astype(np.int32),
+                            src_sub,
+                            in_port=1,
+                            data_format=qconv_obj.data_format)
+            insert_constant(graph,
+                            src + '_scale',
+                            qconv_obj.x_scale.astype(np.float32),
+                            src_mul,
+                            in_port=1,
+                            data_format=qconv_obj.data_format)
+            NodeWrap(graph, src_cast).replace_obj('Cast', {'name': src_cast, 'opset_version': 1, 'to': 'int32'})
+            NodeWrap(graph, src_sub).replace_obj('Sub', {'name': src_sub, 'opset_version': 7})
+            NodeWrap(graph, src_sub_cast).replace_obj(
+                'Cast', {'name': src_sub_cast, 'opset_version': 1, 'to': 'float32'})
+            NodeWrap(graph, src_mul).replace_obj('Mul', {'name': src_mul, 'opset_version': 7})
+
+            out_mul = get_valid_node_name(graph, qconv + '_out_mul')
+            out_add = get_valid_node_name(graph, qconv + '_out_add')
+            out_clip = get_valid_node_name(graph, qconv + '_out_clip')
+            out_cast = get_valid_node_name(graph, qconv + '_out_cast')
+
+            out_edges = graph.sorted_out_edges(qconv, data=True)
+            graph.remove_edges_from(out_edges)
+            graph.add_edge(qconv, out_mul)
+            graph.add_edge(out_mul, out_add)
+            graph.add_edge(out_add, out_clip)
+            graph.add_edge(out_clip, out_cast)
+            insert_constant(graph,
+                            out_mul + '_scale',
+                            np.array(1 / qconv_obj.y_scale).astype(np.float32),
+                            out_mul,
+                            in_port=1,
+                            data_format=qconv_obj.data_format)
+            insert_constant(graph,
+                            out_add + '_zp',
+                            qconv_obj.y_zero_point.astype(np.float32),
+                            out_add,
+                            in_port=1,
+                            data_format=qconv_obj.data_format)
+
+            for _, dst, out_attr in out_edges:
+                graph.add_edge(out_cast, dst, **out_attr)
+
+            NodeWrap(graph, out_mul).replace_obj('Mul', {'name': out_mul, 'opset_version': 7})
+            NodeWrap(graph, out_add).replace_obj('Add', {'name': out_add, 'opset_version': 7})
+            NodeWrap(graph, out_clip).replace_obj('Clip', {'name': out_clip, 'opset_version': 6, 'min': float(
+                np.iinfo(y_type).min), 'max': float(np.iinfo(y_type).max)})
+            NodeWrap(graph, out_cast).replace_obj('Cast', {'name': out_cast, 'opset_version': 1, 'to': str(y_type)})
+
+            if qconv in graph._attr['output_names']:
+                index = graph._attr['output_names'].index(qconv)
+                graph._attr['output_names'][index] = out_cast
+
+        conv_attr.update({'opset_version': 1, 'weights': weights, 'biases': biases})
+        NodeWrap(graph, qconv).replace_obj('Conv', conv_attr)
+
+    if matched:
+        clear_redundant_nodes(graph)
 
 
 def merge_batchnorm(graph):
@@ -7399,7 +7504,7 @@ def middle_passes(graph, params):
 
     fuse_const(graph)
 
-    # convert_qconv(graph)
+    convert_qconv(graph)
 
     convert_abnormal_reshape(graph)
     convert_fill(graph)
