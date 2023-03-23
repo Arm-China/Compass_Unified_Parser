@@ -491,7 +491,7 @@ class Graph(object):
         for i, (n_name, n) in enumerate(self.nodes._nodes.items()):
             id_s = str(i)
             label = "node_%d [style=\"filled\",color=\"black\",fillcolor=\"%s\",label=\"{%s %s|%s" % (
-                keys.index(n_name), "white", id_s, n_name[-10:], n.op)
+                keys.index(n_name), "white", id_s, n_name, n.op)
             in_tensor = [str(a["tensor"].shape)
                          for _, _, a in self.sorted_in_edges(n_name, data=True)]
             out_tensor = [str(a["tensor"].shape)
