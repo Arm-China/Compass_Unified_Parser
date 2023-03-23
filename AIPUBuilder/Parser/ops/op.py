@@ -2936,8 +2936,18 @@ class KerasBaseConvOp(BaseConvOp, BaseActivationOp, KerasOp):
         activation = None if self.activations == 'NONE' else self.activations.lower()
         biases = 'zeros' if self.biases is None else tf.keras.initializers.Constant(
             self.biases)
-        if self._type == 'TfKerasDepthwiseConv2D':
+        if self._type in ('TfKerasDepthwiseConv2D', 'TfKerasSeparableConv2D'):
             self.group = inp.shape[-1]
+            if self._type == 'TfKerasSeparableConv2D':
+                assert len(self.weights_list) >= 2, \
+                    'Expect the length of weights_list to be at least 2, but got %d' % len(weights_list)
+                depthwise_weights = self.weights_list[0]
+                pointwise_weights = self.weights_list[1]
+                kwargs = {'filters': self.filters,
+                          'depthwise_initializer': tf.keras.initializers.Constant(depthwise_weights),
+                          'pointwise_initializer': tf.keras.initializers.Constant(pointwise_weights)}
+            else:
+                kwargs = {'depthwise_initializer': tf.keras.initializers.Constant(self.weights)}
             conv = type(self).ufunc()(
                 kernel_size=self.kernel_shape,
                 strides=self.strides,
@@ -2947,9 +2957,8 @@ class KerasBaseConvOp(BaseConvOp, BaseActivationOp, KerasOp):
                 dilation_rate=self.dilations,
                 activation=activation,
                 use_bias=self.use_bias,
-                depthwise_initializer=tf.keras.initializers.Constant(
-                    self.weights),
-                bias_initializer=biases)
+                bias_initializer=biases,
+                **kwargs)
         else:
             conv = type(self).ufunc()(
                 filters=self.filters,

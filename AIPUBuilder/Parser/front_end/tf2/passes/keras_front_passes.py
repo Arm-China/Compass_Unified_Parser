@@ -710,6 +710,44 @@ def convert_dense(graph):
                                'num_output': kernel_value.shape[1]})
 
 
+def convert_seperable_conv(graph):
+    '''
+    Convert keras SeparableConv2D op to depthwise Conv and pointwise Conv.
+    '''
+    matches = single_node_matcher(graph, 'TfKerasSeparableConv2D')
+    for m in matches:
+        sep_conv = m['target']
+        sep_conv_obj = NodeWrap(graph, sep_conv)['object']
+        out_edges = graph.sorted_out_edges(sep_conv, data=True)
+        if sep_conv_obj is None or len(out_edges) < 1 or len(sep_conv_obj.weights_list) < 2:
+            ERROR('[Parser]: Meets invalid Op (%s) in convert_seperable_conv!' % sep_conv)
+            continue
+        graph.remove_edges_from(out_edges)
+
+        pointwise_conv = get_valid_node_name(graph, sep_conv + '_pointwise_conv')
+        graph.add_edge(sep_conv, pointwise_conv)
+        for _, dst, out_attr in out_edges:
+            graph.add_edge(pointwise_conv, dst, **out_attr)
+        pointwise_weights = sep_conv_obj.weights_list[1]
+        new_pointwise_weights = np.transpose(pointwise_weights, [3, 2, 0, 1])
+        data_format = 'NCHW' if sep_conv_obj.data_format.startswith('NC') else 'NHWC'
+        pointwise_conv_attr = {'name': pointwise_conv, 'weights': new_pointwise_weights,
+                               'auto_pad': 'VALID', 'kernel_shape': [1, 1], 'strides': [1, 1],
+                               'biases': sep_conv_obj.biases, 'data_format': data_format, 'opset_version': 1}
+        NodeWrap(graph, pointwise_conv).replace_obj('Conv', pointwise_conv_attr)
+
+        depthwise_weights = sep_conv_obj.weights_list[0]
+        new_depthwise_weights = np.reshape(depthwise_weights, list(
+            depthwise_weights.shape[:2]) + [-1, depthwise_weights.shape[2]//sep_conv_obj.group])
+        new_depthwise_weights = np.transpose(new_depthwise_weights, sep_conv_obj.perm_tf_to_onnx())
+        depthwise_conv_attr = sep_conv_obj.copied_attr()
+        depthwise_conv_attr.update({'weights': new_depthwise_weights, 'biases': None, 'opset_version': 1})
+        NodeWrap(graph, sep_conv).replace_obj('Conv', depthwise_conv_attr)
+        if sep_conv in graph._attr['output_names']:
+            index = graph._attr['output_names'].index(sep_conv)
+            graph._attr['output_names'][index] = pointwise_conv
+
+
 def convert_softmax(graph):
     '''
     Keras Softmax support multiple axes. Convert to onnx Softmax for one axis, otherwise
@@ -957,6 +995,7 @@ def process_keras_op_after_infer(graph):
 
     convert_batchnorm(graph)
     convert_global_pooling(graph)
+    convert_seperable_conv(graph)
     convert_softmax(graph)
 
     convert_to_onnx(graph)
