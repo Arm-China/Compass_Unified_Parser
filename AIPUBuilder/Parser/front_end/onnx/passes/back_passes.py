@@ -4351,7 +4351,6 @@ def sink_transpose_through_special_reshape(graph, max_branches=6):
                     continue
                 if len(none_one_in_shape) != len(set(none_one_in_shape)) or len(none_one_out_shape) != len(set(none_one_out_shape)):
                     continue
-                matched = True
 
                 diff_axis = 0
                 min_shape_len = min(len(reshape_in_shape),
@@ -4371,6 +4370,12 @@ def sink_transpose_through_special_reshape(graph, max_branches=6):
                     change_pos = trans_obj.perm[diff_axis]
                     new_dim = trans_in_shape[:]
                     new_dim.pop(change_pos)
+
+                if int(np.prod(new_dim)) != int(np.prod(reshape_in_shape)):
+                    WARN('[Parser]: Meets invalid Reshape(%s) dim in sink_transpose_through_special_reshape!' % reshape)
+                    continue
+
+                matched = True
 
                 new_perm = []
                 for i, d in enumerate(reshape_out_shape):

@@ -2027,7 +2027,7 @@ def convert_qconv(graph):
         qconv = m['target']
         qconv_obj = NodeWrap(graph, qconv)['object']
         in_edges = graph.sorted_in_edges(qconv, data=True)
-        if qconv_obj is None or len(in_edges) != 9:
+        if qconv_obj is None or qconv_obj.num_output is None or len(in_edges) != 9:
             ERROR('[Parser]: Meets invalid QLinearConv node(%s) in convert_qconv!' % qconv)
             continue
         if any(e[2]['tensor'].value is None for e in in_edges[1:]):
@@ -2036,15 +2036,35 @@ def convert_qconv(graph):
         if any(not e[2]['tensor'].is_const for e in in_edges[1:]):
             WARN('[Parser]: Only supports QLinearConv(%s) with constant weights/biases/scale/zp in convert_qconv!' % qconv)
             continue
-        y_type = qconv_obj.y_zero_point.dtype
-        if str(y_type) not in ('int8', 'uint8'):
+        x_dtype = qconv_obj.x_zero_point.dtype
+        y_dtype = qconv_obj.y_zero_point.dtype
+        if str(x_dtype) not in ('int8', 'uint8') or str(y_dtype) not in ('int8', 'uint8'):
             ERROR('[Parser]: Meets invalid QLinearConv node(%s) in convert_qconv!' % qconv)
             continue
         matched = True
         graph.remove_edges_from(in_edges[1:])
         conv_attr = qconv_obj.copied_attr()
         if graph._attr.get('quantize', False):
-            pass
+            x_scale, x_zp = qconv_obj.x_scale, qconv_obj.x_zero_point
+            w_scale, w_zp = qconv_obj.w_scale, qconv_obj.w_zero_point
+            b_scale, b_zp = qconv_obj.x_scale * qconv_obj.w_scale, np.zeros((qconv_obj.num_output, ), np.int32)
+            y_scale, y_zp = qconv_obj.y_scale, qconv_obj.y_zero_point
+
+            in_edges[0][2]['tensor'].dtype = str(x_dtype)
+            in_edges[0][2]['tensor'].scale_zp = (x_scale, x_zp)
+
+            out_edges = graph.sorted_out_edges(qconv, data=True)
+            for _, _, out_attr in out_edges:
+                out_attr['tensor'].dtype = str(y_dtype)
+                out_attr['tensor'].scale_zp = (y_scale, y_zp)
+
+            conv_attr.update({'opset_version': 1,
+                              'quantize': True,
+                              'weights': qconv_obj.w,
+                              'weights_scale_zp': [w_scale, w_zp],
+                              'biases': qconv_obj.B,
+                              'biases_scale_zp': [b_scale, b_zp]})
+
         else:
             spatial_len = len(qconv_obj.w.shape) - 2
             w_scal_zp_reshape_dim = [-1] + [1] * (spatial_len + 1)
@@ -2053,6 +2073,7 @@ def convert_qconv(graph):
             weights = weights.astype(np.float32)
             biases = qconv_obj.B.astype(np.int32) * qconv_obj.x_scale * qconv_obj.w_scale
             biases = biases.astype(np.float32)
+            conv_attr.update({'opset_version': 1, 'weights': weights, 'biases': biases})
 
             src, _, in_attr = in_edges[0]
             src_cast = get_valid_node_name(graph, src + '_cast')
@@ -2120,7 +2141,6 @@ def convert_qconv(graph):
                 index = graph._attr['output_names'].index(qconv)
                 graph._attr['output_names'][index] = out_cast
 
-        conv_attr.update({'opset_version': 1, 'weights': weights, 'biases': biases})
         NodeWrap(graph, qconv).replace_obj('Conv', conv_attr)
 
     if matched:

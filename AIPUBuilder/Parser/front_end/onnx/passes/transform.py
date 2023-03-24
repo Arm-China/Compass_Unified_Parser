@@ -12,7 +12,7 @@ from ....common.utils import extend_lists
 from ....graph.node_wrap import NodeWrap
 from ....graph.graph_algo import *
 from ....graph.pattern_match import matched_patterns, single_node_matcher, two_nodes_matcher
-from .common_passes import remove_useless_op, insert_transpose, insert_constant, insert_gather, \
+from .common_passes import remove_useless_op, insert_transpose, insert_transpose_after, insert_constant, insert_gather, \
     remove_redundant_transpose
 
 
@@ -101,11 +101,8 @@ def insert_transpose_for_layoutconcern(graph):
                     and len(output_shape) >= 2:
                 input_dim = len(input_shape)
                 pre_trans_perm = [0] + list(range(2, input_dim)) + [1]
-                post_trans_perm = [0, input_dim - 1] + \
-                    list(range(1, input_dim - 1))
+                post_trans_perm = Op.cal_inverse_perm(pre_trans_perm)
                 in_edges = graph.sorted_in_edges(node, data=True)
-                out_edges = graph.sorted_out_edges(
-                    node, keys=True, data=True)
                 src, _, in_attr = in_edges[0]
                 insert_transpose(graph, src, node, in_attr, pre_trans_perm)
 
@@ -115,31 +112,10 @@ def insert_transpose_for_layoutconcern(graph):
                     for p in out_ports:
                         if (node_obj.type == 'BatchNormalization' or node_obj.type == 'TfFusedBatchNormV3') and p > 0:
                             continue
-                        candidate_name = node + \
-                            '_post_transpose' if len(
-                                out_ports) == 1 else node + '_post_transpose_port_' + str(p)
-                        post_trans = get_valid_node_name(
-                            graph, candidate_name)
-                        node_port_tensor = None
-                        for _, dst, k, out_attr in out_edges:
-                            if out_attr['src_out_port'] == p:
-                                graph.remove_edge(node, dst, key=k)
-                                new_out_attr = copy.deepcopy(out_attr)
-                                new_out_attr['src_out_port'] = 0
-                                graph.add_edge(
-                                    post_trans, dst, **new_out_attr)
-                                if out_attr['tensor'].value is not None:
-                                    node_port_tensor = np.transpose(out_attr['tensor'].value, [
-                                                                    post_trans_perm.index(i) for i in range(len(post_trans_perm))])
-                        graph.add_edge(
-                            node, post_trans, **{'src_out_port': p, 'dst_in_port': 0, 'tensor': Tensor(value=node_port_tensor)})
-                        post_trans_attr = node_obj.copied_attr()
-                        post_trans_attr.update({'name': post_trans,
-                                                'opset_version': 1,
-                                                'data_format': 'NHWC',
-                                                'perm': post_trans_perm})
-                        NodeWrap(graph, post_trans).replace_obj(
-                            'Transpose', post_trans_attr)
+                        post_trans = insert_transpose_after(graph, node, post_trans_perm, port=p)
+                        if post_trans is None:
+                            ERROR('[Parser]: Meets Error for Node (%s) in insert_transpose_for_layoutconcern!' % node)
+                            continue
                         post_trans_list.append(post_trans)
 
                     if node_obj.type == 'MaxPool' and len(out_ports) == 2:

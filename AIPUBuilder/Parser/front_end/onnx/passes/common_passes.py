@@ -817,23 +817,30 @@ def insert_transpose_after(graph, src, perm, port=0):
             and isinstance(perm, (list, np.ndarray)):
         if isinstance(perm, np.ndarray):
             perm = perm.tolist()
-        transpose = get_valid_node_name(graph, src + '_post_transpose')
+        if port == 0:
+            candidate_name = '_post_transpose'
+        else:
+            candidate_name = '_post_transpose_%s' % str(port)
+        transpose = get_valid_node_name(graph, src + candidate_name)
         found_port = False
         out_tensor = None
-        for _, dst, out_attr in graph.sorted_out_edges(src, data=True):
+        for _, dst, k, out_attr in graph.sorted_out_edges(src, keys=True, data=True):
             if out_attr['src_out_port'] == port:
                 found_port = True
                 new_out_attr = copy.deepcopy(out_attr)
                 new_out_attr['src_out_port'] = 0
-                graph.remove_edge(src, dst)
+                graph.remove_edge(src, dst, key=k)
                 graph.add_edge(transpose, dst, **new_out_attr)
-                out_tensor = new_out_attr['tensor'].value
+                if out_tensor is None:
+                    out_tensor = copy.deepcopy(new_out_attr['tensor'])
+
         if found_port:
             out_edge_attr = {'src_out_port': port, 'dst_in_port': 0}
-            if out_tensor is not None:
+            if out_tensor is not None and out_tensor.value is not None:
                 inverse_perm = Op.cal_inverse_perm(perm)
-                out_tensor = np.transpose(out_tensor, inverse_perm)
-                out_edge_attr.update({'tensor': Tensor(value=out_tensor)})
+                out_tensor.value = np.transpose(out_tensor.value, inverse_perm)
+                out_tensor.shape = out_tensor.value.shape
+                out_edge_attr.update({'tensor': out_tensor})
             graph.add_edge(src, transpose, **out_edge_attr)
             NodeWrap(graph, transpose).replace_obj('Transpose',
                                                    {'name': transpose,
