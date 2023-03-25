@@ -1113,7 +1113,7 @@ class OpHasWeights(Op):
         return {'weights': {'type': AttrType.TENSOR, 'default': None},
                 'weights_offset': {'type': AttrType.INT, 'default': -1},
                 'weights_min_max': {'type': AttrType.FLOATS, 'default': []},
-                'weights_scale_zp': {'type': AttrType.TENSORS, 'default': [np.array([1.0]), np.array([0])]},
+                'weights_scale_zp': {'type': AttrType.TENSORS, 'default': [np.array([1.0]).astype(np.float32), np.array([0]).astype(np.int32)]},
                 'weights_scale_offset': {'type': AttrType.INT, 'default': -1},
                 'weights_zp_offset': {'type': AttrType.INT, 'default': -1}
                 }
@@ -1229,7 +1229,7 @@ class OpHasBiases(Op):
         '''return attributes of OpHasBiases class.'''
         return {'biases': {'type': AttrType.TENSOR, 'default': None},
                 'biases_offset': {'type': AttrType.INT, 'default': -1},
-                'biases_scale_zp': {'type': AttrType.TENSORS, 'default': [np.array([1.0]), np.array([0])]},
+                'biases_scale_zp': {'type': AttrType.TENSORS, 'default': [np.array([1.0]).astype(np.float32), np.array([0]).astype(np.int32)]},
                 'biases_scale_offset': {'type': AttrType.INT, 'default': -1},
                 'biases_zp_offset': {'type': AttrType.INT, 'default': -1}
                 }
