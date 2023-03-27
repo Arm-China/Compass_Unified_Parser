@@ -112,9 +112,9 @@ def convert_1d_conv(graph):
                     conv_attr = conv_obj.copied_attr()
                     conv_attr['weights'] = np.expand_dims(
                         conv_attr['weights'], axis=2)
-                    conv_attr['kernel_shape'] = [1] + conv_attr['kernel_shape']
-                    conv_attr['strides'] = [1] + conv_attr['strides']
-                    conv_attr['dilations'] = [1] + conv_attr['dilations']
+                    conv_attr['kernel_shape'] = [1] + conv_obj.kernel_shape
+                    conv_attr['strides'] = [1] + conv_obj.strides
+                    conv_attr['dilations'] = [1] + conv_obj.dilations
                     if 'pads' in conv_attr and conv_attr['pads']:
                         pad_len = len(conv_attr['pads'])
                         pads = copy.deepcopy(conv_attr['pads'])

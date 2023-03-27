@@ -736,12 +736,24 @@ def convert_seperable_conv(graph):
             ERROR('[Parser]: Meets invalid Op (%s) in convert_seperable_conv!' % sep_conv)
             continue
         graph.remove_edges_from(out_edges)
+        data_format = 'NCHW' if sep_conv_obj.data_format.startswith('NC') else 'NHWC'
+        pointwise_weights = sep_conv_obj.weights_list[1]
 
         pointwise_conv = get_valid_node_name(graph, sep_conv + '_pointwise_conv')
-        graph.add_edge(sep_conv, pointwise_conv)
+        depthwise_conv_out_attr = copy.deepcopy(out_edges[0][2])
+        depthwise_conv_out_attr.update({'dst_in_port': 0})
+        if depthwise_conv_out_attr['tensor'] is not None and depthwise_conv_out_attr['tensor'].value is not None:
+            dtype = depthwise_conv_out_attr['tensor'].value.dtype
+            shape = list(depthwise_conv_out_attr['tensor'].value.shape)
+            if data_format == 'NHWC':
+                depthwise_conv_out_shape = shape[:-1] + [pointwise_weights.shape[-2]]
+            else:
+                depthwise_conv_out_shape = [shape[0], pointwise_weights.shape[-2]] + shape[2:]
+            depthwise_conv_out_attr['tensor'].value = np.random.ranf(depthwise_conv_out_shape).astype(dtype)
+        graph.add_edge(sep_conv, pointwise_conv, **depthwise_conv_out_attr)
         for _, dst, out_attr in out_edges:
             graph.add_edge(pointwise_conv, dst, **out_attr)
-        pointwise_weights = sep_conv_obj.weights_list[1]
+
         if sep_conv_obj.type == 'TfKerasSeparableConv1D':
             weights_perm = [2, 1, 0]
             kernel_shape = [1]
@@ -751,7 +763,6 @@ def convert_seperable_conv(graph):
             kernel_shape = [1, 1]
             strides = [1, 1]
         new_pointwise_weights = np.transpose(pointwise_weights, weights_perm)
-        data_format = 'NCHW' if sep_conv_obj.data_format.startswith('NC') else 'NHWC'
         pointwise_conv_attr = {'name': pointwise_conv, 'weights': new_pointwise_weights,
                                'auto_pad': 'VALID', 'kernel_shape': kernel_shape, 'strides': strides,
                                'biases': sep_conv_obj.biases, 'data_format': data_format, 'opset_version': 1}
@@ -1004,7 +1015,6 @@ def process_keras_op_before_infer(graph):
     from ...lite.passes.front_passes import split_op_has_activation
     split_op_has_activation(graph, is_tf_op=True)
     convert_dense(graph)
-    convert_seperable_conv(graph)
     multidirectional_broadcasting(graph)
 
     from ...onnx.passes.middle_passes import split_sum_or_max_or_min
@@ -1020,5 +1030,6 @@ def process_keras_op_after_infer(graph):
     convert_batchnorm(graph)
     convert_global_pooling(graph)
     convert_softmax(graph)
+    convert_seperable_conv(graph)
 
     convert_to_onnx(graph)
