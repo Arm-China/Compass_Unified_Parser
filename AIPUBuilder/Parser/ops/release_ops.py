@@ -805,7 +805,7 @@ class ArmConstantOp(OpHasWeights, OpHasOneOutPort, ConstLikeOp, ArmOp):
 class ArmConvolutionOp(BaseActivationOp, BaseConvOp, ArmOp):
     @classmethod
     def cast_in_ports(cls):
-        return {0: ['float32', 'int8']}
+        return {0: ['float32', 'int8', 'uint8']}
 
     @classmethod
     def perm_onnx_to_ir(cls):

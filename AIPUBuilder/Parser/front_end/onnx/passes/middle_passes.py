@@ -2047,7 +2047,8 @@ def convert_qconv(graph):
         if graph._attr.get('quantize', False):
             x_scale, x_zp = qconv_obj.x_scale, qconv_obj.x_zero_point
             w_scale, w_zp = qconv_obj.w_scale, qconv_obj.w_zero_point
-            b_scale, b_zp = qconv_obj.x_scale * qconv_obj.w_scale, np.zeros((qconv_obj.num_output, ), np.int32)
+            b_scale = qconv_obj.x_scale * qconv_obj.w_scale
+            b_zp = np.zeros(b_scale.shape, np.int32)
             y_scale, y_zp = qconv_obj.y_scale, qconv_obj.y_zero_point
 
             in_edges[0][2]['tensor'].dtype = str(x_dtype)

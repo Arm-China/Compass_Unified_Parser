@@ -253,7 +253,7 @@ def infer(graph, partial=False, chosen_list=None):
                                  ])
                 DEBUG(msg)
             else:
-                ERROR('[Parser]: Meet invalid Node (%s) in infer!' % node_name)
+                ERROR('[Parser]: Meets invalid Node (%s) in infer!' % node_name)
 
         for out_name in graph._attr['output_names']:
             out_edges = graph.sorted_out_edges(out_name, data=True)
