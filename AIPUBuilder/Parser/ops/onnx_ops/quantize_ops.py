@@ -226,6 +226,48 @@ class QLinearConvOp(BaseConvOp, OnnxOp):
                             self.B, self.name, in_port=8, data_format=self.data_format)
 
 
+class QLinearMatMulOp(OpHasOneOutPort, OnnxOp):
+    @classmethod
+    def attributes(cls):
+        return {10: {}}
+
+    def __init__(self, graph, attr_dict=None):
+        super(QLinearMatMulOp, self).__init__(graph, attr_dict)
+        self.update_attributes(QLinearMatMulOp, attr_dict)
+        assert self.check_required(), 'QLinearMatMulOp is missing a required parameter.'
+
+    def __getattr__(self, item):
+        ret = None
+        try:
+            input_names = ['a', 'a_scale', 'a_zero_point', 'b', 'b_scale', 'b_zero_point', 'y_scale', 'y_zero_point']
+            if item in input_names:
+                item_idx = input_names.index(item)
+                inputs = self.get_input_tensors()
+                if len(inputs) > item_idx:
+                    ret = inputs[item_idx]
+                    if 'scale' in item:
+                        ret = np.array(ret).astype(np.float32)
+                    self.__dict__['_attr'][item] = Attribute(item, {'type': AttrType.TENSOR, 'value': ret})
+        except:
+            ret = None
+        if ret is None:
+            ret = super(QLinearMatMulOp, self).__getattr__(item)
+        return ret
+
+    def infer_shape(self):
+        super(QLinearMatMulOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        assert len(inputs) == 8, 'Meets invalid inputs length of QLinearMatMul(%s)' % self.name
+        float_a = (self.a.astype(np.int32) - self.a_zero_point) * self.a_scale
+        float_b = (self.b.astype(np.int32) - self.b_zero_point) * self.b_scale
+        float_y = np.matmul(float_a, float_b)
+        out_min = np.iinfo(self.y_zero_point.dtype).min
+        out_max = np.iinfo(self.y_zero_point.dtype).max
+        out_tensor = np.clip(np.around(float_y / self.y_scale) + self.y_zero_point,
+                             out_min, out_max).astype(self.y_zero_point.dtype)
+        self.set_out_tensor(out_tensor)
+
+
 class QuantizeLinearOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
     @classmethod
     def attributes(cls):

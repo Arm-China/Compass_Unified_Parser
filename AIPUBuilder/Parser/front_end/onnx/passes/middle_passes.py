@@ -18,7 +18,7 @@ from ....ops.op import Op, BaseLinearOp, BaseConvOp, BaseDeconvOp, BaseOnnxPoolO
 from ....ops.onnx_ops.array_ops import ReshapeOp
 from .common_passes import fuse_const, remove_useless_op, remove_node_safely, insert_reshape, insert_reshape_after, \
     insert_cast, insert_constant, insert_slice, insert_slice_after, insert_tile, insert_transpose, insert_transpose_after, \
-    remove_redundant_reshape, remove_redundant_transpose
+    remove_redundant_reshape, remove_redundant_transpose, insert_cast_sub_mul_for_quant, insert_mul_add_cast_after_for_dequant
 
 
 def clear_useless_concat_input(graph):
@@ -2079,66 +2079,11 @@ def convert_qconv(graph):
             conv_attr.update({'opset_version': 1, 'weights': weights, 'biases': biases})
 
             src, _, in_attr = in_edges[0]
-            src_cast = get_valid_node_name(graph, src + '_cast')
-            src_sub = get_valid_node_name(graph, src + '_sub')
-            src_sub_cast = get_valid_node_name(graph, src_sub + '_cast')
-            src_mul = get_valid_node_name(graph, src + '_mul')
-            graph.remove_edge(src, qconv)
-            graph.add_edge(src, src_cast, **in_attr)
-            graph.add_edge(src_cast, src_sub)
-            graph.add_edge(src_sub, src_sub_cast)
-            graph.add_edge(src_sub_cast, src_mul)
-            graph.add_edge(src_mul, qconv)
-            insert_constant(graph,
-                            src + '_zp',
-                            qconv_obj.x_zero_point.astype(np.int32),
-                            src_sub,
-                            in_port=1,
-                            data_format=qconv_obj.data_format)
-            insert_constant(graph,
-                            src + '_scale',
-                            qconv_obj.x_scale.astype(np.float32),
-                            src_mul,
-                            in_port=1,
-                            data_format=qconv_obj.data_format)
-            NodeWrap(graph, src_cast).replace_obj('Cast', {'name': src_cast, 'opset_version': 1, 'to': 'int32'})
-            NodeWrap(graph, src_sub).replace_obj('Sub', {'name': src_sub, 'opset_version': 7})
-            NodeWrap(graph, src_sub_cast).replace_obj(
-                'Cast', {'name': src_sub_cast, 'opset_version': 1, 'to': 'float32'})
-            NodeWrap(graph, src_mul).replace_obj('Mul', {'name': src_mul, 'opset_version': 7})
-
-            out_mul = get_valid_node_name(graph, qconv + '_out_mul')
-            out_add = get_valid_node_name(graph, qconv + '_out_add')
-            out_clip = get_valid_node_name(graph, qconv + '_out_clip')
-            out_cast = get_valid_node_name(graph, qconv + '_out_cast')
-
-            out_edges = graph.sorted_out_edges(qconv, data=True)
-            graph.remove_edges_from(out_edges)
-            graph.add_edge(qconv, out_mul)
-            graph.add_edge(out_mul, out_add)
-            graph.add_edge(out_add, out_clip)
-            graph.add_edge(out_clip, out_cast)
-            insert_constant(graph,
-                            out_mul + '_scale',
-                            np.array(1 / qconv_obj.y_scale).astype(np.float32),
-                            out_mul,
-                            in_port=1,
-                            data_format=qconv_obj.data_format)
-            insert_constant(graph,
-                            out_add + '_zp',
-                            qconv_obj.y_zero_point.astype(np.float32),
-                            out_add,
-                            in_port=1,
-                            data_format=qconv_obj.data_format)
-
-            for _, dst, out_attr in out_edges:
-                graph.add_edge(out_cast, dst, **out_attr)
-
-            NodeWrap(graph, out_mul).replace_obj('Mul', {'name': out_mul, 'opset_version': 7})
-            NodeWrap(graph, out_add).replace_obj('Add', {'name': out_add, 'opset_version': 7})
-            NodeWrap(graph, out_clip).replace_obj('Clip', {'name': out_clip, 'opset_version': 6, 'min': float(
-                np.iinfo(y_dtype).min), 'max': float(np.iinfo(y_dtype).max)})
-            NodeWrap(graph, out_cast).replace_obj('Cast', {'name': out_cast, 'opset_version': 1, 'to': str(y_dtype)})
+            insert_cast_sub_mul_for_quant(graph, src, qconv, qconv_obj.x_scale, qconv_obj.x_zero_point,
+                                          in_attr, data_format=qconv_obj.data_format)
+            out_cast = insert_mul_add_cast_after_for_dequant(graph, qconv, y_dtype, qconv_obj.y_scale,
+                                                             qconv_obj.y_zero_point,
+                                                             data_format=qconv_obj.data_format)
 
             if qconv in graph._attr['output_names']:
                 index = graph._attr['output_names'].index(qconv)
@@ -2146,6 +2091,66 @@ def convert_qconv(graph):
 
         NodeWrap(graph, qconv).replace_obj('Conv', conv_attr)
 
+    if matched:
+        clear_redundant_nodes(graph)
+
+
+def convert_qmatmul(graph):
+    matched = False
+    matches = single_node_matcher(graph, 'QLinearMatMul')
+    for m in matches:
+        qmatmul = m['target']
+        qmatmul_obj = NodeWrap(graph, qmatmul)['object']
+        in_edges = graph.sorted_in_edges(qmatmul, data=True)
+        if qmatmul_obj is None or len(in_edges) != 8:
+            ERROR('[Parser]: Meets invalid QLinearMatMul node(%s) in convert_qmatmul!' % qmatmul)
+            continue
+        if any((e[2]['tensor'] is None or e[2]['tensor'].value is None) for e in (in_edges[1:3] + in_edges[4:])):
+            ERROR('[Parser]: Meets invalid QLinearMatMul node(%s) to in convert_qmatmul!' % qmatmul)
+            continue
+        if any(not e[2]['tensor'].is_const for e in (in_edges[1:3] + in_edges[4:])):
+            WARN('[Parser]: Only supports QLinearMatMul(%s) with constant scale/zp in convert_qmatmul!' % qmatmul)
+            continue
+        a_dtype = qmatmul_obj.a_zero_point.dtype
+        b_dtype = qmatmul_obj.b_zero_point.dtype
+        y_dtype = qmatmul_obj.y_zero_point.dtype
+        if any(str(dtype) not in ('int8', 'uint8') for dtype in (a_dtype, b_dtype, y_dtype)):
+            ERROR('[Parser]: Meets invalid zero_point dtype of QLinearMatMul node(%s) in convert_qmatmul!' % qmatmul)
+            continue
+        matched = True
+        graph.remove_edges_from(in_edges[1:])
+        a_scale, a_zp = qmatmul_obj.a_scale, qmatmul_obj.a_zero_point
+        b_scale, b_zp = qmatmul_obj.b_scale, qmatmul_obj.b_zero_point
+        y_scale, y_zp = qmatmul_obj.y_scale, qmatmul_obj.y_zero_point
+        qmatmul_attr = qmatmul_obj.copied_attr()
+        input_a, _, input_a_in_attr = in_edges[0]
+        input_b, _, input_b_in_attr = in_edges[3]
+        input_b_in_attr.update({'dst_in_port': 1})
+        graph.add_edge(input_b, qmatmul, **input_b_in_attr)
+        if graph._attr.get('quantize', False):
+            input_a_in_attr['tensor'].dtype = str(a_dtype)
+            input_a_in_attr['tensor'].scale_zp = (a_scale, a_zp)
+            input_b_in_attr['tensor'].dtype = str(b_dtype)
+            input_b_in_attr['tensor'].scale_zp = (b_scale, b_zp)
+
+            out_edges = graph.sorted_out_edges(qmatmul, data=True)
+            for _, _, out_attr in out_edges:
+                out_attr['tensor'].dtype = str(y_dtype)
+                out_attr['tensor'].scale_zp = (y_scale, y_zp)
+
+            qmatmul_attr.update({'opset_version': 13, 'quantize': True})
+        else:
+            insert_cast_sub_mul_for_quant(graph, input_a, qmatmul, a_scale, a_zp,
+                                          input_a_in_attr)
+            insert_cast_sub_mul_for_quant(graph, input_b, qmatmul, b_scale, b_zp,
+                                          input_b_in_attr)
+            out_cast = insert_mul_add_cast_after_for_dequant(graph, qmatmul, y_dtype, y_scale,
+                                                             y_zp)
+            qmatmul_attr.update({'opset_version': 13})
+            if qmatmul in graph._attr['output_names']:
+                index = graph._attr['output_names'].index(qmatmul)
+                graph._attr['output_names'][index] = out_cast
+        NodeWrap(graph, qmatmul).replace_obj('MatMul', qmatmul_attr)
     if matched:
         clear_redundant_nodes(graph)
 
@@ -7534,6 +7539,7 @@ def middle_passes(graph, params):
     fuse_const(graph)
 
     convert_qconv(graph)
+    convert_qmatmul(graph)
 
     convert_abnormal_reshape(graph)
     convert_fill(graph)

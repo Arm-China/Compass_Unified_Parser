@@ -469,6 +469,125 @@ def insert_cast_after(graph, src, from_dtype, to_dtype, out_port=0, type='Cast')
     return ret
 
 
+def insert_cast_sub_mul_for_quant(graph, src, dst, scale, zero_point, in_attr=None, key=None, data_format='NCHW'):
+    ret = None
+    if graph is None \
+            or len(graph) < 2 \
+            or not graph.has_node(src) \
+            or not graph.has_node(dst) \
+            or not has_path(graph, src, dst):
+        ERROR('[Parser]: Meets invalid params for insert_cast_sub_mul_for_quant!')
+        return ret
+
+    scale = np.array(scale).astype(np.float32)
+    zero_point = np.array(zero_point).astype(np.int32)
+
+    cast_out_attr = copy.deepcopy(in_attr)
+    cast_out_attr.update({'src_out_port': 0, 'dst_in_port': 0})
+    sub_out_attr = copy.deepcopy(cast_out_attr)
+    sub_cast_out_attr = copy.deepcopy(cast_out_attr)
+    mul_out_attr = copy.deepcopy(cast_out_attr)
+    if not in_attr:
+        in_attr = {'src_out_port': 0, 'dst_in_port': 0}
+    else:
+        mul_out_attr.update({'dst_in_port': in_attr.get('dst_in_port', 0)})
+        in_attr.update({'dst_in_port': 0})
+        if in_attr['tensor'] is not None and in_attr['tensor'].value is not None:
+            cast_out_attr['tensor'].value = np.array(in_attr['tensor'].value).astype(np.int32)
+            sub_out_attr['tensor'].value = cast_out_attr['tensor'].value - zero_point
+            sub_cast_out_attr['tensor'].value = np.array(sub_out_attr['tensor'].value).astype(np.float32)
+            mul_out_attr['tensor'].value = sub_cast_out_attr['tensor'].value * scale
+
+    graph.remove_edge(src, dst, key=key)
+
+    cast = get_valid_node_name(graph, src + '_cast')
+    sub = get_valid_node_name(graph, src + '_sub')
+    sub_cast = get_valid_node_name(graph, sub + '_cast')
+    mul = get_valid_node_name(graph, src + '_mul')
+
+    graph.add_edge(src, cast, **in_attr)
+    graph.add_edge(cast, sub, **cast_out_attr)
+    graph.add_edge(sub, sub_cast, **sub_out_attr)
+    graph.add_edge(sub_cast, mul, **sub_cast_out_attr)
+    graph.add_edge(mul, dst, **mul_out_attr)
+
+    insert_constant(graph, src + '_zp', zero_point, sub, in_port=1, data_format=data_format)
+    insert_constant(graph, src + '_scale', scale, mul, in_port=1, data_format=data_format)
+    NodeWrap(graph, cast).replace_obj('Cast', {'name': cast, 'opset_version': 1, 'to': 'int32'})
+    NodeWrap(graph, sub).replace_obj('Sub', {'name': sub, 'opset_version': 7})
+    NodeWrap(graph, sub_cast).replace_obj(
+        'Cast', {'name': sub_cast, 'opset_version': 1, 'to': 'float32'})
+    NodeWrap(graph, mul).replace_obj('Mul', {'name': mul, 'opset_version': 7})
+    ret = cast
+    return ret
+
+
+def insert_mul_add_cast_after_for_dequant(graph, src, to_dtype, scale, zero_point, data_format='NCHW'):
+    '''Insert nodes for the output of quantized nodes according to formula:
+    y = saturate(round(x / y_scale) + y_zero_point)
+    '''
+    ret = None
+    if not graph.has_node(src) \
+            or NodeWrap(graph, src)['object'] is None \
+            or to_dtype not in ArmCastOp.attributes()['to_dtype']['options']:
+        ERROR('[Parser]: Meets invalid params for insert_mul_add_cast_after_for_dequant!')
+        return ret
+    out_edges = graph.sorted_out_edges(src, data=True)
+    if len(out_edges) < 1:
+        ERROR('[Parser]: Meets invalid outputs for Node(%s) in insert_mul_add_cast_after_for_dequant!' % src)
+        return ret
+
+    mul_scale = np.array(1 / scale).astype(np.float32)
+    zero_point = np.array(zero_point).astype(np.float32)
+    clip_min = float(np.iinfo(to_dtype).min)
+    clip_max = float(np.iinfo(to_dtype).max)
+
+    out_attr = out_edges[0][2]
+    src_out_attr = copy.deepcopy(out_attr)
+    src_out_attr.update({'dst_in_port': 0})
+    mul_out_attr = copy.deepcopy(src_out_attr)
+    mul_out_attr.update({'src_out_port': 0})
+    round_out_attr = copy.deepcopy(mul_out_attr)
+    add_out_attr = copy.deepcopy(mul_out_attr)
+    clip_out_attr = copy.deepcopy(mul_out_attr)
+    if out_attr['tensor'] is not None and out_attr['tensor'].value is not None:
+        src_out_attr['tensor'].value = np.array(out_attr['tensor'].value).astype(np.float32)
+        mul_out_attr['tensor'].value = src_out_attr['tensor'].value * mul_scale
+        round_out_attr['tensor'].value = np.around(mul_out_attr['tensor'].value)
+        add_out_attr['tensor'].value = round_out_attr['tensor'].value + zero_point
+        clip_out_attr['tensor'].value = np.clip(add_out_attr['tensor'].value, clip_min, clip_max)
+
+    out_mul = get_valid_node_name(graph, src + '_out_mul')
+    out_round = get_valid_node_name(graph, src + '_out_round')
+    out_add = get_valid_node_name(graph, src + '_out_add')
+    out_clip = get_valid_node_name(graph, src + '_out_clip')
+    out_cast = get_valid_node_name(graph, src + '_out_cast')
+
+    graph.remove_edges_from(out_edges)
+    graph.add_edge(src, out_mul, **src_out_attr)
+    graph.add_edge(out_mul, out_round, **mul_out_attr)
+    graph.add_edge(out_round, out_add, **round_out_attr)
+    graph.add_edge(out_add, out_clip, **add_out_attr)
+    graph.add_edge(out_clip, out_cast, **clip_out_attr)
+
+    insert_constant(graph, out_mul + '_scale', mul_scale,
+                    out_mul, in_port=1, data_format=data_format)
+    insert_constant(graph, out_add + '_zp', zero_point,
+                    out_add, in_port=1, data_format=data_format)
+
+    for _, dst, out_attr in out_edges:
+        graph.add_edge(out_cast, dst, **out_attr)
+
+    NodeWrap(graph, out_mul).replace_obj('Mul', {'name': out_mul, 'opset_version': 7})
+    NodeWrap(graph, out_round).replace_obj('Round', {'name': out_round, 'opset_version': 11})
+    NodeWrap(graph, out_add).replace_obj('Add', {'name': out_add, 'opset_version': 7})
+    NodeWrap(graph, out_clip).replace_obj('Clip', {'name': out_clip, 'opset_version': 6,
+                                                   'min': clip_min, 'max': clip_max})
+    NodeWrap(graph, out_cast).replace_obj('Cast', {'name': out_cast, 'opset_version': 1, 'to': str(to_dtype)})
+    ret = out_cast
+    return ret
+
+
 def insert_constant(graph, name, value, dst, in_port=0, data_format='NCHW', const_ver=9, scale_zp=None, quantize=False):
     if graph.has_node(dst) and value is not None and isinstance(value, np.ndarray):
         const_name = get_valid_node_name(graph, name)
