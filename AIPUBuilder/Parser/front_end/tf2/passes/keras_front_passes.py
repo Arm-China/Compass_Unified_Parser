@@ -725,9 +725,9 @@ def convert_dense(graph):
 
 def convert_seperable_conv(graph):
     '''
-    Convert keras SeparableConv2D op to depthwise Conv and pointwise Conv.
+    Convert keras SeparableConv1D/2D op to depthwise Conv and pointwise Conv.
     '''
-    matches = single_node_matcher(graph, 'TfKerasSeparableConv2D')
+    matches = single_node_matcher(graph, ['TfKerasSeparableConv1D', 'TfKerasSeparableConv2D'])
     for m in matches:
         sep_conv = m['target']
         sep_conv_obj = NodeWrap(graph, sep_conv)['object']
@@ -742,16 +742,24 @@ def convert_seperable_conv(graph):
         for _, dst, out_attr in out_edges:
             graph.add_edge(pointwise_conv, dst, **out_attr)
         pointwise_weights = sep_conv_obj.weights_list[1]
-        new_pointwise_weights = np.transpose(pointwise_weights, [3, 2, 0, 1])
+        if sep_conv_obj.type == 'TfKerasSeparableConv1D':
+            weights_perm = [2, 1, 0]
+            kernel_shape = [1]
+            strides = [1]
+        else:
+            weights_perm = [3, 2, 0, 1]
+            kernel_shape = [1, 1]
+            strides = [1, 1]
+        new_pointwise_weights = np.transpose(pointwise_weights, weights_perm)
         data_format = 'NCHW' if sep_conv_obj.data_format.startswith('NC') else 'NHWC'
         pointwise_conv_attr = {'name': pointwise_conv, 'weights': new_pointwise_weights,
-                               'auto_pad': 'VALID', 'kernel_shape': [1, 1], 'strides': [1, 1],
+                               'auto_pad': 'VALID', 'kernel_shape': kernel_shape, 'strides': strides,
                                'biases': sep_conv_obj.biases, 'data_format': data_format, 'opset_version': 1}
         NodeWrap(graph, pointwise_conv).replace_obj('Conv', pointwise_conv_attr)
 
         depthwise_weights = sep_conv_obj.weights_list[0]
         new_depthwise_weights = np.reshape(depthwise_weights, list(
-            depthwise_weights.shape[:2]) + [-1, depthwise_weights.shape[2]//sep_conv_obj.group])
+            depthwise_weights.shape[:-2]) + [-1, depthwise_weights.shape[-2]//sep_conv_obj.group])
         new_depthwise_weights = np.transpose(new_depthwise_weights, sep_conv_obj.perm_tf_to_onnx())
         depthwise_conv_attr = sep_conv_obj.copied_attr()
         depthwise_conv_attr.update({'weights': new_depthwise_weights, 'biases': None, 'opset_version': 1})
@@ -996,6 +1004,7 @@ def process_keras_op_before_infer(graph):
     from ...lite.passes.front_passes import split_op_has_activation
     split_op_has_activation(graph, is_tf_op=True)
     convert_dense(graph)
+    convert_seperable_conv(graph)
     multidirectional_broadcasting(graph)
 
     from ...onnx.passes.middle_passes import split_sum_or_max_or_min
@@ -1010,7 +1019,6 @@ def process_keras_op_after_infer(graph):
 
     convert_batchnorm(graph)
     convert_global_pooling(graph)
-    convert_seperable_conv(graph)
     convert_softmax(graph)
 
     convert_to_onnx(graph)

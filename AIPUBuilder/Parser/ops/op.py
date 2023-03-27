@@ -2947,9 +2947,8 @@ class KerasBaseConvOp(BaseConvOp, BaseActivationOp, KerasOp):
         activation = None if self.activations == 'NONE' else self.activations.lower()
         biases = 'zeros' if self.biases is None else tf.keras.initializers.Constant(
             self.biases)
-        if self._type in ('TfKerasDepthwiseConv2D', 'TfKerasSeparableConv2D'):
-            self.group = inp.shape[-1]
-            if self._type == 'TfKerasSeparableConv2D':
+        if self._type in ('TfKerasDepthwiseConv2D', 'TfKerasSeparableConv1D', 'TfKerasSeparableConv2D'):
+            if self._type in ('TfKerasSeparableConv1D', 'TfKerasSeparableConv2D'):
                 assert len(self.weights_list) >= 2, \
                     'Expect the length of weights_list to be at least 2, but got %d' % len(weights_list)
                 depthwise_weights = self.weights_list[0]
