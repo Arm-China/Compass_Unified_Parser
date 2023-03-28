@@ -2137,8 +2137,8 @@ def convert_qconv(graph):
             NodeWrap(graph, out_mul).replace_obj('Mul', {'name': out_mul, 'opset_version': 7})
             NodeWrap(graph, out_add).replace_obj('Add', {'name': out_add, 'opset_version': 7})
             NodeWrap(graph, out_clip).replace_obj('Clip', {'name': out_clip, 'opset_version': 6, 'min': float(
-                np.iinfo(y_type).min), 'max': float(np.iinfo(y_type).max)})
-            NodeWrap(graph, out_cast).replace_obj('Cast', {'name': out_cast, 'opset_version': 1, 'to': str(y_type)})
+                np.iinfo(y_dtype).min), 'max': float(np.iinfo(y_dtype).max)})
+            NodeWrap(graph, out_cast).replace_obj('Cast', {'name': out_cast, 'opset_version': 1, 'to': str(y_dtype)})
 
             if qconv in graph._attr['output_names']:
                 index = graph._attr['output_names'].index(qconv)
