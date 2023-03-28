@@ -2753,6 +2753,12 @@ def merge_dilated_conv(graph):
         new_perm = Op.cal_inverse_perm(new_inner_perm)
         if slice_obj.type != 'Slice' or any(s != 1 for s in slice_obj.steps):
             exclude_slice = True
+            if len(trans4_obj.get_output_shapes()) > 0 and all(s is not None for s in trans4_obj.get_output_shapes()[0]):
+                true_out_shape = trans4_obj.get_output_shapes()[0]
+                if new_perm is not None:
+                    inverse_perm = Op.cal_inverse_perm(perm)
+                    true_out_shape = np.array(true_out_shape)[np.array(inverse_perm)]
+                    true_out_shape = true_out_shape[np.array(ref_perm)].tolist()
         else:
             slice_in_shapes = slice_obj.get_input_shapes()
             if len(slice_in_shapes) < 1 \
