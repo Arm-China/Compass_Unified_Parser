@@ -95,14 +95,16 @@ def convert_1d_conv(graph):
                         graph.add_edge(reshape2, dst, **out_attr)
                     conv_out_tensor = None
                     conv_out_attr = out_edges[0][2]
-                    if conv_out_attr['tensor'] is not None and conv_out_attr['tensor'].value is not None:
-                        conv_out_tensor = np.expand_dims(conv_out_attr['tensor'].value, 1 if is_channels_last else 2)
-                    graph.add_edge(conv, reshape2, **{'tensor': Tensor(value=conv_out_tensor)})
+                    if conv_out_attr['tensor'] is not None:
+                        conv_out_tensor = copy.deepcopy(conv_out_attr['tensor'])
+                        if conv_out_tensor.value is not None:
+                            conv_out_tensor.value = np.expand_dims(conv_out_tensor.value, 1 if is_channels_last else 2)
+                    graph.add_edge(conv, reshape2, **{'tensor': conv_out_tensor})
 
                     reshape2_shape_const = get_valid_node_name(
                         graph, reshape2 + '_shape')
                     insert_constant(graph, reshape2_shape_const, np.array(
-                        reshape2_dim, np.int64), reshape2, in_port=1, data_format='NHWC')
+                        reshape2_dim, np.int32), reshape2, in_port=1, data_format='NHWC')
                     reshape2_attr = conv_obj.copied_attr()
                     reshape2_attr.update(
                         {'name': reshape2, 'opset_version': 5})

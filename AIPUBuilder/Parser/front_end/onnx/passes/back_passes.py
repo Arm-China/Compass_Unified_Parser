@@ -4394,13 +4394,11 @@ def sink_transpose_through_special_reshape(graph, max_branches=6):
                     graph.add_edge(new_transpose, dst, **out_attr)
                 reshape_obj.dim = new_dim
                 reshape_in_edges = graph.sorted_in_edges(reshape, data=True)
+                reshape_out_tensor = copy.deepcopy(reshape_out_edges[0][2]['tensor'])
                 if reshape_in_edges[0][2]['tensor'].value is not None:
-                    reshape_out_tensor = np.reshape(
+                    reshape_out_tensor.value = np.reshape(
                         reshape_in_edges[0][2]['tensor'].value, reshape_obj.dim)
-                else:
-                    reshape_out_tensor = None
-                graph.add_edge(reshape, new_transpose, **
-                               {'tensor': Tensor(value=reshape_out_tensor)})
+                graph.add_edge(reshape, new_transpose, **{'tensor': reshape_out_tensor})
 
                 new_transpose_attr = reshape_obj.copied_attr()
                 new_transpose_attr.update(

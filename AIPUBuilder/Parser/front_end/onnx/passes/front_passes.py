@@ -138,3 +138,99 @@ def convert_deconv(graph):
             attrs = deconv_obj.copied_attr()
             attrs.update({'opset_version': 11, 'weights': new_weights})
             NodeWrap(graph, deconv).replace_obj('ConvTranspose', attrs)
+
+
+def merge_qconv(graph):
+    if not graph._attr.get('quantize', False):
+        return
+    matched = False
+    matches = matched_patterns(graph,
+                               nodes=[
+                                   ('x_dequant', {'op': 'DequantizeLinear'}),
+                                   ('w_dequant', {'op': 'DequantizeLinear'}),
+                                   ('b_dequant', {'op': 'DequantizeLinear'}),
+                                   ('conv', {'op': 'Conv'}),
+                                   ('y_quant', {'op': 'QuantizeLinear'}),
+                               ],
+                               edges=[
+                                   ('x_dequant', 'conv'),
+                                   ('w_dequant', 'conv', {'dst_in_port': 1}),
+                                   ('b_dequant', 'conv', {'dst_in_port': 2}),
+                                   ('conv', 'y_quant')
+                               ])
+    for m in matches:
+        names = ['x_dequant', 'w_dequant', 'b_dequant', 'conv', 'y_quant']
+        obj_dict = {n: NodeWrap(graph, m[n])['object'] for n in names}
+        if any(v is None for v in obj_dict.values()):
+            error_node = [n for n in obj_dict if obj_dict[n] is None][0]
+            ERROR('[Parser]: Meets invalid Op(%s) in merge_qconv!' % error_node)
+            continue
+        x_dequant_in_edges = graph.sorted_in_edges(m['x_dequant'], data=True)
+        if len(x_dequant_in_edges) not in (2, 3):
+            ERROR('[Parser]: Meets invalid Dequantize Op(%s) in merge_qconv!' % m['x_dequant'])
+            continue
+        if any(e[2]['tensor'].value is None for e in x_dequant_in_edges[1:]) \
+                or any(not e[2]['tensor'].is_const for e in x_dequant_in_edges[1:]):
+            continue
+        w_dequant_in_edges = graph.sorted_in_edges(m['w_dequant'], data=True)
+        if len(w_dequant_in_edges) not in (2, 3):
+            ERROR('[Parser]: Meets invalid Dequantize Op(%s) in merge_qconv!' % m['w_dequant'])
+            continue
+        if any(e[2]['tensor'].value is None for e in w_dequant_in_edges) \
+                or any(not e[2]['tensor'].is_const for e in w_dequant_in_edges):
+            continue
+        b_dequant_in_edges = graph.sorted_in_edges(m['b_dequant'], data=True)
+        if len(b_dequant_in_edges) not in (2, 3):
+            ERROR('[Parser]: Meets invalid Dequantize Op(%s) in merge_qconv!' % m['b_dequant'])
+            continue
+        if any(e[2]['tensor'].value is None for e in b_dequant_in_edges) \
+                or any(not e[2]['tensor'].is_const for e in b_dequant_in_edges):
+            continue
+        conv_out_edges = graph.sorted_out_edges(m['conv'], data=True)
+        if len(conv_out_edges) != 1:
+            continue
+        y_quant_in_edges = graph.sorted_in_edges(m['y_quant'], data=True)
+        if len(y_quant_in_edges) not in (2, 3):
+            ERROR('[Parser]: Meets invalid Quantize Op(%s) in merge_qconv!' % m['y_quant'])
+            continue
+        if any(e[2]['tensor'].value is None for e in y_quant_in_edges[1:]) \
+                or any(not e[2]['tensor'].is_const for e in y_quant_in_edges[1:]):
+            continue
+
+        matched = True
+
+        src, _, in_attr = x_dequant_in_edges[0]
+        x_scale, x_zp = obj_dict['x_dequant'].x_scale, obj_dict['x_dequant'].x_zero_point
+        in_attr['tensor'].dtype = str(x_zp.dtype)
+        in_attr['tensor'].scale_zp = (x_scale, x_zp)
+
+        weights = w_dequant_in_edges[0][2]['tensor'].value
+        w_scale, w_zp = obj_dict['w_dequant'].x_scale, obj_dict['w_dequant'].x_zero_point
+        biases = b_dequant_in_edges[0][2]['tensor'].value
+        b_scale, b_zp = obj_dict['b_dequant'].x_scale, obj_dict['b_dequant'].x_zero_point
+        y_scale, y_zp = obj_dict['y_quant'].y_scale, obj_dict['y_quant'].y_zero_point
+
+        graph.remove_edges_from(graph.sorted_in_edges(m['conv']))
+        graph.remove_edge(m['conv'], m['y_quant'])
+        graph.add_edge(src, m['conv'], **in_attr)
+        for _, dst, out_attr in graph.sorted_out_edges(m['y_quant'], data=True):
+            graph.remove_edge(m['y_quant'], dst)
+            out_attr['tensor'].dtype = str(y_zp.dtype)
+            out_attr['tensor'].scale_zp = (y_scale, y_zp)
+            graph.add_edge(m['conv'], dst, **out_attr)
+
+        if m['y_quant'] in graph._attr['output_names']:
+            index = graph._attr['output_names'].index(m['y_quant'])
+            graph._attr['output_names'][index] = m['conv']
+
+        conv_attr = obj_dict['conv'].copied_attr()
+        conv_attr.update({'quantize': True,
+                          'weights': weights,
+                          'weights_scale_zp': [w_scale, w_zp],
+                          'biases': biases,
+                          'biases_scale_zp': [b_scale, b_zp]
+                          })
+        NodeWrap(graph, m['conv']).replace_obj('Conv', conv_attr)
+
+    if matched:
+        clear_redundant_nodes(graph)

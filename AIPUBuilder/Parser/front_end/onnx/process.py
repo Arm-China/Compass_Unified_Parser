@@ -4,7 +4,7 @@
 
 from .load import convert_onnx_to_graph
 from ...graph.graph_algo import infer
-from .passes.front_passes import fuse_weights_const, convert_special_prelu
+from .passes.front_passes import fuse_weights_const, convert_special_prelu, merge_qconv
 from .passes.common_passes import remove_useless_op, apply_subgraph_plugin, record_output_tensors
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 
@@ -20,11 +20,12 @@ def process_onnx(model_path, params):
             remove_useless_op(
                 graph, ['Dummy', 'Transpose', 'Reshape', 'Upsample', 'Identity'])
         infer(graph, partial=True)
+        merge_qconv(graph)
+
         fuse_weights_const(graph)
         convert_special_prelu(graph)
         infer(graph)
 
-        # merge_qconv(graph)
     else:
         WARN('[Parser]: Got empty graph in process_onnx!')
     return graph
