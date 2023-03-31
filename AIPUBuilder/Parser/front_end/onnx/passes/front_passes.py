@@ -1,13 +1,13 @@
 # Copyright © 2022 Arm Technology (China) Co. Ltd. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-
+import copy
 import numpy as np
 from ....ops.op import Op, OpHasWeights, OpHasBiases, KerasOp, BaseDeconvOp
 from ....graph.node_wrap import NodeWrap
 from ....graph.pattern_match import matched_patterns, single_node_matcher, two_nodes_matcher
 from ....logger import INFO, DEBUG, WARN, ERROR, FATAL
-from .common_passes import clear_redundant_nodes
+from .common_passes import clear_redundant_nodes, FLOAT_EQUAL
 
 
 def fuse_weights_const(graph):
@@ -201,8 +201,9 @@ def merge_qconv(graph):
 
         src, _, in_attr = x_dequant_in_edges[0]
         x_scale, x_zp = obj_dict['x_dequant'].x_scale, obj_dict['x_dequant'].x_zero_point
-        in_attr['tensor'].dtype = str(x_zp.dtype)
-        in_attr['tensor'].scale_zp = (x_scale, x_zp)
+        new_in_attr = copy.deepcopy(in_attr)
+        new_in_attr['tensor'].dtype = str(x_zp.dtype)
+        new_in_attr['tensor'].scale_zp = (x_scale, x_zp)
 
         weights = w_dequant_in_edges[0][2]['tensor'].value
         w_scale, w_zp = obj_dict['w_dequant'].x_scale, obj_dict['w_dequant'].x_zero_point
@@ -212,7 +213,7 @@ def merge_qconv(graph):
 
         graph.remove_edges_from(graph.sorted_in_edges(m['conv']))
         graph.remove_edge(m['conv'], m['y_quant'])
-        graph.add_edge(src, m['conv'], **in_attr)
+        graph.add_edge(src, m['conv'], **new_in_attr)
         for _, dst, out_attr in graph.sorted_out_edges(m['y_quant'], data=True):
             graph.remove_edge(m['y_quant'], dst)
             out_attr['tensor'].dtype = str(y_zp.dtype)
@@ -231,6 +232,177 @@ def merge_qconv(graph):
                           'biases_scale_zp': [b_scale, b_zp]
                           })
         NodeWrap(graph, m['conv']).replace_obj('Conv', conv_attr)
+
+    if matched:
+        clear_redundant_nodes(graph)
+
+
+def merge_q_multiple(graph, op_list):
+    if not graph._attr.get('quantize', False):
+        return
+    if not op_list:
+        return
+    if not isinstance(op_list, (list, tuple)):
+        op_list = [op_list]
+    else:
+        op_list = list(op_list)
+
+    matched = False
+    matches = matched_patterns(graph,
+                               nodes=[
+                                   ('float_op', {'op': op_list}),
+                                   ('quant', {'op': 'QuantizeLinear'}),
+                               ],
+                               edges=[
+                                   ('float_op', 'quant')
+                               ])
+    for m in matches:
+        in_edges = graph.sorted_in_edges(m['float_op'], data=True)
+        if len(in_edges) < 1:
+            ERROR('[Parser]: Meets invalid Concat Op(%s) in merge_q_multiple!' % m['float_op'])
+            continue
+        out_edges = graph.sorted_out_edges(m['float_op'], data=True)
+        if len(out_edges) != 1:
+            continue
+
+        op_in_names = [e[0] for e in in_edges]
+        names = op_in_names + [m['float_op'], m['quant']]
+        obj_dict = {n: NodeWrap(graph, n)['object'] for n in names}
+        if any(v is None for v in obj_dict.values()):
+            error_node = [n for n in obj_dict if obj_dict[n] is None][0]
+            ERROR('[Parser]: Meets invalid Op(%s) in merge_q_multiple!' % error_node)
+            continue
+        if any(obj_dict[n].type != 'DequantizeLinear' for n in op_in_names):
+            continue
+
+        found_invalid_dequant = False
+        for dequant in op_in_names:
+            dequant_in_edges = graph.sorted_in_edges(dequant, data=True)
+            if len(dequant_in_edges) not in (2, 3):
+                ERROR('[Parser]: Meets invalid Quantize Op(%s) in merge_q_multiple!' % dequant)
+                found_invalid_dequant = True
+                continue
+            if any(e[2]['tensor'].value is None for e in dequant_in_edges[1:]) \
+                    or any(not e[2]['tensor'].is_const for e in dequant_in_edges[1:]):
+                found_invalid_dequant = True
+                continue
+        if found_invalid_dequant:
+            continue
+
+        quant_in_edges = graph.sorted_in_edges(m['quant'], data=True)
+        if len(quant_in_edges) not in (2, 3):
+            ERROR('[Parser]: Meets invalid Quantize Op(%s) in merge_q_multiple!' % m['quant'])
+            continue
+        if any(e[2]['tensor'].value is None for e in quant_in_edges[1:]) \
+                or any(not e[2]['tensor'].is_const for e in quant_in_edges[1:]):
+            continue
+
+        matched = True
+
+        graph.remove_edges_from(in_edges)
+        graph.remove_edge(m['float_op'], m['quant'])
+        for i, dequant in enumerate(op_in_names):
+            dequant_in_edges = graph.sorted_in_edges(dequant, data=True)
+            src, _, in_attr = dequant_in_edges[0]
+            new_in_attr = copy.deepcopy(in_attr)
+            new_in_attr['dst_in_port'] = i
+            x_scale, x_zp = obj_dict[dequant].x_scale, obj_dict[dequant].x_zero_point
+            new_in_attr['tensor'].dtype = str(x_zp.dtype)
+            new_in_attr['tensor'].scale_zp = (x_scale, x_zp)
+            graph.add_edge(src, m['float_op'], **new_in_attr)
+
+        y_scale, y_zp = obj_dict[m['quant']].y_scale, obj_dict[m['quant']].y_zero_point
+        for _, dst, out_attr in graph.sorted_out_edges(m['quant'], data=True):
+            graph.remove_edge(m['quant'], dst)
+            out_attr['tensor'].dtype = str(y_zp.dtype)
+            out_attr['tensor'].scale_zp = (y_scale, y_zp)
+            graph.add_edge(m['float_op'], dst, **out_attr)
+
+        if m['quant'] in graph._attr['output_names']:
+            index = graph._attr['output_names'].index(m['quant'])
+            graph._attr['output_names'][index] = m['float_op']
+
+        obj_dict[m['float_op']].quantize = True
+
+    if matched:
+        clear_redundant_nodes(graph)
+
+
+def merge_q_unary(graph, op_list):
+    if not graph._attr.get('quantize', False):
+        return
+
+    if not op_list:
+        return
+    if not isinstance(op_list, (list, tuple)):
+        op_list = [op_list]
+    else:
+        op_list = list(op_list)
+
+    matched = False
+    matches = matched_patterns(graph,
+                               nodes=[
+                                   ('dequant', {'op': 'DequantizeLinear'}),
+                                   ('float_op', {'op': op_list}),
+                                   ('quant', {'op': 'QuantizeLinear'}),
+                               ],
+                               edges=[
+                                   ('dequant', 'float_op'),
+                                   ('float_op', 'quant')
+                               ])
+    for m in matches:
+        names = ['dequant', 'float_op', 'quant']
+        obj_dict = {n: NodeWrap(graph, m[n])['object'] for n in names}
+        if any(v is None for v in obj_dict.values()):
+            error_node = [n for n in obj_dict if obj_dict[n] is None][0]
+            ERROR('[Parser]: Meets invalid Op(%s) in merge_q_unary!' % error_node)
+            continue
+        dequant_in_edges = graph.sorted_in_edges(m['dequant'], data=True)
+        if len(dequant_in_edges) not in (2, 3):
+            ERROR('[Parser]: Meets invalid Dequantize Op(%s) in merge_q_unary!' % m['dequant'])
+            continue
+        if any(e[2]['tensor'].value is None for e in dequant_in_edges[1:]) \
+                or any(not e[2]['tensor'].is_const for e in dequant_in_edges[1:]):
+            continue
+
+        op_in_edges = graph.sorted_in_edges(m['float_op'], data=True)
+        if len(op_in_edges) < 1:
+            ERROR('[Parser]: Meets invalid Op(%s) in merge_q_unary!' % m['float_op'])
+            continue
+        op_out_edges = graph.sorted_out_edges(m['float_op'], data=True)
+        if len(op_out_edges) != 1:
+            continue
+
+        quant_in_edges = graph.sorted_in_edges(m['quant'], data=True)
+        if len(quant_in_edges) not in (2, 3):
+            ERROR('[Parser]: Meets invalid Quantize Op(%s) in merge_q_unary!' % m['quant'])
+            continue
+        if any(e[2]['tensor'].value is None for e in quant_in_edges[1:]) \
+                or any(not e[2]['tensor'].is_const for e in quant_in_edges[1:]):
+            continue
+
+        matched = True
+
+        x_scale, x_zp = obj_dict['dequant'].x_scale, obj_dict['dequant'].x_zero_point
+        y_scale, y_zp = obj_dict['quant'].y_scale, obj_dict['quant'].y_zero_point
+
+        src, _, in_attr = dequant_in_edges[0]
+        new_in_attr = copy.deepcopy(in_attr)
+        new_in_attr['tensor'].dtype = str(x_zp.dtype)
+        new_in_attr['tensor'].scale_zp = (x_scale, x_zp)
+
+        graph.remove_edges_from(op_in_edges[:1])
+        graph.remove_edge(m['float_op'], m['quant'])
+        graph.add_edge(src, m['float_op'], **new_in_attr)
+        for _, dst, out_attr in graph.sorted_out_edges(m['quant'], data=True):
+            graph.remove_edge(m['quant'], dst)
+            out_attr['tensor'].dtype = str(y_zp.dtype)
+            out_attr['tensor'].scale_zp = (y_scale, y_zp)
+            graph.add_edge(m['float_op'], dst, **out_attr)
+        if m['quant'] in graph._attr['output_names']:
+            index = graph._attr['output_names'].index(m['quant'])
+            graph._attr['output_names'][index] = m['float_op']
+        obj_dict['float_op'].quantize = True
 
     if matched:
         clear_redundant_nodes(graph)

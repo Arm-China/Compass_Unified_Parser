@@ -683,7 +683,7 @@ def rename_quantize_dequantize(graph):
         zp_name, _, k2, zp_in_attr = in_edges[2]
         if not scale_in_attr['tensor'].is_const \
                 or not zp_in_attr['tensor'].is_const:
-            WARN('[Parser]: QuantizeLinear/DequantizeLinear Op(%s) with non-constant scale/zp should has been split before in rename_quantize_dequantize!' % quantize)
+            WARN('[Parser]: QuantizeLinear/DequantizeLinear Op(%s) with non-constant scale/zp should have been split before in rename_quantize_dequantize!' % quantize)
             continue
         if scale_in_attr['tensor'].value is None \
                 or zp_in_attr['tensor'].value is None \
