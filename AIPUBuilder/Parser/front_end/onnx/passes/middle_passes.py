@@ -1018,7 +1018,8 @@ def convert_special_matmul_to_fc(graph):
         if matmul_obj is None \
                 or w_obj is None \
                 or w_obj.value is None \
-                or len(in_edges) != 2:
+                or len(in_edges) != 2 \
+                or in_edges[1][2]['tensor'] is None:
             ERROR('[Parser]: Meets invalid MatMul Node (%s) in convert_special_matmul_to_fc!' % matmul)
             continue
 
@@ -1035,10 +1036,19 @@ def convert_special_matmul_to_fc(graph):
         if len(input_shapes[0]) >= 2:
             matched = True
             weights = np.transpose(w_obj.value)
-            biases = np.zeros((weights.shape[0],), np.float32)
             graph.remove_edge(w, matmul)
             matmul_attr = matmul_obj.copied_attr()
-            matmul_attr.update({'weights': weights, 'biases': biases})
+            if graph._attr.get('quantize', False):
+                biases = np.zeros([weights.shape[0]], np.int32)
+                biases_scale = np.ones([weights.shape[0]], np.float32)
+                biases_zp = np.zeros([weights.shape[0]], np.int32)
+                matmul_attr.update({'weights': weights,
+                                    'weights_scale_zp': list(in_edges[1][2]['tensor'].scale_zp),
+                                    'biases': biases,
+                                    'biases_scale_zp': [biases_scale, biases_zp]})
+            else:
+                biases = np.zeros([weights.shape[0]], np.float32)
+                matmul_attr.update({'weights': weights, 'biases': biases})
             NodeWrap(graph, matmul).replace_obj('FullyConnected', matmul_attr)
             if len(input_shapes[0]) > 2:
                 src, _, in_attr = in_edges[0]

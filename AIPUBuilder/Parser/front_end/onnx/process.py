@@ -21,7 +21,7 @@ def process_onnx(model_path, params):
                 graph, ['Dummy', 'Transpose', 'Reshape', 'Upsample', 'Identity'])
         infer(graph, partial=True)
         merge_qconv(graph)
-        merge_q_multiple(graph, ['Concat', 'Add'])
+        merge_q_multiple(graph, ['Concat', 'Add', 'MatMul'])
         merge_q_unary(graph, ['Relu', 'Transpose', 'Slice'])
 
         fuse_weights_const(graph)

@@ -300,7 +300,6 @@ def merge_q_multiple(graph, op_list):
         matched = True
 
         graph.remove_edges_from(in_edges)
-        graph.remove_edge(m['float_op'], m['quant'])
         for i, dequant in enumerate(op_in_names):
             dequant_in_edges = graph.sorted_in_edges(dequant, data=True)
             src, _, in_attr = dequant_in_edges[0]
@@ -312,6 +311,7 @@ def merge_q_multiple(graph, op_list):
             graph.add_edge(src, m['float_op'], **new_in_attr)
 
         y_scale, y_zp = obj_dict[m['quant']].y_scale, obj_dict[m['quant']].y_zero_point
+        graph.remove_edge(m['float_op'], m['quant'])
         for _, dst, out_attr in graph.sorted_out_edges(m['quant'], data=True):
             graph.remove_edge(m['quant'], dst)
             out_attr['tensor'].dtype = str(y_zp.dtype)
