@@ -30,9 +30,11 @@ def process_tf2(model_path, params):
             convert_matmul, convert_maxpoolwithargmax, convert_nms, split_special_floormod, split_s2b
         split_b2s(graph, op_type='Tfbatch_to_space_nd')
 
-        from ..lite.passes.front_passes import split_not_equal, split_rsqrt, convert_square_diff
+        from ..lite.passes.front_passes import split_not_equal, split_rsqrt, convert_square, \
+            convert_square_diff
         split_not_equal(graph, op_type='Tfnot_equal')
         split_rsqrt(graph, op_type='Tfrsqrt')
+        convert_square(graph, op_type='Tfsquare')
         convert_square_diff(graph, op_type='Tfsquared_difference')
 
         infer(graph)

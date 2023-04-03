@@ -581,6 +581,10 @@ class TfsqrtOp(TfSqrtOp, Tf2Op):
     pass
 
 
+class TfsquareOp(TfSquareOp, Tf2Op):
+    pass
+
+
 class Tfsquared_differenceOp(TfSquaredDifferenceOp, Tf2Op):
     pass
 

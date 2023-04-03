@@ -114,18 +114,28 @@ def convert_negative_pool_pad(graph):
 
 
 def convert_square(graph, op_type='TfSquare'):
-    if op_type not in ('TfSquare', 'LiteSQUARE'):
+    if op_type not in ('TfSquare', 'Tfsquare', 'LiteSQUARE'):
         ERROR('[Parser]: Meets invalid Op type (%s) in convert_square_diff!' % op_type)
         return
+    need_clear = False
     matches = single_node_matcher(graph, op_type)
     for m in matches:
         square = m['target']
         square_obj = NodeWrap(graph, square)['object']
+        if square_obj is None:
+            ERROR('[Parser]: Meets invalid Op type (%s) in convert_square!' % square)
+            continue
+        if square_obj.type == 'Tfsquare':
+            need_clear = True
+            in_edges = graph.sorted_in_edges(square)
+            graph.remove_edges_from(in_edges[1:])
         pow_attr = square_obj.copied_attr()
         pow_attr.update({'opset_version': 13})
         NodeWrap(graph, square).replace_obj('Pow', pow_attr)
         insert_constant(graph, square + '_power', np.array(2, np.int32),
                         square, in_port=1, data_format='NHWC')
+    if need_clear:
+        clear_redundant_nodes(graph)
 
 
 def convert_square_diff(graph, op_type='TfSquaredDifference'):
