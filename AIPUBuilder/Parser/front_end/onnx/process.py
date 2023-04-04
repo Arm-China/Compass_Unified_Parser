@@ -4,7 +4,7 @@
 
 from .load import convert_onnx_to_graph
 from ...graph.graph_algo import infer
-from .passes.front_passes import fuse_weights_const, convert_special_prelu, merge_qconv, merge_q_multiple, merge_q_unary
+from .passes.front_passes import fuse_weights_const, convert_special_prelu, merge_qconv, merge_qmatmul, merge_q_multiple, merge_q_unary
 from .passes.common_passes import remove_useless_op, apply_subgraph_plugin, record_output_tensors
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 
@@ -19,9 +19,11 @@ def process_onnx(model_path, params):
         for i in range(2):
             remove_useless_op(
                 graph, ['Dummy', 'Transpose', 'Reshape', 'Upsample', 'Identity'])
+
         infer(graph, partial=True)
         merge_qconv(graph)
-        merge_q_multiple(graph, ['Concat', 'Add', 'MatMul'])
+        merge_qmatmul(graph)
+        merge_q_multiple(graph, ['Concat', 'Add'])
         merge_q_unary(graph, ['Relu', 'Transpose', 'Slice'])
 
         fuse_weights_const(graph)

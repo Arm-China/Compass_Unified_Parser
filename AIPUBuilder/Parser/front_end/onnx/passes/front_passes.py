@@ -7,7 +7,7 @@ from ....ops.op import Op, OpHasWeights, OpHasBiases, KerasOp, BaseDeconvOp
 from ....graph.node_wrap import NodeWrap
 from ....graph.pattern_match import matched_patterns, single_node_matcher, two_nodes_matcher
 from ....logger import INFO, DEBUG, WARN, ERROR, FATAL
-from .common_passes import clear_redundant_nodes, FLOAT_EQUAL
+from .common_passes import clear_redundant_nodes, FLOAT_EQUAL, insert_constant
 
 
 def fuse_weights_const(graph):
@@ -237,6 +237,94 @@ def merge_qconv(graph):
         clear_redundant_nodes(graph)
 
 
+def merge_qmatmul(graph):
+    if not graph._attr.get('quantize', False):
+        return
+    matched = False
+    matches = matched_patterns(graph,
+                               nodes=[
+                                   ('a_dequant', {'op': 'DequantizeLinear'}),
+                                   ('b_dequant', {'op': 'DequantizeLinear'}),
+                                   ('matmul', {'op': 'MatMul'}),
+                                   ('y_quant', {'op': 'QuantizeLinear'}),
+                               ],
+                               edges=[
+                                   ('a_dequant', 'matmul'),
+                                   ('b_dequant', 'matmul', {'dst_in_port': 1}),
+                                   ('matmul', 'y_quant')
+                               ])
+    for m in matches:
+        names = ['a_dequant', 'b_dequant', 'matmul', 'y_quant']
+        obj_dict = {n: NodeWrap(graph, m[n])['object'] for n in names}
+        if any(v is None for v in obj_dict.values()):
+            error_node = [n for n in obj_dict if obj_dict[n] is None][0]
+            ERROR('[Parser]: Meets invalid Op(%s) in merge_qmatmul!' % error_node)
+            continue
+        a_dequant_in_edges = graph.sorted_in_edges(m['a_dequant'], data=True)
+        if len(a_dequant_in_edges) not in (2, 3):
+            ERROR('[Parser]: Meets invalid Dequantize Op(%s) in merge_qmatmul!' % m['x_dequant'])
+            continue
+        if any(e[2]['tensor'].value is None for e in a_dequant_in_edges[1:]):
+            continue
+        b_dequant_in_edges = graph.sorted_in_edges(m['b_dequant'], data=True)
+        if len(b_dequant_in_edges) not in (2, 3):
+            ERROR('[Parser]: Meets invalid Dequantize Op(%s) in merge_qmatmul!' % m['b_dequant'])
+            continue
+        if any(e[2]['tensor'].value is None for e in b_dequant_in_edges[1:]):
+            continue
+        matmul_out_edges = graph.sorted_out_edges(m['matmul'], data=True)
+        if len(matmul_out_edges) != 1:
+            continue
+        y_quant_in_edges = graph.sorted_in_edges(m['y_quant'], data=True)
+        if len(y_quant_in_edges) not in (2, 3):
+            ERROR('[Parser]: Meets invalid Quantize Op(%s) in merge_qmatmul!' % m['y_quant'])
+            continue
+        if any(e[2]['tensor'].value is None for e in y_quant_in_edges[1:]):
+            continue
+
+        matched = True
+        a_zp = obj_dict['a_dequant'].x_zero_point
+        b_zp = obj_dict['b_dequant'].x_zero_point
+        y_zp = obj_dict['y_quant'].y_zero_point
+
+        matmul_in_edges = graph.sorted_in_edges(m['matmul'])
+        graph.remove_edges_from(matmul_in_edges)
+        for src, _, in_attr in a_dequant_in_edges:
+            new_in_attr = copy.deepcopy(in_attr)
+            graph.add_edge(src, m['matmul'], **new_in_attr)
+        if len(a_dequant_in_edges) == 2:
+            insert_constant(graph, m['matmul'] + '_a_zero_point', a_zp, m['matmul'], in_port=2, data_format='NHWC')
+        for src, _, in_attr in b_dequant_in_edges:
+            new_in_attr = copy.deepcopy(in_attr)
+            new_in_attr['dst_in_port'] += 3
+            graph.add_edge(src, m['matmul'], **new_in_attr)
+        if len(b_dequant_in_edges) == 2:
+            insert_constant(graph, m['matmul'] + '_b_zero_point', b_zp, m['matmul'], in_port=5, data_format='NHWC')
+        for src, _, in_attr in y_quant_in_edges[1:]:
+            new_in_attr = copy.deepcopy(in_attr)
+            new_in_attr['dst_in_port'] += 5
+            graph.add_edge(src, m['matmul'], **new_in_attr)
+        if len(y_quant_in_edges) == 2:
+            insert_constant(graph, m['matmul'] + '_y_zero_point', y_zp, m['matmul'], in_port=7, data_format='NHWC')
+
+        graph.remove_edge(m['matmul'], m['y_quant'])
+        y_quant_out_edges = graph.sorted_out_edges(m['y_quant'], data=True)
+        for _, dst, out_attr in y_quant_out_edges:
+            graph.remove_edge(m['y_quant'], dst)
+            graph.add_edge(m['matmul'], dst, **out_attr)
+
+        if m['y_quant'] in graph._attr['output_names']:
+            index = graph._attr['output_names'].index(m['y_quant'])
+            graph._attr['output_names'][index] = m['matmul']
+
+        matmul_attr = obj_dict['matmul'].copied_attr()
+        matmul_attr.update({'opset_version': 10, 'quantize': True})
+        NodeWrap(graph, m['matmul']).replace_obj('QLinearMatMul', matmul_attr)
+
+    if matched:
+        clear_redundant_nodes(graph)
+
+
 def merge_q_multiple(graph, op_list):
     if not graph._attr.get('quantize', False):
         return
@@ -299,7 +387,11 @@ def merge_q_multiple(graph, op_list):
 
         matched = True
 
+        y_scale, y_zp = obj_dict[m['quant']].y_scale, obj_dict[m['quant']].y_zero_point
+
         graph.remove_edges_from(in_edges)
+        graph.remove_edge(m['float_op'], m['quant'])
+
         for i, dequant in enumerate(op_in_names):
             dequant_in_edges = graph.sorted_in_edges(dequant, data=True)
             src, _, in_attr = dequant_in_edges[0]
@@ -310,8 +402,6 @@ def merge_q_multiple(graph, op_list):
             new_in_attr['tensor'].scale_zp = (x_scale, x_zp)
             graph.add_edge(src, m['float_op'], **new_in_attr)
 
-        y_scale, y_zp = obj_dict[m['quant']].y_scale, obj_dict[m['quant']].y_zero_point
-        graph.remove_edge(m['float_op'], m['quant'])
         for _, dst, out_attr in graph.sorted_out_edges(m['quant'], data=True):
             graph.remove_edge(m['quant'], dst)
             out_attr['tensor'].dtype = str(y_zp.dtype)
