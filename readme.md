@@ -140,6 +140,7 @@ First, you should config inference env and download the model via download_model
 ```bash
 cd ../  # the parent dir of Compass_Unified_Parser
 git clone git@github.com:Arm-China/Compass_OpportunePostTrainingTools.git
+cd Compass_Unified_Parser
 sh examples/env_setup.sh
 sh examples/tensorflow/download_model.sh
 ```
