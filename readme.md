@@ -57,7 +57,7 @@ Or you can build AIPUBuilder by yourself with [Compass_Integration](https://gith
 Besides, the Parser can also run independently. Before running the `main.py`, please make sure the following requirements are met
 ### Requirements
 * python (3.8 or higher)
-* numpy
+* numpy (<1.24)
 * onnx (> 12)
 * protobuf
 * flatbuffers
@@ -136,8 +136,10 @@ output = resnet_v1_50/predictions/Reshape
 For more examples, please refer to [examples](examples).
 
 ### Run examples
-First, you should download the model via download_model.sh in the model_framework folder in [examples](examples)
+First, you should config inference env and download the model via download_model.sh in the model_framework folder in [examples](examples)
 ```bash
+git clone git@github.com:Arm-China/Compass_OpportunePostTrainingTools.git
+sh examples/env_setup.sh
 sh examples/tensorflow/download_model.sh
 ```
 
