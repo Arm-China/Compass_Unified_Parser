@@ -30,10 +30,24 @@ def convert_torch_to_onnx(model_path, params):
     onnx_version = str(get_version(onnx)).split('.')
     onnx_opset_version = (int(onnx_version[-1]) + 5) if int(onnx_version[0]) == 1 else None
     if onnx_opset_version is not None:
-        if onnx_opset_version >= helper._onnx_main_opset:
-            onnx_opset_version = helper._onnx_main_opset
-        elif onnx_opset_version not in helper._onnx_stable_opsets:
+        default_onnx_main_opset = None
+        default_onnx_stable_opsets = []
+        try:
+            torch_version = str(torch.onnx.producer_version)
+            if torch_version.startswith('1.11'):
+                default_onnx_main_opset = helper._onnx_main_opset
+                default_onnx_stable_opsets = helper._onnx_stable_opsets
+            elif torch_version >= '1.12.0':
+                import torch.onnx._constants as Constant
+                default_onnx_main_opset = Constant.onnx_main_opset
+                default_onnx_stable_opsets = Constant.onnx_stable_opsets
+        except Exception as e:
+            DEBUG('[Parser]: Fail to get default onnx opset version because %s' % str(e))
+        if default_onnx_main_opset is None:
             onnx_opset_version = None
+        elif onnx_opset_version >= default_onnx_main_opset or onnx_opset_version not in default_onnx_stable_opsets:
+            onnx_opset_version = default_onnx_main_opset
+    DEBUG('[Parser]: Will convert to onnx opset version (%s)!' % str(onnx_opset_version))
 
     # Get input_tensors and input_names
     input_names = []
@@ -61,8 +75,8 @@ def convert_torch_to_onnx(model_path, params):
                           opset_version=onnx_opset_version)
     except Exception as e:
         FATAL('[Parser]: Fail to convert model (%s) to onnx because %s' % (model_path, str(e)))
-    INFO('[Parser]: Torch model has been converted to onnx model (%s) with opset version %d!' %
-         (onnx_model_path, helper._export_onnx_opset_version))
+    INFO('[Parser]: Torch model has been converted to onnx model (%s) with opset version (%d)!' %
+         (onnx_model_path, 'default' if onnx_opset_version is None else onnx_opset_version))
 
     # Update params
     updated_params = copy.deepcopy(params)
