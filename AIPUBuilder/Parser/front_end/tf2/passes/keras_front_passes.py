@@ -465,7 +465,7 @@ def convert_normalization(graph):
             if in_attr['tensor'] is not None and in_attr['tensor'].value is not None:
                 sub_out_attr['tensor'].value = in_attr['tensor'].value - mean
             graph.add_edge(sub, norm, **sub_out_attr)
-            mul_value = np.array(1 / np.sqrt(variance))
+            mul_value = np.array(1 / np.maximum(np.sqrt(variance), 1e-7))
             insert_constant(graph, norm + '_mul', mul_value, norm, in_port=1)
 
             NodeWrap(graph, sub).replace_obj('Sub', {'name': sub, 'opset_version': 13})
