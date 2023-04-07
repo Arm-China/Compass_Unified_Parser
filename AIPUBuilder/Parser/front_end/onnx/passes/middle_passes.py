@@ -5767,6 +5767,10 @@ def merge_gn2(graph):
                 or non_axes[1] >= len(expanded_shape) - 1:
             continue
         channels_axis = non_axes[1]
+        exp_channel_axes = [idx for idx, shape in enumerate(input_shapes[0]) if shape != expanded_shape[idx]]
+        exp_channel_axis = exp_channel_axes[0] if len(exp_channel_axes) > 0 else (len(input_shapes[0]) - 1)
+        if channels_axis != exp_channel_axis:
+            continue
         axes_after_reshape = [channels_axis, channels_axis + 1]
         exp_shape = [expanded_shape[axis] for axis in axes_after_reshape]
         biases = OpHasAxis.align_axes(
