@@ -160,7 +160,7 @@ def merge_quantized_ln(graph):
                                       ('square_diff', 'mean2'),
                                       ('mean2', 'add1'),
                                       ('add1', 'sqrt'),
-                                      ('eps', 'add1'),
+                                      ('eps', 'add1', {'dst_in_port': 1}),
                                       ('sqrt', 'mul1'),
                                       ('sqrt', 'mul2'),
                                       ('mul1', 'add2'),
@@ -188,6 +188,7 @@ def merge_quantized_ln(graph):
         input_shapes = objs_dict[mean1].get_input_shapes()
         mean1_in_edges = graph.sorted_in_edges(mean1, data=True)
         mul1_in_edges = graph.sorted_in_edges(mul1, data=True)
+        add1_in_edges = graph.sorted_in_edges(add1, data=True)
         add2_in_edges = graph.sorted_in_edges(add2)
         square_diff_in_edges = graph.sorted_in_edges(square_diff, data=True)
 
@@ -196,6 +197,7 @@ def merge_quantized_ln(graph):
                 or any((shape_item is None for shape in input_shapes for shape_item in shape))\
                 or len(mean1_in_edges) != 2 \
                 or len(square_diff_in_edges) != 2 \
+                or len(add1_in_edges) != 2 \
                 or len(mul1_in_edges) != 2:
             ERROR('[Parser]: Meets invalid nodes in merge_tflite_ln!')
             continue
@@ -229,7 +231,9 @@ def merge_quantized_ln(graph):
         biases = OpHasAxis.align_axes(
             objs_dict[beta].value, non_axes[1], [in_shape[non_axes[1]]])
         weights = np.ones_like(biases)
-        eps = objs_dict[epsilon].value.item(0)
+        eps_q = objs_dict[epsilon].value.item(0)
+        eps_s, eps_z = add1_in_edges[1][2]['tensor'].scale_zp
+        eps_f = float((np.array(eps_q).astype(np.int32) - eps_z) * eps_s)
 
         inp_out_attr = copy.deepcopy(mean1_in_edges[0][2])
         inp_out_attr.update({'dst_in_port': 0})
@@ -238,7 +242,7 @@ def merge_quantized_ln(graph):
             mean1_in_edges + mul1_in_edges + add2_in_edges)
         graph.add_edge(mean1_src, add2, **inp_out_attr)
         ln_attr = objs_dict[add2].copied_attr()
-        ln_attr.update({'epsilon': eps, 'weights': weights, 'biases': biases,
+        ln_attr.update({'epsilon': eps_f, 'weights': weights, 'biases': biases,
                        'opset_version': 6, 'non_channel_axes': axes, 'data_format': 'NCHW'})
         NodeWrap(graph, add2).replace_obj(
             'InstanceNormalization', ln_attr)
