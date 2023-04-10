@@ -3141,6 +3141,37 @@ class ArmOneHotOp(OpHasOneOutPort, OpHasAxis, ArmOp):
         return ret
 
 
+class ArmOverlapAddOp(OpHasOneOutPort, ArmOp):
+    @classmethod
+    def cast_in_ports(cls):
+        return {0: ['float32', 'uint32', 'uint8', 'int16', 'uint16', 'int8', 'int32']}
+
+    @classmethod
+    def attributes(cls):
+        return {'frame_step': {'type': AttrType.INT}
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(ArmOverlapAddOp, self).__init__(graph, attr_dict)
+        self.update_attributes(ArmOverlapAddOp, attr_dict)
+        assert self.check_required(), 'ArmOverlapAddOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(ArmOverlapAddOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        assert len(inputs[0].shape) >= 2, 'The rank of ArmOverlapAddOp inp0 must be at least 2., but got %d' % len(
+            inputs[0].shape)
+        out_tensor = tf.signal.overlap_and_add(
+            signal=inputs[0], frame_step=self.frame_step).numpy()
+        self.set_out_tensor(out_tensor)
+
+    def write_attrs(self, txt_file):
+        ret = super(ArmOverlapAddOp, self).write_attrs(txt_file)
+        if ret:
+            txt_file.write('frame_step=%d\n' % self.frame_step)
+        return ret
+
+
 class ArmPadOp(OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):

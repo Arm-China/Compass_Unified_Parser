@@ -420,6 +420,47 @@ class Tfnot_equalOp(TfNotEqualOp, Tf2Op):
     pass
 
 
+class Tfoverlap_and_addOp(OpHasOneOutPort, Tf2Op):
+    @classmethod
+    def attributes(cls):
+        return {2: {'frame_step': {'type': AttrType.INT}}
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(Tfoverlap_and_addOp, self).__init__(graph, attr_dict)
+        self.update_attributes(Tfoverlap_and_addOp, attr_dict)
+        assert self.check_required(), 'Tfoverlap_and_addOp is missing a required parameter.'
+
+    def __getattr__(self, item):
+        ret = None
+        try:
+            if item == 'frame_step':
+                inputs = self.get_input_tensors()
+                if len(inputs) >= 2:
+                    assert np.issubdtype(inputs[1].dtype, np.integer) and np.ndim(
+                        inputs[1]) == 0 and int(inputs[1]) <= inputs[0].shape[-1], 'Invaild attributes of Tfoverlap_and_add Op.'
+                    ret = int(inputs[1])
+                    self.__dict__['_attr'][item].value = ret
+        except:
+            ret = None
+        if ret is None:
+            ret = super(Tfoverlap_and_addOp, self).__getattr__(item)
+        return ret
+
+    def infer_shape(self):
+        super(Tfoverlap_and_addOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        assert len(inputs[0].shape) >= 2, 'The rank of Tfoverlap_and_add inp0 must be at least 2., but got %d' % len(
+            inputs[0].shape)
+        out_tensor = tf.signal.overlap_and_add(
+            signal=inputs[0], frame_step=self.frame_step).numpy()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'OverlapAdd', 'version': 1}
+
+
 class TfpowOp(TfPowOp, Tf2Op):
     pass
 

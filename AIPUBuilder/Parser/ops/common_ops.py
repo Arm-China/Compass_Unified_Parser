@@ -528,6 +528,27 @@ class OutOp(OpHasOneOutPort, CommonOp):
         super(OutOp, self).infer_shape()
 
 
+class OverlapAddOp(OpHasOneOutPort, CommonOp):
+    @classmethod
+    def attributes(cls):
+        return {'frame_step': {'type': AttrType.INT}
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(OverlapAddOp, self).__init__(graph, attr_dict)
+        self.update_attributes(OverlapAddOp, attr_dict)
+        assert self.check_required(), 'OverlapAddOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(OverlapAddOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        assert len(inputs[0].shape) >= 2, 'The rank of OverlapAddOp inp0 must be at least 2., but got %d' % len(
+            inputs[0].shape)
+        out_tensor = tf.signal.overlap_and_add(
+            signal=inputs[0], frame_step=self.frame_step).numpy()
+        self.set_out_tensor(out_tensor)
+
+
 class PluginOp(OpHasVariableOutPorts, CommonOp):
     @classmethod
     def num_in_ports(cls):

@@ -395,7 +395,7 @@ def convert_to_onnx(graph):
                 size = node_obj.depth_radius * 2 + 1
                 alpha = node_obj.alpha * size
                 new_node_attr.update({'size': size, 'alpha': alpha})
-            elif pure_type in ('log_softmax', 'reduce_all', 'reduce_any', 'reduce_logsumexp', 'reduce_max',
+            elif pure_type in ('log_softmax', 'overlap_and_add', 'reduce_all', 'reduce_any', 'reduce_logsumexp', 'reduce_max',
                                'reduce_mean', 'reduce_min', 'reduce_prod', 'reduce_sum', 'reduce_variance',
                                'split'):
                 _remove_edges_if_const(node_name, in_edges[1:])
