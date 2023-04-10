@@ -51,6 +51,9 @@ class CUPLogger():
             msg = self.header + msg
         return msg
 
+    def show_as_is(self, msg, *args, **kwargs):
+        self.logger.info(msg % args)
+
     def info(self, msg, *args, **kwargs):
         self.logger.info(self._info_msg + (self.apply_header(msg) % args))
 
@@ -92,13 +95,19 @@ def WARN(msg, *args, **kwargs):
 
 def ERROR(msg, *args, **kwargs):
     LOGGER.error(msg, *args, **kwargs)
+    exc = traceback.format_exc().replace('%', '%%')
+    if exc != 'NoneType: None\n':
+        LOGGER.show_as_is(exc)
+    else:
+        stacks = traceback.format_stack(limit=2)
+        LOGGER.show_as_is('Error comes from: \n' + stacks[0].replace('%', '%%'))
 
 
 def FATAL(msg, *args, **kwargs):
     LOGGER.fatal(msg, *args, **kwargs)
-    exc = traceback.format_exc()
+    exc = traceback.format_exc().replace('%', '%%')
     if exc != 'NoneType: None\n':
-        LOGGER.fatal(exc)
+        LOGGER.show_as_is(exc)
     LOGGER.error('Parser Failed!')
     sys.exit(-1)
 
