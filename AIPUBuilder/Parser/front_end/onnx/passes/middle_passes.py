@@ -3876,8 +3876,8 @@ def multidirectional_broadcasting(graph):
             if broadcast_obj is not None and len(in_edges) >= 2:
                 in_tensors = broadcast_obj.get_input_tensors()
                 if len(broadcast_obj.sorted_in_consts()) == len(in_edges):
-                    ERROR(
-                        '[Parser]: Broadcast op (%s) with Constant inputs should not be fused in multidirectional_broadcasting!' % broadcast)
+                    WARN(
+                        '[Parser]: Broadcast op (%s) with Constant inputs should have been fused before multidirectional_broadcasting!' % broadcast)
                 if any([t is None or t.shape == [] for t in in_tensors]):
                     ERROR(
                         '[Parser]: Meets Broadcast op (%s) with empty inputs in multidirectional_broadcasting!' % broadcast)
