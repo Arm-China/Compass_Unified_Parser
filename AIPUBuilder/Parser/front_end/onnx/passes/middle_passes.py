@@ -4599,9 +4599,11 @@ def merge_ln(graph):
             graph.remove_edges_from(add_2_in_edges)
             graph.add_edge(m['inp'], m['add_2'], **in_attr)
             ln_attr = node_objs['add_2'].copied_attr()
-            ln_attr.update({'epsilon': epsilon, 'weights': gamma,
-                            'biases': beta, 'axes': [-1]})
-            NodeWrap(graph, m['add_2']).replace_obj('LayerNorm', ln_attr)
+            ln_attr.update({'epsilon': epsilon, 'opset_version': 17,
+                            'axes': [-1]})
+            NodeWrap(graph, m['add_2']).replace_obj('LayerNormalization', ln_attr)
+            insert_constant(graph, m['add_2'] + '_scale', gamma, m['add_2'], in_port=1)
+            insert_constant(graph, m['add_2'] + '_bias', beta, m['add_2'], in_port=2)
     if matched:
         clear_redundant_nodes(graph)
 
@@ -4770,16 +4772,18 @@ def merge_ln2(graph):
                     mean_1_in_edges + mul_1_in_edges + sub_1_in_edges + add_2_in_edges)
                 graph.add_edge(inp, add_2, **inp_out_attr)
                 ln_attr = objs_dict[add_2].copied_attr()
-                ln_attr.update(
-                    {'epsilon': eps, 'weights': weights, 'biases': biases})
+                ln_attr.update({'epsilon': eps})
                 if is_in:
                     ln_attr.update(
-                        {'opset_version': 6, 'non_channel_axes': axes, 'data_format': data_format})
+                        {'opset_version': 6, 'non_channel_axes': axes, 'data_format': data_format,
+                         'weights': weights, 'biases': biases})
                     NodeWrap(graph, add_2).replace_obj(
                         'InstanceNormalization', ln_attr)
                 else:
-                    ln_attr.update({'axes': axes})
-                    NodeWrap(graph, add_2).replace_obj('LayerNorm', ln_attr)
+                    ln_attr.update({'opset_version': 17, 'axes': axes})
+                    NodeWrap(graph, add_2).replace_obj('LayerNormalization', ln_attr)
+                    insert_constant(graph, add_2 + '_scale', weights, add_2, in_port=1)
+                    insert_constant(graph, add_2 + '_bias', biases, add_2, in_port=2)
                 if pre_perm is not None:
                     insert_transpose(graph, inp, add_2, inp_out_attr, pre_perm)
                     post_trans = insert_transpose_after(
@@ -4875,8 +4879,10 @@ def merge_ln3(graph):
                 graph.add_edge(inp, add_1, **inp_out_attr)
                 ln_attr = objs_dict[add_1].copied_attr()
                 ln_attr.update({'axes': axes, 'epsilon': eps,
-                                'weights': gamma, 'biases': beta})
-                NodeWrap(graph, add_1).replace_obj('LayerNorm', ln_attr)
+                                'opset_version': 17})
+                NodeWrap(graph, add_1).replace_obj('LayerNormalization', ln_attr)
+                insert_constant(graph, add_1 + '_scale', gamma, add_1, in_port=1)
+                insert_constant(graph, add_1 + '_bias', beta, add_1, in_port=2)
         else:
             ERROR('[Parser]: Meets invalid nodes in merge_ln3!')
     if matched:
@@ -4981,9 +4987,11 @@ def merge_ln4(graph):
             graph.remove_edges_from(add_2_in_edges)
             graph.add_edge(inp, m['add_2'], **in_attr)
             ln_attr = node_objs['add_2'].copied_attr()
-            ln_attr.update({'epsilon': eps, 'weights': weight,
-                            'biases': bias, 'axes': node_objs['mean_2'].axes})
-            NodeWrap(graph, m['add_2']).replace_obj('LayerNorm', ln_attr)
+            ln_attr.update({'epsilon': eps, 'opset_version': 17,
+                            'axes': node_objs['mean_2'].axes})
+            NodeWrap(graph, m['add_2']).replace_obj('LayerNormalization', ln_attr)
+            insert_constant(graph, m['add_2'] + '_scale', weight, m['add_2'], in_port=1)
+            insert_constant(graph, m['add_2'] + '_bias', bias, m['add_2'], in_port=2)
         else:
             ERROR('[Parser]: Meets invalid nodes in merge_ln4!')
     if matched:
@@ -5089,9 +5097,9 @@ def merge_ln5(graph):
             node_attr.update({'opset_version': 13})
         else:
             last_node = m['add_1']
-            new_op_type = 'LayerNorm'
+            new_op_type = 'LayerNormalization'
             node_attr = obj_dict['add_1'].copied_attr()
-            node_attr.update({'weights': weights, 'biases': biases})
+            node_attr.update({'opset_version': 17})
         last_node_in_edges = graph.sorted_in_edges(last_node)
         graph.remove_edges_from(square_diff_in_edges +
                                 mean_in_edges + sub_1_in_edges + last_node_in_edges)
@@ -5102,6 +5110,9 @@ def merge_ln5(graph):
         node_attr.update({'epsilon': eps,
                           'axes': axes1})
         NodeWrap(graph, last_node).replace_obj(new_op_type, node_attr)
+        if new_op_type == 'LayerNormalization':
+            insert_constant(graph, m['add_1'] + '_scale', weights, m['add_1'], in_port=1)
+            insert_constant(graph, m['add_1'] + '_bias', biases, m['add_1'], in_port=2)
     if matched:
         clear_redundant_nodes(graph)
 
@@ -5172,11 +5183,12 @@ def merge_ln6(graph):
                 eps = float(obj_dict['bn'].epsilon)
                 ln_attr = obj_dict['reshape2'].copied_attr()
                 ln_attr.update({'epsilon': eps,
-                                'weights': gamma,
-                                'biases': beta,
-                                'axes': np.array(axis)})
+                                'axes': axis,
+                                'opset_version': 17})
                 NodeWrap(graph, m['reshape2']).replace_obj(
-                    'LayerNorm', ln_attr)
+                    'LayerNormalization', ln_attr)
+                insert_constant(graph, m['reshape2'] + '_scale', gamma, m['reshape2'], in_port=1)
+                insert_constant(graph, m['reshape2'] + '_bias', beta, m['reshape2'], in_port=2)
             else:
                 ERROR('[Parser]: Meets invalid nodes in merge_ln6!')
 
@@ -5189,20 +5201,27 @@ def merge_ln_reshape(graph):
     matches = matched_patterns(graph,
                                nodes=[
                                    ('reshape_1', {'op': 'Reshape'}),
-                                   ('ln', {'op': 'LayerNorm'}),
+                                   ('ln', {'op': 'LayerNormalization'}),
                                    ('reshape_2', {'op': 'Reshape'}),
                                ],
                                edges=[
-                                   ('reshape_1', 'ln'),
+                                   ('reshape_1', 'ln', {'dst_in_port': 0}),
                                    ('ln', 'reshape_2'),
                                ]
                                )
     for m in matches:
         obj_dict = {name: NodeWrap(graph, m[name])['object']
                     for name in ['reshape_1', 'ln', 'reshape_2']}
-        if any(obj is None for obj in obj_dict.values()) or \
-                len(graph.sorted_in_edges(m['reshape_1'])) < 1:
+        ln_in_edges = graph.sorted_in_edges(m['ln'], data=True)
+        if any(obj is None for obj in obj_dict.values()) \
+                or len(graph.sorted_in_edges(m['reshape_1'])) < 1 \
+                or len(ln_in_edges) < 2:
             ERROR('[Parser]: Meets invalid Node in merge_ln_reshape!')
+            continue
+        scale_in_attr = ln_in_edges[1][2]
+        bias_in_attr = ln_in_edges[2][2]
+        if scale_in_attr['tensor'] is None or not scale_in_attr['tensor'].is_const \
+                or bias_in_attr['tensor'] is None or not bias_in_attr['tensor'].is_const:
             continue
         reshape1_in_edges = graph.sorted_in_edges(m['reshape_1'], data=True)
         reshape1_in_shapes = obj_dict['reshape_1'].get_input_shapes()
@@ -5228,8 +5247,8 @@ def merge_ln_reshape(graph):
         new_begin_axis = new_begin_axis[0]
         new_ln_axes = list(range(new_begin_axis, len(reshape1_in_shapes[0])))
         exp_wb_shape = [reshape1_in_shapes[0][axis] for axis in new_ln_axes]
-        weights = np.reshape(obj_dict['ln'].weights, exp_wb_shape)
-        biases = np.reshape(obj_dict['ln'].biases, exp_wb_shape)
+        weights = np.reshape(scale_in_attr['tensor'].value, exp_wb_shape)
+        biases = np.reshape(bias_in_attr['tensor'].value, exp_wb_shape)
 
         src, _, in_attr = reshape1_in_edges[0]
         reshape2_in_edges = graph.sorted_in_edges(m['reshape_2'])
@@ -5237,10 +5256,11 @@ def merge_ln_reshape(graph):
         graph.add_edge(src, m['reshape_2'], **in_attr)
         new_ln_attr = obj_dict['reshape_2'].copied_attr()
         new_ln_attr.update({'epsilon': obj_dict['ln'].epsilon,
-                            'weights': weights,
-                            'biases': biases,
-                            'axes': np.array(new_ln_axes)})
-        NodeWrap(graph, m['reshape_2']).replace_obj('LayerNorm', new_ln_attr)
+                            'axes': np.array(new_ln_axes),
+                            'opset_version': 17})
+        NodeWrap(graph, m['reshape_2']).replace_obj('LayerNormalization', new_ln_attr)
+        insert_constant(graph, m['reshape_2'] + '_scale', weights, m['reshape_2'], in_port=1)
+        insert_constant(graph, m['reshape_2'] + '_bias', biases, m['reshape_2'], in_port=2)
     if matched:
         clear_redundant_nodes(graph)
 
@@ -5249,7 +5269,7 @@ def merge_ln_mul_add(graph):
     matched = False
     matches = matched_patterns(graph,
                                nodes=[
-                                   ('ln', {'op': 'LayerNorm'}),
+                                   ('ln', {'op': 'LayerNormalization'}),
                                    ('gamma', {'op': 'Constant'}),
                                    ('mul', {'op': 'Mul'}),
                                    ('beta', {'op': 'Constant'}),
@@ -5265,14 +5285,13 @@ def merge_ln_mul_add(graph):
     for m in matches:
         obj_dict = {name: NodeWrap(graph, m[name])['object']
                     for name in ['ln', 'gamma', 'beta', 'add']}
+        ln_in_edges = graph.sorted_in_edges(m['ln'], data=True)
         if any(obj is None for obj in obj_dict.values()) or \
-                len(graph.sorted_in_edges(m['ln'])) < 1:
+                len(ln_in_edges) < 3:
             ERROR('[Parser]: Meets invalid Node in merge_ln_mul_add!')
             continue
-        ln_in_edges = graph.sorted_in_edges(m['ln'], data=True)
         ln_in_shapes = obj_dict['ln'].get_input_shapes()
-        if len(ln_in_edges) < 1 \
-                or len(ln_in_shapes) < 1 \
+        if len(ln_in_shapes) < 1 \
                 or ln_in_shapes[0] is None:
             continue
         add_out_shapes = obj_dict['add'].get_output_shapes()
@@ -5280,8 +5299,15 @@ def merge_ln_mul_add(graph):
                 or add_out_shapes[0] is None \
                 or ln_in_shapes[0] != add_out_shapes[0]:
             continue
-        if not FLOAT_EQUAL(obj_dict['ln'].weights, 1.0) \
-                or not FLOAT_EQUAL(obj_dict['ln'].biases, 0.0):
+        scale_in_attr = ln_in_edges[1][2]
+        if scale_in_attr['tensor'] is None \
+                or not scale_in_attr['tensor'].is_const \
+                or not FLOAT_EQUAL(scale_in_attr['tensor'].value, 1.0):
+            continue
+        bias_in_attr = ln_in_edges[2][2]
+        if bias_in_attr['tensor'] is None \
+                or not bias_in_attr['tensor'].is_const \
+                or not FLOAT_EQUAL(bias_in_attr['tensor'].value, 0.0):
             continue
         ln_axes = np.sort(OpHasAxis.make_axes_non_negative(
             obj_dict['ln'].axes, ln_in_shapes[0]))
@@ -5299,10 +5325,11 @@ def merge_ln_mul_add(graph):
         graph.add_edge(src, m['add'], **in_attr)
         new_ln_attr = obj_dict['add'].copied_attr()
         new_ln_attr.update({'epsilon': obj_dict['ln'].epsilon,
-                            'weights': new_weights,
-                            'biases': new_biases,
-                            'axes': np.array(ln_axes)})
-        NodeWrap(graph, m['add']).replace_obj('LayerNorm', new_ln_attr)
+                            'axes': np.array(ln_axes),
+                            'opset_version': 17})
+        NodeWrap(graph, m['add']).replace_obj('LayerNormalization', new_ln_attr)
+        insert_constant(graph, m['add'] + '_scale', new_weights, m['add'], in_port=1)
+        insert_constant(graph, m['add'] + '_bias', new_biases, m['add'], in_port=2)
     if matched:
         clear_redundant_nodes(graph)
 
@@ -5583,7 +5610,7 @@ def merge_gn(graph):
                                nodes=[
                                    ('reshape_1', {'op': 'Reshape'}),
                                    ('norm', {
-                                    'op': ['LayerNorm', 'MeanVarianceNormalization']}),
+                                    'op': ['LayerNormalization', 'MeanVarianceNormalization']}),
                                    ('reshape_2', {'op': 'Reshape'}),
                                ],
                                edges=[
@@ -5594,8 +5621,10 @@ def merge_gn(graph):
     for m in matches:
         obj_dict = {name: NodeWrap(graph, m[name])['object']
                     for name in ['reshape_1', 'norm', 'reshape_2']}
-        if any([obj is None for obj in obj_dict.values()]) or \
-                len(graph.sorted_in_edges(m['reshape_1'])) < 1:
+        norm_in_edges = graph.sorted_in_edges(m['norm'], data=True)
+        if any([obj is None for obj in obj_dict.values()]) \
+                or len(graph.sorted_in_edges(m['reshape_1'])) < 1 \
+                or len(norm_in_edges) < 1:
             ERROR('[Parser]: Meets invalid Node in merge_gn!')
             continue
         expand_shape = obj_dict['reshape_1'].shape
@@ -5618,8 +5647,17 @@ def merge_gn(graph):
             weights = np.ones(weights_shape, dtype=np.float32)
             biases = np.zeros(weights_shape, dtype=np.float32)
         else:
-            weights = obj_dict['norm'].weights
-            biases = obj_dict['norm'].biases
+            if len(norm_in_edges) < 3:
+                ERROR('[Parser]: Meets invalid LayerNormalization Node(%s) in merge_gn!' % m['norm'])
+                continue
+            scale_in_attr = norm_in_edges[1][2]
+            if scale_in_attr['tensor'] is None or not scale_in_attr['tensor'].is_const:
+                continue
+            weights = scale_in_attr['tensor'].value
+            bias_in_attr = norm_in_edges[2][2]
+            if bias_in_attr['tensor'] is None or not bias_in_attr['tensor'].is_const:
+                continue
+            biases = bias_in_attr['tensor'].value
             perm = [i for i in range(
                 len(origin_shape)) if i != channels_axis] + [channels_axis]
             if len(weights.shape) == len(expand_shape):
@@ -5663,7 +5701,7 @@ def merge_gn(graph):
         matched = True
         group = expand_shape[channels_axis]
         src, _, in_attr = graph.sorted_in_edges(m['reshape_1'], data=True)[0]
-        graph.remove_edge(m['reshape_1'], m['norm'])
+        graph.remove_edges_from(norm_in_edges)
         graph.add_edge(src, m['norm'], **in_attr)
         for _, dst, out_attr in graph.sorted_out_edges(m['reshape_2'], data=True):
             graph.remove_edge(m['reshape_2'], dst)
@@ -5885,7 +5923,7 @@ def merge_norm(graph):
     matches = matched_patterns(graph,
                                nodes=[
                                    ('norm', {
-                                    'op': ['InstanceNormalization', 'MeanVarianceNormalization', 'LayerNorm']}),
+                                    'op': ['InstanceNormalization', 'MeanVarianceNormalization', 'LayerNormalization']}),
                                    ('reshape', {'op': 'Reshape'}),
                                    ('mul', {'op': 'Mul'}),
                                    ('add', {'op': 'Add'}),
@@ -5910,7 +5948,7 @@ def merge_norm(graph):
                      'reshape_dim', 'weight', 'bias']
         node_objs = {k: NodeWrap(graph, m[k])['object'] for k in key_names}
         if all([obj is not None for obj in node_objs.values()]):
-            norm_in_edges = graph.sorted_in_edges(m['norm'])
+            norm_in_edges = graph.sorted_in_edges(m['norm'], data=True)
             reshape_out_edges = graph.sorted_out_edges(m['reshape'])
             mul_in_edges = graph.sorted_in_edges(m['mul'])
             add_out_edges = graph.sorted_out_edges(m['add'], data=True)
@@ -5950,23 +5988,38 @@ def merge_norm(graph):
                         continue
                     weight = np.reshape(weight, exp_shape)
                     bias = np.reshape(bias, exp_shape)
-                    if node_objs['norm'].type == 'LayerNorm':
-                        if node_objs['norm'].weights.shape != weight.shape \
-                                or node_objs['norm'].biases.shape != bias.shape:
+                    if node_objs['norm'].type == 'LayerNormalization':
+                        if len(norm_in_edges) < 3:
+                            ERROR('[Parser]: Meets invalid LayerNormalization Node(%s) in merge_norm!' % m['norm'])
                             continue
-                        bias = bias + node_objs['norm'].biases * weight
-                        weight = weight * node_objs['norm'].weights
+                        scale_in_attr = norm_in_edges[1][2]
+                        if scale_in_attr['tensor'] is None \
+                                or not scale_in_attr['tensor'].is_const \
+                                or scale_in_attr['tensor'].value.shape != weight.shape:
+                            continue
+                        norm_weights = scale_in_attr['tensor'].value
+                        bias_in_attr = norm_in_edges[2][2]
+                        if bias_in_attr['tensor'] is None \
+                                or not bias_in_attr['tensor'].is_const \
+                                or bias_in_attr['tensor'].value.shape != bias.shape:
+                            continue
+                        norm_biases = bias_in_attr['tensor'].value
+                        bias = bias + norm_biases * weight
+                        weight = weight * norm_weights
                 matched = True
 
                 graph.remove_edges_from(mul_in_edges)
                 graph.remove_edges_from(add_out_edges)
                 for _, dst, out_attr in add_out_edges:
                     graph.add_edge(m['reshape'], dst, **out_attr)
+                graph.remove_edges_from(norm_in_edges[1:])
 
-                ins_attr.update({'weights': weight, 'biases': bias})
+                ins_attr.update({'opset_version': 17})
 
                 NodeWrap(graph, m['norm']).replace_obj(
-                    'LayerNorm', ins_attr)
+                    'LayerNormalization', ins_attr)
+                insert_constant(graph, m['norm'] + '_scale', weight, m['norm'], in_port=1)
+                insert_constant(graph, m['norm'] + '_bias', bias, m['norm'], in_port=2)
 
                 if m['add'] in graph._attr['output_names']:
                     index = graph._attr['output_names'].index(m['add'])
@@ -5978,43 +6031,60 @@ def merge_norm(graph):
 
 
 def broadcast_ln_weights_biases(graph):
-    matches = single_node_matcher(graph, 'LayerNorm')
+    matches = matched_patterns(graph,
+                               nodes=[
+                                   ('ln', {'op': 'LayerNormalization'}),
+                                   ('weights', {'op': 'Constant'}),
+                                   ('biases', {'op': 'Constant'}),
+                               ],
+                               edges=[
+                                   ('weights', 'ln', {'dst_in_port': 1}),
+                                   ('biases', 'ln', {'dst_in_port': 2}),
+                               ])
     for m in matches:
-        ln = m['target']
-        ln_obj = NodeWrap(graph, ln)['object']
-        if ln_obj is not None and ln_obj.weights is not None and ln_obj.biases is not None:
+        ln, weights, biases = m['ln'], m['weights'], m['biases']
+        ln_obj, weights_obj, biases_obj = [NodeWrap(graph, node)['object'] for node in [ln, weights, biases]]
+        if ln_obj is not None and weights_obj is not None and biases_obj is not None:
             input_shapes = ln_obj.get_output_shapes()
+            in_edges = graph.sorted_in_edges(ln, data=True)
             if len(input_shapes) >= 1 \
                     and input_shapes[0] \
-                    and len(input_shapes[0]) >= 2:
+                    and len(input_shapes[0]) >= 2 \
+                    and len(in_edges) == 3:
                 input_rank = len(input_shapes[0])
-                if list(ln_obj.weights.shape) != list(ln_obj.biases.shape):
+                weights_value = weights_obj.value
+                biases_value = biases_obj.value
+                if list(weights_value.shape) != list(biases_value.shape):
                     axes = OpHasAxis.make_axes_non_negative(
                         ln_obj.axes, len(input_shapes[0]))
                     axes = sorted(axes)
-                    if list(ln_obj.weights.shape) != [input_shapes[0][d] for d in axes]:
-                        w_rank = len(ln_obj.weights.shape)
+                    if list(weights_value.shape) != [input_shapes[0][d] for d in axes]:
+                        w_rank = len(weights_value.shape)
                         reshape_dim = [
-                            1] * (len(axes) - w_rank) + list(ln_obj.weights.shape)
-                        ln_obj.weights = np.reshape(
-                            ln_obj.weights, reshape_dim)
-                    if list(ln_obj.biases.shape) != [input_shapes[0][d] for d in axes]:
-                        b_rank = len(ln_obj.biases.shape)
+                            1] * (len(axes) - w_rank) + list(weights_value.shape)
+                        weights_obj.value = np.reshape(
+                            weights_value, reshape_dim)
+                    if list(biases_value.shape) != [input_shapes[0][d] for d in axes]:
+                        b_rank = len(biases_value.shape)
                         reshape_dim = [
-                            1] * (len(axes) - b_rank) + list(ln_obj.biases.shape)
-                        ln_obj.biases = np.reshape(ln_obj.biases, reshape_dim)
-                    if list(ln_obj.weights.shape) != list(ln_obj.biases.shape):
+                            1] * (len(axes) - b_rank) + list(biases_value.shape)
+                        biases_obj.value = np.reshape(biases_value, reshape_dim)
+                    if list(weights_value.shape) != list(biases_value.shape):
                         max_reps = np.maximum(
-                            np.array(ln_obj.weights.shape), np.array(ln_obj.biases.shape))
+                            np.array(weights_value.shape), np.array(biases_value.shape))
                         weights_reps = max_reps // np.array(
-                            ln_obj.weights.shape)
+                            weights_value.shape)
                         if np.any(weights_reps > 1):
-                            ln_obj.weights = np.tile(
-                                ln_obj.weights, weights_reps.tolist())
-                        biases_reps = max_reps // np.array(ln_obj.biases.shape)
+                            weights_obj.value = np.tile(
+                                weights_value, weights_reps.tolist())
+                        biases_reps = max_reps // np.array(biases_value.shape)
                         if np.any(biases_reps > 1):
-                            ln_obj.biases = np.tile(
-                                ln_obj.biases, biases_reps.tolist())
+                            biases_obj.value = np.tile(
+                                biases_value, biases_reps.tolist())
+                    if not FLOAT_EQUAL(weights_value, weights_obj.value) and in_edges[1][2]['tensor'] is not None:
+                        in_edges[1][2]['tensor'].value = weights_obj.value
+                    if not FLOAT_EQUAL(biases_value, biases_obj.value) and in_edges[2][2]['tensor'] is not None:
+                        in_edges[2][2]['tensor'].value = biases_obj.value
 
 
 def rearrange_fc_reshape_bn(graph):
@@ -6706,6 +6776,52 @@ def split_special_bn(graph):
                     graph._attr['output_names'].insert(index, bn_bias_add)
     if matched:
         clear_redundant_nodes(graph)
+
+
+def split_special_ln(graph):
+    '''Split LayerNormalization into MVN+Mul+Add if any one of scale and bias is not constant.
+    '''
+    matches = single_node_matcher(graph, 'LayerNormalization')
+    for m in matches:
+        ln = m['target']
+        ln_obj = NodeWrap(graph, ln)['object']
+        ln_in_edges = graph.sorted_in_edges(ln, data=True)
+        ln_out_edges = graph.sorted_out_edges(ln, data=True)
+        if ln_obj is None or len(ln_in_edges) < 3 or len(ln_out_edges) < 1:
+            ERROR('[Parser]: Meets invalid LayerNormalization Node(%s) in split_special_ln!' % ln)
+            continue
+        if ln_obj.get_out_ports() != [0]:
+            WARN('[Parser]: Outputs Mean and InvStdDev in LayerNormalization Node(%s) are not supported!' % ln)
+            continue
+        scale, _, scale_in_attr = ln_in_edges[1]
+        bias, _, bias_in_attr = ln_in_edges[2]
+        if scale_in_attr['tensor'] is not None and scale_in_attr['tensor'].is_const \
+                and bias_in_attr['tensor'] is not None and bias_in_attr['tensor'].is_const:
+            continue
+        graph.remove_edges_from(ln_out_edges + ln_in_edges[1:])
+
+        mul_node = get_valid_node_name(graph, ln + '_mul')
+        graph.add_edge(ln, mul_node)
+        graph.add_edge(scale, mul_node, **scale_in_attr)
+        mul_attr = {'name': mul_node, 'opset_version': 13}
+        NodeWrap(graph, mul_node).replace_obj('Mul', mul_attr)
+
+        add_node = get_valid_node_name(graph, ln + '_add')
+        graph.add_edge(mul_node, add_node)
+        bias_in_attr.update({'dst_in_port': 1})
+        graph.add_edge(bias, add_node, **bias_in_attr)
+        add_attr = {'name': add_node, 'opset_version': 13}
+        NodeWrap(graph, add_node).replace_obj('Add', add_attr)
+
+        mvn_attr = ln_obj.copied_attr()
+        mvn_attr.update({'opset_version': 13})
+        NodeWrap(graph, ln).replace_obj('MeanVarianceNormalization', mvn_attr)
+
+        for _, dst, out_attr in ln_out_edges:
+            graph.add_edge(add_node, dst, **out_attr)
+        if ln in graph._attr['output_names']:
+            index = graph._attr['output_names'].index(ln)
+            graph._attr['output_names'][index] = add_node
 
 
 def split_group_conv(graph):
@@ -7580,6 +7696,7 @@ def middle_passes(graph, params):
     merge_gelu_3(graph)
 
     split_special_bn(graph)
+    split_special_ln(graph)
     split_hardmax(graph)
     split_reduce_logsumexp(graph)
     split_reduce_logsum(graph)

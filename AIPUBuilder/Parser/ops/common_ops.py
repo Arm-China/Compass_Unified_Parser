@@ -461,31 +461,6 @@ class InTopKOp(LayoutUnawareOp, OpHasOneOutPort, CommonOp):
         self.set_out_tensor(out_tensor)
 
 
-class LayerNormOp(OpHasAxis, OpHasBiases, OpHasWeights, OpHasOneOutPort, CommonOp):
-    @classmethod
-    def attributes(cls):
-        return {'epsilon': {'type': AttrType.FLOAT, 'required': True, 'default': 1e-5}}
-
-    def __init__(self, graph, attr_dict=None):
-        super(LayerNormOp, self).__init__(graph, attr_dict)
-        self.update_attributes(LayerNormOp, attr_dict)
-        assert self.check_required(), 'LayerNormOp is missing a required parameter.'
-
-    def infer_shape(self):
-        super(LayerNormOp, self).infer_shape()
-        inputs = self.get_input_tensors()
-        mean = np.mean(inputs[0], axis=tuple(self.axes), keepdims=True)
-        variance = np.var(inputs[0], axis=tuple(self.axes), keepdims=True)
-        ngamma = 1.0 / ((variance + self.epsilon) ** 0.5)
-        out_tensor = (inputs[0] - mean) * ngamma
-        axes = OpHasAxis.make_axes_non_negative(
-            self.axes, len(inputs[0].shape))
-        weights = OpHasAxis.expand_to(self.weights, axes, len(inputs[0].shape))
-        biases = OpHasAxis.expand_to(self.biases, axes, len(inputs[0].shape))
-        out_tensor = out_tensor * weights + biases
-        self.set_out_tensor(out_tensor)
-
-
 class MeshgridOp(OpHasMultipleOutPorts, CommonOp):
     @classmethod
     def attributes(cls):

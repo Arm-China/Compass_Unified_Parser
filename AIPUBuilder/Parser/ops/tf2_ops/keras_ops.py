@@ -790,7 +790,7 @@ class TfKerasLayerNormalizationOp(KerasNormalizationOp):
 
     @property
     def correspond_onnx_op(self):
-        return {'type': 'LayerNorm', 'version': 1}
+        return {'type': 'LayerNormalization', 'version': 17}
 
 
 class TfKerasLeakyReLUOp(OpHasOneOutPort, KerasOp):

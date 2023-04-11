@@ -953,6 +953,67 @@ class InstanceNormalizationOp(OpHasBiases, OpHasWeights, LayoutConcernedOp, OpHa
         self.set_out_tensor(out_tensor)
 
 
+class LayerNormalizationOp(OpHasAxis, OpHasVariableOutPorts, OnnxOp):
+    @classmethod
+    def attributes(cls):
+        return {17: {'epsilon': {'type': AttrType.FLOAT, 'required': True, 'default': 1e-5},
+                     'axis': {'default': -1},
+                     'stash_type': {'type': AttrType.BOOL, 'default': True}}
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(LayerNormalizationOp, self).__init__(graph, attr_dict)
+        self.update_attributes(LayerNormalizationOp, attr_dict)
+        assert self.check_required(), 'LayerNormalizationOp is missing a required parameter.'
+
+    def __getattr__(self, item):
+        ret = None
+        if item == 'axes':
+            ret = self.__dict__['_attr'][item].value
+            if ret is None and self.axis is not None:
+                input_length = len(self.get_input_tensors()[0].shape)
+                start_axis = (self.axis + input_length) if self.axis < 0 else self.axis
+                ret = [axis for axis in range(input_length) if axis >= start_axis]
+                self.__dict__['_attr'][item].value = ret
+        if ret is None:
+            ret = super(LayerNormalizationOp, self).__getattr__(item)
+        return ret
+
+    def infer_shape(self):
+        super(LayerNormalizationOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        assert len(inputs) in (2, 3), 'LayerNormalizationOp expects 2 or 3 inputs, but got %d' % len(inputs)
+        input_length = len(inputs[0].shape)
+        self.axes = OpHasAxis.make_axes_non_negative(self.axes, input_length)
+        inp = np.array(inputs[0], np.float32) if self.stash_type else inputs[0]
+        mean = np.mean(inp, axis=tuple(self.axes), keepdims=True)
+        variance = np.var(inp, axis=tuple(self.axes), keepdims=True)
+        ngamma = 1.0 / ((variance + self.epsilon) ** 0.5)
+        normalized = (inputs[0] - mean) * ngamma
+        if self.stash_type:
+            normalized = np.array(normalized, inputs[0].dtype)
+        weights = OpHasAxis.expand_to(inputs[1], self.axes, input_length)
+        if len(inputs) == 3:
+            biases = OpHasAxis.expand_to(inputs[2], self.axes, input_length)
+        else:
+            biases = np.zeros_like(weights)
+        out_tensors = [normalized * weights + biases]
+        out_ports = self.get_out_ports()
+        if 1 in out_ports:
+            out_tensors.append(np.array(mean, np.float32))
+        if 2 in out_ports:
+            out_tensors.append(np.array(ngamma, np.float32))
+        self.set_out_tensor(out_tensors)
+
+    def convert_version(self):
+        from ...front_end.onnx.passes.common_passes import insert_constant
+        inputs = self.get_input_tensors()
+        assert len(inputs) >= 2, 'Meets invalid inputs of LayerNormalizationOp(%s) in convert_version!' % self.name
+        if len(inputs) == 2:
+            bias = np.zeros_like(inputs[1])
+            insert_constant(self._graph, self.name + '_bias', bias, self.name, in_port=2)
+
+
 class LeakyReluOp(BaseReluOp, OnnxOp):
     @classmethod
     def attributes(cls):

@@ -2297,6 +2297,40 @@ def rename_gridsample(graph):
             'ArmGridSample', gridsample_attr)
 
 
+def rename_layernorm(graph):
+    matched = False
+    matches = single_node_matcher(graph, 'LayerNormalization')
+    for m in matches:
+        layernorm = m['target']
+        layernorm_obj = NodeWrap(graph, layernorm)['object']
+        in_edges = graph.sorted_in_edges(layernorm, data=True)
+        out_edges = graph.sorted_out_edges(layernorm, data=True)
+        if layernorm_obj is None or len(in_edges) < 3 or len(out_edges) < 1:
+            ERROR('[Parser]: Meets invalid LayerNormalization Node(%s) in rename_layernorm!' % layernorm)
+            continue
+        scale_in_attr = in_edges[1][2]
+        bias_in_attr = in_edges[2][2]
+        if scale_in_attr['tensor'] is None or not scale_in_attr['tensor'].is_const \
+                or bias_in_attr['tensor'] is None or not bias_in_attr['tensor'].is_const:
+            WARN('[Parser]: Meets unsupported non-constant scale and bias of LayerNormalization Node(%s) in rename_layernorm!' % layernorm)
+            continue
+        matched = True
+        graph.remove_edges_from(in_edges[1:])
+
+        layernorm_attr = layernorm_obj.copied_attr()
+        scale = scale_in_attr['tensor'].value
+        biases = bias_in_attr['tensor'].value
+        layernorm_attr.update({'weights': scale, 'biases': biases})
+        if layernorm_obj.quantize:
+            if scale_in_attr['tensor'].scale_zp:
+                layernorm_attr.update({'weights_scale_zp': list(scale_in_attr['tensor'].scale_zp)})
+            if bias_in_attr['tensor'].scale_zp:
+                layernorm_attr.update({'biases_scale_zp': list(bias_in_attr['tensor'].scale_zp)})
+        NodeWrap(graph, layernorm).replace_obj('ArmLayerNorm', layernorm_attr)
+    if matched:
+        clear_redundant_nodes(graph)
+
+
 def rename_logical(graph):
     logical_map = {'And': 'AND',
                    'Equal': 'EQUAL',
@@ -4566,6 +4600,7 @@ def back_passes(graph, params):
     rename_gemm(graph)
     rename_generate_proposals(graph)
     rename_gridsample(graph)
+    rename_layernorm(graph)
     rename_logical(graph)
     rename_matmulinteger(graph)
     rename_maxunpool(graph)
@@ -4618,7 +4653,6 @@ def back_passes(graph, params):
     simple_rename(graph, 'Input', 'ArmInput')
     simple_rename(graph, 'InstanceNormalization', 'ArmInstanceNorm')
     simple_rename(graph, 'InTopK', 'ArmInTopK')
-    simple_rename(graph, 'LayerNorm', 'ArmLayerNorm')
     simple_rename(graph, 'Log', 'ArmLog')
     simple_rename(graph, 'LogSoftmax', 'ArmLogSoftmax')
     simple_rename(graph, 'LRN', 'ArmLRN')

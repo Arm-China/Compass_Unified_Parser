@@ -934,6 +934,9 @@ def convert_to_onnx(graph):
                     insert_transpose(graph, src, node_name, in_attr, perm)
                     node_data_format = 'NHWC'
             new_node_attr.update({'shape': [0, -1]})
+        elif pure_type == 'LayerNormalization':
+            insert_constant(graph, node_name + '_scale', node_obj.weights, node_name, in_port=1)
+            insert_constant(graph, node_name + '_bias', node_obj.biases, node_name, in_port=2)
         elif pure_type == 'Permute':
             perm = [0] + list(node_obj.dims)
             new_node_attr.update({'perm': perm})
