@@ -2087,17 +2087,23 @@ def rename_cast(graph):
         cast = m['target']
         cast_obj = NodeWrap(graph, cast)['object']
         if cast_obj is not None:
-            if cast_obj.to in ArmCastOp.attributes()['to_dtype']['options']:
+            if cast_obj.to in ArmCastOp.attributes()['to_dtype']['options'] + ['bool']:
                 cast_attr = cast_obj.copied_attr()
-                cast_attr.update({'to_dtype': cast_obj.to})
-                NodeWrap(graph, cast).replace_obj('ArmCast', cast_attr)
-            elif cast_obj.to == 'bool':
-                cast_attr = cast_obj.copied_attr()
-                cast_attr.update({'to_dtype': 'uint8'})
+                if cast_obj.to == 'bool':
+                    to_dtype = 'uint8'
+                else:
+                    to_dtype = cast_obj.to
+                if cast_obj.saturate:
+                    mode = 'saturation'
+                else:
+                    mode = 'truncation'
+                cast_attr.update({'to_dtype': to_dtype, 'clip_mode': mode})
                 NodeWrap(graph, cast).replace_obj('ArmCast', cast_attr)
             else:
                 ERROR('[Parser]: Meets Cast Op (%s) with invalid dtype (%s) that cannot be converted in rename_cast!' % (
                     cast, cast_obj.to))
+        else:
+            ERROR('[Parser]: Meets invalid Cast Op (%s) in rename_cast!' % cast)
 
 
 def rename_compress(graph):

@@ -2678,8 +2678,9 @@ def convert_to_onnx(graph):
                                 and node_obj.group == 1:
                             new_node_attr.update(
                                 {'group': new_weights.shape[0] // getattr(node_obj, 'multiplier')})
-
-                if pure_type == 'ELU':
+                if pure_type == 'CAST':
+                    new_node_attr.update({'saturate': False})
+                elif pure_type == 'ELU':
                     new_node_attr.update({'alpha': 1.})
                 elif pure_type == 'EXPAND_DIMS':
                     in_edges = graph.sorted_in_edges(node_name)

@@ -33,13 +33,10 @@ onnx_tensor_np_mapping = [
     ('INT8', np.int8, lambda pb: pb.int32_data if len(pb.int32_data) > 0 else np.frombuffer(pb.raw_data, dtype=np.int8)),
     ('UINT16', np.uint16, lambda pb: pb.int32_data if len(pb.int32_data) > 0 else np.frombuffer(pb.raw_data, dtype=np.uint16)),
     ('INT16', np.int16, lambda pb: pb.int32_data if len(pb.int32_data) > 0 else np.frombuffer(pb.raw_data, dtype=np.int16)),
-    ('INT32', np.int32, lambda pb: pb.int32_data if len(pb.int32_data)
-     > 0 else np.frombuffer(pb.raw_data, dtype=np.int32)),
-    ('INT64', np.int64, lambda pb: pb.int64_data if len(pb.int64_data)
-     > 0 else np.frombuffer(pb.raw_data, dtype=np.int64)),
+    ('INT32', np.int32, lambda pb: pb.int32_data if len(pb.int32_data) > 0 else np.frombuffer(pb.raw_data, dtype=np.int32)),
+    ('INT64', np.int64, lambda pb: pb.int64_data if len(pb.int64_data) > 0 else np.frombuffer(pb.raw_data, dtype=np.int64)),
     ('STRING', str, lambda pb: pb.string_data),
-    ('BOOL', bool, lambda pb: pb.int32_data if len(pb.int32_data)
-     > 0 else np.frombuffer(pb.raw_data, dtype=bool)),
+    ('BOOL', bool, lambda pb: pb.int32_data if len(pb.int32_data) > 0 else np.frombuffer(pb.raw_data, dtype=bool)),
     ('FLOAT16', np.float16, lambda pb: pb.int32_data),
     ('DOUBLE', np.double, lambda pb: pb.double_data if len(pb.double_data)
      > 0 else np.frombuffer(pb.raw_data, dtype=np.float64)),

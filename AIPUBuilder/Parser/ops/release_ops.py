@@ -632,7 +632,9 @@ class ArmCastOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
         return {'to_dtype': {'type': AttrType.STRING,
                              'required': True,
                              'options': ['int8', 'uint8', 'int16', 'uint32', 'uint16', 'int32', 'float32', 'float16', 'bfloat16']
-                             }
+                             },
+                'clip_mode': {'type': AttrType.STRING, 'options': ['saturation', 'truncation'], 'default': 'saturation'},
+                'ignore_scale_zp': {'type': AttrType.BOOL, 'default': False}
                 }
 
     def __init__(self, graph, attr_dict=None):
@@ -650,6 +652,8 @@ class ArmCastOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
         ret = super(ArmCastOp, self).write_attrs(txt_file)
         if ret:
             txt_file.write('to_dtype=%s\n' % self.to_dtype)
+            txt_file.write('clip_mode=%s\n' % self.clip_mode)
+            txt_file.write('ignore_scale_zp=%s\n' % str(self.ignore_scale_zp).lower())
         return ret
 
 

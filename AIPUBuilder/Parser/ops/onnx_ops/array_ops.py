@@ -42,6 +42,7 @@ class CastOp(OpHasOneOutPort, OnnxOp):
                 6: {'to': {'type': AttrType.INT, 'required': True}},
                 9: {'to': {'type': AttrType.INT, 'required': True}},
                 13: {'to': {'type': AttrType.INT, 'required': True}},
+                19: {'to': {'type': AttrType.INT, 'required': True}, 'saturate': {'type': AttrType.BOOL, 'default': True}}
                 }
 
     def __init__(self, graph, attr_dict=None):
@@ -59,6 +60,15 @@ class CastOp(OpHasOneOutPort, OnnxOp):
                 else:
                     ret = np.dtype(
                         onnx_tensor_np_mapping[self._attr[item].value][1]).name
+            elif item == 'saturate':
+                if cur_ver < 19:
+                    ret = False
+                    if item in self.__dict__['_attr']:
+                        self.__dict__['_attr'][item].value = ret
+                    else:
+                        self.__dict__['_attr'][item] = Attribute(item, {'type': AttrType.BOOL, 'value': ret})
+                else:
+                    ret = bool(self._attr[item].value)
         except:
             ret = None
         if ret is None:
