@@ -112,9 +112,11 @@ def insert_transpose_for_layoutconcern(graph):
                     for p in out_ports:
                         if (node_obj.type == 'BatchNormalization' or node_obj.type == 'TfFusedBatchNormV3') and p > 0:
                             continue
-                        post_trans = insert_transpose_after(graph, node, post_trans_perm, port=p)
+                        post_trans = insert_transpose_after(
+                            graph, node, post_trans_perm, port=p)
                         if post_trans is None:
-                            ERROR('[Parser]: Meets Error for Node (%s) in insert_transpose_for_layoutconcern!' % node)
+                            ERROR(
+                                '[Parser]: Meets Error for Node (%s) in insert_transpose_for_layoutconcern!' % node)
                             continue
                         post_trans_list.append(post_trans)
 
@@ -179,7 +181,6 @@ def insert_transpose_for_layoutconcern(graph):
                             'Add', {'name': add, 'opset_version': 7})
                         NodeWrap(graph, cast_to_int).replace_obj(
                             'Cast', {'name': cast_to_int, 'opset_version': 13, 'to': 6})
-
                 else:
                     post_trans_list.append(node)
 
@@ -245,6 +246,9 @@ def insert_transpose_for_layoutconcern(graph):
                     else:
                         ERROR('[Parser]: Meets invalid %s Op (%s) in insert_transpose_for_layoutconcern!' % (
                             node_obj.type, node))
+                elif node_obj.type == 'InstanceNormalization':
+                    node_obj.non_channel_axes = list(
+                        range(1, len(input_shape) - 1))
                 if node in graph._attr['output_names'] and post_trans_list and node not in post_trans_list:
                     index = graph._attr['output_names'].index(node)
                     graph._attr['output_names'][index] = post_trans_list[0]

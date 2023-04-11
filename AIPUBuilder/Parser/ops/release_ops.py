@@ -2433,6 +2433,8 @@ class ArmInstanceNormOp(OpHasBiases, OpHasWeights, OpHasOneOutPort, ArmOp):
     def attributes(cls):
         return {'non_channel_axes': {'type': AttrType.INTS, 'default': None},
                 'epsilon': {'type': AttrType.FLOAT, 'default': 1e-5},
+                'eps_scale': {'type': AttrType.FLOAT, 'default': None},
+                'eps_zp': {'type': AttrType.FLOAT, 'default': None},
                 }
 
     def __init__(self, graph, attr_dict=None):
@@ -2458,7 +2460,14 @@ class ArmInstanceNormOp(OpHasBiases, OpHasWeights, OpHasOneOutPort, ArmOp):
     def write_attrs(self, txt_file):
         ret = super(ArmInstanceNormOp, self).write_attrs(txt_file)
         if ret:
-            txt_file.write('epsilon=%1.12f\n' % self.epsilon)
+            if self.quantize \
+                    and self.eps_scale is not None \
+                    and self.eps_zp is not None:
+                txt_file.write('epsilon=%d\n' % self.epsilon)
+                txt_file.write('eps_scale=%1.12f\n' % self.eps_scale)
+                txt_file.write('eps_zp=%1.12f\n' % self.eps_zp)
+            else:
+                txt_file.write('epsilon=%1.12f\n' % self.epsilon)
         return ret
 
 

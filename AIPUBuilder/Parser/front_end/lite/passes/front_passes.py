@@ -142,37 +142,50 @@ def merge_quantized_ln(graph):
     matched = False
     ln_matches = matched_patterns(graph,
                                   nodes=[
+                                      ('reshape1', {'op': 'LiteRESHAPE'}),
                                       ('mean1', {'op': 'LiteMEAN'}),
                                       ('square_diff', {
                                           'op': 'LiteSQUARED_DIFFERENCE'}),
                                       ('mean2', {'op': 'LiteMEAN'}),
                                       ('add1', {'op': 'LiteADD'}),
+                                      ('eps', {'op': 'Constant'}),
                                       ('sqrt', {'op': 'LiteRSQRT'}),
                                       ('mul1', {'op': 'LiteMUL'}),
                                       ('mul2', {'op': 'LiteMUL'}),
                                       ('sub', {'op': 'LiteSUB'}),
                                       ('add2', {'op': 'LiteADD'}),
-                                      ('eps', {'op': 'Constant'}),
+                                      ('reshape2', {'op': 'LiteRESHAPE'}),
+                                      ('mul3', {'op': 'LiteMUL'}),
+                                      ('gamma', {'op': 'Constant'}),
+                                      ('add3', {'op': 'LiteADD'}),
                                       ('beta', {'op': 'Constant'}),
+
                                   ],
                                   edges=[
+                                      ('reshape1', 'mean1'),
+                                      ('reshape1', 'square_diff'),
+                                      ('reshape1', 'mul1'),
                                       ('mean1', 'square_diff'),
                                       ('square_diff', 'mean2'),
                                       ('mean2', 'add1'),
-                                      ('add1', 'sqrt'),
                                       ('eps', 'add1', {'dst_in_port': 1}),
+                                      ('add1', 'sqrt'),
                                       ('sqrt', 'mul1'),
                                       ('sqrt', 'mul2'),
                                       ('mul1', 'add2'),
                                       ('mul2', 'sub'),
                                       ('sub', 'add2'),
-                                      ('beta', 'sub'),
+                                      ('add2', 'reshape2'),
+                                      ('reshape2', 'mul3'),
+                                      ('gamma', 'mul3', {'dst_in_port': 1}),
+                                      ('mul3', 'add3'),
+                                      ('beta', 'add3', {'dst_in_port': 1}),
                                   ])
 
     for m in ln_matches:
-        key_names = ['mean1', 'square_diff', 'mean2', 'add1', 'sqrt',
-                     'mul1', 'mul2', 'sub', 'add2', 'eps', 'beta']
-        mean1, square_diff, mean2, add1, sqrt, mul1, mul2, sub, add2, epsilon, beta = [
+        key_names = ['reshape1', 'mean1', 'square_diff', 'mean2', 'add1', 'sqrt',
+                     'mul1', 'mul2', 'sub', 'add2', 'reshape2', 'mul3', 'add3', 'eps', 'gamma', 'beta']
+        reshape1, mean1, square_diff, mean2, add1, sqrt, mul1, mul2, sub, add2, reshape2, mul3, add3, epsilon, gamma, beta = [
             m[name] for name in key_names]
         objs_dict = {m[name]: NodeWrap(graph, m[name])[
             'object'] for name in key_names}
@@ -185,66 +198,47 @@ def merge_quantized_ln(graph):
                 and not FLOAT_EQUAL(objs_dict[epsilon].value.flatten()[1:], objs_dict[epsilon].value.item(0)):
             continue
 
-        input_shapes = objs_dict[mean1].get_input_shapes()
-        mean1_in_edges = graph.sorted_in_edges(mean1, data=True)
-        mul1_in_edges = graph.sorted_in_edges(mul1, data=True)
+        input_shapes = objs_dict[reshape1].get_input_shapes()
+        reshape1_in_edges = graph.sorted_in_edges(reshape1, data=True)
         add1_in_edges = graph.sorted_in_edges(add1, data=True)
-        add2_in_edges = graph.sorted_in_edges(add2)
-        square_diff_in_edges = graph.sorted_in_edges(square_diff, data=True)
+        add3_in_edges = graph.sorted_in_edges(add3)
 
         if len(input_shapes) < 1 \
                 or any((shape is None for shape in input_shapes))\
                 or any((shape_item is None for shape in input_shapes for shape_item in shape))\
-                or len(mean1_in_edges) != 2 \
-                or len(square_diff_in_edges) != 2 \
-                or len(add1_in_edges) != 2 \
-                or len(mul1_in_edges) != 2:
+                or len(add1_in_edges) != 2\
+                or len(reshape1_in_edges) != 2:
             ERROR('[Parser]: Meets invalid nodes in merge_tflite_ln!')
             continue
 
-        mean1_src, _, in_attr1 = mean1_in_edges[0]
-        mul1_src, _, in_attr2 = mul1_in_edges[0]
-        sq_diff_src, _, in_attr3 = square_diff_in_edges[0]
-
-        if mean1_src != mul1_src \
-                or mean1_src != sq_diff_src \
-                or in_attr1['src_out_port'] != in_attr2['src_out_port'] \
-                or in_attr1['src_out_port'] != in_attr3['src_out_port'] \
-                or len(input_shapes[0]) <= 1 \
+        reshape1_src, _, _ = reshape1_in_edges[0]
+        if len(input_shapes[0]) <= 1 \
                 or objs_dict[mean1].keepdims != objs_dict[mean2].keepdims \
-                or (not sorted(objs_dict[mean1].axes) == sorted(objs_dict[mean2].axes)):
+                or (not sorted(objs_dict[mean1].axes) == sorted(objs_dict[mean2].axes))\
+                or objs_dict[mean1].axes != [2]:
             continue
 
         in_shape = input_shapes[0]
-        axes = OpHasAxis.make_axes_non_negative(
-            objs_dict[mean1].axes, len(in_shape))
-        axes.sort()
-        non_axes = [num for num in range(
-            len(in_shape)) if num not in axes]
-        if len(non_axes) != 2 \
-                or non_axes[0] != 0 \
-                or non_axes[1] != 1:
-            continue
+        axes = list(range(2, len(in_shape)))
 
         matched = True
 
-        biases = OpHasAxis.align_axes(
-            objs_dict[beta].value, non_axes[1], [in_shape[non_axes[1]]])
-        weights = np.ones_like(biases)
+        biases = np.array(objs_dict[beta].value).astype(np.int32)
+        biases = np.reshape(biases, [-1])
+        weights = np.array(objs_dict[gamma].value).astype(np.int8)
+        weights = np.reshape(weights, [-1])
         eps_q = objs_dict[epsilon].value.item(0)
         eps_s, eps_z = add1_in_edges[1][2]['tensor'].scale_zp
-        eps_f = float((np.array(eps_q).astype(np.int32) - eps_z) * eps_s)
 
-        inp_out_attr = copy.deepcopy(mean1_in_edges[0][2])
+        inp_out_attr = copy.deepcopy(reshape1_in_edges[0][2])
         inp_out_attr.update({'dst_in_port': 0})
 
-        graph.remove_edges_from(
-            mean1_in_edges + mul1_in_edges + add2_in_edges)
-        graph.add_edge(mean1_src, add2, **inp_out_attr)
-        ln_attr = objs_dict[add2].copied_attr()
-        ln_attr.update({'epsilon': eps_f, 'weights': weights, 'biases': biases,
-                       'opset_version': 6, 'non_channel_axes': axes, 'data_format': 'NCHW'})
-        NodeWrap(graph, add2).replace_obj(
+        graph.remove_edges_from(add3_in_edges)
+        graph.add_edge(reshape1_src, add3, **inp_out_attr)
+        ln_attr = objs_dict[add3].copied_attr()
+        ln_attr.update({'epsilon': eps_q, 'eps_scale': eps_s, 'eps_zp': eps_z, 'weights': weights,
+                       'biases': biases, 'opset_version': 6, 'non_channel_axes': axes, 'data_format': 'NCHW'})
+        NodeWrap(graph, add3).replace_obj(
             'InstanceNormalization', ln_attr)
     if matched:
         clear_redundant_nodes(graph)

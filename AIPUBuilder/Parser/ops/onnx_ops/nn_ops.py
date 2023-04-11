@@ -921,9 +921,13 @@ class InstanceNormalizationOp(OpHasBiases, OpHasWeights, LayoutConcernedOp, OpHa
     def attributes(cls):
         return {1: {'consumed_inputs': {'type': AttrType.INTS},
                     'epsilon': {'type': AttrType.FLOAT, 'default': 1e-5},
+                    'eps_scale': {'type': AttrType.FLOAT, 'default': None},
+                    'eps_zp': {'type': AttrType.FLOAT, 'default': None},
                     'non_channel_axes': {'type': AttrType.INTS, 'default': None}
                     },
                 6: {'epsilon': {'type': AttrType.FLOAT, 'default': 1e-5},
+                    'eps_scale': {'type': AttrType.FLOAT, 'default': None},
+                    'eps_zp': {'type': AttrType.FLOAT, 'default': None},
                     'non_channel_axes': {'type': AttrType.INTS, 'default': None}
                     },
                 }
