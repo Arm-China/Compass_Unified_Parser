@@ -226,11 +226,14 @@ def infer(graph, partial=False, chosen_list=None):
                     if isinstance(node_obj, InputLikeOp):
                         if node_obj.type == 'ArmInput':
                             input_data = graph._attr['input_tensors'][node_name].value
-                            if str(input_data.dtype) in _input_cast_map:
-                                casted_type = _input_cast_map[str(
-                                    input_data.dtype)]
-                                graph._attr['input_tensors'][node_name].value = input_data.astype(
-                                    np.dtype(casted_type))
+                            input_type_str = str(input_data.dtype)
+                            if input_type_str in _input_cast_map:
+                                casted_type = _input_cast_map[input_type_str]
+                                if casted_type != input_type_str:
+                                    WARN('[Parser]: Convert unsupported type %s to type %s for Input Node (%s)!' %
+                                         (input_type_str, casted_type, node_name))
+                                    graph._attr['input_tensors'][node_name].value = input_data.astype(
+                                        np.dtype(casted_type))
 
                         infer_data = graph._attr['input_tensors'][node_name].value
                         node_obj.infer_shape(infer_data)

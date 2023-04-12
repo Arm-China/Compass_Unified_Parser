@@ -557,23 +557,25 @@ class ArmBitShiftOp(OpHasOneOutPort, ArmOp):
 
 class ArmBitwiseOp(OpHasOneOutPort, OpHasMethod, ArmOp):
     FUNC_MAP = {'AND': tf.bitwise.bitwise_and,
+                'NOT': tf.bitwise.invert,
                 'OR': tf.bitwise.bitwise_or,
                 'XOR': tf.bitwise.bitwise_xor
                 }
 
     @classmethod
     def cast_in_ports(cls):
-        return {0: ['uint32', 'uint8', 'int16', 'uint16', 'int8', 'int32'], 1: ['uint32', 'uint8', 'uint16', 'int16', 'int8', 'int32']}
+        return {0: ['uint32', 'uint8', 'int16', 'uint16', 'int8', 'int32'], None: ['uint32', 'uint8', 'uint16', 'int16', 'int8', 'int32']}
 
     @classmethod
     def attributes(cls):
-        return {'method': {'options': ['ADD', 'OR', 'XOR']},
+        return {'method': {'options': ['ADD', 'NOT', 'OR', 'XOR']},
                 }
 
     def infer_shape(self):
         super(ArmBitwiseOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        if len(inputs) != 2 \
+        exp_inputs_cnt = 1 if self.method == 'NOT' else 2
+        if len(inputs) != exp_inputs_cnt \
                 or any([inp is None for inp in inputs]) is None:
             ERROR(
                 '[Parser]: Meets invalid inputs of Bitwise Op(%s) in infer_shape!' % self.name)

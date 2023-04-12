@@ -245,6 +245,23 @@ class BitwiseAndOp(OpHasOneOutPort, OnnxOp):
         self.set_out_tensor(out_tensor)
 
 
+class BitwiseNotOp(OpHasOneOutPort, OnnxOp):
+    @classmethod
+    def attributes(cls):
+        return {18: {}}
+
+    def __init__(self, graph, attr_dict=None):
+        super(BitwiseNotOp, self).__init__(graph, attr_dict)
+        self.update_attributes(BitwiseNotOp, attr_dict)
+        assert self.check_required(), 'BitwiseNotOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(BitwiseNotOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = tf.bitwise.invert(*inputs).numpy()
+        self.set_out_tensor(out_tensor)
+
+
 class BitwiseOrOp(OpHasOneOutPort, OnnxOp):
     @classmethod
     def attributes(cls):

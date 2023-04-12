@@ -1978,7 +1978,7 @@ def rename_activations(graph):
 
 
 def rename_bitwise(graph):
-    bitwises = ['BitwiseAnd', 'BitwiseOr', 'BitwiseXor']
+    bitwises = ['BitwiseAnd', 'BitwiseNot', 'BitwiseOr', 'BitwiseXor']
     matches = [single_node_matcher(graph, bit_type)
                for bit_type in bitwises]
     matches = extend_lists(matches)
@@ -1986,11 +1986,13 @@ def rename_bitwise(graph):
         bit = m['target']
         bit_obj = NodeWrap(graph, bit)['object']
         if bit_obj is None:
-            ERROR('[Parser]: Meets invalid node(%s) in rename_bitwises!' % bit)
+            ERROR('[Parser]: Meets invalid node(%s) in rename_bitwise!' % bit)
             continue
         bit_attr = bit_obj.copied_attr()
         if bit_obj.type == 'BitwiseAnd':
             method = 'AND'
+        elif bit_obj.type == 'BitwiseNot':
+            method = 'NOT'
         elif bit_obj.type == 'BitwiseOr':
             method = 'OR'
         elif bit_obj.type == 'BitwiseXor':
