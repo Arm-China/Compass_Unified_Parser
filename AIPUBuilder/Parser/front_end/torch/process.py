@@ -7,11 +7,27 @@ import os
 import onnx
 import torch
 import torch.onnx.symbolic_helper as helper
+from multiprocessing import Process
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 from ...common.utils import get_version
 
 
 def convert_torch_to_onnx(model_path, params):
+    def _export_to_onnx(model,
+                        input_tensors,
+                        onnx_model_path,
+                        input_names,
+                        opset_version=None):
+        # Note: Use operator_export_type=torch.onnx.OperatorExportTypes.ONNX_ATEN_FALLBACK
+        # or torch.onnx.OperatorExportTypes.ONNX_ATEN for debug if export fails.
+        # The failure could be caused by unexpected input shapes.
+        torch.onnx.export(model,
+                          input_tensors,
+                          onnx_model_path,
+                          input_names=input_names,
+                          opset_version=onnx_opset_version)
+        return
+
     # Check whether inputs and shapes are provided. They must be provided because we cannot get input
     # shapes info from the provided model.
     if not params['input_shapes']:
@@ -71,17 +87,26 @@ def convert_torch_to_onnx(model_path, params):
     INFO('[Parser]: Convert TorchScript (%s) to onnx model...' % model_path)
 
     # Call torch.onnx.export to convert TorchScript model to onnx model
+    exit_code = 1
     try:
-        # Note: Use operator_export_type=torch.onnx.OperatorExportTypes.ONNX_ATEN_FALLBACK
-        # or torch.onnx.OperatorExportTypes.ONNX_ATEN for debug if export fails.
-        # The failure could be caused by unexpected input shapes.
-        torch.onnx.export(model,
-                          input_tensors,
-                          onnx_model_path,
-                          input_names=input_names,
-                          opset_version=onnx_opset_version)
+        process = Process(target=_export_to_onnx, args=(model,
+                                                        input_tensors,
+                                                        onnx_model_path,
+                                                        input_names,
+                                                        onnx_opset_version))
+        process.start()
+        process.join()
+        exit_code = process.exitcode
+        try:
+            process.close()
+        except Exception as e:
+            DEBUG('[Parser]: Fail to close process because %s' % str(e))
     except Exception as e:
         FATAL('[Parser]: Fail to convert model (%s) to onnx because %s' % (model_path, str(e)))
+
+    if exit_code != 0:
+        FATAL('[Parser]: Fail to convert model (%s) to onnx! Suggest to set env var PYTORCH_JIT_LOG_LEVEL=onnx for debug!' % model_path)
+
     INFO('[Parser]: Torch model has been converted to onnx model (%s) with opset version (%d)!' %
          (onnx_model_path, 'default' if onnx_opset_version is None else onnx_opset_version))
 
