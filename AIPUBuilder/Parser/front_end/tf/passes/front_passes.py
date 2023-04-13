@@ -3883,7 +3883,7 @@ def convert_to_onnx(graph):
                             insert_reshape(graph, src, node_name,
                                            in_attr, reshape_dim)
                 elif pure_type == 'Cast':
-                    new_node_attr.update({'to': new_node_attr['DstT']})
+                    new_node_attr.update({'to': new_node_attr['DstT'], 'saturate': False})
                 elif pure_type == 'ComputeAccidentalHits':
                     out_edges = graph.sorted_out_edges(
                         node_name, data=True, keys=True)

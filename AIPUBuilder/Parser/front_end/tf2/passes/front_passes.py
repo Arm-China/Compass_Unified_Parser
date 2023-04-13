@@ -318,7 +318,7 @@ def convert_to_onnx(graph):
                 new_node_attr.update({'keepdims': 0})
             elif pure_type == 'cast':
                 _remove_edges_if_const(node_name, in_edges[1:])
-                new_node_attr.update({'to': node_obj.dtype})
+                new_node_attr.update({'to': node_obj.dtype, 'saturate': False})
             elif pure_type == 'concat':
                 _remove_edges_if_const(node_name, in_edges[-2:])
             elif pure_type in ('conv2d', 'cumsum', 'cumprod', 'gather', 'gather_nd', 'top_k'):

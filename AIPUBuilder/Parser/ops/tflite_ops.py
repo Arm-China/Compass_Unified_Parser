@@ -288,7 +288,7 @@ class LiteCASTOp(OpHasOneOutPort, TfliteOp):
 
     @property
     def correspond_onnx_op(self):
-        return {'type': 'Cast', 'version': 1}
+        return {'type': 'Cast', 'version': 19}
 
 
 class LiteCEILOp(OpHasOneOutPort, TfliteOp):

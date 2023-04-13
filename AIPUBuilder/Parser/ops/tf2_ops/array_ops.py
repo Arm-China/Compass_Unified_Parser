@@ -28,7 +28,7 @@ class TfcastOp(OpHasOneOutPort, Tf2Op):
 
     @property
     def correspond_onnx_op(self):
-        return {'type': 'Cast', 'version': 1}
+        return {'type': 'Cast', 'version': 19}
 
 
 class Tfclip_by_valueOp(ActivationOnlyOp, Tf2Op):

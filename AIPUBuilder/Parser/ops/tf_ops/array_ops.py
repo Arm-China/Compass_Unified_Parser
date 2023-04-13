@@ -45,7 +45,7 @@ class TfCastOp(OpHasOneOutPort, TfOp):
 
     @property
     def correspond_onnx_op(self):
-        return {'type': 'Cast', 'version': 1}
+        return {'type': 'Cast', 'version': 19}
 
 
 class TfConcatV2Op(OpHasAxis, OpHasOneOutPort, TfHasN):
