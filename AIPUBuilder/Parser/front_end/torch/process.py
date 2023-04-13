@@ -52,7 +52,14 @@ def convert_torch_to_onnx(model_path, params):
     # Get input_tensors and input_names
     input_names = []
     input_tensors = ()
-    for input_name, input_shape in params['input_shapes'].items():
+    input_info_dict = copy.deepcopy(params['input_shapes'])
+    for input_name, input_shape in input_info_dict.items():
+        if len(input_name) >= 1 and input_name[0].isdigit():  # Starting with numbers is not legal in pytorch
+            new_input_name = 'input_' + input_name
+            WARN('[Parser]: Input name %s is invalid; rename it to %s!' % (input_name, new_input_name))
+            params['input_shapes'].pop(input_name)
+            params['input_shapes'][new_input_name] = input_shape
+            input_name = new_input_name
         input_names.append(input_name)
         # FIXME: dtype is set to float32 but user may want other dtype for inputs
         tensor = torch.randn(input_shape, dtype=torch.float32)
