@@ -118,11 +118,18 @@ def remove_useless_op(graph, op_type_list):
                 in_edges = graph.sorted_in_edges(node_name, data=True)
                 if len(in_edges) == 2 \
                         and in_edges[1][2].get('tensor', None) is not None \
-                        and in_edges[1][2]['tensor'].is_const \
-                        and FLOAT_EQUAL(in_edges[1][2]['tensor'].value, 1):
-                    shape_node, _, _ = in_edges[1]
-                    graph.remove_edge(shape_node, node_name)
-                    removing_nodes.append(node_name)
+                        and in_edges[1][2]['tensor'].is_const:
+                    if FLOAT_EQUAL(in_edges[1][2]['tensor'].value, 1):
+                        graph.remove_edges_from(in_edges[1:])
+                        removing_nodes.append(node_name)
+                    else:
+                        in_shapes = node_obj.get_input_shapes()
+                        out_shapes = node_obj.get_output_shapes()
+                        if len(in_shapes) >= 1 and in_shapes[0] is not None \
+                                and len(out_shapes) >= 1 and out_shapes[0] is not None \
+                                and in_shapes[0] == out_shapes[0]:
+                            graph.remove_edges_from(in_edges[1:])
+                            removing_nodes.append(node_name)
             elif op_type in ('AveragePool', 'MaxPool'):
                 in_shapes = node_obj.get_input_shapes()
                 out_shapes = node_obj.get_output_shapes()

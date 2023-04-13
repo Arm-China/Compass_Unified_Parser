@@ -1188,34 +1188,42 @@ def convert_special_scatternd(graph):
             continue
         matched = True
         graph.remove_edges_from(scatternd_in_edges)
-        src, _, src_out_attr = scatternd_in_edges[0]
         _, _, updates_out_attr = scatternd_in_edges[2]
-        split_node = get_valid_node_name(graph, scatternd + '_split')
-        graph.add_edge(src, split_node, **src_out_attr)
-        if start_indice == 0:
-            split_out_attr = {'src_out_port': 1, 'dst_in_port': 1}
-            graph.add_edge(split_node, scatternd, **split_out_attr)
-            updates_out_attr.update({'dst_in_port': 0})
-            split = [indices_len_at_axis, input_last_dim - indices_len_at_axis]
+        if indices_len_at_axis == input_last_dim:
+            scatternd_out_edges = graph.sorted_out_edges(scatternd, data=True)
+            graph.remove_edges_from(scatternd_out_edges)
+            updates_out_port = updates_out_attr['src_out_port']
+            for _, dst, out_attr in scatternd_out_edges:
+                out_attr['src_out_port'] = updates_out_port
+                graph.add_edge(updates, dst, **out_attr)
         else:
-            split_out_0_attr = {'src_out_port': 0, 'dst_in_port': 0}
-            graph.add_edge(split_node, scatternd, **split_out_0_attr)
-            split_mid_len = indices_len_at_axis
-            split_end_len = input_last_dim - start_indice - split_mid_len
-            if split_end_len != 0:
-                split_out_2_attr = {'src_out_port': 2, 'dst_in_port': 2}
-                graph.add_edge(split_node, scatternd, **split_out_2_attr)
-                split = [start_indice, split_mid_len, split_end_len]
+            src, _, src_out_attr = scatternd_in_edges[0]
+            split_node = get_valid_node_name(graph, scatternd + '_split')
+            graph.add_edge(src, split_node, **src_out_attr)
+            if start_indice == 0:
+                split_out_attr = {'src_out_port': 1, 'dst_in_port': 1}
+                graph.add_edge(split_node, scatternd, **split_out_attr)
+                updates_out_attr.update({'dst_in_port': 0})
+                split = [indices_len_at_axis, input_last_dim - indices_len_at_axis]
             else:
-                split = [start_indice, split_mid_len]
-            updates_out_attr.update({'dst_in_port': 1})
-        graph.add_edge(updates, scatternd, **updates_out_attr)
+                split_out_0_attr = {'src_out_port': 0, 'dst_in_port': 0}
+                graph.add_edge(split_node, scatternd, **split_out_0_attr)
+                split_mid_len = indices_len_at_axis
+                split_end_len = input_last_dim - start_indice - split_mid_len
+                if split_end_len != 0:
+                    split_out_2_attr = {'src_out_port': 2, 'dst_in_port': 2}
+                    graph.add_edge(split_node, scatternd, **split_out_2_attr)
+                    split = [start_indice, split_mid_len, split_end_len]
+                else:
+                    split = [start_indice, split_mid_len]
+                updates_out_attr.update({'dst_in_port': 1})
+            graph.add_edge(updates, scatternd, **updates_out_attr)
 
-        NodeWrap(graph, split_node).replace_obj(
-            'Split', {'name': split_node, 'opset_version': 11, 'axis': -1, 'split': split})
-        concat_attr = scatternd_obj.copied_attr()
-        concat_attr.update({'opset_version': 13, 'axis': -1})
-        NodeWrap(graph, scatternd).replace_obj('Concat', concat_attr)
+            NodeWrap(graph, split_node).replace_obj(
+                'Split', {'name': split_node, 'opset_version': 11, 'axis': -1, 'split': split})
+            concat_attr = scatternd_obj.copied_attr()
+            concat_attr.update({'opset_version': 13, 'axis': -1})
+            NodeWrap(graph, scatternd).replace_obj('Concat', concat_attr)
     if matched:
         clear_redundant_nodes(graph)
 
