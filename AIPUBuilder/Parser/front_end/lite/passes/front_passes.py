@@ -2769,8 +2769,11 @@ def convert_to_onnx(graph):
                     new_node_attr.update({'method': 'SUM'})
                 elif pure_type == 'SELECT':
                     in_tensors = node_obj.get_input_tensors()
-                    dims_and_reps = OpNeedBroadcast.cal_reshape_and_tile(
-                        [t.shape for t in in_tensors], match_from_left=True)
+                    try:
+                        dims_and_reps = OpNeedBroadcast.cal_reshape_and_tile(
+                            [t.shape for t in in_tensors], match_from_left=True)
+                    except:
+                        dims_and_reps = []
                     in_edges = graph.sorted_in_edges(
                         node_name, keys=True, data=True)
                     if len(dims_and_reps) != len(in_edges):

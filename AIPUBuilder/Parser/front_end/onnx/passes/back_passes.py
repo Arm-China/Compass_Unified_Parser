@@ -2488,7 +2488,7 @@ def rename_mul_add_max_min(graph):
                 if in_types.count('Constant') == 2:
                     meta_ret = False
                     WARN(
-                        '[Parser]: Mul/Add/Sub/Max/Min (%s) with two Constant inputs should be fused in rename_mul_add_max_min!' % eltwise)
+                        '[Parser]: Mul/Add/Sub/Max/Min (%s) with two Constant inputs should have been fused before rename_mul_add_max_min!' % eltwise)
                 elif in_types.count('Constant') <= 1 \
                         and in_tensors[0] is not None \
                         and in_tensors[1] is not None \

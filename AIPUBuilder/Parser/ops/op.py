@@ -1865,74 +1865,70 @@ class OpNeedBroadcast(Op):
     def cal_reshape_and_tile(input_shapes, match_from_left=False):
         '''We implement brocast by adding reshape and tile, and this function calculates the parameters of reshape and tile.'''
         ret = []
-        if len(input_shapes) >= 2:
-            max_rank = max([len(s) for s in input_shapes])
-            max_dims_array = np.array(
-                [list(s) for s in input_shapes if len(s) == max_rank])
-            if max_dims_array.size > 0:
-                max_dims = np.max(max_dims_array, axis=0,
-                                  keepdims=False).tolist()
-            else:
-                max_dims = []
-            new_dims_dict = {}
-            for r in range(max_rank - 1, 0, -1):
-                for idx, s in enumerate(input_shapes):
-                    if len(s) == r and len(s) < len(max_dims):
-                        dim_diff = len(max_dims) - len(s)
-                        range_list = list(range(0, dim_diff + 1)) if match_from_left \
-                            else list(range(dim_diff, -1, -1))
-                        offset = -1
-                        for o in range_list:
-                            if all([sd == max_d for sd, max_d in zip(s, max_dims[o:])]):
-                                offset = o
-                                break
-                            if all([sd == max_d or sd == 1 for sd, max_d in zip(s, max_dims[o:])]):
-                                offset = o
-                                break
-                            if all([sd == 1 or max_d == 1 for sd, max_d in zip(s, max_dims[o:])]):
-                                offset = o
-                                break
-                            if all([sd == max_d or sd == 1 or max_d == 1 for sd, max_d in zip(s, max_dims[o:])]):
-                                offset = o
-                                break
-                        if offset == -1:
-                            ERROR(
-                                '[Parser]: Meets invalid input shape for broadcasting in cal_reshape_and_tile!')
-                            break
-                        else:
-                            cur_full_dim = [1] * offset + \
-                                list(s) + [1] * (dim_diff - offset)
-                            new_dims_dict.update({idx: cur_full_dim})
-                            max_dims = np.max(
-                                np.array([cur_full_dim, max_dims]), axis=0, keepdims=False).tolist()
+        assert len(input_shapes) >= 2 and all(s is not None for shape in input_shapes for s in shape)
 
-            reshape_dims, reps = [], []
-            for i, in_shape in enumerate(input_shapes):
-                if len(in_shape) == 0:
-                    reshape_dims.append([1] * max_rank)
-                elif len(in_shape) == max_rank:
-                    reshape_dims.append(list(in_shape))
-                elif i in new_dims_dict:
-                    reshape_dims.append(new_dims_dict[i])
-                else:
-                    ERROR('[Parser]: Meets error when calculating broadcast!')
-                    break
-
-            max_dims = np.max(np.array([list(s) for s in reshape_dims if len(
-                s) == max_rank]), axis=0, keepdims=False).tolist()
-            reps = [(np.array(max_dims) // np.array(dim)).tolist()
-                    for dim in reshape_dims]
-
-            for i, s in enumerate(input_shapes):
-                meta_ret = {'reshape': None, 'tile': None}
-                if list(s) != reshape_dims[i]:
-                    meta_ret.update({'reshape': reshape_dims[i]})
-                if any([r != 1 for r in reps[i]]):
-                    meta_ret.update({'tile': reps[i]})
-                ret.append(meta_ret)
+        max_rank = max([len(s) for s in input_shapes])
+        max_dims_array = np.array(
+            [list(s) for s in input_shapes if len(s) == max_rank])
+        if max_dims_array.size > 0:
+            max_dims = np.max(max_dims_array, axis=0,
+                              keepdims=False).tolist()
         else:
-            WARN(
-                '[Parser]: Only broadcast when inputs number greater or equal to 2 in cal_reshape_and_tile!')
+            max_dims = []
+        new_dims_dict = {}
+        for r in range(max_rank - 1, 0, -1):
+            for idx, s in enumerate(input_shapes):
+                if len(s) == r and len(s) < len(max_dims):
+                    dim_diff = len(max_dims) - len(s)
+                    range_list = list(range(0, dim_diff + 1)) if match_from_left \
+                        else list(range(dim_diff, -1, -1))
+                    offset = -1
+                    for o in range_list:
+                        if all([sd == max_d for sd, max_d in zip(s, max_dims[o:])]):
+                            offset = o
+                            break
+                        if all([sd == max_d or sd == 1 for sd, max_d in zip(s, max_dims[o:])]):
+                            offset = o
+                            break
+                        if all([sd == 1 or max_d == 1 for sd, max_d in zip(s, max_dims[o:])]):
+                            offset = o
+                            break
+                        if all([sd == max_d or sd == 1 or max_d == 1 for sd, max_d in zip(s, max_dims[o:])]):
+                            offset = o
+                            break
+                    if offset == -1:
+                        raise Exception(
+                            '[Parser]: Meets invalid input shape for broadcasting in cal_reshape_and_tile!')
+                    else:
+                        cur_full_dim = [1] * offset + \
+                            list(s) + [1] * (dim_diff - offset)
+                        new_dims_dict.update({idx: cur_full_dim})
+                        max_dims = np.max(
+                            np.array([cur_full_dim, max_dims]), axis=0, keepdims=False).tolist()
+
+        reshape_dims, reps = [], []
+        for i, in_shape in enumerate(input_shapes):
+            if len(in_shape) == 0:
+                reshape_dims.append([1] * max_rank)
+            elif len(in_shape) == max_rank:
+                reshape_dims.append(list(in_shape))
+            elif i in new_dims_dict:
+                reshape_dims.append(new_dims_dict[i])
+            else:
+                raise Exception('[Parser]: Meets error when calculating broadcast!')
+
+        max_dims = np.max(np.array([list(s) for s in reshape_dims if len(
+            s) == max_rank]), axis=0, keepdims=False).tolist()
+        reps = [(np.array(max_dims) // np.array(dim)).tolist()
+                for dim in reshape_dims]
+
+        for i, s in enumerate(input_shapes):
+            meta_ret = {'reshape': None, 'tile': None}
+            if list(s) != reshape_dims[i]:
+                meta_ret.update({'reshape': reshape_dims[i]})
+            if any([r != 1 for r in reps[i]]):
+                meta_ret.update({'tile': reps[i]})
+            ret.append(meta_ret)
         return ret
 
     @staticmethod
@@ -1941,7 +1937,10 @@ class OpNeedBroadcast(Op):
         ret = copy.deepcopy(inputs)
         if len(inputs) >= 2:
             input_shapes = [s.shape for s in inputs]
-            reshape_tile = OpNeedBroadcast.cal_reshape_and_tile(input_shapes)
+            try:
+                reshape_tile = OpNeedBroadcast.cal_reshape_and_tile(input_shapes)
+            except:
+                reshape_tile = []
             if len(reshape_tile) == len(ret):
                 for i, inp in enumerate(zip(ret, reshape_tile)):
                     value, params = inp

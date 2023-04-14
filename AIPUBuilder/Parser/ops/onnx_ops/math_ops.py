@@ -1408,8 +1408,8 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
     @staticmethod
     def get_data_for_coordinate(data, data_idx, input_height, input_width, is_nchw=True):
         height_idx, width_idx = data_idx[2:4] if is_nchw else data_idx[1:3]
-        valid_height_idx = np.clip(height_idx, 0, input_height-1)
-        valid_width_idx = np.clip(width_idx, 0, input_width-1)
+        valid_height_idx = np.clip(height_idx, 0, input_height - 1)
+        valid_width_idx = np.clip(width_idx, 0, input_width - 1)
         if is_nchw:
             new_data_idx = data_idx[:2] + [valid_height_idx, valid_width_idx]
         else:
@@ -1456,7 +1456,7 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
                 original_list.append(inp)
                 inp = max(0, min(inp, (current_input_size - 1)))
                 inp_1 = min(int(inp), current_input_size - 1)
-                inp_2 = min(inp_1+1, current_input_size - 1)
+                inp_2 = min(inp_1 + 1, current_input_size - 1)
                 d_1 = 0.5 if inp_1 == inp_2 else abs(inp - inp_1)
                 d_2 = 0.5 if inp_1 == inp_2 else abs(inp - inp_2)
                 d1_list.append(d_1)
@@ -1496,10 +1496,11 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
             for in_idx in itertools.product(list(range(1, 3)), repeat=spatial_len):
                 in_names = ['in1' if idx == 1 else 'in2' for idx in in_idx]
                 d_names = ['d1' if idx == 2 else 'd2' for idx in in_idx]
-                data_idx = ele_idx[:2] + tuple([init_dict[in_names[idx]][idx][ele_idx[idx+2]]
+                data_idx = ele_idx[:2] + tuple([init_dict[in_names[idx]][idx][ele_idx[idx + 2]]
                                                 for idx in range(spatial_len)])
                 in_x = x_data[data_idx]
-                ret = ret + np.prod([init_dict[d_names[idx]][idx][ele_idx[idx+2]] for idx in range(spatial_len)]) * in_x
+                ret = ret + np.prod([init_dict[d_names[idx]][idx][ele_idx[idx + 2]]
+                                    for idx in range(spatial_len)]) * in_x
             y_data[ele_idx] = ret
         if pre_perm is not None:
             y_data = np.transpose(y_data, Op.cal_inverse_perm(pre_perm))
@@ -1516,8 +1517,8 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
         input_shape = list(x_data.shape)
         n_dim = len(input_shape)
         input_dim_factor = [1] * n_dim
-        for dim_idx in reversed(range(n_dim-1)):
-            input_dim_factor[dim_idx] = input_dim_factor[dim_idx+1] * input_shape[dim_idx+1]
+        for dim_idx in reversed(range(n_dim - 1)):
+            input_dim_factor[dim_idx] = input_dim_factor[dim_idx + 1] * input_shape[dim_idx + 1]
         if is_nchw:
             full_scales = [1, 1] + spatial_scales
             output_shape = input_shape[:2] + output_spatial_sizes
@@ -1584,13 +1585,13 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
             data = np.transpose(data, [0, 3, 1, 2])
             data_idx = [data_idx[0], data_idx[-1]] + data_idx[1:-1]
         n, c, y, x = data_idx
-        grid_start_pos = y * input_width + (x-1)
+        grid_start_pos = y * input_width + (x - 1)
         if grid_start_pos in cache:
             return cache[grid_start_pos]
 
         result = 0.0
         for i, j in zip(range(4), range(-1, 3)):
-            orig_data = ResizeOp.get_data_for_coordinate(data, [n, c, y, x+j], input_height, input_width)
+            orig_data = ResizeOp.get_data_for_coordinate(data, [n, c, y, x + j], input_height, input_width)
             result = result + coeff_array[i] / coeff_sum * orig_data
 
         cache.update({grid_start_pos: result})

@@ -3886,8 +3886,10 @@ def multidirectional_broadcasting(graph):
                     DEBUG(
                         '[Parser]: Meets Broadcast op (%s) with shift shape is [1], no need to broadcast in multidirectional_broadcasting!' % broadcast)
                     continue
-                dims_and_reps = OpNeedBroadcast.cal_reshape_and_tile(
-                    [t.shape for t in in_tensors])
+                try:
+                    dims_and_reps = OpNeedBroadcast.cal_reshape_and_tile([t.shape for t in in_tensors])
+                except:
+                    dims_and_reps = []
                 if len(dims_and_reps) == len(in_edges):
                     for i, dr in enumerate(dims_and_reps):
                         if dr['reshape'] is not None:

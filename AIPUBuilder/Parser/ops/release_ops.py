@@ -1686,8 +1686,7 @@ class ArmEltwiseOp(LayoutUnawareOp, OpHasMethod, BaseActivationOp, ArmOp):
             ERROR(
                 '[Parser]: Meets invalid inputs of Eltwise Op(%s) in infer_shape!' % self.name)
         if list(inputs[0].shape) != list(inputs[1].shape):
-            ERROR(
-                '[Parser]: Shapes of two inputs of Eltwise Op(%s) should be equal in infer_shape!' % self.name)
+            ERROR('[Parser]: Shapes of two inputs of Eltwise Op(%s) should be equal in infer_shape!' % self.name)
         eltwise_func = ArmEltwiseOp.FUNC_MAP[self.method]
         out_tensor = eltwise_func(*inputs)
         out_tensor = self.cal_activation(out_tensor)
