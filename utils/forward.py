@@ -4,6 +4,7 @@
 
 import os
 import re
+from collections import OrderedDict
 
 from AIPUBuilder.Parser.logger import ERROR, FATAL, INFO, WARN
 from .common import (get_model_type, match_node_name,
@@ -177,6 +178,31 @@ def tflite_forward(model_path, feed_dict, output_names=None, save_output=True):
     return output_dict
 
 
+def torch_forward(model_path, ordered_feed_dict, output_names=None, save_output=True):
+    import torch
+
+    model = torch.jit.load(model_path)
+    inputs = [torch.tensor(inp) for inp in ordered_feed_dict.values()]
+    out_tensors = model(*inputs)
+    if not isinstance(out_tensors, (list, tuple)):
+        out_tensors = [out_tensors]
+
+    if output_names is None:
+        # graph = model.graph
+        # output_names = [out.debugName() for out in graph.outputs()]
+        output_names = ['out_' + str(idx) for idx in range(len(out_tensors))]
+    assert len(out_tensors) == len(output_names), 'The length of out_tensors is different with output_names!'
+
+    output_dict = OrderedDict()
+    for out_name, out_tensor in zip(output_names, out_tensors):
+        output_dict[out_name] = out_tensor.detach().numpy()
+
+    if save_output:
+        save_data_to_file('torch_outputs.npy', output_dict)
+
+    return output_dict
+
+
 def rt_forward(model_path, feed_dict, output_names=None, save_output=True, proto_path=None):
     model_type = get_model_type(model_path)
     if model_type == 'onnx':
@@ -191,6 +217,8 @@ def rt_forward(model_path, feed_dict, output_names=None, save_output=True, proto
         return caffe_forward(proto_path, model_path, feed_dict, output_names, save_output)
     if model_type == 'tflite':
         return tflite_forward(model_path, feed_dict, output_names, save_output)
+    if model_type == 'torch':
+        return torch_forward(model_path, feed_dict, output_names, save_output)
 
     # TODO: Support other model types
     ERROR('Runtime forward for %s is not yet supported!' % model_type)

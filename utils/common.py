@@ -76,6 +76,8 @@ def get_model_type(model_path):
         model_type = 'caffe'
     elif model_path.endswith('.tflite'):
         model_type = 'tflite'
+    elif model_path.endswith('.pt') or model_path.endswith('.pth'):
+        model_type = 'torch'
     else:
         # TODO: Support other models
         ERROR('Unsupported model type!')

@@ -4,6 +4,7 @@
 
 import os
 import subprocess
+from collections import OrderedDict
 
 from AIPUBuilder.Parser.logger import INFO, WARN, DEBUG
 from .common import get_model_type, check_float_ir
@@ -40,9 +41,16 @@ def run_parser(model_path, feed_dict, output_names=None, model_type=None, save_o
     if model_type is None:
         model_type = get_model_type(model_path)
 
+    # Need input shape info for torch model
+    input_shapes = OrderedDict()
+    if model_type == 'torch':
+        for name, value in feed_dict.items():
+            input_shapes[name] = list(value.shape)
+
     # Generate config file for parser
     _, cfg_path = read_model(model_path, save_cfg=True,
-                             model_type=model_type, proto_path=proto_path)
+                             model_type=model_type, proto_path=proto_path,
+                             input_shapes=input_shapes)
     INFO('Config file %s is generated' % cfg_path)
 
     # Run parser to get float IR

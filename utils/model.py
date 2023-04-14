@@ -3,12 +3,15 @@
 
 
 import os
+from collections import OrderedDict
 
 from AIPUBuilder.Parser.logger import ERROR, WARN
 from .common import get_model_type
 
 
 def generate_cfg(model_path, model_type, inputs=None, inputs_shape=None, output_folder_name='output_dir', proto_path=None):
+    '''Return cfg file path.
+    '''
     test_name = model_path.split('/')[-1]
     test_name = test_name.rsplit('.', maxsplit=1)[0]
 
@@ -221,7 +224,7 @@ def read_tflite_model(model_path, save_cfg=False):
     return model_content, cfg_path
 
 
-def read_model(model_path, save_cfg=False, model_type=None, proto_path=None):
+def read_model(model_path, save_cfg=False, model_type=None, proto_path=None, input_shapes=OrderedDict()):
     ''' Read model and save it to log file.
     Basing on the suffix of model path, decide model type if it's not set.
     '''
@@ -247,6 +250,13 @@ def read_model(model_path, save_cfg=False, model_type=None, proto_path=None):
                 model_path, save_cfg)
     elif model_type == 'tflite':
         model_content, cfg_path = read_tflite_model(model_path, save_cfg)
+    elif model_type == 'torch':
+        if not input_shapes:
+            ERROR('Input names and shapes of torch model must be provided in read_model!')
+        input_names = [name for name in input_shapes.keys()]
+        input_names_str = ','.join(input_names)
+        input_shapes = [shape for shape in input_shapes.values()]
+        cfg_path = generate_cfg(model_path, model_type, input_names_str, input_shapes)
     else:
         # TODO: Support other models
         ERROR('Unsupported model type!')
