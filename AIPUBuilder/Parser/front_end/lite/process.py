@@ -63,6 +63,10 @@ def process_tflite(model_path, params):
 
         from ..tf.passes.front_passes import convert_reverse
         convert_reverse(graph, op_type='LiteREVERSE_V2')
+
+        from ..tf.passes.front_passes import merge_overlap_and_add
+        merge_overlap_and_add(graph)
+
         convert_reverse_sequence(graph, 'LiteREVERSE_SEQUENCE')
         convert_unpack(graph)
         convert_special_uni_seq_lstm(graph)

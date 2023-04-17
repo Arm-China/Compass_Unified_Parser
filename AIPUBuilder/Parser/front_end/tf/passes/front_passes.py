@@ -13,7 +13,7 @@ from ....graph.pattern_match import matched_patterns, single_node_matcher, two_n
 from ...onnx.passes.common_passes import insert_constant, insert_reshape, insert_reshape_after, \
     insert_transpose, insert_transpose_after, remove_node_safely, insert_cast, place_reshape, \
     insert_cast_after
-from ....common.defs import Tensor, FLOAT_EQUAL, INT_MAX
+from ....common.defs import Tensor, FLOAT_EQUAL, INT_MAX, Framework
 from ....common.utils import extend_lists
 from ....logger import INFO, DEBUG, WARN, ERROR, FATAL
 
@@ -3598,6 +3598,188 @@ def merge_keras_maskrcnn(graph, params):
     graph._attr['output_names'] = [
         gather3, mrcnn_mask_reshape, topk_final, gather4]
     clear_redundant_nodes(graph)
+
+
+def merge_overlap_and_add(graph):
+
+    def _full_shape(inner_shape, outer_dimensions):
+        return np.concatenate([outer_dimensions, inner_shape], 0)
+
+    matched = False
+    matches = matched_patterns(graph,
+                               nodes=[
+                                   ('pad', {'op': ['TfPad', 'LitePAD']}),
+                                   ('reshape1', {
+                                    'op': ['TfReshape', 'LiteRESHAPE']}),
+                                   ('transpose1', {
+                                    'op': ['TfTranspose', 'LiteTRANSPOSE']}),
+                                   ('reshape2', {
+                                    'op': ['TfReshape', 'LiteRESHAPE']}),
+                                   ('strideslice1', {
+                                       'op': ['TfStridedSlice', 'LiteSTRIDED_SLICE']}),
+                                   ('reshape3', {
+                                    'op': ['TfReshape', 'LiteRESHAPE']}),
+                                   ('sum1', {'op': ['TfSum', 'LiteSUM']}),
+                                   ('reshape4', {
+                                    'op': ['TfReshape', 'LiteRESHAPE']}),
+                                   ('strideslice2', {
+                                       'op': ['TfStridedSlice', 'LiteSTRIDED_SLICE']}),
+                               ],
+                               edges=[
+                                   ('pad', 'reshape1', {
+                                    'src_out_port': 0, 'dst_in_port': 0}),
+                                   ('reshape1', 'transpose1', {
+                                    'src_out_port': 0, 'dst_in_port': 0}),
+                                   ('transpose1', 'reshape2', {
+                                    'src_out_port': 0, 'dst_in_port': 0}),
+                                   ('reshape2', 'strideslice1', {
+                                    'src_out_port': 0, 'dst_in_port': 0}),
+                                   ('strideslice1', 'reshape3', {
+                                    'src_out_port': 0, 'dst_in_port': 0}),
+                                   ('reshape3', 'sum1'),
+                                   ('sum1', 'reshape4', {
+                                    'src_out_port': 0, 'dst_in_port': 0}),
+                                   ('reshape4', 'strideslice2', {
+                                    'src_out_port': 0, 'dst_in_port': 0}),
+                               ]
+                               )
+    for m in matches:
+        names = ['pad', 'reshape1', 'transpose1', 'reshape2',
+                 'strideslice1', 'reshape3', 'sum1', 'reshape4', 'strideslice2']
+        objs_dict = {n: NodeWrap(graph, m[n])['object'] for n in names}
+        if any(obj is None for obj in objs_dict.values()):
+            ERROR('[Parser]: Meets invalid Op in merge_overlap_and_add!')
+            continue
+
+        pad_in_edges = graph.sorted_in_edges(m['pad'], data=True)
+        reshape1_in_edges = graph.sorted_in_edges(m['reshape1'], data=True)
+        transpose1_in_edges = graph.sorted_in_edges(m['transpose1'], data=True)
+        reshape2_in_edges = graph.sorted_in_edges(m['reshape2'], data=True)
+        strideslice1_in_edges = graph.sorted_in_edges(
+            m['strideslice1'], data=True)
+        reshape3_in_edges = graph.sorted_in_edges(m['reshape3'], data=True)
+        sum1_in_edges = graph.sorted_in_edges(m['sum1'], data=True)
+        reshape4_in_edges = graph.sorted_in_edges(m['reshape4'], data=True)
+        strideslice2_in_edges = graph.sorted_in_edges(
+            m['strideslice2'], data=True)
+
+        if len(pad_in_edges) != 2 \
+                or len(reshape1_in_edges) != 2 \
+                or len(transpose1_in_edges) != 2 \
+                or len(reshape2_in_edges) != 2 \
+                or len(strideslice1_in_edges) != 4\
+                or len(reshape3_in_edges) != 2 \
+                or len(sum1_in_edges) != 2 \
+                or len(reshape4_in_edges) != 2 \
+                or len(strideslice2_in_edges) != 4:
+            continue
+
+        src, _, in_attr = pad_in_edges[0]
+
+        _, _, paddings_in_attr = pad_in_edges[1]
+        _, _, shape1_in_attr = reshape1_in_edges[1]
+        _, _, perm_in_attr = transpose1_in_edges[1]
+        _, _, shape2_in_attr = reshape2_in_edges[1]
+        _, _, stride1_end_in_attr = strideslice1_in_edges[2]
+        _, _, shape3_in_attr = reshape3_in_edges[1]
+        _, _, sum1_in_attr = sum1_in_edges[1]
+        _, _, shape4_in_attr = reshape4_in_edges[1]
+        _, _, stride2_end_in_attr = strideslice2_in_edges[2]
+
+        signal_shapes = objs_dict['pad'].get_input_shapes()
+
+        if len(signal_shapes) < 1 \
+                or any((shape is None for shape in signal_shapes))\
+                or any((shape_item is None for shape in signal_shapes for shape_item in shape))\
+                or not paddings_in_attr['tensor'].is_const\
+                or not shape1_in_attr['tensor'].is_const\
+                or not shape2_in_attr['tensor'].is_const\
+                or not shape3_in_attr['tensor'].is_const\
+                or not shape4_in_attr['tensor'].is_const\
+                or not perm_in_attr['tensor'].is_const\
+                or not stride1_end_in_attr['tensor'].is_const\
+                or not stride2_end_in_attr['tensor'].is_const\
+                or not sum1_in_attr['tensor'].is_const:
+            continue
+
+        # Calculate parameters that need to be checked.
+        signal_shape = np.array(signal_shapes[0])
+        if signal_shape.size < 2:
+            continue
+        outer_dimensions = signal_shape[:-2]
+        outer_rank = outer_dimensions.size
+        frame_length = signal_shape[-1]
+        frames = signal_shape[-2]
+
+        # Deduce the value of the frame_step according to the parameters of the model.
+        output_length = stride2_end_in_attr['tensor'].value[-1]
+        frame_step = int((output_length - frame_length)/(frames - 1))
+
+        segments = -(-frame_length // frame_step)
+        paddings = [[0, segments], [0, segments * frame_step - frame_length]]
+        outer_paddings = np.zeros([outer_rank, 2]).astype(np.int32)
+        paddings = np.concatenate([outer_paddings, paddings], 0)
+        shape1 = _full_shape([frames + segments, segments,
+                              frame_step], outer_dimensions)
+        perm = np.concatenate([np.arange(outer_rank), np.add(
+            [outer_rank]*3, [1, 0, 2])], 0)
+        shape2 = _full_shape(
+            [(frames + segments) * segments, frame_step], outer_dimensions)
+        shape3 = _full_shape(
+            [segments, (frames + segments - 1), frame_step], outer_dimensions)
+        shape4 = _full_shape(
+            [(frames + segments - 1) * frame_step], outer_dimensions)
+        stride1_end = (frames + segments - 1) * segments
+
+        if np.any(paddings_in_attr['tensor'].value != paddings)\
+                or np.any(shape1_in_attr['tensor'].value != shape1)\
+                or np.any(shape2_in_attr['tensor'].value != shape2)\
+                or np.any(shape3_in_attr['tensor'].value != shape3)\
+                or np.any(shape4_in_attr['tensor'].value != shape4)\
+                or np.any(perm_in_attr['tensor'].value != perm)\
+                or not FLOAT_EQUAL(stride1_end_in_attr['tensor'].value[-2], stride1_end)\
+                or not FLOAT_EQUAL(int(sum1_in_attr['tensor'].value), -3):
+            continue
+
+        slice1_obj = objs_dict['strideslice1']
+        slice2_obj = objs_dict['strideslice2']
+
+        if graph._attr['framework'] == Framework.TENSORFLOW:
+            if slice1_obj.begin_mask != 6\
+                    or slice1_obj.ellipsis_mask != 1\
+                    or slice1_obj.end_mask != 4\
+                    or slice1_obj.new_axis_mask != 0\
+                    or slice1_obj.shrink_axis_mask != 0\
+                    or slice2_obj.begin_mask != 2\
+                    or slice2_obj.ellipsis_mask != 1\
+                    or slice2_obj.end_mask != 0\
+                    or slice2_obj.new_axis_mask != 0\
+                    or slice2_obj.shrink_axis_mask != 0:
+                continue
+        elif graph._attr['framework'] == Framework.TFLITE:
+            if slice1_obj.begin_mask != 7\
+                    or slice1_obj.ellipsis_mask != 0\
+                    or slice1_obj.end_mask != 5\
+                    or slice1_obj.new_axis_mask != 0\
+                    or slice1_obj.shrink_axis_mask != 0\
+                    or slice2_obj.begin_mask != 3\
+                    or slice2_obj.ellipsis_mask != 0\
+                    or slice2_obj.end_mask != 1\
+                    or slice2_obj.new_axis_mask != 0\
+                    or slice2_obj.shrink_axis_mask != 0:
+                continue
+        else:
+            continue
+
+        matched = True
+
+        graph.remove_edges_from(strideslice2_in_edges)
+        graph.add_edge(src, m['strideslice2'], **in_attr)
+        add_attr = objs_dict['strideslice2'].copied_attr()
+        add_attr.update({'frame_step': frame_step})
+        NodeWrap(graph, m['strideslice2']).replace_obj('OverlapAdd', add_attr)
+    if matched:
+        clear_redundant_nodes(graph)
 
 
 def merge_embedding_lookup_sparse(graph):

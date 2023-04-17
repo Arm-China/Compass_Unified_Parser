@@ -14,7 +14,7 @@ from .passes.front_passes import merge_gru, merge_gru2, merge_lstm, merge_zero_f
     convert_special_fakequantminmaxvars, convert_maxpoolwithargmax, convert_nms, convert_fusebatchnormv3, \
     convert_matmul, convert_invert_permutation, convert_reverse, convert_d2s_or_s2d, convert_onehot, \
     remove_isfinite_select, merge_fasterrcnn, merge_keras_maskrcnn, merge_lstm2, \
-    merge_embedding_lookup_sparse, merge_embedding_lookup_sparse_with_weights
+    merge_embedding_lookup_sparse, merge_embedding_lookup_sparse_with_weights, merge_overlap_and_add
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
@@ -47,10 +47,12 @@ def process_tf(model_path, params):
 
         from ..onnx.passes.middle_passes import convert_to_const
         from ..tf2.passes.front_passes import convert_squeeze
-        convert_to_const(graph, ['TfPlaceholderWithDefault', 'TfShape', 'TfSize', 'TfZerosLike'])
+        convert_to_const(
+            graph, ['TfPlaceholderWithDefault', 'TfShape', 'TfSize', 'TfZerosLike'])
 
         merge_embedding_lookup_sparse(graph)
         merge_embedding_lookup_sparse_with_weights(graph)
+        merge_overlap_and_add(graph)
 
         merge_zero_fraction(graph)
         convert_d2s_or_s2d(graph)
