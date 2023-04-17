@@ -6272,20 +6272,34 @@ def rearrange_linear_reshape_relu(graph):
                                    )
         for m in matches:
             linear, reshape, relu = m['linear'], m['reshape'], m['relu']
+            obj_dict = {n: NodeWrap(graph, m[n])['object'] for n in ['linear', 'reshape', 'relu']}
+            if any(obj is None for obj in obj_dict.values()):
+                ERROR('[Parser]: Meets invalid Op in rearrange_linear_reshape_relu!')
+                continue
             reshape_out_edges = graph.sorted_out_edges(reshape)
+            if len(reshape_out_edges) != 1:
+                continue
+            reshape_in_shapes = obj_dict['reshape'].get_input_shapes()
             relu_in_edges = graph.sorted_in_edges(relu, data=True)
             relu_out_edges = graph.sorted_out_edges(relu, data=True)
-            if len(reshape_out_edges) == 1:
-                for _, dst, attr in relu_out_edges:
-                    graph.remove_edge(relu, dst)
-                    graph.add_edge(reshape, dst, **attr)
-                graph.add_edge(linear, relu, **relu_in_edges[0][2])
-                graph.add_edge(relu, reshape)
-                graph.remove_edge(linear, reshape)
-                graph.remove_edge(reshape, relu)
-                if relu in graph._attr['output_names']:
-                    index = graph._attr['output_names'].index(relu)
-                    graph._attr['output_names'][index] = reshape
+            relu_out_tensor = None
+            for _, dst, attr in relu_out_edges:
+                graph.remove_edge(relu, dst)
+                graph.add_edge(reshape, dst, **attr)
+                if relu_out_tensor is None:
+                    relu_out_tensor = copy.deepcopy(attr['tensor'])
+            graph.add_edge(linear, relu, **relu_in_edges[0][2])
+            if relu_out_tensor.value is not None \
+                    and len(reshape_in_shapes) >= 1 \
+                    and reshape_in_shapes[0] is not None \
+                    and all(s is not None for s in reshape_in_shapes[0]):
+                relu_out_tensor.value = np.reshape(relu_out_tensor.value, reshape_in_shapes[0])
+            graph.add_edge(relu, reshape, **{'src_out_port': 0, 'dst_in_port': 0, 'tensor': relu_out_tensor})
+            graph.remove_edge(linear, reshape)
+            graph.remove_edge(reshape, relu)
+            if relu in graph._attr['output_names']:
+                index = graph._attr['output_names'].index(relu)
+                graph._attr['output_names'][index] = reshape
 
 
 def rearrange_pack_concat(graph):
