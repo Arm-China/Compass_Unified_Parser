@@ -2474,11 +2474,25 @@ def rename_moments(graph):
 
 def rename_mul_add_max_min(graph):
     for op_type in ['Mul', 'Add', 'Sub', 'Max', 'Min']:
+        converted = False
         matches = single_node_matcher(graph, op_type)
         for m in matches:
             eltwise = m['target']
-            eltwise_node = NodeWrap(graph, eltwise)
-            eltwise_obj = eltwise_node['object']
+            eltwise_obj = NodeWrap(graph, eltwise)['object']
+            if eltwise_obj is None:
+                ERROR('[Parser]: Meets invalid Op(%s) in rename_mul_add_max_min!' % eltwise)
+                continue
+            if eltwise_obj.type in ['Mul', 'Add', 'Sub']:
+                out_edges = graph.sorted_out_edges(eltwise, data=True)
+                if len(out_edges) != 1:
+                    continue
+                out_name = out_edges[0][1]
+                out_obj = NodeWrap(graph, out_name)['object']
+                if out_obj is None:
+                    WARN('[Parser]: Meets invalid child node for Op(%s) in rename_mul_add_max_min!' % eltwise)
+                    continue
+                if not isinstance(out_obj, BaseReluOp) or out_obj.type == 'PRelu':
+                    continue
             in_edges = graph.sorted_in_edges(eltwise, data=True)
             if len(in_edges) == 2:
                 meta_ret = True
@@ -2502,10 +2516,14 @@ def rename_mul_add_max_min(graph):
                     ERROR(
                         '[Parser]: Invalid pattern of Node(%s) to convert into Eltwise in rename_mul_add_max_min!' % eltwise)
                 if meta_ret:
+                    converted = True
                     eltwise_attr = eltwise_obj.copied_attr()
                     method = op_type.upper()
                     eltwise_attr.update({'method': method})
-                    eltwise_node.replace_obj('ArmEltwise', eltwise_attr)
+                    NodeWrap(graph, eltwise).replace_obj('ArmEltwise', eltwise_attr)
+        if op_type in ['Mul', 'Add', 'Sub'] and converted:
+            from .middle_passes import multidirectional_broadcasting
+            multidirectional_broadcasting(graph, 'ArmEltwise')
 
 
 def rename_normalization(graph):
@@ -4079,7 +4097,7 @@ def sink_double_transpose(graph):
     matched = True
     unaware_types = set(ArmOp.get_concrete_subclass_names()).intersection(
         LayoutUnawareOp.get_concrete_subclass_names())
-    unaware_types = sorted(list(unaware_types))
+    unaware_types = sorted(list(unaware_types)) + ['ArmAdd', 'ArmSub', 'ArmMul']
     matches = matched_patterns(graph,
                                nodes=[
                                    ('trans1', {'op': 'ArmTranspose'}),
@@ -4196,7 +4214,7 @@ def sink_reshape_through_cast(graph):
 def sink_transpose_with_const(graph):
     unaware_types = set(ArmOp.get_concrete_subclass_names()).intersection(
         LayoutUnawareOp.get_concrete_subclass_names())
-    unaware_types = sorted(list(unaware_types))
+    unaware_types = sorted(list(unaware_types)) + ['ArmAdd', 'ArmSub', 'ArmMul']
     matches = [matched_patterns(graph,
                                 nodes=[
                                     ('trans', {'op': 'ArmTranspose'}),
@@ -4629,6 +4647,7 @@ def back_passes(graph, params):
     simple_rename(graph, 'AccidentalHits', 'ArmAccidentalHits')
     simple_rename(graph, 'Acos', 'ArmAcos')
     simple_rename(graph, 'Acosh', 'ArmAcosh')
+    simple_rename(graph, 'Add', 'ArmAdd')
     simple_rename(graph, 'Asin', 'ArmAsin')
     simple_rename(graph, 'Asinh', 'ArmAsinh')
     simple_rename(graph, 'BatchGather', 'ArmGather')
@@ -4662,6 +4681,7 @@ def back_passes(graph, params):
     simple_rename(graph, 'MeanVarianceNormalization', 'ArmMVN')
     simple_rename(graph, 'Meshgrid', 'ArmMeshgrid')
     simple_rename(graph, 'Mod', 'ArmMod')
+    simple_rename(graph, 'Mul', 'ArmMul')
     simple_rename(graph, 'Neg', 'ArmNegative')
     simple_rename(graph, 'NormalizedMoments', 'ArmNormalizedMoments')
     simple_rename(graph, 'OverlapAdd', 'ArmOverlapAdd')
@@ -4677,6 +4697,7 @@ def back_passes(graph, params):
     simple_rename(graph, 'SpaceToDepth', 'ArmSpaceToDepth')
     simple_rename(graph, 'Split', 'ArmSplit')
     simple_rename(graph, 'Sqrt', 'ArmSqrt')
+    simple_rename(graph, 'Sub', 'ArmSub')
     simple_rename(graph, 'Tan', 'ArmTan')
     simple_rename(graph, 'Transpose', 'ArmTranspose')
     simple_rename(graph, 'ZeroFraction', 'ArmZeroFraction')
