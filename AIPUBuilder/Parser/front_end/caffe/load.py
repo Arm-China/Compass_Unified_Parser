@@ -319,7 +319,6 @@ def convert_caffe_to_graph(model_path, params):
             for out_name in graph._attr['output_names']:
                 out_layer = layer_map[out_name]
                 out_edges = graph.sorted_out_edges(out_name)
-                graph.remove_edges_from(out_edges)
                 for i, top in enumerate(out_layer.get('top', [])):
                     noop_node_name = get_valid_node_name(
                         graph, out_name + '_noop_' + str(i))

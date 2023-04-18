@@ -1454,6 +1454,7 @@ def convert_to_onnx(graph):
                     input_shape = node_obj.get_input_shapes()[0]
                     insert_constant(graph, node_name + '_sizes',
                                     np.array(input_shape[:-2] + [node_obj.height, node_obj.width], np.int64), node_name, in_port=3)
+                    new_node_attr.update({'coordinate_transformation_mode': 'align_corners'})
                 elif pure_type == 'LRN':
                     if 'k' in new_node_attr:
                         new_node_attr.update({'bias': new_node_attr['k']})
