@@ -1052,7 +1052,10 @@ class LpPoolOp(BaseOnnxPoolOp, OpHasOneOutPort):
                     },
                 11: {'kernel_shape': {'type': AttrType.INTS, 'required': True},
                      'p': {'type': AttrType.INT, 'default': '2'}
-                     }
+                     },
+                18: {'kernel_shape': {'type': AttrType.INTS, 'required': True},
+                     'p': {'type': AttrType.INT, 'default': '2'}
+                     },
                 }
 
     def __init__(self, graph, attr_dict=None):
@@ -1066,7 +1069,7 @@ class LpPoolOp(BaseOnnxPoolOp, OpHasOneOutPort):
         in_shape = inputs[0].shape[1:-1] if self.data_format == 'NHWC' \
             else inputs[0].shape[2:]
         out_shape = BaseOnnxPoolOp.cal_out_shape(
-            in_shape, self.pads, self.strides, self.kernel_shape, self.auto_pad)
+            in_shape, self.pads, self.strides, self.kernel_shape, self.auto_pad, self.dilations, ceil_mode=self.ceil_mode)
         out_tensor_shape = list(inputs[0].shape[0:1]) + out_shape + list(inputs[0].shape[-1:]) \
             if self.data_format == 'NHWC' \
             else list(inputs[0].shape[0:2]) + out_shape
