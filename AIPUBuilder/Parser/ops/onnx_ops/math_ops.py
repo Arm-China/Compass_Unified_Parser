@@ -1290,8 +1290,11 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
                     inputs = self.get_input_tensors()
                     if cur_ver >= 11:
                         try:
-                            ret = np.array(inputs[1], np.float32)
+                            if inputs[1] is not None:
+                                ret = np.array(inputs[1], np.float32)
                         except:
+                            pass
+                        if ret is None:
                             ret = np.array([], np.float32)
                 elif item == 'scales':
                     inputs = self.get_input_tensors()
@@ -1299,18 +1302,24 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
                         ret = np.array(inputs[1], np.float32)
                     else:
                         try:
-                            ret = np.array(inputs[2], np.float32)
+                            if inputs[2] is not None:
+                                ret = np.array(inputs[2], np.float32)
                         except:
-                            ret = None
+                            pass
+                        if ret is None:
+                            ret = np.array([], np.float32)
                 elif item == 'sizes':
                     inputs = self.get_input_tensors()
                     if cur_ver == 10:
                         ret = None
                     else:
                         try:
-                            ret = np.array(inputs[3], np.int64)
+                            if inputs[3] is not None:
+                                ret = np.array(inputs[3], np.int64)
                         except:
-                            ret = None
+                            pass
+                    if ret is None:
+                        ret = np.array([], np.int64)
                 elif item == 'coordinate_transformation_mode':
                     if cur_ver == 10:
                         ret = 'asymmetric'
@@ -1700,11 +1709,12 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
     def infer_shape(self):
         super(ResizeOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        if not np.all(self.scales) and not np.all(self.sizes):
+        if (self.scales is None or self.scales.size == 0) \
+                and (self.sizes is None or self.sizes.size == 0):
             ERROR('[Parser]: At least one of scales and sizes of Resize Op (%s) should be valid!' % (
                 self.name))
         input_dim_np = np.array(inputs[0].shape, np.float32)
-        if self.scales is None or self.scales.size == 0 or not np.all(self.scales):
+        if self.scales is None or self.scales.size == 0:
             self.scales = np.array(self.sizes, np.float32) / input_dim_np
         if self.cur_version == 10:
             out_shape = np.floor(
@@ -1774,36 +1784,39 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
                             np.array([], np.float32), self.name, in_port=1)
         else:
             src, _, k, in_attr = in_edges[1]
+            roi = self.roi
             if in_attr.get('tensor', None) is None \
                     or in_attr['tensor'].value is None \
-                    or np.any(np.array(in_attr['tensor'].value) != self.roi):
-                insert_constant(self._graph, self.name + '_roi',
-                                np.array(self.roi, np.float32), self.name, in_port=1)
+                    or np.any(np.array(in_attr['tensor'].value) != roi):
                 self._graph.remove_edge(src, self.name, key=k)
+                insert_constant(self._graph, self.name + '_roi',
+                                np.array(roi, np.float32), self.name, in_port=1)
 
         if len(in_edges) < 3:
             insert_constant(self._graph, self.name + '_scales', np.array(
                 self.scales if self.scales is not None else [], np.float32), self.name, in_port=2)
         else:
             src, _, k, in_attr = in_edges[2]
+            scales = self.scales
             if in_attr.get('tensor', None) is None \
                     or in_attr['tensor'].value is None \
-                    or np.any(np.array(in_attr['tensor'].value) != self.scales):
+                    or np.any(np.array(in_attr['tensor'].value) != scales):
                 self._graph.remove_edge(src, self.name, key=k)
                 insert_constant(self._graph, self.name + '_scales', np.array(
-                    self.scales if self.scales is not None else [], np.float32), self.name, in_port=2)
+                    scales if scales is not None else [], np.float32), self.name, in_port=2)
 
         if len(in_edges) < 4:
             insert_constant(self._graph, self.name + '_sizes', np.array(
                 self.sizes if self.sizes is not None else [], np.int64), self.name, in_port=3)
         else:
             src, _, k, in_attr = in_edges[3]
+            sizes = self.sizes
             if in_attr.get('tensor', None) is None \
                     or in_attr['tensor'].value is None \
-                    or np.any(np.array(in_attr['tensor'].value) != self.sizes):
+                    or np.any(np.array(in_attr['tensor'].value) != sizes):
                 self._graph.remove_edge(src, self.name, key=k)
                 insert_constant(self._graph, self.name + '_sizes', np.array(
-                    self.sizes if self.sizes is not None else [], np.int64), self.name, in_port=3)
+                    sizes if sizes is not None else [], np.int64), self.name, in_port=3)
 
 
 class RoundOp(LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
