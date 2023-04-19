@@ -167,12 +167,16 @@ def convert_1d_pooling(graph):
                     insert_reshape(
                         graph, src, pool, in_attr, pre_reshape_dim, data_format=pool_obj.data_format)
 
+                    pool_out_tensor = None
                     post_reshape = get_valid_node_name(
                         graph, pool + '_post_reshape')
                     for _, dst, out_attr in out_edges:
                         graph.remove_edge(pool, dst)
                         graph.add_edge(post_reshape, dst, **out_attr)
-                    graph.add_edge(pool, post_reshape)
+                        if pool_out_tensor is None:
+                            pool_out_tensor = copy.deepcopy(out_attr['tensor'])
+                    graph.add_edge(
+                        pool, post_reshape, **{'src_out_port': 0, 'dst_in_port': 0, 'tensor': pool_out_tensor})
                     NodeWrap(graph, post_reshape).replace_obj(
                         'Reshape', {'name': post_reshape, 'opset_version': 5})
                     insert_constant(graph, post_reshape + '_shape', np.array(post_reshape_dim,
