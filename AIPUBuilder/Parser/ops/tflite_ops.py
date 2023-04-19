@@ -2405,7 +2405,7 @@ class LiteSOFTMAXOp(OpHasAxis, OpHasOneOutPort, TfliteOp):
 
     @property
     def correspond_onnx_op(self):
-        return {'type': 'Softmax', 'version': 1}
+        return {'type': 'Softmax', 'version': 13}
 
 
 class LiteSPACE_TO_BATCH_NDOp(OpHasOneOutPort, TfliteOp):

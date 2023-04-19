@@ -3811,7 +3811,7 @@ def merge_softmax(graph):
             graph.add_edge(src, m['div'], **in_attr)
             softmax_attr = obj_dict['div'].copied_attr()
             softmax_attr.update(
-                {'opset_version': 1, 'axis': obj_dict['sum'].axes[0]})
+                {'opset_version': 13, 'axis': obj_dict['sum'].axes[0]})
             NodeWrap(graph, m['div']).replace_obj(
                 'Softmax', softmax_attr)
     if matched:

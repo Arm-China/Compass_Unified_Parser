@@ -1724,7 +1724,7 @@ class CaffeSOFTMAXOp(OpHasAxis, OpHasOneOutPort, CaffeOp):
 
     @property
     def correspond_onnx_op(self):
-        return {'type': 'Softmax', 'version': 11}
+        return {'type': 'Softmax', 'version': 13}
 
 
 class CaffeSOFTMAX_LOSSOp(OpHasOneOutPort, CaffeOp):

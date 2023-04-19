@@ -1962,9 +1962,49 @@ class SoftmaxOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
     def infer_shape(self):
         super(SoftmaxOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = torch.nn.functional.softmax(
-            torch.from_numpy(inputs[0]), dim=self.axis).numpy()
+        if self.cur_version < 13:
+            input_shape = inputs[0].shape
+            inner_dim = [-1, 1] \
+                if self.axis == 0 \
+                else [int(np.prod(input_shape[:self.axis])), int(np.prod(input_shape[self.axis:]))]
+            inp = np.reshape(inputs[0], inner_dim)
+            out_tensor = torch.nn.functional.softmax(
+                torch.from_numpy(inp), dim=0 if self.axis == 0 else -1).numpy()
+            out_tensor = np.reshape(out_tensor, input_shape)
+        else:
+            out_tensor = torch.nn.functional.softmax(
+                torch.from_numpy(inputs[0]), dim=self.axis).numpy()
         self.set_out_tensor(out_tensor)
+
+    def convert_version(self):
+        max_ver = type(self).max_ver()
+        cur_ver = self.cur_version
+        if cur_ver < 13:
+            in_edges = self._graph.sorted_in_edges(self.name, data=True)
+            inputs = self.get_input_tensors()
+            if len(in_edges) != 1 \
+                    or len(inputs) != 1 \
+                    or inputs[0] is None:
+                ERROR('[Parser}: Meets invalid Softmax (%s) in convert_version!' % self.name)
+                return
+            input_shape = inputs[0].shape
+            if self.axis < 0:
+                self.axis += len(input_shape)
+            if self.axis != len(input_shape) - 1:
+                from ...front_end.onnx.passes.common_passes import insert_reshape, insert_reshape_after
+                pre_dim = [-1, 1] \
+                    if self.axis == 0 \
+                    else [int(np.prod(input_shape[:self.axis])), int(np.prod(input_shape[self.axis:]))]
+                post_dim = list(input_shape)
+                if self.axis > 1:
+                    self.axis = 1
+                src, _, in_attr = in_edges[0]
+                insert_reshape(self._graph, src, self.name, in_attr, pre_dim)
+                post_reshape = insert_reshape_after(self._graph, self.name, post_dim)
+                if self.name in self._graph._attr['output_names']:
+                    index = self._graph._attr['output_names'].index(self.name)
+                    self._graph._attr['output_names'][index] = post_reshape
+        self.cur_version = max_ver
 
 
 class SoftplusOp(LayoutUnawareOp, BaseActivationOp, OnnxOp):

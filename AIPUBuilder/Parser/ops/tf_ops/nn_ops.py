@@ -833,7 +833,7 @@ class TfSoftmaxOp(OpHasAxis, OpHasOneOutPort, TfOp):
 
     @property
     def correspond_onnx_op(self):
-        return {'type': 'Softmax', 'version': 11}
+        return {'type': 'Softmax', 'version': 13}
 
 
 class TfSpaceToDepthOp(LayoutConcernedOp, OpHasOneOutPort, TfOp):
