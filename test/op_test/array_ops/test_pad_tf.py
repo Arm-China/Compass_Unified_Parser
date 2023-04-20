@@ -46,7 +46,7 @@ def create_mirror_pad_model(pb_file_path, input_size, paddings, constant_values)
 
 TEST_NAME = 'pad'
 
-input_shape = [[10, 20, 30, 40, 50], 10, [1, 8, 26, 512]]
+input_shape = [[2, 8, 12, 5, 20], 10, [1, 8, 6, 12]]
 paddings = [[[0, 0], [3, 4], [5, 6], [0, 0], [9, 10]],
             [[1, 2]], [[0, 0], [1, 1], [1, 1], [0, 0]]]
 constant_values = [0, 0, 0]

@@ -552,7 +552,8 @@ class PadOp(OpHasOneOutPort, OnnxOp):
                     'value': {'type': AttrType.FLOAT, 'default': 0.0}
                     },
                 11: {'mode': {'type': AttrType.STRING, 'default': 'constant', 'options': ['constant', 'reflect', 'edge', 'symmetric']}},
-                13: {'mode': {'type': AttrType.STRING, 'default': 'constant', 'options': ['constant', 'reflect', 'edge', 'symmetric']}}
+                13: {'mode': {'type': AttrType.STRING, 'default': 'constant', 'options': ['constant', 'reflect', 'edge', 'symmetric']}},
+                18: {'mode': {'type': AttrType.STRING, 'default': 'constant', 'options': ['constant', 'reflect', 'edge', 'symmetric']}},
                 }
 
     def __init__(self, graph, attr_dict=None):
@@ -570,6 +571,14 @@ class PadOp(OpHasOneOutPort, OnnxOp):
                 elif cur_ver >= 11:
                     inputs = self.get_input_tensors()
                     ret = inputs[1].flatten().tolist()
+                    if cur_ver >= 18 and len(inputs) > 3 and inputs[3] is not None and len(inputs[3]) > 0:
+                        axes = inputs[3].tolist()
+                        input_length = len(inputs[0].shape)
+                        new_pads = np.zeros([input_length * 2], np.int64)
+                        positive_axes = [(axis + input_length) if axis < 0 else axis for axis in axes]
+                        complete_idx = positive_axes + [(axis + input_length) for axis in positive_axes]
+                        np.put(new_pads, complete_idx, np.array(ret[:(len(axes) * 2)]))
+                        ret = new_pads.tolist()
             elif item == 'value':
                 if cur_ver <= 2:
                     ret = self.__dict__['_attr'][item].value
@@ -595,15 +604,24 @@ class PadOp(OpHasOneOutPort, OnnxOp):
             pads = self.pads
             const_value = self.value
         else:
-            pads = inputs[1].flatten().tolist()
+            pads = self.pads
             const_value = 0 if len(inputs) <= 2 or (
                 len(inputs) > 2 and inputs[2] is None) else np.asscalar(inputs[2].flatten())
+        negative_pads = [pad if pad < 0 else None for pad in pads]
+        if all(pad is None for pad in negative_pads):
+            sliced_input = inputs[0]
+        else:
+            input_length = len(inputs[0].shape)
+            slice_obj = [slice(-begin if begin is not None else None, end, 1)
+                         for begin, end in zip(negative_pads[:input_length], negative_pads[input_length:])]
+            sliced_input = inputs[0][tuple(slice_obj)]
+            pads = [pad if pad >= 0 else 0 for pad in pads]
         if self.mode in ('reflect', 'symmetric'):
             pads = np.reshape(np.array(pads, np.int32), (2, -1))
             pads = np.transpose(pads)
-            out_tensor = np.pad(inputs[0], pads, mode=self.mode)
+            out_tensor = np.pad(sliced_input, pads, mode=self.mode)
         else:
-            torch_input = torch.from_numpy(inputs[0])
+            torch_input = torch.from_numpy(sliced_input)
             out_tensor = torch.nn.functional.pad(torch_input,
                                                  OpHasPaddingStrides.onnx_to_torch(
                                                      pads),

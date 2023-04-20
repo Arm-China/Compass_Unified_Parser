@@ -2580,22 +2580,44 @@ def rename_onehot(graph):
 
 
 def rename_pad(graph):
+    need_clear = False
     matches = single_node_matcher(graph, 'Pad')
     for m in matches:
         pad = m['target']
         pad_obj = NodeWrap(graph, pad)['object']
-        if pad_obj is not None:
+        in_edges = graph.sorted_in_edges(pad, data=True)
+        if pad_obj is not None and len(in_edges) >= 1:
+            pads_value = pad_obj.pads
+            negative_pads = [val if val < 0 else 0 for val in pads_value]
+            if any(val != 0 for val in negative_pads):
+                input_shapes = pad_obj.get_input_shapes()
+                if len(input_shapes) < 1 or input_shapes[0] is None or None in input_shapes[0]:
+                    ERROR('[Parser]: Meets invalid input shape of Pad Node(%s) in rename_pad!' % pad)
+                    continue
+                input_length = len(input_shapes[0])
+                if len(pads_value) != input_length * 2:
+                    ERROR('[Parser]: Meets invalid pads of Pad Node(%s) in rename_pad!' % pad)
+                    continue
+                src, _, in_attr = in_edges[0]
+                begins = (-1 * np.array(negative_pads[:input_length])).tolist()
+                sizes = (np.array(input_shapes[0]) +
+                         np.array(negative_pads[:input_length]) +
+                         np.array(negative_pads[input_length:])).tolist()
+                insert_slice(graph, src, pad, in_attr, begins, sizes, type='ArmSlice')
+                pads_value = [val if val >= 0 else 0 for val in pads_value]
             pad_attr = pad_obj.copied_attr()
-            pad_attr.update({'pads': pad_obj.pads})
+            pad_attr.update({'pads': pads_value})
             pad_attr.update({'constant_value': float(pad_obj.value)})
             if pad_attr['mode'] == 'edge':
                 pad_attr['mode'] = 'symmetric'
             NodeWrap(graph, pad).replace_obj('ArmPad', pad_attr)
-            in_edges = graph.sorted_in_edges(pad)
             if len(in_edges) > 1:
+                need_clear = True
                 graph.remove_edges_from(in_edges[1:])
         else:
-            ERROR('[Parser]: invalid Pad op for Node(%s) in rename_pad!' % pad)
+            ERROR('[Parser]: Meets invalid Pad Node(%s) in rename_pad!' % pad)
+    if need_clear:
+        clear_redundant_nodes(graph)
 
 
 def rename_pool(graph):
