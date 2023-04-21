@@ -13,7 +13,7 @@ from ....graph.node_wrap import NodeWrap
 from ....graph.graph_algo import determined_sort, get_valid_node_name, clear_redundant_nodes, has_path, infer
 from ....graph.pattern_match import matched_patterns, single_node_matcher, two_nodes_matcher
 from ....ops.op import Op, LayoutUnawareOp, BaseLinearOp, BaseActivationOp, BaseReluOp, OpHasWeights, OpHasBiases, \
-    ArmOp, OpHasAxis, BaseQuantizeDequantizeOp
+    ArmOp, OpHasAxis, BaseQuantizeDequantizeOp, BaseRnnOp
 from ....ops.onnx_ops.array_ops import ReshapeOp
 from ....ops.release_ops import ArmCastOp, ArmConvolutionOp, ArmConvolution3DOp, ArmConvIntegerOp, ArmDecodeBoxOp, \
     ArmDepthwiseConvOp, ArmConvTransposeOp, ArmConvTranspose3DOp, ArmActivationOp
@@ -22,7 +22,8 @@ from .rename_ops import simple_rename
 from .common_passes import remove_node_safely, insert_cast, insert_cast_after, insert_tile, \
     insert_reshape, insert_reshape_after, insert_constant, \
     insert_slice, insert_transpose, remove_redundant_bn, remove_redundant_reshape, remove_redundant_transpose, \
-    remove_redundant_transpose_pro, remove_useless_op, fuse_const, insert_gather, remove_redundant_cast
+    remove_redundant_transpose_pro, remove_useless_op, fuse_const, insert_gather, remove_redundant_cast, \
+    insert_transpose_after
 from ....plugin_loader import PARSER_OP_DICT
 
 
@@ -616,26 +617,7 @@ def convert_uni_lstm(graph):
                     last_name = reshape
                     if not lstm_obj.layout:
                         post_trans_perm = [1, 2, 0, 3] if p == 0 else [1, 0, 2]
-                        post_trans = get_valid_node_name(
-                            graph, reshape + '_post_transpose')
-                        reshape_out_edges = graph.sorted_out_edges(
-                            reshape, data=True)
-                        reshape_out_tensor = None
-                        for _, dst, out_attr in reshape_out_edges:
-                            if out_attr.get('tensor', None) is not None:
-                                reshape_out_tensor = out_attr['tensor'].value
-                                reshape_out_tensor = np.transpose(reshape_out_tensor, [
-                                                                  post_trans_perm.index(i) for i in range(len(post_trans_perm))])
-                            graph.remove_edge(reshape, dst)
-                            graph.add_edge(post_trans, dst, **out_attr)
-                        graph.add_edge(reshape, post_trans, **{
-                                       'src_out_port': 0, 'dst_in_port': 0, 'tensor': Tensor(value=reshape_out_tensor)})
-                        post_trans_attr = lstm_obj.copied_attr()
-                        post_trans_attr.update(
-                            {'name': post_trans, 'perm': post_trans_perm, 'opset_version': 1})
-                        NodeWrap(graph, post_trans).replace_obj(
-                            'Transpose', post_trans_attr)
-                        last_name = post_trans
+                        last_name = insert_transpose_after(graph, reshape, post_trans_perm)
                     last_names.append(last_name)
 
                 if lstm in graph._attr['output_names'] and last_names:
@@ -3962,6 +3944,16 @@ def trim_weights(graph):
                 node_obj.zero_point = _data_in_supported_dtype(node_obj.zero_point, 'zero_point', node_name)
                 node_obj.zero_point_offset = offset
                 offset += node_obj.zero_point.size * node_obj.zero_point.dtype.itemsize
+            if isinstance(node_obj, BaseRnnOp) \
+                    and node_obj.activations_scale is not None \
+                    and node_obj.activations_zp is not None:
+                node_obj.activations_scale = _data_in_supported_dtype(
+                    node_obj.activations_scale, 'activations_scale', node_name)
+                node_obj.activations_scale_offset = offset
+                offset += node_obj.activations_scale.size * node_obj.activations_scale.dtype.itemsize
+                node_obj.activations_zp = _data_in_supported_dtype(node_obj.activations_zp, 'activations_zp', node_name)
+                node_obj.activations_zp_offset = offset
+                offset += node_obj.activations_zp.size * node_obj.activations_zp.dtype.itemsize
             if isinstance(node_obj, PluginOp) \
                     and node_obj.constants:
                 # Keep the original dtype for constants in Plugin

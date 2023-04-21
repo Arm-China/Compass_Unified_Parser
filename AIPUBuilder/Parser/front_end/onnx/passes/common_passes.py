@@ -725,21 +725,22 @@ def insert_reshape_after(graph, src, new_dim, old_dim=None, out_port=0, type='Re
                 new_out_attr = copy.deepcopy(out_attr)
                 new_out_attr['src_out_port'] = 0
                 graph.add_edge(reshape, dst, **new_out_attr)
-                if new_out_attr.get('tensor', None) is not None \
-                        and new_out_attr['tensor'].value is not None:
-                    if old_dim:
-                        new_src_out_tensor = np.reshape(
-                            new_out_attr['tensor'].value, newshape=old_dim)
-                        src_out_attr.update(
-                            {'tensor': Tensor(value=new_src_out_tensor)})
-                    elif new_dim and new_dim != list(new_out_attr['tensor'].value.shape):
-                        new_src_out_tensor = np.reshape(
-                            new_out_attr['tensor'].value, newshape=new_dim)
-                        src_out_attr.update(
-                            {'tensor': Tensor(value=new_src_out_tensor)})
-                    if src_out_attr.get('tensor', None) is not None \
-                            and (new_out_attr['tensor'].dtype is not None
-                                 or len(new_out_attr['tensor'].scale_zp) > 0):
+                if new_out_attr.get('tensor', None) is not None:
+                    if new_out_attr['tensor'].value is not None:
+                        if old_dim:
+                            new_src_out_tensor = np.reshape(
+                                new_out_attr['tensor'].value, newshape=old_dim)
+                            src_out_attr.update(
+                                {'tensor': Tensor(value=new_src_out_tensor)})
+                        elif new_dim and new_dim != list(new_out_attr['tensor'].value.shape):
+                            new_src_out_tensor = np.reshape(
+                                new_out_attr['tensor'].value, newshape=new_dim)
+                            src_out_attr.update(
+                                {'tensor': Tensor(value=new_src_out_tensor)})
+                    if new_out_attr['tensor'].dtype is not None \
+                            or len(new_out_attr['tensor'].scale_zp) > 0:
+                        if src_out_attr.get('tensor', None) is None:
+                            src_out_attr.update({'tensor': Tensor()})
                         src_out_attr['tensor'].dtype = new_out_attr['tensor'].dtype
                         src_out_attr['tensor'].scale_zp = new_out_attr['tensor'].scale_zp
         graph.add_edge(src, reshape, **src_out_attr)

@@ -1760,7 +1760,10 @@ class BaseRnnOp(OpHasMethod, OpHasVariableOutPorts):
             'method': {'required': False, 'default': 'Y', 'options': ['Y', 'C', 'H', 'YH', 'YC', 'CH', 'YCH']},
             'forget_bias': {'type': AttrType.INT, 'required': False, 'default': None},
             'forget_bias_scale_zp': {'type': AttrType.TENSORS, 'required': False, 'default': None},
-            'activations_scale_zp': {'type': AttrType.TENSORS, 'required': False, 'default': None},
+            'activations_scale': {'type': AttrType.TENSOR, 'required': False, 'default': None},
+            'activations_scale_offset': {'type': AttrType.INT, 'default': -1},
+            'activations_zp': {'type': AttrType.TENSOR, 'required': False, 'default': None},
+            'activations_zp_offset': {'type': AttrType.INT, 'default': -1},
         }
 
     def __init__(self, graph, attr_dict=None):
@@ -1792,14 +1795,35 @@ class BaseRnnOp(OpHasMethod, OpHasVariableOutPorts):
                                    num_list_to_string(forget_bias_scale))
                     txt_file.write('forget_bias_zp=[%s]\n' %
                                    num_list_to_string(forget_bias_zp))
-                if self.activations_scale_zp is not None \
-                        and len(self.activations_scale_zp) == 2:
-                    activations_scale = np.array(self.activations_scale_zp[0]).tolist()
-                    activations_zp = np.array(self.activations_scale_zp[1]).tolist()
-                    txt_file.write('activations_scale=[%s]\n' %
-                                   num_list_to_string(activations_scale))
-                    txt_file.write('activations_zp=[%s]\n' %
-                                   num_list_to_string(activations_zp))
+                if self.activations_scale is not None \
+                        and self.activations_zp is not None:
+                    activations_scale = self.activations_scale
+                    activations_zp = self.activations_zp
+                    txt_file.write('activations_scale_type=%s\n' % str(activations_scale.dtype))
+                    txt_file.write('activations_scale_offset=%d\n' % self.activations_scale_offset)
+                    txt_file.write('activations_scale_size=%d\n' %
+                                   (activations_scale.size * activations_scale.dtype.itemsize))
+                    txt_file.write('activations_scale_shape=[%s]\n' % num_list_to_string(list(activations_scale.shape)))
+                    txt_file.write('activations_zp_type=%s\n' % str(activations_zp.dtype))
+                    txt_file.write('activations_zp_offset=%d\n' % self.activations_zp_offset)
+                    txt_file.write('activations_zp_size=%d\n' % (activations_zp.size * activations_zp.dtype.itemsize))
+                    txt_file.write('activations_zp_shape=[%s]\n' % num_list_to_string(list(activations_zp.shape)))
+        return ret
+
+    def write_scale_zp(self, bin_file):
+        ret = True
+        if not self.quantize:
+            return ret
+        if not bin_file.closed and bin_file.mode == 'wb':
+            if self.activations_scale is not None and self.activations_scale_offset >= 0 \
+                    and self.activations_zp is not None and self.activations_zp_offset >= 0:
+                Op.numpy_to_bin(bin_file, self.activations_scale, self.activations_scale_offset, self.name)
+                Op.numpy_to_bin(bin_file, self.activations_zp, self.activations_zp_offset, self.name)
+            else:
+                ERROR('[Parser]: Invalid scale/zp for Node %s in write_scale_zp!' % self.name)
+        else:
+            FATAL('[Parser]: Invalid file to write scale/zp for Node(%s) in write_scale_zp!' %
+                  (self.name))
         return ret
 
 

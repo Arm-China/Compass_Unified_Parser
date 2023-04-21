@@ -1204,7 +1204,7 @@ def merge_quantized_lstm(graph):
 
 def merge_quantized_lstm2(graph):
     '''
-    Merge quantized lstm. The cell matches are different with merge_quantized_lstm.
+    Merge quantized lstm(crnn). The cell matches are different with merge_quantized_lstm.
     And the first cell merges the initial hidden state(H0) to biases, which may introduce
     errors if trying to calculate H0. Therefore, only merge the latter timesteps to lstm,
     and the first timestep is not merged.
@@ -1390,6 +1390,7 @@ def merge_quantized_lstm2(graph):
         final_hout_list = [first_cell_match['mul_hout']]
         dequant_recurrent_weights, recurrent_weights, recurrent_weights_scale_zp = None, None, None
         dequant_biases, biases, biases_scale_zp = None, None, None
+        activations_scale_list, activations_zp_list = [], []
         is_same_lstm = True
         for idx, (parent_out_port, cell_match) in enumerate(cell_matches):
             exp_out_port = (len(cell_matches) - 1 - idx) if is_reverse_lstm else idx
@@ -1446,6 +1447,16 @@ def merge_quantized_lstm2(graph):
                 is_same_lstm = False
                 break
             final_hout_list.append(cell_match['mul_hout'])
+            # get scale/zp from the output tensor of sum0, icfo, mul_i_and_c, mul_f_and_c_prev, c_lut,
+            # cout and hout
+            act_nodes = [cell_match[name] for name in
+                         ['add_bias', 'sigmoid_sp0', 'tanh_sp2', 'sigmoid_sp1', 'sigmoid_sp3',
+                          'mul_sp01', 'mul_sp2', 'tanh_c', 'add_cout', 'mul_hout']]
+            activations_scale, activations_zp = get_out_tensor_scale_zp(graph, act_nodes)
+            if None in activations_scale or None in activations_zp:
+                break
+            activations_scale_list.append(activations_scale)
+            activations_zp_list.append(activations_zp)
         if not is_same_lstm:
             continue
 
@@ -1466,6 +1477,8 @@ def merge_quantized_lstm2(graph):
         # Get the final outputs of the hidden and the cell
         final_hout = cell_matches[-1][1]['mul_hout']
         final_hout_out_edges = graph.sorted_out_edges(final_hout, data=True)
+        if len(final_hout_out_edges) < 1:
+            continue
         final_cout = cell_matches[-1][1]['add_cout']
         final_cout_out_edges = graph.sorted_out_edges(final_cout, data=True)
 
@@ -1479,6 +1492,7 @@ def merge_quantized_lstm2(graph):
         NodeWrap(graph, split).replace_obj('Split',
                                            {'name': split,
                                             'opset_version': 11,
+                                            'quantize': 1,
                                             'axis': 0,
                                             'split': [lstm_timestep_num, 1] if is_reverse_lstm else [1, lstm_timestep_num]})
         # Connect split with fc from the first cell and merged lstm
@@ -1490,17 +1504,25 @@ def merge_quantized_lstm2(graph):
             split_to_fc_out_attr['tensor'].value = np.expand_dims(first_cell_fc_in_attr['tensor'].value, 0)
         graph.add_edge(split, first_cell_fc, **split_to_fc_out_attr)
         split_to_lstm_out_attr = {'src_out_port': 0 if is_reverse_lstm else 1}
+        if first_cell_fc_in_attr['tensor'] is not None:
+            split_to_lstm_out_attr.update({'tensor': Tensor(dtype=first_cell_fc_in_attr['tensor'].dtype,
+                                                            scale_zp=first_cell_fc_in_attr['tensor'].scale_zp)})
         graph.add_edge(split, lstm, **split_to_lstm_out_attr)
         insert_reshape(graph, split, first_cell_fc, split_to_fc_out_attr, [batch_size, input_size])
         # Add concat node to concat the output of the first cell and the merged lstm
         concat = get_valid_node_name(graph, lstm + '_concat')
         # Connect lstm and initial_h(which is also the output of the first cell) to concat
         lstm_y_out_attr = {'src_out_port': 0, 'dst_in_port': 0 if is_reverse_lstm else 1}
+        hout_out_attr = final_hout_out_edges[0][2]
+        if hout_out_attr['tensor'] is not None:
+            lstm_y_out_attr.update({'tensor': Tensor(dtype=hout_out_attr['tensor'].dtype,
+                                                     scale_zp=hout_out_attr['tensor'].scale_zp)})
         graph.add_edge(lstm, concat, **lstm_y_out_attr)
-        first_cell_h_out_attr = {'dst_in_port': 1 if is_reverse_lstm else 0}
+        first_cell_h_out_attr = copy.deepcopy(initial_h_out_edges[0][2])
+        first_cell_h_out_attr.update({'dst_in_port': 1 if is_reverse_lstm else 0})
         graph.add_edge(initial_h, concat, **first_cell_h_out_attr)
         insert_reshape(graph, initial_h, concat, first_cell_h_out_attr, [1, batch_size, hidden_size])
-        NodeWrap(graph, concat).replace_obj('Concat', {'name': concat, 'opset_version': 13, 'axis': 0})
+        NodeWrap(graph, concat).replace_obj('Concat', {'name': concat, 'opset_version': 13, 'quantize': 1, 'axis': 0})
         # Connect the dst nodes of pack/reverse with concat/lstm
         final_yout_out_edges = graph.sorted_out_edges(final_yout, data=True)
         for _, dst, out_attr in final_yout_out_edges:
@@ -1573,12 +1595,15 @@ def merge_quantized_lstm2(graph):
                        initial_h_out_attr, initial_hc_shape)
         lstm_attr = {'name': lstm,
                      'opset_version': 14,
+                     'quantize': 1,
                      'layout': False,
                      'hidden_size': hidden_size,
                      'direction': 'reverse' if is_reverse_lstm else 'forward',
-                     'weights_scale_zp': [[weights_scale_zp[0], recurrent_weights_scale_zp[0]],
-                                          [weights_scale_zp[1], recurrent_weights_scale_zp[1]]],
-                     'biases_scale_zp': biases_scale_zp}
+                     'weights_scale_zp': [np.array([weights_scale_zp[0], recurrent_weights_scale_zp[0]]),
+                                          np.array([weights_scale_zp[1], recurrent_weights_scale_zp[1]])],
+                     'biases_scale_zp': [np.array(biases_scale_zp[0]), np.array(biases_scale_zp[1])],
+                     'activations_scale': np.array(activations_scale_list, np.float32),
+                     'activations_zp': np.array(activations_zp_list, np.int32)}
         NodeWrap(graph, lstm).replace_obj('LSTM', lstm_attr)
 
     if matched:
@@ -1802,7 +1827,8 @@ def merge_quantized_lstm_cell(graph):
                      'weights_scale_zp': [np.array([weights_scale_zp[0].item(), recurrent_weights_scale_zp[0].item()], np.float32),
                                           np.array([weights_scale_zp[1].item(), recurrent_weights_scale_zp[1].item()], np.int32)],
                      'biases_scale_zp': biases_scale_zp,
-                     'activations_scale_zp': [np.array(activations_scale), np.array(activations_zp)]}
+                     'activations_scale': np.array(activations_scale, np.float32),
+                     'activations_zp': np.array(activations_zp, np.int32)}
         NodeWrap(graph, lstm).replace_obj('LSTM', lstm_attr)
 
     if matched:
@@ -1991,7 +2017,8 @@ def merge_quantized_lstm_cell2(graph):
                      'direction': 'forward',
                      'weights_scale_zp': weights_scale_zp,
                      'biases_scale_zp': biases_scale_zp,
-                     'activations_scale_zp': [np.array(activations_scale), np.array(activations_zp)]}
+                     'activations_scale': np.array(activations_scale, np.float32),
+                     'activations_zp': np.array(activations_zp, np.int32)}
         NodeWrap(graph, lstm).replace_obj('LSTM', lstm_attr)
 
     if matched:
