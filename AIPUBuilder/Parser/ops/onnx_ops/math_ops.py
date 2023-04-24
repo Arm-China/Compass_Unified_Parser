@@ -1263,6 +1263,27 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
                      'nearest_mode': {'type': AttrType.STRING,
                                       'default': 'round_prefer_floor',
                                       'options': ['simple', 'round_prefer_floor', 'round_prefer_ceil', 'floor', 'ceil']},
+                     },
+                18: {'antialias': {'type': AttrType.BOOL, 'default': False},
+                     'axes': {'type': AttrType.INTS, 'default': None},
+                     'coordinate_transformation_mode': {'type': AttrType.STRING,
+                                                        'default': 'half_pixel',
+                                                        'options': ['half_pixel',
+                                                                    'pytorch_half_pixel',
+                                                                    'align_corners',
+                                                                    'asymmetric',
+                                                                    'tf_crop_and_resize']
+                                                        },
+                     'cubic_coeff_a': {'type': AttrType.FLOAT, 'default': -0.75},
+                     'exclude_outside': {'type': AttrType.INT, 'default': 0},
+                     'extrapolation_value': {'type': AttrType.FLOAT, 'default': 0.0},
+                     'keep_aspect_ratio_policy': {'type': AttrType.STRING,
+                                                  'default': 'stretch',
+                                                  'options': ['stretch', 'not_larger', 'not_smaller']},
+                     'mode': {'type': AttrType.STRING, 'default': 'nearest', 'options': ['nearest', 'linear', 'cubic']},
+                     'nearest_mode': {'type': AttrType.STRING,
+                                      'default': 'round_prefer_floor',
+                                      'options': ['simple', 'round_prefer_floor', 'round_prefer_ceil', 'floor', 'ceil']},
                      }
                 }
 
@@ -1283,7 +1304,8 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
             ret = super(ResizeOp, self).__getattr__(item)
         except:
             ret = None
-        if ret is None and item in ('roi', 'scales', 'sizes', 'coordinate_transformation_mode', 'extrapolation_value'):
+        if ret is None and item in ('roi', 'scales', 'sizes', 'coordinate_transformation_mode', 'extrapolation_value',
+                                    'antialias', 'axes', 'keep_aspect_ratio_policy'):
             try:
                 cur_ver = self.__dict__['_attr']['cur_version'].value
                 if item == 'roi':
@@ -1292,6 +1314,13 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
                         try:
                             if inputs[1] is not None:
                                 ret = np.array(inputs[1], np.float32)
+                                axes = self.axes
+                                if cur_ver >= 18 and axes is not None:
+                                    input_length = len(inputs[0].shape)
+                                    new_roi = np.array([0] * input_length + [1] * input_length, np.float32)
+                                    complete_idx = axes + [(axis + input_length) for axis in axes]
+                                    np.put(new_roi, complete_idx, np.array(ret[:(len(axes) * 2)]))
+                                    ret = new_roi
                         except:
                             pass
                         if ret is None:
@@ -1304,6 +1333,13 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
                         try:
                             if inputs[2] is not None:
                                 ret = np.array(inputs[2], np.float32)
+                                axes = self.axes
+                                if cur_ver >= 18 and axes is not None:
+                                    input_length = len(inputs[0].shape)
+                                    new_scales = np.ones([input_length], np.float32)
+                                    complete_idx = axes + [(axis + input_length) for axis in axes]
+                                    np.put(new_scales, complete_idx, np.array(ret[:len(axes)]))
+                                    ret = new_scales
                         except:
                             pass
                         if ret is None:
@@ -1316,6 +1352,13 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
                         try:
                             if inputs[3] is not None:
                                 ret = np.array(inputs[3], np.int64)
+                                axes = self.axes
+                                if cur_ver >= 18 and axes is not None:
+                                    input_length = len(inputs[0].shape)
+                                    new_sizes = np.array(inputs[0].shape, np.int64)
+                                    complete_idx = axes + [(axis + input_length) for axis in axes]
+                                    np.put(new_sizes, complete_idx, np.array(ret[:len(axes)]))
+                                    ret = new_sizes
                         except:
                             pass
                     if ret is None:
@@ -1332,6 +1375,29 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
                         ret = 0.0
                         self.__dict__['_attr'][item] = Attribute(
                             item, {'type': AttrType.FLOAT, 'value': ret})
+                elif item == 'antialias':
+                    if cur_ver >= 18:
+                        ret = self.__dict__['_attr'][item].value
+                    else:
+                        ret = False
+                        if item not in self.__dict__['_attr']:
+                            self.__dict__['_attr'][item] = Attribute(
+                                item, {'type': AttrType.BOOL, 'value': ret})
+                        else:
+                            self.__dict__['_attr'][item].value = ret
+                elif item == 'axes':
+                    if cur_ver >= 18:
+                        ret = self.__dict__['_attr'][item].value
+                        if ret is not None:
+                            input_length = len(self.get_input_shapes()[0])
+                            ret = [(axis + input_length) if axis < 0 else axis for axis in ret]
+                    else:
+                        ret = None
+                elif item == 'keep_aspect_ratio_policy':
+                    if cur_ver >= 18:
+                        ret = self.__dict__['_attr'][item].value
+                    else:
+                        ret = 'stretch'
             except:
                 ret = None
         return ret
@@ -1355,7 +1421,7 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
             super(ResizeOp, self).__setattr__(item, value)
 
     @staticmethod
-    def get_nearest_pixel(nearest_mode, x_original, is_down_sample):
+    def get_nearest_pixel(nearest_mode, x_original, is_down_sample=False):
         # Use around to avoid errors between onnx runtime and this implementation because
         # most decimal fractions can't be represented exactly as a float, for example
         # 25.00000031370866 is used to represent 25. Then, we will get unexpected ceil
@@ -1715,6 +1781,23 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
                 self.name))
         input_dim_np = np.array(inputs[0].shape, np.float32)
         if self.scales is None or self.scales.size == 0:
+            if self.keep_aspect_ratio_policy in ('not_larger', 'not_smaller'):
+                axes = self.axes
+                axes = list(range(len(input_dim_np))) if axes is None else axes
+                if self.keep_aspect_ratio_policy == 'not_larger':
+                    min_max_fn = min
+                    scale_in_policy = np.finfo(np.float32).max
+                else:
+                    min_max_fn = max
+                    scale_in_policy = np.finfo(np.float32).min
+                original_out_size = self.sizes
+                adjusted_out_size = copy.deepcopy(original_out_size)
+                for axis in axes:
+                    scale_in_policy = min_max_fn(original_out_size[axis]/input_dim_np[axis], scale_in_policy)
+                for axis in axes:
+                    adjusted_out_size[axis] = int(ResizeOp.get_nearest_pixel(
+                        'round_prefer_ceil', scale_in_policy * input_dim_np[axis]))
+                self.sizes = adjusted_out_size
             self.scales = np.array(self.sizes, np.float32) / input_dim_np
         if self.cur_version == 10:
             out_shape = np.floor(
@@ -1731,6 +1814,9 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
                             (np.reshape(self.roi, (2, -1))
                              [1, :] - np.reshape(self.roi, (2, -1))[0, :])
                 out_shape = np.floor(base_shape).astype(np.int64).tolist()
+        if self.antialias:
+            # TODO: Add the implementation of antialias to support const inputs.
+            WARN('[Parser]: Meets unsupported attribute antialias of Resize Op (%s) in infer_shape!' % self.name)
         if self.is_all_inputs_const():
             if FLOAT_EQUAL(inputs[0], 0):
                 out_tensor = np.zeros(out_shape).astype(inputs[0].dtype)

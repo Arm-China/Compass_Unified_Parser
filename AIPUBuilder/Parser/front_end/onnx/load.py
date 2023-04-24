@@ -308,7 +308,7 @@ def convert_onnx_to_graph(model_path, params):
                             dummy_attr = {'name': in_tensor_name}
                             dummy_node.replace_obj('Dummy', dummy_attr)
                             edge_attr = {'src_out_port': in_tensor_out_port, 'dst_in_port': in_port, 'tensor': Tensor(
-                                name=in_tensor_name)}
+                                name=in_tensor_name, is_const=True)}
                             graph.add_edge(
                                 in_tensor_name, op_name, **edge_attr)
                         elif in_tensor_name in const_names:
