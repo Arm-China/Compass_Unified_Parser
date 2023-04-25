@@ -284,29 +284,6 @@ class ArmActivationOp(LayoutUnawareOp, OpHasMethod, OpHasOneOutPort, ArmOp):
         return ret
 
 
-class ArmAddOp(OpHasOneOutPort, ArmOp):
-    @classmethod
-    def num_in_ports(cls):
-        return 2
-
-    @classmethod
-    def cast_in_ports(cls):
-        return {0: ['float32', 'int8', 'uint8', 'int16', 'uint16'],
-                1: ['float32', 'int8', 'uint8', 'int16', 'uint16']
-                }
-
-    def infer_shape(self):
-        super(ArmAddOp, self).infer_shape()
-        inputs = self.get_input_tensors()
-        assert len(inputs) == 2, 'ArmAddOp only supports 2 inputs!'
-        try:
-            OpNeedBroadcast.cal_reshape_and_tile([inp.shape for inp in inputs])
-        except:
-            ERROR('[Parser]: Meets invalid inputs shape for broadcasting in ArmAddOp(%s)' % self.name)
-        out_tensor = inputs[0] + inputs[1]
-        self.set_out_tensor(out_tensor)
-
-
 class ArmArgMinMaxOp(OpHasMethod, OpHasAxis, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
@@ -2996,29 +2973,6 @@ class ArmMVNOp(OpHasOneOutPort, OpHasAxis, ArmOp):
         return ret
 
 
-class ArmMulOp(OpHasOneOutPort, ArmOp):
-    @classmethod
-    def num_in_ports(cls):
-        return 2
-
-    @classmethod
-    def cast_in_ports(cls):
-        return {0: ['float32', 'int8', 'uint8', 'int16', 'uint16'],
-                1: ['float32', 'int8', 'uint8', 'int16', 'uint16']
-                }
-
-    def infer_shape(self):
-        super(ArmMulOp, self).infer_shape()
-        inputs = self.get_input_tensors()
-        assert len(inputs) == 2, 'ArmMulOp only supports 2 inputs!'
-        try:
-            OpNeedBroadcast.cal_reshape_and_tile([inp.shape for inp in inputs])
-        except:
-            ERROR('[Parser]: Meets invalid inputs shape for broadcasting in ArmMulOp(%s)' % self.name)
-        out_tensor = inputs[0] * inputs[1]
-        self.set_out_tensor(out_tensor)
-
-
 class ArmNormalizedMomentsOp(OpHasMultipleOutPorts, ArmOp):
     @classmethod
     def num_in_ports(cls):
@@ -4376,29 +4330,6 @@ class ArmSquaredDifferenceOp(OpNeedBroadcast, OpHasOneOutPort, ArmOp):
         super(ArmSquaredDifferenceOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor = np.power(np.subtract(*inputs), 2)
-        self.set_out_tensor(out_tensor)
-
-
-class ArmSubOp(OpHasOneOutPort, ArmOp):
-    @classmethod
-    def num_in_ports(cls):
-        return 2
-
-    @classmethod
-    def cast_in_ports(cls):
-        return {0: ['float32', 'int8', 'uint8', 'int16', 'uint16'],
-                1: ['float32', 'int8', 'uint8', 'int16', 'uint16']
-                }
-
-    def infer_shape(self):
-        super(ArmSubOp, self).infer_shape()
-        inputs = self.get_input_tensors()
-        assert len(inputs) == 2, 'ArmSubOp only supports 2 inputs!'
-        try:
-            OpNeedBroadcast.cal_reshape_and_tile([inp.shape for inp in inputs])
-        except:
-            ERROR('[Parser]: Meets invalid inputs shape for broadcasting in ArmSubOp(%s)' % self.name)
-        out_tensor = inputs[0] - inputs[1]
         self.set_out_tensor(out_tensor)
 
 

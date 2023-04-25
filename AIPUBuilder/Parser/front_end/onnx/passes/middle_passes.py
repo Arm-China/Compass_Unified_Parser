@@ -3870,13 +3870,8 @@ def merge_mish(graph):
         clear_redundant_nodes(graph)
 
 
-def multidirectional_broadcasting(graph, op_types=[]):
-    if not op_types:
-        op_type_list = OpNeedBroadcast.get_concrete_subclass_names()
-    elif isinstance(op_types, str):
-        op_type_list = [op_types]
-    else:
-        op_type_list = list(op_types)
+def multidirectional_broadcasting(graph):
+    op_type_list = OpNeedBroadcast.get_concrete_subclass_names()
     for op_type in op_type_list:
         matches = single_node_matcher(graph, op_type)
         for m in matches:
