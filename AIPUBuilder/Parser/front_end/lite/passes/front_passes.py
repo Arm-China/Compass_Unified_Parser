@@ -1736,9 +1736,11 @@ def merge_quantized_lstm_cell(graph):
             continue
         biases_scale_zp = list(biases_out_edges[0][2]['tensor'].scale_zp)
 
-        # get scale/zp from the output tensor of sum0, icfo, mul_i_and_c, mul_f_and_c_prev, c_lut
+        # get scale/zp from the output tensor of sum0, icfo, mul_i_and_c, mul_f_and_c_prev, c_lut,
+        # cout and hout
         act_nodes = [m[name] for name in ['add_bias', 'sigmoid_sp0', 'tanh_sp2',
-                                          'sigmoid_sp1', 'sigmoid_sp3', 'mul_sp01', 'mul_sp2', 'tanh_c']]
+                                          'sigmoid_sp1', 'sigmoid_sp3', 'mul_sp01', 'mul_sp2', 'tanh_c',
+                                          'add_cout', 'mul_hout']]
         activations_scale, activations_zp = get_out_tensor_scale_zp(graph, act_nodes)
         if None in activations_scale or None in activations_zp:
             continue
@@ -1923,9 +1925,11 @@ def merge_quantized_lstm_cell2(graph):
         biases = objs_dict['fc'].biases
         biases_scale_zp = objs_dict['fc'].biases_scale_zp
 
-        # get scale/zp from the output tensor of sum0, icfo, mul_i_and_c, mul_f_and_c_prev, c_lut and f_in if forget_bias exists
+        # get scale/zp from the output tensor of sum0, icfo, mul_i_and_c, mul_f_and_c_prev, c_lut,
+        # cout, hout and f_in if forget_bias exists
         act_nodes = [m[name] for name in ['fc', 'sigmoid_sp0', 'tanh_sp1',
-                                          'sigmoid_sp2', 'sigmoid_sp3', 'mul_sp01', 'mul_sp2', 'tanh_c', 'add_sp2']]
+                                          'sigmoid_sp2', 'sigmoid_sp3', 'mul_sp01', 'mul_sp2', 'tanh_c',
+                                          'add_cout', 'mul_hout', 'add_sp2']]
         activations_scale, activations_zp = get_out_tensor_scale_zp(graph, act_nodes)
         if None in activations_scale or None in activations_zp:
             continue
