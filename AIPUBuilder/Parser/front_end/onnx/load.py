@@ -163,10 +163,10 @@ def convert_onnx_to_graph(model_path, params):
     graph = Graph(name=params.get('model_name', ''))
     graph._attr['framework'] = Framework.ONNX
     graph._attr['output_tensor_names'] = params.get('output_tensor_names', [])
-    quantize = True \
-        if params.get('compat_quantized_model', 'false').lower() == 'true' \
+    force_not_quantize = True \
+        if ((params.get('force_float_ir', 'false').lower() == 'true')
+            or (params.get('compat_quantized_model', 'true').lower() == 'false')) \
         else False
-    graph._attr['quantize'] = quantize
 
     meta_ret = True
     consumer_ver = get_version(onnx)
@@ -272,6 +272,7 @@ def convert_onnx_to_graph(model_path, params):
                     anchor_tensors_value = [None] * len(anchor_tensors)
                 graph._attr['anchors'] = None
 
+                graph_is_quantized = False
                 const_tensor_count = defaultdict(int)
                 for ni, node in enumerate(nodes):
                     op_attr = {k: v for k, v in node.items()}
@@ -377,6 +378,13 @@ def convert_onnx_to_graph(model_path, params):
                                 graph.add_edge(
                                     branch_out, op_name, **edge_attr)
                                 if_in_port += 1
+
+                    if not graph_is_quantized and not force_not_quantize \
+                            and (node['type'] in ('QuantizeLinear', 'DequantizeLinear')
+                                 or node['type'].startswith('QLinear')):
+                        graph_is_quantized = True
+
+                graph._attr['quantize'] = graph_is_quantized
 
                 if anchor_tensors and anchor_tensors_value:
                     try:

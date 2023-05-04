@@ -58,5 +58,19 @@ create_QLinearMatMul_model(
     model_path, input_a_shape, input_b_shape, output_shape)
 
 # Run tests with parser and compare result with runtime
-exit_status = run_parser(model_path, feed_dict, verify=True)
+exit_status = run_parser(model_path, feed_dict, force_float_ir=True,
+                         expected_keywords=['MatMul', 'Round', 'compat_quantized_model=false'],
+                         unexpected_keywords=['layer_top_scale', 'layer_top_zp'], verify=True)
+assert exit_status
+
+# Set verify to False because need qtlib to generate IR for opt firstly
+exit_status = run_parser(model_path, feed_dict, force_float_ir=False,
+                         expected_keywords=['MatMul', 'compat_quantized_model=true', 'layer_top_scale', 'layer_top_zp'],
+                         unexpected_keywords=['Round'], verify=False)
+assert exit_status
+
+# force_float_ir=False has the same effect as not to set force_float_ir
+exit_status = run_parser(model_path, feed_dict,
+                         expected_keywords=['MatMul', 'compat_quantized_model=true', 'layer_top_scale', 'layer_top_zp'],
+                         unexpected_keywords=['Round'], verify=False)
 assert exit_status

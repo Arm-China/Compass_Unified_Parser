@@ -9,7 +9,9 @@ from AIPUBuilder.Parser.logger import ERROR, WARN
 from .common import get_model_type
 
 
-def generate_cfg(model_path, model_type, inputs=None, inputs_shape=None, output_folder_name='output_dir', proto_path=None):
+def generate_cfg(model_path, model_type, inputs=None, inputs_shape=None,
+                 output_folder_name='output_dir', proto_path=None,
+                 force_float_ir=None):
     '''Return cfg file path.
     '''
     test_name = model_path.split('/')[-1]
@@ -39,6 +41,11 @@ def generate_cfg(model_path, model_type, inputs=None, inputs_shape=None, output_
         f.write('detection_postprocess = \n')
         f.write('model_domain = image_classification\n')
         f.write('input_model = ' + model_path_fullpath + '\n')
+        if force_float_ir is not None:
+            # quantize_str = 'true' if quantize else 'false'
+            # f.write('compat_quantized_model = ' + quantize_str + '\n')
+            force_float_ir_str = 'true' if force_float_ir else 'false'
+            f.write('force_float_ir = ' + force_float_ir_str + '\n')
         if inputs is not None:
             f.write('input = ' + inputs + '\n')
             if inputs_shape is not None:
@@ -112,7 +119,7 @@ def read_keras_model(model_path, save_cfg=False):
     return model_content, cfg_path
 
 
-def read_onnx_model(model_path, save_cfg=False):
+def read_onnx_model(model_path, save_cfg=False, force_float_ir=None):
     import onnx
 
     def get_tensor_info(graph_info):
@@ -145,7 +152,7 @@ def read_onnx_model(model_path, save_cfg=False):
     model_content += '\nOUTPUT_SHAPE:' + str(outputs_shape)
 
     if save_cfg:
-        cfg_path = generate_cfg(model_path, 'onnx', inputs, inputs_shape)
+        cfg_path = generate_cfg(model_path, 'onnx', inputs, inputs_shape, force_float_ir=force_float_ir)
     else:
         cfg_path = None
 
@@ -192,7 +199,7 @@ def read_tf_model(frozen_pb, save_cfg=False, model_type='tensorflow'):
     return model_content, cfg_path
 
 
-def read_tflite_model(model_path, save_cfg=False):
+def read_tflite_model(model_path, save_cfg=False, force_float_ir=None):
     import tensorflow as tf
 
     interpreter = tf.lite.Interpreter(model_path)
@@ -217,16 +224,17 @@ def read_tflite_model(model_path, save_cfg=False):
         model_content += '\n' + str(output_detail)
 
     if save_cfg:
-        cfg_path = generate_cfg(model_path, 'tflite')
+        cfg_path = generate_cfg(model_path, 'tflite', force_float_ir)
     else:
         cfg_path = None
 
     return model_content, cfg_path
 
 
-def read_model(model_path, save_cfg=False, model_type=None, proto_path=None, input_shapes=OrderedDict()):
+def read_model(model_path, save_cfg=False, model_type=None, proto_path=None, input_shapes=OrderedDict(), force_float_ir=None):
     ''' Read model and save it to log file.
     Basing on the suffix of model path, decide model type if it's not set.
+    Input arg `force_float_ir` only works for onnx and tflite models for now. Defaults to None.
     '''
     if not os.path.exists(model_path):
         ERROR('File %s does not exist!' % model_path)
@@ -240,7 +248,7 @@ def read_model(model_path, save_cfg=False, model_type=None, proto_path=None, inp
     if model_type == 'caffe':
         model_content, cfg_path = read_caffe_model(model_path, proto_path, save_cfg)
     elif model_type == 'onnx':
-        model_content, cfg_path = read_onnx_model(model_path, save_cfg)
+        model_content, cfg_path = read_onnx_model(model_path, save_cfg, force_float_ir)
     elif model_type in ('tf', 'tensorflow'):
         if model_path.endswith('.pb'):
             model_content, cfg_path = read_tf_model(
@@ -249,7 +257,7 @@ def read_model(model_path, save_cfg=False, model_type=None, proto_path=None, inp
             model_content, cfg_path = read_keras_model(
                 model_path, save_cfg)
     elif model_type == 'tflite':
-        model_content, cfg_path = read_tflite_model(model_path, save_cfg)
+        model_content, cfg_path = read_tflite_model(model_path, save_cfg, force_float_ir)
     elif model_type == 'torch':
         if not input_shapes:
             ERROR('Input names and shapes of torch model must be provided in read_model!')

@@ -277,7 +277,7 @@ def parse_quantization_info(quant_info):
     return ret
 
 
-def parse_tensor(tensor_info, tflite_model, quantize=False):
+def parse_tensor(tensor_info, tflite_model, force_not_quantize=False):
     tensor, is_const, linear_type = tensor_info
     buffer_index = tensor.Buffer()
     assert 0 <= buffer_index < tflite_model.BuffersLength(
@@ -293,10 +293,12 @@ def parse_tensor(tensor_info, tflite_model, quantize=False):
     except:
         parsed_data = np.empty(data_shape, dtype=data_type)
 
+    detect_quantize = False
     quant_info_dict = parse_quantization_info(tensor.Quantization())
-    if quant_info_dict:
+    if quant_info_dict and 'ZeroPoint' in quant_info_dict and 'Scale' in quant_info_dict:
+        detect_quantize = True
         if is_const:
-            if not quantize:
+            if force_not_quantize:
                 if linear_type == 'DEPTHWISE_CONV_2D':
                     scale = quant_info_dict['Scale']
                     zp = quant_info_dict['ZeroPoint']
@@ -311,16 +313,16 @@ def parse_tensor(tensor_info, tflite_model, quantize=False):
                         quant_info_dict['ZeroPoint'], newshape=new_scale_zp_shape)
                 parsed_data = (parsed_data - zp) * scale
         else:
-            if 'ZeroPoint' in quant_info_dict and 'Scale' in quant_info_dict:
-                parsed_data = (
-                    parsed_data - quant_info_dict['ZeroPoint']) * quant_info_dict['Scale']
+            parsed_data = (
+                parsed_data - quant_info_dict['ZeroPoint']) * quant_info_dict['Scale']
         if parsed_data.dtype == np.float64:
             parsed_data = parsed_data.astype(np.float32)
 
     ret = {'name': tensor.Name().decode('utf-8'),
            'data': parsed_data,
            'is_const': is_const,
-           'dtype': str(data_type.__name__)
+           'dtype': str(data_type.__name__),
+           'quantize': False if force_not_quantize else detect_quantize,
            }
     if quant_info_dict:
         ret.update({'quant_info': quant_info_dict})

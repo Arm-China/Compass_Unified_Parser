@@ -31,7 +31,8 @@ def generate_ir(cfg_path, verbose=False):
 
 
 def run_parser(model_path, feed_dict, output_names=None, model_type=None, save_output=True,
-               proto_path=None, verify=True, expected_keywords=[], unexpected_keywords=[]):
+               proto_path=None, verify=True, expected_keywords=[], unexpected_keywords=[],
+               force_float_ir=None):
     ''' Generate config file for parser and call parser to run tests. Return True if
     test is successfully run, otherwise return False.
     If verify is set, using opt_forward to get parser's output and compare the output
@@ -50,7 +51,7 @@ def run_parser(model_path, feed_dict, output_names=None, model_type=None, save_o
     # Generate config file for parser
     _, cfg_path = read_model(model_path, save_cfg=True,
                              model_type=model_type, proto_path=proto_path,
-                             input_shapes=input_shapes)
+                             input_shapes=input_shapes, force_float_ir=force_float_ir)
     INFO('Config file %s is generated' % cfg_path)
 
     # Run parser to get float IR
