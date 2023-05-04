@@ -802,7 +802,8 @@ class ScatterNDOp(OpHasOneOutPort, OnnxOp):
     def attributes(cls):
         return {11: {},
                 13: {},
-                16: {'reduction': {'type': AttrType.STRING, 'options': ['none', 'mul', 'add'], 'default': 'none'}}
+                16: {'reduction': {'type': AttrType.STRING, 'options': ['none', 'mul', 'add'], 'default': 'none'}},
+                18: {'reduction': {'type': AttrType.STRING, 'options': ['none', 'mul', 'add', 'max', 'min'], 'default': 'none'}},
                 }
 
     def __init__(self, graph, attr_dict=None):
@@ -831,7 +832,7 @@ class ScatterNDOp(OpHasOneOutPort, OnnxOp):
         if item == 'reduction':
             try:
                 assert value in [
-                    'none', 'mul', 'add'], 'ScatterNDOp __setattr__ has an invalid value.'
+                    'none', 'mul', 'add', 'max', 'min'], 'ScatterNDOp __setattr__ has an invalid value.'
                 cur_ver = self.__dict__['_attr']['cur_version'].value
                 if cur_ver < 16:
                     assert value == 'none', 'ScatterNDOp __setattr__ has an invalid value.'
@@ -857,6 +858,10 @@ class ScatterNDOp(OpHasOneOutPort, OnnxOp):
                 out_tensor[index] *= updates[idx]
             elif self.reduction == 'add':
                 out_tensor[index] += updates[idx]
+            elif self.reduction == 'max':
+                out_tensor[index] = np.maximum(out_tensor[index], updates[idx])
+            elif self.reduction == 'min':
+                out_tensor[index] = np.minimum(out_tensor[index], updates[idx])
             else:
                 out_tensor[index] = updates[idx]
         self.set_out_tensor(out_tensor)

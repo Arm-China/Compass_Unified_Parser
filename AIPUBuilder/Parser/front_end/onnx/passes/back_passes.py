@@ -2873,7 +2873,11 @@ def rename_scatternd(graph):
         scatter_obj = NodeWrap(graph, scatter)['object']
         if scatter_obj is not None:
             scatter_attr = scatter_obj.copied_attr()
-            scatter_attr.update({'reduction': scatter_obj.reduction.upper()})
+            reduction = scatter_obj.reduction
+            if reduction not in ('none', 'mul', 'add'):
+                WARN('[Parser]: Meets unsupported reduction %s of ScatterND Op (%s) in rename_scatternd!' % (reduction, scatter))
+                continue
+            scatter_attr.update({'reduction': reduction.upper()})
             NodeWrap(graph, scatter).replace_obj('ArmScatterND', scatter_attr)
         else:
             ERROR(
