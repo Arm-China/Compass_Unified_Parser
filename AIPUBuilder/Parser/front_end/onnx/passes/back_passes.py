@@ -3518,12 +3518,21 @@ def detection_post_process(graph, params):
 
                 meta_ret = True
                 anchors_num = 3
-                if mode == 'YOLO3_TINY':
-                    anchors = [[2.53125, 2.5625, 4.21875, 5.28125, 11.65625, 9.96875], [
-                        0.625, 0.875, 1.4375, 1.6875, 2.3125, 3.625]]
-                else:
-                    anchors = (np.array([[116, 90, 156, 198, 373, 326], [30, 61, 62, 45, 59, 119], [
-                               10, 13, 16, 30, 33, 23]]) / np.array([[32.0], [16.0], [8.0]])).tolist()
+                anchors = params.get('anchors', None)
+                if anchors is not None:
+                    try:
+                        anchors = float_string_to_list(params['anchors'])
+                        anchors = np.reshape(anchors, [len(out_shapes), -1]).tolist()
+                    except:
+                        anchors = None
+                        WARN('[Parser]: Meets invalid anchors of detection postprocess(%s)! Default anchors will be used!' % mode)
+                if anchors is None:
+                    if mode == 'YOLO3_TINY':
+                        anchors = [[2.53125, 2.5625, 4.21875, 5.28125, 11.65625, 9.96875], [
+                            0.625, 0.875, 1.4375, 1.6875, 2.3125, 3.625]]
+                    else:
+                        anchors = (np.array([[116, 90, 156, 198, 373, 326], [30, 61, 62, 45, 59, 119], [
+                            10, 13, 16, 30, 33, 23]]) / np.array([[32.0], [16.0], [8.0]])).tolist()
 
                 region_fuse = get_valid_node_name(
                     graph, params['model_name'] + '_region_fuse')
