@@ -7226,10 +7226,6 @@ def split_roll(graph):
             NodeWrap(graph, slice1).replace_obj('Slice', slice1_attr)
             NodeWrap(graph, slice2).replace_obj('Slice', slice2_attr)
 
-            if roll in graph._attr['output_names']:
-                index = graph._attr['output_names'].index(roll)
-                graph._attr['output_names'][index] = concat
-
 
 def split_mean(graph):
     matches = single_node_matcher(graph, 'Mean')
