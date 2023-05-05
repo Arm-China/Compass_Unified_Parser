@@ -636,33 +636,38 @@ def convert_uni_lstm(graph):
 
 
 def rename_quantize_dequantize(graph):
-    matches = single_node_matcher(graph, ['QuantizeLinear', 'DequantizeLinear'])
+    matches = single_node_matcher(
+        graph, ['QuantizeLinear', 'DequantizeLinear'])
     for m in matches:
         quantize = m['target']
         quantize_obj = NodeWrap(graph, quantize)['object']
         in_edges = graph.sorted_in_edges(quantize, keys=True, data=True)
+        out_edges = graph.sorted_out_edges(quantize, keys=True, data=True)
+        dtype_str = None
         if quantize_obj is None or len(in_edges) != 3:
             ERROR('[Parser]: Meets invalid QuantizeLinear/DequantizeLinear Op(%s) in rename_quantize_dequantize!' % quantize)
             continue
+
+        input_tensors = quantize_obj.get_input_tensors()
+        output_tensors = quantize_obj.get_output_tensors()
+        if len(output_tensors) < 1 \
+                or len(input_tensors) != 3 \
+                or any(t is None for t in output_tensors)\
+                or any(t is None for t in input_tensors):
+            ERROR('[Parser]: Meets invalid QuantizeLinear/DequantizeLinear Op(%s) in rename_quantize_dequantize!' % quantize)
+            continue
         if quantize_obj.type == 'QuantizeLinear':
-            output_tensors = quantize_obj.get_output_tensors()
-            if len(output_tensors) < 1 \
-                    or any(t is None for t in output_tensors):
-                ERROR('[Parser]: Meets invalid QuantizeLinear/DequantizeLinear Op(%s) in rename_quantize_dequantize!' % quantize)
-                continue
             dtype_str = str(output_tensors[0].dtype)
         else:
-            input_tensors = quantize_obj.get_input_tensors()
-            if len(input_tensors) != 3 \
-                    or any(t is None for t in input_tensors):
-                ERROR('[Parser]: Meets invalid QuantizeLinear/DequantizeLinear Op(%s) in rename_quantize_dequantize!' % quantize)
-                continue
             if in_edges[0][3]['tensor'].dtype is not None:
                 dtype_str = str(in_edges[0][3]['tensor'].dtype)
             else:
                 dtype_str = str(input_tensors[0].dtype)
+
         scale_name, _, k1, scale_in_attr = in_edges[1]
         zp_name, _, k2, zp_in_attr = in_edges[2]
+        _, _, _, inp_attr = in_edges[0]
+
         if not scale_in_attr['tensor'].is_const \
                 or not zp_in_attr['tensor'].is_const:
             WARN('[Parser]: QuantizeLinear/DequantizeLinear Op(%s) with non-constant scale/zp should have been split before in rename_quantize_dequantize!' % quantize)
@@ -674,6 +679,13 @@ def rename_quantize_dequantize(graph):
             continue
         scale = scale_in_attr['tensor'].value
         zp = zp_in_attr['tensor'].value
+        if quantize_obj.type == 'DequantizeLinear':
+            if not inp_attr['tensor'].scale_zp:
+                inp_attr['tensor'].scale_zp = (scale, zp)
+        else:
+            for _, _, _, out_attr in out_edges:
+                if not out_attr['tensor'].scale_zp:
+                    out_attr['tensor'].scale_zp = (scale, zp)
         graph.remove_edge(scale_name, quantize, key=k1)
         graph.remove_edge(zp_name, quantize, key=k2)
         quantize_attr = quantize_obj.copied_attr()
@@ -683,7 +695,8 @@ def rename_quantize_dequantize(graph):
             NodeWrap(graph, quantize).replace_obj('ArmQuantize', quantize_attr)
         else:
             quantize_attr.update({'from_dtype': dtype_str})
-            NodeWrap(graph, quantize).replace_obj('ArmDeQuantize', quantize_attr)
+            NodeWrap(graph, quantize).replace_obj(
+                'ArmDeQuantize', quantize_attr)
 
 
 def rename_dilation_erosion(graph):
