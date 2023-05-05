@@ -2531,6 +2531,7 @@ def merge_lstm2(graph):
             begin_name = begin_match[0]['trans']
             begin_obj = NodeWrap(graph, begin_name)['object']
             begin_in_shapes = begin_obj.get_input_shapes()
+            begin_in_edges = graph.sorted_in_edges(begin_name, data=True)
 
             weights_name = cm['matmul']
             weights_value_name = cm['weights']
@@ -2555,10 +2556,19 @@ def merge_lstm2(graph):
             c_init_out_edge = graph.sorted_out_edges(initial_c_name, data=True)
 
             if scatter_obj is None \
-                    or len(scatter_in_edges) < 3 \
                     or h_init_obj is None \
                     or c_init_obj is None \
-                    or begin_obj is None:
+                    or weights_value_name_obj is None\
+                    or biases_value_name_obj is None\
+                    or const_b_obj is None\
+                    or begin_obj is None\
+                    or len(scatter_in_edges) < 3 \
+                    or len(begin_in_edges) < 1\
+                    or len(h_init_out_edge) < 1\
+                    or len(c_init_out_edge) < 1\
+                    or len(begin_in_shapes) < 1\
+                    or any((shape is None for shape in begin_in_shapes))\
+                    or any((shape_item is None for shape in begin_in_shapes for shape_item in shape)):
                 continue
 
             matched = True
@@ -2602,8 +2612,7 @@ def merge_lstm2(graph):
             new_h_init_attr['dst_in_port'] = 5
             new_c_init_attr = copy.deepcopy(initial_c_attr)
             new_c_init_attr['dst_in_port'] = 6
-            trans_src, _, attr = graph.sorted_in_edges(
-                begin_name, data=True)[0]
+            trans_src, _, attr = begin_in_edges[0]
 
             graph.remove_edge(trans_src, begin_name)
             graph.add_edge(trans_src, lstm_begin, **attr)
