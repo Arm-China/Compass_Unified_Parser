@@ -2008,57 +2008,21 @@ class OpNeedUniBroadcast(Op):
     Ops need unidirectional brocast must inherit ConstLikeOp.
     '''
     @staticmethod
-    def cal_reshape_and_tile(input_shapes):
+    def cal_reshape_and_tile(input_shapes, match_from_left=False):
         '''We implement brocast by adding reshape and tile, and this function calculates the parameters of reshape and tile.'''
         ret = []
         if len(input_shapes) >= 2:
-            max_rank = max(len(input_shapes[0]), 1)
-            max_dims_array = np.array(
-                [list(s) for s in input_shapes[0:1] if len(s) == max_rank])
-            if max_dims_array.size > 0:
-                max_dims = np.max(max_dims_array, axis=0,
-                                  keepdims=False).tolist()
-            else:
-                max_dims = []
+            reshape_and_tile_list = OpNeedBroadcast.cal_reshape_and_tile(input_shapes, match_from_left)
 
-            reshape_dims, reps = [], []
-            for i, in_shape in enumerate(input_shapes[1:]):
-                if len(in_shape) == 0:
-                    reshape_dims.append([1] * max_rank)
-                elif len(in_shape) == max_rank:
-                    reshape_dims.append(list(in_shape))
+            for idx, meta_ret in enumerate(reshape_and_tile_list):
+                reshape = meta_ret.get('reshape', None)
+                tile = meta_ret.get('tile', None)
+                if idx == 0:
+                    if reshape is not None or tile is not None:
+                        ERROR('[Parser]: Meets error when calculating broadcast in OpNeedUniBroadcast!')
+                        return ret
                 else:
-                    found_index = -1
-                    cur_index = 0
-                    for si, s in enumerate(in_shape):
-                        if s == 1:
-                            continue
-                        else:
-                            if s in max_dims:
-                                index = max_dims.index(s)
-                                found_index = index
-                                cur_index = si
-                                break
-                    if found_index != -1:
-                        new_dim = [1] * (found_index - cur_index) + list(in_shape) + [1] * (
-                            max_rank - len(in_shape) - (found_index - cur_index))
-                    else:
-                        new_dim = list(in_shape) + \
-                            [1] * (max_rank - len(in_shape))
-                    if len(new_dim) > max_rank:
-                        ERROR('[Parser]: Meets error when calculating broadcast!')
-                    reshape_dims.append(new_dim)
-
-            reps = [(np.array(max_dims) // np.array(dim)).tolist()
-                    for dim in reshape_dims]
-
-            for i, s in enumerate(input_shapes[1:]):
-                meta_ret = {'reshape': None, 'tile': None}
-                if list(s) != reshape_dims[i]:
-                    meta_ret.update({'reshape': reshape_dims[i]})
-                if any([r != 1 for r in reps[i]]):
-                    meta_ret.update({'tile': reps[i]})
-                ret.append(meta_ret)
+                    ret.append({'reshape': reshape, 'tile': tile})
         else:
             WARN('[Parser]: Only broadcast when inputs number greater or equal to 2!')
         return ret
