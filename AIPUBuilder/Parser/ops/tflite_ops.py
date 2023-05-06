@@ -914,6 +914,18 @@ class LiteFLOOROp(OpHasOneOutPort, TfliteOp):
         return {'type': 'Floor', 'version': 13}
 
 
+class LiteFLOOR_DIVOp(OpHasOneOutPort, TfliteOp):
+    @classmethod
+    def attributes(cls):
+        return {1: {}, 2: {}}
+
+    def infer_shape(self):
+        super(LiteFLOOR_DIVOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = tf.math.floordiv(*inputs).numpy()
+        self.set_out_tensor(out_tensor)
+
+
 class LiteFLOOR_MODOp(OpHasOneOutPort, TfliteOp):
     @classmethod
     def attributes(cls):

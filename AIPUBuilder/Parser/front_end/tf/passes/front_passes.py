@@ -102,7 +102,7 @@ def convert_d2s_or_s2d(graph):
         d2s_or_s2d_obj = NodeWrap(graph, d2s_or_s2d)['object']
         in_edges = graph.sorted_in_edges(d2s_or_s2d, data=True)
         if d2s_or_s2d_obj is None or len(in_edges) < 1:
-            WARN('[Parser]: Meets invalid Op (%s) in convert_d2s_or_s2d!' % d2s_or_s2d)
+            ERROR('[Parser]: Meets invalid Op (%s) in convert_d2s_or_s2d!' % d2s_or_s2d)
             continue
         if d2s_or_s2d_obj.type == 'Tfdepth_to_space' and len(d2s_or_s2d_obj.sorted_in_consts()) < 2:
             WARN('[Parser]: Meets non-constant block_size or data_format in Tfdepth_to_space Op (%s) in convert_d2s_or_s2d!' % d2s_or_s2d)
@@ -155,6 +155,65 @@ def convert_d2s_or_s2d(graph):
             new_node_type = 'SpaceToDepth'
         NodeWrap(graph, d2s_or_s2d).replace_obj(new_node_type, new_node_attr)
     if matched:
+        clear_redundant_nodes(graph)
+
+
+def convert_floordiv(graph, op_type='TfFloorDiv'):
+    '''Convert tf/tflite floordiv to Div+Floor(+Cast if output dtype is int).
+    '''
+    if op_type not in ('TfFloorDiv', 'Tffloor_div', 'LiteFLOOR_DIV'):
+        ERROR('[Parser]: Meets invalid Op type (%s) in convert_floordiv!' % op_type)
+        return
+
+    need_clear = False
+    matches = single_node_matcher(graph, op_type)
+    for m in matches:
+        floordiv = m['target']
+        floordiv_obj = NodeWrap(graph, floordiv)['object']
+        in_edges = graph.sorted_in_edges(floordiv, data=True, keys=True)
+        out_edges = graph.sorted_out_edges(floordiv, data=True, keys=True)
+        if floordiv_obj is None or len(out_edges) < 1 or len(in_edges) < 2:
+            ERROR('[Parser]: Meets invalid Op (%s) in convert_floordiv!' % floordiv)
+            continue
+        src_x, _, k_x, in_attr_x = in_edges[0]
+        src_y, _, k_y, in_attr_y = in_edges[1]
+        if in_attr_x['tensor'] is None or in_attr_x['tensor'].value is None \
+                or in_attr_y['tensor'] is None or in_attr_y['tensor'].value is None:
+            ERROR('[Parser]: Meets invalid input tensors of Op (%s) in convert_floordiv!' % floordiv)
+            continue
+
+        dtype_x = str(in_attr_x['tensor'].value.dtype)
+        if 'int' in dtype_x:
+            insert_cast(graph, src_x, floordiv, 'float32', in_attr=in_attr_x, key=k_x)
+        dtype_y = str(in_attr_y['tensor'].value.dtype)
+        if 'int' in dtype_y:
+            insert_cast(graph, src_y, floordiv, 'float32', in_attr=in_attr_y, key=k_y)
+        if len(in_edges) > 2:
+            need_clear = True
+            graph.remove_edges_from(in_edges[2:])
+        graph.remove_edges_from(out_edges)
+        floor_name = get_valid_node_name(graph, floordiv + '_floor')
+        div_out_attr = copy.deepcopy(out_edges[0][3])
+        if div_out_attr['tensor'] is not None and div_out_attr['tensor'].value is not None:
+            div_out_attr['tensor'].value = np.array(div_out_attr['tensor'].value, np.float32)
+        div_out_attr['dst_in_port'] = 0
+        graph.add_edge(floordiv, floor_name, **div_out_attr)
+        for _, dst, k, out_attr in out_edges:
+            graph.add_edge(floor_name, dst, **out_attr)
+        floor_attr = {'name': floor_name, 'opset_version': 13}
+        NodeWrap(graph, floor_name).replace_obj('Floor', floor_attr)
+
+        out_node_name = floor_name
+        if 'int' in dtype_x and 'int' in dtype_y:
+            out_node_name = insert_cast_after(graph, floor_name, 'float32', 'int32')
+        if floordiv in graph._attr['output_names']:
+            index = graph._attr['output_names'].index(floordiv)
+            graph._attr['output_names'][index] = out_node_name
+
+        div_attr = floordiv_obj.copied_attr()
+        div_attr.update({'opset_version': 13})
+        NodeWrap(graph, floordiv).replace_obj('Div', div_attr)
+    if need_clear:
         clear_redundant_nodes(graph)
 
 
@@ -4150,53 +4209,6 @@ def convert_to_onnx(graph):
                         continue
                 elif pure_type == 'FloorMod':
                     new_node_attr.update({'fmod': 0})
-                elif pure_type == 'FloorDiv':
-                    in_edges = graph.sorted_in_edges(
-                        node_name, data=True, keys=True)
-                    out_edges = graph.sorted_out_edges(
-                        node_name, data=True, keys=True)
-                    if len(out_edges) > 0 and len(node_obj.get_input_tensors()) > 1\
-                            and len(in_edges) > 0:
-                        floor_name = get_valid_node_name(
-                            graph, node_name + '_floor')
-                        dtype1 = str(node_obj.get_input_tensors()[0].dtype)
-                        dtype2 = str(node_obj.get_input_tensors()[1].dtype)
-                        for src_in, dst_in, k, in_attr in in_edges:
-                            if 'int' in str(in_attr['tensor'].value.dtype):
-                                insert_cast(graph, src_in, dst_in,
-                                            'float32', in_attr=in_attr, key=k)
-                        _, _, _, in_attr = in_edges[0]
-                        graph.remove_edges_from(out_edges)
-                        if 'int' in dtype1 \
-                                and 'int' in dtype2:
-                            cast_name = get_valid_node_name(
-                                graph, node_name + '_post_cast')
-                            graph.add_edge(floor_name, cast_name)
-                            for _, dst, k, out_attr in out_edges:
-                                graph.add_edge(cast_name, dst, **out_attr)
-                            cast_attr = {'name': cast_name,
-                                         'opset_version': 13, 'to': 'int32'}
-                            NodeWrap(graph, cast_name).replace_obj(
-                                'Cast', cast_attr)
-                            if node_name in graph._attr['output_names']:
-                                index = graph._attr['output_names'].index(
-                                    node_name)
-                                graph._attr['output_names'][index] = cast_name
-                        else:
-                            for _, dst, k, out_attr in out_edges:
-                                graph.add_edge(floor_name, dst, **out_attr)
-                            if node_name in graph._attr['output_names']:
-                                index = graph._attr['output_names'].index(
-                                    node_name)
-                                graph._attr['output_names'][index] = floor_name
-                        div_out_attr = copy.deepcopy(out_edges[0][3])
-                        div_out_attr['tensor'].value = div_out_attr['tensor'].value.astype(
-                            np.float32)
-                        div_out_attr['dst_in_port'] = 0
-                        graph.add_edge(node_name, floor_name, **div_out_attr)
-                        floor_attr = {'name': floor_name, 'opset_version': 13}
-                        NodeWrap(graph, floor_name).replace_obj(
-                            'Floor', floor_attr)
                 elif pure_type in ('FractionalAvgPool', 'FractionalMaxPool'):
                     method = 'AVG' if pure_type == 'FractionalAvgPool' else 'MAX'
                     new_node_attr.update({'method': method,

@@ -148,6 +148,10 @@ class TffloorOp(TfFloorOp, Tf2Op):
     pass
 
 
+class Tffloor_divOp(TfFloorDivOp, Tf2Op):
+    pass
+
+
 class TffloormodOp(TfFloorModOp, Tf2Op):
     pass
 

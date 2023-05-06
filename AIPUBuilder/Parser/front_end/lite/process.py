@@ -79,6 +79,9 @@ def process_tflite(model_path, params):
         from ..onnx.passes.middle_passes import convert_to_const
         convert_to_const(graph, ['LiteSHAPE', 'LiteZEROS_LIKE'])
 
+        from ..tf.passes.front_passes import convert_floordiv
+        convert_floordiv(graph, op_type='LiteFLOOR_DIV')
+
         convert_deconv(graph)
         convert_negative_pool_pad(graph)
         remove_redundant_broadcast_to(graph)

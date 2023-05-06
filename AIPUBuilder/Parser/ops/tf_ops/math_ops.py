@@ -596,10 +596,6 @@ class TfFloorDivOp(OpHasOneOutPort, TfOp):
         out_tensor = tf.math.floordiv(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
-    @property
-    def correspond_onnx_op(self):
-        return {'type': 'Div', 'version': 13}
-
 
 class TfFloorModOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
