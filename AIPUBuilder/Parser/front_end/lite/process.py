@@ -11,7 +11,7 @@ from .passes.front_passes import split_op_has_activation, split_fc, split_s2b, s
     merge_quantized_instance_norm, merge_quantized_lstm_cell, convert_dequantize, merge_min_quant_max_to_clip, merge_quantized_ln
 # merge_quantized_lstm_cell2, merge_quantized_lstm2
 from ..onnx.passes.front_passes import fuse_weights_const, convert_deconv
-from ..onnx.passes.common_passes import apply_subgraph_plugin, record_output_tensors, remove_useless_op
+from ..onnx.passes.common_passes import apply_subgraph_plugin, record_output_tensors, remove_useless_op, fuse_const
 from ...graph.graph_algo import infer, clear_redundant_nodes
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 
@@ -71,13 +71,14 @@ def process_tflite(model_path, params):
         convert_unpack(graph)
         convert_special_uni_seq_lstm(graph)
 
-        convert_strided_slice(graph, 'LiteSTRIDED_SLICE')
-
         clear_redundant_nodes(graph)
         infer(graph)
+        fuse_const(graph)
 
         from ..onnx.passes.middle_passes import convert_to_const
         convert_to_const(graph, ['LiteSHAPE', 'LiteZEROS_LIKE'])
+
+        convert_strided_slice(graph, 'LiteSTRIDED_SLICE')
 
         from ..tf.passes.front_passes import convert_floordiv
         convert_floordiv(graph, op_type='LiteFLOOR_DIV')
