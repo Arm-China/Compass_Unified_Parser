@@ -1470,7 +1470,7 @@ class ArmDepthToSpaceOp(OpHasOneOutPort, ArmOp):
 class ArmDepthwiseConvOp(BaseActivationOp, BaseConvOp, ArmOp):
     @classmethod
     def cast_in_ports(cls):
-        return {0: 'float32'}
+        return {0: ['float32', 'int8']}
 
     @classmethod
     def attributes(cls):
