@@ -780,6 +780,74 @@ def convert_seperable_conv(graph):
             graph._attr['output_names'][index] = pointwise_conv
 
 
+def convert_sufficient_statistics(graph):
+    matched = False
+    matches = single_node_matcher(graph, 'Tfsufficient_statistics')
+    for m in matches:
+        ss_name = m['target']
+        ss_obj = NodeWrap(graph, ss_name)['object']
+        in_edges = graph.sorted_in_edges(ss_name, data=True)
+        out_edges = graph.sorted_out_edges(ss_name, data=True)
+        input_tensors = ss_obj.get_input_tensors()
+        out_ports = ss_obj.get_out_ports()
+
+        if ss_obj is None \
+                or len(in_edges) != 6\
+                or len(input_tensors) != 6:
+            ERROR(
+                '[Parser]: invalid sufficient_statistics Node(%s) in rename_sufficient_statistics!' % ss_name)
+            continue
+
+        matched = True
+
+        graph.remove_edges_from(in_edges[1:])
+        inp3_src, _, inp3_attr = in_edges[2]
+        inp3_attr.update({'dst_in_port': 1})
+        graph.add_edge(inp3_src, ss_name, **inp3_attr)
+
+        if np.any(input_tensors[2] == np.array(None))\
+                or (input_tensors[2].ndim == 1 and input_tensors[2].size == 0):
+            inp1_data = np.zeros(input_tensors[0].shape)
+            graph.remove_edges_from(in_edges[1:])
+            insert_constant(graph, ss_name + '_inp1',
+                            inp1_data, ss_name, in_port=1)
+
+        graph.remove_edges_from(out_edges)
+        for src, dst, attr in out_edges:
+            if attr['src_out_port'] == 0 or attr['src_out_port'] == 3:
+                if dst in graph._attr['output_names']:
+                    index = graph._attr['output_names'].index(dst)
+                    graph._attr['output_names'].pop(index)
+            if attr['src_out_port'] == 1:
+                attr.update({'src_out_port': 0})
+                graph.add_edge(src, dst, **attr)
+            if attr['src_out_port'] == 2:
+                attr.update({'src_out_port': 1})
+                graph.add_edge(src, dst, **attr)
+
+        if not ss_obj.keepdims:
+            out_shape = ss_obj.get_output_shapes()[0]
+            post_reshapes = []
+            for out_port in ss_obj.get_out_ports():
+                reshape = insert_reshape_after(graph,
+                                               ss_name,
+                                               out_shape,
+                                               out_port=out_port,
+                                               type='Reshape')
+                post_reshapes.append(reshape)
+            if ss_name in graph._attr['output_names'] and post_reshapes:
+                index = graph._attr['output_names'].index(ss_name)
+                graph._attr['output_names'].pop(index)
+                for reshape in post_reshapes:
+                    graph._attr['output_names'].append(reshape)
+
+        ss_attr = ss_obj.copied_attr()
+        NodeWrap(graph, ss_name).replace_obj(
+            'SufficientStatistics', ss_attr)
+    if matched:
+        clear_redundant_nodes(graph)
+
+
 def convert_softmax(graph):
     '''
     Keras Softmax support multiple axes. Convert to onnx Softmax for one axis, otherwise

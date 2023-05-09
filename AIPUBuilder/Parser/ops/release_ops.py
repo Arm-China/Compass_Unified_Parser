@@ -4369,6 +4369,30 @@ class ArmSquaredDifferenceOp(OpNeedBroadcast, OpHasOneOutPort, ArmOp):
         self.set_out_tensor(out_tensor)
 
 
+class ArmSufficientStatisticsOp(OpHasAxis, OpHasMultipleOutPorts, ArmOp):
+    @classmethod
+    def num_in_ports(cls):
+        return 2
+
+    @classmethod
+    def cast_in_ports(cls):
+        return {0: ['float32', 'uint32', 'uint8', 'int16', 'uint16', 'int8', 'int32'],
+                1: ['float32', 'uint32', 'uint8', 'int16', 'uint16', 'int8', 'int32']}
+
+    def __init__(self, graph, attr_dict=None):
+        super(ArmSufficientStatisticsOp, self).__init__(graph, attr_dict)
+        self.update_attributes(ArmSufficientStatisticsOp, attr_dict)
+        assert self.check_required(), 'ArmSufficientStatisticsOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(ArmSufficientStatisticsOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor_list = tf.nn.sufficient_statistics(
+            inputs[0], self.axes, shift=inputs[1], keepdims=True)
+        out_tensor_list = [ot.numpy() for ot in out_tensor_list[1:3]]
+        self.set_out_tensor(out_tensor_list)
+
+
 class ArmTanOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):

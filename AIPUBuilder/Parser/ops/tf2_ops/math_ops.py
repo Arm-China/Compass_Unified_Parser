@@ -638,6 +638,90 @@ class TfsubtractOp(TfSubOp, Tf2Op):
     pass
 
 
+class Tfsufficient_statisticsOp(OpHasAxis, OpHasVariableOutPorts, Tf2Op):
+    @classmethod
+    def attributes(cls):
+        return {2: {'shift': {'type': AttrType.FLOATS, 'default': None},
+                    'keepdims': {'default': 0},
+                    },
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(Tfsufficient_statisticsOp, self).__init__(graph, attr_dict)
+        self.update_attributes(Tfsufficient_statisticsOp, attr_dict)
+        assert self.check_required(), 'Tfsufficient_statisticsOp is missing a required parameter.'
+
+    def __getattr__(self, item):
+        ret = None
+        try:
+            if item == 'axes':
+                inputs = self.get_input_tensors()
+                if len(inputs) >= 2:
+                    ret = list(inputs[1])
+                    self.__dict__['_attr'][item].value = ret
+            elif item == 'shift':
+                inputs = self.get_input_tensors()
+                if len(inputs) >= 3:
+                    ret = inputs[2] if np.all(
+                        inputs[2] != np.array(None)) else None
+                    self.__dict__['_attr'][item].value = ret
+            elif item == 'keepdims':
+                inputs = self.get_input_tensors()
+                if len(inputs) >= 4:
+                    ret = int(inputs[3])
+                    self.__dict__['_attr'][item].value = ret
+        except:
+            ret = None
+        if ret is None:
+            ret = super(Tfsufficient_statisticsOp, self).__getattr__(item)
+        return ret
+
+    def infer_shape(self):
+        super(Tfsufficient_statisticsOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor_list = tf.nn.sufficient_statistics(
+            inputs[0], self.axes, shift=self.shift, keepdims=bool(self.keepdims))
+        out_ports = self.get_out_ports()
+
+        if out_ports == [0, 1]:
+            out_tensor_list = [ot.numpy() for ot in out_tensor_list[:2]]
+        elif out_ports == [0, 2]:
+            out_tensor_list = [
+                out_tensor_list[0].numpy(), out_tensor_list[2].numpy()]
+        elif out_ports == [1]:
+            out_tensor_list = [out_tensor_list[1].numpy()]
+        elif out_ports == [2]:
+            out_tensor_list = [out_tensor_list[2].numpy()]
+        elif out_ports == [1, 2]:
+            out_tensor_list = [
+                out_tensor_list[1].numpy(), out_tensor_list[2].numpy()]
+        elif out_ports == [1, 3]:
+            out_tensor_list = [
+                out_tensor_list[1].numpy(), out_tensor_list[3].numpy()]
+        elif out_ports == [2, 3]:
+            out_tensor_list = [
+                out_tensor_list[2].numpy(), out_tensor_list[3].numpy()]
+        elif out_ports == [0, 1, 2]:
+            out_tensor_list = [ot.numpy() for ot in out_tensor_list[:3]]
+        elif out_ports == [0, 2, 3]:
+            out_tensor_list = [out_tensor_list[0].numpy(
+            ), out_tensor_list[2].numpy(), out_tensor_list[3].numpy()]
+        elif out_ports == [0, 1, 3]:
+            out_tensor_list = [out_tensor_list[0].numpy(
+            ), out_tensor_list[1].numpy(), out_tensor_list[3].numpy()]
+        elif out_ports == [1, 2, 3]:
+            out_tensor_list = [out_tensor_list[1].numpy(
+            ), out_tensor_list[2].numpy(), out_tensor_list[3].numpy()]
+        elif out_ports == [0, 1, 2, 3]:
+            out_tensor_list = [ot.numpy() for ot in out_tensor_list]
+
+        self.set_out_tensor(out_tensor_list)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'SufficientStatistics', 'version': 1}
+
+
 class TftanOp(TfTanOp, Tf2Op):
     pass
 

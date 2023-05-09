@@ -4688,6 +4688,7 @@ def back_passes(graph, params):
     rename_pool(graph)
     rename_quantize_dequantize(graph)
     rename_reduce(graph)
+
     rename_reshape(graph)
     rename_resize(graph)
     rename_roipool(graph)
@@ -4750,6 +4751,7 @@ def back_passes(graph, params):
     simple_rename(graph, 'Sinh', 'ArmSinh')
     simple_rename(graph, 'Softmax', 'ArmSoftmax')
     simple_rename(graph, 'SpaceToDepth', 'ArmSpaceToDepth')
+    simple_rename(graph, 'SufficientStatistics', 'ArmSufficientStatistics')
     simple_rename(graph, 'Split', 'ArmSplit')
     simple_rename(graph, 'Sqrt', 'ArmSqrt')
     simple_rename(graph, 'Tan', 'ArmTan')

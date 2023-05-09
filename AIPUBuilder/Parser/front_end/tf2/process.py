@@ -7,7 +7,7 @@ from ...graph.graph_algo import infer
 from ..onnx.passes.front_passes import fuse_weights_const
 from ..onnx.passes.common_passes import fuse_const, record_output_tensors, apply_subgraph_plugin, remove_useless_op
 from .passes.front_passes import convert_to_onnx, convert_crelu, convert_l2_normalize, convert_lp_norm, convert_squeeze
-from .passes.keras_front_passes import process_keras_op_before_infer, process_keras_op_after_infer
+from .passes.keras_front_passes import process_keras_op_before_infer, process_keras_op_after_infer, convert_sufficient_statistics
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
@@ -47,6 +47,7 @@ def process_tf2(model_path, params):
         convert_matmul(graph)
         convert_maxpoolwithargmax(graph, op_type='Tfmax_pool_with_argmax')
         convert_nms(graph, params)
+        convert_sufficient_statistics(graph)
         split_special_floormod(graph, op_type='Tffloormod')
         split_s2b(graph)
 

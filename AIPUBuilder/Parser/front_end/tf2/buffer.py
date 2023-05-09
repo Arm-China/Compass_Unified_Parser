@@ -213,9 +213,10 @@ def get_const_node_content(node_name, const_value):
 
 
 def get_node_content(layer):
-    layer_outputs = layer.output if isinstance(layer.output, (list, tuple)) else [layer.output]
+    layer_outputs = layer.output if isinstance(
+        layer.output, (list, tuple)) else [layer.output]
     output_name_shape = [(out.name, out.shape.as_list() if out.shape is not None else [])
-                         for out in layer_outputs]
+                         for out in layer_outputs if hasattr(out, 'shape')]
     DEBUG('layer: %s, output: %s' % (layer.name, str(output_name_shape)))
     node_type, opcode_version = get_node_type(layer)
     ret = {'name': layer.name,
@@ -241,7 +242,8 @@ def get_nodes_content(layers, model_configs):
         node_content.update({
             'input': [(name, src_out_port, control_edge) for name, src_out_port, control_edge, _, _ in node_input_info]})
         nodes_content.append(node_content)
-        const_nodes = [(name, value) for name, _, _, is_const, value in node_input_info if is_const]
+        const_nodes = [(name, value) for name, _, _, is_const,
+                       value in node_input_info if is_const]
         for name, value in const_nodes:
             nodes_content.append(get_const_node_content(name, value))
     return nodes_content
@@ -252,8 +254,10 @@ def parse_keras(model_path, params):
     nodes_dict, tensors, np_tensors = OrderedDict(), OrderedDict(), OrderedDict()
     input_shapes = params['input_shapes'].copy()
     try:
-        load_options = tf.saved_model.LoadOptions(allow_partial_checkpoint=True)
-        model = tf.keras.models.load_model(model_path, compile=False, options=load_options)
+        load_options = tf.saved_model.LoadOptions(
+            allow_partial_checkpoint=True)
+        model = tf.keras.models.load_model(
+            model_path, compile=False, options=load_options)
     except Exception as e:
         WARN('[Parser]: Reading saved model/h5 file (%s) meets error (%s)!' %
              (model_path, str(e)))
@@ -307,10 +311,12 @@ def parse_keras(model_path, params):
     except Exception as e:
         outputs_value = [None] * len(outputs)
         DEBUG('Fail to get outputs of tensors: %s' % str(e))
+    outputs = (out for out in outputs if hasattr(out, 'shape'))
     for out, out_value in zip(outputs, outputs_value):
         tensors.update({out.name: out})
         if out_value is None:
-            out_value = np.random.ranf(out.shape.as_list()).astype(out.dtype.name)
+            out_value = np.random.ranf(
+                out.shape.as_list()).astype(out.dtype.name)
         np_tensors.update({out.name: np.array(out_value)})
 
     return nodes, nodes_dict, tensors, np_tensors, input_shapes
