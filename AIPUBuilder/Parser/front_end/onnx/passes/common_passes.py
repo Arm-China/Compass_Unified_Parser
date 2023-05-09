@@ -348,14 +348,14 @@ def remove_redundant_transpose_pro(graph, trans_type='Transpose', max_branches=6
         matched = False
         nodes = [('trans', {'op': trans_type})] + \
             [('trans_out_%s' % str(i + 1), {}) for i in range(b)]
-        edges = [('trans', 'trans_out_%s' % str(i + 1)) for i in range(b)]
+        edges = [('trans', 'trans_out_%s' % str(i + 1), {'src_out_port': 0}) for i in range(b)]
         matches = matched_patterns(graph, nodes, edges)
         for m in matches:
             trans = m['trans']
             trans_out_names = [m['trans_out_%s' %
                                  str(i + 1)] for i in range(b)]
             if any([not graph.has_node(name) for name in [trans] + trans_out_names]):
-                ERROR(
+                DEBUG(
                     '[Parser]: Meets invalid name that does not exist in graph in remove_redundant_transpose_pro!')
                 continue
             trans_obj = NodeWrap(graph, trans)['object']

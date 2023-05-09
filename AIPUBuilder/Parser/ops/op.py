@@ -439,7 +439,7 @@ class Op(abc.ABC):
         '''Sort the contents of the constant node in the order of name, attr, and value.'''
         ret = []
         for u, _, in_attr in self._graph.sorted_in_edges(self.name, data=True):
-            obj = self._graph.nodes[u]._attr.get('object', None)
+            obj = self._graph.nodes[u].get('object', None)
             if obj is not None and obj.type in ('Constant', 'TfConst', 'Tfconstant'):
                 ret.append((u, in_attr['dst_in_port'], obj.value))
         return ret
@@ -461,7 +461,7 @@ class Op(abc.ABC):
         ret = []
         quantize = self._graph._attr.get('quantize', False)
         for u, v, k, d in self._graph.sorted_in_edges(self.name, keys=True, data=True):
-            pred_node_obj = self._graph.nodes[u]._attr.get('object', None)
+            pred_node_obj = self._graph.nodes[u].get('object', None)
             if pred_node_obj is not None:
                 if u in self._graph._attr.get('duplicate_name', {}):
                     u = self._graph._attr['duplicate_name'][u]

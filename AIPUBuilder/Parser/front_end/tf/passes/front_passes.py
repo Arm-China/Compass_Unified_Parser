@@ -1400,7 +1400,7 @@ def merge_gru(graph):
                                                'op': 'TfNextIteration'}),
                                               ('merge', {'op': 'TfMerge'}),
                                               ('loop_cond', {
-                                               'op': 'TfLoopCond'}),
+                                               'op': 'TfLoopCond', 'unique': False}),
                                               ('switch', {'op': 'TfSwitch'})
                                           ],
                                           edges=[
@@ -1951,7 +1951,7 @@ def merge_gru2(graph):
         sequence_match = sorted(sequence_out_matches, key=lambda x: cal_path_length(
             graph, cell['out'], x['gather']))[0] if sequence_out_matches else {}
         state_match = [m for m in state_out_matches if m['add'] == cell['out']
-                       or cell['out'] in graph.pred[m['add']]]
+                       or cell['out'] in graph.predecessor[m['add']]]
         state_match = state_match[0] if state_match else {}
 
         init = init_match['init_state']
@@ -3765,7 +3765,7 @@ def merge_overlap_and_add(graph):
 
         # Deduce the value of the frame_step according to the parameters of the model.
         output_length = stride2_end_in_attr['tensor'].value[-1]
-        frame_step = int((output_length - frame_length)/(frames - 1))
+        frame_step = int((output_length - frame_length) / (frames - 1))
 
         segments = -(-frame_length // frame_step)
         paddings = [[0, segments], [0, segments * frame_step - frame_length]]
@@ -3774,7 +3774,7 @@ def merge_overlap_and_add(graph):
         shape1 = _full_shape([frames + segments, segments,
                               frame_step], outer_dimensions)
         perm = np.concatenate([np.arange(outer_rank), np.add(
-            [outer_rank]*3, [1, 0, 2])], 0)
+            [outer_rank] * 3, [1, 0, 2])], 0)
         shape2 = _full_shape(
             [(frames + segments) * segments, frame_step], outer_dimensions)
         shape3 = _full_shape(

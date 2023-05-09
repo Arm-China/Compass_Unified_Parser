@@ -4168,14 +4168,13 @@ def sink_single_transpose(graph):
 
 
 def sink_double_transpose(graph):
-    matched = True
     unaware_types = set(ArmOp.get_concrete_subclass_names()).intersection(
         LayoutUnawareOp.get_concrete_subclass_names())
     unaware_types = sorted(list(unaware_types))
     matches = matched_patterns(graph,
                                nodes=[
-                                   ('trans1', {'op': 'ArmTranspose'}),
-                                   ('trans2', {'op': 'ArmTranspose'}),
+                                   ('trans1', {'op': 'ArmTranspose', 'unique': False}),
+                                   ('trans2', {'op': 'ArmTranspose', 'unique': False}),
                                    ('unaware', {'op': unaware_types})
                                ],
                                edges=[
@@ -4187,6 +4186,9 @@ def sink_double_transpose(graph):
                                )
     for m in matches:
         trans1, trans2, unaware = m['trans1'], m['trans2'], m['unaware']
+        if any(not graph.has_node(name) for name in [trans1, trans2, unaware]):
+            DEBUG('[Parser]: Meets invalid name that does not exist in graph in sink_double_transpose!')
+            continue
         trans1_obj = NodeWrap(graph, trans1)['object']
         trans2_obj = NodeWrap(graph, trans2)['object']
         unaware_obj = NodeWrap(graph, unaware)['object']
@@ -4200,7 +4202,6 @@ def sink_double_transpose(graph):
                     ERROR('[Parser]: Meets invalid Node(%s) or Node(%s) in sink_double_transposes!' % (
                         trans1, trans2))
                     continue
-                matched = True
                 src1, _, in_attr1 = trans1_in_edges[0]
                 src2, _, in_attr2 = trans2_in_edges[0]
 
@@ -4243,12 +4244,11 @@ def sink_double_transpose(graph):
                     index = graph._attr['output_names'].index(unaware)
                     graph._attr['output_names'][index] = post_trans
 
+                clear_redundant_nodes(graph)
+
         else:
             ERROR('[Parser]: Meets invalid Node(%s) or Node(%s) or Node(%s) in sink_double_transposes!' % (
                 trans1, trans2, unaware))
-
-    if matched:
-        clear_redundant_nodes(graph)
 
 
 def sink_reshape_through_cast(graph):
@@ -4380,7 +4380,7 @@ def sink_transpose_through_concat(graph, max_branches=8):
             concat = m['concat']
             in_trans_names = [m['in_trans_%s' % str(i + 1)] for i in range(b)]
             if any([not graph.has_node(name) for name in [concat] + in_trans_names]):
-                ERROR(
+                DEBUG(
                     '[Parser]: Meets invalid name that does not exist in graph in sink_transpose_through_concat!')
                 continue
             concat_obj = NodeWrap(graph, concat)['object']
@@ -4443,7 +4443,6 @@ def sink_transpose_through_concat(graph, max_branches=8):
 
 def sink_transpose_through_special_reshape(graph, max_branches=6):
     for b in range(max_branches, 0, -1):
-        matched = False
         nodes = [('trans', {'op': 'ArmTranspose'})] + \
             [('trans_out_%s' % str(i + 1), {}) for i in range(b)]
         edges = [('trans', 'trans_out_%s' % str(i + 1)) for i in range(b)]
@@ -4509,8 +4508,6 @@ def sink_transpose_through_special_reshape(graph, max_branches=6):
                     WARN('[Parser]: Meets invalid Reshape(%s) dim in sink_transpose_through_special_reshape!' % reshape)
                     continue
 
-                matched = True
-
                 new_perm = []
                 for i, d in enumerate(reshape_out_shape):
                     for new_i, new_d in enumerate(new_dim):
@@ -4549,7 +4546,6 @@ def sink_transpose_through_special_reshape(graph, max_branches=6):
                 trans_in_edges = graph.sorted_in_edges(trans)
                 graph.remove_edges_from(trans_in_edges)
 
-        if matched:
             clear_redundant_nodes(graph)
 
 

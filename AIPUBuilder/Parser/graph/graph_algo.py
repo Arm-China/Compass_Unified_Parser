@@ -9,6 +9,7 @@ import sys
 import itertools
 from collections import defaultdict
 from .node_wrap import NodeWrap
+from networkx.algorithms import has_path, all_simple_paths, shortest_path_length
 from .graph import Graph, SubGraph
 from .pattern_match import single_node_matcher
 from ..ops.op import InputLikeOp
@@ -17,126 +18,13 @@ from ..common.defs import Tensor
 from ..logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
-def _shortest_path_length(g, source, target):
-    ret = sys.maxsize
-    if g.has_node(source) and g.has_node(target):
-        if source == target:
-            ret = 0
-        else:
-
-            def _bidirectional_pred_succ(G, source, target):
-                """Bidirectional shortest path helper.
-
-                   Returns (pred, succ, w) where
-                   pred is a dictionary of predecessors from w to the source, and
-                   succ is a dictionary of successors from w to the target.
-                """
-                # does BFS from both source and target and meets in the middle
-                if target == source:
-                    return ({target: None}, {source: None}, source)
-
-                # handle either directed or undirected
-                Gpred = G.pred
-                Gsucc = G.succ
-
-                # predecesssor and successors in search
-                pred = {source: None}
-                succ = {target: None}
-
-                # initialize fringes, start with forward
-                forward_fringe = [source]
-                reverse_fringe = [target]
-
-                while forward_fringe and reverse_fringe:
-                    if len(forward_fringe) <= len(reverse_fringe):
-                        this_level = forward_fringe
-                        forward_fringe = []
-                        for v in this_level:
-                            for w in Gsucc[v]:
-                                if w not in pred:
-                                    forward_fringe.append(w)
-                                    pred[w] = v
-                                if w in succ:  # path found
-                                    return pred, succ, w
-                    else:
-                        this_level = reverse_fringe
-                        reverse_fringe = []
-                        for v in this_level:
-                            for w in Gpred[v]:
-                                if w not in succ:
-                                    succ[w] = v
-                                    reverse_fringe.append(w)
-                                if w in pred:  # found path
-                                    return pred, succ, w
-
-                raise RuntimeError(
-                    "No path between %s and %s." % (source, target))
-
-            # call helper to do the real work
-            results = _bidirectional_pred_succ(g, source, target)
-            pred, succ, w = results
-
-            # build path from pred+w+succ
-            path = []
-            # from source to w
-            while w is not None:
-                path.append(w)
-                w = pred[w]
-            path.reverse()
-            # from w to target
-            w = succ[path[-1]]
-            while w is not None:
-                path.append(w)
-                w = succ[w]
-
-            ret = len(path) - 1
-    else:
-        raise RuntimeError(
-            'Source %s or target %s node not in graph!' % (source, target))
-    return ret
-
-
-def has_path(g, source, target):
-    '''Check if there is a path between two nodes.'''
-    try:
-        _ = _shortest_path_length(g, source, target)
-    except (KeyError, RuntimeError):
-        return False
-    return True
-
-
 def cal_path_length(g, source, target):
     try:
-        sp = _shortest_path_length(g, source, target)
-        return sp
-    except (KeyError, RuntimeError):
+        assert source in g.nodes and target in g.nodes
+        sp = shortest_path_length(g, source, target)
+        return int(sp)
+    except:
         return sys.maxsize
-
-
-def all_simple_paths(graph, source, target):
-    '''Find all paths between the destination node and the source node.'''
-    if source not in graph.nodes:
-        raise Exception('source node %s not in graph' % source)
-    if target not in graph.nodes:
-        raise Exception('target node %s not in graph' % target)
-    if source == target:
-        return []
-    if not has_path(graph, source, target):
-        return []
-
-    def _all_simple_paths_multigraph(G, source, target):
-        queue = [source]
-        seen = [source]
-        while(len(queue) > 0):
-            vertex = queue.pop(0)
-            nodes = G._adj_dict[vertex].keys()
-            for w in nodes:
-                if w == target:
-                    yield seen + [target]
-                elif w not in seen:
-                    queue.append(w)
-                    seen.append(w)
-    return _all_simple_paths_multigraph(graph, source, target)
 
 
 def nodes_in_simple_paths(graph, source, target):
@@ -167,7 +55,7 @@ def determined_sort(g, outputs):
         stack.pop(0)
         visited.add(node_name)
         has_child = False
-        in_names = [name for name in g.pred[node_name]]
+        in_names = [name for name in g.predecessor[node_name]]
         for in_node_name in in_names:
             if in_node_name not in visited:
                 stack.insert(0, node_name)
@@ -181,18 +69,18 @@ def determined_sort(g, outputs):
 
 def clear_redundant_nodes(g, outputs=None):
     '''Delete redundant nodes in the graph.'''
-    noop_names = [n for n in g.nodes if g.get_node(n)._attr['op'] == 'Out'
-                  and g.pred[n]
-                  and any([p in g._attr.get('output_names', []) for p in g.pred[n]])
+    noop_names = [n for n in g.nodes if g.nodes[n]['op'] == 'Out'
+                  and g.predecessor[n]
+                  and any([p in g._attr.get('output_names', []) for p in g.predecessor[n]])
                   ]
     output_names = outputs if outputs else (
         noop_names if noop_names else g._attr.get('output_names', []))
     if output_names:
         valid_nodes = determined_sort(g, output_names)
         removing_nodes = set(g.nodes).difference(valid_nodes)
-        valid_out_nodes = [n for n in removing_nodes if g.get_node(n)._attr['op'] == 'Out'
-                           and len(g.pred[n]) == 1
-                           and g.pred[n][0] not in removing_nodes]
+        valid_out_nodes = [n for n in removing_nodes if g.nodes[n]['op'] == 'Out'
+                           and len(g.predecessor[n]) == 1
+                           and g.predecessor[n][0] not in removing_nodes]
         removing_nodes = set(removing_nodes).difference(valid_out_nodes)
         g.remove_nodes_from(removing_nodes)
     else:

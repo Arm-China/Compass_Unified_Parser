@@ -308,7 +308,7 @@ def convert_caffe_to_graph(model_path, params):
                     i for i in graph._attr['output_names'] if i is not None]
             else:
                 node_names = [n for n in graph.nodes]
-                succ = graph.succ
+                succ = graph.successor
                 for n in node_names:
                     if len(succ[n]) == 0:
                         graph._attr['output_names'].append(n)

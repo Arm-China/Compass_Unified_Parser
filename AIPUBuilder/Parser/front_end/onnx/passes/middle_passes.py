@@ -6776,7 +6776,7 @@ def remove_sub_add_pair(graph):
             ERROR('[Parser]: Node (%s or %s or %s or %s) cannot be found, graph maybe has been changed!' % (
                 const_1, const_2, add, sub))
             continue
-        inp = add if sub in graph.succ[add] else sub
+        inp = add if sub in graph.successor[add] else sub
         out = sub if inp == add else add
         inp_out_edges = graph.sorted_out_edges(inp)
         const_1_node = NodeWrap(graph, const_1)
@@ -6929,7 +6929,7 @@ def split_special_gn(graph):
 
         channels = gn_input_shapes[0][-1] if is_channels_last else gn_input_shapes[0][1]
         if num_groups != channels:
-            reps = [int(channels/num_groups)] * num_groups
+            reps = [int(channels / num_groups)] * num_groups
             axis = (len(gn_input_shapes[0]) - 1) if is_channels_last else 1
             post_scale_out_attr = copy.deepcopy(scale_in_attr)
             if shape is not None and scale_in_attr['tensor'] is not None and scale_in_attr['tensor'].value is not None:
@@ -7761,7 +7761,7 @@ def adjust_5d_to_4d(graph):
                             and in_shapes[0] is not None \
                             and len(in_shapes[0]) > 4 \
                             and NodeWrap(graph, in_edges[0][0])['object'].type == 'Transpose' \
-                            and NodeWrap(graph, graph.pred[graph.pred[node_name][0]][0])['object'].type == 'Input':
+                            and NodeWrap(graph, graph.predecessor[graph.predecessor[node_name][0]][0])['object'].type == 'Input':
                         new_w = 1
                         for i in range(2, len(in_shapes[0]) - 1):
                             new_w *= in_shapes[0][i]

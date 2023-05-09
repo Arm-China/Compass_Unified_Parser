@@ -464,13 +464,12 @@ def convert_tflite_to_graph(model_path, params):
 
                     for name in graph._attr['output_names']:
                         if graph.has_node(name):
-                            if not graph.succ[name] \
-                                    or all([graph.get_node(succ)._attr['op'] != 'Out' for succ in graph.succ[name]]):
+                            if not graph.successor[name] \
+                                    or all([graph.nodes[succ]['op'] != 'Out' for succ in graph.successor[name]]):
                                 out_edges = graph.sorted_out_edges(
                                     name, data=True)
                                 try:
-                                    out_ports = graph.get_node(
-                                        name)._attr['object'].get_out_ports()
+                                    out_ports = graph.nodes[name]['object'].get_out_ports()
                                 except:
                                     out_ports = []
                                 for p in out_ports:

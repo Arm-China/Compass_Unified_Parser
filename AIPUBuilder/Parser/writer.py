@@ -65,10 +65,9 @@ def serialize(graph, params):
         net_attr['model_bin'] = './' + os.path.basename(bin_path)
 
         input_names = params['input_names']
-        if any([i not in graph.nodes or graph.nodes[i].op != 'ArmInput' for i in input_names]) or len(input_names) == 0:
+        if any([i not in graph.nodes or graph.nodes[i]['op'] != 'ArmInput' for i in input_names]) or len(input_names) == 0:
             WARN('[Parser]: the input node(s) has changed or not set, please check the IR to confirm the input tensors order.')
-            input_names = [
-                graph.nodes[n].key for n in graph.nodes if graph.nodes[n].op == 'ArmInput']
+            input_names = [n for n in graph.nodes if graph.nodes[n]['op'] == 'ArmInput']
         input_objs = [NodeWrap(graph, name)['object'] for name in input_names]
         input_tops = [obj.get_outputs_info() for obj in input_objs]
         input_tops_names = [t[0][0] for t in input_tops]
