@@ -6045,6 +6045,75 @@ def merge_norm(graph):
         clear_redundant_nodes(graph)
 
 
+def merge_rms_norm(graph):
+    matched = False
+    matches = matched_patterns(graph,
+                               nodes=[
+                                   ('pow', {'op': 'Pow'}),
+                                   ('pow_y', {'op': 'Constant'}),
+                                   ('mean', {'op': 'ReduceMean'}),
+                                   ('add', {'op': 'Add'}),
+                                   ('add_const', {'op': 'Constant'}),
+                                   ('sqrt', {'op': 'Sqrt'}),
+                                   ('div', {'op': 'Div'}),
+                                   ('mul', {'op': 'Mul'}),
+                                   ('mul_const', {'op': 'Constant'}),
+                               ],
+                               edges=[
+                                   ('pow_y', 'pow', {'dst_in_port': 1}),
+                                   ('pow', 'mean'),
+                                   ('mean', 'add'),
+                                   ('add_const', 'add'),
+                                   ('add', 'sqrt'),
+                                   ('sqrt', 'div', {'dst_in_port': 1}),
+                                   ('div', 'mul'),
+                                   ('mul_const', 'mul'),
+                               ])
+    for m in matches:
+        key_names = ['pow', 'pow_y', 'mean', 'add_const',
+                     'div', 'mul', 'mul_const']
+        node_objs = {k: NodeWrap(graph, m[k])['object'] for k in key_names}
+        if any(obj is None for obj in node_objs.values()):
+            ERROR('[Parser]: Meets invalid nodes in merge_rms_norm!')
+            continue
+        pow_in_edges = graph.sorted_in_edges(m['pow'], data=True)
+        div_in_edges = graph.sorted_in_edges(m['div'], data=True)
+        if len(pow_in_edges) != 2 or len(div_in_edges) != 2:
+            ERROR('[Parser]: Meets invalid inputs of Pow(%s) or Div(%s) node in merge_rms_norm!' % (m['pow'], m['div']))
+            continue
+        if pow_in_edges[0][0] != div_in_edges[0][0] \
+                or pow_in_edges[0][2]['dst_in_port'] != 0 \
+                or div_in_edges[0][2]['dst_in_port'] != 0 \
+                or pow_in_edges[0][2]['src_out_port'] != div_in_edges[0][2]['src_out_port']:
+            continue
+        if node_objs['pow_y'].value != 2 or not node_objs['mean'].keepdims:
+            continue
+        input_shapes = node_objs['pow'].get_input_shapes()
+        if len(input_shapes) < 1 or input_shapes[0] is None or None in input_shapes[0]:
+            ERROR('[Parser]: Meets invalid input shape of Pow(%s) node in merge_rms_norm!' % m['pow'])
+            continue
+        input_shape = input_shapes[0]
+        norm_axes = OpHasAxis.make_axes_non_negative(node_objs['mean'].axes, len(input_shape))
+        exp_weights_shape = [input_shape[axis] for axis in norm_axes]
+        weights = OpHasAxis.align_axes(node_objs['mul_const'].value, norm_axes, exp_weights_shape)
+        if weights is None:
+            continue
+        epsilon = node_objs['add_const'].value
+        if np.array(epsilon).size != 1:
+            continue
+        matched = True
+        epsilon = np.array(epsilon).item()
+        src, _, src_in_attr = pow_in_edges[0]
+        mul_in_edges = graph.sorted_in_edges(m['mul'])
+        graph.remove_edges_from(mul_in_edges)
+        graph.add_edge(src, m['mul'], **src_in_attr)
+        rms_norm_attr = node_objs['mul'].copied_attr()
+        rms_norm_attr.update({'axes': norm_axes, 'weights': weights, 'epsilon': epsilon})
+        NodeWrap(graph, m['mul']).replace_obj('ArmRMSNorm', rms_norm_attr)
+    if matched:
+        clear_redundant_nodes(graph)
+
+
 def broadcast_ln_weights_biases(graph):
     matches = matched_patterns(graph,
                                nodes=[
@@ -7844,6 +7913,7 @@ def middle_passes(graph, params):
     merge_in(graph)
     broadcast_ln_weights_biases(graph)
     merge_norm(graph)
+    merge_rms_norm(graph)
     merge_ln_reshape(graph)
     merge_ln_mul_add(graph)
     duplicate_moments_mean(graph)

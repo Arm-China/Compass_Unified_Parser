@@ -3878,6 +3878,40 @@ class ArmReverseSequenceOp(OpHasOneOutPort, ArmOp):
         return ret
 
 
+class ArmRMSNormOp(OpHasAxis, OpHasWeights, OpHasOneOutPort, ArmOp):
+    @classmethod
+    def cast_in_ports(cls):
+        return {0: 'float32'}
+
+    @classmethod
+    def attributes(cls):
+        return {'epsilon': {'type': AttrType.FLOAT, 'required': True, 'default': 1e-5}
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(ArmRMSNormOp, self).__init__(graph, attr_dict)
+        self.update_attributes(ArmRMSNormOp, attr_dict)
+        assert self.check_required(), 'ArmRMSNormOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(ArmRMSNormOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        square = np.power(inputs[0], 2)
+        mean = np.mean(square, axis=tuple(self.axes), keepdims=True)
+        normalized = inputs[0] / np.sqrt(mean + self.epsilon)
+        axes = OpHasAxis.make_axes_non_negative(
+            self.axes, len(inputs[0].shape))
+        weights = OpHasAxis.expand_to(self.weights, axes, len(inputs[0].shape))
+        out_tensor = (normalized * weights).astype(np.float32)
+        self.set_out_tensor(out_tensor)
+
+    def write_attrs(self, txt_file):
+        ret = super(ArmRMSNormOp, self).write_attrs(txt_file)
+        if ret:
+            txt_file.write('epsilon=%1.12f\n' % self.epsilon)
+        return ret
+
+
 class ArmRoiAlignOp(OpHasMethod, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
