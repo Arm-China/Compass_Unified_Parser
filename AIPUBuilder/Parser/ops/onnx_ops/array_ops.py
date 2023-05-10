@@ -1277,6 +1277,9 @@ class SplitOp(OpHasAxis, OpHasMultipleOutPorts, OnnxOp):
                      'split': {'type': AttrType.INTS, 'required': False}
                      },
                 13: {'axis': {'type': AttrType.INT, 'default': 0},
+                     },
+                18: {'axis': {'type': AttrType.INT, 'default': 0},
+                     'num_outputs': {'type': AttrType.INT, 'default': None},
                      }}
 
     def __init__(self, graph, attr_dict=None):
@@ -1297,8 +1300,16 @@ class SplitOp(OpHasAxis, OpHasMultipleOutPorts, OnnxOp):
                     if len(inputs) == 2:
                         ret = np.array(inputs[1]).tolist()
                     else:
-                        ret = [inputs[0].shape[self.axis] //
-                               len(self.get_out_ports())] * len(self.get_out_ports())
+                        split_size = inputs[0].shape[self.axis]
+                        if self.cur_version >= 18:
+                            size = int(np.ceil(split_size / self.num_outputs))
+                            remainder = split_size % size
+                            ret = [size] * self.num_outputs
+                            if remainder != 0:
+                                ret[-1] = remainder
+                        else:
+                            ret = [split_size //
+                                   len(self.get_out_ports())] * len(self.get_out_ports())
                     if self.cur_version < 13:
                         self.__dict__['_attr'][item].value = ret
                     else:
@@ -1317,6 +1328,9 @@ class SplitOp(OpHasAxis, OpHasMultipleOutPorts, OnnxOp):
         if cur_ver == 1:
             assert len(inputs) in (
                 1, 2), 'The length of input is invalid in SplitOp.'
+        elif cur_ver >= 18:
+            assert (len(inputs) == 2 and self.num_outputs is None) or (len(inputs) == 1 and self.num_outputs is not None), \
+                'Either the second input split or attribute num_outputs should be specified in SplitOp.'
         else:
             assert len(
                 inputs) >= 1, 'The length of input is invalid in SplitOp.'
