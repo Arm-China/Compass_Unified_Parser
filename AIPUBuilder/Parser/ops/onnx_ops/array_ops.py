@@ -898,7 +898,9 @@ class ScatterElementsOp(OpHasOneOutPort, OpHasAxis, OnnxOp):
         return {11: {'axis': {'type': AttrType.INT, 'default': 0}},
                 13: {'axis': {'type': AttrType.INT, 'default': 0}},
                 16: {'axis': {'type': AttrType.INT, 'default': 0},
-                     'reduction': {'type': AttrType.STRING, 'options': ['none', 'mul', 'add'], 'default': 'none'}}
+                     'reduction': {'type': AttrType.STRING, 'options': ['none', 'mul', 'add'], 'default': 'none'}},
+                18: {'axis': {'type': AttrType.INT, 'default': 0},
+                     'reduction': {'type': AttrType.STRING, 'options': ['none', 'mul', 'add', 'max', 'min'], 'default': 'none'}},
                 }
 
     def __init__(self, graph, attr_dict=None):
@@ -936,8 +938,10 @@ class ScatterElementsOp(OpHasOneOutPort, OpHasAxis, OnnxOp):
             out_tensor = torch.Tensor.scatter_(
                 data_torch, src=update_torch, dim=self.axis, index=index_torch).numpy()
         else:
-            out_tensor = torch.Tensor.scatter_(
-                data_torch, src=update_torch, dim=self.axis, index=index_torch, reduce=self.reduction).numpy()
+            onnx_reduction_map = {'mul': 'prod', 'add': 'sum', 'max': 'amax', 'min': 'amin'}
+            assert self.reduction in onnx_reduction_map, 'Meets invalid reduction %s in infer_shape of ScatterElementsOp!' % self.reduction
+            out_tensor = torch.Tensor.scatter_reduce(
+                data_torch, src=update_torch, dim=self.axis, index=index_torch, reduce=onnx_reduction_map[self.reduction]).numpy()
         self.set_out_tensor(out_tensor)
 
 

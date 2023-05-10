@@ -2905,8 +2905,12 @@ def rename_scatterel(graph):
         if scatterel_obj is not None:
             scatterel_attr = scatterel_obj.copied_attr()
             if scatterel_obj.type == 'ScatterElements':
-                scatterel_attr.update(
-                    {'reduction': scatterel_obj.reduction.upper()})
+                reduction = scatterel_obj.reduction
+                if reduction not in ('none', 'mul', 'add'):
+                    WARN('[Parser]: Meets unsupported reduction %s of ScatterElements Op (%s) in rename_scatterel!' %
+                         (reduction, scatterel))
+                    continue
+                scatterel_attr.update({'reduction': reduction.upper()})
             NodeWrap(graph, scatterel).replace_obj(
                 'ArmScatterElements', scatterel_attr)
         else:
