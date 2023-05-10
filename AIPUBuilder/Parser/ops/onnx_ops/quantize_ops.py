@@ -136,6 +136,10 @@ class QLinearConvOp(BaseConvOp, OnnxOp):
                 inputs = self.get_input_tensors()
                 ret = np.array(inputs[2])
                 need_set_attr = True
+            elif item == 'kernel_shape':
+                if self.__dict__['_attr'][item].value is None or len(self.__dict__['_attr'][item].value) == 0:
+                    ret = self.w.shape[2:]
+                    need_set_attr = True
             elif item == 'w':
                 inputs = self.get_input_tensors()
                 ret = np.array(inputs[3])
