@@ -14,7 +14,7 @@ from ....graph.node_wrap import NodeWrap
 from ....graph.pattern_match import matched_patterns, single_node_matcher, two_nodes_matcher
 from ....graph.graph_algo import get_valid_node_name, clear_redundant_nodes, determined_sort, all_simple_paths, has_path
 from ....ops.op import Op, BaseLinearOp, BaseConvOp, BaseDeconvOp, BaseOnnxPoolOp, OpHasOneOutPort, OpHasPaddingStrides, OpHasAxis, \
-    OnnxOp, CommonOp, OpNeedBroadcast, OpNeedUniBroadcast
+    OnnxOp, CommonOp, OpNeedBroadcast, OpNeedUniBroadcast, OnnxReduceOp
 from ....ops.onnx_ops.array_ops import ReshapeOp
 from .common_passes import fuse_const, remove_useless_op, remove_node_safely, insert_reshape, insert_reshape_after, \
     insert_cast, insert_constant, insert_slice, insert_slice_after, insert_tile, insert_transpose, insert_transpose_after, \
@@ -7180,13 +7180,13 @@ def split_reduce_logsumexp(graph):
         rlse = m['target']
         rlse_obj = NodeWrap(graph, rlse)['object']
         in_edges = graph.sorted_in_edges(rlse, data=True)
-        if rlse_obj is None or len(in_edges) != 1:
+        if rlse_obj is None or len(in_edges) < 1:
             ERROR(
                 '[Parser]: Meets invalid ReduceLogSumExp (%s) in split_reduce_logsumexp!' % rlse)
             continue
         exp = get_valid_node_name(graph, rlse + '_exp')
         src, _, in_attr = in_edges[0]
-        graph.remove_edge(src, rlse)
+        graph.remove_edges_from(in_edges)
         graph.add_edge(src, exp, **in_attr)
         graph.add_edge(exp, rlse)
         exp_attr = rlse_obj.copied_attr()
@@ -7203,13 +7203,13 @@ def split_reduce_logsum(graph):
         rls = m['target']
         rls_obj = NodeWrap(graph, rls)['object']
         in_edges = graph.sorted_in_edges(rls, data=True)
-        if rls_obj is None or len(in_edges) != 1:
+        if rls_obj is None or len(in_edges) < 1:
             ERROR(
                 '[Parser]: Meets invalid ReduceLogSum (%s) in split_reduce_logsum!' % rls)
             continue
         reduce_sum = get_valid_node_name(graph, rls + '_reduce_sum')
         src, _, in_attr = in_edges[0]
-        graph.remove_edge(src, rls)
+        graph.remove_edges_from(in_edges)
         graph.add_edge(src, reduce_sum, **in_attr)
         graph.add_edge(reduce_sum, rls)
         reduce_sum_attr = rls_obj.copied_attr()
@@ -7226,10 +7226,10 @@ def split_reduce_sumsq(graph):
         rss = m['target']
         rss_obj = NodeWrap(graph, rss)['object']
         in_edges = graph.sorted_in_edges(rss, data=True)
-        if rss_obj is not None and len(in_edges) == 1:
+        if rss_obj is not None and len(in_edges) >= 1:
             pow = get_valid_node_name(graph, rss + '_pre_pow')
             src, _, in_attr = in_edges[0]
-            graph.remove_edge(src, rss)
+            graph.remove_edges_from(in_edges)
             graph.add_edge(src, pow, **in_attr)
             graph.add_edge(pow, rss)
             insert_constant(graph, pow + '_exponent',
@@ -7846,7 +7846,8 @@ def middle_passes(graph, params):
     merge_dilated_conv_group(graph)
     merge_dilated_conv(graph)
     remove_useless_op(graph, ['Concat',
-                              'Dropout', 'Expand', 'Reshape', 'Slice', 'Transpose', 'Roll'])
+                              'Dropout', 'Expand', 'Reshape', 'Slice', 'Transpose', 'Roll']
+                      + OnnxReduceOp.get_concrete_subclass_names())
     remove_redundant_transpose(graph)
 
     decompose_const_if(graph, params)

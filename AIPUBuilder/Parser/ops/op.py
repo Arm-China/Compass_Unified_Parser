@@ -2102,6 +2102,66 @@ class OnnxOp(Op):
         pass
 
 
+class OnnxReduceOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
+    '''
+    Class OnnxReduceOp inherited from OpHasAxis, OpHasOneOutPort, OnnxOp class.
+    All reduce ops under the onnx framework must inherit OnnxReduceOp.
+    '''
+    @classmethod
+    def ufunc(cls):
+        '''ufunc of OnnxReduceOp should be a lambda function without keyword arguments.'''
+        return None
+
+    @classmethod
+    def attributes(cls):
+        '''return attributes of OnnxReduceOp class.'''
+        return {'keepdims': {'default': 1},
+                'noop_with_empty_axes': {'type': AttrType.BOOL, 'default': False}
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(OnnxReduceOp, self).__init__(graph, attr_dict)
+        self.update_attributes(OnnxReduceOp, attr_dict)
+        assert self.check_required(), 'OnnxReduceOp is missing a required parameter.'
+
+    def __getattr__(self, item):
+        ret = None
+        try:
+            cur_ver = self.__dict__['_attr']['cur_version'].value
+            if item == 'axes':
+                if cur_ver >= 18 or (self.type == 'ReduceSum' and cur_ver >= 13):
+                    inputs = self.get_input_tensors()
+                    if len(inputs) > 1:
+                        ret = inputs[1].tolist()
+                        self.__dict__['_attr'][item].value = ret
+                else:
+                    ret = self.__dict__['_attr'][item].value
+            elif item == 'noop_with_empty_axes':
+                if cur_ver >= 18 or (self.type == 'ReduceSum' and cur_ver >= 13):
+                    ret = self.__dict__['_attr'][item].value
+                else:
+                    ret = False
+        except:
+            ret = None
+        if ret is None:
+            ret = super(OnnxReduceOp, self).__getattr__(item)
+        return ret
+
+    @abc.abstractmethod
+    def infer_shape(self):
+        '''An abstract method for shape inference.'''
+        super(OnnxReduceOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        if self.axes is None and self.noop_with_empty_axes:
+            out_tensor = inputs[0]
+        else:
+            if self.axes is None:
+                self.axes = list(range(len(inputs[0].shape)))
+            out_tensor = type(self).ufunc()(
+                inputs[0], tuple(self.axes), self.keepdims)
+        self.set_out_tensor(out_tensor)
+
+
 class BaseOnnxPoolOp(OpHasPaddingStrides, OnnxOp):
     '''
     Class BaseOnnxPoolOp inherited from OpHasPaddingStrides,OnnxOp class.

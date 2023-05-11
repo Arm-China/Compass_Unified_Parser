@@ -10,7 +10,7 @@ from ....plugin_loader import PARSER_OP_DICT
 from ....common.defs import Tensor, Framework, FLOAT_EQUAL
 from ....logger import INFO, DEBUG, WARN, ERROR, FATAL
 from ....common.utils import extend_lists, get_converted_dtype
-from ....ops.op import Op, OpHasWeights, OpHasBiases, OpHasOneOutPort, ConstLikeOp
+from ....ops.op import Op, OpHasWeights, OpHasBiases, OpHasOneOutPort, ConstLikeOp, OnnxReduceOp
 from ....ops.onnx_ops.array_ops import CastOp
 from ....ops.release_ops import ArmCastOp, ArmTransposeOp
 from ....graph.node_wrap import NodeWrap
@@ -165,6 +165,16 @@ def remove_useless_op(graph, op_type_list):
                     removing_nodes.append(node_name)
                 elif perm and list(perm) == list(range(max(perm) + 1)):
                     removing_nodes.append(node_name)
+            elif op_type in OnnxReduceOp.get_concrete_subclass_names():
+                in_edges = graph.sorted_in_edges(node_name)
+                if len(in_edges) < 1:
+                    ERROR('[Parser]: Meets invalid Reduce(%s) to remove in remove_useless_op!' % node_name)
+                    continue
+                if node_obj.axes is None and node_obj.noop_with_empty_axes:
+                    removing_nodes.append(node_name)
+                    if node_name in graph._attr['output_names']:
+                        index = graph._attr['output_names'].index(node_name)
+                        graph._attr['output_names'][index] = in_edges[0][0]
             elif op_type in ('Reshape', 'ArmReshape'):
                 reshape_in_edges = graph.sorted_in_edges(node_name, data=True)
                 src_name = reshape_in_edges[0][0]
