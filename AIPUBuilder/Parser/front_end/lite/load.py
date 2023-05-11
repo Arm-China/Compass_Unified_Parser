@@ -344,6 +344,9 @@ def convert_tflite_to_graph(model_path, params):
                                     detect_quantize = True
                                     edge_attr['tensor'].scale_zp = (const_tensor['quant_info']['Scale'],
                                                                     const_tensor['quant_info']['ZeroPoint'])
+                            quantize = False if force_not_quantize else detect_quantize
+                            if not graph_is_quantized and quantize:
+                                graph_is_quantized = True
                             if 'dtype' in const_tensor:
                                 edge_attr['tensor'].dtype = const_tensor['dtype']
                             graph.add_edge(const_name, node_name, **edge_attr)
@@ -353,7 +356,7 @@ def convert_tflite_to_graph(model_path, params):
                                                     'value': const_tensor['data'],
                                                     'data_format': 'NHWC',
                                                     'opset_version': opset_version,
-                                                    'quantize': False if force_not_quantize else detect_quantize,
+                                                    'quantize': quantize,
                                                     }
                                                    )
                 graph._attr['quantize'] = graph_is_quantized
