@@ -49,6 +49,14 @@ optional arguments in Common section of <net.cfg>:
                             YOLO3_FULL
                             CAFFE_FASTERRCNN
     caffe_prototxt      Prototxt file path of the Caffe model. Required for caffe model. (default: None)
+    input_dtype         The dtype of input(s) for torch models. Use comma to separate for several dtype string.
+                        The sequence of several dtype should be aligned with inputs. (default: float32)
+                        Example:
+                        1) One input and the dtype of the only one input is int8:
+                           input_dtype=int8
+                        2) Three inputs, in which the dtype of the first input is int32, the second is uint8,
+                           and the third is float32:
+                           input_dtype=int32,uint8,float32
     iou_threshold       Overlap threshold value between two boxes. Required if detection_postprocess is used.
     obj_threshold       Confidence threshold value of the current box. Required if detection_postprocess in
                         (case insensitive):

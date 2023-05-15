@@ -69,7 +69,8 @@ def convert_torch_to_onnx(model_path, params):
     input_names = []
     input_tensors = ()
     input_info_dict = copy.deepcopy(params['input_shapes'])
-    for input_name, input_shape in input_info_dict.items():
+    input_dtype = params['input_dtype']
+    for idx, (input_name, input_shape) in enumerate(input_info_dict.items()):
         if len(input_name) >= 1 and input_name[0].isdigit():  # Starting with numbers is not legal in pytorch
             new_input_name = 'input_' + input_name
             WARN('[Parser]: Input name %s is invalid; rename it to %s!' % (input_name, new_input_name))
@@ -77,8 +78,17 @@ def convert_torch_to_onnx(model_path, params):
             params['input_shapes'][new_input_name] = input_shape
             input_name = new_input_name
         input_names.append(input_name)
-        # FIXME: dtype is set to float32 but user may want other dtype for inputs
-        tensor = torch.randn(input_shape, dtype=torch.float32)
+        assert len(input_dtype) > idx, 'Meets invalid input_dtype in convert_torch_to_onnx'
+        try:
+            tensor_dtype = getattr(torch, input_dtype[idx])
+            INFO('[Parser]: Input dtype of input %s is set to %s!' % (input_name, input_dtype[idx]))
+        except Exception as e:
+            tensor_dtype = torch.float32
+            WARN('[Parser]: Input dtype %s is changed to float32 because %s' % (input_dtype[idx], str(e)))
+        if 'float' in str(tensor_dtype):
+            tensor = torch.randn(input_shape, dtype=tensor_dtype)
+        else:
+            tensor = torch.zeros(input_shape, dtype=tensor_dtype)
         input_tensors += (tensor, )
 
     # Get the file name of the onnx model to be exported

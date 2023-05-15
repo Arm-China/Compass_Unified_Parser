@@ -11,7 +11,7 @@ from .common import get_model_type
 
 def generate_cfg(model_path, model_type, inputs=None, inputs_shape=None,
                  output_folder_name='output_dir', proto_path=None,
-                 force_float_ir=None):
+                 force_float_ir=None, input_dtype=[]):
     '''Return cfg file path.
     '''
     test_name = model_path.split('/')[-1]
@@ -50,6 +50,8 @@ def generate_cfg(model_path, model_type, inputs=None, inputs_shape=None,
             f.write('input = ' + inputs + '\n')
             if inputs_shape is not None:
                 f.write('input_shape = ' + shape_str + '\n')
+        if model_type == 'torch' and len(input_dtype) > 0:
+            f.write('input_dtype = ' + ','.join(input_dtype) + '\n')
         if model_type == 'caffe':
             f.write('caffe_prototxt = ' + proto_path + '\n')
         f.write('output_dir = ' + output_dir + '\n')
@@ -231,7 +233,9 @@ def read_tflite_model(model_path, save_cfg=False, force_float_ir=None):
     return model_content, cfg_path
 
 
-def read_model(model_path, save_cfg=False, model_type=None, proto_path=None, input_shapes=OrderedDict(), force_float_ir=None):
+def read_model(model_path, save_cfg=False, model_type=None, proto_path=None,
+               input_shapes=OrderedDict(), force_float_ir=None,
+               input_dtype=[]):
     ''' Read model and save it to log file.
     Basing on the suffix of model path, decide model type if it's not set.
     Input arg `force_float_ir` only works for onnx and tflite models for now. Defaults to None.
@@ -264,7 +268,7 @@ def read_model(model_path, save_cfg=False, model_type=None, proto_path=None, inp
         input_names = [name for name in input_shapes.keys()]
         input_names_str = ','.join(input_names)
         input_shapes = [shape for shape in input_shapes.values()]
-        cfg_path = generate_cfg(model_path, model_type, input_names_str, input_shapes)
+        cfg_path = generate_cfg(model_path, model_type, input_names_str, input_shapes, input_dtype=input_dtype)
     else:
         # TODO: Support other models
         ERROR('Unsupported model type!')

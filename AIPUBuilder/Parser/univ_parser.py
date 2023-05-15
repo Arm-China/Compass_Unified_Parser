@@ -63,8 +63,17 @@ def univ_parser(params):
             if params['input_names'] or params['output_names']:
                 INFO('[Parser]: input_names and output_names in config file won\'t change input '
                      'and output nodes for torch model!')
+            input_num = len(params['input_shapes'])
             if not params['input_names']:
-                params['input_names'] = [('x' + str(idx)) for idx in range(len(params['input_shapes']))]
+                params['input_names'] = [('x' + str(idx)) for idx in range(input_num)]
+            if 'input_dtype' in params:
+                params['input_dtype'] = multi_string_to_list(params['input_dtype'])
+                if len(params['input_dtype']) != input_num:
+                    FATAL('[Parser]: Length of input_dtype should be equal to length of input_shapes! '
+                          'Please check config file!')
+            else:
+                params['input_dtype'] = ['float32'] * input_num
+                INFO('[Parser]: Input dtype is not set; default to float32 for torch model!')
 
         if len(params['input_names']) == len(params['input_shapes']):
             params['input_shapes'] = {
