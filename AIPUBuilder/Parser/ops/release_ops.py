@@ -598,7 +598,7 @@ class ArmBNLLOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
         self.set_out_tensor(out_tensor)
 
 
-class ArmBoundingBoxOp(OpHasMultipleOutPorts, ArmOp):
+class ArmBoundingBoxOp(OpHasOneOutPort, ArmOp):
     @classmethod
     def num_in_ports(cls):
         return 2
@@ -616,10 +616,8 @@ class ArmBoundingBoxOp(OpHasMultipleOutPorts, ArmOp):
     def infer_shape(self):
         super(ArmBoundingBoxOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        batch_size = inputs[0].shape[0]
-        out_tensor1 = copy.deepcopy(inputs[0])
-        out_tensor2 = np.zeros([batch_size, 1], np.int32)
-        self.set_out_tensor([out_tensor1, out_tensor2, out_tensor2])
+        out_tensor = copy.deepcopy(inputs[0])
+        self.set_out_tensor(out_tensor)
 
     def write_attrs(self, txt_file):
         ret = super(ArmBoundingBoxOp, self).write_attrs(txt_file)

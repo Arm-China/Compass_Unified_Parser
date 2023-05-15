@@ -3168,8 +3168,6 @@ def merge_keras_maskrcnn(graph, params):
 
     # rpn_class/concat_proposal
     bounding_box = get_valid_node_name(graph, rpn_probs + '_proposal')
-    bounding_box_1_out = get_valid_node_name(graph, bounding_box + '_1_out')
-    bounding_box_2_out = get_valid_node_name(graph, bounding_box + '_2_out')
     nms1_box_num_per_class_value = np.array([[N]], dtype=np.int32)
     nms1_total_class_num_value = np.array([[1]], dtype=np.int32)
     # rpn_class/concat_proposal_nms1 ,iou_threshold=0.7, image_height=600, image_width=600
@@ -3213,10 +3211,6 @@ def merge_keras_maskrcnn(graph, params):
 
     # mrcnn_detecion/decodebox
     bounding_box2 = get_valid_node_name(graph, model_name + '_decodebox')
-    bounding_box2_1_out = get_valid_node_name(
-        graph, bounding_box2 + '_1_out')  # Out
-    bounding_box2_2_out = get_valid_node_name(
-        graph, bounding_box2 + '_2_out')  # Out
 
     # mrcnn_detecion/reshape_probs
     mrcnn_class_reshape_post_reshape = get_valid_node_name(
@@ -3326,8 +3320,6 @@ def merge_keras_maskrcnn(graph, params):
     graph.add_edge(box_gather, bounding_box, **{'dst_in_port': 1})
     graph.add_edge(bounding_box, nms1)
     graph.add_edge(bounding_box, post_nms1)
-    graph.add_edge(bounding_box, bounding_box_1_out, **{'src_out_port': 1})
-    graph.add_edge(bounding_box, bounding_box_2_out, **{'src_out_port': 2})
 
     graph.add_edge(rpn_probs, class_gather)
     graph.add_edge(topk_indices_reshape, class_gather, **{'dst_in_port': 1})
@@ -3417,8 +3409,6 @@ def merge_keras_maskrcnn(graph, params):
                    gather2, **{'dst_in_port': 1})
     graph.add_edge(gather2, gather2_post_reshape)
     graph.add_edge(bounding_box2, gather1)
-    graph.add_edge(bounding_box2, bounding_box2_1_out, **{'src_out_port': 1})
-    graph.add_edge(bounding_box2, bounding_box2_2_out, **{'src_out_port': 2})
     graph.add_edge(count, reverse_seq)
     insert_constant(graph,
                     reverse_seq + '_len',
@@ -3488,10 +3478,6 @@ def merge_keras_maskrcnn(graph, params):
                                                )
     NodeWrap(graph, bounding_box).replace_obj(
         'ArmBoundingBox', {'name': bounding_box})
-    NodeWrap(graph, bounding_box_1_out).replace_obj(
-        'Out', {'name': bounding_box_1_out})
-    NodeWrap(graph, bounding_box_2_out).replace_obj(
-        'Out', {'name': bounding_box_2_out})
     NodeWrap(graph, nms1).replace_obj('ArmNMS',
                                       {'name': nms1,
                                        'image_width': 600,
@@ -3552,10 +3538,6 @@ def merge_keras_maskrcnn(graph, params):
                                                                  })
     NodeWrap(graph, bounding_box2).replace_obj(
         'ArmBoundingBox', {'name': bounding_box2})
-    NodeWrap(graph, bounding_box2_1_out).replace_obj(
-        'Out', {'name': bounding_box2_1_out})
-    NodeWrap(graph, bounding_box2_2_out).replace_obj(
-        'Out', {'name': bounding_box2_2_out})
     place_reshape(graph, mrcnn_class_reshape_post_reshape, [N, class_num])
     NodeWrap(graph, score_gathernd).replace_obj('GatherND',
                                                 {'name': score_gathernd,
