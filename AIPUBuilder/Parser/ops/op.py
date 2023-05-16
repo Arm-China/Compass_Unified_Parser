@@ -1028,8 +1028,7 @@ class OpHasPaddingStrides(LayoutConcernedOp):
             elif item == 'pads':
                 ret = self.__dict__['_attr'][item].value
                 if not ret:
-                    ret = [0, 0] * len(self.__dict__['_attr']
-                                       ['kernel_shape'].value)
+                    ret = [0, 0] * len(self.kernel_shape)
                     self.__dict__['_attr'][item].value = ret
         except:
             ret = None
