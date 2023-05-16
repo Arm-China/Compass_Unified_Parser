@@ -2132,8 +2132,9 @@ class OnnxReduceOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
                 if cur_ver >= 18 or (self.type == 'ReduceSum' and cur_ver >= 13):
                     inputs = self.get_input_tensors()
                     if len(inputs) > 1:
-                        ret = inputs[1].tolist()
-                        self.__dict__['_attr'][item].value = ret
+                        ret = inputs[1].tolist() if inputs[1].size > 0 else None
+                        if ret is not None:
+                            self.__dict__['_attr'][item].value = ret
                 else:
                     ret = self.__dict__['_attr'][item].value
             elif item == 'noop_with_empty_axes':

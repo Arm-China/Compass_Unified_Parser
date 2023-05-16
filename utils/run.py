@@ -44,8 +44,8 @@ def run_parser(model_path, feed_dict, output_names=None, model_type=None, save_o
 
     # Need input shape info for torch model
     input_shapes = OrderedDict()
+    input_dtype = []
     if model_type == 'torch':
-        input_dtype = []
         for name, value in feed_dict.items():
             input_shapes[name] = list(value.shape)
             input_dtype.append(value.dtype.name)
