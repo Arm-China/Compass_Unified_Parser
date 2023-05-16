@@ -490,7 +490,7 @@ def convert_tflite_to_graph(model_path, params):
                 ERROR('Onnx version is too low, needs updating!')
     except Exception as e:
         ret = False
-        WARN('[Parser]: Read Tflite %s meets error in convert_tflite_to_graph! %s' % (
+        ERROR('[Parser]: Read Tflite %s meets error in convert_tflite_to_graph! %s' % (
             model_path, str(e)))
     if not ret:
         graph.clear()

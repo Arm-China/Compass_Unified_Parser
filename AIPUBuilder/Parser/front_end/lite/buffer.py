@@ -197,7 +197,10 @@ def parse_operator(operator, tflite_model, buffer):
                               opcode.DeprecatedBuiltinCode())
     else:
         builtin_op_code = opcode.BuiltinCode()
-    builtin_op_type = get_class_variables_map(BuiltinOperator)[builtin_op_code]
+    opcode_optype_maps = get_class_variables_map(BuiltinOperator)
+    assert builtin_op_code in opcode_optype_maps, \
+        'Op builtin_code (%d) out of range in parse_operator.' % builtin_op_code
+    builtin_op_type = opcode_optype_maps[builtin_op_code]
     builtin_op_version = opcode.Version()
 
     is_tf_op = False
