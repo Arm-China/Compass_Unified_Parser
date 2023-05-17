@@ -987,11 +987,12 @@ def insert_transpose(graph, src, dst, in_attr, perm, key=None):
     return ret
 
 
-def insert_transpose_after(graph, src, perm, port=0):
+def insert_transpose_after(graph, src, perm, port=0, type='Transpose'):
     ret = None
     if graph.has_node(src) \
             and perm is not None \
-            and isinstance(perm, (list, np.ndarray)):
+            and isinstance(perm, (list, np.ndarray)) \
+            and type in ('Transpose', 'ArmTranspose'):
         if isinstance(perm, np.ndarray):
             perm = perm.tolist()
         if port == 0:
@@ -1019,11 +1020,10 @@ def insert_transpose_after(graph, src, perm, port=0):
                 out_tensor.shape = out_tensor.value.shape
                 out_edge_attr.update({'tensor': out_tensor})
             graph.add_edge(src, transpose, **out_edge_attr)
-            NodeWrap(graph, transpose).replace_obj('Transpose',
-                                                   {'name': transpose,
-                                                    'opset_version': 1,
-                                                    'perm': perm
-                                                    })
+            node_attr = {'name': transpose, 'perm': perm}
+            if type == 'Transpose':
+                node_attr.update({'opset_version': 1})
+            NodeWrap(graph, transpose).replace_obj(type, node_attr)
             ret = transpose
         else:
             ERROR('[Parser]: Cannot find port=%d in insert_transpose_after!' % port)

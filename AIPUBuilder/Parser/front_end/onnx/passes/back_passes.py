@@ -4222,23 +4222,9 @@ def sink_double_transpose(graph):
                     trans2_in_edges = graph.sorted_in_edges(trans2)
                     graph.remove_edges_from(trans2_in_edges)
 
-                post_trans = get_valid_node_name(
-                    graph, unaware + '_post_transpose')
-                unaware_out_tensor = None
-                for _, dst, out_attr in graph.sorted_out_edges(unaware, data=True):
-                    graph.remove_edge(unaware, dst)
-                    graph.add_edge(post_trans, dst, **out_attr)
-                    if out_attr['tensor'].value is not None:
-                        unaware_out_tensor = np.transpose(out_attr['tensor'].value, [
-                                                          trans1_obj.perm.index(i) for i in range(len(trans1_obj.perm))])
-                graph.add_edge(unaware, post_trans, **
-                               {'tensor': Tensor(value=unaware_out_tensor)})
-
-                post_trans_attr = unaware_obj.copied_attr()
-                post_trans_attr.update(
-                    {'name': post_trans, 'perm': trans1_obj.perm})
-                NodeWrap(graph, post_trans).replace_obj(
-                    'ArmTranspose', post_trans_attr)
+                post_trans = insert_transpose_after(graph, unaware, trans1_obj.perm,
+                                                    port=unaware_obj.get_out_ports()[0],
+                                                    type='ArmTranspose')
 
                 if unaware in graph._attr['output_names']:
                     index = graph._attr['output_names'].index(unaware)
