@@ -3992,7 +3992,7 @@ class ArmScatterNDOp(OpHasOneOutPort, ArmOp):
 
     @classmethod
     def attributes(cls):
-        return {'reduction': {'type': AttrType.STRING, 'options': ['NONE', 'MUL', 'ADD'], 'default': 'NONE'}}
+        return {'reduction': {'type': AttrType.STRING, 'options': ['NONE', 'MUL', 'ADD', 'MAX', 'MIN'], 'default': 'NONE'}}
 
     def __init__(self, graph, attr_dict=None):
         super(ArmScatterNDOp, self).__init__(graph, attr_dict)
@@ -4011,6 +4011,10 @@ class ArmScatterNDOp(OpHasOneOutPort, ArmOp):
                 out_tensor[index] *= updates[idx]
             elif self.reduction == 'add':
                 out_tensor[index] += updates[idx]
+            elif self.reduction == 'max':
+                out_tensor[index] = np.maximum(out_tensor[index], updates[idx])
+            elif self.reduction == 'min':
+                out_tensor[index] = np.minimum(out_tensor[index], updates[idx])
             else:
                 out_tensor[index] = updates[idx]
         self.set_out_tensor(out_tensor)
@@ -4033,7 +4037,7 @@ class ArmScatterElementsOp(OpHasOneOutPort, OpHasAxis, ArmOp):
 
     @classmethod
     def attributes(cls):
-        return {'reduction': {'type': AttrType.STRING, 'options': ['NONE', 'MUL', 'ADD'], 'default': 'NONE'}}
+        return {'reduction': {'type': AttrType.STRING, 'options': ['NONE', 'MUL', 'ADD', 'MAX', 'MIN'], 'default': 'NONE'}}
 
     def __init__(self, graph, attr_dict=None):
         super(ArmScatterElementsOp, self).__init__(graph, attr_dict)
@@ -4053,12 +4057,11 @@ class ArmScatterElementsOp(OpHasOneOutPort, OpHasAxis, ArmOp):
         if self.reduction == 'NONE':
             out_tensor = torch.Tensor.scatter_(
                 data_torch, src=update_torch, dim=self.axis, index=index_torch).numpy()
-        elif self.reduction == 'ADD':
-            out_tensor = torch.Tensor.scatter_(
-                data_torch, src=update_torch, dim=self.axis, index=index_torch, reduce='add').numpy()
         else:
-            out_tensor = torch.Tensor.scatter_(
-                data_torch, src=update_torch, dim=self.axis, index=index_torch, reduce='multiply').numpy()
+            reduction_map = {'MUL': 'prod', 'ADD': 'sum', 'MAX': 'amax', 'MIN': 'amin'}
+            assert self.reduction in reduction_map, 'Meets invalid reduction %s in infer_shape of ArmScatterElementsOp!' % self.reduction
+            out_tensor = torch.Tensor.scatter_reduce(
+                data_torch, src=update_torch, dim=self.axis, index=index_torch, reduce=reduction_map[self.reduction]).numpy()
         self.set_out_tensor(out_tensor)
 
     def write_attrs(self, txt_file):

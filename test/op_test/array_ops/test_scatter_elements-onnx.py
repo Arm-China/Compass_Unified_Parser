@@ -74,7 +74,7 @@ for version in (16, 18):
             feed_dict.clear()
             feed_dict['X'] = np.random.randint(-10, 10, add_input_shape).astype(np.int32)
             for const_scatter_inputs in (False, True):
-                if (version < 18 or not const_scatter_inputs) and reduction in ('min', 'max'):
+                if version < 18 and reduction in ('min', 'max'):
                     continue
                 scatter_index = np.random.randint(0, 5, [2, 5]).astype(np.int32)
                 scatter_update = np.arange(-5, 5).reshape([2, 5])
