@@ -733,6 +733,8 @@ class LiteDEQUANTIZEOp(OpHasOneOutPort, TfliteOp):
         return {1: {'scale': {'type': AttrType.TENSOR, 'default': np.array([1.], np.float32)},
                     'zero_point': {'type': AttrType.TENSOR, 'default': np.array([0], np.int32)}},
                 2: {'scale': {'type': AttrType.TENSOR, 'default': np.array([1.], np.float32)},
+                    'zero_point': {'type': AttrType.TENSOR, 'default': np.array([0], np.int32)}},
+                3: {'scale': {'type': AttrType.TENSOR, 'default': np.array([1.], np.float32)},
                     'zero_point': {'type': AttrType.TENSOR, 'default': np.array([0], np.int32)}}
                 }
 
@@ -761,7 +763,10 @@ class LiteDEQUANTIZEOp(OpHasOneOutPort, TfliteOp):
     def infer_shape(self):
         super(LiteDEQUANTIZEOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        x = inputs[0].astype(np.int32)
+        if np.issubdtype(inputs[0].dtype, np.integer):
+            x = inputs[0].astype(np.int32)
+        else:
+            x = inputs[0]
         out_tensor = (self.scale * (x - self.zero_point)).astype(np.float32)
         self.set_out_tensor(out_tensor)
 

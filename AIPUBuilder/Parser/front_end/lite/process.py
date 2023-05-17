@@ -40,7 +40,6 @@ def process_tflite(model_path, params):
             split_quatized_mean(graph)
         else:
             merge_min_quant_max_to_clip(graph)
-            remove_useless_op(graph, ['LiteDEQUANTIZE'])
 
         split_fc(graph)
         split_s2b(graph)
@@ -74,6 +73,9 @@ def process_tflite(model_path, params):
         clear_redundant_nodes(graph)
         infer(graph)
         fuse_const(graph)
+
+        if not graph._attr.get('quantize', False):
+            remove_useless_op(graph, ['LiteDEQUANTIZE'])  # need after fuse_const
 
         from ..onnx.passes.middle_passes import convert_to_const
         convert_to_const(graph, ['LiteSHAPE', 'LiteZEROS_LIKE'])
