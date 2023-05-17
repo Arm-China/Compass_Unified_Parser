@@ -477,8 +477,8 @@ class GatherNDOp(OpHasOneOutPort, OnnxOp):
                 try:
                     out_data.append(reshaped_data[(batch_dim,) + gather_index])
                 except:
-                    out_data.append(np.zeros_like(
-                        reshaped_data[batch_dim, 0], inputs[0].dtype))
+                    gather_index = tuple(np.zeros_like(reshaped_indices[batch_dim][outer_dim]))
+                    out_data.append(reshaped_data[(batch_dim,) + gather_index])
         out_tensor = np.asarray(
             out_data, dtype=inputs[0].dtype).reshape(output_shape)
         self.set_out_tensor(out_tensor)
