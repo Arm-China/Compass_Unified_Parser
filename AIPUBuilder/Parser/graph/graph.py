@@ -167,9 +167,10 @@ class Graph(nx.MultiDiGraph):
         ret = "digraph \"%s\" {\nnode [shape=record];\n" % self._attr["name"]
 
         for i, (n_name, n) in enumerate(self.nodes._nodes.items()):
+            # n is a dictionary whose keys include 'op', 'unique' and 'object'.
             id_s = str(i)
             label = "node_%d [style=\"filled\",color=\"black\",fillcolor=\"%s\",label=\"{%s %s|%s" % (
-                keys.index(n_name), "white", id_s, n_name, n.op)
+                keys.index(n_name), "white", id_s, n_name, n.get('op', ''))
             in_tensor = [str(a["tensor"].shape)
                          for _, _, a in self.sorted_in_edges(n_name, data=True)]
             out_tensor = [str(a["tensor"].shape)
@@ -183,20 +184,21 @@ class Graph(nx.MultiDiGraph):
             comment = ""
             ret += label % (comment)
 
-        for name, successors in self._adj_dict.items():
+        for name, successors in self.adj.items():
             p_id = keys.index(name)
             for s in successors:
                 if s in keys:
-                    label = "node_%d -> {node_%d} [style=\"filled\",color=\"black\",label=\"" % (
-                        p_id, keys.index(s))
-                    in_port = successors[s][0]._attr['dst_in_port']
-                    scale_zp = successors[s][0]._attr['tensor'].scale_zp if successors[s][0]._attr['tensor'] is not None else ''
-                    out_port = successors[s][0]._attr['src_out_port']
-                    label += "%s %s \n\n" % (out_port, str(scale_zp))
-                    label += "%s " % (in_port)
-                    label_end = "\"];"
-                    label += label_end
-                    ret += label
+                    for _, edge in successors[s].items():
+                        label = "node_%d -> {node_%d} [style=\"filled\",color=\"black\",label=\"" % (
+                            p_id, keys.index(s))
+                        in_port = edge['dst_in_port']
+                        scale_zp = edge['tensor'].scale_zp if edge['tensor'] is not None else ''
+                        out_port = edge['src_out_port']
+                        label += "%s %s \n\n" % (out_port, str(scale_zp))
+                        label += "%s " % (in_port)
+                        label_end = "\"];"
+                        label += label_end
+                        ret += label
         ret += "};"
         return ret
 
