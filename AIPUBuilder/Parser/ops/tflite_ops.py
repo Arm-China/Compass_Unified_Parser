@@ -253,6 +253,24 @@ class LiteBROADCAST_TOOp(OpHasOneOutPort, TfliteOp):
         self.set_out_tensor(out_tensor)
 
 
+class LiteBROADCAST_ARGSOp(OpHasOneOutPort, TfliteOp):
+    @classmethod
+    def attributes(cls):
+        return {1: {}, 2: {}}
+
+    def __init__(self, graph, attr_dict=None):
+        super(LiteBROADCAST_ARGSOp, self).__init__(graph, attr_dict)
+        self.update_attributes(LiteBROADCAST_ARGSOp, attr_dict)
+        assert self.check_required(), 'LiteBROADCAST_ARGSOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(LiteBROADCAST_ARGSOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        assert len(inputs) == 2, 'Meets invalid inputs of LiteBROADCAST_ARGSOp(%s) in infer_shape' % self.name
+        out_tensor = tf.raw_ops.BroadcastArgs(s0=inputs[0], s1=inputs[1]).numpy()
+        self.set_out_tensor(out_tensor)
+
+
 class LiteCASTOp(OpHasOneOutPort, TfliteOp):
     @classmethod
     def attributes(cls):

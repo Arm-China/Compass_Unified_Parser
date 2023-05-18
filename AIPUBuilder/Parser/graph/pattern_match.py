@@ -80,7 +80,8 @@ def matched_patterns(graph, nodes, edges):
         pattern.add_nodes_from(nodes)
         pattern.add_edges_from(edges)
         matcher = isomorphism.MultiDiGraphMatcher(graph, pattern, node_feasibility, edge_feasibility)
-        matches = [{v: k for k, v in m.items()} for m in matcher.subgraph_monomorphisms_iter()]
+        # matches = [{v: k for k, v in m.items()} for m in matcher.subgraph_monomorphisms_iter()]
+        matches = [{v: k for k, v in m.items()} for m in matcher.subgraph_isomorphisms_iter()]
         if len(matches) > 1:
             keys = list(matches[0].keys())
             matches = sorted(matches, key=lambda x: tuple(x[k] for k in keys))
