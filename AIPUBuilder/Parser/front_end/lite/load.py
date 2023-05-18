@@ -388,6 +388,12 @@ def convert_tflite_to_graph(model_path, params):
                     # add output node into graph
                     output_names = []
                     for output_index, output_tensor_id in enumerate(net_outputs):
+                        if output_tensor_id < 0 \
+                                or output_tensor_id >= len(parsed_tensors_table) \
+                                or output_tensor_id not in out_tensor_operator_map:
+                            DEBUG('[Parser]: Meets invalid output tensor id(%d) in convert_tflite_to_graph!' %
+                                  output_tensor_id)
+                            continue
                         out_tensor = parsed_tensors_table[output_tensor_id]
                         out_op_id = out_tensor_operator_map[output_tensor_id]
                         out_op_info = parsed_operators_table[out_op_id]
