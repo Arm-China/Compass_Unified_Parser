@@ -2497,12 +2497,15 @@ def merge_lstm2(graph):
                                             ('concat', {'op': 'TfConcatV2'}),
                                             ],
                                      edges=[('trans', 'tensor_arr_scatter', {'src_out_port': 0, 'dst_in_port': 2}),
-                                            ('tensor_arr', 'tensor_arr_scatter'),
                                             ('tensor_arr', 'tensor_arr_scatter', {
-                                             'src_out_port': 1, 'dst_in_port': 3}),
+                                             'src_out_port': 0, 'dst_in_port': 0}),
                                             ('range', 'tensor_arr_scatter', {
                                              'src_out_port': 0, 'dst_in_port': 1}),
-                                            ('tensor_arr_scatter', 'tensor_read'),
+                                            ('tensor_arr', 'tensor_arr_scatter', {
+                                             'src_out_port': 1, 'dst_in_port': 3}),
+                                            ('tensor_arr', 'tensor_read', {'src_out_port': 0, 'dst_in_port': 0}),
+                                            ('tensor_arr_scatter', 'tensor_read', {
+                                             'src_out_port': 0, 'dst_in_port': 2}),
                                             ('tensor_read', 'concat'),
                                             ])
 
@@ -2531,6 +2534,17 @@ def merge_lstm2(graph):
                                                 ('concat', 'trans'),
                                                 ('gather', 'trans')
                                             ])
+
+    h_out_matches = matched_patterns(graph,
+                                     nodes=[('ht', {'op': 'TfMul'}),
+                                            ('iter', {'op': 'TfNextIteration'}),
+                                            ('merge', {'op': 'TfMerge'}),
+                                            ('switch', {'op': 'TfSwitch'}),
+                                            ('exit', {'op': 'TfExit'})],
+                                     edges=[('ht', 'iter'),
+                                            ('iter', 'merge'),
+                                            ('merge', 'switch'),
+                                            ('switch', 'exit')])
 
     h_init_matches = matched_patterns(graph,
                                       nodes=[
@@ -2569,20 +2583,21 @@ def merge_lstm2(graph):
             and cell_matches \
             and h_init_matches \
             and c_init_matches \
-            and sequence_out_matches \
-            and len(begin_matches) >= len(cell_matches) \
-            and len(sequence_out_matches) == len(cell_matches):
+            and (sequence_out_matches or h_out_matches) \
+            and len(begin_matches) >= len(cell_matches):
 
         for cm in cell_matches:
             begin_match = [
                 b for b in begin_matches if b["concat"] == cm["concat"]]
             Y_out_match = [
                 s for s in sequence_out_matches if s["ht"] == cm["mul3"]]
+            H_out_match = [
+                s for s in h_out_matches if s["ht"] == cm["mul3"]]
             h_init_match = [
                 h for h in h_init_matches if h["cell_concat"] == cm["concat"]]
             c_init_match = [c for c in c_init_matches if c["mul"] == cm["mul"]]
 
-            if not begin_match or not Y_out_match or not h_init_match or not c_init_match:
+            if not begin_match or (not Y_out_match and not H_out_match) or not h_init_match or not c_init_match:
                 continue
 
             const_b = cm['const_b']
@@ -2659,7 +2674,7 @@ def merge_lstm2(graph):
             biases_r = np.zeros_like(biases_w)
             B_value = np.stack([np.concatenate([biases_w, biases_r])])
             seq_length = np.array([time_steps] * batch_size, np.int32)
-            hidden_size = begin_in_shapes[0][-1]
+            hidden_size = np.size(biases) // 4
             Y_out_dim = [batch_size, time_steps, hidden_size]
             initial_hc_shape = [batch_size, 1, hidden_size]
 
@@ -2680,14 +2695,30 @@ def merge_lstm2(graph):
             graph.add_edge(initial_c_name, lstm_begin, **new_c_init_attr)
             graph.remove_edges_from(scatter_in_edges + scatter_out_edges)
 
-            seq_end_name = Y_out_match[0]['trans']
-            seq_end_out_edge = graph.sorted_out_edges(
-                seq_end_name, data=True)
-            for _, seq_end_dst, seq_end_attr in seq_end_out_edge:
-                graph.remove_edge(seq_end_name, seq_end_dst)
-                graph.add_edge(lstm_begin, seq_end_dst, **seq_end_attr)
-            post_reshape_name = insert_reshape_after(
-                graph, lstm_begin, Y_out_dim)
+            if Y_out_match:
+                seq_end_name = Y_out_match[0]['trans']
+                seq_end_out_edges = graph.sorted_out_edges(
+                    seq_end_name, data=True)
+                for _, seq_end_dst, seq_end_attr in seq_end_out_edges:
+                    graph.remove_edge(seq_end_name, seq_end_dst)
+                    graph.add_edge(lstm_begin, seq_end_dst, **seq_end_attr)
+                post_reshape_name = insert_reshape_after(
+                    graph, lstm_begin, Y_out_dim)
+                if seq_end_name in graph._attr['output_names']:
+                    index = graph._attr['output_names'].index(seq_end_name)
+                    graph._attr['output_names'][index] = post_reshape_name
+            if H_out_match:
+                hout_end_name = H_out_match[0]['exit']
+                hout_end_out_edges = graph.sorted_out_edges(hout_end_name, data=True)
+                graph.remove_edges_from(hout_end_out_edges)
+                for _, hout_end_dst, hout_end_attr in hout_end_out_edges:
+                    hout_end_attr.update({'src_out_port': 1})
+                    graph.add_edge(lstm_begin, hout_end_dst, **hout_end_attr)
+                post_reshape_name = insert_reshape_after(
+                    graph, lstm_begin, [batch_size, hidden_size], out_port=1)
+                if hout_end_name in graph._attr['output_names']:
+                    index = graph._attr['output_names'].index(hout_end_name)
+                    graph._attr['output_names'][index] = post_reshape_name
 
             # Convert to onnx lstm
             insert_constant(graph, lstm_begin + '_W', W_value, lstm_begin,
@@ -2708,13 +2739,8 @@ def merge_lstm2(graph):
                          'opset_version': 14,
                          'layout': True,
                          'hidden_size': hidden_size,
-                         'method': 'Y',
                          }
             NodeWrap(graph, lstm_begin).replace_obj('LSTM', lstm_attr)
-
-            if seq_end_name in graph._attr['output_names']:
-                index = graph._attr['output_names'].index(seq_end_name)
-                graph._attr['output_names'][index] = post_reshape_name
 
     if matched:
         clear_redundant_nodes(graph)
