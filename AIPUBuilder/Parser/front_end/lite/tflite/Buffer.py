@@ -43,12 +43,9 @@ class Buffer(object):
 
 
 def BufferStart(builder): builder.StartObject(1)
-
-
 def BufferAddData(builder, data): builder.PrependUOffsetTRelativeSlot(
     0, flatbuffers.number_types.UOffsetTFlags.py_type(data), 0)
-def BufferStartDataVector(
-    builder, numElems): return builder.StartVector(1, numElems, 1)
 
 
+def BufferStartDataVector(builder, numElems): return builder.StartVector(1, numElems, 1)
 def BufferEnd(builder): return builder.EndObject()

@@ -28,20 +28,13 @@ class ResizeBilinearOptions(object):
 
     # ResizeBilinearOptions
     def HalfPixelCenters(self):
-        o = flatbuffers.number_types.UOffsetTFlags.py_type(
-            self._tab.Offset(10))
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(10))
         if o != 0:
             return bool(self._tab.Get(flatbuffers.number_types.BoolFlags, o + self._tab.Pos))
         return False
 
 
 def ResizeBilinearOptionsStart(builder): builder.StartObject(4)
-
-
-def ResizeBilinearOptionsAddAlignCorners(
-    builder, alignCorners): builder.PrependBoolSlot(2, alignCorners, 0)
-def ResizeBilinearOptionsAddHalfPixelCenters(
-    builder, halfPixelCenters): builder.PrependBoolSlot(3, halfPixelCenters, 0)
-
-
+def ResizeBilinearOptionsAddAlignCorners(builder, alignCorners): builder.PrependBoolSlot(2, alignCorners, 0)
+def ResizeBilinearOptionsAddHalfPixelCenters(builder, halfPixelCenters): builder.PrependBoolSlot(3, halfPixelCenters, 0)
 def ResizeBilinearOptionsEnd(builder): return builder.EndObject()

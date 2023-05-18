@@ -43,12 +43,9 @@ class CustomQuantization(object):
 
 
 def CustomQuantizationStart(builder): builder.StartObject(1)
-
-
 def CustomQuantizationAddCustom(builder, custom): builder.PrependUOffsetTRelativeSlot(
     0, flatbuffers.number_types.UOffsetTFlags.py_type(custom), 0)
-def CustomQuantizationStartCustomVector(
-    builder, numElems): return builder.StartVector(1, numElems, 1)
 
 
+def CustomQuantizationStartCustomVector(builder, numElems): return builder.StartVector(1, numElems, 1)
 def CustomQuantizationEnd(builder): return builder.EndObject()

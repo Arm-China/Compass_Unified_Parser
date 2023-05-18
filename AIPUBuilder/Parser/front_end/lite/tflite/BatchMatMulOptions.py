@@ -42,14 +42,8 @@ class BatchMatMulOptions(object):
 
 
 def BatchMatMulOptionsStart(builder): builder.StartObject(3)
-
-
-def BatchMatMulOptionsAddAdjX(
-    builder, adjX): builder.PrependBoolSlot(0, adjX, 0)
-
-
-def BatchMatMulOptionsAddAdjY(
-    builder, adjY): builder.PrependBoolSlot(1, adjY, 0)
+def BatchMatMulOptionsAddAdjX(builder, adjX): builder.PrependBoolSlot(0, adjX, 0)
+def BatchMatMulOptionsAddAdjY(builder, adjY): builder.PrependBoolSlot(1, adjY, 0)
 def BatchMatMulOptionsAddAsymmetricQuantizeInputs(
     builder, asymmetricQuantizeInputs): builder.PrependBoolSlot(2, asymmetricQuantizeInputs, 0)
 

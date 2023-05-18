@@ -35,12 +35,6 @@ class CumsumOptions(object):
 
 
 def CumsumOptionsStart(builder): builder.StartObject(2)
-
-
-def CumsumOptionsAddExclusive(
-    builder, exclusive): builder.PrependBoolSlot(0, exclusive, 0)
-def CumsumOptionsAddReverse(
-    builder, reverse): builder.PrependBoolSlot(1, reverse, 0)
-
-
+def CumsumOptionsAddExclusive(builder, exclusive): builder.PrependBoolSlot(0, exclusive, 0)
+def CumsumOptionsAddReverse(builder, reverse): builder.PrependBoolSlot(1, reverse, 0)
 def CumsumOptionsEnd(builder): return builder.EndObject()

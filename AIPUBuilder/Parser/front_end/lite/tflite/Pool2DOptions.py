@@ -42,50 +42,32 @@ class Pool2DOptions(object):
 
     # Pool2DOptions
     def FilterWidth(self):
-        o = flatbuffers.number_types.UOffsetTFlags.py_type(
-            self._tab.Offset(10))
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(10))
         if o != 0:
             return self._tab.Get(flatbuffers.number_types.Int32Flags, o + self._tab.Pos)
         return 0
 
     # Pool2DOptions
     def FilterHeight(self):
-        o = flatbuffers.number_types.UOffsetTFlags.py_type(
-            self._tab.Offset(12))
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(12))
         if o != 0:
             return self._tab.Get(flatbuffers.number_types.Int32Flags, o + self._tab.Pos)
         return 0
 
     # Pool2DOptions
     def FusedActivationFunction(self):
-        o = flatbuffers.number_types.UOffsetTFlags.py_type(
-            self._tab.Offset(14))
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(14))
         if o != 0:
             return self._tab.Get(flatbuffers.number_types.Int8Flags, o + self._tab.Pos)
         return 0
 
 
 def Pool2DOptionsStart(builder): builder.StartObject(6)
-
-
-def Pool2DOptionsAddPadding(
-    builder, padding): builder.PrependInt8Slot(0, padding, 0)
-
-
-def Pool2DOptionsAddStrideW(
-    builder, strideW): builder.PrependInt32Slot(1, strideW, 0)
-
-
-def Pool2DOptionsAddStrideH(
-    builder, strideH): builder.PrependInt32Slot(2, strideH, 0)
-
-
-def Pool2DOptionsAddFilterWidth(
-    builder, filterWidth): builder.PrependInt32Slot(3, filterWidth, 0)
-
-
-def Pool2DOptionsAddFilterHeight(
-    builder, filterHeight): builder.PrependInt32Slot(4, filterHeight, 0)
+def Pool2DOptionsAddPadding(builder, padding): builder.PrependInt8Slot(0, padding, 0)
+def Pool2DOptionsAddStrideW(builder, strideW): builder.PrependInt32Slot(1, strideW, 0)
+def Pool2DOptionsAddStrideH(builder, strideH): builder.PrependInt32Slot(2, strideH, 0)
+def Pool2DOptionsAddFilterWidth(builder, filterWidth): builder.PrependInt32Slot(3, filterWidth, 0)
+def Pool2DOptionsAddFilterHeight(builder, filterHeight): builder.PrependInt32Slot(4, filterHeight, 0)
 def Pool2DOptionsAddFusedActivationFunction(
     builder, fusedActivationFunction): builder.PrependInt8Slot(5, fusedActivationFunction, 0)
 

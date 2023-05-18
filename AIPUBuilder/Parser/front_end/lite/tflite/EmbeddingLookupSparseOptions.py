@@ -28,8 +28,5 @@ class EmbeddingLookupSparseOptions(object):
 
 
 def EmbeddingLookupSparseOptionsStart(builder): builder.StartObject(1)
-def EmbeddingLookupSparseOptionsAddCombiner(
-    builder, combiner): builder.PrependInt8Slot(0, combiner, 0)
-
-
+def EmbeddingLookupSparseOptionsAddCombiner(builder, combiner): builder.PrependInt8Slot(0, combiner, 0)
 def EmbeddingLookupSparseOptionsEnd(builder): return builder.EndObject()

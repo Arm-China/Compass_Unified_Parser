@@ -42,28 +42,15 @@ class LocalResponseNormalizationOptions(object):
 
     # LocalResponseNormalizationOptions
     def Beta(self):
-        o = flatbuffers.number_types.UOffsetTFlags.py_type(
-            self._tab.Offset(10))
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(10))
         if o != 0:
             return self._tab.Get(flatbuffers.number_types.Float32Flags, o + self._tab.Pos)
         return 0.0
 
 
 def LocalResponseNormalizationOptionsStart(builder): builder.StartObject(4)
-
-
-def LocalResponseNormalizationOptionsAddRadius(
-    builder, radius): builder.PrependInt32Slot(0, radius, 0)
-
-
-def LocalResponseNormalizationOptionsAddBias(
-    builder, bias): builder.PrependFloat32Slot(1, bias, 0.0)
-
-
-def LocalResponseNormalizationOptionsAddAlpha(
-    builder, alpha): builder.PrependFloat32Slot(2, alpha, 0.0)
-def LocalResponseNormalizationOptionsAddBeta(
-    builder, beta): builder.PrependFloat32Slot(3, beta, 0.0)
-
-
+def LocalResponseNormalizationOptionsAddRadius(builder, radius): builder.PrependInt32Slot(0, radius, 0)
+def LocalResponseNormalizationOptionsAddBias(builder, bias): builder.PrependFloat32Slot(1, bias, 0.0)
+def LocalResponseNormalizationOptionsAddAlpha(builder, alpha): builder.PrependFloat32Slot(2, alpha, 0.0)
+def LocalResponseNormalizationOptionsAddBeta(builder, beta): builder.PrependFloat32Slot(3, beta, 0.0)
 def LocalResponseNormalizationOptionsEnd(builder): return builder.EndObject()

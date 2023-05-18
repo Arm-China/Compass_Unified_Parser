@@ -28,8 +28,5 @@ class SplitVOptions(object):
 
 
 def SplitVOptionsStart(builder): builder.StartObject(1)
-def SplitVOptionsAddNumSplits(
-    builder, numSplits): builder.PrependInt32Slot(0, numSplits, 0)
-
-
+def SplitVOptionsAddNumSplits(builder, numSplits): builder.PrependInt32Slot(0, numSplits, 0)
 def SplitVOptionsEnd(builder): return builder.EndObject()

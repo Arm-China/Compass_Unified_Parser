@@ -85,28 +85,19 @@ class SparsityParameters(object):
 
 
 def SparsityParametersStart(builder): builder.StartObject(3)
-
-
 def SparsityParametersAddTraversalOrder(builder, traversalOrder): builder.PrependUOffsetTRelativeSlot(
     0, flatbuffers.number_types.UOffsetTFlags.py_type(traversalOrder), 0)
 
 
-def SparsityParametersStartTraversalOrderVector(
-    builder, numElems): return builder.StartVector(4, numElems, 4)
-
-
+def SparsityParametersStartTraversalOrderVector(builder, numElems): return builder.StartVector(4, numElems, 4)
 def SparsityParametersAddBlockMap(builder, blockMap): builder.PrependUOffsetTRelativeSlot(
     1, flatbuffers.number_types.UOffsetTFlags.py_type(blockMap), 0)
 
 
-def SparsityParametersStartBlockMapVector(
-    builder, numElems): return builder.StartVector(4, numElems, 4)
-
-
+def SparsityParametersStartBlockMapVector(builder, numElems): return builder.StartVector(4, numElems, 4)
 def SparsityParametersAddDimMetadata(builder, dimMetadata): builder.PrependUOffsetTRelativeSlot(
     2, flatbuffers.number_types.UOffsetTFlags.py_type(dimMetadata), 0)
-def SparsityParametersStartDimMetadataVector(
-    builder, numElems): return builder.StartVector(4, numElems, 4)
 
 
+def SparsityParametersStartDimMetadataVector(builder, numElems): return builder.StartVector(4, numElems, 4)
 def SparsityParametersEnd(builder): return builder.EndObject()

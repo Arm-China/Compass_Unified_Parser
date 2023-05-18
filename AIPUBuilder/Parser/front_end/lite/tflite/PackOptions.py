@@ -35,9 +35,6 @@ class PackOptions(object):
 
 
 def PackOptionsStart(builder): builder.StartObject(2)
-def PackOptionsAddValuesCount(
-    builder, valuesCount): builder.PrependInt32Slot(0, valuesCount, 0)
-
-
+def PackOptionsAddValuesCount(builder, valuesCount): builder.PrependInt32Slot(0, valuesCount, 0)
 def PackOptionsAddAxis(builder, axis): builder.PrependInt32Slot(1, axis, 0)
 def PackOptionsEnd(builder): return builder.EndObject()

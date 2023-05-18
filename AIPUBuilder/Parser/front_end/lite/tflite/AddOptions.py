@@ -35,12 +35,9 @@ class AddOptions(object):
 
 
 def AddOptionsStart(builder): builder.StartObject(2)
-
-
 def AddOptionsAddFusedActivationFunction(
     builder, fusedActivationFunction): builder.PrependInt8Slot(0, fusedActivationFunction, 0)
-def AddOptionsAddPotScaleInt16(
-    builder, potScaleInt16): builder.PrependBoolSlot(1, potScaleInt16, 1)
 
 
+def AddOptionsAddPotScaleInt16(builder, potScaleInt16): builder.PrependBoolSlot(1, potScaleInt16, 1)
 def AddOptionsEnd(builder): return builder.EndObject()

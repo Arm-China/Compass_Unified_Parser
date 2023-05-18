@@ -42,40 +42,23 @@ class StridedSliceOptions(object):
 
     # StridedSliceOptions
     def NewAxisMask(self):
-        o = flatbuffers.number_types.UOffsetTFlags.py_type(
-            self._tab.Offset(10))
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(10))
         if o != 0:
             return self._tab.Get(flatbuffers.number_types.Int32Flags, o + self._tab.Pos)
         return 0
 
     # StridedSliceOptions
     def ShrinkAxisMask(self):
-        o = flatbuffers.number_types.UOffsetTFlags.py_type(
-            self._tab.Offset(12))
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(12))
         if o != 0:
             return self._tab.Get(flatbuffers.number_types.Int32Flags, o + self._tab.Pos)
         return 0
 
 
 def StridedSliceOptionsStart(builder): builder.StartObject(5)
-
-
-def StridedSliceOptionsAddBeginMask(
-    builder, beginMask): builder.PrependInt32Slot(0, beginMask, 0)
-
-
-def StridedSliceOptionsAddEndMask(
-    builder, endMask): builder.PrependInt32Slot(1, endMask, 0)
-
-
-def StridedSliceOptionsAddEllipsisMask(
-    builder, ellipsisMask): builder.PrependInt32Slot(2, ellipsisMask, 0)
-
-
-def StridedSliceOptionsAddNewAxisMask(
-    builder, newAxisMask): builder.PrependInt32Slot(3, newAxisMask, 0)
-def StridedSliceOptionsAddShrinkAxisMask(
-    builder, shrinkAxisMask): builder.PrependInt32Slot(4, shrinkAxisMask, 0)
-
-
+def StridedSliceOptionsAddBeginMask(builder, beginMask): builder.PrependInt32Slot(0, beginMask, 0)
+def StridedSliceOptionsAddEndMask(builder, endMask): builder.PrependInt32Slot(1, endMask, 0)
+def StridedSliceOptionsAddEllipsisMask(builder, ellipsisMask): builder.PrependInt32Slot(2, ellipsisMask, 0)
+def StridedSliceOptionsAddNewAxisMask(builder, newAxisMask): builder.PrependInt32Slot(3, newAxisMask, 0)
+def StridedSliceOptionsAddShrinkAxisMask(builder, shrinkAxisMask): builder.PrependInt32Slot(4, shrinkAxisMask, 0)
 def StridedSliceOptionsEnd(builder): return builder.EndObject()

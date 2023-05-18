@@ -35,12 +35,6 @@ class WhileOptions(object):
 
 
 def WhileOptionsStart(builder): builder.StartObject(2)
-
-
-def WhileOptionsAddCondSubgraphIndex(
-    builder, condSubgraphIndex): builder.PrependInt32Slot(0, condSubgraphIndex, 0)
-def WhileOptionsAddBodySubgraphIndex(
-    builder, bodySubgraphIndex): builder.PrependInt32Slot(1, bodySubgraphIndex, 0)
-
-
+def WhileOptionsAddCondSubgraphIndex(builder, condSubgraphIndex): builder.PrependInt32Slot(0, condSubgraphIndex, 0)
+def WhileOptionsAddBodySubgraphIndex(builder, bodySubgraphIndex): builder.PrependInt32Slot(1, bodySubgraphIndex, 0)
 def WhileOptionsEnd(builder): return builder.EndObject()

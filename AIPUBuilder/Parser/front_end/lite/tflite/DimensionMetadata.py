@@ -42,8 +42,7 @@ class DimensionMetadata(object):
 
     # DimensionMetadata
     def ArraySegments(self):
-        o = flatbuffers.number_types.UOffsetTFlags.py_type(
-            self._tab.Offset(10))
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(10))
         if o != 0:
             from flatbuffers.table import Table
             obj = Table(bytearray(), 0)
@@ -53,16 +52,14 @@ class DimensionMetadata(object):
 
     # DimensionMetadata
     def ArrayIndicesType(self):
-        o = flatbuffers.number_types.UOffsetTFlags.py_type(
-            self._tab.Offset(12))
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(12))
         if o != 0:
             return self._tab.Get(flatbuffers.number_types.Uint8Flags, o + self._tab.Pos)
         return 0
 
     # DimensionMetadata
     def ArrayIndices(self):
-        o = flatbuffers.number_types.UOffsetTFlags.py_type(
-            self._tab.Offset(14))
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(14))
         if o != 0:
             from flatbuffers.table import Table
             obj = Table(bytearray(), 0)
@@ -72,26 +69,14 @@ class DimensionMetadata(object):
 
 
 def DimensionMetadataStart(builder): builder.StartObject(6)
-
-
-def DimensionMetadataAddFormat(
-    builder, format): builder.PrependInt8Slot(0, format, 0)
-
-
-def DimensionMetadataAddDenseSize(
-    builder, denseSize): builder.PrependInt32Slot(1, denseSize, 0)
-
-
-def DimensionMetadataAddArraySegmentsType(
-    builder, arraySegmentsType): builder.PrependUint8Slot(2, arraySegmentsType, 0)
-
-
+def DimensionMetadataAddFormat(builder, format): builder.PrependInt8Slot(0, format, 0)
+def DimensionMetadataAddDenseSize(builder, denseSize): builder.PrependInt32Slot(1, denseSize, 0)
+def DimensionMetadataAddArraySegmentsType(builder, arraySegmentsType): builder.PrependUint8Slot(2, arraySegmentsType, 0)
 def DimensionMetadataAddArraySegments(builder, arraySegments): builder.PrependUOffsetTRelativeSlot(
     3, flatbuffers.number_types.UOffsetTFlags.py_type(arraySegments), 0)
 
 
-def DimensionMetadataAddArrayIndicesType(
-    builder, arrayIndicesType): builder.PrependUint8Slot(4, arrayIndicesType, 0)
+def DimensionMetadataAddArrayIndicesType(builder, arrayIndicesType): builder.PrependUint8Slot(4, arrayIndicesType, 0)
 def DimensionMetadataAddArrayIndices(builder, arrayIndices): builder.PrependUOffsetTRelativeSlot(
     5, flatbuffers.number_types.UOffsetTFlags.py_type(arrayIndices), 0)
 

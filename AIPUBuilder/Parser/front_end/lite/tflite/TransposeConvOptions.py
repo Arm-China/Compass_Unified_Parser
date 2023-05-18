@@ -40,18 +40,20 @@ class TransposeConvOptions(object):
             return self._tab.Get(flatbuffers.number_types.Int32Flags, o + self._tab.Pos)
         return 0
 
+    # TransposeConvOptions
+    def FusedActivationFunction(self):
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(10))
+        if o != 0:
+            return self._tab.Get(flatbuffers.number_types.Int8Flags, o + self._tab.Pos)
+        return 0
 
-def TransposeConvOptionsStart(builder): builder.StartObject(3)
 
-
-def TransposeConvOptionsAddPadding(
-    builder, padding): builder.PrependInt8Slot(0, padding, 0)
-
-
-def TransposeConvOptionsAddStrideW(
-    builder, strideW): builder.PrependInt32Slot(1, strideW, 0)
-def TransposeConvOptionsAddStrideH(
-    builder, strideH): builder.PrependInt32Slot(2, strideH, 0)
+def TransposeConvOptionsStart(builder): builder.StartObject(4)
+def TransposeConvOptionsAddPadding(builder, padding): builder.PrependInt8Slot(0, padding, 0)
+def TransposeConvOptionsAddStrideW(builder, strideW): builder.PrependInt32Slot(1, strideW, 0)
+def TransposeConvOptionsAddStrideH(builder, strideH): builder.PrependInt32Slot(2, strideH, 0)
+def TransposeConvOptionsAddFusedActivationFunction(
+    builder, fusedActivationFunction): builder.PrependInt8Slot(3, fusedActivationFunction, 0)
 
 
 def TransposeConvOptionsEnd(builder): return builder.EndObject()

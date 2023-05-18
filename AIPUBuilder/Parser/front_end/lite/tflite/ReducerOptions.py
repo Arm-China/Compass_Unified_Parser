@@ -28,8 +28,5 @@ class ReducerOptions(object):
 
 
 def ReducerOptionsStart(builder): builder.StartObject(1)
-def ReducerOptionsAddKeepDims(
-    builder, keepDims): builder.PrependBoolSlot(0, keepDims, 0)
-
-
+def ReducerOptionsAddKeepDims(builder, keepDims): builder.PrependBoolSlot(0, keepDims, 0)
 def ReducerOptionsEnd(builder): return builder.EndObject()

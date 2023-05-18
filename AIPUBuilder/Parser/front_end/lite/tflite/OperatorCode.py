@@ -42,8 +42,7 @@ class OperatorCode(object):
 
     # OperatorCode
     def BuiltinCode(self):
-        o = flatbuffers.number_types.UOffsetTFlags.py_type(
-            self._tab.Offset(10))
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(10))
         if o != 0:
             return self._tab.Get(flatbuffers.number_types.Int32Flags, o + self._tab.Pos)
         return 0
@@ -54,16 +53,10 @@ def OperatorCodeStart(builder): builder.StartObject(4)
 
 def OperatorCodeAddDeprecatedBuiltinCode(
     builder, deprecatedBuiltinCode): builder.PrependInt8Slot(0, deprecatedBuiltinCode, 0)
-
-
 def OperatorCodeAddCustomCode(builder, customCode): builder.PrependUOffsetTRelativeSlot(
     1, flatbuffers.number_types.UOffsetTFlags.py_type(customCode), 0)
 
 
-def OperatorCodeAddVersion(
-    builder, version): builder.PrependInt32Slot(2, version, 1)
-def OperatorCodeAddBuiltinCode(
-    builder, builtinCode): builder.PrependInt32Slot(3, builtinCode, 0)
-
-
+def OperatorCodeAddVersion(builder, version): builder.PrependInt32Slot(2, version, 1)
+def OperatorCodeAddBuiltinCode(builder, builtinCode): builder.PrependInt32Slot(3, builtinCode, 0)
 def OperatorCodeEnd(builder): return builder.EndObject()

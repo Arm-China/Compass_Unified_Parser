@@ -28,8 +28,5 @@ class ShapeOptions(object):
 
 
 def ShapeOptionsStart(builder): builder.StartObject(1)
-def ShapeOptionsAddOutType(
-    builder, outType): builder.PrependInt8Slot(0, outType, 0)
-
-
+def ShapeOptionsAddOutType(builder, outType): builder.PrependInt8Slot(0, outType, 0)
 def ShapeOptionsEnd(builder): return builder.EndObject()

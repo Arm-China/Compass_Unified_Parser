@@ -42,16 +42,7 @@ class SkipGramOptions(object):
 
 
 def SkipGramOptionsStart(builder): builder.StartObject(3)
-
-
-def SkipGramOptionsAddNgramSize(
-    builder, ngramSize): builder.PrependInt32Slot(0, ngramSize, 0)
-
-
-def SkipGramOptionsAddMaxSkipSize(
-    builder, maxSkipSize): builder.PrependInt32Slot(1, maxSkipSize, 0)
-def SkipGramOptionsAddIncludeAllNgrams(
-    builder, includeAllNgrams): builder.PrependBoolSlot(2, includeAllNgrams, 0)
-
-
+def SkipGramOptionsAddNgramSize(builder, ngramSize): builder.PrependInt32Slot(0, ngramSize, 0)
+def SkipGramOptionsAddMaxSkipSize(builder, maxSkipSize): builder.PrependInt32Slot(1, maxSkipSize, 0)
+def SkipGramOptionsAddIncludeAllNgrams(builder, includeAllNgrams): builder.PrependBoolSlot(2, includeAllNgrams, 0)
 def SkipGramOptionsEnd(builder): return builder.EndObject()

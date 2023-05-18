@@ -28,8 +28,5 @@ class DepthToSpaceOptions(object):
 
 
 def DepthToSpaceOptionsStart(builder): builder.StartObject(1)
-def DepthToSpaceOptionsAddBlockSize(
-    builder, blockSize): builder.PrependInt32Slot(0, blockSize, 0)
-
-
+def DepthToSpaceOptionsAddBlockSize(builder, blockSize): builder.PrependInt32Slot(0, blockSize, 0)
 def DepthToSpaceOptionsEnd(builder): return builder.EndObject()

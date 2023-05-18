@@ -35,12 +35,6 @@ class ReverseSequenceOptions(object):
 
 
 def ReverseSequenceOptionsStart(builder): builder.StartObject(2)
-
-
-def ReverseSequenceOptionsAddSeqDim(
-    builder, seqDim): builder.PrependInt32Slot(0, seqDim, 0)
-def ReverseSequenceOptionsAddBatchDim(
-    builder, batchDim): builder.PrependInt32Slot(1, batchDim, 0)
-
-
+def ReverseSequenceOptionsAddSeqDim(builder, seqDim): builder.PrependInt32Slot(0, seqDim, 0)
+def ReverseSequenceOptionsAddBatchDim(builder, batchDim): builder.PrependInt32Slot(1, batchDim, 0)
 def ReverseSequenceOptionsEnd(builder): return builder.EndObject()

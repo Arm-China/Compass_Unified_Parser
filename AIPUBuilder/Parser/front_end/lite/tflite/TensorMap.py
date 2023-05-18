@@ -35,12 +35,9 @@ class TensorMap(object):
 
 
 def TensorMapStart(builder): builder.StartObject(2)
-
-
 def TensorMapAddName(builder, name): builder.PrependUOffsetTRelativeSlot(
     0, flatbuffers.number_types.UOffsetTFlags.py_type(name), 0)
-def TensorMapAddTensorIndex(
-    builder, tensorIndex): builder.PrependUint32Slot(1, tensorIndex, 0)
 
 
+def TensorMapAddTensorIndex(builder, tensorIndex): builder.PrependUint32Slot(1, tensorIndex, 0)
 def TensorMapEnd(builder): return builder.EndObject()

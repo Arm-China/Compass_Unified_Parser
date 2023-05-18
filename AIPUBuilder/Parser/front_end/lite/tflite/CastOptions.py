@@ -35,12 +35,6 @@ class CastOptions(object):
 
 
 def CastOptionsStart(builder): builder.StartObject(2)
-
-
-def CastOptionsAddInDataType(
-    builder, inDataType): builder.PrependInt8Slot(0, inDataType, 0)
-def CastOptionsAddOutDataType(
-    builder, outDataType): builder.PrependInt8Slot(1, outDataType, 0)
-
-
+def CastOptionsAddInDataType(builder, inDataType): builder.PrependInt8Slot(0, inDataType, 0)
+def CastOptionsAddOutDataType(builder, outDataType): builder.PrependInt8Slot(1, outDataType, 0)
 def CastOptionsEnd(builder): return builder.EndObject()

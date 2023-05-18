@@ -43,12 +43,9 @@ class Int32Vector(object):
 
 
 def Int32VectorStart(builder): builder.StartObject(1)
-
-
 def Int32VectorAddValues(builder, values): builder.PrependUOffsetTRelativeSlot(
     0, flatbuffers.number_types.UOffsetTFlags.py_type(values), 0)
-def Int32VectorStartValuesVector(
-    builder, numElems): return builder.StartVector(4, numElems, 4)
 
 
+def Int32VectorStartValuesVector(builder, numElems): return builder.StartVector(4, numElems, 4)
 def Int32VectorEnd(builder): return builder.EndObject()

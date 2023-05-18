@@ -42,28 +42,15 @@ class FakeQuantOptions(object):
 
     # FakeQuantOptions
     def NarrowRange(self):
-        o = flatbuffers.number_types.UOffsetTFlags.py_type(
-            self._tab.Offset(10))
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(10))
         if o != 0:
             return bool(self._tab.Get(flatbuffers.number_types.BoolFlags, o + self._tab.Pos))
         return False
 
 
 def FakeQuantOptionsStart(builder): builder.StartObject(4)
-
-
-def FakeQuantOptionsAddMin(
-    builder, min): builder.PrependFloat32Slot(0, min, 0.0)
-
-
-def FakeQuantOptionsAddMax(
-    builder, max): builder.PrependFloat32Slot(1, max, 0.0)
-
-
-def FakeQuantOptionsAddNumBits(
-    builder, numBits): builder.PrependInt32Slot(2, numBits, 0)
-def FakeQuantOptionsAddNarrowRange(
-    builder, narrowRange): builder.PrependBoolSlot(3, narrowRange, 0)
-
-
+def FakeQuantOptionsAddMin(builder, min): builder.PrependFloat32Slot(0, min, 0.0)
+def FakeQuantOptionsAddMax(builder, max): builder.PrependFloat32Slot(1, max, 0.0)
+def FakeQuantOptionsAddNumBits(builder, numBits): builder.PrependInt32Slot(2, numBits, 0)
+def FakeQuantOptionsAddNarrowRange(builder, narrowRange): builder.PrependBoolSlot(3, narrowRange, 0)
 def FakeQuantOptionsEnd(builder): return builder.EndObject()

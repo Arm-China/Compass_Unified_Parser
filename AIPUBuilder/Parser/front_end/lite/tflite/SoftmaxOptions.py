@@ -28,8 +28,5 @@ class SoftmaxOptions(object):
 
 
 def SoftmaxOptionsStart(builder): builder.StartObject(1)
-def SoftmaxOptionsAddBeta(
-    builder, beta): builder.PrependFloat32Slot(0, beta, 0.0)
-
-
+def SoftmaxOptionsAddBeta(builder, beta): builder.PrependFloat32Slot(0, beta, 0.0)
 def SoftmaxOptionsEnd(builder): return builder.EndObject()

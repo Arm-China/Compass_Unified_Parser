@@ -35,12 +35,9 @@ class SubOptions(object):
 
 
 def SubOptionsStart(builder): builder.StartObject(2)
-
-
 def SubOptionsAddFusedActivationFunction(
     builder, fusedActivationFunction): builder.PrependInt8Slot(0, fusedActivationFunction, 0)
-def SubOptionsAddPotScaleInt16(
-    builder, potScaleInt16): builder.PrependBoolSlot(1, potScaleInt16, 1)
 
 
+def SubOptionsAddPotScaleInt16(builder, potScaleInt16): builder.PrependBoolSlot(1, potScaleInt16, 1)
 def SubOptionsEnd(builder): return builder.EndObject()

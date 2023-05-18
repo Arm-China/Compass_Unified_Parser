@@ -42,10 +42,7 @@ class SequenceRNNOptions(object):
 
 
 def SequenceRNNOptionsStart(builder): builder.StartObject(3)
-
-
-def SequenceRNNOptionsAddTimeMajor(
-    builder, timeMajor): builder.PrependBoolSlot(0, timeMajor, 0)
+def SequenceRNNOptionsAddTimeMajor(builder, timeMajor): builder.PrependBoolSlot(0, timeMajor, 0)
 
 
 def SequenceRNNOptionsAddFusedActivationFunction(

@@ -43,12 +43,9 @@ class ReshapeOptions(object):
 
 
 def ReshapeOptionsStart(builder): builder.StartObject(1)
-
-
 def ReshapeOptionsAddNewShape(builder, newShape): builder.PrependUOffsetTRelativeSlot(
     0, flatbuffers.number_types.UOffsetTFlags.py_type(newShape), 0)
-def ReshapeOptionsStartNewShapeVector(
-    builder, numElems): return builder.StartVector(4, numElems, 4)
 
 
+def ReshapeOptionsStartNewShapeVector(builder, numElems): return builder.StartVector(4, numElems, 4)
 def ReshapeOptionsEnd(builder): return builder.EndObject()

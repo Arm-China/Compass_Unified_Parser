@@ -35,10 +35,7 @@ class ConcatenationOptions(object):
 
 
 def ConcatenationOptionsStart(builder): builder.StartObject(2)
-
-
-def ConcatenationOptionsAddAxis(
-    builder, axis): builder.PrependInt32Slot(0, axis, 0)
+def ConcatenationOptionsAddAxis(builder, axis): builder.PrependInt32Slot(0, axis, 0)
 def ConcatenationOptionsAddFusedActivationFunction(
     builder, fusedActivationFunction): builder.PrependInt8Slot(1, fusedActivationFunction, 0)
 

@@ -43,12 +43,9 @@ class Uint8Vector(object):
 
 
 def Uint8VectorStart(builder): builder.StartObject(1)
-
-
 def Uint8VectorAddValues(builder, values): builder.PrependUOffsetTRelativeSlot(
     0, flatbuffers.number_types.UOffsetTFlags.py_type(values), 0)
-def Uint8VectorStartValuesVector(
-    builder, numElems): return builder.StartVector(1, numElems, 1)
 
 
+def Uint8VectorStartValuesVector(builder, numElems): return builder.StartVector(1, numElems, 1)
 def Uint8VectorEnd(builder): return builder.EndObject()

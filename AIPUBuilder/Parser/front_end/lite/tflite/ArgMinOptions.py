@@ -28,8 +28,5 @@ class ArgMinOptions(object):
 
 
 def ArgMinOptionsStart(builder): builder.StartObject(1)
-def ArgMinOptionsAddOutputType(
-    builder, outputType): builder.PrependInt8Slot(0, outputType, 0)
-
-
+def ArgMinOptionsAddOutputType(builder, outputType): builder.PrependInt8Slot(0, outputType, 0)
 def ArgMinOptionsEnd(builder): return builder.EndObject()

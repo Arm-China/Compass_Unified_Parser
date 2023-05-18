@@ -35,12 +35,6 @@ class IfOptions(object):
 
 
 def IfOptionsStart(builder): builder.StartObject(2)
-
-
-def IfOptionsAddThenSubgraphIndex(
-    builder, thenSubgraphIndex): builder.PrependInt32Slot(0, thenSubgraphIndex, 0)
-def IfOptionsAddElseSubgraphIndex(
-    builder, elseSubgraphIndex): builder.PrependInt32Slot(1, elseSubgraphIndex, 0)
-
-
+def IfOptionsAddThenSubgraphIndex(builder, thenSubgraphIndex): builder.PrependInt32Slot(0, thenSubgraphIndex, 0)
+def IfOptionsAddElseSubgraphIndex(builder, elseSubgraphIndex): builder.PrependInt32Slot(1, elseSubgraphIndex, 0)
 def IfOptionsEnd(builder): return builder.EndObject()

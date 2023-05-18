@@ -28,8 +28,5 @@ class UniqueOptions(object):
 
 
 def UniqueOptionsStart(builder): builder.StartObject(1)
-def UniqueOptionsAddIdxOutType(
-    builder, idxOutType): builder.PrependInt8Slot(0, idxOutType, 2)
-
-
+def UniqueOptionsAddIdxOutType(builder, idxOutType): builder.PrependInt8Slot(0, idxOutType, 2)
 def UniqueOptionsEnd(builder): return builder.EndObject()

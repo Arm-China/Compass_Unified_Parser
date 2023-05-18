@@ -28,8 +28,5 @@ class CallOnceOptions(object):
 
 
 def CallOnceOptionsStart(builder): builder.StartObject(1)
-def CallOnceOptionsAddInitSubgraphIndex(
-    builder, initSubgraphIndex): builder.PrependInt32Slot(0, initSubgraphIndex, 0)
-
-
+def CallOnceOptionsAddInitSubgraphIndex(builder, initSubgraphIndex): builder.PrependInt32Slot(0, initSubgraphIndex, 0)
 def CallOnceOptionsEnd(builder): return builder.EndObject()

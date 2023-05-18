@@ -85,8 +85,7 @@ class SubGraph(object):
 
     # SubGraph
     def Operators(self, j):
-        o = flatbuffers.number_types.UOffsetTFlags.py_type(
-            self._tab.Offset(10))
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(10))
         if o != 0:
             x = self._tab.Vector(o)
             x += flatbuffers.number_types.UOffsetTFlags.py_type(j) * 4
@@ -99,54 +98,40 @@ class SubGraph(object):
 
     # SubGraph
     def OperatorsLength(self):
-        o = flatbuffers.number_types.UOffsetTFlags.py_type(
-            self._tab.Offset(10))
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(10))
         if o != 0:
             return self._tab.VectorLen(o)
         return 0
 
     # SubGraph
     def Name(self):
-        o = flatbuffers.number_types.UOffsetTFlags.py_type(
-            self._tab.Offset(12))
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(12))
         if o != 0:
             return self._tab.String(o + self._tab.Pos)
         return None
 
 
 def SubGraphStart(builder): builder.StartObject(5)
-
-
 def SubGraphAddTensors(builder, tensors): builder.PrependUOffsetTRelativeSlot(
     0, flatbuffers.number_types.UOffsetTFlags.py_type(tensors), 0)
 
 
-def SubGraphStartTensorsVector(
-    builder, numElems): return builder.StartVector(4, numElems, 4)
-
-
+def SubGraphStartTensorsVector(builder, numElems): return builder.StartVector(4, numElems, 4)
 def SubGraphAddInputs(builder, inputs): builder.PrependUOffsetTRelativeSlot(
     1, flatbuffers.number_types.UOffsetTFlags.py_type(inputs), 0)
 
 
-def SubGraphStartInputsVector(
-    builder, numElems): return builder.StartVector(4, numElems, 4)
-
-
+def SubGraphStartInputsVector(builder, numElems): return builder.StartVector(4, numElems, 4)
 def SubGraphAddOutputs(builder, outputs): builder.PrependUOffsetTRelativeSlot(
     2, flatbuffers.number_types.UOffsetTFlags.py_type(outputs), 0)
 
 
-def SubGraphStartOutputsVector(
-    builder, numElems): return builder.StartVector(4, numElems, 4)
-
-
+def SubGraphStartOutputsVector(builder, numElems): return builder.StartVector(4, numElems, 4)
 def SubGraphAddOperators(builder, operators): builder.PrependUOffsetTRelativeSlot(
     3, flatbuffers.number_types.UOffsetTFlags.py_type(operators), 0)
 
 
-def SubGraphStartOperatorsVector(
-    builder, numElems): return builder.StartVector(4, numElems, 4)
+def SubGraphStartOperatorsVector(builder, numElems): return builder.StartVector(4, numElems, 4)
 def SubGraphAddName(builder, name): builder.PrependUOffsetTRelativeSlot(
     4, flatbuffers.number_types.UOffsetTFlags.py_type(name), 0)
 

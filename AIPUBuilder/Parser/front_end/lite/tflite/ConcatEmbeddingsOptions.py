@@ -72,10 +72,7 @@ class ConcatEmbeddingsOptions(object):
 
 
 def ConcatEmbeddingsOptionsStart(builder): builder.StartObject(3)
-
-
-def ConcatEmbeddingsOptionsAddNumChannels(
-    builder, numChannels): builder.PrependInt32Slot(0, numChannels, 0)
+def ConcatEmbeddingsOptionsAddNumChannels(builder, numChannels): builder.PrependInt32Slot(0, numChannels, 0)
 
 
 def ConcatEmbeddingsOptionsAddNumColumnsPerChannel(builder, numColumnsPerChannel): builder.PrependUOffsetTRelativeSlot(

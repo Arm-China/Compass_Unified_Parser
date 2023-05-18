@@ -8,6 +8,7 @@ import re
 from collections import OrderedDict
 from ...common.utils import is_file
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
+
 from .tflite.Model import Model
 from .tflite.Operator import Operator
 from .tflite.BuiltinOptions import BuiltinOptions
@@ -20,10 +21,15 @@ from .tflite.AddNOptions import AddNOptions
 from .tflite.AddOptions import AddOptions
 from .tflite.ArgMaxOptions import ArgMaxOptions
 from .tflite.ArgMinOptions import ArgMinOptions
+from .tflite.AssignVariableOptions import AssignVariableOptions
+from .tflite.ATan2Options import ATan2Options
 from .tflite.BatchMatMulOptions import BatchMatMulOptions
 from .tflite.BatchToSpaceNDOptions import BatchToSpaceNDOptions
 from .tflite.BidirectionalSequenceLSTMOptions import BidirectionalSequenceLSTMOptions
 from .tflite.BidirectionalSequenceRNNOptions import BidirectionalSequenceRNNOptions
+from .tflite.BroadcastToOptions import BroadcastToOptions
+from .tflite.BucketizeOptions import BucketizeOptions
+from .tflite.CallOnceOptions import CallOnceOptions
 from .tflite.CallOptions import CallOptions
 from .tflite.CastOptions import CastOptions
 from .tflite.ConcatEmbeddingsOptions import ConcatEmbeddingsOptions
@@ -32,6 +38,7 @@ from .tflite.Conv2DOptions import Conv2DOptions
 from .tflite.Conv3DOptions import Conv3DOptions
 from .tflite.CosOptions import CosOptions
 from .tflite.CumsumOptions import CumsumOptions
+from .tflite.CustomQuantization import CustomQuantization
 from .tflite.DensifyOptions import DensifyOptions
 from .tflite.DepthToSpaceOptions import DepthToSpaceOptions
 from .tflite.DepthwiseConv2DOptions import DepthwiseConv2DOptions
@@ -48,7 +55,13 @@ from .tflite.FloorModOptions import FloorModOptions
 from .tflite.FullyConnectedOptions import FullyConnectedOptions
 from .tflite.GatherNdOptions import GatherNdOptions
 from .tflite.GatherOptions import GatherOptions
+from .tflite.GeluOptions import GeluOptions
+from .tflite.GreaterEqualOptions import GreaterEqualOptions
+from .tflite.GreaterOptions import GreaterOptions
 from .tflite.HardSwishOptions import HardSwishOptions
+from .tflite.HashtableFindOptions import HashtableFindOptions
+from .tflite.HashtableImportOptions import HashtableImportOptions
+from .tflite.HashtableSizeOptions import HashtableSizeOptions
 from .tflite.IfOptions import IfOptions
 from .tflite.L2NormOptions import L2NormOptions
 from .tflite.LeakyReluOptions import LeakyReluOptions
@@ -81,14 +94,17 @@ from .tflite.PadV2Options import PadV2Options
 from .tflite.Pool2DOptions import Pool2DOptions
 from .tflite.PowOptions import PowOptions
 from .tflite.QuantizeOptions import QuantizeOptions
+from .tflite.RandomOptions import RandomOptions
 from .tflite.RangeOptions import RangeOptions
 from .tflite.RankOptions import RankOptions
+from .tflite.ReadVariableOptions import ReadVariableOptions
 from .tflite.ReducerOptions import ReducerOptions
 from .tflite.ReshapeOptions import ReshapeOptions
 from .tflite.ResizeBilinearOptions import ResizeBilinearOptions
 from .tflite.ResizeNearestNeighborOptions import ResizeNearestNeighborOptions
 from .tflite.ReverseSequenceOptions import ReverseSequenceOptions
 from .tflite.ReverseV2Options import ReverseV2Options
+from .tflite.Rfft2dOptions import Rfft2dOptions
 from .tflite.RNNOptions import RNNOptions
 from .tflite.ScatterNdOptions import ScatterNdOptions
 from .tflite.SegmentSumOptions import SegmentSumOptions
@@ -96,11 +112,12 @@ from .tflite.SelectOptions import SelectOptions
 from .tflite.SelectV2Options import SelectV2Options
 from .tflite.SequenceRNNOptions import SequenceRNNOptions
 from .tflite.ShapeOptions import ShapeOptions
+from .tflite.SignOptions import SignOptions
 from .tflite.SkipGramOptions import SkipGramOptions
 from .tflite.SliceOptions import SliceOptions
 from .tflite.SoftmaxOptions import SoftmaxOptions
-from .tflite.SpaceToDepthOptions import SpaceToDepthOptions
 from .tflite.SpaceToBatchNDOptions import SpaceToBatchNDOptions
+from .tflite.SpaceToDepthOptions import SpaceToDepthOptions
 from .tflite.SparseToDenseOptions import SparseToDenseOptions
 from .tflite.SplitOptions import SplitOptions
 from .tflite.SplitVOptions import SplitVOptions
@@ -117,6 +134,10 @@ from .tflite.TransposeOptions import TransposeOptions
 from .tflite.UnidirectionalSequenceLSTMOptions import UnidirectionalSequenceLSTMOptions
 from .tflite.UniqueOptions import UniqueOptions
 from .tflite.UnpackOptions import UnpackOptions
+from .tflite.UnsortedSegmentMaxOptions import UnsortedSegmentMaxOptions
+from .tflite.UnsortedSegmentMinOptions import UnsortedSegmentMinOptions
+from .tflite.UnsortedSegmentProdOptions import UnsortedSegmentProdOptions
+from .tflite.UnsortedSegmentSumOptions import UnsortedSegmentSumOptions
 from .tflite.WhereOptions import WhereOptions
 from .tflite.WhileOptions import WhileOptions
 from .tflite.ZerosLikeOptions import ZerosLikeOptions

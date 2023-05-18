@@ -28,8 +28,5 @@ class ArgMaxOptions(object):
 
 
 def ArgMaxOptionsStart(builder): builder.StartObject(1)
-def ArgMaxOptionsAddOutputType(
-    builder, outputType): builder.PrependInt8Slot(0, outputType, 0)
-
-
+def ArgMaxOptionsAddOutputType(builder, outputType): builder.PrependInt8Slot(0, outputType, 0)
 def ArgMaxOptionsEnd(builder): return builder.EndObject()

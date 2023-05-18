@@ -35,10 +35,7 @@ class ResizeNearestNeighborOptions(object):
 
 
 def ResizeNearestNeighborOptionsStart(builder): builder.StartObject(2)
-
-
-def ResizeNearestNeighborOptionsAddAlignCorners(
-    builder, alignCorners): builder.PrependBoolSlot(0, alignCorners, 0)
+def ResizeNearestNeighborOptionsAddAlignCorners(builder, alignCorners): builder.PrependBoolSlot(0, alignCorners, 0)
 def ResizeNearestNeighborOptionsAddHalfPixelCenters(
     builder, halfPixelCenters): builder.PrependBoolSlot(1, halfPixelCenters, 0)
 

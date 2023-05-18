@@ -36,8 +36,5 @@ class GatherOptions(object):
 
 def GatherOptionsStart(builder): builder.StartObject(2)
 def GatherOptionsAddAxis(builder, axis): builder.PrependInt32Slot(0, axis, 0)
-def GatherOptionsAddBatchDims(
-    builder, batchDims): builder.PrependInt32Slot(1, batchDims, 0)
-
-
+def GatherOptionsAddBatchDims(builder, batchDims): builder.PrependInt32Slot(1, batchDims, 0)
 def GatherOptionsEnd(builder): return builder.EndObject()

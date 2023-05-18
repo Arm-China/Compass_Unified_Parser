@@ -28,8 +28,5 @@ class LSHProjectionOptions(object):
 
 
 def LSHProjectionOptionsStart(builder): builder.StartObject(1)
-def LSHProjectionOptionsAddType(
-    builder, type): builder.PrependInt8Slot(0, type, 0)
-
-
+def LSHProjectionOptionsAddType(builder, type): builder.PrependInt8Slot(0, type, 0)
 def LSHProjectionOptionsEnd(builder): return builder.EndObject()

@@ -28,8 +28,5 @@ class LeakyReluOptions(object):
 
 
 def LeakyReluOptionsStart(builder): builder.StartObject(1)
-def LeakyReluOptionsAddAlpha(
-    builder, alpha): builder.PrependFloat32Slot(0, alpha, 0.0)
-
-
+def LeakyReluOptionsAddAlpha(builder, alpha): builder.PrependFloat32Slot(0, alpha, 0.0)
 def LeakyReluOptionsEnd(builder): return builder.EndObject()

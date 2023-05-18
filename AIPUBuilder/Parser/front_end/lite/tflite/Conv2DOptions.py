@@ -42,52 +42,34 @@ class Conv2DOptions(object):
 
     # Conv2DOptions
     def FusedActivationFunction(self):
-        o = flatbuffers.number_types.UOffsetTFlags.py_type(
-            self._tab.Offset(10))
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(10))
         if o != 0:
             return self._tab.Get(flatbuffers.number_types.Int8Flags, o + self._tab.Pos)
         return 0
 
     # Conv2DOptions
     def DilationWFactor(self):
-        o = flatbuffers.number_types.UOffsetTFlags.py_type(
-            self._tab.Offset(12))
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(12))
         if o != 0:
             return self._tab.Get(flatbuffers.number_types.Int32Flags, o + self._tab.Pos)
         return 1
 
     # Conv2DOptions
     def DilationHFactor(self):
-        o = flatbuffers.number_types.UOffsetTFlags.py_type(
-            self._tab.Offset(14))
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(14))
         if o != 0:
             return self._tab.Get(flatbuffers.number_types.Int32Flags, o + self._tab.Pos)
         return 1
 
 
 def Conv2DOptionsStart(builder): builder.StartObject(6)
-
-
-def Conv2DOptionsAddPadding(
-    builder, padding): builder.PrependInt8Slot(0, padding, 0)
-
-
-def Conv2DOptionsAddStrideW(
-    builder, strideW): builder.PrependInt32Slot(1, strideW, 0)
-
-
-def Conv2DOptionsAddStrideH(
-    builder, strideH): builder.PrependInt32Slot(2, strideH, 0)
-
-
+def Conv2DOptionsAddPadding(builder, padding): builder.PrependInt8Slot(0, padding, 0)
+def Conv2DOptionsAddStrideW(builder, strideW): builder.PrependInt32Slot(1, strideW, 0)
+def Conv2DOptionsAddStrideH(builder, strideH): builder.PrependInt32Slot(2, strideH, 0)
 def Conv2DOptionsAddFusedActivationFunction(
     builder, fusedActivationFunction): builder.PrependInt8Slot(3, fusedActivationFunction, 0)
 
 
-def Conv2DOptionsAddDilationWFactor(
-    builder, dilationWFactor): builder.PrependInt32Slot(4, dilationWFactor, 1)
-def Conv2DOptionsAddDilationHFactor(
-    builder, dilationHFactor): builder.PrependInt32Slot(5, dilationHFactor, 1)
-
-
+def Conv2DOptionsAddDilationWFactor(builder, dilationWFactor): builder.PrependInt32Slot(4, dilationWFactor, 1)
+def Conv2DOptionsAddDilationHFactor(builder, dilationHFactor): builder.PrependInt32Slot(5, dilationHFactor, 1)
 def Conv2DOptionsEnd(builder): return builder.EndObject()

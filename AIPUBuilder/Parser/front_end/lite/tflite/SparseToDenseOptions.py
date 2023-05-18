@@ -28,8 +28,5 @@ class SparseToDenseOptions(object):
 
 
 def SparseToDenseOptionsStart(builder): builder.StartObject(1)
-def SparseToDenseOptionsAddValidateIndices(
-    builder, validateIndices): builder.PrependBoolSlot(0, validateIndices, 0)
-
-
+def SparseToDenseOptionsAddValidateIndices(builder, validateIndices): builder.PrependBoolSlot(0, validateIndices, 0)
 def SparseToDenseOptionsEnd(builder): return builder.EndObject()

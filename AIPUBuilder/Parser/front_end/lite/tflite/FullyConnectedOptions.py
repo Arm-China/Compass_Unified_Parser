@@ -42,26 +42,19 @@ class FullyConnectedOptions(object):
 
     # FullyConnectedOptions
     def AsymmetricQuantizeInputs(self):
-        o = flatbuffers.number_types.UOffsetTFlags.py_type(
-            self._tab.Offset(10))
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(10))
         if o != 0:
             return bool(self._tab.Get(flatbuffers.number_types.BoolFlags, o + self._tab.Pos))
         return False
 
 
 def FullyConnectedOptionsStart(builder): builder.StartObject(4)
-
-
 def FullyConnectedOptionsAddFusedActivationFunction(
     builder, fusedActivationFunction): builder.PrependInt8Slot(0, fusedActivationFunction, 0)
 
 
-def FullyConnectedOptionsAddWeightsFormat(
-    builder, weightsFormat): builder.PrependInt8Slot(1, weightsFormat, 0)
-
-
-def FullyConnectedOptionsAddKeepNumDims(
-    builder, keepNumDims): builder.PrependBoolSlot(2, keepNumDims, 0)
+def FullyConnectedOptionsAddWeightsFormat(builder, weightsFormat): builder.PrependInt8Slot(1, weightsFormat, 0)
+def FullyConnectedOptionsAddKeepNumDims(builder, keepNumDims): builder.PrependBoolSlot(2, keepNumDims, 0)
 def FullyConnectedOptionsAddAsymmetricQuantizeInputs(
     builder, asymmetricQuantizeInputs): builder.PrependBoolSlot(3, asymmetricQuantizeInputs, 0)
 
