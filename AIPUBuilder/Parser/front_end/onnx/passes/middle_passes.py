@@ -6770,13 +6770,17 @@ def remove_sub_add_pair(graph):
                                      ('const_2', 'sub', {'dst_in_port': 1}),
                                  ])
     all_matches = matches_1 + matches_2
+    if all_matches:
+        succ = graph.successor
+    else:
+        succ = {}
     for m in all_matches:
         const_1, const_2, add, sub = m['const_1'], m['const_2'], m['add'], m['sub']
         if not graph.has_node(add) or not graph.has_node(sub):
             ERROR('[Parser]: Node (%s or %s or %s or %s) cannot be found, graph maybe has been changed!' % (
                 const_1, const_2, add, sub))
             continue
-        inp = add if sub in graph.successor[add] else sub
+        inp = add if sub in succ[add] else sub
         out = sub if inp == add else add
         inp_out_edges = graph.sorted_out_edges(inp)
         const_1_node = NodeWrap(graph, const_1)
@@ -7760,25 +7764,26 @@ def adjust_5d_to_4d(graph):
                     if op_type == 'InstanceNormalization' \
                             and in_shapes[0] is not None \
                             and len(in_shapes[0]) > 4 \
-                            and NodeWrap(graph, in_edges[0][0])['object'].type == 'Transpose' \
-                            and NodeWrap(graph, graph.predecessor[graph.predecessor[node_name][0]][0])['object'].type == 'Input':
-                        new_w = 1
-                        for i in range(2, len(in_shapes[0]) - 1):
-                            new_w *= in_shapes[0][i]
-                        src, _, k, in_attr = in_edges[0]
-                        pre_reshape_dim = [
-                            in_shapes[0][0], in_shapes[0][1], new_w, in_shapes[0][-1]]
-                        insert_reshape(graph, src, node_name,
-                                       in_attr, pre_reshape_dim, key=k)
+                            and NodeWrap(graph, in_edges[0][0])['object'].type == 'Transpose':
+                        pred = graph.predecessor
+                        if NodeWrap(graph, pred[pred[node_name][0]][0])['object'].type == 'Input':
+                            new_w = 1
+                            for i in range(2, len(in_shapes[0]) - 1):
+                                new_w *= in_shapes[0][i]
+                            src, _, k, in_attr = in_edges[0]
+                            pre_reshape_dim = [
+                                in_shapes[0][0], in_shapes[0][1], new_w, in_shapes[0][-1]]
+                            insert_reshape(graph, src, node_name,
+                                           in_attr, pre_reshape_dim, key=k)
 
-                        src, dst, in_attr = out_edges[0]
-                        post_reshape_dim = in_shapes[0]
-                        new_out = insert_reshape(
-                            graph, node_name, dst, in_attr, post_reshape_dim)
-                        if node_name in graph._attr['output_names']:
-                            index = graph._attr['output_names'].index(
-                                node_name)
-                            graph._attr['output_names'][index] = new_out
+                            src, dst, in_attr = out_edges[0]
+                            post_reshape_dim = in_shapes[0]
+                            new_out = insert_reshape(
+                                graph, node_name, dst, in_attr, post_reshape_dim)
+                            if node_name in graph._attr['output_names']:
+                                index = graph._attr['output_names'].index(
+                                    node_name)
+                                graph._attr['output_names'][index] = new_out
 
 
 def broadcast_prelu(graph):

@@ -71,9 +71,10 @@ def determined_sort(g, outputs):
 
 def clear_redundant_nodes(g, outputs=None):
     '''Delete redundant nodes in the graph.'''
+    pred = g.predecessor
     noop_names = [n for n in g.nodes if g.nodes[n]['op'] == 'Out'
-                  and g.predecessor[n]
-                  and any([p in g._attr.get('output_names', []) for p in g.predecessor[n]])
+                  and pred[n]
+                  and any([p in g._attr.get('output_names', []) for p in pred[n]])
                   ]
     output_names = outputs if outputs else (
         noop_names if noop_names else g._attr.get('output_names', []))
@@ -81,8 +82,8 @@ def clear_redundant_nodes(g, outputs=None):
         valid_nodes = determined_sort(g, output_names)
         removing_nodes = set(g.nodes).difference(valid_nodes)
         valid_out_nodes = [n for n in removing_nodes if g.nodes[n]['op'] == 'Out'
-                           and len(g.predecessor[n]) == 1
-                           and g.predecessor[n][0] not in removing_nodes]
+                           and len(pred[n]) == 1
+                           and pred[n][0] not in removing_nodes]
         removing_nodes = set(removing_nodes).difference(valid_out_nodes)
         g.remove_nodes_from(removing_nodes)
     else:

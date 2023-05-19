@@ -34,8 +34,9 @@ def decompose_abnormal_reshape(graph, changed_nodes):
                 intermediate_shape = []
                 pre_4d_node = None
                 cur_node = node_name
-                while graph.predecessor[cur_node]:
-                    cur_node = graph.predecessor[cur_node][0]
+                pred = graph.predecessor
+                while pred[cur_node]:
+                    cur_node = pred[cur_node][0]
                     cur_obj = NodeWrap(graph, cur_node)['object']
                     if cur_obj is not None:
                         cur_out_shapes = cur_obj.get_output_shapes()

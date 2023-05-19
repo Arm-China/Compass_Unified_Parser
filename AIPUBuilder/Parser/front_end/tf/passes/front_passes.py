@@ -1943,6 +1943,7 @@ def merge_gru2(graph):
             or len(cell_matches) < 1 \
             or (len(sequence_out_matches) < 1 and len(state_out_matches) < 1):
         return
+    pred = graph.predecessor
     for cell in cell_matches:
         init_match = sorted(init_state_matches, key=lambda x: cal_path_length(
             graph, x['init_state'], cell['matmul0']))[0]
@@ -1951,7 +1952,7 @@ def merge_gru2(graph):
         sequence_match = sorted(sequence_out_matches, key=lambda x: cal_path_length(
             graph, cell['out'], x['gather']))[0] if sequence_out_matches else {}
         state_match = [m for m in state_out_matches if m['add'] == cell['out']
-                       or cell['out'] in graph.predecessor[m['add']]]
+                       or cell['out'] in pred[m['add']]]
         state_match = state_match[0] if state_match else {}
 
         init = init_match['init_state']
