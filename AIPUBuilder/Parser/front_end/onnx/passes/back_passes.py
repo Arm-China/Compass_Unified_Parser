@@ -4282,6 +4282,7 @@ def sink_transpose_with_const(graph):
                                 ]
                                 ) for uw in unaware_types for tr_in_port in [0, 1]]
     matches = extend_lists(matches)
+    matched = False
     for m in matches:
         trans, const, unaware = m['trans'], m['const'], m['unaware']
         trans_obj = NodeWrap(graph, trans)['object']
@@ -4298,6 +4299,7 @@ def sink_transpose_with_const(graph):
                     and unaware_obj.num_in_ports() == 2 \
                     and len(unaware_in_edges) == 2 \
                     and len(unaware_obj.get_out_ports()) == 1:
+                matched = True
                 inverse_perm = Op.cal_inverse_perm(trans_obj.perm)
                 trans_in_edges = graph.sorted_in_edges(
                     trans, keys=True, data=True)
@@ -4342,10 +4344,11 @@ def sink_transpose_with_const(graph):
                     index = graph._attr['output_names'].index(unaware)
                     graph._attr['output_names'][index] = post_trans
 
-                clear_redundant_nodes(graph)
         else:
             ERROR('[Parser]: Meets invalid Node(%s) or Node(%s) or Node(%s) in sink_transpose_with_const!' % (
                 trans, const, unaware))
+    if matched:
+        clear_redundant_nodes(graph)
 
 
 def sink_transpose_through_concat(graph, max_branches=8):
@@ -4426,6 +4429,7 @@ def sink_transpose_through_special_reshape(graph, max_branches=6):
             [('trans_out_%s' % str(i + 1), {}) for i in range(b)]
         edges = [('trans', 'trans_out_%s' % str(i + 1)) for i in range(b)]
         matches = matched_patterns(graph, nodes, edges)
+        matched = False
         for m in matches:
             trans = m['trans']
             trans_out_names = [m['trans_out_%s' % str(i + 1)] for i in range(b)]
@@ -4487,6 +4491,7 @@ def sink_transpose_through_special_reshape(graph, max_branches=6):
                     WARN('[Parser]: Meets invalid Reshape(%s) dim in sink_transpose_through_special_reshape!' % reshape)
                     continue
 
+                matched = True
                 new_perm = []
                 for i, d in enumerate(reshape_out_shape):
                     for new_i, new_d in enumerate(new_dim):
@@ -4525,6 +4530,7 @@ def sink_transpose_through_special_reshape(graph, max_branches=6):
                 trans_in_edges = graph.sorted_in_edges(trans)
                 graph.remove_edges_from(trans_in_edges)
 
+        if matched:
             clear_redundant_nodes(graph)
 
 
@@ -4777,6 +4783,7 @@ def back_passes(graph, params):
         iter_times = min(max(len(graph) // 15, 15), 20)
         for i in range(iter_times):
             try:
+                nodes_num_at_begin = len(graph.nodes)
                 remove_redundant_reshape(graph, 'ArmReshape')
                 for f in [sink_transpose_through_split,
                           sink_transpose_through_concat,
@@ -4791,6 +4798,8 @@ def back_passes(graph, params):
                     remove_redundant_transpose_pro(graph, 'ArmTranspose')
                     remove_redundant_transpose(graph)
                     remove_useless_op(graph, ['ArmReshape', 'ArmTranspose'])
+                if len(graph.nodes) == nodes_num_at_begin:
+                    break
             except Exception as e:
                 WARN(
                     '[Parser]: Meets exception (%s) in remove redundant Transpose! But will proceed!', str(e))

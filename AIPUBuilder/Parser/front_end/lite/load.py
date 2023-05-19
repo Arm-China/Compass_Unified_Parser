@@ -468,11 +468,11 @@ def convert_tflite_to_graph(model_path, params):
                         graph._attr['output_names'] = copy.deepcopy(
                             output_names)
 
-                    successor = graph.successor
                     for name in graph._attr['output_names']:
                         if graph.has_node(name):
-                            if not successor[name] \
-                                    or all([graph.nodes[succ]['op'] != 'Out' for succ in successor[name]]):
+                            node_successors = graph.successor_of(name)
+                            if not node_successors \
+                                    or all([graph.nodes[succ]['op'] != 'Out' for succ in node_successors]):
                                 out_edges = graph.sorted_out_edges(
                                     name, data=True)
                                 try:

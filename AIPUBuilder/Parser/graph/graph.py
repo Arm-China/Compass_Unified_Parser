@@ -26,6 +26,12 @@ class Graph(nx.MultiDiGraph):
                     ret[start].append(end)
         return ret
 
+    def successor_of(self, node):
+        ret = []
+        if node in self.adj:
+            ret = list(self.adj[node].keys())
+        return ret
+
     @property
     def predecessor(self):
         ret = OrderedDict()

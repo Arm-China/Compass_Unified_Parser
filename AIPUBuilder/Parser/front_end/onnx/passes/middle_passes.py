@@ -6770,17 +6770,13 @@ def remove_sub_add_pair(graph):
                                      ('const_2', 'sub', {'dst_in_port': 1}),
                                  ])
     all_matches = matches_1 + matches_2
-    if all_matches:
-        succ = graph.successor
-    else:
-        succ = {}
     for m in all_matches:
         const_1, const_2, add, sub = m['const_1'], m['const_2'], m['add'], m['sub']
         if not graph.has_node(add) or not graph.has_node(sub):
             ERROR('[Parser]: Node (%s or %s or %s or %s) cannot be found, graph maybe has been changed!' % (
                 const_1, const_2, add, sub))
             continue
-        inp = add if sub in succ[add] else sub
+        inp = add if sub in graph.successor_of(add) else sub
         out = sub if inp == add else add
         inp_out_edges = graph.sorted_out_edges(inp)
         const_1_node = NodeWrap(graph, const_1)
