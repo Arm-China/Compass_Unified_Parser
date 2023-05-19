@@ -3956,6 +3956,50 @@ def reshape_prelu_slope(graph):
             ERROR('[Parser]: Meets invalid PRelu Op(%s) in reshape_prelu_slope!' % prelu)
 
 
+def deduplicate_mean_sub(graph):
+    matches = matched_patterns(graph,
+                               nodes=[
+                                   ('input', {}),
+                                   ('mean', {'op': 'ReduceMean'}),
+                                   ('sub_1', {'op': 'Sub'}),
+                                   ('sub_2', {'op': 'Sub'}),
+                               ],
+                               edges=[
+                                   ('input', 'mean'),
+                                   ('input', 'sub_1', {'dst_in_port': 0}),
+                                   ('mean', 'sub_1', {'dst_in_port': 1}),
+                                   ('input', 'sub_2', {'dst_in_port': 0}),
+                                   ('mean', 'sub_2', {'dst_in_port': 1}),
+                               ])
+    for m in matches:
+        names = ['mean', 'sub_1', 'sub_2']
+        node_objs = {n: NodeWrap(graph, m[n])['object'] for n in names}
+        mean_in_edges = graph.sorted_in_edges(m['mean'], data=True)
+        sub_1_in_edges = graph.sorted_in_edges(m['sub_1'], data=True)
+        sub_2_in_edges = graph.sorted_in_edges(m['sub_2'], data=True)
+        if any(obj is None for obj in node_objs.values()) \
+                or len(mean_in_edges) < 1 \
+                or len(sub_1_in_edges) < 2 or len(sub_2_in_edges) < 2:
+            ERROR('[Parser]: Meets invalid node in deduplicate_mean_sub!')
+            continue
+        mean_in_port = mean_in_edges[0][2]['src_out_port']
+        sub_1_in_port = sub_1_in_edges[0][2]['src_out_port']
+        sub_2_in_port = sub_2_in_edges[0][2]['src_out_port']
+        if mean_in_port != sub_1_in_port or mean_in_port != sub_2_in_port:
+            continue
+        sub_2_out_edges = graph.sorted_out_edges(m['sub_2'], data=True)
+        graph.remove_edges_from(sub_2_out_edges + sub_2_in_edges)
+        for _, dst, out_attr in sub_2_out_edges:
+            graph.add_edge(m['sub_1'], dst, **out_attr)
+        if m['sub_2'] in graph._attr['output_names']:
+            index = graph._attr['output_names'].index(m['sub_2'])
+            if m['sub_1'] not in graph._attr['output_names']:
+                graph._attr['output_names'][index] = m['sub_1']
+            else:
+                graph._attr['output_names'].pop(index)
+        graph.remove_node(m['sub_2'])
+
+
 def duplicate_moments_mean(graph):
     matched = False
     matches = matched_patterns(graph,
@@ -4936,19 +4980,16 @@ def merge_ln4(graph):
                                    ('pow_y', 'pow', {
                                     'src_out_port': 0, 'dst_in_port': 1}),
                                    ('mul', 'add_2'),
-                                   ('eps', 'add_1', {
-                                    'src_out_port': 0, 'dst_in_port': 1}),
-                                   ('weight', 'mul', {
-                                    'src_out_port': 0, 'dst_in_port': 1}),
-                                   ('bias', 'add_2', {
-                                    'src_out_port': 0, 'dst_in_port': 1}),
+                                   ('eps', 'add_1'),
+                                   ('weight', 'mul'),
+                                   ('bias', 'add_2'),
                                ]
                                )
     for m in matches:
         key_names = ['mean_1', 'sub', 'pow', 'pow_y',
                      'mean_2', 'add_1', 'sqrt', 'div', 'mul', 'add_2', 'eps', 'weight', 'bias']
         node_objs = {k: NodeWrap(graph, m[k])['object'] for k in key_names}
-        if all([obj is not None for obj in node_objs.values()]):
+        if all(obj is not None for obj in node_objs.values()):
             mean_1_in_edges = graph.sorted_in_edges(m['mean_1'], data=True)
             sub_in_edges = graph.sorted_in_edges(m['sub'], data=True)
             if len(mean_1_in_edges) != 1 \
@@ -4959,29 +5000,12 @@ def merge_ln4(graph):
 
             add_2_in_edges = graph.sorted_in_edges(m['add_2'])
 
-            mean_1_out_edges = graph.sorted_out_edges(m['mean_1'], data=True)
-            pow_out_edges = graph.sorted_out_edges(m['pow'])
-            mean2_out_edges = graph.sorted_out_edges(m['mean_2'])
-            add_1_out_edges = graph.sorted_out_edges(m['add_1'])
-            sqrt_out_edges = graph.sorted_out_edges(m['sqrt'])
-            div_out_edges = graph.sorted_out_edges(m['div'])
-            mul_out_edges = graph.sorted_out_edges(m['mul'])
-
             input_shape = mean_1_in_edges[0][2]['tensor'].value.shape
             weight = node_objs['weight'].value
             bias = node_objs['bias'].value
 
-            if weight.shape != bias.shape \
-                    or np.ndim(weight) >= len(input_shape) \
-                    or node_objs['mean_1'].axes != node_objs['mean_2'].axes \
-                    or FLOAT_EQUAL(node_objs['pow_y'].value, 2.0) is False \
-                    or len(mean_1_out_edges) != 1 \
-                    or len(pow_out_edges) != 1 \
-                    or len(mean2_out_edges) != 1 \
-                    or len(add_1_out_edges) != 1 \
-                    or len(sqrt_out_edges) != 1 \
-                    or len(div_out_edges) != 1 \
-                    or len(mul_out_edges) != 1:
+            if node_objs['mean_1'].axes != node_objs['mean_2'].axes \
+                    or FLOAT_EQUAL(node_objs['pow_y'].value, 2.0) is False:
                 continue
             axes = OpHasAxis.make_axes_non_negative(
                 node_objs['mean_1'].axes, len(input_shape))
@@ -4995,10 +5019,6 @@ def merge_ln4(graph):
             matched = True
             eps = float(node_objs['eps'].value)
             inp, _, in_attr = mean_1_in_edges[0]
-            for src, _, _ in mean_1_in_edges:
-                graph.remove_edge(src, m['mean_1'])
-            for src, _, _ in sub_in_edges:
-                graph.remove_edge(src, m['sub'])
             graph.remove_edges_from(add_2_in_edges)
             graph.add_edge(inp, m['add_2'], **in_attr)
             ln_attr = node_objs['add_2'].copied_attr()
@@ -7901,6 +7921,7 @@ def middle_passes(graph, params):
     merge_batchnorm(graph)
     merge_channel_shuffle(graph)
     merge_channel_shuffle_with_pack(graph)
+    deduplicate_mean_sub(graph)
     merge_ln(graph)
     merge_ln2(graph)
     merge_ln3(graph)

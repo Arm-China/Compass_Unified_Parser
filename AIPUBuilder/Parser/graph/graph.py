@@ -50,10 +50,10 @@ class Graph(nx.MultiDiGraph):
             raise Exception('[Parser]: Node(%s) dose not exist in graph!' % n)
         in_edges = []
         for start, v in self.adj.items():
-            for end, edges in v.items():
-                if end == n:
-                    for edge_k, edge_attr in edges.items():
-                        in_edges.append((start, end, edge_k, edge_attr))
+            if n in v:
+                edges = v[n]
+                for edge_k, edge_attr in edges.items():
+                    in_edges.append((start, n, edge_k, edge_attr))
         in_edges = sorted(in_edges, key=lambda x: (x[3]['dst_in_port'] if x[3]['dst_in_port'] is not None else 0, x[2]))
         if keys and data:
             ret = [(u, v, k, d) for u, v, k, d in in_edges]
@@ -69,11 +69,10 @@ class Graph(nx.MultiDiGraph):
         if n not in self.nodes:
             raise Exception('[Parser]: Node(%s) dose not exist in graph!' % n)
         out_edges = []
-        for start, v in self.adj.items():
-            if start == n:
-                for end, edges in v.items():
-                    for edge_k, edge_attr in edges.items():
-                        out_edges.append((start, end, edge_k, edge_attr))
+        if n in self.adj:
+            for end, edges in self.adj[n].items():
+                for edge_k, edge_attr in edges.items():
+                    out_edges.append((n, end, edge_k, edge_attr))
         out_edges = sorted(out_edges, key=lambda x: (x[3]['src_out_port']
                            if x[3]['src_out_port'] is not None else 0, x[2]))
         if keys and data:

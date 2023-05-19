@@ -4351,187 +4351,190 @@ def sink_transpose_with_const(graph):
         clear_redundant_nodes(graph)
 
 
-def sink_transpose_through_concat(graph, max_branches=8):
-    for b in range(max_branches, 1, -1):
-        nodes = [('in_trans_%s' % str(i + 1), {'op': 'ArmTranspose'})
-                 for i in range(b)] + [('concat', {'op': 'ArmConcat'})]
-        edges = [('in_trans_%s' % str(i + 1), 'concat',
-                  {'dst_in_port': i}) for i in range(b)]
-        matches = matched_patterns(graph, nodes, edges)
-        for m in matches:
-            concat = m['concat']
-            in_trans_names = [m['in_trans_%s' % str(i + 1)] for i in range(b)]
-            if any([not graph.has_node(name) for name in [concat] + in_trans_names]):
-                DEBUG(
-                    '[Parser]: Meets invalid name that does not exist in graph in sink_transpose_through_concat!')
-                continue
-            concat_obj = NodeWrap(graph, concat)['object']
-            in_trans_objs = {name: NodeWrap(
-                graph, name)['object'] for name in in_trans_names}
-            if concat_obj is None or any([obj is None for obj in in_trans_objs.values()]):
-                ERROR(
-                    '[Parser]: Meets invalid Node object in sink_transpose_through_concat!')
-                continue
-            concat_in_edges = graph.sorted_in_edges(concat, data=True)
-            if b != len(concat_in_edges):
-                continue
-            if any([in_trans_objs[in_trans_names[0]].perm != in_trans_objs[name].perm for name in in_trans_names]):
-                continue
-            perm = in_trans_objs[in_trans_names[0]].perm
-            inverse_perm = [perm.index(i) for i in range(len(perm))]
-            for i, (trans, _, concat_in_attr) in enumerate(concat_in_edges):
-                inverse_trans = get_valid_node_name(
-                    graph, concat + '_pre_trans' + str(i))
-                graph.remove_edge(trans, concat)
-                new_in_attr = copy.deepcopy(concat_in_attr)
-                new_in_attr['dst_in_port'] = 0
-                graph.add_edge(trans, inverse_trans, **new_in_attr)
-                inverse_trans_out_tensor = np.transpose(new_in_attr.get('tensor').value, inverse_perm) \
-                    if new_in_attr.get('tensor').value is not None \
-                    else None
-                graph.add_edge(inverse_trans, concat, **{
-                               'src_out_port': 0, 'dst_in_port': i, 'tensor': Tensor(value=inverse_trans_out_tensor)})
-                inverse_trans_attr = concat_obj.copied_attr()
-                inverse_trans_attr.update(
-                    {'name': inverse_trans, 'perm': inverse_perm})
-                NodeWrap(graph, inverse_trans).replace_obj(
-                    'ArmTranspose', inverse_trans_attr)
-            post_trans = get_valid_node_name(graph, concat + '_post_transpose')
-            for _, dst, out_attr in graph.sorted_out_edges(concat, data=True):
-                graph.remove_edge(concat, dst)
-                graph.add_edge(post_trans, dst, **out_attr)
-            axis = concat_obj.axis
-            if axis < 0:
-                axis += len(perm)
-            concat_obj.axis = perm[axis]
-            concat_in_edges = graph.sorted_in_edges(concat, data=True)
-            if all([edge_attr['tensor'].value is not None for _, _, edge_attr in concat_in_edges]):
-                concat_inputs = [edge_attr['tensor'].value for _,
-                                 _, edge_attr in concat_in_edges]
-                concat_output = np.concatenate(concat_inputs, concat_obj.axis)
-            else:
-                concat_output = None
-            graph.add_edge(concat, post_trans, **
-                           {'tensor': Tensor(value=concat_output)})
-            if concat in graph._attr['output_names']:
-                index = graph._attr['output_names'].index(concat)
-                graph._attr['output_names'][index] = post_trans
+def sink_transpose_through_concat(graph):
+    matches = single_node_matcher(graph, 'ArmConcat')
+    for m in matches:
+        concat = m['target']
+        concat_obj = NodeWrap(graph, concat)['object']
+        concat_in_edges = graph.sorted_in_edges(concat, data=True)
+        if concat_obj is None or len(concat_in_edges) < 1:
+            ERROR(
+                '[Parser]: Meets invalid Concat Node(%s) in sink_transpose_through_concat!' % concat)
+            continue
+        all_src_are_trans = True
+        in_trans_names = []
+        in_trans_objs = {}
+        for src, _, _ in concat_in_edges:
+            src_obj = NodeWrap(graph, src)['object']
+            if src_obj is None or src_obj.type != 'ArmTranspose':
+                all_src_are_trans = False
+                break
+            in_trans_names.append(src)
+            in_trans_objs[src] = src_obj
+        if not all_src_are_trans:
+            continue
+        if any([not graph.has_node(name) for name in [concat] + in_trans_names]):
+            DEBUG(
+                '[Parser]: Meets invalid name that does not exist in graph in sink_transpose_through_concat!')
+            continue
 
-            post_trans_attr = concat_obj.copied_attr()
-            post_trans_attr.update({'name': post_trans, 'perm': perm})
-            NodeWrap(graph, post_trans).replace_obj(
-                'ArmTranspose', post_trans_attr)
+        if any([in_trans_objs[in_trans_names[0]].perm != in_trans_objs[name].perm for name in in_trans_names]):
+            continue
+        perm = in_trans_objs[in_trans_names[0]].perm
+        inverse_perm = [perm.index(i) for i in range(len(perm))]
+        for i, (trans, _, concat_in_attr) in enumerate(concat_in_edges):
+            inverse_trans = get_valid_node_name(
+                graph, concat + '_pre_trans' + str(i))
+            graph.remove_edge(trans, concat)
+            new_in_attr = copy.deepcopy(concat_in_attr)
+            new_in_attr['dst_in_port'] = 0
+            graph.add_edge(trans, inverse_trans, **new_in_attr)
+            inverse_trans_out_tensor = np.transpose(new_in_attr.get('tensor').value, inverse_perm) \
+                if new_in_attr.get('tensor').value is not None \
+                else None
+            graph.add_edge(inverse_trans, concat, **{
+                'src_out_port': 0, 'dst_in_port': i, 'tensor': Tensor(value=inverse_trans_out_tensor)})
+            inverse_trans_attr = concat_obj.copied_attr()
+            inverse_trans_attr.update(
+                {'name': inverse_trans, 'perm': inverse_perm})
+            NodeWrap(graph, inverse_trans).replace_obj(
+                'ArmTranspose', inverse_trans_attr)
+        post_trans = get_valid_node_name(graph, concat + '_post_transpose')
+        for _, dst, out_attr in graph.sorted_out_edges(concat, data=True):
+            graph.remove_edge(concat, dst)
+            graph.add_edge(post_trans, dst, **out_attr)
+        axis = concat_obj.axis
+        if axis < 0:
+            axis += len(perm)
+        concat_obj.axis = perm[axis]
+        concat_in_edges = graph.sorted_in_edges(concat, data=True)
+        if all([edge_attr['tensor'].value is not None for _, _, edge_attr in concat_in_edges]):
+            concat_inputs = [edge_attr['tensor'].value for _,
+                             _, edge_attr in concat_in_edges]
+            concat_output = np.concatenate(concat_inputs, concat_obj.axis)
+        else:
+            concat_output = None
+        graph.add_edge(concat, post_trans, **
+                       {'tensor': Tensor(value=concat_output)})
+        if concat in graph._attr['output_names']:
+            index = graph._attr['output_names'].index(concat)
+            graph._attr['output_names'][index] = post_trans
+
+        post_trans_attr = concat_obj.copied_attr()
+        post_trans_attr.update({'name': post_trans, 'perm': perm})
+        NodeWrap(graph, post_trans).replace_obj(
+            'ArmTranspose', post_trans_attr)
 
 
-def sink_transpose_through_special_reshape(graph, max_branches=6):
-    for b in range(max_branches, 0, -1):
-        nodes = [('trans', {'op': 'ArmTranspose'})] + \
-            [('trans_out_%s' % str(i + 1), {}) for i in range(b)]
-        edges = [('trans', 'trans_out_%s' % str(i + 1)) for i in range(b)]
-        matches = matched_patterns(graph, nodes, edges)
-        matched = False
-        for m in matches:
-            trans = m['trans']
-            trans_out_names = [m['trans_out_%s' % str(i + 1)] for i in range(b)]
-            if any([not graph.has_node(name) for name in [trans] + trans_out_names]):
-                ERROR(
-                    '[Parser]: Meets invalid name that does not exist in graph in sink_transpose_through_special_reshape!')
-                continue
-            trans_obj = NodeWrap(graph, trans)['object']
-            trans_out_objs = [NodeWrap(graph, name)['object']
-                              for name in trans_out_names]
-            if trans_obj is None or any([out_obj is None for out_obj in trans_out_objs]):
-                ERROR(
-                    '[Parser]: Meets invalid Node(%s) object in sink_transpose_through_special_reshape!' % trans)
-                continue
-            out_reshape_objs = {
-                out_obj.name: out_obj for out_obj in trans_out_objs if out_obj.type == 'ArmReshape'}
-            if len(out_reshape_objs) == 0:
-                continue
-            trans_in_shape = trans_obj.get_input_shapes()[0]
-            trans_in_edges = graph.sorted_in_edges(trans, data=True)
-            for reshape, reshape_obj in out_reshape_objs.items():
-                reshape_out_edges = graph.sorted_out_edges(reshape, data=True)
-                if len(reshape_out_edges) != 1:
-                    continue
-                reshape_in_shape = reshape_obj.get_input_shapes()[0]
-                reshape_out_shape = reshape_obj.get_output_shapes()[0]
-                if 1 not in reshape_in_shape and 1 not in reshape_out_shape:
-                    continue
-                shape_len_diff = len(reshape_in_shape) - len(reshape_out_shape)
-                if abs(shape_len_diff) != 1:
-                    continue
-                none_one_in_shape = [d for d in reshape_in_shape if d != 1]
-                none_one_out_shape = [d for d in reshape_out_shape if d != 1]
-                if none_one_in_shape != none_one_out_shape:
-                    continue
-                if len(none_one_in_shape) != len(set(none_one_in_shape)) or len(none_one_out_shape) != len(set(none_one_out_shape)):
-                    continue
+def sink_transpose_through_special_reshape(graph):
+    matches = single_node_matcher(graph, 'ArmTranspose')
+    matched = False
+    for m in matches:
+        trans = m['target']
+        trans_obj = NodeWrap(graph, trans)['object']
+        if trans_obj is None:
+            ERROR(
+                '[Parser]: Meets invalid ArmTranspose Node(%s) in sink_transpose_through_special_reshape!' % trans)
+            continue
+        trans_out_names = graph.successor_of(trans)
+        if not trans_out_names:
+            continue
+        out_reshape_objs = {}
+        for trans_out in trans_out_names:
+            trans_out_obj = NodeWrap(graph, trans_out)['object']
+            if trans_out_obj is not None and trans_out_obj.type == 'ArmReshape':
+                out_reshape_objs[trans_out] = trans_out_obj
+        if not out_reshape_objs:
+            continue
+        if any([not graph.has_node(name) for name in [trans] + trans_out_names]):
+            ERROR(
+                '[Parser]: Meets invalid name that does not exist in graph in sink_transpose_through_special_reshape!')
+            continue
 
-                diff_axis = 0
-                min_shape_len = min(len(reshape_in_shape),
-                                    len(reshape_out_shape))
-                for in_dim, out_dim in zip(reshape_in_shape[0:min_shape_len], reshape_out_shape[0:min_shape_len]):
-                    if in_dim != out_dim:
-                        break
-                    diff_axis += 1
-                if shape_len_diff < 0:
-                    if diff_axis in trans_obj.perm:
-                        change_pos = trans_obj.perm.index(diff_axis)
-                    else:
-                        change_pos = len(trans_obj.perm)
-                    new_dim = trans_in_shape[:]
-                    new_dim.insert(change_pos, 1)
+        trans_in_shape = trans_obj.get_input_shapes()[0]
+        trans_in_edges = graph.sorted_in_edges(trans, data=True)
+        for reshape, reshape_obj in out_reshape_objs.items():
+            reshape_out_edges = graph.sorted_out_edges(reshape, data=True)
+            if len(reshape_out_edges) != 1:
+                continue
+            reshape_in_shape = reshape_obj.get_input_shapes()[0]
+            reshape_out_shape = reshape_obj.get_output_shapes()[0]
+            if 1 not in reshape_in_shape and 1 not in reshape_out_shape:
+                continue
+            shape_len_diff = len(reshape_in_shape) - len(reshape_out_shape)
+            if abs(shape_len_diff) != 1:
+                continue
+            none_one_in_shape = [d for d in reshape_in_shape if d != 1]
+            none_one_out_shape = [d for d in reshape_out_shape if d != 1]
+            if none_one_in_shape != none_one_out_shape:
+                continue
+            if len(none_one_in_shape) != len(set(none_one_in_shape)) or len(none_one_out_shape) != len(set(none_one_out_shape)):
+                continue
+
+            diff_axis = 0
+            min_shape_len = min(len(reshape_in_shape),
+                                len(reshape_out_shape))
+            for in_dim, out_dim in zip(reshape_in_shape[0:min_shape_len], reshape_out_shape[0:min_shape_len]):
+                if in_dim != out_dim:
+                    break
+                diff_axis += 1
+            if shape_len_diff < 0:
+                if diff_axis in trans_obj.perm:
+                    change_pos = trans_obj.perm.index(diff_axis)
                 else:
-                    change_pos = trans_obj.perm[diff_axis]
-                    new_dim = trans_in_shape[:]
-                    new_dim.pop(change_pos)
+                    change_pos = len(trans_obj.perm)
+                new_dim = trans_in_shape[:]
+                new_dim.insert(change_pos, 1)
+            else:
+                change_pos = trans_obj.perm[diff_axis]
+                new_dim = trans_in_shape[:]
+                new_dim.pop(change_pos)
 
-                if int(np.prod(new_dim)) != int(np.prod(reshape_in_shape)):
-                    WARN('[Parser]: Meets invalid Reshape(%s) dim in sink_transpose_through_special_reshape!' % reshape)
-                    continue
+            if int(np.prod(new_dim)) != int(np.prod(reshape_in_shape)):
+                WARN('[Parser]: Meets invalid Reshape(%s) dim in sink_transpose_through_special_reshape!' % reshape)
+                continue
 
-                matched = True
-                new_perm = []
-                for i, d in enumerate(reshape_out_shape):
-                    for new_i, new_d in enumerate(new_dim):
-                        if new_d == d and new_i not in new_perm:
-                            new_perm.append(new_i)
-                            break
+            matched = True
+            new_perm = []
+            for d in reshape_out_shape:
+                for new_i, new_d in enumerate(new_dim):
+                    if new_d == d and new_i not in new_perm:
+                        new_perm.append(new_i)
+                        break
 
-                src, _, trans_in_attr = trans_in_edges[0]
-                graph.remove_edge(trans, reshape)
-                graph.add_edge(src, reshape, **trans_in_attr)
-                new_transpose = get_valid_node_name(
-                    graph, reshape + '_post_trans')
-                for _, dst, out_attr in reshape_out_edges:
-                    graph.remove_edge(reshape, dst)
-                    graph.add_edge(new_transpose, dst, **out_attr)
-                reshape_obj.dim = new_dim
-                reshape_in_edges = graph.sorted_in_edges(reshape, data=True)
-                reshape_out_tensor = copy.deepcopy(reshape_out_edges[0][2]['tensor'])
-                if reshape_in_edges[0][2]['tensor'].value is not None:
-                    reshape_out_tensor.value = np.reshape(
-                        reshape_in_edges[0][2]['tensor'].value, reshape_obj.dim)
-                graph.add_edge(reshape, new_transpose, **{'tensor': reshape_out_tensor})
+            src, _, trans_in_attr = trans_in_edges[0]
+            graph.remove_edge(trans, reshape)
+            graph.add_edge(src, reshape, **trans_in_attr)
+            new_transpose = get_valid_node_name(
+                graph, reshape + '_post_trans')
+            for _, dst, out_attr in reshape_out_edges:
+                graph.remove_edge(reshape, dst)
+                graph.add_edge(new_transpose, dst, **out_attr)
+            reshape_obj.dim = new_dim
+            reshape_in_edges = graph.sorted_in_edges(reshape, data=True)
+            reshape_out_tensor = copy.deepcopy(reshape_out_edges[0][2]['tensor'])
+            if reshape_in_edges[0][2]['tensor'].value is not None:
+                reshape_out_tensor.value = np.reshape(
+                    reshape_in_edges[0][2]['tensor'].value, reshape_obj.dim)
+            graph.add_edge(reshape, new_transpose, **{'tensor': reshape_out_tensor})
 
-                new_transpose_attr = reshape_obj.copied_attr()
-                new_transpose_attr.update(
-                    {'name': new_transpose, 'perm': new_perm})
-                NodeWrap(graph, new_transpose).replace_obj(
-                    'ArmTranspose', new_transpose_attr)
+            new_transpose_attr = reshape_obj.copied_attr()
+            new_transpose_attr.update(
+                {'name': new_transpose, 'perm': new_perm})
+            NodeWrap(graph, new_transpose).replace_obj(
+                'ArmTranspose', new_transpose_attr)
 
-                if reshape in graph._attr['output_names']:
-                    index = graph._attr['output_names'].index(reshape)
-                    graph._attr['output_names'][index] = new_transpose
+            if reshape in graph._attr['output_names']:
+                index = graph._attr['output_names'].index(reshape)
+                graph._attr['output_names'][index] = new_transpose
 
-            trans_out_edges = graph.sorted_out_edges(trans)
-            if len(trans_out_edges) == 0:
-                trans_in_edges = graph.sorted_in_edges(trans)
-                graph.remove_edges_from(trans_in_edges)
+        trans_out_edges = graph.sorted_out_edges(trans)
+        if len(trans_out_edges) == 0:
+            trans_in_edges = graph.sorted_in_edges(trans)
+            graph.remove_edges_from(trans_in_edges)
 
-        if matched:
-            clear_redundant_nodes(graph)
+    if matched:
+        clear_redundant_nodes(graph)
 
 
 def sink_transpose_through_split(graph):
@@ -4783,10 +4786,9 @@ def back_passes(graph, params):
 
     if graph._attr['framework'] in (Framework.ONNX, Framework.CAFFE):
         iter_times = min(max(len(graph) // 15, 15), 20)
+        nodes_num_list = [len(graph.nodes)]
         for i in range(iter_times):
             try:
-                nodes_num_at_begin = len(graph.nodes)
-                remove_redundant_reshape(graph, 'ArmReshape')
                 for f in [sink_transpose_through_split,
                           sink_transpose_through_concat,
                           sink_transpose_through_special_reshape,
@@ -4799,9 +4801,15 @@ def back_passes(graph, params):
                     f(graph)
                     remove_redundant_transpose_pro(graph, 'ArmTranspose')
                     remove_redundant_transpose(graph)
+                    remove_redundant_reshape(graph, 'ArmReshape')
                     remove_useless_op(graph, ['ArmReshape', 'ArmTranspose'])
-                if len(graph.nodes) == nodes_num_at_begin:
-                    break
+                if len(nodes_num_list) < 4:
+                    nodes_num_list.append(len(graph.nodes))
+                else:
+                    if all(num == nodes_num_list[0] for num in nodes_num_list[1:]):
+                        break
+                    nodes_num_list.pop(0)
+                    nodes_num_list.append(len(graph.nodes))
             except Exception as e:
                 WARN(
                     '[Parser]: Meets exception (%s) in remove redundant Transpose! But will proceed!', str(e))
