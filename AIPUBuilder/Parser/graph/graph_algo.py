@@ -48,22 +48,24 @@ def get_valid_node_name(graph, base_name):
 def determined_sort(g, outputs):
     '''Get all the sorted nodes according to the outputs node of the graph.'''
     op_order = []
-    stack = copy.deepcopy(outputs)
-    visited = set()
-    while len(stack) != 0:
-        node_name = stack[0]
-        stack.pop(0)
-        visited.add(node_name)
-        has_child = False
-        in_names = [name for name in g.predecessor[node_name]]
-        for in_node_name in in_names:
-            if in_node_name not in visited:
-                stack.insert(0, node_name)
-                stack.insert(0, in_node_name)
-                has_child = True
-                break
-        if not has_child and node_name not in op_order:
-            op_order.append(node_name)
+    if outputs:
+        stack = copy.deepcopy(outputs)
+        pred = g.predecessor
+        visited = set()
+        while len(stack) != 0:
+            node_name = stack[0]
+            stack.pop(0)
+            visited.add(node_name)
+            has_child = False
+            in_names = [name for name in pred[node_name]]
+            for in_node_name in in_names:
+                if in_node_name not in visited:
+                    stack.insert(0, node_name)
+                    stack.insert(0, in_node_name)
+                    has_child = True
+                    break
+            if not has_child and node_name not in op_order:
+                op_order.append(node_name)
     return op_order
 
 
