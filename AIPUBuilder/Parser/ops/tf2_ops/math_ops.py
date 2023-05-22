@@ -682,40 +682,9 @@ class Tfsufficient_statisticsOp(OpHasAxis, OpHasVariableOutPorts, Tf2Op):
         out_tensor_list = tf.nn.sufficient_statistics(
             inputs[0], self.axes, shift=self.shift, keepdims=bool(self.keepdims))
         out_ports = self.get_out_ports()
-
-        if out_ports == [0, 1]:
-            out_tensor_list = [ot.numpy() for ot in out_tensor_list[:2]]
-        elif out_ports == [0, 2]:
-            out_tensor_list = [
-                out_tensor_list[0].numpy(), out_tensor_list[2].numpy()]
-        elif out_ports == [1]:
-            out_tensor_list = [out_tensor_list[1].numpy()]
-        elif out_ports == [2]:
-            out_tensor_list = [out_tensor_list[2].numpy()]
-        elif out_ports == [1, 2]:
-            out_tensor_list = [
-                out_tensor_list[1].numpy(), out_tensor_list[2].numpy()]
-        elif out_ports == [1, 3]:
-            out_tensor_list = [
-                out_tensor_list[1].numpy(), out_tensor_list[3].numpy()]
-        elif out_ports == [2, 3]:
-            out_tensor_list = [
-                out_tensor_list[2].numpy(), out_tensor_list[3].numpy()]
-        elif out_ports == [0, 1, 2]:
-            out_tensor_list = [ot.numpy() for ot in out_tensor_list[:3]]
-        elif out_ports == [0, 2, 3]:
-            out_tensor_list = [out_tensor_list[0].numpy(
-            ), out_tensor_list[2].numpy(), out_tensor_list[3].numpy()]
-        elif out_ports == [0, 1, 3]:
-            out_tensor_list = [out_tensor_list[0].numpy(
-            ), out_tensor_list[1].numpy(), out_tensor_list[3].numpy()]
-        elif out_ports == [1, 2, 3]:
-            out_tensor_list = [out_tensor_list[1].numpy(
-            ), out_tensor_list[2].numpy(), out_tensor_list[3].numpy()]
-        elif out_ports == [0, 1, 2, 3]:
-            out_tensor_list = [ot.numpy() for ot in out_tensor_list]
-
-        self.set_out_tensor(out_tensor_list)
+        assert 1 in out_ports or 2 in out_ports, 'invaild output ports in Tfsufficient_statisticsOp, must include 1 or 2.'
+        out_tensor_res = [out_tensor_list[port].numpy() for port in out_ports]
+        self.set_out_tensor(out_tensor_res)
 
     @property
     def correspond_onnx_op(self):

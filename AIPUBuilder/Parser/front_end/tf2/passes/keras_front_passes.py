@@ -807,7 +807,7 @@ def convert_sufficient_statistics(graph):
 
         if np.any(input_tensors[2] == np.array(None))\
                 or (input_tensors[2].ndim == 1 and input_tensors[2].size == 0):
-            inp1_data = np.zeros(input_tensors[0].shape)
+            inp1_data = np.zeros(input_tensors[0].shape).astype(input_tensors[0].dtype)
             graph.remove_edges_from(in_edges[1:])
             insert_constant(graph, ss_name + '_inp1',
                             inp1_data, ss_name, in_port=1)

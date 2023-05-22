@@ -906,10 +906,6 @@ class SiluOp(LayoutUnawareOp, ActivationOnlyOp, CommonOp):
 
 
 class SufficientStatisticsOp(OpHasAxis, OpHasMultipleOutPorts, CommonOp):
-    @classmethod
-    def attributes(cls):
-        return {'shift': {'type': AttrType.FLOATS, 'default': None}}
-
     def __init__(self, graph, attr_dict=None):
         super(SufficientStatisticsOp, self).__init__(graph, attr_dict)
         self.update_attributes(SufficientStatisticsOp, attr_dict)
@@ -919,7 +915,7 @@ class SufficientStatisticsOp(OpHasAxis, OpHasMultipleOutPorts, CommonOp):
         super(SufficientStatisticsOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor_list = tf.nn.sufficient_statistics(
-            inputs[0], self.axes, shift=self.shift, keepdims=True)
+            inputs[0], self.axes, shift=inputs[1], keepdims=True)
         out_tensor_list = [ot.numpy() for ot in out_tensor_list[1:3]]
         self.set_out_tensor(out_tensor_list)
 
