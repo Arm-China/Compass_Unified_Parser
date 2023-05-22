@@ -17,7 +17,7 @@ def create_cast_model(pb_file_path, input_size, to_dtype):
         # Truncate doesn't really work in tf.
         op1 = tf.raw_ops.Cast(x=x1, DstT=to_dtype, name='cast1')
         op2 = tf.raw_ops.Cast(x=x2, DstT=to_dtype, name='cast2')
-        y = tf.add(op1, op2, name='Y')
+        y = tf.bitwise.bitwise_or(op1, op2, name='Y')  # add may overflow
 
         sess.run(tf.global_variables_initializer())
         constant_graph = tf.graph_util.convert_variables_to_constants(
@@ -34,15 +34,14 @@ input_shape = [2, 3, 4, 5]
 feed_dict = dict()
 feed_dict['X1:0'] = np.random.ranf(input_shape).astype(np.float32) * 10
 feed_dict['X2:0'] = np.random.randint(-10000, 1000, input_shape).astype(np.int32)
+np.save('input', feed_dict)
 
 model_path = TEST_NAME + '.pb'
 # Create model
 create_cast_model(model_path, input_shape, to_dtype='int8')
 
-# Run tests with parser and compare result with runtime
-# FIXME: Enable verify after opt/lib supports truncate
-expected_keywords = 'clip_mode=truncation'
+expected_keywords = 'clip_mode=TRUNCATION'
 exit_status = run_parser(
-    model_path, feed_dict, model_type='tf', verify=False,
+    model_path, feed_dict, model_type='tf', verify=True,
     expected_keywords=expected_keywords)
 assert exit_status

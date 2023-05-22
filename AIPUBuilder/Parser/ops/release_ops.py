@@ -652,7 +652,7 @@ class ArmCastOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
         ret = super(ArmCastOp, self).write_attrs(txt_file)
         if ret:
             txt_file.write('to_dtype=%s\n' % self.to_dtype)
-            txt_file.write('clip_mode=%s\n' % self.clip_mode)
+            txt_file.write('clip_mode=%s\n' % self.clip_mode.upper())
             txt_file.write('ignore_scale_zp=%s\n' % str(self.ignore_scale_zp).lower())
         return ret
 

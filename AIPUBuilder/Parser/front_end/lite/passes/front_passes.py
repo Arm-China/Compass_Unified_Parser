@@ -2269,7 +2269,7 @@ def merge_special_cast_quantize(graph):
             graph.remove_edge(cast, quantize)
             graph.add_edge(src, quantize, **in_attr)
             node_attr = quantize_obj.copied_attr()
-            node_attr.update({'opset_version': 1, 'to': to_dtype})
+            node_attr.update({'opset_version': 19, 'to': to_dtype, 'saturate': True})
             NodeWrap(graph, quantize).replace_obj('Cast', node_attr)
     if matched:
         clear_redundant_nodes(graph)
@@ -2308,7 +2308,7 @@ def convert_special_quantize(graph):
                                   'to_dtype': to_dtype})
                 NodeWrap(graph, quantize).replace_obj('ArmQuantize', node_attr)
             else:
-                node_attr.update({'opset_version': 1, 'to': to_dtype})
+                node_attr.update({'opset_version': 19, 'to': to_dtype, 'saturate': True})
                 NodeWrap(graph, quantize).replace_obj('Cast', node_attr)
         else:
             ERROR(
