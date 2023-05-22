@@ -1990,7 +1990,11 @@ class SigmoidOp(LayoutUnawareOp, BaseActivationOp, OnnxOp):
     def infer_shape(self):
         super(SigmoidOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.sigmoid(inputs[0]).numpy()
+        input_dtype = str(inputs[0].dtype)
+        inp = inputs[0].astype(np.float32) if input_dtype != 'float32' else inputs[0]
+        out_tensor = tf.sigmoid(inp).numpy()
+        if input_dtype != 'float32':
+            out_tensor = out_tensor.astype(input_dtype)
         self.set_out_tensor(out_tensor)
 
 
