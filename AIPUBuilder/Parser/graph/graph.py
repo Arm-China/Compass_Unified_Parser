@@ -260,42 +260,47 @@ class SubGraph(ReadOnlyGraph, Graph):
         self._attr['output_names'] = []
         self._attr['root_in_ports'] = []
 
-    @property
-    def _nodes_dict(self):
-        ret = OrderedDict()
-        for n in self._filter_node:
-            if n in self._root.nodes:
-                ret.update({n: self._root.nodes[n]})
-        return ret
+    # @property
+    # def _nodes_dict(self):
+    #     ret = OrderedDict()
+    #     for n in self._filter_node:
+    #         if n in self._root.nodes:
+    #             ret.update({n: self._root.nodes[n]})
+    #     return ret
+    #
+    # @property
+    # def _adj_dict(self):
+    #     ret = OrderedDict()
+    #     for n in self._filter_node:
+    #         if n in self._root.nodes and n not in ret:
+    #             ret[n] = OrderedDict()
+    #
+    #     for filter_edge_info in self._filter_edge:
+    #         if len(filter_edge_info) == 2:
+    #             u, v = filter_edge_info
+    #             src_out_port, dst_in_port = 0, 0
+    #         elif len(filter_edge_info) >= 3:
+    #             u, v, d = filter_edge_info[:3]
+    #             src_out_port = d.get('src_out_port', 0)
+    #             dst_in_port = d.get('dst_in_port', 0)
+    #         else:
+    #             DEBUG('[Parser]: Meets invalid Subgraph edge!')
+    #             continue
+    #
+    #         if u in self._filter_node \
+    #                 and u in self._root.nodes \
+    #                 and v in self._filter_node \
+    #                 and v in self._root.nodes:
+    #             if u in self._root.adj and v in self._root.adj[u]:
+    #                 if v not in ret[u]:
+    #                     ret[u][v] = OrderedDict()
+    #                 for k, edge_obj in self._root._adj_dict[u][v].items():
+    #                     if edge_obj.src_out_port == src_out_port and edge_obj.dst_in_port == dst_in_port:
+    #                         sub_k = len(ret[u][v])
+    #                         ret[u][v][sub_k] = edge_obj
+    #     return ret
 
-    @property
-    def _adj_dict(self):
-        ret = OrderedDict()
-        for n in self._filter_node:
-            if n in self._root.nodes and n not in ret:
-                ret[n] = OrderedDict()
-
-        for filter_edge_info in self._filter_edge:
-            if len(filter_edge_info) == 2:
-                u, v = filter_edge_info
-                src_out_port, dst_in_port = 0, 0
-            elif len(filter_edge_info) >= 3:
-                u, v, d = filter_edge_info[:3]
-                src_out_port = d.get('src_out_port', 0)
-                dst_in_port = d.get('dst_in_port', 0)
-            else:
-                DEBUG('[Parser]: Meets invalid Subgraph edge!')
-                continue
-
-            if u in self._filter_node \
-                    and u in self._root.nodes \
-                    and v in self._filter_node \
-                    and v in self._root.nodes:
-                if u in self._root._adj_dict and v in self._root._adj_dict[u]:
-                    if v not in ret[u]:
-                        ret[u][v] = OrderedDict()
-                    for k, edge_obj in self._root._adj_dict[u][v].items():
-                        if edge_obj.src_out_port == src_out_port and edge_obj.dst_in_port == dst_in_port:
-                            sub_k = len(ret[u][v])
-                            ret[u][v][sub_k] = edge_obj
-        return ret
+    def has_node(self, n):
+        if n in self._root and n in self._filter_node:
+            return True
+        return False
