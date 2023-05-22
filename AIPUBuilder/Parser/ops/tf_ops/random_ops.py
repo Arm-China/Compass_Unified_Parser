@@ -7,7 +7,7 @@ from ..op import *
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
-class TfRandomUniformOp(OpHasOneOutPort, ConstLikeOp, TfOp):
+class TfRandomUniformOp(OpHasOneOutPort, TfOp):
     @classmethod
     def attributes(cls):
         return {1: {'seed': {'type': AttrType.INT, 'default': 0},

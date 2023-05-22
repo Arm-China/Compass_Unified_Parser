@@ -1908,7 +1908,7 @@ class ConstLikeOp(Op):
 class OpNeedBroadcast(Op):
     '''
     Class OpNeedBroadcast inherited from Op class.
-    Ops need brocast must inherit ConstLikeOp.
+    Ops need broadcast must inherit OpNeedBroadcast.
     '''
     @staticmethod
     def cal_reshape_and_tile(input_shapes, match_from_left=False):
@@ -2019,8 +2019,8 @@ class OpNeedBroadcast(Op):
 class OpNeedUniBroadcast(Op):
     '''
     Class OpNeedBroadcast inherited from Op class.
-    Unidirectional broadcast means that input1 can broadcast to input2, but input2 cannot brocast to input1.
-    Ops need unidirectional brocast must inherit ConstLikeOp.
+    Unidirectional broadcast means that input1 can broadcast to input2, but input2 cannot broadcast to input1.
+    Ops need unidirectional broadcast must inherit OpNeedUniBroadcast.
     '''
     @staticmethod
     def cal_reshape_and_tile(input_shapes, match_from_left=False):
