@@ -387,8 +387,14 @@ class GatherOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
         super(GatherOp, self).infer_shape()
         inputs = self.get_input_tensors()
         indices = inputs[1]
-        out_tensor = np.take(inputs[0], np.array(
-            indices, np.int32), axis=self.axis)
+        try:
+            out_tensor = np.take(inputs[0], np.array(
+                indices, np.int32), axis=self.axis)
+        except:
+            if self.is_all_inputs_const():
+                ERROR('[Parser]: Meets invalid indices input of Gather Op (%s) in infer_shape!' % self.name)
+            indices = np.zeros_like(indices)
+            out_tensor = np.take(inputs[0], indices, axis=self.axis)
         self.set_out_tensor(out_tensor)
 
 
