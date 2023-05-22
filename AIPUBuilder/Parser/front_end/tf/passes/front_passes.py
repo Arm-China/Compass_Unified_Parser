@@ -3679,6 +3679,207 @@ def merge_keras_maskrcnn(graph, params):
     clear_redundant_nodes(graph)
 
 
+def merge_sufficient_statistics(graph):
+    matched = False
+    matches = matched_patterns(graph,
+                               nodes=[
+                                   ('inp', {}),
+                                   ('sum1', {'op': ['TfSum', 'LiteSUM']}),
+                                   ('square', {
+                                    'op': ['TfSquare', 'LiteSQUARE']}),
+
+                                   ('sum2', {'op': ['TfSum', 'LiteSUM']}),
+                                   ('sum1_const', {
+                                    'op': ['TfConst', 'Constant']}),
+                                   ('sum2_const', {
+                                    'op': ['TfConst', 'Constant']}),
+
+                               ],
+                               edges=[
+                                   ('inp', 'sum1', {'dst_in_port': 0}),
+                                   ('inp', 'square', {'dst_in_port': 0}),
+                                   ('sum1_const', 'sum1', {
+                                    'src_out_port': 0, 'dst_in_port': 1}),
+                                   ('square', 'sum2', {
+                                    'src_out_port': 0, 'dst_in_port': 0}),
+                                   ('sum2_const', 'sum2', {
+                                    'src_out_port': 0, 'dst_in_port': 1}),
+
+                               ])
+
+    for m in matches:
+        names = ['inp', 'sum1', 'sum2', 'square', 'sum1_const', 'sum2_const']
+        objs_dict = {n: NodeWrap(graph, m[n])['object'] for n in names}
+        if any(obj is None for obj in objs_dict.values()):
+            ERROR('[Parser]: Meets invalid Op in merge_sufficient_statistics!')
+            continue
+        sum2_out_edges = graph.sorted_out_edges(m['sum2'], data=True)
+        input_tensors = objs_dict['sum1'].get_input_tensors()
+        sum1_in_edges = graph.sorted_in_edges(m['sum1'], data=True)
+        square_in_edges = graph.sorted_in_edges(m['square'], data=True)
+
+        if len(sum2_out_edges) != 1 \
+                or len(sum1_in_edges) != 2 \
+                or len(square_in_edges) != 1 \
+                or len(input_tensors) != 2 \
+                or np.any([None in input_tensor for input_tensor in input_tensors]):
+            ERROR('[Parser]: Meets invalid Op in merge_sufficient_statistics!')
+            continue
+
+        sum1_src, _, sum1_in_attr = sum1_in_edges[0]
+        square_src, _, square_in_attr = square_in_edges[0]
+        if sum1_src != square_src \
+                or sum1_in_attr['src_out_port'] != square_in_attr['src_out_port']\
+                or objs_dict['sum1'].keepdims != objs_dict['sum2'].keepdims\
+                or np.any(objs_dict['sum1_const'].value != objs_dict['sum2_const'].value):
+            continue
+
+        matched = True
+        graph.remove_edge(m['sum1_const'], m['sum1'])
+
+        inp1_data = np.zeros(input_tensors[0].shape).astype(
+            input_tensors[0].dtype)
+        insert_constant(graph, m['sum1'] + '_inp1',
+                        inp1_data, m['sum1'], in_port=1)
+
+        graph.remove_edges_from(sum2_out_edges)
+        for _, dst, out_attr in sum2_out_edges:
+            if out_attr['src_out_port'] == 0:
+                out_attr.update({'src_out_port': 1})
+                graph.add_edge(m['sum1'], dst, **out_attr)
+
+        if not objs_dict['sum1'].keepdims:
+            out_shape = objs_dict['sum1'].get_output_shapes()[0]
+            post_reshapes = []
+            out_port = objs_dict['sum1'].get_out_ports()
+            for out_port in out_port:
+                reshape = insert_reshape_after(graph,
+                                               m['sum1'],
+                                               out_shape,
+                                               out_port=out_port,
+                                               type='Reshape')
+                post_reshapes.append(reshape)
+            if m['sum1'] in graph._attr['output_names'] and post_reshapes:
+                index = graph._attr['output_names'].index(m['sum1'])
+                graph._attr['output_names'].pop(index)
+                for reshape in post_reshapes:
+                    graph._attr['output_names'].append(reshape)
+
+        ss_attr = objs_dict['sum1'].copied_attr()
+        ss_attr.update({'keepdims': True, 'axes': list(
+            objs_dict['sum1_const'].value)})
+        NodeWrap(graph, m['sum1']).replace_obj('SufficientStatistics', ss_attr)
+    if matched:
+        clear_redundant_nodes(graph)
+
+
+def merge_sufficient_statistics2(graph):
+    matched = False
+    matches = matched_patterns(graph,
+                               nodes=[
+                                   ('inp1', {}),
+                                   ('inp2', {}),
+                                   ('sum1', {'op': ['TfSum', 'LiteSUM']}),
+                                   ('square_diff', {
+                                    'op': ['TfSquaredDifference', 'LiteSQUARED_DIFFERENCE']}),
+                                   ('sum2', {'op': ['TfSum', 'LiteSUM']}),
+                                   ('sub', {'op': ['TfSub', 'LiteSUB']}),
+                                   ('sum1_const', {
+                                    'op': ['TfConst', 'Constant']}),
+                                   ('sum2_const', {
+                                    'op': ['TfConst', 'Constant']}),
+                               ],
+                               edges=[
+                                   ('inp1', 'sub', {'dst_in_port': 0}),
+                                   ('inp1', 'square_diff', {'dst_in_port': 0}),
+                                   ('inp2', 'sub', {'dst_in_port': 1}),
+                                   ('inp2', 'square_diff', {'dst_in_port': 1}),
+                                   ('sub', 'sum1', {
+                                       'src_out_port': 0, 'dst_in_port': 0}),
+                                   ('sum1_const', 'sum1', {
+                                    'src_out_port': 0, 'dst_in_port': 1}),
+                                   ('square_diff', 'sum2', {
+                                    'src_out_port': 0, 'dst_in_port': 0}),
+                                   ('sum2_const', 'sum2', {
+                                    'src_out_port': 0, 'dst_in_port': 1}),
+
+                               ])
+
+    for m in matches:
+        names = ['inp1', 'inp2', 'sum1', 'sum2',
+                 'square_diff', 'sub', 'sum1_const', 'sum2_const']
+        objs_dict = {n: NodeWrap(graph, m[n])['object'] for n in names}
+        if any(obj is None for obj in objs_dict.values()):
+            ERROR('[Parser]: Meets invalid Op in merge_sufficient_statistics!')
+            continue
+
+        sub_in_edges = graph.sorted_in_edges(m['sub'], data=True)
+        square_diff_in_edges = graph.sorted_in_edges(
+            m['square_diff'], data=True)
+        sum1_in_edges = graph.sorted_in_edges(m['sum1'], data=True)
+
+        sum2_out_edges = graph.sorted_out_edges(m['sum2'], data=True)
+        input_tensors = objs_dict['sum1'].get_input_tensors()
+
+        if len(sum2_out_edges) != 1 \
+                or len(sub_in_edges) != 2\
+                or len(square_diff_in_edges) != 2\
+                or len(sum1_in_edges) != 2\
+                or len(input_tensors) != 2 \
+                or np.any([None in input_tensor for input_tensor in input_tensors]):
+            ERROR('[Parser]: Meets invalid Op in merge_sufficient_statistics!')
+            continue
+
+        for i in range(0, len(sub_in_edges)):
+            sub_src, _, sub_in_attr = sub_in_edges[i]
+            square_diff_src, _, square_diff_in_attr = square_diff_in_edges[i]
+            if sub_src != square_diff_src \
+                    or sub_in_attr['src_out_port'] != square_diff_in_attr['src_out_port']:
+                continue
+
+        if objs_dict['sum1'].keepdims != objs_dict['sum2'].keepdims\
+                or np.any(objs_dict['sum1_const'].value != objs_dict['sum2_const'].value):
+            continue
+
+        matched = True
+        graph.remove_edges_from(sum1_in_edges)
+        src1, _, in_attr1 = sub_in_edges[0]
+        src2, _, in_attr2 = sub_in_edges[1]
+
+        graph.add_edge(src1, m['sum1'], **in_attr1)
+        graph.add_edge(src2, m['sum1'], **in_attr2)
+
+        graph.remove_edges_from(sum2_out_edges)
+        for _, dst, out_attr in sum2_out_edges:
+            if out_attr['src_out_port'] == 0:
+                out_attr.update({'src_out_port': 1})
+                graph.add_edge(m['sum1'], dst, **out_attr)
+
+        if not objs_dict['sum1'].keepdims:
+            out_shape = objs_dict['sum1'].get_output_shapes()[0]
+            post_reshapes = []
+            out_port = objs_dict['sum1'].get_out_ports()
+            for out_port in out_port:
+                reshape = insert_reshape_after(graph,
+                                               m['sum1'],
+                                               out_shape,
+                                               out_port=out_port,
+                                               type='Reshape')
+                post_reshapes.append(reshape)
+            if m['sum1'] in graph._attr['output_names'] and post_reshapes:
+                index = graph._attr['output_names'].index(m['sum1'])
+                graph._attr['output_names'].pop(index)
+                for reshape in post_reshapes:
+                    graph._attr['output_names'].append(reshape)
+
+        ss_attr = objs_dict['sum1'].copied_attr()
+        ss_attr.update({'keepdims': True, 'axes': list(
+            objs_dict['sum1_const'].value)})
+        NodeWrap(graph, m['sum1']).replace_obj('SufficientStatistics', ss_attr)
+    if matched:
+        clear_redundant_nodes(graph)
+
+
 def merge_overlap_and_add(graph):
 
     def _full_shape(inner_shape, outer_dimensions):

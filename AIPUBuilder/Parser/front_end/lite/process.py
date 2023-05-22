@@ -50,20 +50,18 @@ def process_tflite(model_path, params):
         split_not_equal(graph, 'LiteNOT_EQUAL')
         split_rsqrt(graph)
 
-        from ..tf.passes.front_passes import split_special_floormod
+        from ..tf.passes.front_passes import split_special_floormod, convert_reverse, merge_overlap_and_add, merge_sufficient_statistics, merge_sufficient_statistics2
         split_special_floormod(graph, 'LiteFLOOR_MOD')
 
         remove_detection_postprocess(graph, params)
         convert_onehot(graph)
+        merge_sufficient_statistics(graph)
+        merge_sufficient_statistics2(graph)
 
         convert_square(graph, 'LiteSQUARE')
         convert_square_diff(graph, 'LiteSQUARED_DIFFERENCE')
         convert_scatternd(graph, 'LiteSCATTER_ND')
-
-        from ..tf.passes.front_passes import convert_reverse
         convert_reverse(graph, op_type='LiteREVERSE_V2')
-
-        from ..tf.passes.front_passes import merge_overlap_and_add
         merge_overlap_and_add(graph)
 
         convert_reverse_sequence(graph, 'LiteREVERSE_SEQUENCE')
@@ -75,7 +73,8 @@ def process_tflite(model_path, params):
         fuse_const(graph)
 
         if not graph._attr.get('quantize', False):
-            remove_useless_op(graph, ['LiteDEQUANTIZE'])  # need after fuse_const
+            # need after fuse_const
+            remove_useless_op(graph, ['LiteDEQUANTIZE'])
 
         from ..onnx.passes.middle_passes import convert_to_const
         convert_to_const(graph, ['LiteSHAPE', 'LiteZEROS_LIKE'])
