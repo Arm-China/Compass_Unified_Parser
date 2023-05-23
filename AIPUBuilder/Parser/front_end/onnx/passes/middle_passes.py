@@ -6065,6 +6065,50 @@ def merge_norm(graph):
         clear_redundant_nodes(graph)
 
 
+def merge_special_div_mul(graph):
+    '''Convert Div(A=1, B=x1, C=div_out)+Mul(A=div_out, B=x2) to Div(A=x2, B=x1) because 1/x1*x2=x2/x1.'''
+    matched = False
+    matches = matched_patterns(graph,
+                               nodes=[
+                                   ('div', {'op': 'Div'}),
+                                   ('div_const', {'op': 'Constant'}),
+                                   ('mul_inp', {}),
+                                   ('mul', {'op': 'Mul'}),
+                               ],
+                               edges=[
+                                   ('div_const', 'div', {'src_out_port': 0, 'dst_in_port': 0}),
+                                   ('div', 'mul'),
+                                   ('mul_inp', 'mul'),
+                               ])
+    for m in matches:
+        key_names = ['div_const', 'mul']
+        node_objs = {k: NodeWrap(graph, m[k])['object'] for k in key_names}
+        div_in_edges = graph.sorted_in_edges(m['div'], data=True)
+        mul_in_edges = graph.sorted_in_edges(m['mul'], data=True)
+        if any(obj is None for obj in node_objs.values()) \
+                or len(div_in_edges) != 2 \
+                or len(mul_in_edges) != 2:
+            ERROR('[Parser]: Meets invalid nodes in merge_special_div_mul!')
+            continue
+        if not FLOAT_EQUAL(node_objs['div_const'].value, 1):
+            continue
+        divisor_in_attr = [in_attr for src, _, in_attr in mul_in_edges if src == m['mul_inp']]
+        if len(divisor_in_attr) != 1:
+            continue
+        divisor_in_attr = divisor_in_attr[0]
+        matched = True
+        graph.remove_edges_from(mul_in_edges)
+        divisor_in_attr.update({'dst_in_port': 0})
+        graph.add_edge(m['mul_inp'], m['mul'], **divisor_in_attr)
+        dividend, _, dividend_in_attr = div_in_edges[1]
+        graph.add_edge(dividend, m['mul'], **dividend_in_attr)
+        div_attr = node_objs['mul'].copied_attr()
+        div_attr.update({'opset_version': 14})
+        NodeWrap(graph, m['mul']).replace_obj('Div', div_attr)
+    if matched:
+        clear_redundant_nodes(graph)
+
+
 def merge_rms_norm(graph):
     matched = False
     matches = matched_patterns(graph,
@@ -7936,6 +7980,7 @@ def middle_passes(graph, params):
     merge_in(graph)
     broadcast_ln_weights_biases(graph)
     merge_norm(graph)
+    merge_special_div_mul(graph)
     merge_rms_norm(graph)
     merge_ln_reshape(graph)
     merge_ln_mul_add(graph)
