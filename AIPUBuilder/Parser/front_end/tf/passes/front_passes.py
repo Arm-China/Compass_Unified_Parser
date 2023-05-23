@@ -1446,7 +1446,7 @@ def merge_gru(graph):
                                                    ]
                                             )
     state_out_matches = matched_patterns(graph,
-                                         nodes=[('state', {'op': ['TfConst', 'Constant']}),
+                                         nodes=[('state', {'op': ['TfConst', 'Constant', 'TfFill']}),
                                                 ('next_iter', {
                                                     'op': 'TfNextIteration'}),
                                                 ('merge', {'op': 'TfMerge'}),
@@ -1486,6 +1486,19 @@ def merge_gru(graph):
             scatter = inputs_match['scatter']
             sequence_out = sequence_match.get('transpose', '')
             state_out = state_match.get('exit_3', '')
+            state_in = state_match.get('state', '')
+
+            if state_in:
+                state_in_obj = NodeWrap(graph, state_in)['object']
+                if state_in_obj is None:
+                    ERROR('[Parser]: Meets invalid Node(%s) in merge_gru!' % state_in)
+                    continue
+                if state_in_obj.type == 'TfFill':
+                    state_in_in_edges = graph.sorted_in_edges(state_in, data=True)
+                    if len(state_in_in_edges) < 2 or state_in_in_edges[1][2]['tensor'] is None \
+                            or not state_in_in_edges[1][2]['tensor'].is_const \
+                            or not FLOAT_EQUAL(state_in_in_edges[1][2]['tensor'].value, 0):
+                        continue
 
             init_obj, trans_obj, range_obj, seq_out_obj, state_out_obj \
                 = [NodeWrap(graph, name)['object'] if name else None for name in [init, transpose, range_name, sequence_out, state_out]]
@@ -2060,17 +2073,24 @@ def merge_gru2(graph):
         insert_constant(graph, gru + '_seq_length',
                         seq_length, gru, in_port=4, data_format='NHWC')
 
-        new_init_out_attr = copy.deepcopy(init_out_attr)
-        new_init_out_attr['dst_in_port'] = 5
-        graph.add_edge(init, gru, **new_init_out_attr)
-        init_shape = [
-            1, (batch_size if batch_size is not None else -1), cell_size]
-        insert_reshape(graph, init,
-                       gru,
-                       new_init_out_attr,
-                       init_shape,
-                       type='Reshape',
-                       data_format='NHWC')
+        if batch_size is not None and init_out_attr['tensor'] is not None \
+                and init_out_attr['tensor'].is_const \
+                and FLOAT_EQUAL(init_out_attr['tensor'].value, 0):
+            init_shape = [1, batch_size, cell_size]
+            initial_h_value = np.zeros(init_shape, dtype=init_out_attr['tensor'].value.dtype)
+            insert_constant(graph, gru + '_initial_h', initial_h_value, gru, in_port=5, data_format='NHWC')
+        else:
+            new_init_out_attr = copy.deepcopy(init_out_attr)
+            new_init_out_attr['dst_in_port'] = 5
+            graph.add_edge(init, gru, **new_init_out_attr)
+            init_shape = [
+                1, (batch_size if batch_size is not None else -1), cell_size]
+            insert_reshape(graph, init,
+                           gru,
+                           new_init_out_attr,
+                           init_shape,
+                           type='Reshape',
+                           data_format='NHWC')
 
         gru_attr = NodeWrap(graph, gru)['object'].copied_attr()
         gru_attr.update({'name': gru,
