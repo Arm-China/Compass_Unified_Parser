@@ -663,13 +663,13 @@ def insert_repeat(graph, src, dst, in_attr, reps, axis=None, key=None, type='Rep
     ret = None
     if graph.has_node(src) \
             and graph.has_node(dst) \
-            and has_path(graph, src, dst) \
             and reps is not None \
             and ((isinstance(reps, (list, tuple)) and len(reps) > 0) or (isinstance(reps, np.ndarray) and reps.size > 0)) \
             and type in ('Repeat', 'ArmRepeat'):
         if isinstance(reps, (list, tuple)):
             reps = np.array(reps, np.int32)
-        graph.remove_edge(src, dst, key=key)
+        if has_path(graph, src, dst):
+            graph.remove_edge(src, dst, key=key)
         repeat = get_valid_node_name(graph, dst + '_pre_repeat')
         graph.add_node(repeat)
 
@@ -702,7 +702,8 @@ def insert_repeat(graph, src, dst, in_attr, reps, axis=None, key=None, type='Rep
 def insert_reshape(graph, src, dst, in_attr, dim, key=None, type='Reshape', data_format='NHWC'):
     ret = None
     if graph.has_node(src) and graph.has_node(dst) and dim:
-        graph.remove_edge(src, dst, key=key)
+        if has_path(graph, src, dst):
+            graph.remove_edge(src, dst, key=key)
         reshape = get_valid_node_name(graph, src + '_post_reshape')
         graph.add_node(reshape)
         reshape_attr = {'name': reshape, 'opset_version': 5}
@@ -818,7 +819,8 @@ def place_reshape(graph, reshape, dim, data_format='NHWC'):
 def insert_slice(graph, src, dst, in_attr, begin, size, key=None, type='Slice', data_format='NHWC'):
     ret = None
     if graph.has_node(src) and graph.has_node(dst) and begin and size and type in ('Slice', 'ArmSlice'):
-        graph.remove_edge(src, dst, key=key)
+        if has_path(graph, src, dst):
+            graph.remove_edge(src, dst, key=key)
         slice = get_valid_node_name(graph, src + '_post_slice')
         graph.add_node(slice)
         slice_attr = {'name': slice}
@@ -901,14 +903,14 @@ def insert_tile(graph, src, dst, in_attr, reps, key=None, type='Tile', data_form
     ret = None
     if graph.has_node(src) \
             and graph.has_node(dst) \
-            and has_path(graph, src, dst) \
             and reps is not None \
             and ((isinstance(reps, (list, tuple)) and len(reps) > 0) or (isinstance(reps, np.ndarray) and reps.size > 0)) \
             and type in ('Tile', 'ArmTile'):
 
         if isinstance(reps, (list, tuple)):
             reps = np.array(reps, np.int32)
-        graph.remove_edge(src, dst, key=key)
+        if has_path(graph, src, dst):
+            graph.remove_edge(src, dst, key=key)
         tile = get_valid_node_name(graph, dst + '_pre_tile')
         graph.add_node(tile)
 
