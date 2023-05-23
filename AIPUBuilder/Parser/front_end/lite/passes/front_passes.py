@@ -1814,7 +1814,7 @@ def merge_quantized_lstm_cell(graph):
             old_dim = [1, batch_size, hidden_size]
             new_dim = [batch_size, hidden_size]
             post_reshape = insert_reshape_after(
-                graph, lstm, new_dim, old_dim, out_port=(idx+1))
+                graph, lstm, new_dim, old_dim, out_port=(idx + 1))
             if node in graph._attr['output_names']:
                 index = graph._attr['output_names'].index(node)
                 graph._attr['output_names'][index] = post_reshape
@@ -2005,7 +2005,7 @@ def merge_quantized_lstm_cell2(graph):
             old_dim = [1, batch_size, hidden_size]
             new_dim = [batch_size, hidden_size]
             post_reshape = insert_reshape_after(
-                graph, lstm, new_dim, old_dim, out_port=(idx+1))
+                graph, lstm, new_dim, old_dim, out_port=(idx + 1))
             if node in graph._attr['output_names']:
                 index = graph._attr['output_names'].index(node)
                 graph._attr['output_names'][index] = post_reshape
@@ -2336,6 +2336,7 @@ def convert_special_dequantize(graph):
         if in_attr.get('tensor', None) is not None \
                 and out_attr.get('tensor', None) is not None \
                 and in_attr['tensor'].dtype is not None \
+                and len(in_attr['tensor'].scale_zp) == 2 \
                 and out_attr['tensor'].dtype is not None:
             from_dtype = in_attr['tensor'].dtype
             to_dtype = out_attr['tensor'].dtype
