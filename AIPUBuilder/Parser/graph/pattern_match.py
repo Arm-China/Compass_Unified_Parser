@@ -91,6 +91,8 @@ def matched_patterns(graph, nodes, edges):
                 unique_names = set([v for k, v in m.items() if pattern.nodes[k]['unique']])
                 if not current_found_names.intersection(unique_names):
                     ret.append(m)
+        else:
+            ret = matches
     return ret
 
 
