@@ -2252,6 +2252,7 @@ def merge_lstm(graph):
                                          ('write', 'iter'),
                                          ('iter', 'merge'),
                                          ('merge', 'switch'),
+                                         ('switch', 'write', {'dst_in_port': 3}),
                                          ('switch', 'exit'),
                                          ('exit', 'gather'),
                                      ])
