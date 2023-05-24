@@ -2299,13 +2299,32 @@ def rename_layernorm(graph):
                 or bias_in_attr['tensor'] is None or not bias_in_attr['tensor'].is_const:
             WARN('[Parser]: Meets unsupported non-constant scale and bias of LayerNormalization Node(%s) in rename_layernorm!' % layernorm)
             continue
+        in_shapes = layernorm_obj.get_input_shapes()
+        if len(in_shapes) < 1 or in_shapes[0] is None:
+            ERROR('[Parser]: Meets invalid input shape of LayerNormalization Node(%s) in rename_layernorm!' % layernorm)
+            continue
+        in_shape_len = len(in_shapes[0])
+        ln_axes = OpHasAxis.make_axes_non_negative(layernorm_obj.axes, in_shape_len)
+        non_ln_axes = [axis for axis in range(in_shape_len) if axis not in ln_axes]
+        pre_perm = non_ln_axes + ln_axes
+        if pre_perm != list(range(in_shape_len)):
+            updated_axes = list(range(len(non_ln_axes), in_shape_len))
+            src, _, in_attr = in_edges[0]
+            insert_transpose(graph, src, layernorm, in_attr, pre_perm, type='ArmTranspose')
+            post_perm = Op.cal_inverse_perm(pre_perm)
+            post_trans = insert_transpose_after(graph, layernorm, post_perm, type='ArmTranspose')
+            if layernorm in graph._attr['output_names']:
+                index = graph._attr['output_names'].index(layernorm)
+                graph._attr['output_names'][index] = post_trans
+        else:
+            updated_axes = ln_axes
         matched = True
         graph.remove_edges_from(in_edges[1:])
 
         layernorm_attr = layernorm_obj.copied_attr()
         scale = scale_in_attr['tensor'].value
         biases = bias_in_attr['tensor'].value
-        layernorm_attr.update({'weights': scale, 'biases': biases})
+        layernorm_attr.update({'weights': scale, 'biases': biases, 'axes': updated_axes})
         if layernorm_obj.quantize:
             if scale_in_attr['tensor'].scale_zp:
                 layernorm_attr.update({'weights_scale_zp': list(scale_in_attr['tensor'].scale_zp)})

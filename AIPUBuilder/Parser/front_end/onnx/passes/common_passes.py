@@ -953,20 +953,22 @@ def insert_tile(graph, src, dst, in_attr, reps, key=None, type='Tile', data_form
     return ret
 
 
-def insert_transpose(graph, src, dst, in_attr, perm, key=None):
+def insert_transpose(graph, src, dst, in_attr, perm, key=None, type='Transpose'):
     ret = None
     if graph.has_node(src) \
             and graph.has_node(dst) \
             and perm is not None \
-            and isinstance(perm, (list, np.ndarray)):
+            and isinstance(perm, (list, np.ndarray)) \
+            and type in ('Transpose', 'ArmTranspose'):
         if isinstance(perm, np.ndarray):
             perm = perm.tolist()
         if has_path(graph, src, dst):
             graph.remove_edge(src, dst, key=key)
         transpose = get_valid_node_name(graph, src + '_post_transpose')
         graph.add_node(transpose)
-        transpose_attr = {'name': transpose, 'opset_version': 1}
-        transpose_attr.update({'perm': perm})
+        transpose_attr = {'name': transpose, 'perm': perm}
+        if type == 'Transpose':
+            transpose_attr.update({'opset_version': 1})
         NodeWrap(graph, transpose).replace_obj('Transpose', transpose_attr)
 
         transpose_in_attr = copy.deepcopy(in_attr)

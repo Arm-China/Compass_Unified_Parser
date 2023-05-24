@@ -28,7 +28,7 @@ def create_layernorm_model(tflite_file_path, input_size, axis):
 TEST_NAME = 'layernorm'
 
 input_shapes = [[3, 4, 5], [4, 5, 244, 100], [4, 5, 244, 100]]
-axes = [[1, 2], [-3, -2, -1], [2, 3]]
+axes = [[0, 1], [-3, -2, -1], [1, 3]]
 feed_dict = dict()
 for input_shape, axis in zip(input_shapes, axes):
     feed_dict.clear()
