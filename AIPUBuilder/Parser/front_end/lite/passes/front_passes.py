@@ -166,6 +166,7 @@ def merge_quantized_ln(graph):
                                       ('reshape1', 'square_diff'),
                                       ('reshape1', 'mul1'),
                                       ('mean1', 'square_diff'),
+                                      ('mean1', 'mul2'),
                                       ('square_diff', 'mean2'),
                                       ('mean2', 'add1'),
                                       ('eps', 'add1', {'dst_in_port': 1}),
