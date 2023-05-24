@@ -1973,10 +1973,8 @@ def rename_activations(graph):
 
 
 def rename_bitwise(graph):
-    bitwises = ['BitwiseAnd', 'BitwiseNot', 'BitwiseOr', 'BitwiseXor']
-    matches = [single_node_matcher(graph, bit_type)
-               for bit_type in bitwises]
-    matches = extend_lists(matches)
+    matches = single_node_matcher(
+        graph, ['BitwiseAnd', 'BitwiseNot', 'BitwiseOr', 'BitwiseXor'])
     for m in matches:
         bit = m['target']
         bit_obj = NodeWrap(graph, bit)['object']
@@ -1984,23 +1982,13 @@ def rename_bitwise(graph):
             ERROR('[Parser]: Meets invalid node(%s) in rename_bitwise!' % bit)
             continue
         bit_attr = bit_obj.copied_attr()
-        if bit_obj.type == 'BitwiseAnd':
-            method = 'AND'
-        elif bit_obj.type == 'BitwiseNot':
-            method = 'NOT'
-        elif bit_obj.type == 'BitwiseOr':
-            method = 'OR'
-        elif bit_obj.type == 'BitwiseXor':
-            method = 'XOR'
+        method = bit_obj.type.split('Bitwise')[1].upper()
         bit_attr.update({'method': method})
         NodeWrap(graph, bit).replace_obj('ArmBitwise', bit_attr)
 
 
 def rename_cum(graph):
-    cumlative = ['CumProd', 'CumSum']
-    matches = [single_node_matcher(graph, cum_type)
-               for cum_type in cumlative]
-    matches = extend_lists(matches)
+    matches = single_node_matcher(graph, ['CumProd', 'CumSum'])
     for m in matches:
         cum = m['target']
         cum_obj = NodeWrap(graph, cum)['object']
@@ -2010,18 +1998,18 @@ def rename_cum(graph):
         in_edges = graph.sorted_in_edges(cum, data=True)
         if cum_obj.type == 'CumSum':
             if len(in_edges) < 2:
-                ERROR('[Parser]: Meets invalid in_edge for cumlative Op(%s) in rename_cum!' % cum)
+                ERROR(
+                    '[Parser]: Meets invalid in_edge for cumlative Op(%s) in rename_cum!' % cum)
                 continue
             else:
                 if in_edges[1][2]['tensor'] is None or not in_edges[1][2]['tensor'].is_const:
-                    WARN('[Parser]: Meets unsupported non-constant axis for cumlative Op(%s) in rename_cum!' % cum)
+                    WARN(
+                        '[Parser]: Meets unsupported non-constant axis for cumlative Op(%s) in rename_cum!' % cum)
                     continue
 
         cum_attr = cum_obj.copied_attr()
-        if cum_obj.type == 'CumProd':
-            method = 'PROD'
-        elif cum_obj.type == 'CumSum':
-            method = 'SUM'
+        method = cum_obj.type.split('Cum')[1].upper()
+        if cum_obj.type == 'CumSum':
             cum_attr.update({'axis': cum_obj.axis})
         cum_attr.update({'method': method})
         NodeWrap(graph, cum).replace_obj('ArmCumulate', cum_attr)
