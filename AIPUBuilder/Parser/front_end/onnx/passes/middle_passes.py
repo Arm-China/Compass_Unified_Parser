@@ -1162,7 +1162,8 @@ def convert_special_scatternd(graph):
                                       ('updates', 'scatternd', {'dst_in_port': 2})])
     for m in matches:
         indices, scatternd, updates = m['indices'], m['scatternd'], m['updates']
-        indices_obj, scatternd_obj = [NodeWrap(graph, name)['object'] for name in [indices, scatternd]]
+        indices_obj, scatternd_obj = [NodeWrap(graph, name)['object'] for name in [
+            indices, scatternd]]
         scatternd_in_edges = graph.sorted_in_edges(scatternd, data=True)
         if indices_obj is None or scatternd_obj is None or len(scatternd_in_edges) < 3:
             ERROR('[Parser]: Meet invalid node in convert_special_scatternd!')
@@ -1170,24 +1171,30 @@ def convert_special_scatternd(graph):
         if scatternd_obj.reduction != 'none':
             continue
         input_shapes = scatternd_obj.get_input_shapes()
-        if len(input_shapes) < 3 or input_shapes[0] is None or None in input_shapes[0] \
+        if len(input_shapes) < 3 \
+                or np.any([None in input_shape for input_shape in input_shapes])\
+                or np.any([item is None for input_shape in input_shapes for item in input_shape])\
                 or len(input_shapes[0]) < 1 \
                 or len(indices_obj.value.shape) < 2:
             continue
         input_shape = input_shapes[0]
+        indices_shape = input_shapes[1]
         update_shape = input_shapes[2]
-        if update_shape is None or None in update_shape \
-                or len(input_shape) != len(update_shape) \
+
+        if len(input_shape) != len(update_shape) \
+                or len(indices_shape) != (len(update_shape) + 1) \
                 or input_shape[:-1] != update_shape[:-1]:
             continue
         input_last_dim = input_shape[-1]
         indices_value = indices_obj.value
         indices_len_at_axis = indices_value.shape[-2]
         start_indice = indices_value.item(indices_value.shape[-1] - 1)
-        start_indices = np.array([0] * (indices_value.shape[-1] - 1) + [start_indice])
+        start_indices = np.array(
+            [0] * (indices_value.shape[-1] - 1) + [start_indice])
         exp_shape = indices_value.shape[:-1]
         indices_exp_value = list(np.ndindex(*exp_shape))
-        indices_exp_value = np.reshape(np.array(indices_exp_value) + start_indices, indices_value.shape)
+        indices_exp_value = np.reshape(
+            np.array(indices_exp_value) + start_indices, indices_value.shape)
         if not np.array_equal(indices_exp_value, indices_value) \
                 or (indices_len_at_axis + start_indice) > input_last_dim:
             continue
@@ -1209,7 +1216,8 @@ def convert_special_scatternd(graph):
                 split_out_attr = {'src_out_port': 1, 'dst_in_port': 1}
                 graph.add_edge(split_node, scatternd, **split_out_attr)
                 updates_out_attr.update({'dst_in_port': 0})
-                split = [indices_len_at_axis, input_last_dim - indices_len_at_axis]
+                split = [indices_len_at_axis,
+                         input_last_dim - indices_len_at_axis]
             else:
                 split_out_0_attr = {'src_out_port': 0, 'dst_in_port': 0}
                 graph.add_edge(split_node, scatternd, **split_out_0_attr)
