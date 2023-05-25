@@ -479,14 +479,6 @@ class MeshgridOp(OpHasMultipleOutPorts, CommonOp):
         self.set_out_tensor(out_tensors)
 
 
-class MishOp(LayoutUnawareOp, OpHasOneOutPort, CommonOp):
-    def infer_shape(self):
-        super(MishOp, self).infer_shape()
-        inputs = self.get_input_tensors()
-        out_tensor = inputs[0] * np.tanh(np.log(np.exp(inputs[0]) + 1))
-        self.set_out_tensor(out_tensor)
-
-
 class MomentsOp(OpHasMultipleOutPorts, OpHasAxis, CommonOp):
     def infer_shape(self):
         super(MomentsOp, self).infer_shape()

@@ -1041,6 +1041,23 @@ class MinOp(OpNeedBroadcast, LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
         self.set_out_tensor(out_tensor)
 
 
+class MishOp(LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
+    @classmethod
+    def attributes(cls):
+        return {18: {}, }
+
+    def __init__(self, graph, attr_dict=None):
+        super(MishOp, self).__init__(graph, attr_dict)
+        self.update_attributes(MishOp, attr_dict)
+        assert self.check_required(), 'MishOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(MishOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = inputs[0] * np.tanh(np.log(np.exp(inputs[0]) + 1))
+        self.set_out_tensor(out_tensor)
+
+
 class ModOp(OpNeedBroadcast, LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
     @classmethod
     def attributes(cls):

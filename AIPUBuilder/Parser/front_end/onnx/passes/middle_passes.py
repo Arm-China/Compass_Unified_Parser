@@ -3869,7 +3869,7 @@ def merge_mish(graph):
                     continue
                 graph.remove_edges_from(softplus_in_edges + tanh_out_edges)
                 mish_attr = obj_dict['mul'].copied_attr()
-                mish_attr.update({'opset_version': 1})
+                mish_attr.update({'opset_version': 18})
                 NodeWrap(graph, m['mul']).replace_obj(
                     'Mish', mish_attr)
         else:
