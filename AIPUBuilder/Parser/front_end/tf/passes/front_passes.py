@@ -1800,6 +1800,7 @@ def merge_gru2(graph):
                                          ('tanh', 'mul2'),
                                          ('sub', 'mul2'),
                                          ('z', 'mul1'),
+                                         ('state', 'mul1'),
                                          ('mul1', 'out'),
                                          ('mul2', 'out'),
                                      ])
@@ -1931,7 +1932,7 @@ def merge_gru2(graph):
                                                    ]
                                             )
     state_out_matches = matched_patterns(graph,
-                                         nodes=[('add', {'op': ['TfAddV2', 'TfSelect']}),
+                                         nodes=[('add', {'op': 'TfAddV2'}),
                                                 ('state', {}),
                                                 ('next_iter', {
                                                     'op': 'TfNextIteration'}),
@@ -1949,6 +1950,29 @@ def merge_gru2(graph):
                                                  'dst_in_port': 1}),
                                                 ('switch', 'out'),
                                                 ])
+    state_out_matches2 = matched_patterns(graph,
+                                          nodes=[('add', {'op': 'TfAdd'}),
+                                                 ('select', {'op': 'TfSelect'}),
+                                                 ('state', {}),
+                                                 ('next_iter', {
+                                                     'op': 'TfNextIteration'}),
+                                                 ('merge', {'op': 'TfMerge'}),
+                                                 ('loop', {'op': 'TfLoopCond'}),
+                                                 ('switch', {'op': 'TfSwitch'}),
+                                                 ('out', {'op': 'TfExit'}),
+                                                 ],
+                                          edges=[('add', 'select'),
+                                                 ('select', 'next_iter'),
+                                                 ('state', 'merge'),
+                                                 ('next_iter', 'merge',
+                                                 {'dst_in_port': 1}),
+                                                 ('merge', 'switch'),
+                                                 ('loop', 'switch', {
+                                                     'dst_in_port': 1}),
+                                                 ('switch', 'select'),
+                                                 ('switch', 'out'),
+                                                 ])
+    state_out_matches = state_out_matches + state_out_matches2
     matched = False
 
     if len(init_state_matches) < 1 \
@@ -1956,7 +1980,7 @@ def merge_gru2(graph):
             or len(cell_matches) < 1 \
             or (len(sequence_out_matches) < 1 and len(state_out_matches) < 1):
         return
-    pred = graph.predecessor
+
     for cell in cell_matches:
         init_match = sorted(init_state_matches, key=lambda x: cal_path_length(
             graph, x['init_state'], cell['matmul0']))[0]
@@ -1964,8 +1988,7 @@ def merge_gru2(graph):
             graph, x['input'], cell['matmul0']))[0]
         sequence_match = sorted(sequence_out_matches, key=lambda x: cal_path_length(
             graph, cell['out'], x['gather']))[0] if sequence_out_matches else {}
-        state_match = [m for m in state_out_matches if m['add'] == cell['out']
-                       or cell['out'] in pred[m['add']]]
+        state_match = [m for m in state_out_matches if m['add'] == cell['out']]
         state_match = state_match[0] if state_match else {}
 
         init = init_match['init_state']
