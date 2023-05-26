@@ -264,7 +264,7 @@ def convert_to_onnx(graph):
         if _tensors_are_const(edges):
             graph.remove_edges_from(edges)
         else:
-            ERROR('[Parser]: Meet non-const tensors of Node (%s) in remove_edges_if_const' % node_name)
+            WARN('[Parser]: Meets unsupported non-const tensors of Node (%s) in remove_edges_if_const' % node_name)
 
     tf2_ops = Tf2Op.get_concrete_subclass_names()
     keras_ops = KerasOp.get_concrete_subclass_names()
