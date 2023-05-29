@@ -366,9 +366,9 @@ class Op(abc.ABC):
                     and len(top_info) >= 4 \
                     and all('scale_zp' in info for info in top_info[3]):
                 scale_list = [info['scale_zp'][0].tolist() for info in top_info[3]]
-                scale_str = ','.join(['[' + num_list_to_string(s) + ']' for s in scale_list])
+                scale_str = ','.join([num_list_to_string(s) for s in scale_list])
                 zp_list = [info['scale_zp'][1].tolist() for info in top_info[3]]
-                zp_str = ','.join(['[' + num_list_to_string(z) + ']' for z in zp_list])
+                zp_str = ','.join([num_list_to_string(z) for z in zp_list])
                 if scale_str:
                     txt_file.write('layer_top_scale=[%s]\n' % scale_str)
                 if zp_str:
