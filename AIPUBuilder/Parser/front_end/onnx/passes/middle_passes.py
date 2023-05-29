@@ -2747,6 +2747,88 @@ def merge_gelu_3(graph):
         clear_redundant_nodes(graph)
 
 
+def merge_gelu_4(graph):
+    '''Merge Gelu according to this formula:
+    y = 0.5 * x * (1 + tanh(sqrt(2 / pi) * (x + 0.044715 * x^3))) if approximate is True, so
+    y = (0.5 * x) * (1 + tanh(z)), in which
+    z = sqrt(2 / pi) * (x + 0.044715 * x^3)
+      = 0.797884 * x * (1 + 0.044715 * x^2)
+      = (0.797884 * x) * (1 + x * (x * 0.044715))
+    '''
+    matched = False
+    matches = matched_patterns(graph,
+                               nodes=[
+                                   ('const_mul', {'op': 'Constant'}),
+                                   ('mul_x', {'op': 'Mul'}),
+                                   ('mul_xx', {'op': 'Mul'}),
+                                   ('const_add_1', {'op': 'Constant'}),
+                                   ('add_1', {'op': 'Add'}),
+                                   ('const_sqrt', {'op': 'Constant'}),
+                                   ('mul_sqrt', {'op': 'Mul'}),
+                                   ('mul_for_tanh', {'op': 'Mul'}),
+                                   ('tanh', {'op': 'Tanh'}),
+                                   ('const_add_1_tanh', {'op': 'Constant'}),
+                                   ('add_tanh', {'op': 'Add'}),
+                                   ('const_half', {'op': 'Constant'}),
+                                   ('mul_half', {'op': 'Mul'}),
+                                   ('mul_out', {'op': 'Mul'}),
+                               ],
+                               edges=[
+                                   ('const_mul', 'mul_x'),
+                                   ('mul_x', 'mul_xx'),
+                                   ('const_add_1', 'add_1'),
+                                   ('mul_xx', 'add_1'),
+                                   ('const_sqrt', 'mul_sqrt'),
+                                   ('add_1', 'mul_for_tanh'),
+                                   ('mul_sqrt', 'mul_for_tanh'),
+                                   ('mul_for_tanh', 'tanh'),
+                                   ('const_add_1_tanh', 'add_tanh'),
+                                   ('tanh', 'add_tanh'),
+                                   ('const_half', 'mul_half'),
+                                   ('add_tanh', 'mul_out'),
+                                   ('mul_half', 'mul_out'),
+                               ]
+                               )
+    for m in matches:
+        key_names = ['const_mul', 'const_add_1', 'const_sqrt', 'const_add_1_tanh',
+                     'const_half', 'mul_x', 'mul_xx', 'mul_sqrt', 'mul_half', 'mul_out']
+        node_objs = {k: NodeWrap(graph, m[k])['object'] for k in key_names}
+        if any(obj is None for obj in node_objs.values()):
+            ERROR('[Parser]: Meets invalid nodes in merge_gelu_4!')
+            continue
+        if not FLOAT_EQUAL(node_objs['const_mul'].value, 0.044715) \
+                or not FLOAT_EQUAL(node_objs['const_sqrt'].value, 0.797884) \
+                or not FLOAT_EQUAL(node_objs['const_half'].value, 0.5) \
+                or not FLOAT_EQUAL(node_objs['const_add_1'].value, 1) \
+                or not FLOAT_EQUAL(node_objs['const_add_1_tanh'].value, 1):
+            continue
+        mul_xx_in_edges = graph.sorted_in_edges(m['mul_xx'], data=True)
+        inp_in_edges = [(src, in_attr) for src, _, in_attr in mul_xx_in_edges if src != m['mul_x']]
+        if len(inp_in_edges) != 1:
+            continue
+        gelu_inp, inp_in_attr = inp_in_edges[0]
+        has_same_input = True
+        for name in ['mul_x', 'mul_half', 'mul_sqrt']:
+            mul_in_edges = graph.sorted_in_edges(m[name], data=True)
+            src_out_ports = [in_attr['src_out_port'] for src, _, in_attr in mul_in_edges if src == gelu_inp]
+            if len(src_out_ports) != 1 or src_out_ports[0] != inp_in_attr['src_out_port']:
+                has_same_input = False
+                break
+        if not has_same_input:
+            continue
+        matched = True
+        mul_out_in_edges = graph.sorted_in_edges(m['mul_out'])
+        graph.remove_edges_from(mul_out_in_edges)
+        gelu_in_attr = copy.deepcopy(inp_in_attr)
+        gelu_in_attr.update({'dst_in_port': 0})
+        graph.add_edge(gelu_inp, m['mul_out'], **gelu_in_attr)
+        gelu_attr = node_objs['mul_out'].copied_attr()
+        gelu_attr.update({'approximate': 'tanh', 'opset_version': 1})
+        NodeWrap(graph, m['mul_out']).replace_obj('Gelu', gelu_attr)
+    if matched:
+        clear_redundant_nodes(graph)
+
+
 def merge_dilated_conv(graph):
     _REFERENCE_PERM = {'NHWC': [3, 1, 2, 0], 'NCHW': [1, 0, 2, 3]}
 
@@ -7989,6 +8071,7 @@ def middle_passes(graph, params):
     merge_gelu_1(graph)
     merge_gelu_2(graph)
     merge_gelu_3(graph)
+    merge_gelu_4(graph)
 
     split_special_bn(graph)
     split_special_gn(graph)
