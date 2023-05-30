@@ -1054,7 +1054,6 @@ def merge_pattern_to_plugin(graph, plugin_node_optype, innodes, outnodes, match=
     def add_plugin_in_edge(src, in_attr, in_port):
         new_in_attr = copy.deepcopy(in_attr)
         new_in_attr.update({'dst_in_port': in_port})
-        graph.remove_edge(src, innode)
         graph.add_edge(src, plugin_node, **new_in_attr)
 
     all_nodes = set()
@@ -1095,7 +1094,6 @@ def merge_pattern_to_plugin(graph, plugin_node_optype, innodes, outnodes, match=
         for _, dst, out_attr in outnode_out_edges:
             new_out_attr = copy.deepcopy(out_attr)
             new_out_attr.update({'src_out_port': out_port})
-            graph.remove_edge(outnode, dst)
             graph.add_edge(plugin_node, dst, **new_out_attr)
             out_port += 1
 
