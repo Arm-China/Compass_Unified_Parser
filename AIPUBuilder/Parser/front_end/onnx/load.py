@@ -119,8 +119,7 @@ def build_subgraph(params, root_graph_info, opset_ver):
         else:
             ERROR('[Parser]: Meets error in build_subgraph: Key %s is not in tensor_operator_map!' % str(output_info))
             continue
-        assert ret.has_node(
-            out_node_name), 'Node does not exist in build_subgraph.'
+        assert ret.has_node(out_node_name), ('Node(%s) does not exist in build_subgraph!' % out_node_name)
         ret._attr['output_names'].append(out_node_name)
 
     return ret

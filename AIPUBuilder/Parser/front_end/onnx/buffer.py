@@ -148,7 +148,7 @@ onnx_attr_convert_mapping = [
     ('INTS', lambda pb: list(pb.ints)),
     ('STRINGS', lambda pb: list(map(lambda string: string.decode('utf-8'), pb.strings))),
     ('TENSORS', lambda pb: list(map(get_tensor_content, pb.tensors))),
-    ('GRAPHS', lambda pb: pb.graphs),
+    ('GRAPHS', lambda pb: list(map(get_graph_content, pb.graphs))),
     ('SPARSE_TENSOR', lambda pb: pb.sparse_tensor),
     ('SPARSE_TENSORS', lambda pb: pb.sparse_tensors),
 ]
