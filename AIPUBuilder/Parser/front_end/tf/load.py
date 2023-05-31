@@ -517,7 +517,11 @@ def convert_tf_to_graph(model_path, params):
                     for placeholder in unusual_placeholders:
                         try:
                             t_shape = nodes_dict[placeholder]['output'][0][1]
-                            if all([d is not None for d in t_shape]):
+                            if any(d is not None for d in t_shape):
+                                if None in t_shape:
+                                    WARN(
+                                        '[Parser]: Input shape of %s is partially known; will set the unknown shape to 1!' % placeholder)
+                                    t_shape = [d if d is not None else 1 for d in t_shape]
                                 tensor_name = placeholder + ':0'
                                 if tensor_name in np_tensors:
                                     tensor_value = np_tensors[tensor_name]
