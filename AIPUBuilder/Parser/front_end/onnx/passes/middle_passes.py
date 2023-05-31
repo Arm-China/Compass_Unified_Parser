@@ -5127,7 +5127,6 @@ def merge_ln5(graph):
     matched = False
     matches = matched_patterns(graph,
                                nodes=[
-                                   ('inp', {}),
                                    ('square_diff', {'op': 'Sub'}),
                                    ('mean', {'op': 'ReduceMean'}),
                                    ('sub_1', {'op': 'Sub'}),
@@ -5147,9 +5146,6 @@ def merge_ln5(graph):
                                     'op': 'Constant', 'unique': False}),
                                ],
                                edges=[
-                                   ('inp', 'square_diff'),
-                                   ('inp', 'mean'),
-                                   ('inp', 'sub_1'),
                                    ('mean', 'square_diff', {'dst_in_port': 1}),
                                    ('mean', 'sub_1', {'dst_in_port': 1}),
                                    ('square_diff', 'square'),
@@ -5167,30 +5163,83 @@ def merge_ln5(graph):
                                    ('mul', 'add_1'),
                                    ('beta', 'add_1'),
                                ])
+    matches2 = matched_patterns(graph,
+                                nodes=[
+                                    ('mean', {'op': 'ReduceMean'}),
+                                    ('sub_1', {'op': 'Sub'}),
+                                    ('exponent_1', {'op': 'Constant'}),
+                                    ('square', {'op': 'Pow'}),
+                                    ('mean_1', {'op': 'ReduceMean'}),
+                                    ('add', {'op': 'Add'}),
+                                    ('eps', {'op': 'Constant'}),
+                                    ('exponent_2', {'op': 'Constant'}),
+                                    ('pow', {'op': 'Pow'}),
+                                    ('div', {'op': 'Div'}),
+                                    ('mul', {'op': 'Mul'}),
+                                    ('gamma', {
+                                        'op': 'Constant', 'unique': False}),
+                                    ('add_1', {'op': 'Add'}),
+                                    ('beta', {
+                                        'op': 'Constant', 'unique': False}),
+                                ],
+                                edges=[
+                                    ('mean', 'sub_1', {'dst_in_port': 1}),
+                                    ('sub_1', 'square'),
+                                    ('exponent_1', 'square',
+                                        {'dst_in_port': 1}),
+                                    ('square', 'mean_1'),
+                                    ('mean_1', 'add'),
+                                    ('eps', 'add'),
+                                    ('add', 'pow'),
+                                    ('exponent_2', 'pow', {'dst_in_port': 1}),
+                                    ('sub_1', 'div'),
+                                    ('pow', 'div', {'dst_in_port': 1}),
+                                    ('div', 'mul'),
+                                    ('gamma', 'mul'),
+                                    ('mul', 'add_1'),
+                                    ('beta', 'add_1'),
+                                ])
+    matches += matches2
     for m in matches:
-        names = ['inp', 'square_diff', 'mean', 'sub_1', 'exponent_1', 'square', 'mean_1',
+        names = ['mean', 'sub_1', 'exponent_1', 'square', 'mean_1',
                  'add', 'eps', 'exponent_2', 'pow', 'div', 'mul', 'gamma', 'add_1', 'beta']
+        in_names = ['mean', 'sub_1']
+        if 'square_diff' in m:
+            names += ['square_diff']
+            in_names += ['square_diff']
         obj_dict = {n: NodeWrap(graph, m[n])['object'] for n in names}
         if any([obj is None for obj in obj_dict.values()]):
             ERROR('[Parser]: Meets invalid nodes in merge_ln5!')
             continue
-        square_diff_in_edges = graph.sorted_in_edges(
-            m['square_diff'], data=True)
-        mean_in_edges = graph.sorted_in_edges(m['mean'], data=True)
-        sub_1_in_edges = graph.sorted_in_edges(m['sub_1'], data=True)
-        if len(square_diff_in_edges) != 2 \
-                or len(mean_in_edges) != 1 \
-                or len(sub_1_in_edges) != 2:
-            ERROR('[Parser]: Meets invalid nodes in merge_ln5!')
+
+        found_error = False
+        edges_dict = {}
+        for name in in_names:
+            edges = graph.sorted_in_edges(m[name], data=True)
+            if (name == 'mean' and len(edges) != 1) \
+                    or (name != 'mean' and len(edges) != 2):
+                ERROR('[Parser]: Meets invalid nodes(%s) in merge_ln5!' % name)
+                found_error = True
+                break
+            edges_dict.update({name: edges})
+        if found_error:
             continue
-        inp = m['inp']
+
+        if edges_dict['mean'][0][0] != edges_dict['sub_1'][0][0]:
+            continue
+        if 'square_diff' in edges_dict and edges_dict['mean'][0][0] != edges_dict['square_diff'][0][0]:
+            continue
+        mean_in_edges = edges_dict['mean']
+        sub_1_in_edges = edges_dict['sub_1']
+        inp = mean_in_edges[0][0]
         inp_out_attr = mean_in_edges[0][2]
         inp_out_port = inp_out_attr['src_out_port']
         found_invalid_port = False
-        for src, _, in_attr in square_diff_in_edges:
-            if src == inp and in_attr['src_out_port'] != inp_out_port:
-                found_invalid_port = True
-                break
+        if 'square_diff' in edges_dict:
+            for src, _, in_attr in edges_dict['square_diff']:
+                if src == inp and in_attr['src_out_port'] != inp_out_port:
+                    found_invalid_port = True
+                    break
         if not found_invalid_port:
             for src, _, in_attr in sub_1_in_edges:
                 if src == inp and in_attr['src_out_port'] != inp_out_port:
@@ -5226,8 +5275,7 @@ def merge_ln5(graph):
             node_attr = obj_dict['add_1'].copied_attr()
             node_attr.update({'opset_version': 17})
         last_node_in_edges = graph.sorted_in_edges(last_node)
-        graph.remove_edges_from(square_diff_in_edges +
-                                mean_in_edges + sub_1_in_edges + last_node_in_edges)
+        graph.remove_edges_from(list(edges_dict.values()) + last_node_in_edges)
         new_edge_attr = copy.deepcopy(inp_out_attr)
         new_edge_attr.update({'src_out_port': inp_out_port, 'dst_in_port': 0})
         graph.add_edge(inp, last_node, **new_edge_attr)
