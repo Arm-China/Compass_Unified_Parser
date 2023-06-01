@@ -517,7 +517,7 @@ def convert_tf_to_graph(model_path, params):
                     for placeholder in unusual_placeholders:
                         try:
                             t_shape = nodes_dict[placeholder]['output'][0][1]
-                            if any(d is not None for d in t_shape):
+                            if any(d is not None for d in t_shape) or t_shape == []:
                                 if None in t_shape:
                                     WARN(
                                         '[Parser]: Input shape of %s is partially known; will set the unknown shape to 1!' % placeholder)
