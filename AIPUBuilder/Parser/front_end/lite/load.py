@@ -14,7 +14,7 @@ from ...graph.graph_algo import get_valid_node_name, clear_redundant_nodes
 from ...common.defs import Framework, get_opset_version, Tensor
 from ...common.utils import get_version, extend_lists
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
-from .buffer import read_tflite_model, parse_operator, parse_tensor, get_act_info_from_tensor
+from .buffer import read_tflite_model, parse_operator, parse_tensor, dequantize_tensor_data, get_act_info_from_tensor
 
 
 def convert_attr_to_onnx(attr_dict):
@@ -190,7 +190,7 @@ def convert_tflite_to_graph(model_path, params):
     graph = Graph(name=params.get('model_name', ''))
     graph._attr['framework'] = Framework.TFLITE
     graph._attr['output_tensor_names'] = params.get('output_tensor_names', [])
-    force_not_quantize = True \
+    force_float = True \
         if ((params.get('force_float_ir', 'false').lower() == 'true')
             or (params.get('compat_quantized_model', 'true').lower() == 'false')) \
         else False
@@ -223,8 +223,7 @@ def convert_tflite_to_graph(model_path, params):
                     net_outputs + extend_lists([op_info['outputs'] for op_info in parsed_operators_table]))
                 tensors_table = [(tensor, ti not in non_const_tensor_ids, linear_weights_tensor_id.get(
                     ti, '')) for ti, tensor in enumerate(tensors_table)]
-                parsed_tensors_table = list(
-                    map(partial(parse_tensor, tflite_model=model, force_not_quantize=force_not_quantize), tensors_table))
+                parsed_tensors_table = list(map(partial(parse_tensor, tflite_model=model), tensors_table))
 
                 tensor_name_count = defaultdict(int)
                 for in_tensor_id in non_const_tensor_ids:
@@ -243,7 +242,19 @@ def convert_tflite_to_graph(model_path, params):
 
                 # const sharing exits in tflite
                 const_tensor_count = defaultdict(int)
-                graph_is_quantized = False
+
+                if force_float:
+                    graph_is_quantized = False
+                else:
+                    if all(not parsed_tensors_table[out_id].get('quantize', False)
+                           for op in parsed_operators_table
+                           for out_id in op.get('outputs', [])):
+                        graph_is_quantized = False
+                    else:
+                        graph_is_quantized = True
+                parsed_tensors_table = list(
+                    map(partial(dequantize_tensor_data, quantized=graph_is_quantized), parsed_tensors_table))
+
                 for op_id, op_info in enumerate(parsed_operators_table):
                     node_name = parsed_tensors_table[op_info['outputs'][0]]['name']
                     node_name = get_valid_node_name(graph, node_name)
@@ -262,16 +273,14 @@ def convert_tflite_to_graph(model_path, params):
                         if op_info['type'] in ('DEQUANTIZE', 'QUANTIZE'):
                             detect_quantize = True
                         op_type = ('Tf' if op_info['is_tf_op'] else 'Lite') + op_info['type']
-                    quantize = False if force_not_quantize else detect_quantize
-                    if not graph_is_quantized and quantize:
-                        graph_is_quantized = True
+                    quantize = False if not graph_is_quantized else detect_quantize
                     attr_dict = copy.deepcopy(op_info['attr'])
                     attr_dict.update(
                         {'name': node_name, 'data_format': 'NHWC', 'quantize': quantize})
                     if re.search(r'Lite', op_type):
                         attr_dict.update(
                             {'opcode_version': op_info['opcode_version']})
-                    if not quantize:
+                    if not graph_is_quantized:
                         activation = get_act_info_from_tensor(
                             parsed_tensors_table[op_info['outputs'][0]])
                         if activation and attr_dict.get('FusedActivationFunction', 'NONE') == 'NONE':
@@ -329,11 +338,11 @@ def convert_tflite_to_graph(model_path, params):
                             assert not graph.has_node(
                                 const_name), ('The const node(%s) already exist, cannot add node into graph in convert_tflite_to_graph.' % const_name)
                             const_tensor = parsed_tensors_table[in_tensor_id]
+
                             edge_attr = {'src_out_port': 0,
                                          'dst_in_port': in_port,
                                          'tensor': Tensor(value=const_tensor['data'], is_const=True)
                                          }
-                            detect_quantize = False
                             if 'quant_info' in const_tensor:
                                 if 'Max' in const_tensor['quant_info'] \
                                         and 'Min' in const_tensor['quant_info']:
@@ -341,12 +350,8 @@ def convert_tflite_to_graph(model_path, params):
                                                                    const_tensor['quant_info']['Max'])
                                 if 'Scale' in const_tensor['quant_info'] \
                                         and 'ZeroPoint' in const_tensor['quant_info']:
-                                    detect_quantize = True
                                     edge_attr['tensor'].scale_zp = (const_tensor['quant_info']['Scale'],
                                                                     const_tensor['quant_info']['ZeroPoint'])
-                            quantize = False if force_not_quantize else detect_quantize
-                            if not graph_is_quantized and quantize:
-                                graph_is_quantized = True
                             if 'dtype' in const_tensor:
                                 edge_attr['tensor'].dtype = const_tensor['dtype']
                             graph.add_edge(const_name, node_name, **edge_attr)
@@ -356,7 +361,7 @@ def convert_tflite_to_graph(model_path, params):
                                                     'value': const_tensor['data'],
                                                     'data_format': 'NHWC',
                                                     'opset_version': opset_version,
-                                                    'quantize': quantize,
+                                                    'quantize': const_tensor['quantize'],
                                                     }
                                                    )
                 graph._attr['quantize'] = graph_is_quantized

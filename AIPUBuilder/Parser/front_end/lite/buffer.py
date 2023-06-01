@@ -301,7 +301,7 @@ def parse_quantization_info(quant_info):
     return ret
 
 
-def parse_tensor(tensor_info, tflite_model, force_not_quantize=False):
+def parse_tensor(tensor_info, tflite_model):
     tensor, is_const, linear_type = tensor_info
     buffer_index = tensor.Buffer()
     assert 0 <= buffer_index < tflite_model.BuffersLength(
@@ -317,40 +317,47 @@ def parse_tensor(tensor_info, tflite_model, force_not_quantize=False):
     except:
         parsed_data = np.empty(data_shape, dtype=data_type)
 
-    detect_quantize = False
+    quantize = False
     quant_info_dict = parse_quantization_info(tensor.Quantization())
     if quant_info_dict and 'ZeroPoint' in quant_info_dict and 'Scale' in quant_info_dict:
-        detect_quantize = True
-        if is_const:
-            if force_not_quantize:
-                if linear_type == 'DEPTHWISE_CONV_2D':
-                    scale = quant_info_dict['Scale']
-                    zp = quant_info_dict['ZeroPoint']
-                else:
-                    expand_dims = len(parsed_data.shape) - \
-                        len(quant_info_dict['Scale'].shape)
-                    new_scale_zp_shape = list(
-                        quant_info_dict['Scale'].shape) + [1 for _ in range(expand_dims)]
-                    scale = np.reshape(
-                        quant_info_dict['Scale'], newshape=new_scale_zp_shape)
-                    zp = np.reshape(
-                        quant_info_dict['ZeroPoint'], newshape=new_scale_zp_shape)
-                parsed_data = (parsed_data - zp) * scale
-        else:
-            parsed_data = (
-                parsed_data - quant_info_dict['ZeroPoint']) * quant_info_dict['Scale']
-        if parsed_data.dtype == np.float64:
-            parsed_data = parsed_data.astype(np.float32)
-
+        quantize = True
     ret = {'name': tensor.Name().decode('utf-8'),
            'data': parsed_data,
            'is_const': is_const,
            'dtype': str(data_type.__name__),
-           'quantize': False if force_not_quantize else detect_quantize,
+           'linear_type': linear_type,
+           'quantize': quantize,
            }
     if quant_info_dict:
         ret.update({'quant_info': quant_info_dict})
     return ret
+
+
+def dequantize_tensor_data(tensor_info, quantized):
+    if 'quant_info' in tensor_info and 'ZeroPoint' in tensor_info['quant_info'] and 'Scale' in tensor_info['quant_info']:
+        tensor_data = tensor_info['data']
+        quant_info = tensor_info['quant_info']
+        if tensor_info['is_const']:
+            if not quantized:
+                if tensor_info['linear_type'] == 'DEPTHWISE_CONV_2D':
+                    scale = quant_info['Scale']
+                    zp = quant_info['ZeroPoint']
+                else:
+                    expand_dims = len(tensor_data.shape) - len(quant_info['Scale'].shape)
+                    new_scale_zp_shape = list(quant_info['Scale'].shape) + [1] * expand_dims
+                    scale = np.reshape(
+                        quant_info['Scale'], newshape=new_scale_zp_shape)
+                    zp = np.reshape(
+                        quant_info['ZeroPoint'], newshape=new_scale_zp_shape)
+                tensor_data = (tensor_data - zp) * scale
+        else:
+            tensor_data = (tensor_data - quant_info['ZeroPoint']) * quant_info['Scale']
+        if tensor_data.dtype == np.float64:
+            tensor_data = tensor_data.astype(np.float32)
+        tensor_info['data'] = tensor_data
+    if not quantized:
+        tensor_info['quantize'] = False
+    return tensor_info
 
 
 def get_act_info_from_tensor(tensor_dict):
