@@ -779,6 +779,7 @@ class LiteDEQUANTIZEOp(OpHasOneOutPort, TfliteOp):
         return ret
 
     def infer_shape(self):
+        # input: uint8, int8, int16, float16
         super(LiteDEQUANTIZEOp, self).infer_shape()
         inputs = self.get_input_tensors()
         if np.issubdtype(inputs[0].dtype, np.integer):

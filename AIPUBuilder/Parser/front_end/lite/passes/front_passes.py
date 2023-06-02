@@ -2405,6 +2405,30 @@ def convert_dequantize(graph):
         NodeWrap(graph, dequantize).replace_obj('DequantizeLinear', node_attr)
 
 
+def remove_useless_dequantize(graph):
+    if graph._attr['quantize']:
+        return
+    matched = False
+    matches = two_nodes_matcher(graph, 'Constant', 'LiteDEQUANTIZE')
+    for m in matches:
+        const, dequantize = m['begin'], m['end']
+        const_obj = NodeWrap(graph, const)['object']
+        dequantize_obj = NodeWrap(graph, dequantize)['object']
+        in_edges = graph.sorted_in_edges(dequantize, data=True)
+        if const_obj is not None and dequantize_obj is not None and len(in_edges) == 1:
+            if const_obj.value is not None and const_obj.value.dtype == 'float32':
+                matched = True
+                graph.remove_edge(const, dequantize)
+                for _, dst, out_attr in graph.sorted_out_edges(dequantize, data=True):
+                    graph.remove_edge(dequantize, dst)
+                    graph.add_edge(const, dst, **out_attr)
+        else:
+            ERROR('[Parser]: Meets invalid LiteDEQUANTIZE(%s) in remove_useless_dequantize!' % dequantize)
+            continue
+    if matched:
+        clear_redundant_nodes(graph)
+
+
 def merge_min_quant_max_to_clip(graph):
     quantize = graph._attr.get('quantize', False)
     if quantize:

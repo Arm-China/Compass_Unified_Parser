@@ -15,6 +15,7 @@ from ...common.defs import Framework, get_opset_version, Tensor
 from ...common.utils import get_version, extend_lists
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 from .buffer import read_tflite_model, parse_operator, parse_tensor, dequantize_tensor_data, get_act_info_from_tensor
+from .passes.front_passes import remove_useless_dequantize
 
 
 def convert_attr_to_onnx(attr_dict):
@@ -498,6 +499,9 @@ def convert_tflite_to_graph(model_path, params):
                                         'Out', {'name': out_name})
 
                     clear_redundant_nodes(graph)
+
+                    if not graph._attr['quantize']:
+                        remove_useless_dequantize(graph)
             else:
                 ERROR('Onnx version is too low, needs updating!')
     except Exception as e:
