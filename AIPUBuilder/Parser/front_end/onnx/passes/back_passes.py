@@ -4642,6 +4642,83 @@ def sink_transpose_through_tile(graph):
             ERROR('[Parser]: Meets invalid Node object in sink_transpose_through_tile!')
 
 
+def sink_transpose_through_slice_pair(graph):
+    matched = False
+    unaware_types = set(ArmOp.get_concrete_subclass_names()).intersection(
+        LayoutUnawareOp.get_concrete_subclass_names())
+    unaware_types = sorted(list(unaware_types))
+    matches = matched_patterns(graph,
+                               nodes=[
+                                   ('transpose', {'op': 'ArmTranspose'}),
+                                   ('slice1', {'op': 'ArmSlice'}),
+                                   ('slice2', {'op': 'ArmSlice'}),
+                                   ('unaware', {'op': unaware_types})
+                               ],
+                               edges=[
+                                   ('transpose', 'slice1', {'dst_in_port': 0}),
+                                   ('transpose', 'slice2', {'dst_in_port': 0}),
+                                   ('slice1', 'unaware', {
+                                       'src_out_port': 0, 'dst_in_port': 0}),
+                                   ('slice2', 'unaware', {
+                                       'src_out_port': 0, 'dst_in_port': 1}),
+                               ]
+                               )
+    for m in matches:
+        names = ['transpose', 'slice1', 'slice2', 'unaware']
+        if any(not graph.has_node(m[n]) for n in names):
+            DEBUG('[Parser]: Meets invalid name that does not exist in graph in sink_transpose_through_slice_pair!')
+            continue
+        obj_dict = {n: NodeWrap(graph, m[n])['object'] for n in names}
+        if any([obj is None for obj in obj_dict.values()]):
+            ERROR('[Parser]: Meets invalid Op in sink_transpose_through_slice_pair!')
+            continue
+        if obj_dict['unaware'].num_in_ports() != 2:
+            continue
+        unaware_in_edges = graph.sorted_in_edges(m['unaware'], data=True)
+        if len(unaware_in_edges) != 2:
+            continue
+        slice1_out_edges = graph.sorted_out_edges(m['slice1'])
+        slice2_out_edges = graph.sorted_out_edges(m['slice2'])
+        if len(slice1_out_edges) != 1 or len(slice2_out_edges) != 1:
+            continue
+        transpose_in_edges = graph.sorted_in_edges(m['transpose'], data=True)
+        if len(transpose_in_edges) < 1:
+            continue
+        slice1_in_edges = graph.sorted_in_edges(m['slice1'], keys=True, data=True)
+        slice2_in_edges = graph.sorted_in_edges(m['slice2'], keys=True, data=True)
+        if len(slice1_in_edges) < 1 or len(slice2_in_edges) < 1:
+            continue
+
+        matched = True
+
+        src, _, trans_in_attr = transpose_in_edges[0]
+        _, _, k1, slice1_in_attr = slice1_in_edges[0]
+        _, _, k2, slice2_in_attr = slice2_in_edges[0]
+
+        graph.remove_edge(m['transpose'], m['slice1'], key=k1)
+        graph.remove_edge(m['transpose'], m['slice2'], key=k2)
+        graph.add_edge(src, m['slice1'], **trans_in_attr)
+        graph.add_edge(src, m['slice2'], **trans_in_attr)
+        post_transpose = insert_transpose_after(
+            graph, m['unaware'], obj_dict['transpose'].perm, port=0, type='ArmTranspose')
+
+        inv_perm = Op.cal_inverse_perm(obj_dict['transpose'].perm)
+        np_inv_perm = np.array(inv_perm)
+        obj_dict['slice1'].starts = np.array(obj_dict['slice1'].starts)[np_inv_perm].tolist()
+        obj_dict['slice1'].ends = np.array(obj_dict['slice1'].ends)[np_inv_perm].tolist()
+        obj_dict['slice1'].steps = np.array(obj_dict['slice1'].steps)[np_inv_perm].tolist()
+        obj_dict['slice2'].starts = np.array(obj_dict['slice2'].starts)[np_inv_perm].tolist()
+        obj_dict['slice2'].ends = np.array(obj_dict['slice2'].ends)[np_inv_perm].tolist()
+        obj_dict['slice2'].steps = np.array(obj_dict['slice2'].steps)[np_inv_perm].tolist()
+
+        if m['unaware'] in graph._attr['output_names']:
+            index = graph._attr['output_names'].index(m['unaware'])
+            graph._attr['output_names'][index] = post_transpose
+
+    if matched:
+        clear_redundant_nodes(graph)
+
+
 def back_passes(graph, params):
     '''
     Pass is an optimization based on IR to remove redundant operators and perform hardware-friendly operator transformation.
@@ -4800,6 +4877,7 @@ def back_passes(graph, params):
                           sink_transpose_through_concat,
                           sink_transpose_through_special_reshape,
                           sink_transpose_through_tile,
+                          sink_transpose_through_slice_pair,
                           sink_reshape_through_cast,
                           sink_single_transpose,
                           sink_double_transpose,
