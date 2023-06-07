@@ -159,6 +159,8 @@ def convert_attr_to_onnx(attr_dict, is_keras_op=False):
 
 def parse_pb(graph, model_path, params, anchor_tensors):
 
+    tfv1.reset_default_graph()
+
     def _get_possible_outputs(gf):
         output_names = []
 
