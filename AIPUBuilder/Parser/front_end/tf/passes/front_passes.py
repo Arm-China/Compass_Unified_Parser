@@ -4196,6 +4196,7 @@ def merge_embedding_lookup_sparse_with_weights(graph):
                                         edges=[
                                             ('unique', 'gather1', {'src_out_port': 0, 'dst_in_port': 1}),
                                             ('gather1_axis', 'gather1', {'dst_in_port': 2}),
+                                            ('gather1', 'gather2', {'dst_in_port': 0}),
                                             ('unique', 'gather2', {'src_out_port': 1, 'dst_in_port': 1}),
                                             ('gather2_axis', 'gather2', {'dst_in_port': 2}),
                                             ('reshape_shape', 'reshape', {'dst_in_port': 1}),
