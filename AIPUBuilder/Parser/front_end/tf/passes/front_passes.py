@@ -1115,7 +1115,7 @@ def split_b2s(graph, op_type='TfBatchToSpaceND'):
         in_consts = b2s_obj.sorted_in_consts()
         if len(input_shapes) >= 3 \
                 and input_shapes[0] is not None \
-                and len(input_shapes[0]) in (3, 4) \
+                and len(input_shapes[0]) >= 3 \
                 and all(s is not None for s in input_shapes[0]) \
                 and len(in_consts) >= 2 \
                 and [c[1] for c in in_consts[:2]] == [1, 2]:
@@ -1161,8 +1161,17 @@ def split_b2s(graph, op_type='TfBatchToSpaceND'):
                 NodeWrap(graph, trans2).replace_obj('Transpose', trans2_attr)
 
             else:
+                # 1) reshape to [block_shape[0], ..., block_shape[M-1], batch / prod(block_shape), input_shape[1], ..., input_shape[N-1]]
                 dim1 = [*block_shape.tolist(), -1] + list(in_shape[1:])
-                perm = [2, 3, 0, 4, 1, 5] if is_4d else [1, 2, 0, 3]
+                # 2) perm to [batch / prod(block_shape), input_shape[1], block_shape[0], ..., input_shape[M], block_shape[M-1],
+                #    input_shape[M+1], ..., input_shape[N-1]]
+                block_shape_len = len(block_shape)
+                perm = [block_shape_len]  # position of batch / prod(block_shape) in dim1
+                for input_index, block_index in zip(range(block_shape_len + 1, len(dim1) - 1), range(0, block_shape_len)):
+                    perm.extend([input_index, block_index])  # position of input_shape[M], block_shape[M-1] in dim1
+                perm.append(len(dim1) - 1)  # position of input_shape[N-1] in dim1
+                # 3) reshape to [batch / prod(block_shape), input_shape[1] * block_shape[0], ..., input_shape[M] * block_shape[M-1],
+                #    input_shape[M+1], ..., input_shape[N-1]]
                 dim2 = [-1] + spatial_out_shape_before_slice + [in_shape[-1]]
 
                 reshape1 = get_valid_node_name(graph, b2s + '_reshape1')
@@ -1224,7 +1233,7 @@ def split_b2s(graph, op_type='TfBatchToSpaceND'):
                 ends[zero_mask] = np.array(spatial_out_shape_before_slice)[zero_mask]
                 slice_attr = {'name': slice,
                               'opset_version': slice_version,
-                              'axes': [1, 2] if is_4d else [1],
+                              'axes': list(range(1, len(in_shape) - 1)),
                               'starts': starts.tolist(),
                               'ends': ends.tolist(),
                               }
