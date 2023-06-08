@@ -964,9 +964,12 @@ def convert_fusebatchnormv3(graph):
         clear_redundant_nodes(graph)
 
 
-def split_s2b(graph):
+def split_s2b(graph, op_type='TfSpaceToBatchND'):
+    if op_type not in ('TfSpaceToBatchND', 'Tfspace_to_batch_nd', 'LiteSPACE_TO_BATCH_ND'):
+        ERROR('[Parser]: Meets invalid Op type (%s) in split_s2b!' % op_type)
+        return
     pad_version, transpose_version, s2d_version, reshape_version = 2, 1, 1, 5
-    matches = single_node_matcher(graph, ['TfSpaceToBatchND', 'Tfspace_to_batch_nd'])
+    matches = single_node_matcher(graph, op_type)
     for m in matches:
         s2b = m['target']
         s2b_obj = NodeWrap(graph, s2b)['object']
@@ -981,11 +984,17 @@ def split_s2b(graph):
             in_shape = s2b_obj.get_input_shapes()[0]
             if in_shape is None or None in in_shape:
                 continue
-            if block_shape is None or len(in_shape) not in (3, 4) \
-                    or (len(in_shape) == 3 and block_shape.size != 1) \
-                    or (len(in_shape) == 4 and block_shape.size != 2):
+            spatial_shape_length = len(in_shape) - 2
+            if block_shape is None or paddings is None \
+                    or len(block_shape.shape) != 1 \
+                    or len(paddings.shape) != 2 \
+                    or paddings.shape[0] != block_shape.shape[0]:
+                ERROR('[Parser]: Meets invalid block_shape/paddings for Op (%s) in split_s2b!' % s2b)
+                continue
+            if len(in_shape) < 3 \
+                    or block_shape.shape[0] != spatial_shape_length:
                 WARN(
-                    '[Parser]: Only support 4D inputs(block_shape shape=[2]) or 3D inputs(block_shape shape=[1])'
+                    '[Parser]: Only support 3D or above inputs(block_shape shape=[input dims-2])'
                     ' for Op (%s) for now!' % s2b)
                 continue
             pads = OpHasPaddingStrides.tf_to_onnx(paddings, as_full=True)
@@ -1023,33 +1032,28 @@ def split_s2b(graph):
                 last_name = trans2
             else:
                 need_pad = np.any(paddings != 0)
-                if is_4d_input:
-                    block_size_y, block_size_x = block_shape.tolist()
-                    padded_in_shape = (np.array(in_shape, np.int64) + np.array(
-                        [0, np.sum(paddings[0, :]), np.sum(paddings[1, :]), 0], np.int64)).tolist()
-                    dim1 = [padded_in_shape[0],
-                            padded_in_shape[1] // block_size_y,
-                            block_size_y,
-                            padded_in_shape[2] // block_size_x,
-                            block_size_x,
-                            padded_in_shape[-1]]
-                    dim2 = [padded_in_shape[0] * block_size_y * block_size_x,
-                            padded_in_shape[1] // block_size_y,
-                            padded_in_shape[2] // block_size_x,
-                            padded_in_shape[-1]]
-                    trans_perm = [2, 4, 0, 1, 3, 5]
-                else:
-                    block_size = block_shape.item()
-                    padded_in_shape = (np.array(in_shape, np.int64) + np.array(
-                        [0, np.sum(paddings[0, :]), 0], np.int64)).tolist()
-                    dim1 = [padded_in_shape[0],
-                            padded_in_shape[1] // block_size,
-                            block_size,
-                            padded_in_shape[-1]]
-                    dim2 = [padded_in_shape[0] * block_size,
-                            padded_in_shape[1] // block_size,
-                            padded_in_shape[-1]]
-                    trans_perm = [2, 0, 1, 3]
+                paddings_sum = [np.sum(paddings[idx, :]) for idx in range(spatial_shape_length)]
+                padded_in_shape = (np.array(in_shape, np.int64) + np.array(
+                    [0] + paddings_sum + [0], np.int64)).tolist()
+                # 1) reshape to [batch] + [padded_shape[1] / block_shape[0], block_shape[0], ...,
+                #    padded_shape[M] / block_shape[M-1], block_shape[M-1]] + remaining_shape
+                dim1 = [padded_in_shape[0]]
+                for idx, shape in enumerate(block_shape):
+                    dim1.extend([padded_in_shape[idx + 1] // shape, shape])
+                dim1.append(padded_in_shape[-1])
+                # 2) permute to block_shape + [batch] + [padded_shape[1] / block_shape[0], ...,
+                #    padded_shape[M] / block_shape[M-1]] + remaining_shape
+                trans_perm = list(range(2, len(dim1)-1, 2))  # positions of block_shape in dim1
+                trans_perm.append(0)  # position of batch in dim1
+                # positions of padded_shape[M]/block_shape[M-1] in dim1
+                trans_perm.extend(list(range(1, len(dim1)-2, 2)))
+                trans_perm.append(len(dim1)-1)  # position of remaining_shape in dim1
+                # 3) reshape to [batch * prod(block_shape)] + [padded_shape[1] / block_shape[0], ...,
+                #    padded_shape[M] / block_shape[M-1]] + remaining_shape
+                dim2 = [padded_in_shape[0] * np.prod(block_shape)]
+                for idx, shape in enumerate(block_shape):
+                    dim2.append(padded_in_shape[idx + 1] // shape)
+                dim2.append(padded_in_shape[-1])
 
                 pad = get_valid_node_name(graph, s2b + '_pad')
                 reshape1 = get_valid_node_name(graph, s2b + '_reshape1')
@@ -1092,7 +1096,7 @@ def split_s2b(graph):
                 graph._attr['output_names'][index] = last_name
         else:
             ERROR(
-                '[Parser]: Meets invalid TfSpaceToBatchND/Tfspace_to_batch_nd Node(%s) in split_s2b!' % s2b)
+                '[Parser]: Meets invalid %s Node(%s) in split_s2b!' % (op_type, s2b))
 
 
 def split_b2s(graph, op_type='TfBatchToSpaceND'):
@@ -1105,7 +1109,7 @@ def split_b2s(graph, op_type='TfBatchToSpaceND'):
         b2s = m['target']
         b2s_obj = NodeWrap(graph, b2s)['object']
         if b2s_obj is None:
-            ERROR('[Parser]: Meets invalid TfBatchToSpaceND Node(%s) in split_b2s!' % b2s)
+            ERROR('[Parser]: Meets invalid %s Node(%s) in split_b2s!' % (op_type, b2s))
             continue
         in_edges = graph.sorted_in_edges(b2s, data=True)
         out_edges = graph.sorted_out_edges(b2s, data=True)

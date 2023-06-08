@@ -49,7 +49,7 @@ def process_tf2(model_path, params):
         convert_nms(graph, params)
         convert_sufficient_statistics(graph)
         split_special_floormod(graph, op_type='Tffloormod')
-        split_s2b(graph)
+        split_s2b(graph, op_type='Tfspace_to_batch_nd')
 
         process_keras_op_after_infer(graph)
 

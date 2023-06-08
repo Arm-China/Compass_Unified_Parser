@@ -63,7 +63,7 @@ def process_tf(model_path, params):
         convert_reverse_sequence(graph, op_type='TfReverseSequence')
         convert_scatternd(graph, op_type='TfScatterNd')
         split_b2s(graph)
-        split_s2b(graph)
+        split_s2b(graph, 'TfSpaceToBatchND')
         split_special_floormod(graph)
 
         split_not_equal(graph, op_type='TfNotEqual')

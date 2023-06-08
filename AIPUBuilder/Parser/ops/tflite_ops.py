@@ -2447,7 +2447,7 @@ class LiteSOFTMAXOp(OpHasAxis, OpHasOneOutPort, TfliteOp):
 class LiteSPACE_TO_BATCH_NDOp(OpHasOneOutPort, TfliteOp):
     @classmethod
     def attributes(cls):
-        return {1: {}, 2: {}}
+        return {1: {}, 2: {}, 3: {}}
 
     def __init__(self, graph, attr_dict=None):
         super(LiteSPACE_TO_BATCH_NDOp, self).__init__(graph, attr_dict)
