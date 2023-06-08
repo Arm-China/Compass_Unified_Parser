@@ -213,7 +213,8 @@ def parse_pb(graph, model_path, params, anchor_tensors):
             nodes_dict.update({n['name']: n})
             if n['type'] == 'Placeholder':
                 tensor_shape = n['output'][0][1]
-                if all([d is not None for d in tensor_shape]):
+                if any(d is not None for d in tensor_shape) or tensor_shape == []:
+                    tensor_shape = [d if d is not None else 1 for d in tensor_shape]
                     if n['name'] not in input_shapes:
                         input_shapes.update({n['name']: tensor_shape})
                     elif input_shapes[n['name']] != tensor_shape:

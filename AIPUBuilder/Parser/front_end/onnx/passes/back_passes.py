@@ -3194,10 +3194,15 @@ def detection_post_process(graph, params):
                 ERROR('[Parser]: Invalid params of output nodes (%s or %s) for detection_post_process!' % (
                     out1, out2))
                 return
-            if len(out1_out_shapes[0]) == 3 \
-                    and len(out2_out_shapes[0]) == 3 \
-                    and out1_out_shapes[0][1] == 1 \
-                    and out2_out_shapes[0][1] == 1:
+            if len(out1_out_shapes[0]) != 3:
+                ERROR('[Parser]: The length of output shape of output node (%s) should be 3 but got %d for detection_post_process!' % (
+                    out1, len(out1_out_shapes[0])))
+                return
+            if len(out2_out_shapes[0]) != 3:
+                ERROR('[Parser]: The length of output shape of output node (%s) should be 3 but got %d for detection_post_process!' % (
+                    out2, len(out2_out_shapes[0])))
+                return
+            if out1_out_shapes[0][1] == 1 and out2_out_shapes[0][1] == 1:
                 if out1_out_shapes[0][2] % 4 == 0 and out2_out_shapes[0][2] % (out1_out_shapes[0][2] // 4) == 0:
                     pred_box_num = out1_out_shapes[0][2] // 4
                     total_classes_num = out2_out_shapes[0][2] // pred_box_num
