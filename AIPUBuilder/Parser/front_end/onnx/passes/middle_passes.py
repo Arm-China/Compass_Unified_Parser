@@ -7034,7 +7034,7 @@ def remove_sub_add_pair(graph):
             ERROR('[Parser]: Node (%s or %s or %s or %s) cannot be found, graph maybe has been changed!' % (
                 const_1, const_2, add, sub))
             continue
-        inp = add if sub in graph.successor_of(add) else sub
+        inp = add if sub in graph.children(add) else sub
         out = sub if inp == add else add
         inp_out_edges = graph.sorted_out_edges(inp)
         const_1_node = NodeWrap(graph, const_1)

@@ -26,12 +26,6 @@ class Graph(nx.MultiDiGraph):
                     ret[start].append(end)
         return ret
 
-    def successor_of(self, node):
-        ret = []
-        if node in self.adj:
-            ret = list(self.adj[node].keys())
-        return ret
-
     @property
     def predecessor(self):
         ret = OrderedDict()
@@ -44,6 +38,12 @@ class Graph(nx.MultiDiGraph):
                 else:
                     ret[end].append(start)
         return ret
+
+    def children(self, node):
+        return list(self.successors(node))
+
+    def parents(self, node):
+        return list(self.predecessors(node))
 
     def sorted_in_edges(self, n, keys=False, data=False):
         if n not in self.nodes:

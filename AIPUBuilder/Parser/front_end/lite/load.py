@@ -476,7 +476,7 @@ def convert_tflite_to_graph(model_path, params):
 
                     for name in graph._attr['output_names']:
                         if graph.has_node(name):
-                            node_successors = graph.successor_of(name)
+                            node_successors = graph.children(name)
                             if not node_successors \
                                     or all([graph.nodes[succ]['op'] != 'Out' for succ in node_successors]):
                                 out_edges = graph.sorted_out_edges(

@@ -4443,7 +4443,7 @@ def sink_transpose_through_special_reshape(graph):
             ERROR(
                 '[Parser]: Meets invalid ArmTranspose Node(%s) in sink_transpose_through_special_reshape!' % trans)
             continue
-        trans_out_names = graph.successor_of(trans)
+        trans_out_names = graph.children(trans)
         if not trans_out_names:
             continue
         out_reshape_objs = {}
@@ -4719,6 +4719,57 @@ def sink_transpose_through_slice_pair(graph):
         clear_redundant_nodes(graph)
 
 
+def merge_same_op_at_out_port(graph, op_types=list()):
+    op_types = list(set(op_types).union(['ArmTranspose', 'ArmReshape']))
+    matches = single_node_matcher(graph, {})
+    for m in matches:
+        node = m['target']
+        if not graph.has_node(node):
+            continue
+        node_obj = NodeWrap(graph, node)['object']
+        if node_obj is None or node_obj.type == 'Out':
+            continue
+        out_ports = node_obj.get_out_ports()
+        if len(out_ports) < 1:
+            continue
+        out_edges = graph.sorted_out_edges(node, keys=True, data=True)
+        if len(out_edges) < 2:
+            continue
+        for p in out_ports:
+            cur_p_edges = [e for e in out_edges if (e[3]['src_out_port'] == p and graph.has_node(
+                e[1]) and NodeWrap(graph, e[1])['object'] is not None)]
+            if len(cur_p_edges) < 2:
+                continue
+            for op in op_types:
+                cur_type_edges = [e for e in cur_p_edges if (graph.has_node(e[1]) and NodeWrap(
+                    graph, e[1])['object'] is not None and NodeWrap(graph, e[1])['object'].type == op)]
+                if len(cur_type_edges) < 2:
+                    continue
+                cur_objs = [NodeWrap(graph, e[1])['object'] for e in cur_type_edges]
+                if op == 'ArmReshape':
+                    if any(cur_objs[0].dim != obj.dim for obj in cur_objs[1:]):
+                        continue
+                elif op == 'ArmTranspose':
+                    if any(cur_objs[0].perm != obj.perm for obj in cur_objs[1:]):
+                        continue
+                else:
+                    # not supported yet
+                    continue
+                keep_out_node = cur_type_edges[0][1]
+                for _, removing_out, k, _ in cur_type_edges[1:]:
+                    graph.remove_edge(node, removing_out, key=k)
+                    for _, dst, meta_k, out_attr in graph.sorted_out_edges(removing_out, keys=True, data=True):
+                        graph.remove_edge(removing_out, dst, key=meta_k)
+                        graph.add_edge(keep_out_node, dst, **out_attr)
+                    graph.remove_node(removing_out)
+                    if removing_out in graph._attr['output_names']:
+                        index = graph._attr['output_names'].index(removing_out)
+                        if keep_out_node not in graph._attr['output_names']:
+                            graph._attr['output_names'][index] = keep_out_node
+                        else:
+                            graph._attr['output_names'].pop(index)
+
+
 def back_passes(graph, params):
     '''
     Pass is an optimization based on IR to remove redundant operators and perform hardware-friendly operator transformation.
@@ -4881,7 +4932,8 @@ def back_passes(graph, params):
                           sink_reshape_through_cast,
                           sink_single_transpose,
                           sink_double_transpose,
-                          sink_transpose_with_const
+                          sink_transpose_with_const,
+                          merge_same_op_at_out_port
                           ]:
                     f(graph)
                     remove_redundant_transpose_pro(graph, 'ArmTranspose')
