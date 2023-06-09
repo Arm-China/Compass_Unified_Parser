@@ -249,7 +249,7 @@ def convert_tflite_to_graph(model_path, params):
                 else:
                     if all(not parsed_tensors_table[out_id].get('quantize', False)
                            for op in parsed_operators_table
-                           for out_id in op.get('outputs', [])):
+                           for out_id in op.get('outputs', []) if op['type'] not in ['Input', 'CAST']):
                         graph_is_quantized = False
                     else:
                         graph_is_quantized = True
