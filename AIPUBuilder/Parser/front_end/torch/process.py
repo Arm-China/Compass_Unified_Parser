@@ -12,6 +12,45 @@ from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 from ...common.utils import get_version
 
 
+@helper.parse_args('v', 'v', 'v', 'is', 'v', 'is', 'i')
+def convert_conv(g, input, weight, bias, stride, padding, dilation, groups):
+    # Support padding as string. Refer to https://github.com/pytorch/pytorch/pull/89107
+    ret = None
+    weight_shape = helper._get_tensor_sizes(weight)
+    try:
+        kernel_shape = weight_shape[2:]
+    except:
+        kernel_shape = None
+    if kernel_shape is None or None in kernel_shape:
+        ERROR('[Parser]: Meets invalid kernel shape of Conv op in convert_conv!')
+        return ret
+
+    args = [input, weight]
+    need_separate_add = False
+    if not helper._is_none(bias):
+        if helper._get_tensor_rank(bias) == 1:
+            args.append(bias)
+        else:
+            need_separate_add = True
+
+    kwargs = {'kernel_shape_i': kernel_shape, 'strides_i': stride, 'dilations_i': dilation, 'group_i': groups}
+
+    str_padding = helper._parse_arg(padding, "s")
+    if str_padding in ('valid', 'same'):
+        auto_pad = 'VALID' if str_padding == 'valid' else 'SAME_UPPER'
+        kwargs.update({'auto_pad_s': auto_pad})
+    else:
+        padding = helper._parse_arg(padding, "is")
+        padding = padding + padding
+        kwargs.update({'pads_i': padding})
+
+    conv = g.op('Conv', *args, **kwargs)
+
+    if need_separate_add:
+        return g.op('Add', conv, bias)
+    return conv
+
+
 def convert_torch_to_onnx(model_path, params):
     def _export_to_onnx(model,
                         input_tensors,
@@ -45,11 +84,11 @@ def convert_torch_to_onnx(model_path, params):
     # for onnx version 1.x, onnx opset version=x+5
     onnx_version = str(get_version(onnx)).split('.')
     onnx_opset_version = (int(onnx_version[-1]) + 5) if int(onnx_version[0]) == 1 else None
+    torch_version = str(torch.onnx.producer_version)
     if onnx_opset_version is not None:
         default_onnx_main_opset = None
         default_onnx_stable_opsets = []
         try:
-            torch_version = str(torch.onnx.producer_version)
             if torch_version.startswith('1.11'):
                 default_onnx_main_opset = helper._onnx_main_opset
                 default_onnx_stable_opsets = helper._onnx_stable_opsets
@@ -63,7 +102,14 @@ def convert_torch_to_onnx(model_path, params):
             onnx_opset_version = None
         elif onnx_opset_version >= default_onnx_main_opset or onnx_opset_version not in default_onnx_stable_opsets:
             onnx_opset_version = default_onnx_main_opset
+    if onnx_opset_version is None:
+        onnx_opset_version = 9
     DEBUG('[Parser]: Will convert to onnx opset version (%s)!' % str(onnx_opset_version))
+
+    # Apply fixes before convertting to onnx model
+    if torch_version < '2.1.0':
+        for conv_op in ('aten::conv1d', 'aten::conv2d', 'aten::conv3d'):
+            torch.onnx.register_custom_op_symbolic(conv_op, convert_conv, onnx_opset_version)
 
     # Get input_tensors and input_names
     input_names = []
