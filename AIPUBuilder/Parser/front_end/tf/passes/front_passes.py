@@ -72,7 +72,7 @@ def convert_conv_backpropinput(graph):
                 full_len = len(input_spatial_shape) + 2
                 pad_slice = slice(1, full_len - 1) if data_format == 'NHWC' else slice(2, full_len)
                 pads = np.transpose(np.reshape(np.array(conv_back_obj.explicit_paddings),
-                                    (full_len, 2))[pad_slice, :]).flatten().tolist()
+                                               (full_len, 2))[pad_slice, :]).flatten().tolist()
                 conv_attr.update({'pads': pads})
             conv_attr.update({'opset_version': 11,
                               'weights': new_weights,
@@ -105,7 +105,8 @@ def convert_d2s_or_s2d(graph):
             ERROR('[Parser]: Meets invalid Op (%s) in convert_d2s_or_s2d!' % d2s_or_s2d)
             continue
         if d2s_or_s2d_obj.type == 'Tfdepth_to_space' and len(d2s_or_s2d_obj.sorted_in_consts()) < 2:
-            WARN('[Parser]: Meets non-constant block_size or data_format in Tfdepth_to_space Op (%s) in convert_d2s_or_s2d!' % d2s_or_s2d)
+            WARN(
+                '[Parser]: Meets non-constant block_size or data_format in Tfdepth_to_space Op (%s) in convert_d2s_or_s2d!' % d2s_or_s2d)
             continue
         block_size = d2s_or_s2d_obj.block_size
         data_format = d2s_or_s2d_obj.data_format
@@ -116,7 +117,8 @@ def convert_d2s_or_s2d(graph):
                     or None in input_shapes[0] \
                     or len(input_shapes[0]) != 5 \
                     or input_shapes[0][-1] != 4:
-                WARN('[Parser]: Meets invalid input shape in Tfdepth_to_space Op (%s) in convert_d2s_or_s2d!' % d2s_or_s2d)
+                WARN(
+                    '[Parser]: Meets invalid input shape in Tfdepth_to_space Op (%s) in convert_d2s_or_s2d!' % d2s_or_s2d)
                 continue
             data_format = 'NHWC'
             input_shape = input_shapes[0]
@@ -261,7 +263,7 @@ def convert_matmul(graph):
     matches = matched_patterns(graph,
                                nodes=[
                                    ('matmul', {
-                                    'op': ['TfMatMul', 'TfBatchMatMulV2', 'TfBatchMatMul', 'Tfmatmul']}),
+                                       'op': ['TfMatMul', 'TfBatchMatMulV2', 'TfBatchMatMul', 'Tfmatmul']}),
                                ],
                                edges=[])
     for m in matches:
@@ -591,7 +593,8 @@ def convert_resize_bilinear_nearest(graph):
                     transform_mode = 'asymmetric'
             resize_attr = resize_bili_near_obj.copied_attr()
             resize_attr.update(
-                {'opset_version': 11, 'coordinate_transformation_mode': transform_mode, 'mode': mode, 'nearest_mode': nearest_mode})
+                {'opset_version': 11, 'coordinate_transformation_mode': transform_mode, 'mode': mode,
+                 'nearest_mode': nearest_mode})
             NodeWrap(graph, resize_bili_near).replace_obj(
                 'Resize', resize_attr)
         else:
@@ -932,12 +935,13 @@ def convert_fusebatchnormv3(graph):
         fusebnv3 = m['target']
         fusebnv3_obj = NodeWrap(graph, fusebnv3)['object']
         fusebnv3_in_edges = graph.sorted_in_edges(fusebnv3, data=True)
-        if fusebnv3_obj is not None\
+        if fusebnv3_obj is not None \
                 and len(fusebnv3_in_edges) == 5 \
                 and len(fusebnv3_obj.get_input_tensors()) == 5 \
                 and all(inp is not None for inp in fusebnv3_obj.get_input_tensors()):
             if not all(fusebnv3_in_edges[idx][2]['tensor'].is_const for idx in range(1, 5)):
-                WARN('[Parser]: Meets unsupported non-constant inputs(1-4) of Node(%s) in convert_fusebatchnormv3!' % fusebnv3)
+                WARN(
+                    '[Parser]: Meets unsupported non-constant inputs(1-4) of Node(%s) in convert_fusebatchnormv3!' % fusebnv3)
                 continue
             if fusebnv3_obj.is_training \
                     or fusebnv3_in_edges[3][2]['tensor'].value.size != 0 \
@@ -1043,11 +1047,11 @@ def split_s2b(graph, op_type='TfSpaceToBatchND'):
                 dim1.append(padded_in_shape[-1])
                 # 2) permute to block_shape + [batch] + [padded_shape[1] / block_shape[0], ...,
                 #    padded_shape[M] / block_shape[M-1]] + remaining_shape
-                trans_perm = list(range(2, len(dim1)-1, 2))  # positions of block_shape in dim1
+                trans_perm = list(range(2, len(dim1) - 1, 2))  # positions of block_shape in dim1
                 trans_perm.append(0)  # position of batch in dim1
                 # positions of padded_shape[M]/block_shape[M-1] in dim1
-                trans_perm.extend(list(range(1, len(dim1)-2, 2)))
-                trans_perm.append(len(dim1)-1)  # position of remaining_shape in dim1
+                trans_perm.extend(list(range(1, len(dim1) - 2, 2)))
+                trans_perm.append(len(dim1) - 1)  # position of remaining_shape in dim1
                 # 3) reshape to [batch * prod(block_shape)] + [padded_shape[1] / block_shape[0], ...,
                 #    padded_shape[M] / block_shape[M-1]] + remaining_shape
                 dim2 = [padded_in_shape[0] * np.prod(block_shape)]
@@ -1171,7 +1175,8 @@ def split_b2s(graph, op_type='TfBatchToSpaceND'):
                 #    input_shape[M+1], ..., input_shape[N-1]]
                 block_shape_len = len(block_shape)
                 perm = [block_shape_len]  # position of batch / prod(block_shape) in dim1
-                for input_index, block_index in zip(range(block_shape_len + 1, len(dim1) - 1), range(0, block_shape_len)):
+                for input_index, block_index in zip(range(block_shape_len + 1, len(dim1) - 1),
+                                                    range(0, block_shape_len)):
                     perm.extend([input_index, block_index])  # position of input_shape[M], block_shape[M-1] in dim1
                 perm.append(len(dim1) - 1)  # position of input_shape[N-1] in dim1
                 # 3) reshape to [batch / prod(block_shape), input_shape[1] * block_shape[0], ..., input_shape[M] * block_shape[M-1],
@@ -1273,83 +1278,37 @@ def split_special_floormod(graph, op_type='TfFloorMod'):
                 if len(in_edges) > 2:
                     need_clear = True
                     graph.remove_edges_from(in_edges[2:])
+                x, _, x_in_attr = in_edges[0]
                 y, _, y_in_attr = in_edges[1]
-                zero_value = np.zeros_like(inputs[0])
-                zero = get_valid_node_name(graph, floor_mod + '_zero')
-                mod_add_y = get_valid_node_name(
-                    graph, floor_mod + '_mod_add_y')
-                trunc_mod_equal = get_valid_node_name(
-                    graph, floor_mod + '_trunc_equal')
-                trunc_mod_equal_not = get_valid_node_name(
-                    graph, floor_mod + '_trunc_equal_not')
-                trunc_mod_less_zero = get_valid_node_name(
-                    graph, floor_mod + '_trunc_less_zero')
-                y_less_zero = get_valid_node_name(
-                    graph, floor_mod + '_y_less_zero')
-                less_zero_equal = get_valid_node_name(
-                    graph, floor_mod + '_less_zero_equal')
-                less_zero_equal_not = get_valid_node_name(
-                    graph, floor_mod + '_less_zero_equal_not')
-                logical_and = get_valid_node_name(graph, floor_mod + '_and')
-                where = get_valid_node_name(graph, floor_mod + '_where')
 
-                for _, dst, out_attr in graph.sorted_out_edges(floor_mod, data=True):
+                floor = get_valid_node_name(graph, floor_mod + '_floor')
+                mul = get_valid_node_name(graph, floor_mod + '_mul')
+                sub = get_valid_node_name(graph, floor_mod + '_sub')
+
+                graph.add_edge(floor_mod, floor)
+                graph.add_edge(floor, mul)
+                graph.add_edge(y, mul, **{'dst_in_port': 1})
+                graph.add_edge(x, sub)
+                graph.add_edge(mul, sub, **{'dst_in_port': 1})
+
+                out_edges = graph.sorted_out_edges(floor_mod, data=True)
+
+                for _, dst, out_attr in out_edges:
                     graph.remove_edge(floor_mod, dst)
-                    graph.add_edge(where, dst, **out_attr)
-
-                graph.add_edge(floor_mod, trunc_mod_equal)
-                graph.add_edge(zero, trunc_mod_equal, **{'dst_in_port': 1})
-                graph.add_edge(trunc_mod_equal, trunc_mod_equal_not)
-
-                graph.add_edge(floor_mod, trunc_mod_less_zero)
-                graph.add_edge(zero, trunc_mod_less_zero, **{'dst_in_port': 1})
-                new_y_in_attr = copy.deepcopy(y_in_attr)
-                new_y_in_attr['dst_in_port'] = 0
-                graph.add_edge(y, y_less_zero, **new_y_in_attr)
-                graph.add_edge(zero, y_less_zero, **{'dst_in_port': 1})
-
-                graph.add_edge(trunc_mod_less_zero, less_zero_equal)
-                graph.add_edge(y_less_zero, less_zero_equal,
-                               **{'dst_in_port': 1})
-                graph.add_edge(less_zero_equal, less_zero_equal_not)
-
-                graph.add_edge(less_zero_equal_not, logical_and)
-                graph.add_edge(trunc_mod_equal_not, logical_and,
-                               **{'dst_in_port': 1})
-
-                graph.add_edge(floor_mod, mod_add_y)
-                graph.add_edge(y, mod_add_y, **y_in_attr)
-
-                graph.add_edge(logical_and, where)
-                graph.add_edge(mod_add_y, where, **{'dst_in_port': 1})
-                graph.add_edge(floor_mod, where, **{'dst_in_port': 2})
+                    graph.add_edge(sub, dst, **out_attr)
 
                 NodeWrap(graph, floor_mod).replace_obj(
-                    'Mod', {'name': floor_mod, 'opset_version': 13, 'fmod': 1})
-                NodeWrap(graph, zero).replace_obj('Constant', {
-                    'name': zero, 'opset_version': 9, 'value': zero_value})
-                NodeWrap(graph, mod_add_y).replace_obj(
-                    'Add', {'name': mod_add_y, 'opset_version': 7})
-                NodeWrap(graph, trunc_mod_equal).replace_obj(
-                    'Equal', {'name': trunc_mod_equal, 'opset_version': 13})
-                NodeWrap(graph, trunc_mod_equal_not).replace_obj(
-                    'Not', {'name': trunc_mod_equal_not, 'opset_version': 1})
-                NodeWrap(graph, trunc_mod_less_zero).replace_obj(
-                    'Less', {'name': trunc_mod_less_zero, 'opset_version': 13})
-                NodeWrap(graph, y_less_zero).replace_obj(
-                    'Less', {'name': y_less_zero, 'opset_version': 13})
-                NodeWrap(graph, less_zero_equal).replace_obj(
-                    'Equal', {'name': less_zero_equal, 'opset_version': 13})
-                NodeWrap(graph, less_zero_equal_not).replace_obj(
-                    'Not', {'name': less_zero_equal_not, 'opset_version': 1})
-                NodeWrap(graph, logical_and).replace_obj(
-                    'And', {'name': logical_and, 'opset_version': 7})
-                NodeWrap(graph, where).replace_obj(
-                    'Where', {'name': where, 'opset_version': 9})
+                    'Div', {'name': floor_mod, 'opset_version': 13})
+                NodeWrap(graph, floor).replace_obj(
+                    'Floor', {'name': floor, 'opset_version': 13})
+                NodeWrap(graph, mul).replace_obj(
+                    'Mul', {'name': mul, 'opset_version': 13})
+                NodeWrap(graph, sub).replace_obj(
+                    'Sub', {'name': sub, 'opset_version': 13})
 
                 if floor_mod in graph._attr['output_names']:
                     index = graph._attr['output_names'].index(floor_mod)
-                    graph._attr['output_names'][index] = where
+                    graph._attr['output_names'][index] = sub
         else:
             ERROR('[Parser]: Meets invalid %s Node(%s) in split_special_floormod!' % (
                 op_type, floor_mod))
@@ -1358,7 +1317,6 @@ def split_special_floormod(graph, op_type='TfFloorMod'):
 
 
 def merge_gru(graph):
-
     cell_matches = matched_patterns(graph,
                                     nodes=[('gate_weights', {'op': 'TfConst'}),
                                            ('matmul', {'op': 'TfMatMul'}),
@@ -1378,7 +1336,7 @@ def merge_gru(graph):
                                            ('biasadd_1', {'op': 'TfBiasAdd'}),
                                            ('tanh', {'op': 'TfTanh'}),
                                            ('add', {
-                                            'op': ['TfAdd', 'TfAddV2']}),
+                                               'op': ['TfAdd', 'TfAddV2']}),
                                            ],
                                     edges=[('gate_weights', 'matmul'),
                                            ('matmul', 'biasadd'),
@@ -1387,10 +1345,10 @@ def merge_gru(graph):
                                            ('biasadd', 'sigmoid'),
                                            ('sigmoid', 'split'),
                                            ('split', 'sub', {
-                                            'src_out_port': 1, 'dst_in_port': 1}),
+                                               'src_out_port': 1, 'dst_in_port': 1}),
                                            ('split', 'mul'),
                                            ('split', 'mul_1', {
-                                            'src_out_port': 1, 'dst_in_port': 0}),
+                                               'src_out_port': 1, 'dst_in_port': 0}),
                                            ('sub', 'mul_2'),
                                            ('candidate_weights', 'matmul_1'),
                                            ('matmul_1', 'biasadd_1'),
@@ -1398,10 +1356,10 @@ def merge_gru(graph):
                                             {'dst_in_port': 1}),
                                            ('biasadd_1', 'tanh'),
                                            ('tanh', 'mul_2', {
-                                            'src_out_port': 0, 'dst_in_port': 1}),
+                                               'src_out_port': 0, 'dst_in_port': 1}),
                                            ('mul_1', 'add'),
                                            ('mul_2', 'add', {
-                                            'src_out_port': 0, 'dst_in_port': 1}),
+                                               'src_out_port': 0, 'dst_in_port': 1}),
                                            ])
     if not cell_matches:
         return
@@ -1410,17 +1368,17 @@ def merge_gru(graph):
                                           nodes=[
                                               ('init_state', {}),
                                               ('next', {
-                                               'op': 'TfNextIteration'}),
+                                                  'op': 'TfNextIteration'}),
                                               ('merge', {'op': 'TfMerge'}),
                                               ('loop_cond', {
-                                               'op': 'TfLoopCond', 'unique': False}),
+                                                  'op': 'TfLoopCond', 'unique': False}),
                                               ('switch', {'op': 'TfSwitch'})
                                           ],
                                           edges=[
                                               ('init_state', 'merge', {
-                                               'src_out_port': 0, 'dst_in_port': 0}),
+                                                  'src_out_port': 0, 'dst_in_port': 0}),
                                               ('next', 'merge', {
-                                               'src_out_port': 0, 'dst_in_port': 1}),
+                                                  'src_out_port': 0, 'dst_in_port': 1}),
                                               ('loop_cond', 'switch'),
                                               ('merge', 'switch')
                                           ])
@@ -1428,33 +1386,33 @@ def merge_gru(graph):
                                       nodes=[
                                           ('transpose', {'op': 'TfTranspose'}),
                                           ('scatter', {
-                                           'op': 'TfTensorArrayScatterV3'}),
+                                              'op': 'TfTensorArrayScatterV3'}),
                                           ('tensor_arr', {
-                                           'op': 'TfTensorArrayV3'}),
+                                              'op': 'TfTensorArrayV3'}),
                                           ('range', {})
                                       ],
                                       edges=[
                                           ('transpose', 'scatter', {
-                                           'src_out_port': 0, 'dst_in_port': 2}),
+                                              'src_out_port': 0, 'dst_in_port': 2}),
                                           ('tensor_arr', 'scatter', {
-                                           'src_out_port': 0, 'dst_in_port': 0}),
+                                              'src_out_port': 0, 'dst_in_port': 0}),
                                           ('tensor_arr', 'scatter', {
-                                           'src_out_port': 1, 'dst_in_port': 3}),
+                                              'src_out_port': 1, 'dst_in_port': 3}),
                                           ('range', 'scatter', {
-                                           'src_out_port': 0, 'dst_in_port': 1})
+                                              'src_out_port': 0, 'dst_in_port': 1})
                                       ])
 
     sequence_out_matches = matched_patterns(graph,
                                             nodes=[('tensor_arr', {'op': 'TfTensorArrayV3'}),
                                                    ('exit', {'op': 'TfExit'}),
                                                    ('gather', {
-                                                    'op': 'TfTensorArrayGatherV3'}),
+                                                       'op': 'TfTensorArrayGatherV3'}),
                                                    ('transpose', {
-                                                    'op': 'TfTranspose'})
+                                                       'op': 'TfTranspose'})
                                                    ],
                                             edges=[('tensor_arr', 'gather'),
                                                    ('exit', 'gather', {
-                                                    'dst_in_port': 2}),
+                                                       'dst_in_port': 2}),
                                                    ('gather', 'transpose')
                                                    ]
                                             )
@@ -1470,7 +1428,7 @@ def merge_gru(graph):
                                          edges=[
                                              ('state', 'merge'),
                                              ('next_iter', 'merge',
-                                                 {'dst_in_port': 1}),
+                                              {'dst_in_port': 1}),
                                              ('merge', 'switch'),
                                              ('loop', 'switch', {
                                                  'dst_in_port': 1}),
@@ -1514,7 +1472,8 @@ def merge_gru(graph):
                         continue
 
             init_obj, trans_obj, range_obj, seq_out_obj, state_out_obj \
-                = [NodeWrap(graph, name)['object'] if name else None for name in [init, transpose, range_name, sequence_out, state_out]]
+                = [NodeWrap(graph, name)['object'] if name else None for name in
+                   [init, transpose, range_name, sequence_out, state_out]]
             init_out_edges = graph.sorted_out_edges(init, data=True)
             trans_in_edges = graph.sorted_in_edges(transpose, data=True)
             trans_out_edges = graph.sorted_out_edges(transpose, keys=True)
@@ -1608,7 +1567,7 @@ def merge_gru(graph):
                                gru,
                                new_init_out_attr,
                                [batch_size if batch_size is not None else -
-                                   1, 1, cell_size],
+                                1, 1, cell_size],
                                type='Reshape',
                                data_format='NHWC')
 
@@ -1620,7 +1579,8 @@ def merge_gru(graph):
                                  'time_steps': time_steps,
                                  'hidden_size': cell_size,
                                  'linear_before_reset': False,
-                                 'method': 'YH' if (sequence_match and state_match) else ('Y' if sequence_match else 'H')
+                                 'method': 'YH' if (sequence_match and state_match) else (
+                                     'Y' if sequence_match else 'H')
                                  })
                 NodeWrap(graph, gru).replace_obj('GRU', gru_attr)
 
@@ -1658,7 +1618,6 @@ def merge_gru(graph):
 
 
 def merge_gru2(graph):
-
     cell_matches1 = matched_patterns(graph,
                                      nodes=[
                                          ('x', {}),
@@ -1899,17 +1858,17 @@ def merge_gru2(graph):
                                           nodes=[
                                               ('init_state', {}),
                                               ('next', {
-                                               'op': 'TfNextIteration'}),
+                                                  'op': 'TfNextIteration'}),
                                               ('merge', {'op': 'TfMerge'}),
                                               ('loop_cond', {
-                                               'op': 'TfLoopCond'}),
+                                                  'op': 'TfLoopCond'}),
                                               ('switch', {'op': 'TfSwitch'})
                                           ],
                                           edges=[
                                               ('init_state', 'merge', {
-                                               'src_out_port': 0, 'dst_in_port': 0}),
+                                                  'src_out_port': 0, 'dst_in_port': 0}),
                                               ('next', 'merge', {
-                                               'src_out_port': 0, 'dst_in_port': 1}),
+                                                  'src_out_port': 0, 'dst_in_port': 1}),
                                               ('loop_cond', 'switch'),
                                               ('merge', 'switch')
                                           ])
@@ -1917,31 +1876,31 @@ def merge_gru2(graph):
                                       nodes=[
                                           ('input', {}),
                                           ('scatter', {
-                                           'op': 'TfTensorArrayScatterV3'}),
+                                              'op': 'TfTensorArrayScatterV3'}),
                                           ('tensor_arr', {
-                                           'op': 'TfTensorArrayV3'}),
+                                              'op': 'TfTensorArrayV3'}),
                                           ('range', {})
                                       ],
                                       edges=[
                                           ('input', 'scatter', {
-                                           'src_out_port': 0, 'dst_in_port': 2}),
+                                              'src_out_port': 0, 'dst_in_port': 2}),
                                           ('tensor_arr', 'scatter', {
-                                           'src_out_port': 0, 'dst_in_port': 0}),
+                                              'src_out_port': 0, 'dst_in_port': 0}),
                                           ('tensor_arr', 'scatter', {
-                                           'src_out_port': 1, 'dst_in_port': 3}),
+                                              'src_out_port': 1, 'dst_in_port': 3}),
                                           ('range', 'scatter', {
-                                           'src_out_port': 0, 'dst_in_port': 1})
+                                              'src_out_port': 0, 'dst_in_port': 1})
                                       ])
 
     sequence_out_matches = matched_patterns(graph,
                                             nodes=[('tensor_arr', {'op': 'TfTensorArrayV3'}),
                                                    ('exit', {'op': 'TfExit'}),
                                                    ('gather', {
-                                                    'op': 'TfTensorArrayGatherV3'}),
+                                                       'op': 'TfTensorArrayGatherV3'}),
                                                    ],
                                             edges=[('tensor_arr', 'gather'),
                                                    ('exit', 'gather', {
-                                                    'dst_in_port': 2}),
+                                                       'dst_in_port': 2}),
                                                    ]
                                             )
     state_out_matches = matched_patterns(graph,
@@ -1960,7 +1919,7 @@ def merge_gru2(graph):
                                                  {'dst_in_port': 1}),
                                                 ('merge', 'switch'),
                                                 ('loop', 'switch', {
-                                                 'dst_in_port': 1}),
+                                                    'dst_in_port': 1}),
                                                 ('switch', 'out'),
                                                 ])
     state_out_matches2 = matched_patterns(graph,
@@ -1978,7 +1937,7 @@ def merge_gru2(graph):
                                                  ('select', 'next_iter'),
                                                  ('state', 'merge'),
                                                  ('next_iter', 'merge',
-                                                 {'dst_in_port': 1}),
+                                                  {'dst_in_port': 1}),
                                                  ('merge', 'switch'),
                                                  ('loop', 'switch', {
                                                      'dst_in_port': 1}),
@@ -2040,6 +1999,7 @@ def merge_gru2(graph):
                 node_name = cell[target]
                 rets.append(NodeWrap(graph, node_name)['object'].value)
             return rets
+
         if 'kernel_weights' in cell:
             sub_oprand_obj = NodeWrap(graph, cell['sub_operand'])['object']
             if sub_oprand_obj is None or not FLOAT_EQUAL(sub_oprand_obj.value, 1):
@@ -2274,13 +2234,13 @@ def merge_lstm(graph):
                                      nodes=[
                                          ('ht', {'op': 'TfMul'}),
                                          ('write', {
-                                          'op': 'TfTensorArrayWriteV3'}),
+                                             'op': 'TfTensorArrayWriteV3'}),
                                          ('iter', {'op': 'TfNextIteration'}),
                                          ('merge', {'op': 'TfMerge'}),
                                          ('switch', {'op': 'TfSwitch'}),
                                          ('exit', {'op': 'TfExit'}),
                                          ('gather', {
-                                          'op': 'TfTensorArrayGatherV3'}),
+                                             'op': 'TfTensorArrayGatherV3'}),
                                      ],
                                      edges=[
                                          ('ht', 'write', {
@@ -2350,9 +2310,9 @@ def merge_lstm(graph):
                                      nodes=[
                                          ('x', {}),
                                          ('scatter', {
-                                          'op': 'TfTensorArrayScatterV3'}),
+                                             'op': 'TfTensorArrayScatterV3'}),
                                          ('read', {
-                                          'op': 'TfTensorArrayReadV3'})
+                                             'op': 'TfTensorArrayReadV3'})
                                      ],
                                      edges=[
                                          ('x', 'scatter', {'dst_in_port': 2}),
@@ -2396,7 +2356,8 @@ def merge_lstm(graph):
         c_init_obj = NodeWrap(graph, C_init_match['init'])['object']
         if h_init_obj is None \
                 or c_init_obj is None \
-                or any([(val is None or len(val.shape) != 2 or val.shape[0] != batch_size) for val in (h_init_obj.value, c_init_obj.value)]) \
+                or any([(val is None or len(val.shape) != 2 or val.shape[0] != batch_size) for val in
+                        (h_init_obj.value, c_init_obj.value)]) \
                 or h_init_obj.value.shape[-1] != c_init_obj.value.shape[-1]:
             continue
         h_init = np.stack([h_init_obj.value])
@@ -2422,6 +2383,7 @@ def merge_lstm(graph):
                 node_name = cell[target]
                 rets.append(NodeWrap(graph, node_name)['object'].value)
             return rets
+
         kernel_w, bias = get_weights_biases(['kernel_w', 'bias'])
         input_r, output_r, forget_r, cell_r = get_weights_biases(
             ['input_r', 'output_r', 'forget_r', 'cell_r'])
@@ -2502,7 +2464,6 @@ def merge_lstm(graph):
 
 
 def merge_lstm2(graph):
-
     cell_matches = matched_patterns(graph,
                                     nodes=[('concat', {'op': 'TfConcatV2'}),
                                            ('matmul', {'op': 'TfMatMul'}),
@@ -2522,14 +2483,14 @@ def merge_lstm2(graph):
                                            ],
                                     edges=[('concat', 'matmul'),
                                            ('weights', 'matmul', {
-                                            'src_out_port': 0, 'dst_in_port': 1}),
+                                               'src_out_port': 0, 'dst_in_port': 1}),
                                            ('bias', 'biasadd', {
-                                            'src_out_port': 0, 'dst_in_port': 1}),
+                                               'src_out_port': 0, 'dst_in_port': 1}),
                                            ('matmul', 'biasadd'),
                                            ('biasadd', 'split'),
                                            ('split', 'add'),
                                            ('split', 'sig2', {
-                                            'src_out_port': 0, 'dst_in_port': 0}),
+                                               'src_out_port': 0, 'dst_in_port': 0}),
                                            ('split', 'sig3'),
                                            ('split', 'tanh'),
                                            ('const_b', 'add'),
@@ -2545,24 +2506,24 @@ def merge_lstm2(graph):
     begin_matches = matched_patterns(graph,
                                      nodes=[('trans', {'op': 'TfTranspose'}),
                                             ('tensor_arr_scatter', {
-                                             'op': 'TfTensorArrayScatterV3'}),
+                                                'op': 'TfTensorArrayScatterV3'}),
                                             ('tensor_arr', {
-                                             'op': 'TfTensorArrayV3'}),
+                                                'op': 'TfTensorArrayV3'}),
                                             ('range', {}),
                                             ('tensor_read', {
-                                             'op': 'TfTensorArrayReadV3'}),
+                                                'op': 'TfTensorArrayReadV3'}),
                                             ('concat', {'op': 'TfConcatV2'}),
                                             ],
                                      edges=[('trans', 'tensor_arr_scatter', {'src_out_port': 0, 'dst_in_port': 2}),
                                             ('tensor_arr', 'tensor_arr_scatter', {
-                                             'src_out_port': 0, 'dst_in_port': 0}),
+                                                'src_out_port': 0, 'dst_in_port': 0}),
                                             ('range', 'tensor_arr_scatter', {
-                                             'src_out_port': 0, 'dst_in_port': 1}),
+                                                'src_out_port': 0, 'dst_in_port': 1}),
                                             ('tensor_arr', 'tensor_arr_scatter', {
-                                             'src_out_port': 1, 'dst_in_port': 3}),
+                                                'src_out_port': 1, 'dst_in_port': 3}),
                                             ('tensor_arr', 'tensor_read', {'src_out_port': 0, 'dst_in_port': 0}),
                                             ('tensor_arr_scatter', 'tensor_read', {
-                                             'src_out_port': 0, 'dst_in_port': 2}),
+                                                'src_out_port': 0, 'dst_in_port': 2}),
                                             ('tensor_read', 'concat'),
                                             ])
 
@@ -2570,19 +2531,19 @@ def merge_lstm2(graph):
                                             nodes=[
                                                 ('ht', {'op': 'TfMul'}),
                                                 ('write', {
-                                                 'op': 'TfTensorArrayWriteV3'}),
+                                                    'op': 'TfTensorArrayWriteV3'}),
                                                 ('iter', {
-                                                 'op': 'TfNextIteration'}),
+                                                    'op': 'TfNextIteration'}),
                                                 ('merge', {'op': 'TfMerge'}),
                                                 ('switch', {'op': 'TfSwitch'}),
                                                 ('exit', {'op': 'TfExit'}),
                                                 ('trans', {
-                                                 'op': 'TfTranspose'}),
+                                                    'op': 'TfTranspose'}),
                                                 ('concat', {}),
                                                 ('gather', {'op': 'TfTensorArrayGatherV3'})],
                                             edges=[
                                                 ('ht', 'write', {
-                                                 'src_out_port': 0, 'dst_in_port': 2}),
+                                                    'src_out_port': 0, 'dst_in_port': 2}),
                                                 ('write', 'iter'),
                                                 ('iter', 'merge'),
                                                 ('merge', 'switch'),
@@ -2607,11 +2568,11 @@ def merge_lstm2(graph):
                                       nodes=[
                                           ('h_init', {}),
                                           ('next_iter', {
-                                           'op': 'TfNextIteration'}),
+                                              'op': 'TfNextIteration'}),
                                           ('merge', {'op': 'TfMerge'}),
                                           ('switch', {'op': 'TfSwitch'}),
                                           ('cell_concat', {
-                                           'op': 'TfConcatV2'}),
+                                              'op': 'TfConcatV2'}),
                                       ],
                                       edges=[
                                           ('h_init', 'merge'),
@@ -2624,7 +2585,7 @@ def merge_lstm2(graph):
                                       nodes=[
                                           ('c_init', {}),
                                           ('next_iter', {
-                                           'op': 'TfNextIteration'}),
+                                              'op': 'TfNextIteration'}),
                                           ('merge', {'op': 'TfMerge'}),
                                           ('switch', {'op': 'TfSwitch'}),
                                           ('mul', {'op': 'TfMul'}),
@@ -2690,16 +2651,16 @@ def merge_lstm2(graph):
             if scatter_obj is None \
                     or h_init_obj is None \
                     or c_init_obj is None \
-                    or weights_value_name_obj is None\
-                    or biases_value_name_obj is None\
-                    or const_b_obj is None\
-                    or begin_obj is None\
+                    or weights_value_name_obj is None \
+                    or biases_value_name_obj is None \
+                    or const_b_obj is None \
+                    or begin_obj is None \
                     or len(scatter_in_edges) < 3 \
-                    or len(begin_in_edges) < 1\
-                    or len(h_init_out_edge) < 1\
-                    or len(c_init_out_edge) < 1\
-                    or len(begin_in_shapes) < 1\
-                    or any((shape is None for shape in begin_in_shapes))\
+                    or len(begin_in_edges) < 1 \
+                    or len(h_init_out_edge) < 1 \
+                    or len(c_init_out_edge) < 1 \
+                    or len(begin_in_shapes) < 1 \
+                    or any((shape is None for shape in begin_in_shapes)) \
                     or any((shape_item is None for shape in begin_in_shapes for shape_item in shape)):
                 continue
 
@@ -2983,7 +2944,7 @@ def merge_fasterrcnn(graph):
     secondstage_box_transpose = get_valid_node_name(
         graph, secondstage_boxpredictor + '_post_transpose')  # [1, 0, 2]
     softmax2 = get_valid_node_name(
-        graph, secondstage_boxpredictor + '_softmax')    # axis = 2
+        graph, secondstage_boxpredictor + '_softmax')  # axis = 2
     detection_output = get_valid_node_name(
         graph, graph._attr['name'] + '_detection_output')
     detection_out_3 = get_valid_node_name(graph, detection_output + '_out_3')
@@ -3132,7 +3093,6 @@ def merge_fasterrcnn(graph):
 
 
 def merge_keras_maskrcnn(graph, params):
-
     def _generate_keras_maskrcnn_anchors(img_width=1024, img_height=1024):
         RPN_ANCHOR_SCALES = (32, 64, 128, 256, 512)
         RPN_ANCHOR_RATIOS = [0.5, 1, 2]
@@ -3281,7 +3241,7 @@ def merge_keras_maskrcnn(graph, params):
     # mrcnn_detecion/argmax, axis=2, method=MAX, select_last_index=false
     argmax = get_valid_node_name(graph, model_name + '_argmax')
     argmax_reshape = get_valid_node_name(
-        graph, argmax + '_reshape')    # [1000, 1]
+        graph, argmax + '_reshape')  # [1000, 1]
     # Cast to float32
     argmax_reshape_cast = get_valid_node_name(graph, argmax_reshape + '_cast')
 
@@ -3323,14 +3283,14 @@ def merge_keras_maskrcnn(graph, params):
         graph, greater_equal_reshape + '_cast')
 
     # mrcnn_detecion/score_out1
-    score_mul = get_valid_node_name(graph, model_name + '_score_mul')   # Mul
+    score_mul = get_valid_node_name(graph, model_name + '_score_mul')  # Mul
 
     # mrcnn_detecion/class_id_used
-    id_mul = get_valid_node_name(graph, model_name + '_id_mul')   # Mul
+    id_mul = get_valid_node_name(graph, model_name + '_id_mul')  # Mul
 
     # mrcnn_detecion/reshape_to_2DIM_mul and mrcnn_detecion/class_id_used_
     id_mul_reshape = get_valid_node_name(
-        graph, id_mul + '_reshape')    # [1, 1000]
+        graph, id_mul + '_reshape')  # [1, 1000]
 
     # mrcnn_detecion/topk_sort, axis=1, k=1000, largest=true, sorted=true
     topk_sort = get_valid_node_name(graph, model_name + '_topk_sort')
@@ -3743,24 +3703,24 @@ def merge_sufficient_statistics(graph):
                                    ('inp', {}),
                                    ('sum1', {'op': ['TfSum', 'LiteSUM']}),
                                    ('square', {
-                                    'op': ['TfSquare', 'LiteSQUARE']}),
+                                       'op': ['TfSquare', 'LiteSQUARE']}),
 
                                    ('sum2', {'op': ['TfSum', 'LiteSUM']}),
                                    ('sum1_const', {
-                                    'op': ['TfConst', 'Constant']}),
+                                       'op': ['TfConst', 'Constant']}),
                                    ('sum2_const', {
-                                    'op': ['TfConst', 'Constant']}),
+                                       'op': ['TfConst', 'Constant']}),
 
                                ],
                                edges=[
                                    ('inp', 'sum1', {'dst_in_port': 0}),
                                    ('inp', 'square', {'dst_in_port': 0}),
                                    ('sum1_const', 'sum1', {
-                                    'src_out_port': 0, 'dst_in_port': 1}),
+                                       'src_out_port': 0, 'dst_in_port': 1}),
                                    ('square', 'sum2', {
-                                    'src_out_port': 0, 'dst_in_port': 0}),
+                                       'src_out_port': 0, 'dst_in_port': 0}),
                                    ('sum2_const', 'sum2', {
-                                    'src_out_port': 0, 'dst_in_port': 1}),
+                                       'src_out_port': 0, 'dst_in_port': 1}),
 
                                ])
 
@@ -3786,8 +3746,8 @@ def merge_sufficient_statistics(graph):
         sum1_src, _, sum1_in_attr = sum1_in_edges[0]
         square_src, _, square_in_attr = square_in_edges[0]
         if sum1_src != square_src \
-                or sum1_in_attr['src_out_port'] != square_in_attr['src_out_port']\
-                or objs_dict['sum1'].keepdims != objs_dict['sum2'].keepdims\
+                or sum1_in_attr['src_out_port'] != square_in_attr['src_out_port'] \
+                or objs_dict['sum1'].keepdims != objs_dict['sum2'].keepdims \
                 or np.any(objs_dict['sum1_const'].value != objs_dict['sum2_const'].value):
             continue
 
@@ -3838,13 +3798,13 @@ def merge_sufficient_statistics2(graph):
                                    ('inp2', {}),
                                    ('sum1', {'op': ['TfSum', 'LiteSUM']}),
                                    ('square_diff', {
-                                    'op': ['TfSquaredDifference', 'LiteSQUARED_DIFFERENCE']}),
+                                       'op': ['TfSquaredDifference', 'LiteSQUARED_DIFFERENCE']}),
                                    ('sum2', {'op': ['TfSum', 'LiteSUM']}),
                                    ('sub', {'op': ['TfSub', 'LiteSUB']}),
                                    ('sum1_const', {
-                                    'op': ['TfConst', 'Constant']}),
+                                       'op': ['TfConst', 'Constant']}),
                                    ('sum2_const', {
-                                    'op': ['TfConst', 'Constant']}),
+                                       'op': ['TfConst', 'Constant']}),
                                ],
                                edges=[
                                    ('inp1', 'sub', {'dst_in_port': 0}),
@@ -3854,11 +3814,11 @@ def merge_sufficient_statistics2(graph):
                                    ('sub', 'sum1', {
                                        'src_out_port': 0, 'dst_in_port': 0}),
                                    ('sum1_const', 'sum1', {
-                                    'src_out_port': 0, 'dst_in_port': 1}),
+                                       'src_out_port': 0, 'dst_in_port': 1}),
                                    ('square_diff', 'sum2', {
-                                    'src_out_port': 0, 'dst_in_port': 0}),
+                                       'src_out_port': 0, 'dst_in_port': 0}),
                                    ('sum2_const', 'sum2', {
-                                    'src_out_port': 0, 'dst_in_port': 1}),
+                                       'src_out_port': 0, 'dst_in_port': 1}),
 
                                ])
 
@@ -3879,9 +3839,9 @@ def merge_sufficient_statistics2(graph):
         input_tensors = objs_dict['sum1'].get_input_tensors()
 
         if len(sum2_out_edges) != 1 \
-                or len(sub_in_edges) != 2\
-                or len(square_diff_in_edges) != 2\
-                or len(sum1_in_edges) != 2\
+                or len(sub_in_edges) != 2 \
+                or len(square_diff_in_edges) != 2 \
+                or len(sum1_in_edges) != 2 \
                 or len(input_tensors) != 2 \
                 or np.any([None in input_tensor for input_tensor in input_tensors]):
             ERROR('[Parser]: Meets invalid Op in merge_sufficient_statistics!')
@@ -3894,7 +3854,7 @@ def merge_sufficient_statistics2(graph):
                     or sub_in_attr['src_out_port'] != square_diff_in_attr['src_out_port']:
                 continue
 
-        if objs_dict['sum1'].keepdims != objs_dict['sum2'].keepdims\
+        if objs_dict['sum1'].keepdims != objs_dict['sum2'].keepdims \
                 or np.any(objs_dict['sum1_const'].value != objs_dict['sum2_const'].value):
             continue
 
@@ -3938,7 +3898,6 @@ def merge_sufficient_statistics2(graph):
 
 
 def merge_overlap_and_add(graph):
-
     def _full_shape(inner_shape, outer_dimensions):
         return np.concatenate([outer_dimensions, inner_shape], 0)
 
@@ -3947,37 +3906,37 @@ def merge_overlap_and_add(graph):
                                nodes=[
                                    ('pad', {'op': ['TfPad', 'LitePAD']}),
                                    ('reshape1', {
-                                    'op': ['TfReshape', 'LiteRESHAPE']}),
+                                       'op': ['TfReshape', 'LiteRESHAPE']}),
                                    ('transpose1', {
-                                    'op': ['TfTranspose', 'LiteTRANSPOSE']}),
+                                       'op': ['TfTranspose', 'LiteTRANSPOSE']}),
                                    ('reshape2', {
-                                    'op': ['TfReshape', 'LiteRESHAPE']}),
+                                       'op': ['TfReshape', 'LiteRESHAPE']}),
                                    ('strideslice1', {
                                        'op': ['TfStridedSlice', 'LiteSTRIDED_SLICE']}),
                                    ('reshape3', {
-                                    'op': ['TfReshape', 'LiteRESHAPE']}),
+                                       'op': ['TfReshape', 'LiteRESHAPE']}),
                                    ('sum1', {'op': ['TfSum', 'LiteSUM']}),
                                    ('reshape4', {
-                                    'op': ['TfReshape', 'LiteRESHAPE']}),
+                                       'op': ['TfReshape', 'LiteRESHAPE']}),
                                    ('strideslice2', {
                                        'op': ['TfStridedSlice', 'LiteSTRIDED_SLICE']}),
                                ],
                                edges=[
                                    ('pad', 'reshape1', {
-                                    'src_out_port': 0, 'dst_in_port': 0}),
+                                       'src_out_port': 0, 'dst_in_port': 0}),
                                    ('reshape1', 'transpose1', {
-                                    'src_out_port': 0, 'dst_in_port': 0}),
+                                       'src_out_port': 0, 'dst_in_port': 0}),
                                    ('transpose1', 'reshape2', {
-                                    'src_out_port': 0, 'dst_in_port': 0}),
+                                       'src_out_port': 0, 'dst_in_port': 0}),
                                    ('reshape2', 'strideslice1', {
-                                    'src_out_port': 0, 'dst_in_port': 0}),
+                                       'src_out_port': 0, 'dst_in_port': 0}),
                                    ('strideslice1', 'reshape3', {
-                                    'src_out_port': 0, 'dst_in_port': 0}),
+                                       'src_out_port': 0, 'dst_in_port': 0}),
                                    ('reshape3', 'sum1'),
                                    ('sum1', 'reshape4', {
-                                    'src_out_port': 0, 'dst_in_port': 0}),
+                                       'src_out_port': 0, 'dst_in_port': 0}),
                                    ('reshape4', 'strideslice2', {
-                                    'src_out_port': 0, 'dst_in_port': 0}),
+                                       'src_out_port': 0, 'dst_in_port': 0}),
                                ]
                                )
     for m in matches:
@@ -4004,7 +3963,7 @@ def merge_overlap_and_add(graph):
                 or len(reshape1_in_edges) != 2 \
                 or len(transpose1_in_edges) != 2 \
                 or len(reshape2_in_edges) != 2 \
-                or len(strideslice1_in_edges) != 4\
+                or len(strideslice1_in_edges) != 4 \
                 or len(reshape3_in_edges) != 2 \
                 or len(sum1_in_edges) != 2 \
                 or len(reshape4_in_edges) != 2 \
@@ -4026,16 +3985,16 @@ def merge_overlap_and_add(graph):
         signal_shapes = objs_dict['pad'].get_input_shapes()
 
         if len(signal_shapes) < 1 \
-                or any((shape is None for shape in signal_shapes))\
-                or any((shape_item is None for shape in signal_shapes for shape_item in shape))\
-                or not paddings_in_attr['tensor'].is_const\
-                or not shape1_in_attr['tensor'].is_const\
-                or not shape2_in_attr['tensor'].is_const\
-                or not shape3_in_attr['tensor'].is_const\
-                or not shape4_in_attr['tensor'].is_const\
-                or not perm_in_attr['tensor'].is_const\
-                or not stride1_end_in_attr['tensor'].is_const\
-                or not stride2_end_in_attr['tensor'].is_const\
+                or any((shape is None for shape in signal_shapes)) \
+                or any((shape_item is None for shape in signal_shapes for shape_item in shape)) \
+                or not paddings_in_attr['tensor'].is_const \
+                or not shape1_in_attr['tensor'].is_const \
+                or not shape2_in_attr['tensor'].is_const \
+                or not shape3_in_attr['tensor'].is_const \
+                or not shape4_in_attr['tensor'].is_const \
+                or not perm_in_attr['tensor'].is_const \
+                or not stride1_end_in_attr['tensor'].is_const \
+                or not stride2_end_in_attr['tensor'].is_const \
                 or not sum1_in_attr['tensor'].is_const:
             continue
 
@@ -4068,13 +4027,13 @@ def merge_overlap_and_add(graph):
             [(frames + segments - 1) * frame_step], outer_dimensions)
         stride1_end = (frames + segments - 1) * segments
 
-        if np.any(paddings_in_attr['tensor'].value != paddings)\
-                or np.any(shape1_in_attr['tensor'].value != shape1)\
-                or np.any(shape2_in_attr['tensor'].value != shape2)\
-                or np.any(shape3_in_attr['tensor'].value != shape3)\
-                or np.any(shape4_in_attr['tensor'].value != shape4)\
-                or np.any(perm_in_attr['tensor'].value != perm)\
-                or not FLOAT_EQUAL(stride1_end_in_attr['tensor'].value[-2], stride1_end)\
+        if np.any(paddings_in_attr['tensor'].value != paddings) \
+                or np.any(shape1_in_attr['tensor'].value != shape1) \
+                or np.any(shape2_in_attr['tensor'].value != shape2) \
+                or np.any(shape3_in_attr['tensor'].value != shape3) \
+                or np.any(shape4_in_attr['tensor'].value != shape4) \
+                or np.any(perm_in_attr['tensor'].value != perm) \
+                or not FLOAT_EQUAL(stride1_end_in_attr['tensor'].value[-2], stride1_end) \
                 or not FLOAT_EQUAL(int(sum1_in_attr['tensor'].value), -3):
             continue
 
@@ -4082,27 +4041,27 @@ def merge_overlap_and_add(graph):
         slice2_obj = objs_dict['strideslice2']
 
         if graph._attr['framework'] == Framework.TENSORFLOW:
-            if slice1_obj.begin_mask != 6\
-                    or slice1_obj.ellipsis_mask != 1\
-                    or slice1_obj.end_mask != 4\
-                    or slice1_obj.new_axis_mask != 0\
-                    or slice1_obj.shrink_axis_mask != 0\
-                    or slice2_obj.begin_mask != 2\
-                    or slice2_obj.ellipsis_mask != 1\
-                    or slice2_obj.end_mask != 0\
-                    or slice2_obj.new_axis_mask != 0\
+            if slice1_obj.begin_mask != 6 \
+                    or slice1_obj.ellipsis_mask != 1 \
+                    or slice1_obj.end_mask != 4 \
+                    or slice1_obj.new_axis_mask != 0 \
+                    or slice1_obj.shrink_axis_mask != 0 \
+                    or slice2_obj.begin_mask != 2 \
+                    or slice2_obj.ellipsis_mask != 1 \
+                    or slice2_obj.end_mask != 0 \
+                    or slice2_obj.new_axis_mask != 0 \
                     or slice2_obj.shrink_axis_mask != 0:
                 continue
         elif graph._attr['framework'] == Framework.TFLITE:
-            if slice1_obj.begin_mask != 7\
-                    or slice1_obj.ellipsis_mask != 0\
-                    or slice1_obj.end_mask != 5\
-                    or slice1_obj.new_axis_mask != 0\
-                    or slice1_obj.shrink_axis_mask != 0\
-                    or slice2_obj.begin_mask != 3\
-                    or slice2_obj.ellipsis_mask != 0\
-                    or slice2_obj.end_mask != 1\
-                    or slice2_obj.new_axis_mask != 0\
+            if slice1_obj.begin_mask != 7 \
+                    or slice1_obj.ellipsis_mask != 0 \
+                    or slice1_obj.end_mask != 5 \
+                    or slice1_obj.new_axis_mask != 0 \
+                    or slice1_obj.shrink_axis_mask != 0 \
+                    or slice2_obj.begin_mask != 3 \
+                    or slice2_obj.ellipsis_mask != 0 \
+                    or slice2_obj.end_mask != 1 \
+                    or slice2_obj.new_axis_mask != 0 \
                     or slice2_obj.shrink_axis_mask != 0:
                 continue
         else:
@@ -4128,7 +4087,7 @@ def merge_embedding_lookup_sparse(graph):
                                    ('gather', {'op': 'TfGatherV2'}),
                                    ('segment_ids', {'op': ['TfConst', 'Constant']}),
                                    ('segment', {'op': ['TfSparseSegmentMean',
-                                    'TfSparseSegmentSum', 'TfSparseSegmentSqrtN']}),
+                                                       'TfSparseSegmentSum', 'TfSparseSegmentSqrtN']}),
                                ],
                                edges=[
                                    ('unique', 'gather', {'src_out_port': 0, 'dst_in_port': 1}),
@@ -4257,7 +4216,8 @@ def merge_embedding_lookup_sparse_with_weights(graph):
                                             ('segment_sum2', 'div', {'dst_in_port': 1})
                                         ])
         mean_matches = [m1 for m1 in mean_matches
-                        if m1['segment_sum'] == m['segment_sum'] and m1['segment_ids'] == m['segment_ids'] and m1['reshape'] == m['reshape']]
+                        if m1['segment_sum'] == m['segment_sum'] and m1['segment_ids'] == m['segment_ids'] and m1[
+                            'reshape'] == m['reshape']]
         if len(mean_matches) > 1:
             ERROR('[Parser]: Pattern error in merge_embedding_lookup_sparse_with_weights!')
             continue
