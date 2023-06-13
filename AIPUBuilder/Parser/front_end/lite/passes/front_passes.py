@@ -40,8 +40,8 @@ def convert_broadcast_to(graph):
         inp, _, bt_in_attr = in_edges[0]
         if len(bt_in_shape) < len(bt_out_shape):
             extra_dim = len(bt_out_shape) - len(bt_in_shape)
-            insert_reshape(graph, inp, bt, bt_in_attr,
-                           bt_in_shape + [1] * extra_dim)
+            bt_in_shape = [1] * extra_dim + bt_in_shape
+            insert_reshape(graph, inp, bt, bt_in_attr, bt_in_shape)
         repeats = np.divide(list(bt_out_shape), bt_in_shape).astype(np.int64)
         tile_attr = bt_obj.copied_attr()
         tile_attr.update({'opset_version': 13, 'repeats': repeats})

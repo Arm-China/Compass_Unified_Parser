@@ -1285,16 +1285,15 @@ def split_special_floormod(graph, op_type='TfFloorMod'):
                 mul = get_valid_node_name(graph, floor_mod + '_mul')
                 sub = get_valid_node_name(graph, floor_mod + '_sub')
 
+                out_edges = graph.sorted_out_edges(floor_mod, data=True)
+                graph.remove_edges_from(out_edges)
                 graph.add_edge(floor_mod, floor)
                 graph.add_edge(floor, mul)
                 graph.add_edge(y, mul, **{'dst_in_port': 1})
                 graph.add_edge(x, sub)
                 graph.add_edge(mul, sub, **{'dst_in_port': 1})
 
-                out_edges = graph.sorted_out_edges(floor_mod, data=True)
-
                 for _, dst, out_attr in out_edges:
-                    graph.remove_edge(floor_mod, dst)
                     graph.add_edge(sub, dst, **out_attr)
 
                 NodeWrap(graph, floor_mod).replace_obj(
