@@ -68,6 +68,7 @@ def convert_torch_to_onnx(model_path, params):
                         input_tensors,
                         onnx_model_path,
                         input_names,
+                        output_names,
                         opset_version=None):
         # Note: Use operator_export_type=torch.onnx.OperatorExportTypes.ONNX_ATEN_FALLBACK
         # or torch.onnx.OperatorExportTypes.ONNX_ATEN for debug if export fails.
@@ -76,6 +77,7 @@ def convert_torch_to_onnx(model_path, params):
                           input_tensors,
                           onnx_model_path,
                           input_names=input_names,
+                          output_names=output_names,
                           opset_version=onnx_opset_version)
         return
 
@@ -150,6 +152,12 @@ def convert_torch_to_onnx(model_path, params):
             tensor = torch.zeros(input_shape, dtype=tensor_dtype)
         input_tensors += (tensor, )
 
+    # Get output_names
+    output_names = [out.debugName() for out in model.graph.outputs()]
+    for idx, output_name in enumerate(output_names):
+        if output_name[0].isdigit():
+            output_names[idx] = 'output_' + output_name
+
     # Get the file name of the onnx model to be exported
     onnx_model_path = os.path.join(params.get('output_dir', './'),
                                    os.path.basename(model_path) + '.onnx')
@@ -162,6 +170,7 @@ def convert_torch_to_onnx(model_path, params):
                                                         input_tensors,
                                                         onnx_model_path,
                                                         input_names,
+                                                        output_names,
                                                         onnx_opset_version))
         process.start()
         process.join()
@@ -184,7 +193,7 @@ def convert_torch_to_onnx(model_path, params):
     updated_params.update({'input_model': onnx_model_path,
                            'input_names': [],
                            'input_shapes': {},
-                           'output_names': [],
+                           'output_tensor_names': output_names,
                            'model_type': 'torch'})
 
     # Return onnx model path and updated params

@@ -391,8 +391,8 @@ def convert_onnx_to_graph(model_path, params):
                     except:
                         WARN('[Parser]: Cannot get anchor tensors (%s) in convert_onnx_to_graph!' % str(anchor_tensors))
 
-                graph._attr['output_names'] = copy.deepcopy(
-                    params.get('output_names', []))
+                graph._attr['output_names'] = copy.deepcopy(params.get('output_names', []))
+
                 if graph._attr['output_names']:
                     removing_names = []
                     for i, out_name in enumerate(graph._attr['output_names']):
@@ -423,7 +423,7 @@ def convert_onnx_to_graph(model_path, params):
                             noop_node.replace_obj(
                                 'Out', {'name': noop_node_name})
                             out_edge_attr = {
-                                'src_out_port': out_port, 'dst_in_port': 0}
+                                'src_out_port': out_port, 'dst_in_port': 0, 'tensor': Tensor(name=out_name)}
                             graph.add_edge(
                                 out_node_name, noop_node_name, **out_edge_attr)
                         else:
@@ -478,7 +478,7 @@ def convert_onnx_to_graph(model_path, params):
                             if not found_non_out_node:
                                 pending_out_port = max(current_out_ports) + 1
                         out_edge_attr = {
-                            'src_out_port': pending_out_port, 'dst_in_port': 0}
+                            'src_out_port': pending_out_port, 'dst_in_port': 0, 'tensor': Tensor(name=output['name'])}
                         graph.add_edge(
                             out_node_name, noop_node_name, **out_edge_attr)
 
