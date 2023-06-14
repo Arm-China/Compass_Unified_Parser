@@ -12,6 +12,11 @@ from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 from ...common.utils import get_version
 
 
+@helper.parse_args('v', 'i')
+def convert_channel_shuffle(g, input, groups):
+    return g.op('custom::ChannelShuffle', input, group_i=groups)
+
+
 @helper.parse_args('v', 'v', 'v', 'is', 'v', 'is', 'i')
 def convert_conv(g, input, weight, bias, stride, padding, dilation, groups):
     # Support padding as string. Refer to https://github.com/pytorch/pytorch/pull/89107
@@ -134,6 +139,7 @@ def convert_torch_to_onnx(model_path, params):
             torch.onnx.register_custom_op_symbolic(conv_op, convert_conv, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic('aten::flatten', convert_flatten, onnx_opset_version)
     # Convert torch op to custom onnx op
+    torch.onnx.register_custom_op_symbolic('aten::channel_shuffle', convert_channel_shuffle, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic('aten::cumprod', convert_cumprod, onnx_opset_version)
 
     # Get input_tensors and input_names
