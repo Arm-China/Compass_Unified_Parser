@@ -52,6 +52,13 @@ def convert_conv(g, input, weight, bias, stride, padding, dilation, groups):
 
 
 @helper.parse_args('v', 'i', 'i')
+def convert_cumprod(g, input, dim, dtype):
+    if dtype is not None:
+        input = g.op('Cast', input, to_i=helper.scalar_type_to_onnx[dtype])
+    return g.op('custom::CumProd', input, axis_i=dim)
+
+
+@helper.parse_args('v', 'i', 'i')
 def convert_flatten(g, input, start_dim, end_dim):
     input_rank = helper._get_tensor_rank(input)
     if input_rank == 0:
@@ -126,6 +133,8 @@ def convert_torch_to_onnx(model_path, params):
         for conv_op in ('aten::conv1d', 'aten::conv2d', 'aten::conv3d'):
             torch.onnx.register_custom_op_symbolic(conv_op, convert_conv, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic('aten::flatten', convert_flatten, onnx_opset_version)
+    # Convert torch op to custom onnx op
+    torch.onnx.register_custom_op_symbolic('aten::cumprod', convert_cumprod, onnx_opset_version)
 
     # Get input_tensors and input_names
     input_names = []
