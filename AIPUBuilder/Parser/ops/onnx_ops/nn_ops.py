@@ -144,10 +144,21 @@ class BatchNormalizationOp(LayoutConcernedOp, OpHasVariableOutPorts, OnnxOp):
         super(BatchNormalizationOp, self).infer_shape()
         # X, scale, B, mean, var
         inputs = self.get_input_tensors()
+        assert len(inputs) >= 5 and inputs[0].ndim >= 2, \
+            'Meets invalid inputs of BatchNormalizationOp(%s) in infer_shape!' % self.name
         is_training = self.training_mode
         if is_training:
+            reshape_dim = None
+            if inputs[0].ndim not in (4, 5):
+                if self.data_format.startswith('NC'):
+                    reshape_dim = list(inputs[0].shape[:2]) + [int(np.prod(inputs[0].shape[2:])), 1]
+                else:
+                    reshape_dim = [1, 1, int(np.prod(inputs[0].shape[:-1])), inputs[0].shape[-1]]
+                inp = np.reshape(inputs[0], reshape_dim)
+            else:
+                inp = inputs[0]
             out_list = tf.compat.v1.nn.fused_batch_norm(
-                x=inputs[0],
+                x=inp,
                 scale=inputs[1],
                 offset=inputs[2],
                 mean=inputs[3],
@@ -158,6 +169,8 @@ class BatchNormalizationOp(LayoutConcernedOp, OpHasVariableOutPorts, OnnxOp):
                 exponential_avg_factor=1.0
             )
             out_tensor_list = [o.numpy() for o in out_list]
+            if reshape_dim is not None:
+                out_tensor_list[0] = np.reshape(out_tensor_list[0], inputs[0].shape)
         else:
             if self.data_format[0] == 'N' and self.data_format[-1] == 'C':
                 out_tensor = tf.nn.batch_normalization(inputs[0],

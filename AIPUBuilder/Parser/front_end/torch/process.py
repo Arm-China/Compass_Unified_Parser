@@ -78,7 +78,8 @@ def convert_torch_to_onnx(model_path, params):
                           onnx_model_path,
                           input_names=input_names,
                           output_names=output_names,
-                          opset_version=onnx_opset_version)
+                          opset_version=onnx_opset_version,
+                          training=torch._C._onnx.TrainingMode.PRESERVE)
         return
 
     # Check whether inputs and shapes are provided. They must be provided because we cannot get input
