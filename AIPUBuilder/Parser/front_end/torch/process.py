@@ -119,6 +119,15 @@ def convert_torch_to_onnx(model_path, params):
                           training=torch._C._onnx.TrainingMode.PRESERVE)
         return
 
+    def _flatten_type(torch_type):
+        output_types = []
+        if isinstance(torch_type, torch._C.TupleType):
+            for nested_out in torch_type.elements():
+                output_types.extend(_flatten_type(nested_out))
+        else:
+            output_types.append(torch_type)
+        return output_types
+
     # Check whether inputs and shapes are provided. They must be provided because we cannot get input
     # shapes info from the provided model.
     if not params['input_shapes']:
@@ -201,8 +210,11 @@ def convert_torch_to_onnx(model_path, params):
             tensor = torch.zeros(input_shape, dtype=tensor_dtype)
         input_tensors += (tensor, )
 
-    # Get output_names
-    output_names = [out.debugName() for out in model.graph.outputs()]
+    # Get output_names. When the output is a tuple, it's actually multiple outputs constructed in that tuple.
+    output_names = []
+    for out_idx, out in enumerate(model.graph.outputs()):
+        out_name = out.debugName() + '_' + str(out_idx) + '_'
+        output_names.extend([out_name + str(idx) for idx in range(len(_flatten_type(out.type())))])
     for idx, output_name in enumerate(output_names):
         if output_name[0].isdigit():
             output_names[idx] = 'output_' + output_name
@@ -240,8 +252,9 @@ def convert_torch_to_onnx(model_path, params):
     # Update params
     updated_params = copy.deepcopy(params)
     updated_params.update({'input_model': onnx_model_path,
-                           'input_names': [],
-                           'input_shapes': {},
+                           'input_names': input_names,
+                           'input_shapes': params['input_shapes'],
+                           'output_names': [],
                            'output_tensor_names': output_names,
                            'model_type': 'torch'})
 
