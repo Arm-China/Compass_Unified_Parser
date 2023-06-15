@@ -8,7 +8,7 @@ from AIPUBuilder.Optimizer.tools.optimizer_forward import OptForward
 
 def run_ir_forward(txt_path, bin_path, input_data, forward_type='float'):
     # init a forward instance
-    opt_forward = OptForward(txt_path, bin_path, forward_type)
+    opt_forward = OptForward(txt_path, bin_path)
 
     # input_data should be a dict and data order should be same with input tensors
     try:
