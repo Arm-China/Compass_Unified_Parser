@@ -7767,10 +7767,11 @@ def align_matmul_input(graph):
             max_dim = max(*[len(s) for s in input_shapes])
             edge_index = 0 if max_dim == len(input_shapes[1]) else 1
             min_dim = len(input_shapes[edge_index])
-            dim_diff = max_dim - len(input_shapes[edge_index])
-            reshape_dim = [1] * dim_diff + list(input_shapes[edge_index]) \
-                if edge_index == 0 \
-                else [1] * (dim_diff - 2 + min_dim) + list(input_shapes[edge_index]) + [1] * (2 - min_dim)
+            dim_diff = max_dim - min_dim
+            if min_dim < 2 and edge_index == 1:
+                reshape_dim = [1] * (dim_diff - 2 + min_dim) + list(input_shapes[edge_index]) + [1] * (2 - min_dim)
+            else:
+                reshape_dim = [1] * dim_diff + list(input_shapes[edge_index])
             src, _, k, in_attr = in_edges[edge_index]
             insert_reshape(graph, src, matmul, in_attr, reshape_dim, key=k)
             out_shape = obj.get_output_shapes()[0]
