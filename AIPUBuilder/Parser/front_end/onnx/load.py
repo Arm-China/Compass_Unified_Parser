@@ -273,6 +273,7 @@ def convert_onnx_to_graph(model_path, params):
 
                 graph_is_quantized = False
                 const_tensor_count = defaultdict(int)
+                in_tensor_names = set()
                 for ni, node in enumerate(nodes):
                     op_attr = {k: v for k, v in node.items()}
                     op_attr.update({'data_format': params.get('input_data_format', 'NCHW'),
@@ -298,6 +299,7 @@ def convert_onnx_to_graph(model_path, params):
                     for in_port, in_tensor_info in enumerate(node['input']):
                         in_tensor_name, in_tensor_out_port = in_tensor_info[
                             'name'], in_tensor_info['out_port']
+                        in_tensor_names.add(in_tensor_name)
                         if not in_tensor_name:
                             in_tensor_name = get_valid_node_name(
                                 graph, 'no_name_const')
@@ -484,6 +486,16 @@ def convert_onnx_to_graph(model_path, params):
                             'src_out_port': pending_out_port, 'dst_in_port': 0, 'tensor': Tensor(name=output['name'])}
                         graph.add_edge(
                             out_node_name, noop_node_name, **out_edge_attr)
+
+                # Add Out node after the nodes with output tensors but without successors.
+                for (out_tensor_name, out_port), node_idx in out_tensor_operator_map.items():
+                    node_name = nodes[node_idx]['name']
+                    if out_tensor_name in in_tensor_names or node_name in graph._attr['output_names']:
+                        continue
+                    out_node_name = out_tensor_name + '_out_' + str(out_port)
+                    graph.add_edge(node_name, out_node_name, **
+                                   {'src_out_port': out_port, 'dst_in_port': 0, 'tensor': Tensor(name=out_tensor_name)})
+                    NodeWrap(graph, out_node_name).replace_obj('Out', {'name': out_node_name})
 
                 if not graph._attr['output_names']:
                     ERROR('[Parser]: Got no output names for graph, cannot proceed!')
