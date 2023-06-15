@@ -1661,7 +1661,7 @@ class ArmEltwiseOp(LayoutUnawareOp, OpHasMethod, BaseActivationOp, ArmOp):
 
     @classmethod
     def cast_in_ports(cls):
-        return {0: ['float32', 'int8', 'uint8'], 1: ['float32', 'int8', 'uint8']}
+        return {0: ['float32', 'int8', 'uint8', 'int32'], 1: ['float32', 'int8', 'uint8', 'int32']}
 
     @classmethod
     def num_in_ports(cls):
@@ -2657,8 +2657,8 @@ class ArmMatMulOp(OpHasOneOutPort, ArmOp):
 
     @classmethod
     def cast_in_ports(cls):
-        return {0:  ['float32', 'uint8', 'int16', 'int8'],
-                1:  ['float32', 'uint8', 'int16', 'int8']}
+        return {0: ['float32', 'uint8', 'int16', 'int8'],
+                1: ['float32', 'uint8', 'int16', 'int8']}
 
     @classmethod
     def attributes(cls):

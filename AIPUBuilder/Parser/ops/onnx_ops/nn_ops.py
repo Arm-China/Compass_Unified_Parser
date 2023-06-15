@@ -176,8 +176,8 @@ class BatchNormalizationOp(LayoutConcernedOp, OpHasVariableOutPorts, OnnxOp):
                 out_tensor = tf.nn.batch_normalization(inputs[0],
                                                        inputs[3],
                                                        inputs[4],
-                                                       inputs[1],
                                                        inputs[2],
+                                                       inputs[1],
                                                        variance_epsilon=self.epsilon).numpy()
                 out_tensor_list = [out_tensor]
             else:
