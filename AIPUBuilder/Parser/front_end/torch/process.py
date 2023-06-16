@@ -4,12 +4,37 @@
 
 import copy
 import os
+import numpy as np
 import onnx
 import torch
 import torch.onnx.symbolic_helper as helper
 from multiprocessing import Process
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 from ...common.utils import get_version
+
+
+def convert_argmax_argmin(g, input, dim, keepdim, op_type):
+    if helper._is_none(dim):
+        flatten = helper._reshape_helper(g, input, [-1])
+        output = g.op(op_type, flatten, axis_i=0, keepdims_i=False)
+        if keepdim:
+            input_shape = helper._get_tensor_sizes(input)
+            output_shape = np.ones_like(input_shape)
+            output = helper._reshape_helper(g, output, output_shape)
+    else:
+        dim = helper._parse_arg(dim, 'i')
+        output = g.op(op_type, input, axis_i=dim, keepdim_i=keepdim)
+    return output
+
+
+@helper.parse_args('v', 'v', 'i')
+def convert_argmax(g, input, dim, keepdim):
+    return convert_argmax_argmin(g, input, dim, keepdim, 'ArgMax')
+
+
+@helper.parse_args('v', 'v', 'i')
+def convert_argmin(g, input, dim, keepdim):
+    return convert_argmax_argmin(g, input, dim, keepdim, 'ArgMin')
 
 
 @helper.parse_args('v', 'i')
@@ -134,7 +159,14 @@ def convert_torch_to_onnx(model_path, params):
     DEBUG('[Parser]: Will convert to onnx opset version (%s)!' % str(onnx_opset_version))
 
     # Apply fixes before convertting to onnx model
+    if torch_version < '2.0.1':
+        # The issue of argmax/argmin is fixed in torch 2.0.1.
+        # Refer to https://github.com/pytorch/pytorch/pull/79503
+        torch.onnx.register_custom_op_symbolic('aten::argmax', convert_argmax, onnx_opset_version)
+        torch.onnx.register_custom_op_symbolic('aten::argmin', convert_argmin, onnx_opset_version)
     if torch_version < '2.1.0':
+        # The issue of string padding is fixed in latest torch.
+        # Refer to https://github.com/pytorch/pytorch/pull/89107
         for conv_op in ('aten::conv1d', 'aten::conv2d', 'aten::conv3d'):
             torch.onnx.register_custom_op_symbolic(conv_op, convert_conv, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic('aten::flatten', convert_flatten, onnx_opset_version)
