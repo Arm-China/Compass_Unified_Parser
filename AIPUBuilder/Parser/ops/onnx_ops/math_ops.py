@@ -1528,7 +1528,7 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
                     roi_index = 1 if is_nchw else 2
                 else:
                     roi_index = 0 if is_nchw else 1
-                roi_start_index = roi.size / 2 - (roi_index + 1)
+                roi_start_index = int(roi.size / 2 - (roi_index + 1))
                 roi_end_index = roi.size - (roi_index + 1)
                 roi_start_value = roi[roi_start_index]
                 roi_end_value = roi[roi_end_index]
