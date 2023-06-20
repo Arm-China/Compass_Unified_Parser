@@ -317,12 +317,15 @@ def convert_onnx_to_graph(model_path, params):
                             if const_tensor_count[in_tensor_name] > 1:
                                 in_tensor_name = get_valid_node_name(
                                     graph, in_tensor_name + '_' + str(const_tensor_count[in_tensor_name] - 1))
+                            # If there is a node whose name is same as the tensor, change the node of const to other name.
+                            const_node_name = ('const_' + in_tensor_name) \
+                                if graph.has_node(in_tensor_name) else in_tensor_name
                             assert not graph.has_node(
-                                in_tensor_name), 'Node %s does not exist in convert_onnx_to_graph.' % (in_tensor_name)
-                            graph.add_node(in_tensor_name)
+                                const_node_name), 'Node %s should not exist in convert_onnx_to_graph.' % (const_node_name)
+                            graph.add_node(const_node_name)
 
-                            const_node = NodeWrap(graph, in_tensor_name)
-                            const_attr = {'name': in_tensor_name,
+                            const_node = NodeWrap(graph, const_node_name)
+                            const_attr = {'name': const_node_name,
                                           'value': const_values[const_index]['tensor'],
                                           'data_format': params.get('input_data_format', 'NCHW'),
                                           'opset_version': opset_ver}
@@ -334,7 +337,7 @@ def convert_onnx_to_graph(model_path, params):
                                                           is_const=True)
                                          }
                             graph.add_edge(
-                                in_tensor_name, op_name, **edge_attr)
+                                const_node_name, op_name, **edge_attr)
                         else:
                             if in_tensor_name in tensor_name_map:
                                 in_tensor_out_port = tensor_name_map[in_tensor_name][0]
