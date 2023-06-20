@@ -23,17 +23,17 @@ def convert_argmax_argmin(g, input, dim, keepdim, op_type):
             output = helper._reshape_helper(g, output, output_shape)
     else:
         dim = helper._parse_arg(dim, 'i')
-        output = g.op(op_type, input, axis_i=dim, keepdim_i=keepdim)
+        output = g.op(op_type, input, axis_i=dim, keepdims_i=keepdim)
     return output
 
 
 @helper.parse_args('v', 'v', 'i')
-def convert_argmax(g, input, dim, keepdim):
+def convert_argmax(g, input, dim=None, keepdim=False):
     return convert_argmax_argmin(g, input, dim, keepdim, 'ArgMax')
 
 
 @helper.parse_args('v', 'v', 'i')
-def convert_argmin(g, input, dim, keepdim):
+def convert_argmin(g, input, dim=None, keepdim=False):
     return convert_argmax_argmin(g, input, dim, keepdim, 'ArgMin')
 
 
