@@ -159,7 +159,10 @@ class NonMaxSuppressionOp(OpHasOneOutPort, OnnxOp):
             inputs = self.get_input_tensors()
             try:
                 if item == 'max_output_boxes_per_class':
-                    ret = int(np.asscalar(inputs[2]))
+                    box_shape = inputs[0].shape
+                    score_shape = inputs[1].shape
+                    ret = min(int(np.asscalar(inputs[2])),
+                              box_shape[0] * box_shape[1] * score_shape[1])
                 elif item == 'iou_threshold':
                     ret = float(np.asscalar(inputs[3]))
                 elif item == 'score_threshold':
@@ -175,13 +178,9 @@ class NonMaxSuppressionOp(OpHasOneOutPort, OnnxOp):
         super(NonMaxSuppressionOp, self).infer_shape()
         inputs = self.get_input_tensors()
         boxes, scores = inputs[0:2]
-        box_shape = inputs[0].shape
-        score_shape = inputs[1].shape
-        max_output_boxes_per_class = min(
-            int(np.asscalar(inputs[2])), box_shape[0] * box_shape[1] * score_shape[1])
         out_tensor = NonMaxSuppressionOp.compute(boxes,
                                                  scores,
-                                                 max_output_boxes_per_class,
+                                                 self.max_output_boxes_per_class,
                                                  self.iou_threshold,
                                                  self.score_threshold,
                                                  self.center_point_box)
