@@ -126,6 +126,7 @@ def convert_torch_to_onnx(model_path, params):
 
     # Load TorchScript model
     try:
+        import torchvision
         model = torch.jit.load(model_path)
     except Exception as e:
         FATAL('[Parser]: Fail to load model (%s) because %s! Only TorchScript format is supported.' %
