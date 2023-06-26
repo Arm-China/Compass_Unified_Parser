@@ -488,6 +488,27 @@ def convert_onnx_to_graph(model_path, params):
                 if not graph._attr['output_names']:
                     ERROR('[Parser]: Got no output names for graph, cannot proceed!')
                 else:
+                    if any(in_name not in graph._attr['input_tensors'] for in_name in params['input_names']):
+                        for in_name in params['input_names']:
+                            if graph.has_node(in_name) \
+                                    and in_name not in graph._attr['input_tensors']:
+                                out_edges = graph.sorted_out_edges(in_name, data=True)
+                                if len(out_edges) > 0:
+                                    in_edges = graph.sorted_in_edges(in_name)
+                                    graph.remove_edges_from(in_edges)
+                                    obj = NodeWrap(graph, in_name)['object']
+                                    if obj is not None:
+                                        NodeWrap(graph, in_name).replace_obj('Input', obj.copied_attr())
+                                    else:
+                                        NodeWrap(graph, in_name).replace_obj('Input', {'name': in_name})
+                                    if out_edges[0][2]['tensor'] is not None and out_edges[0][2]['tensor'].value is not None:
+                                        graph._attr['input_tensors'].update({in_name: out_edges[0][2]['tensor']})
+                                    else:
+                                        cur_shape = params['input_shapes'][in_name]
+                                        graph._attr['input_tensors'].update(
+                                            {in_name: Tensor(name=in_name, value=np.random.ranf(cur_shape).astype(np.float32))})
+                        graph._attr['input_tensors'] = OrderedDict(
+                            {k: v for k, v in graph._attr['input_tensors'].items() if graph.has_node(k)})
                     clear_redundant_nodes(graph)
             else:
                 WARN('[Parser]: Meets empty graph in convert_onnx_to_graph!')
