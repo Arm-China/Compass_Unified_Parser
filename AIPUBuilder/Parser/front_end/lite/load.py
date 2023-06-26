@@ -2,14 +2,14 @@
 # SPDX-License-Identifier: Apache-2.0
 
 
-import onnx
-import numpy as np
 import copy
 import re
 from collections import defaultdict, OrderedDict
 from functools import partial
-# import multiprocessing as mp
-# import tensorflow as tf
+import threading
+import onnx
+import numpy as np
+import tensorflow as tf
 from ...graph.graph import Graph
 from ...graph.node_wrap import NodeWrap
 from ...graph.graph_algo import get_valid_node_name, clear_redundant_nodes
@@ -186,34 +186,33 @@ def convert_attr_to_onnx(attr_dict):
     return new_attr
 
 
-# def update_tensor(tflite_path, tensor_table):
-#     def _worker(q):
-#         table = q.get()
-#         try:
-#             interpreter = tf.lite.Interpreter(model_path=tflite_path, experimental_preserve_all_tensors=True)
-#             interpreter.allocate_tensors()
-#             interpreter.invoke()
-#             tensors = interpreter.get_tensor_details()
-#             for t in tensors:
-#                 idx = t['index']
-#                 if 0 <= idx < len(ret):
-#                     if not np.all(np.equal(t['shape'], table[idx]['data'].shape)):
-#                         table[idx]['data'] = interpreter.get_tensor(idx)
-#         except:
-#             pass
-#         q.put(table)
-#
-#     ret = tensor_table
-#     queue = mp.Queue()
-#     queue.put(ret)
-#     p = mp.Process(target=_worker, args=(queue,))
-#     p.start()
-#     p.join(60)
-#     if p.is_alive():
-#         p.terminate()
-#     else:
-#         ret = queue.get()
-#     return ret
+def update_tensor(tflite_path, tensor_table):
+    def _worker(path, table, stop_event):
+        while True:
+            if stop_event.isSet():
+                return table
+            try:
+                interpreter = tf.lite.Interpreter(model_path=path, experimental_preserve_all_tensors=True)
+                interpreter.allocate_tensors()
+                interpreter.invoke()
+                tensors = interpreter.get_tensor_details()
+                for t in tensors:
+                    idx = t['index']
+                    if 0 <= idx < len(table):
+                        if not np.all(np.equal(t['shape'], table[idx]['data'].shape)):
+                            table[idx]['data'] = interpreter.get_tensor(idx)
+            except:
+                pass
+            break
+        return table
+
+    e = threading.Event()
+    thread = threading.Thread(target=_worker, args=(tflite_path, tensor_table, e), daemon=True)
+    thread.start()
+    thread.join(3)
+    if thread.is_alive():
+        e.set()
+    return tensor_table
 
 
 def convert_tflite_to_graph(model_path, params):
@@ -257,7 +256,7 @@ def convert_tflite_to_graph(model_path, params):
                 tensors_table = [(tensor, ti not in non_const_tensor_ids, linear_weights_tensor_id.get(
                     ti, '')) for ti, tensor in enumerate(tensors_table)]
                 parsed_tensors_table = list(map(partial(parse_tensor, tflite_model=model), tensors_table))
-                # parsed_tensors_table = update_tensor(model_path, parsed_tensors_table)
+                parsed_tensors_table = update_tensor(model_path, parsed_tensors_table)
 
                 tensor_name_count = defaultdict(int)
                 for in_tensor_id in non_const_tensor_ids:
