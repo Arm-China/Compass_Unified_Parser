@@ -87,6 +87,7 @@ class ArmActivationOp(LayoutUnawareOp, OpHasMethod, OpHasOneOutPort, ArmOp):
                 'beta': {'type': AttrType.FLOAT, 'default': None},
                 'negative_slope': {'type': AttrType.TENSOR, 'default': None},
                 'negative_slope_offset': {'type': AttrType.INT, 'default': None},
+                'negative_slope_min_max': {'type': AttrType.FLOATS, 'default': []},
                 'negative_slope_scale': {'type': AttrType.TENSOR, 'default': None},
                 'negative_slope_zp': {'type': AttrType.TENSOR, 'default': None},
                 'gamma': {'type': AttrType.FLOAT, 'default': None},
@@ -241,6 +242,13 @@ class ArmActivationOp(LayoutUnawareOp, OpHasMethod, OpHasOneOutPort, ArmOp):
                     self.negative_slope.size * self.negative_slope.dtype.itemsize))
                 txt_file.write('negative_slope_shape=[%s]\n' % num_list_to_string(
                     list(self.negative_slope.shape)))
+                if len(self.negative_slope_min_max) == 2:
+                    if np.array(self.negative_slope_min_max).size == 2:  # per tensor
+                        txt_file.write('negative_slope_range=[%s]\n' % num_list_to_string(
+                            [float(m) for m in self.negative_slope_min_max]))
+                    else:  # per channel
+                        txt_file.write('negative_slope_range=[%s]\n' % num_list_to_string(
+                            [[min_val, max_val] for min_val, max_val in zip(self.negative_slope_min_max[0], self.negative_slope_min_max[1])]))
                 if self.quantize \
                         and self.negative_slope_scale is not None \
                         and self.negative_slope_zp is not None:

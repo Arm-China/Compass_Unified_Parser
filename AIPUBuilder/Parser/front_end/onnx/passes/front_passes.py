@@ -56,6 +56,9 @@ def fuse_weights_const(graph):
                     elif i == biases_in_port and isinstance(data, np.ndarray):
                         node_obj.biases = data
                         if edge_attr.get('tensor', None) is not None:
+                            if len(edge_attr['tensor'].min_max) == 2:
+                                node_obj.biases_min_max = list(
+                                    edge_attr['tensor'].min_max)
                             if len(edge_attr['tensor'].scale_zp) == 2:
                                 node_obj.biases_scale_zp = list(
                                     edge_attr['tensor'].scale_zp)

@@ -284,7 +284,7 @@ def parse_operator(operator, tflite_model, buffer):
     return ret
 
 
-def parse_quantization_info(quant_info):
+def parse_quantization_info(quant_info, tensor_dtype=None):
     ret = OrderedDict()
     if quant_info is not None and quant_info.Details() is None:
         info_names = ['Scale', 'ZeroPoint', 'Min', 'Max']
@@ -298,6 +298,13 @@ def parse_quantization_info(quant_info):
                 elif str(value.dtype) == 'int64':
                     value = value.astype(np.int32)
                 ret.update({name: value})
+        if tensor_dtype is not None \
+                and np.issubdtype(tensor_dtype, np.integer) \
+                and 'Min' not in ret and 'Max' not in ret \
+                and 'Scale' in ret and 'ZeroPoint' in ret:
+            min_value = (np.iinfo(tensor_dtype).min - ret['ZeroPoint']) * ret['Scale']
+            max_value = (np.iinfo(tensor_dtype).max - ret['ZeroPoint']) * ret['Scale']
+            ret.update({'Min': min_value, 'Max': max_value})
     return ret
 
 
@@ -318,7 +325,7 @@ def parse_tensor(tensor_info, tflite_model):
         parsed_data = np.empty(data_shape, dtype=data_type)
 
     quantize = False
-    quant_info_dict = parse_quantization_info(tensor.Quantization())
+    quant_info_dict = parse_quantization_info(tensor.Quantization(), data_type)
     if quant_info_dict and 'ZeroPoint' in quant_info_dict and 'Scale' in quant_info_dict:
         quantize = True
     ret = {'name': tensor.Name().decode('utf-8'),
