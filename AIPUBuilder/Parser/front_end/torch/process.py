@@ -88,6 +88,16 @@ def convert_cumprod(g, input, dim, dtype):
     return g.op('custom::CumProd', input, axis_i=dim)
 
 
+@helper.parse_args('s', 'v', 's', 'v')
+def convert_dict_construct(g, key_0, value_0, key_1=None, value_1=None):
+    keys = ', '.join([key_0] + ([] if key_1 is None else [key_1]))
+    WARN('[Parser]: prim::DictConstruct is unsupported and is changed to return a tensor or a list of tensors(key(s): %s) instead!' % keys)
+    if value_1 is not None:
+        g.registerOutput(value_0)  # value_0 is the first output of graph
+        return g.op('Identity', value_1)  # value_1 is the second output of graph if this node is output
+    return g.op('Identity', value_0)
+
+
 @helper.parse_args('v', 'i', 'i')
 def convert_flatten(g, input, start_dim, end_dim):
     input_rank = helper._get_tensor_rank(input)
@@ -133,9 +143,16 @@ def convert_torch_to_onnx(model_path, params):
     if not params['input_shapes']:
         FATAL('[Parser]: Input names and shapes must be provided in config file for TorchScript model!')
 
-    # Load TorchScript model
+    # Load torchvision because some models in torchvision need it. If cannot import but model needs it,
+    # error will be raised after torch.jit.load.
     try:
         import torchvision
+    except:
+        DEBUG('[Parser]: Fail to import torchvision!')
+        pass
+
+    # Load TorchScript model
+    try:
         model = torch.jit.load(model_path)
     except Exception as e:
         FATAL('[Parser]: Fail to load model (%s) because %s! Only TorchScript format is supported.' %
@@ -168,7 +185,7 @@ def convert_torch_to_onnx(model_path, params):
         onnx_opset_version = 9
     DEBUG('[Parser]: Will convert to onnx opset version (%s)!' % str(onnx_opset_version))
 
-    # Apply fixes before convertting to onnx model
+    # Convert torch op to non-custom onnx op
     if torch_version < '2.0.1':
         # The issue of argmax/argmin is fixed in torch 2.0.1.
         # Refer to https://github.com/pytorch/pytorch/pull/79503
@@ -180,6 +197,12 @@ def convert_torch_to_onnx(model_path, params):
         for conv_op in ('aten::conv1d', 'aten::conv2d', 'aten::conv3d'):
             torch.onnx.register_custom_op_symbolic(conv_op, convert_conv, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic('aten::flatten', convert_flatten, onnx_opset_version)
+    # Only convert prim::DictConstruct to Identity when it's output node.
+    dict_nodes = model.graph.findAllNodes('prim::DictConstruct')
+    model_output_names = [out.debugName() for out in model.graph.outputs()]
+    if dict_nodes and all(node.output().debugName() in model_output_names for node in dict_nodes):
+        torch.onnx.register_custom_op_symbolic('prim::DictConstruct', convert_dict_construct, onnx_opset_version)
+
     # Convert torch op to custom onnx op
     torch.onnx.register_custom_op_symbolic('aten::channel_shuffle', convert_channel_shuffle, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic('aten::cumprod', convert_cumprod, onnx_opset_version)
@@ -214,7 +237,12 @@ def convert_torch_to_onnx(model_path, params):
     output_names = []
     for out_idx, out in enumerate(model.graph.outputs()):
         out_name = out.debugName() + '_' + str(out_idx) + '_'
-        output_names.extend([out_name + str(idx) for idx in range(len(_flatten_type(out.type())))])
+        if isinstance(out.type(), torch._C.DictType):
+            inputs_num = len([inp for inp in out.node().inputs()])
+            outputs_num = inputs_num // 2
+        else:
+            outputs_num = len(_flatten_type(out.type()))
+        output_names.extend([out_name + str(idx) for idx in range(outputs_num)])
     for idx, output_name in enumerate(output_names):
         if output_name[0].isdigit():
             output_names[idx] = 'output_' + output_name
