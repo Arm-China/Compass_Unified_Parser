@@ -512,7 +512,11 @@ class Op(abc.ABC):
                       self.name)
                 info_value = [re.sub(r' ', '', str(tensor_shape)), '', OrderedDict()]
             if len(d['tensor'].min_max) == 2:
-                min_max_str = '[%f,%f]' % (float(d['tensor'].min_max[0]), float(d['tensor'].min_max[1]))
+                if np.array(d['tensor'].min_max).size == 2:  # per tensor
+                    min_max_str = '[%f,%f]' % (float(d['tensor'].min_max[0]), float(d['tensor'].min_max[1]))
+                else:  # per channel
+                    min_max_str = num_list_to_string(
+                        [[min_val, max_val] for min_val, max_val in zip(d['tensor'].min_max[0], d['tensor'].min_max[1])])
                 info_value[2].update({'min_max': min_max_str})
             if quantize and d['tensor'].dtype is not None:
                 info_value[2].update({'dtype': str(d['tensor'].dtype)})
@@ -1176,9 +1180,13 @@ class OpHasWeights(Op):
                            (self.weights.size * self.weights.dtype.itemsize))
             txt_file.write('weights_shape=[%s]\n' % num_list_to_string(
                 list(self.weights.shape)))
-            if self.weights_min_max:
-                txt_file.write('weights_range=[%s]\n' % num_list_to_string(
-                    [float(np.min(m) if i == 0 else np.max(m)) for i, m in enumerate(self.weights_min_max)]))
+            if len(self.weights_min_max) == 2:
+                if np.array(self.weights_min_max).size == 2:  # per tensor
+                    txt_file.write('weights_range=[%s]\n' % num_list_to_string(
+                        [float(m) for m in self.weights_min_max]))
+                else:  # per channel
+                    txt_file.write('weights_range=[%s]\n' % num_list_to_string(
+                        [[min_val, max_val] for min_val, max_val in zip(self.weights_min_max[0], self.weights_min_max[1])]))
             if self._graph._attr.get('quantize', False) \
                     and np.issubdtype(self.weights.dtype, np.integer) \
                     and len(self.weights_scale_zp) == 2:
@@ -1228,6 +1236,7 @@ class OpHasBiases(Op):
         '''return attributes of OpHasBiases class.'''
         return {'biases': {'type': AttrType.TENSOR, 'default': None},
                 'biases_offset': {'type': AttrType.INT, 'default': -1},
+                'biases_min_max': {'type': AttrType.FLOATS, 'default': []},
                 'biases_scale_zp': {'type': AttrType.TENSORS, 'default': [np.array([1.0]).astype(np.float32), np.array([0]).astype(np.int32)]},
                 'biases_scale_offset': {'type': AttrType.INT, 'default': -1},
                 'biases_zp_offset': {'type': AttrType.INT, 'default': -1}
@@ -1247,6 +1256,13 @@ class OpHasBiases(Op):
                            (self.biases.size * self.biases.dtype.itemsize))
             txt_file.write('biases_shape=[%s]\n' %
                            num_list_to_string(list(self.biases.shape)))
+            if len(self.biases_min_max) == 2:
+                if np.array(self.biases_min_max).size == 2:  # per tensor
+                    txt_file.write('biases_range=[%s]\n' % num_list_to_string(
+                        [float(m) for m in self.biases_min_max]))
+                else:  # per channel
+                    txt_file.write('biases_range=[%s]\n' % num_list_to_string(
+                        [[min_val, max_val] for min_val, max_val in zip(self.biases_min_max[0], self.biases_min_max[1])]))
             if self._graph._attr.get('quantize', False) \
                     and np.issubdtype(self.biases.dtype, np.integer) \
                     and len(self.biases_scale_zp) == 2:
