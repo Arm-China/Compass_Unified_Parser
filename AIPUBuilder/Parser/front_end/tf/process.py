@@ -25,7 +25,7 @@ def process_tf(model_path, params):
     record_output_tensors(graph)
 
     if graph is not None and len(graph) > 0:
-        from ..lite.passes.front_passes import convert_scatternd, split_rsqrt, convert_strided_slice, \
+        from ..lite.passes.front_passes import convert_scatternd, convert_scatternd2, split_rsqrt, convert_strided_slice, \
             convert_square, convert_square_diff, split_not_equal, convert_reverse_sequence, convert_unpack
 
         apply_subgraph_plugin(graph)
@@ -49,7 +49,7 @@ def process_tf(model_path, params):
         from ..onnx.passes.middle_passes import convert_to_const
         from ..tf2.passes.front_passes import convert_squeeze
         convert_to_const(
-            graph, ['TfPlaceholderWithDefault', 'TfShape', 'TfSize', 'TfZerosLike'])
+            graph, ['TfPlaceholderWithDefault', 'TfShape', 'TfSize', 'TfZerosLike', 'TfRandomUniform'])
 
         merge_embedding_lookup_sparse(graph)
         merge_embedding_lookup_sparse_with_weights(graph)
@@ -62,6 +62,7 @@ def process_tf(model_path, params):
         convert_floordiv(graph, op_type='TfFloorDiv')
         convert_reverse_sequence(graph, op_type='TfReverseSequence')
         convert_scatternd(graph, op_type='TfScatterNd')
+        convert_scatternd2(graph, op_type='TfScatterNd')
         split_b2s(graph)
         split_s2b(graph, 'TfSpaceToBatchND')
         split_special_floormod(graph)
