@@ -291,6 +291,7 @@ def convert_square_diff(graph, op_type='TfSquaredDifference'):
 
 
 def convert_scatternd(graph, op_type='TfScatterNd'):
+    # TODO: Check whether this pass is still needed and can be replaced with pass convert_scatternd2.
     if op_type not in ('TfScatterNd', 'LiteSCATTER_ND'):
         ERROR('[Parser]: Meets invalid Op type (%s) in convert_scatternd!' % op_type)
         return
@@ -441,6 +442,41 @@ def convert_scatternd(graph, op_type='TfScatterNd'):
                     scatter_nd_obj.correspond_onnx_op['type'], scatter_nd_attr)
     if matched:
         clear_redundant_nodes(graph)
+
+
+def convert_scatternd2(graph, op_type='TfScatterNd'):
+    ''' Convert ScatterNd whose indices input is not constant to onnx ScatterND with reduction=add.
+    '''
+    if op_type not in ('TfScatterNd', 'LiteSCATTER_ND'):
+        ERROR('[Parser]: Meets invalid Op type (%s) in convert_scatternd!' % op_type)
+        return
+    matches = single_node_matcher(graph, op_type)
+    for m in matches:
+        scatternd = m['target']
+        scatternd_obj = NodeWrap(graph, scatternd)['object']
+        scatternd_in_edges = graph.sorted_in_edges(scatternd, data=True)
+        if scatternd_obj is None or len(scatternd_in_edges) < 3:
+            ERROR('[Parser]: Meets invalid %s Node(%s) in convert_scatternd2!' % (op_type, scatternd))
+            continue
+        indices, _, indices_in_attr = scatternd_in_edges[0]
+        updates, _, updates_in_attr = scatternd_in_edges[1]
+        shape, _, shape_in_attr = scatternd_in_edges[2]
+        if shape_in_attr['tensor'] is None or not shape_in_attr['tensor'].is_const \
+                or shape_in_attr['tensor'].value is None:
+            WARN('[Parser]: Meets unsupported non-const shape input of Node(%s) in convert_scatternd2!' % scatternd)
+            continue
+        if updates_in_attr['tensor'] is None or updates_in_attr['tensor'].value is None:
+            continue
+        data = np.zeros(shape_in_attr['tensor'].value, dtype=updates_in_attr['tensor'].value.dtype)
+        graph.remove_edges_from(scatternd_in_edges)
+        insert_constant(graph, scatternd + '_data', data, scatternd, in_port=0, data_format='NHWC')
+        indices_in_attr.update({'dst_in_port': 1})
+        graph.add_edge(indices, scatternd, **indices_in_attr)
+        updates_in_attr.update({'dst_in_port': 2})
+        graph.add_edge(updates, scatternd, **updates_in_attr)
+        scatternd_attr = scatternd_obj.copied_attr()
+        scatternd_attr.update({'reduction': 'add', 'opset_version': 16})
+        NodeWrap(graph, scatternd).replace_obj('ScatterND', scatternd_attr)
 
 
 def convert_reverse_sequence(graph, op_type='TfReverseSequence'):

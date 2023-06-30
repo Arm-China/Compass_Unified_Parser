@@ -6835,6 +6835,40 @@ def rename_reshape_like(graph):
             graph.add_edge(const, name, **edge_attr)
 
 
+def remove_redundant_mul(graph):
+    matched = False
+    matches = matched_patterns(graph,
+                               nodes=[('const1', {'op': 'Constant'}),
+                                      ('mul1', {'op': 'Mul'}),
+                                      ('const2', {'op': 'Constant'}),
+                                      ('mul2', {'op': 'Mul'})],
+                               edges=[('const1', 'mul1'),
+                                      ('const2', 'mul2'),
+                                      ('mul1', 'mul2')])
+    for m in matches:
+        key_names = ['const1', 'const2', 'mul1', 'mul2']
+        node_objs = {k: NodeWrap(graph, m[k])['object'] for k in key_names}
+        mul1_in_edges = graph.sorted_in_edges(m['mul1'], data=True)
+        mul2_in_edges = graph.sorted_in_edges(m['mul2'], data=True)
+        if any(obj is None for obj in node_objs.values()) \
+                or len(mul1_in_edges) != 2 or len(mul2_in_edges) != 2:
+            ERROR('[Parser]: Meets invalid Nodes in remove_redundant_mul!')
+            continue
+        src_to_mul1_edge = [(src, in_attr) for (src, _, in_attr) in mul1_in_edges if src != m['const1']]
+        if len(src_to_mul1_edge) < 1:
+            continue
+        matched = True
+        src, src_attr = src_to_mul1_edge[0]
+        new_const_value = node_objs['const1'].value * node_objs['const2'].value
+        const_to_mul2_in_port = 1 - src_attr['dst_in_port']
+
+        graph.remove_edges_from(mul2_in_edges)
+        graph.add_edge(src, m['mul2'], **src_attr)
+        insert_constant(graph, m['mul2'] + '_new_const', new_const_value, m['mul2'], in_port=const_to_mul2_in_port)
+    if matched:
+        clear_redundant_nodes(graph)
+
+
 def rename_single_mul_or_add_or_sub(graph):
     mas = ['Mul', 'Div', 'Add', 'Sub']
     mas_matches = [single_node_matcher(graph, op_type) for op_type in mas]
@@ -8188,6 +8222,7 @@ def middle_passes(graph, params):
 
     convert_gemm_to_fc(graph)
     convert_special_matmul_to_fc(graph)
+    remove_redundant_mul(graph)
     fuse_mul_add_or_sub(graph)
     fuse_gather_const_mul(graph)
     convert_gather_to_slice(graph)

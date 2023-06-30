@@ -5,7 +5,7 @@
 from .load import convert_tflite_to_graph
 from .passes.front_passes import split_op_has_activation, split_fc, split_greater_or_less_equal, \
     split_not_equal, split_rsqrt, remove_detection_postprocess, convert_to_onnx, convert_onehot, convert_reverse_sequence, convert_square, \
-    convert_unpack, convert_negative_pool_pad, convert_scatternd, convert_special_uni_seq_lstm, convert_strided_slice, convert_square_diff, \
+    convert_unpack, convert_negative_pool_pad, convert_scatternd, convert_scatternd2, convert_special_uni_seq_lstm, convert_strided_slice, convert_square_diff, \
     convert_broadcast_to, remove_redundant_broadcast_to, remove_sub_equal_select, \
     merge_special_cast_quantize, convert_special_quantize, convert_special_dequantize, split_quatized_mean, \
     merge_quantized_instance_norm, merge_quantized_lstm_cell, convert_dequantize, merge_min_quant_max_to_clip, merge_quantized_ln, \
@@ -63,6 +63,7 @@ def process_tflite(model_path, params):
         convert_square(graph, 'LiteSQUARE')
         convert_square_diff(graph, 'LiteSQUARED_DIFFERENCE')
         convert_scatternd(graph, 'LiteSCATTER_ND')
+        convert_scatternd2(graph, 'LiteSCATTER_ND')
         convert_reverse(graph, op_type='LiteREVERSE_V2')
         merge_overlap_and_add(graph)
 
