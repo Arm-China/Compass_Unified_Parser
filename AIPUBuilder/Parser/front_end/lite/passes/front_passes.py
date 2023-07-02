@@ -2429,6 +2429,84 @@ def remove_useless_dequantize(graph):
         clear_redundant_nodes(graph)
 
 
+def merge_dqd(graph, op_list):
+    quantize = graph._attr.get('quantize', False)
+    if not quantize:
+        return
+    if not op_list:
+        WARN('[Parser]: Empty Op type in merge_dqd!')
+        return
+    matched = False
+    op_list = list(op_list)
+    matches = single_node_matcher(graph, op_list)
+    for m in matches:
+        n = m['target']
+        if not graph.has_node(n):
+            continue
+        node_obj = NodeWrap(graph, n)['object']
+        if node_obj is not None:
+            node_type = node_obj.type
+            in_edges = graph.sorted_in_edges(n, keys=True, data=True)
+            out_edges = graph.sorted_out_edges(n, data=True)
+            if len(in_edges) < 1 or len(out_edges) != 1:
+                continue
+            input_tensors = node_obj.get_input_tensors()
+            output_tensors = node_obj.get_output_tensors()
+            if len(input_tensors) < 1 or len(output_tensors) != 1:
+                continue
+            if input_tensors[0] is None or not np.issubdtype(input_tensors[0].dtype, np.floating):
+                continue
+            if output_tensors[0] is None or not np.issubdtype(output_tensors[0].dtype, np.floating):
+                continue
+            in_objs = [NodeWrap(graph, edge[0])['object'] for edge in in_edges]
+            out_objs = [NodeWrap(graph, edge[1])['object'] for edge in out_edges]
+            if any(obj is None for obj in (in_objs + out_objs)):
+                ERROR('[Parser]: Meets invalid Op(%s) in merge_dqd!' % n)
+                continue
+            if out_objs[0].type != 'LiteQUANTIZE':
+                continue
+            if node_type == 'LiteMIRROR_PAD':
+                if in_objs[0].type != 'LiteDEQUANTIZE':
+                    continue
+            elif node_type == 'LiteSQUARED_DIFFERENCE':
+                if len(in_edges) != 2 or any(obj.type != 'LiteDEQUANTIZE' for obj in in_objs):
+                    continue
+            elif node_type == 'LiteRSQRT':
+                if in_objs[0].type != 'LiteDEQUANTIZE':
+                    continue
+            else:
+                WARN('[Parser]: Meets unsupportesrcd Op type(%s) in merge_dqd!' % node_type)
+                continue
+            matched = True
+            for i, (dequant_name, _, k, in_attr) in enumerate(in_edges):
+                if node_type in ['LiteMIRROR_PAD', 'LiteRSQRT'] and i > 0:
+                    continue
+                elif node_type == 'LiteSQUARED_DIFFERENCE' and i > 1:
+                    continue
+                dequant_in_edges = graph.sorted_in_edges(dequant_name, keys=True, data=True)
+                if len(dequant_in_edges) < 1:
+                    ERROR('[Parser]: Meets invalid LiteDEQUANTIZE Op(%s) in merge_dqd!' % dequant_name)
+                    continue
+                dequant_src, _, dequant_k, dequant_in_attr = dequant_in_edges[0]
+                graph.remove_edge(dequant_name, n, key=k)
+                new_dequant_in_attr = copy.deepcopy(dequant_in_attr)
+                new_dequant_in_attr['src_out_port'] = in_attr['src_out_port']
+                graph.add_edge(dequant_src, n, **new_dequant_in_attr)
+
+            _, quant_name, out_attr = out_edges[0]
+            graph.remove_edge(n, quant_name)
+            for _, dst, quant_out_attr in graph.sorted_out_edges(quant_name, data=True):
+                graph.remove_edge(quant_name, dst)
+                graph.add_edge(n, dst, **quant_out_attr)
+
+            node_obj.quantize = True
+        else:
+            ERROR('[Parser]: Meets invalid Op(%s) in merge_dqd!' % n)
+
+    if matched:
+        clear_redundant_nodes(graph)
+
+
 def merge_min_quant_max_to_clip(graph):
     quantize = graph._attr.get('quantize', False)
     if quantize:
