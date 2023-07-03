@@ -110,6 +110,25 @@ def convert_flatten(g, input, start_dim, end_dim):
     return helper._flatten_helper(g, input, start_dim, end_dim, input_rank)
 
 
+@helper.parse_args('v', 'v', 'v', 'v', 'v', 'v')
+def convert_gru_cell(g, input, hidden, w_ih, w_hh, b_ih, b_hh):
+    from torch.onnx.symbolic_opset9 import _generic_rnn
+
+    input = helper._unsqueeze_helper(g, input, [0])
+    hidden = helper._unsqueeze_helper(g, hidden, [0])
+    if helper._is_tensor(b_ih):
+        weight = (w_ih, w_hh, b_ih, b_hh)
+        has_biases = True
+    else:
+        weight = (w_ih, w_hh)
+        has_biases = False
+    _, h_out = _generic_rnn(g, "GRU", input, hidden, weight,
+                            has_biases, num_layers=1, dropout=False,
+                            train=False, bidirectional=False,
+                            batch_first=False)
+    return helper._squeeze_helper(g, h_out, [0])
+
+
 def convert_torch_to_onnx(model_path, params):
     def _export_to_onnx(model,
                         input_tensors,
@@ -197,6 +216,7 @@ def convert_torch_to_onnx(model_path, params):
         for conv_op in ('aten::conv1d', 'aten::conv2d', 'aten::conv3d'):
             torch.onnx.register_custom_op_symbolic(conv_op, convert_conv, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic('aten::flatten', convert_flatten, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic("aten::gru_cell", convert_gru_cell, onnx_opset_version)
     # Only convert prim::DictConstruct to Identity when it's output node.
     dict_nodes = model.graph.findAllNodes('prim::DictConstruct')
     model_output_names = [out.debugName() for out in model.graph.outputs()]

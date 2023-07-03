@@ -848,9 +848,9 @@ class GRUOp(BaseRnnOp, OpHasBiases, OpHasWeights, OnnxOp):
             batch_size, self.time_steps, self.input_size = inputs[0].shape
             init_shape = (batch_size, num_directions, self.hidden_size)
         W, R = inputs[1:3]
-        B = inputs[3] if len(inputs) > 3 else np.zeros(
+        B = inputs[3] if (len(inputs) > 3 and inputs[3] is not None) else np.zeros(
             (num_directions, 6 * self.hidden_size)).astype(inputs[0].dtype)
-        if len(inputs) == 6:
+        if len(inputs) == 6 and inputs[-1] is not None:
             initial_h = inputs[-1]
         else:
             initial_h = np.zeros(init_shape).astype(inputs[0].dtype)
