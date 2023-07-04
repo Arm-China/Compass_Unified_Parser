@@ -1698,7 +1698,8 @@ def fuse_pad(graph):
             pad, op_has_padding = m['begin'], m['end']
             pad_out_edges = graph.sorted_out_edges(pad)
             pad_obj = NodeWrap(graph, pad)['object']
-            if pad_obj is not None:
+            op_has_padding_obj = NodeWrap(graph, op_has_padding)['object']
+            if pad_obj is not None and op_has_padding_obj is not None:
                 if len(pad_out_edges) == 1 and pad_obj.is_fusable():
                     space_pads = pad_obj.space_pads()
                     op_has_padding_obj = NodeWrap(
@@ -1707,7 +1708,13 @@ def fuse_pad(graph):
                     fused_pads = np.reshape(np.array(init_pads, np.int64), newshape=(2, -1)) \
                         + np.reshape(np.array(space_pads, np.int64),
                                      newshape=(2, -1))
-                    op_has_padding_obj.pads = fused_pads.flatten().tolist()
+                    new_pads = fused_pads.flatten().tolist()
+                    if op_has_padding_obj.type == 'AveragePool':
+                        if any(pad != 0 for pad in new_pads) and not op_has_padding_obj.count_include_pad:
+                            # Cannot fuse pad with the op with padding if not all the pads are 0 and count_include_pad is False
+                            continue
+                        op_has_padding_obj.count_include_pad = True
+                    op_has_padding_obj.pads = new_pads
                     op_has_padding_obj.auto_pad = 'NOTSET'
                     pad_in_edges = graph.sorted_in_edges(pad, data=True)
                     src, _, attr = pad_in_edges[0]
