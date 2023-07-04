@@ -356,7 +356,7 @@ def convert_onnx_to_graph(model_path, params):
                                 'src_out_port': in_tensor_out_port, 'dst_in_port': in_port}
                             if pre_op.get('type', '') == 'Constant' and pre_op.get('value', None) is not None:
                                 edge_attr.update({'tensor': Tensor(name=in_tensor_name,
-                                                                   value=pre_op['value']['tensor'],
+                                                                   value=pre_op['value'],
                                                                    is_const=True)}
                                                  )
                             graph.add_edge(pre_op_name, op_name, **edge_attr)
