@@ -259,10 +259,14 @@ def convert_onnx_to_graph(model_path, params):
                 tensor_name_map = {t_name: (port, op_id) for (
                     t_name, port), op_id in out_tensor_operator_map.items()}
 
-                for name in params.get('input_names', []):
-                    if name not in tensor_name_map and name not in [n.get('name', '') for n in nodes]:
-                        FATAL(
-                            '[Parser]: Input name (%s) does not exit in node names or tensor names. Please check config file.' % name)
+                if not inputs:
+                    WARN('[Parser]: The model does not have any inputs! Ignore input names from config file.')
+                    params['input_names'] = []
+                else:
+                    for name in params.get('input_names', []):
+                        if name not in tensor_name_map and name not in [n.get('name', '') for n in nodes]:
+                            FATAL(
+                                '[Parser]: Input name (%s) does not exit in node names or tensor names. Please check config file.' % name)
 
                 anchor_tensors = params.get('anchor_tensor_name', [])
                 anchor_tensors_value = []

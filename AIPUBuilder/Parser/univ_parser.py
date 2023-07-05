@@ -138,7 +138,7 @@ def univ_parser(params):
                         if has_path(graph, input_name, output_name):
                             has_path_flag = True
                             break
-                    if has_path_flag is False:
+                    if has_path_flag is False and len(input_names) > 0:
                         ERROR('[Parser]: Graph is not a connected one!')
 
                 '''Gives a 'may be time consuming' hint for huge models.'''

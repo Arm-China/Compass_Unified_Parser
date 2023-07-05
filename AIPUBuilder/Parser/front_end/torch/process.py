@@ -65,12 +65,12 @@ def convert_conv(g, input, weight, bias, stride, padding, dilation, groups):
 
     kwargs = {'kernel_shape_i': kernel_shape, 'strides_i': stride, 'dilations_i': dilation, 'group_i': groups}
 
-    str_padding = helper._parse_arg(padding, "s")
+    str_padding = helper._parse_arg(padding, 's')
     if str_padding in ('valid', 'same'):
         auto_pad = 'VALID' if str_padding == 'valid' else 'SAME_UPPER'
         kwargs.update({'auto_pad_s': auto_pad})
     else:
-        padding = helper._parse_arg(padding, "is")
+        padding = helper._parse_arg(padding, 'is')
         padding = padding + padding
         kwargs.update({'pads_i': padding})
 
@@ -122,11 +122,45 @@ def convert_gru_cell(g, input, hidden, w_ih, w_hh, b_ih, b_hh):
     else:
         weight = (w_ih, w_hh)
         has_biases = False
-    _, h_out = _generic_rnn(g, "GRU", input, hidden, weight,
+    _, h_out = _generic_rnn(g, 'GRU', input, hidden, weight,
                             has_biases, num_layers=1, dropout=False,
                             train=False, bidirectional=False,
                             batch_first=False)
     return helper._squeeze_helper(g, h_out, [0])
+
+
+def convert_to_bool(g, input):
+    input_dtype_str = input.type().scalarType()
+    if input_dtype_str != 'Bool':
+        input = g.op('Cast', input, to_i=torch._C._onnx.TensorProtoDataType.BOOL)
+    return input
+
+
+def convert_logical(g, input, other=None, op_type=''):
+    assert len(op_type) > 0, 'Meets empty op_type in convert_logical!'
+    if other is None:
+        return g.op(op_type, convert_to_bool(g, input))
+    return g.op(op_type, convert_to_bool(g, input), convert_to_bool(g, other))
+
+
+@helper.parse_args('v')
+def convert_logical_not(g, input):
+    return convert_logical(g, input, op_type='Not')
+
+
+@helper.parse_args('v', 'v')
+def convert_equal(g, input, other):
+    '''torch equal op is different with logical equal op. It returns scalar
+    True if two tensors have the same size and elements, False otherwise.
+    '''
+    input_shape = helper._get_tensor_sizes(input)
+    other_shape = helper._get_tensor_sizes(other)
+    if input_shape != other_shape:
+        return g.op('Constant', value_t=torch.tensor(False))
+    equal = convert_logical(g, input, other, 'Equal')
+    not_equal = g.op('Not', equal)
+    reduce_sum = g.op('ReduceSum', not_equal, keepdims_i=0)
+    return g.op('Not', reduce_sum)
 
 
 def convert_torch_to_onnx(model_path, params):
@@ -215,8 +249,12 @@ def convert_torch_to_onnx(model_path, params):
         # Refer to https://github.com/pytorch/pytorch/pull/89107
         for conv_op in ('aten::conv1d', 'aten::conv2d', 'aten::conv3d'):
             torch.onnx.register_custom_op_symbolic(conv_op, convert_conv, onnx_opset_version)
+        # The issue of logical_not is fixed in latest torch.
+        # Refer to https://github.com/pytorch/pytorch/pull/96315
+        torch.onnx.register_custom_op_symbolic('aten::logical_not', convert_logical_not, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic('aten::equal', convert_equal, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic('aten::flatten', convert_flatten, onnx_opset_version)
-    torch.onnx.register_custom_op_symbolic("aten::gru_cell", convert_gru_cell, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic('aten::gru_cell', convert_gru_cell, onnx_opset_version)
     # Only convert prim::DictConstruct to Identity when it's output node.
     dict_nodes = model.graph.findAllNodes('prim::DictConstruct')
     model_output_names = [out.debugName() for out in model.graph.outputs()]
