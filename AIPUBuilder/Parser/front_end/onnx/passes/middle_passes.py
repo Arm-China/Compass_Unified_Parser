@@ -6879,6 +6879,8 @@ def rename_reshape_like(graph):
 
 
 def remove_redundant_mul(graph):
+    if graph._attr.get('quantize', False):
+        return
     matched = False
     matches = matched_patterns(graph,
                                nodes=[('const1', {'op': 'Constant'}),
@@ -6902,7 +6904,7 @@ def remove_redundant_mul(graph):
             continue
         matched = True
         src, src_attr = src_to_mul1_edge[0]
-        new_const_value = node_objs['const1'].value * node_objs['const2'].value
+        new_const_value = np.array(node_objs['const1'].value * node_objs['const2'].value)
         const_to_mul2_in_port = 1 - src_attr['dst_in_port']
 
         graph.remove_edges_from(mul2_in_edges)
