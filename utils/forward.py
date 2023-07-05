@@ -232,6 +232,7 @@ def opt_forward(txt_path, bin_path, feed_dict, output_names=None, save_output=Tr
         txt_content = f.read()
         in_match = re.search(r'input_tensors=\[(\S+)\]', txt_content)
         out_match = re.search(r'output_tensors=\[(\S+)\]', txt_content)
+    input_names = []
     if in_match and in_match.group(0) and in_match.group(1):
         input_names = in_match.group(1).rsplit(',')
     # The order of inputs matters for opt forward. Update feed_dict to match input order in IR.

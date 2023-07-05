@@ -1098,6 +1098,42 @@ def convert_upsample_to_resize(graph):
                 '[Parser]: Meets invalid Upsample Op (%s) in convert_upsample_to_resize!' % upsample)
 
 
+def convert_special_cast(graph):
+    '''Convert Cast op whose dst type is 'bool' to Equal(B=0)+Not instead of uint8
+    because convertting to uint8 may cause similarity issue.
+    For example, float 256.0 becomes 0 if converted to uint8(truncate) but expects
+    True if converted to bool.
+    '''
+    matches = single_node_matcher(graph, 'Cast')
+    for m in matches:
+        cast = m['target']
+        cast_obj = NodeWrap(graph, cast)['object']
+        if cast_obj is None:
+            ERROR('[Parser]: Meets invalid Cast Op (%s) in convert_special_cast!' % cast)
+            continue
+        if cast_obj.to != 'bool':
+            continue
+        cast_in_edges = graph.sorted_in_edges(cast, data=True)
+        src, _, in_attr = cast_in_edges[0]
+        if len(cast_in_edges) < 1 or in_attr['tensor'] is None or in_attr['tensor'].value is None:
+            ERROR('[Parser]: Meets invalid input of Cast Op (%s) in convert_special_cast!' % cast)
+            continue
+        graph.remove_edges_from(cast_in_edges)
+
+        equal_node = get_valid_node_name(graph, cast + '_equal')
+        graph.add_edge(src, equal_node, **in_attr)
+        input_value = in_attr['tensor'].value
+        const_zeros_value = np.zeros_like(input_value)
+        insert_constant(graph, equal_node + '_zeros', const_zeros_value, equal_node, in_port=1)
+        equal_out_attr = {'tensor': Tensor(value=np.equal(input_value, const_zeros_value))}
+        graph.add_edge(equal_node, cast, **equal_out_attr)
+
+        NodeWrap(graph, equal_node).replace_obj('Equal', {'name': equal_node, 'opset_version': 13})
+        cast_attr = cast_obj.copied_attr()
+        cast_attr.update({'opset_version': 1})
+        NodeWrap(graph, cast).replace_obj('Not', cast_attr)
+
+
 def convert_special_resize(graph):
     matches = single_node_matcher(graph, 'Resize')
     for m in matches:
@@ -8174,6 +8210,7 @@ def middle_passes(graph, params):
     convert_upsample_to_resize(graph)
     convert_special_resize(graph)
     convert_special_scatternd(graph)
+    convert_special_cast(graph)
     convert_global_pool(graph)
     # merge_l2pool(graph)
     convert_special_clip_to_relu(graph)
