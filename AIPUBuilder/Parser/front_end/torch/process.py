@@ -9,6 +9,7 @@ import onnx
 import torch
 import torch.onnx.symbolic_helper as helper
 from multiprocessing import Process
+from .utils import get_tuple_from_tensor_type
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 from ...common.utils import get_version
 
@@ -267,7 +268,7 @@ def convert_torch_to_onnx(model_path, params):
 
     # Get input_tensors and input_names
     input_names = []
-    input_tensors = ()
+    tensor_list = []
     input_info_dict = copy.deepcopy(params['input_shapes'])
     input_dtype = params['input_dtype']
     for idx, (input_name, input_shape) in enumerate(input_info_dict.items()):
@@ -289,7 +290,14 @@ def convert_torch_to_onnx(model_path, params):
             tensor = torch.randn(input_shape, dtype=tensor_dtype)
         else:
             tensor = torch.zeros(input_shape, dtype=tensor_dtype)
-        input_tensors += (tensor, )
+        tensor_list.append(tensor)
+
+    input_tensors = ()
+    input_index = 0
+    for inp in model.graph.inputs():
+        tensors, input_index = get_tuple_from_tensor_type(inp.type(), tensor_list, input_index)
+        if len(tensors) > 0:
+            input_tensors += tensors
 
     # Get output_names. When the output is a tuple, it's actually multiple outputs constructed in that tuple.
     output_names = []
