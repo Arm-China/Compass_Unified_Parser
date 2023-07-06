@@ -180,12 +180,27 @@ def tflite_forward(model_path, feed_dict, output_names=None, save_output=True):
 
 def torch_forward(model_path, ordered_feed_dict, output_names=None, save_output=True):
     import torch
+    from AIPUBuilder.Parser.front_end.torch.utils import get_tuple_from_tensor_type
+
+    def _flat_outputs(data):
+        outputs = []
+        if isinstance(data, tuple):
+            for nested_data in data:
+                outputs.extend(_flat_outputs(nested_data))
+        else:
+            outputs.append(data)
+        return outputs
 
     model = torch.jit.load(model_path)
     inputs = [torch.tensor(inp) for inp in ordered_feed_dict.values()]
-    out_tensors = model(*inputs)
-    if not isinstance(out_tensors, (list, tuple)):
-        out_tensors = [out_tensors]
+    input_tensors = ()
+    input_index = 0
+    for inp in model.graph.inputs():
+        tensors, input_index = get_tuple_from_tensor_type(inp.type(), inputs, input_index)
+        if len(tensors) > 0:
+            input_tensors += tensors
+    out_tensors = model(*input_tensors)
+    out_tensors = _flat_outputs(out_tensors)
 
     if output_names is None:
         # graph = model.graph
