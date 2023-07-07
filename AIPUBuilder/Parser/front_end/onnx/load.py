@@ -19,7 +19,7 @@ onnx_source_map = {
     '': Framework.NONE,
     'keras2onnx': Framework.TENSORFLOW,
     'onnxmltools': Framework.COREML,
-    'pytroch': Framework.TORCH,
+    'pytorch': Framework.TORCH,
     'tf2onnx': Framework.TENSORFLOW
 
 }
@@ -191,13 +191,22 @@ def convert_onnx_to_graph(model_path, params):
             model_attr = get_model_content(model)
             params['source'] = onnx_source_map.get(
                 model_attr['producer_name'].lower(), Framework.NONE)
-            try:
-                opset_ver = model_attr['opset_import'][0]['version']
-            except:
+            opset_ver = None
+            opset_import_map = dict()
+            for version_dict in model_attr['opset_import']:
+                domain = version_dict.get('domain', '')
+                version = version_dict.get('version', None)
+                assert version is not None and version > 0, \
+                    'Meets invalid version for domain %s of opset_import in convert_onnx_to_graph!' % domain
+                if not domain or domain == 'ai.onnx':
+                    opset_ver = version
+                else:
+                    opset_import_map[domain] = version
+            if opset_ver is None:
                 WARN('[Parser]: Meets empty opset_import in convert_onnx_to_graph! Please check model file.')
                 opset_ver = get_opset_version(consumer_ver)
                 WARN('[Parser]: Try to use suggested opset version(%s) for current Onnx!' % opset_ver)
-            graph._attr['opset_version'] = opset_ver
+            graph._attr['opset_version'] = max([opset_ver] + list(opset_import_map.values()))
             g = model.graph
             if len(g.node) > 0:
                 g_content = get_graph_content(g)
@@ -280,8 +289,15 @@ def convert_onnx_to_graph(model_path, params):
                 in_tensor_names = set()
                 for ni, node in enumerate(nodes):
                     op_attr = {k: v for k, v in node.items()}
+                    domain = op_attr.get('domain', '')
+                    if not domain or domain == 'ai.onnx':
+                        opset_version = opset_ver
+                    else:
+                        assert domain in opset_import_map, \
+                            'Meets domain(%s) with unknown opset version in convert_onnx_to_graph!' % domain
+                        opset_version = opset_import_map[domain]
                     op_attr.update({'data_format': params.get('input_data_format', 'NCHW'),
-                                    'opset_version': opset_ver
+                                    'opset_version': opset_version
                                     })
                     attr_value_converter(
                         op_attr, params['source'], root_graph_info=root_info)
