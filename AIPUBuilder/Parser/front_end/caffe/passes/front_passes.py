@@ -280,6 +280,21 @@ def convert_pool(graph):
                         and pool_obj.pad_h == 0 \
                         and pool_obj.pad_w == 0:
                     count_include_pad = 0
+                elif any(int(s) != 1 for s in pool_obj.strides):
+                    pad_node = get_valid_node_name(graph, pool + '_pre_pad')
+                    pool_in_edges = graph.sorted_in_edges(pool, data=True)
+                    if len(pool_in_edges) < 1:
+                        ERROR('[Parser]: Meets invalid inputs of CaffePOOLING (%s) in convert_pool!' % pool)
+                        continue
+                    src, _, in_attr = pool_in_edges[0]
+                    graph.remove_edges_from(pool_in_edges)
+                    graph.add_edge(src, pad_node, **in_attr)
+                    graph.add_edge(pad_node, pool)
+                    paddings = [0, 0] + pool_obj.pads[:2] + [0, 0] + pool_obj.pads[2:]
+                    pad_attr = {'name': pad_node, 'opset_version': 1, 'paddings': paddings, 'data_format': 'NCHW'}
+                    NodeWrap(graph, pad_node).replace_obj('Pad', pad_attr)
+                    new_node_attr.update({'pads': [0] * len(pool_obj.pads)})
+                    count_include_pad = 0
                 else:
                     count_include_pad = 1
                 new_node_attr.update({'count_include_pad': count_include_pad})
