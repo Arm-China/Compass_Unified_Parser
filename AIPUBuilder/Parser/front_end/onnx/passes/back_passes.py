@@ -4471,7 +4471,8 @@ def sink_transpose_through_special_reshape(graph):
                 continue
             reshape_in_shape = reshape_obj.get_input_shapes()[0]
             reshape_out_shape = reshape_obj.get_output_shapes()[0]
-            if 1 not in reshape_in_shape and 1 not in reshape_out_shape:
+            if reshape_in_shape is None or reshape_out_shape is None \
+                    or (1 not in reshape_in_shape and 1 not in reshape_out_shape):
                 continue
             shape_len_diff = len(reshape_in_shape) - len(reshape_out_shape)
             if abs(shape_len_diff) != 1:
