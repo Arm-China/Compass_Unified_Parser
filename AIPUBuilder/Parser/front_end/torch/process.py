@@ -78,6 +78,26 @@ def convert_bitshift_right(g, input, other):
     return convert_bitshift(g, input, other, 'RIGHT')
 
 
+@helper.parse_args('v', 'v')
+def convert_bitwise_and(g, input, other):
+    return g.op('opset_18::BitwiseAnd', input, other)
+
+
+@helper.parse_args('v')
+def convert_bitwise_not(g, input):
+    return g.op('opset_18::BitwiseNot', input)
+
+
+@helper.parse_args('v', 'v')
+def convert_bitwise_or(g, input, other):
+    return g.op('opset_18::BitwiseOr', input, other)
+
+
+@helper.parse_args('v', 'v')
+def convert_bitwise_xor(g, input, other):
+    return g.op('opset_18::BitwiseXor', input, other)
+
+
 @helper.parse_args('v', 'i')
 def convert_channel_shuffle(g, input, groups):
     return g.op('custom::ChannelShuffle', input, group_i=groups)
@@ -281,7 +301,8 @@ def convert_torch_to_onnx(model_path, params):
                           input_names=input_names,
                           output_names=output_names,
                           opset_version=onnx_opset_version,
-                          training=torch._C._onnx.TrainingMode.PRESERVE)
+                          training=torch._C._onnx.TrainingMode.PRESERVE,
+                          custom_opsets={'opset_18': 18})
         return
 
     def _flatten_type(torch_type):
@@ -367,6 +388,17 @@ def convert_torch_to_onnx(model_path, params):
         torch.onnx.register_custom_op_symbolic(
             'aten::logical_not', convert_logical_not, onnx_opset_version)
 
+    if onnx_opset_version < 18:
+        # The lowest version of onnx BitwiseAnd/Not/Or/Xor is 18
+        # (onnx_opset_version is 16 for torch 1.12.0).
+        torch.onnx.register_custom_op_symbolic(
+            'aten::bitwise_and', convert_bitwise_and, onnx_opset_version)
+        torch.onnx.register_custom_op_symbolic(
+            'aten::bitwise_not', convert_bitwise_not, onnx_opset_version)
+        torch.onnx.register_custom_op_symbolic(
+            'aten::bitwise_or', convert_bitwise_or, onnx_opset_version)
+        torch.onnx.register_custom_op_symbolic(
+            'aten::bitwise_xor', convert_bitwise_xor, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::bitwise_left_shift', convert_bitshift_left, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(

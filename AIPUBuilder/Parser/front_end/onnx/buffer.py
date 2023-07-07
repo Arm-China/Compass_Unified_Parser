@@ -170,7 +170,8 @@ def get_node_content(node_proto):
 
     ret = {'type': node_proto.op_type,
            'input': list(map(parse_proto_name, node_proto.input)),
-           'output': output
+           'output': output,
+           'domain': node_proto.domain,
            }
     ret.update(name_info)
     ret.update({attr.name: get_attribute_content(attr)
