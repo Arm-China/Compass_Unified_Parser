@@ -12,6 +12,28 @@ from multiprocessing import Process
 from .utils import get_tuple_from_tensor_type
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 from ...common.utils import get_version
+from ...common.defs import FLOAT_EQUAL
+
+
+def convert_add_sub(g, input, other, alpha, op_type):
+    if alpha and not FLOAT_EQUAL(helper._maybe_get_const(alpha, 'f'), 1):
+        other = g.op('Mul', other, alpha)
+    return g.op(op_type, input, other)
+
+
+@helper.parse_args('v', 'v', 'v')
+def convert_add(g, input, other, alpha=None):
+    return convert_add_sub(g, input, other, alpha, 'Add')
+
+
+@helper.parse_args('v', 'v', 'v')
+def convert_rsub(g, input, other, alpha=None):
+    return convert_add_sub(g, other, input, alpha, 'Sub')
+
+
+@helper.parse_args('v', 'v', 'v')
+def convert_sub(g, input, other, alpha=None):
+    return convert_add_sub(g, input, other, alpha, 'Sub')
 
 
 def convert_argmax_argmin(g, input, dim, keepdim, op_type):
@@ -245,6 +267,11 @@ def convert_torch_to_onnx(model_path, params):
         # Refer to https://github.com/pytorch/pytorch/pull/79503
         torch.onnx.register_custom_op_symbolic('aten::argmax', convert_argmax, onnx_opset_version)
         torch.onnx.register_custom_op_symbolic('aten::argmin', convert_argmin, onnx_opset_version)
+        # The alpha issue of add/sub/rsub is fixed in torch 2.0.1.
+        # Refer to https://github.com/pytorch/pytorch/pull/81736
+        torch.onnx.register_custom_op_symbolic('aten::add', convert_add, onnx_opset_version)
+        torch.onnx.register_custom_op_symbolic('aten::rsub', convert_rsub, onnx_opset_version)
+        torch.onnx.register_custom_op_symbolic('aten::sub', convert_sub, onnx_opset_version)
     if torch_version < '2.1.0':
         # The issue of string padding is fixed in latest torch.
         # Refer to https://github.com/pytorch/pytorch/pull/89107
