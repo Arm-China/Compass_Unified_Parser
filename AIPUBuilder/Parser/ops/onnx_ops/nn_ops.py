@@ -461,6 +461,86 @@ class ConvTransposeOp(BaseDeconvOp, OnnxOp):
         self.set_out_tensor(out_tensor)
 
 
+class DeformConvOp(BaseConvOp, OnnxOp):
+    @classmethod
+    def attributes(cls):
+        return {19: {'offset_group': {'type': AttrType.INT, 'default': 1}},
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(DeformConvOp, self).__init__(graph, attr_dict)
+        self.update_attributes(DeformConvOp, attr_dict)
+        assert self.check_required(), 'DeformConvOp is missing a required parameter.'
+
+    @staticmethod
+    def gen_offset_base(weights_shape, offset_shape, kernel_shape, strides, dilations, pads):
+        '''Calculate coordinates of sampling points within kernel.
+        '''
+        n = offset_shape[0]
+        oc = weights_shape[0]
+        oh, ow = offset_shape[-2:]
+        kh, kw = kernel_shape
+        sth, stw = strides
+        dh, dw = dilations
+        kh_new, kw_new = (kh - 1) * dh + 1, (kw - 1) * dw + 1
+        bh, bw = -pads[0], -pads[1]
+
+        kernel_pos_w, kernel_pos_h = np.meshgrid(np.arange(0, kw_new, dw), np.arange(0, kh_new, dh))
+        kernel_pos = np.stack([kernel_pos_h, kernel_pos_w], axis=2)  # shape: [kh, kw, 2]
+
+        kernel_offset = np.zeros([oh, ow, kh, kw, 2])
+        for i in range(oh):
+            h_coord = bh + sth * i
+            for j in range(ow):
+                w_coord = bw + stw * j
+                kernel_offset[i, j] = kernel_pos[:, :] + [h_coord, w_coord]
+
+        # reshape from [oh, ow, kh, kw, 2] to [oh, ow, kh*kw, 2]
+        kernel_offset = np.reshape(kernel_offset, [oh, ow, kh*kw, 2])
+        kernel_offset = np.transpose(kernel_offset, [2, 3, 0, 1])  # shape: [kh*kw, 2, oh, ow]
+        kernel_offset = np.tile(kernel_offset, [n, 1, 1, 1])  # shape: [n*kh*kw, 2, oh, ow]
+
+        return kernel_offset
+
+    def infer_shape(self):
+        super(DeformConvOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        assert len(inputs) >= 3, 'Expects at least 3 inputs for DeformConvOp but got %d' % len(inputs)
+        input_dim = len(inputs[0].shape)
+        in_c = inputs[0].shape[-1] if self.data_format == 'NHWC' else inputs[0].shape[1]
+        self.weights = inputs[1]
+        if self.weights.shape[1] * self.group != in_c:
+            ERROR(
+                '[Parser]: Meets invalid weights shape or input shape for DeformConvOp (%s)!' % self.name)
+        self.num_output = self.weights.shape[0]
+        self.biases = inputs[3] if (len(inputs) > 3 and inputs[3]
+                                    is not None) else np.zeros(self.num_output, np.float32)
+        if self.kernel_shape is None:
+            self.kernel_shape = list(self.weights.shape[2:])
+        if self.data_format == 'NHWC':
+            spatial_in_shape = inputs[0].shape[1:-1]
+            out_shape = BaseConvOp.cal_out_shape(spatial_in_shape,
+                                                 self.pads,
+                                                 self.strides,
+                                                 self.kernel_shape,
+                                                 self.auto_pad,
+                                                 dilations=self.dilations,
+                                                 data_format='NHWC')
+            out_shape = [inputs[0].shape[0]] + out_shape + [self.num_output]
+        else:
+            spatial_in_shape = inputs[0].shape[2:]
+            out_shape = BaseConvOp.cal_out_shape(spatial_in_shape,
+                                                 self.pads,
+                                                 self.strides,
+                                                 self.kernel_shape,
+                                                 self.auto_pad,
+                                                 dilations=self.dilations,
+                                                 data_format='NCHW')
+            out_shape = [inputs[0].shape[0], self.num_output] + out_shape
+        out_tensor = np.random.ranf(size=out_shape).astype(inputs[0].dtype)
+        self.set_out_tensor(out_tensor)
+
+
 class DropoutOp(OpHasVariableOutPorts, OnnxOp):
     @classmethod
     def attributes(cls):

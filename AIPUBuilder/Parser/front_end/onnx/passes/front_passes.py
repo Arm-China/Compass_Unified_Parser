@@ -31,7 +31,7 @@ def fuse_weights_const(graph):
             continue
         in_edges = graph.sorted_in_edges(node_name, keys=True, data=True)
         if isinstance(node_obj, OpHasWeights) and isinstance(node_obj, OpHasBiases):
-            if node_obj.type in ('GRU', 'LSTM', 'QLinearConv'):
+            if node_obj.type in ('GRU', 'LSTM', 'QLinearConv', 'DeformConv'):
                 continue
             if node_obj.type == 'LiteTRANSPOSE_CONV' \
                     or node_obj.type == 'LiteCONV_3D_TRANSPOSE':
