@@ -24,8 +24,11 @@ def fuse_const(graph):
         node_name = m['target']
         if node_name in graph.nodes:
             node_obj = NodeWrap(graph, node_name)['object']
-            if node_obj is not None \
-                    and not isinstance(node_obj, ConstLikeOp) \
+            if node_obj is None:
+                ERROR(
+                    '[Parser]: Meets invalid Node (%s) in fuse_const!' % node_name)
+                continue
+            if not isinstance(node_obj, ConstLikeOp) \
                     and isinstance(node_obj, OpHasOneOutPort) \
                     and node_obj.is_all_inputs_const():
                 out_edge = graph.sorted_out_edges(node_name, data=True)
@@ -43,6 +46,12 @@ def fuse_const(graph):
                         'Constant', const_attr)
                     in_edges = graph.sorted_in_edges(node_name)
                     graph.remove_edges_from(in_edges)
+            elif node_obj.type == 'Constant':
+                value_dtype = str(node_obj.value.dtype)
+                if value_dtype == 'int64':
+                    node_obj.value = node_obj.value.astype(np.int32)
+                elif value_dtype == 'float64':
+                    node_obj.value = node_obj.value.astype(np.float32)
     clear_redundant_nodes(graph)
 
 

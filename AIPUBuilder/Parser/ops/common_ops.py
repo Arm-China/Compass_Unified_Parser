@@ -527,6 +527,40 @@ class MeshgridOp(OpHasMultipleOutPorts, CommonOp):
         self.set_out_tensor(out_tensors)
 
 
+class MMCVModulatedDeformConv2dOp(BaseConvOp, OnnxOp):
+    @classmethod
+    def attributes(cls):
+        return {1: {'stride': {'type': AttrType.INTS, 'required': True},
+                    'dilation': {'type': AttrType.INTS, 'required': True},
+                    'padding': {'type': AttrType.INTS, 'required': True},
+                    'groups': {'type': AttrType.INT, 'default': 1},
+                    'deform_groups': {'type': AttrType.INT, 'default': 1}},
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(MMCVModulatedDeformConv2dOp, self).__init__(graph, attr_dict)
+        self.update_attributes(MMCVModulatedDeformConv2dOp, attr_dict)
+        assert self.check_required(), 'MMCVModulatedDeformConv2dOp is missing a required parameter.'
+        self.group = self.groups
+        assert len(self.padding) in (2, 4), 'Expects the length of padding is 2 or 4, but got %d' % len(self.padding)
+        self.pads = self.padding * 2 if len(self.padding) == 2 else self.padding
+        self.dilations = self.dilation
+        self.strides = self.stride
+
+    def infer_shape(self):
+        super(MMCVModulatedDeformConv2dOp, self).infer_shape()
+        inputs = self.get_input_tensors()  # input, offset, mask, weight, bias(optional)
+        assert len(inputs) >= 4, 'Expects at least 4 inputs for MMCVModulatedDeformConv2dOp but got %d' % len(inputs)
+        batch = inputs[0].shape[0]
+        num_output = inputs[3].shape[0]
+        if self.data_format == 'NHWC':
+            out_shape = [batch] + list(inputs[1].shape[1:-1]) + [num_output]
+        else:
+            out_shape = [batch, num_output] + list(inputs[1].shape[2:])
+        out_tensor = np.random.ranf(size=out_shape).astype(inputs[0].dtype)
+        self.set_out_tensor(out_tensor)
+
+
 class MomentsOp(OpHasMultipleOutPorts, OpHasAxis, CommonOp):
     def infer_shape(self):
         super(MomentsOp, self).infer_shape()
