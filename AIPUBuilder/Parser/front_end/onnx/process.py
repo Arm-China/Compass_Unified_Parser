@@ -6,7 +6,7 @@ from .load import convert_onnx_to_graph
 from ...graph.graph_algo import infer
 from .passes.front_passes import fuse_weights_const, convert_special_prelu, merge_qconv, merge_qmatmul, \
     merge_q_multiple, merge_q_unary, convert_special_sequence_construct, merge_sequence_construct_and_at, \
-    decompose_loop, merge_rcnn
+    decompose_loop, merge_rcnn, convert_mmcv_deform_conv
 from .passes.common_passes import remove_useless_op, apply_subgraph_plugin, record_output_tensors, fuse_const
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 
@@ -32,6 +32,7 @@ def process_onnx(model_path, params):
                               'HardSwish', 'HardSigmoid', 'LeakyRelu', 'LRN', 'MaxPool',
                               'ReduceMean', 'Relu', 'Reshape', 'Slice', 'Sigmoid', 'Transpose',
                               ])
+        convert_mmcv_deform_conv(graph)
 
         fuse_weights_const(graph)
         convert_special_prelu(graph)

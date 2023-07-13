@@ -386,6 +386,39 @@ def convert_deconv(graph):
             NodeWrap(graph, deconv).replace_obj('ConvTranspose', attrs)
 
 
+def convert_mmcv_deform_conv(graph):
+    matches = single_node_matcher(graph, 'MMCVModulatedDeformConv2d')
+    for m in matches:
+        deform_conv = m['target']
+        deform_conv_obj = NodeWrap(graph, deform_conv)['object']
+        in_edges = graph.sorted_in_edges(deform_conv, data=True)
+        if deform_conv_obj is None or len(in_edges) < 4:
+            ERROR('[Parser]: Meets invalid MMCVModulatedDeformConv2d Op(%s) in convert_mmcv_deform_conv!' % deconv)
+            continue
+        graph.remove_edges_from(in_edges[1:])
+        # inputs of MMCVModulatedDeformConv2d: input, offset, mask, weight, bias(optional)
+        offset, _, offset_in_attr = in_edges[1]
+        mask, _, mask_in_attr = in_edges[2]
+        weight, _, weight_in_attr = in_edges[3]
+        # inputs of onnx DeformConv: input, weight, offset, bias, mask
+        weight_in_attr.update({'dst_in_port': 1})
+        graph.add_edge(weight, deform_conv, **weight_in_attr)
+        offset_in_attr.update({'dst_in_port': 2})
+        graph.add_edge(offset, deform_conv, **offset_in_attr)
+        if len(in_edges) > 4:
+            bias, _, bias_in_attr = in_edges[4]
+            bias_in_attr.update({'dst_in_port': 3})
+            graph.add_edge(bias, deform_conv, **bias_in_attr)
+        else:
+            bias_value = np.zeros(deform_conv_obj.num_output, np.float32)
+            insert_constant(graph, deform_conv + '_bias', bias_value, deform_conv, in_port=3)
+        mask_in_attr.update({'dst_in_port': 4})
+        graph.add_edge(mask, deform_conv, **mask_in_attr)
+        deform_conv_attr = deform_conv_obj.copied_attr()
+        deform_conv_attr.update({'offset_group': deform_conv_obj.deform_groups, 'opset_version': 19})
+        NodeWrap(graph, deform_conv).replace_obj('DeformConv', deform_conv_attr)
+
+
 def merge_qconv(graph):
     if not graph._attr.get('quantize', False):
         return
