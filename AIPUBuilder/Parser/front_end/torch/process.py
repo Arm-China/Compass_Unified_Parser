@@ -204,6 +204,22 @@ def convert_cumprod(g, input, dim, dtype):
     return g.op('custom::CumProd', input, axis_i=dim)
 
 
+@helper.parse_args('v', 'v', 'v', 'v', 'v', 'i', 'i', 'i', 'i', 'i', 'i', 'i', 'i', 'b')
+@helper.quantized_args(True, True, True, True, True, False, False, False, False, False, False, False, False, False)
+def convert_deform_conv(g, input, weight, offset, mask, bias,
+                        stride_h, stride_w, pad_h, pad_w, dilation_h, dilation_w,
+                        n_weight_grps, n_offset_grps, use_mask):
+    pads = [pad_h, pad_w] * 2
+    weight_shape = helper._get_tensor_sizes(weight)
+    kernel_shape = weight_shape[2:]
+    if not use_mask:
+        mask = g.op('Constant', value_t=torch.tensor([], dtype=torch.float32))
+    return g.op('opset_19::DeformConv', input, weight, offset, bias, mask,
+                dilations_i=[dilation_h, dilation_w], kernel_shape_i=kernel_shape,
+                pads_i=pads, strides_i=[stride_h, stride_w],
+                group_i=n_weight_grps, offset_group_i=n_offset_grps)
+
+
 @helper.parse_args('s', 'v', 's', 'v')
 def convert_dict_construct(g, key_0, value_0, key_1=None, value_1=None):
     keys = ', '.join([key_0] + ([] if key_1 is None else [key_1]))
@@ -800,7 +816,7 @@ def convert_torch_to_onnx(model_path, params):
                           output_names=output_names,
                           opset_version=onnx_opset_version,
                           training=torch._C._onnx.TrainingMode.PRESERVE,
-                          custom_opsets={'opset_11': 11, 'opset_18': 18})
+                          custom_opsets={'opset_11': 11, 'opset_18': 18, 'opset_19': 19})
         return
 
     def _flatten_type(torch_type):
@@ -922,6 +938,9 @@ def convert_torch_to_onnx(model_path, params):
         # The lowest version of onnx Col2Im is 18.
         torch.onnx.register_custom_op_symbolic(
             'aten::col2im', convert_col2im, onnx_opset_version)
+    if onnx_opset_version < 19:
+        torch.onnx.register_custom_op_symbolic(
+            'torchvision::deform_conv2d', convert_deform_conv, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::avg_pool1d', convert_avg_pool1d, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(

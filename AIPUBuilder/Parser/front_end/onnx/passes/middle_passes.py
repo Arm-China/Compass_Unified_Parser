@@ -16,6 +16,7 @@ from ....graph.graph_algo import get_valid_node_name, clear_redundant_nodes, det
 from ....ops.op import Op, BaseLinearOp, BaseConvOp, BaseDeconvOp, BaseOnnxPoolOp, OpHasOneOutPort, OpHasPaddingStrides, OpHasAxis, \
     OnnxOp, CommonOp, OpNeedBroadcast, OpNeedUniBroadcast, OnnxReduceOp
 from ....ops.onnx_ops.array_ops import ReshapeOp, CenterCropPadOp
+from ....ops.onnx_ops.nn_ops import DeformConvOp
 from .common_passes import fuse_const, remove_useless_op, remove_node_safely, insert_reshape, insert_reshape_after, \
     insert_cast, insert_constant, insert_slice, insert_slice_after, insert_tile, insert_transpose, insert_transpose_after, \
     remove_redundant_reshape, remove_redundant_transpose, insert_cast_sub_mul_for_quant, insert_mul_add_cast_after_for_dequant, \
@@ -7895,6 +7896,155 @@ def split_conv_transpose(graph):
         conv_trans_obj.output_padding = [0] * spatial_rank
 
 
+def split_deformable_conv(graph):
+    matches = single_node_matcher(graph, 'DeformConv')
+    for m in matches:
+        deform_conv = m['target']
+        deform_conv_obj = NodeWrap(graph, deform_conv)['object']
+        in_edges = graph.sorted_in_edges(deform_conv, data=True)
+        input_shapes = deform_conv_obj.get_input_shapes()
+        if deform_conv_obj is None or len(in_edges) < 3 or len(input_shapes) < 3:
+            ERROR(
+                '[Parser]: Meets invalid DeformConv (%s) in split_deformable_conv!' % deform_conv)
+            continue
+        weights_tensor = in_edges[1][2]['tensor']
+        if weights_tensor is None or not weights_tensor.is_const or weights_tensor.value is None:
+            WARN('[Parser]: Meets unsupported non-constant weights of DeformConv (%s) in split_deformable_conv!' % deform_conv)
+            continue
+        if len(in_edges) > 3:
+            biases_tensor = in_edges[3][2]['tensor']
+            if biases_tensor is None or not biases_tensor.is_const:
+                WARN('[Parser]: Meets unsupported non-constant biases of DeformConv (%s) in split_deformable_conv!' % deform_conv)
+                continue
+        weights = weights_tensor.value
+        if any((shape is None or None in shape or len(shape) != 4) for shape in input_shapes[:3]):
+            ERROR(
+                '[Parser]: Meets unsupported input shapes of DeformConv (%s) in split_deformable_conv!' % deform_conv)
+            continue
+        data_format = deform_conv_obj.data_format
+        if not data_format.startswith('NC'):
+            WARN('[Parser]: Meets unsupported data format of DeformConv (%s) in split_deformable_conv!' % deform_conv)
+            continue
+        group = deform_conv_obj.group
+        offset_group = deform_conv_obj.offset_group
+        # FIXME: Support non-one group and offset_group
+        if group != 1 or offset_group != 1:
+            WARN('[Parser]: DeformConv only supports group=1 and offset_group=1 now, but got (%d, %d)!' % (group, offset_group))
+            continue
+        output_shapes = deform_conv_obj.get_output_shapes()
+        if len(output_shapes) < 1 or output_shapes[0] is None or None in output_shapes[0]:
+            continue
+        input_shape = input_shapes[0]
+        weights_shape = weights.shape
+        offset_shape = input_shapes[2]
+        kernel_shape = deform_conv_obj.kernel_shape
+        k_h, k_w = kernel_shape
+        k_hw = int(k_h * k_w)
+        out_c = weights_shape[0]
+        strides = deform_conv_obj.strides
+        dilations = deform_conv_obj.dilations
+        pads = deform_conv_obj.pads
+        batch, in_c, in_h, in_w = input_shape
+        out_h, out_w = output_shapes[0][2:]
+        data_repeats = np.array([k_hw] * batch, np.int64)
+        offset_reshape_dim = np.array([int(batch * k_hw), 2, out_h, out_w], np.int64)
+        mask_reshape_dim = np.array([int(batch * k_hw), 1, out_h, out_w], np.int64)
+        data_reshape_dim = np.array([batch, int(k_hw * in_c), out_h, out_w], np.int64)
+        const_hw = np.array([[[2.0 / (in_h - 1)]], [[2.0 / (in_w - 1)]]], np.float32)
+        const_neg1 = np.array(-1.0, np.float32)
+        offset_base_data = DeformConvOp.gen_offset_base(weights_shape, offset_shape,
+                                                        kernel_shape, strides, dilations, pads)
+
+        graph.remove_edges_from(in_edges)
+        data_src, _, data_in_attr = in_edges[0]
+        offset_src, _, offset_in_attr = in_edges[2]
+
+        # offset src -> reshape
+        offset_reshape = get_valid_node_name(graph, deform_conv + '_offset_reshape')
+        offset_reshape_in_attr = copy.deepcopy(offset_in_attr)
+        offset_reshape_in_attr.update({'dst_in_port': 0})
+        graph.add_edge(offset_src, offset_reshape, **offset_reshape_in_attr)
+        insert_constant(graph, offset_reshape + '_shape', offset_reshape_dim, offset_reshape, in_port=1)
+        NodeWrap(graph, offset_reshape).replace_obj('Reshape', {'name': offset_reshape, 'opset_version': 13})
+        # offset src -> reshape -> add base
+        offset_add_base = get_valid_node_name(graph, deform_conv + '_offset_add')
+        graph.add_edge(offset_reshape, offset_add_base)
+        insert_constant(graph, offset_add_base + '_val', offset_base_data, offset_add_base, in_port=1)
+        NodeWrap(graph, offset_add_base).replace_obj('Add', {'name': offset_add_base, 'opset_version': 13})
+        # offset src -> reshape -> add base -> mul&add -1
+        offset_mul = get_valid_node_name(graph, deform_conv + '_offset_mul')
+        graph.add_edge(offset_add_base, offset_mul, **{'src_out_port': 0})
+        insert_constant(graph, offset_mul + '_hw', const_hw, offset_mul, in_port=1)
+        NodeWrap(graph, offset_mul).replace_obj('Mul', {'name': offset_mul, 'opset_version': 11})
+        # NodeWrap(graph, offset_mul).replace_obj('Div', {'name': offset_mul, 'opset_version': 13})
+        offset_add_neg1 = get_valid_node_name(graph, deform_conv + '_offset_add_neg1')
+        graph.add_edge(offset_mul, offset_add_neg1)
+        insert_constant(graph, offset_add_neg1 + '_val', const_neg1, offset_add_neg1, in_port=1)
+        NodeWrap(graph, offset_add_neg1).replace_obj('Add', {'name': offset_add_neg1, 'opset_version': 13})
+        # offset src -> reshape -> add base -> mul&add -1 -> split
+        offset_split = get_valid_node_name(graph, deform_conv + '_offset_split')
+        graph.add_edge(offset_add_neg1, offset_split)
+        NodeWrap(graph, offset_split).replace_obj(
+            'Split', {'name': offset_split, 'opset_version': 11, 'split': [1, 1], 'axis': 1})
+        # offset src -> reshape -> add base -> mul&add -1 -> split -> concat(yx to xy)
+        offset_concat = get_valid_node_name(graph, deform_conv + '_offset_concat')
+        graph.add_edge(offset_split, offset_concat, **{'src_out_port': 1, 'dst_in_port': 0})  # yx to xy
+        graph.add_edge(offset_split, offset_concat, **{'src_out_port': 0, 'dst_in_port': 1})
+        NodeWrap(graph, offset_concat).replace_obj('Concat', {'name': offset_concat, 'opset_version': 13, 'axis': 1})
+        # offset src -> reshape -> add base -> mul&add -1 -> split -> concat -> transpose to NHWC(grid format in onnx GridSample)
+        offset_transpose = get_valid_node_name(graph, deform_conv + '_offset_tran')
+        graph.add_edge(offset_concat, offset_transpose)
+        NodeWrap(graph, offset_transpose).replace_obj('Transpose', {
+            'name': offset_transpose, 'opset_version': 13, 'perm': [0, 2, 3, 1]})
+
+        # data src -> repeat
+        data_repeat = get_valid_node_name(graph, deform_conv + '_repeat')
+        graph.add_edge(data_src, data_repeat, **data_in_attr)
+        insert_constant(graph, data_repeat + '_reps', data_repeats, data_repeat, in_port=1)
+        NodeWrap(graph, data_repeat).replace_obj('Repeat', {'name': data_repeat, 'opset_version': 1, 'axis': 0})
+        # data src -> grid_sample
+        data_grid_sample = get_valid_node_name(graph, deform_conv + '_gridsample')
+        graph.add_edge(data_repeat, data_grid_sample)
+        graph.add_edge(offset_transpose, data_grid_sample, **{'dst_in_port': 1})
+        NodeWrap(graph, data_grid_sample).replace_obj('GridSample', {
+            'name': data_grid_sample, 'align_corners': 1, 'opset_version': 16, 'data_format': data_format})
+
+        if len(in_edges) <= 4 \
+                or (in_edges[4][2]['tensor'] is not None
+                    and in_edges[4][2]['tensor'].is_const
+                    and not in_edges[4][2]['tensor'].value):
+            data_masked = data_grid_sample
+        else:
+            mask_src, _, mask_in_attr = in_edges[4]
+            # mask src -> reshape
+            mask_reshape = get_valid_node_name(graph, deform_conv + '_mask_reshape')
+            mask_reshape_in_attr = copy.deepcopy(mask_in_attr)
+            mask_reshape_in_attr.update({'dst_in_port': 0})
+            graph.add_edge(mask_src, mask_reshape, **mask_reshape_in_attr)
+            insert_constant(graph, mask_reshape + '_shape', mask_reshape_dim, mask_reshape, in_port=1)
+            NodeWrap(graph, mask_reshape).replace_obj('Reshape', {'name': mask_reshape, 'opset_version': 13})
+            # mask src -> reshape -> mul(*data)
+            data_mask_mul = get_valid_node_name(graph, deform_conv + '_data_mask_mul')
+            graph.add_edge(data_grid_sample, data_mask_mul)
+            graph.add_edge(mask_reshape, data_mask_mul, **{'dst_in_port': 1})
+            NodeWrap(graph, data_mask_mul).replace_obj('Mul', {'name': data_mask_mul, 'opset_version': 13})
+            data_masked = data_mask_mul
+
+        # masked data -> reshape
+        data_post_reshape = get_valid_node_name(graph, deform_conv + '_reshape')
+        graph.add_edge(data_masked, data_post_reshape)
+        insert_constant(graph, data_post_reshape + '_shape', data_reshape_dim, data_post_reshape, in_port=1)
+        NodeWrap(graph, data_post_reshape).replace_obj('Reshape', {'name': data_post_reshape, 'opset_version': 13})
+
+        # data -> conv
+        new_weights = np.reshape(np.transpose(weights, [0, 2, 3, 1]), [out_c, int(k_h * k_w * in_c), 1, 1])
+        graph.add_edge(data_post_reshape, deform_conv)
+        conv_attr = deform_conv_obj.copied_attr()
+        conv_attr.update({'opset_version': 11, 'kernel_shape': [1, 1], 'weights': new_weights,
+                          'strides': [1, 1], 'pads': [0, 0, 0, 0], 'dilations': [1, 1]})
+        NodeWrap(graph, deform_conv).replace_obj('Conv', conv_attr)
+
+
 def split_negative_pads(graph):
     possible_op_types = [op_type.get_concrete_subclass_names()
                          for op_type in [OnnxOp, CommonOp]]
@@ -8630,6 +8780,7 @@ def middle_passes(graph, params):
 
     rename_reshape_like(graph)
 
+    split_deformable_conv(graph)
     split_negative_pads(graph)
     split_conv_transpose(graph)
     convert_to_const(graph, ['Concat', 'Mul', 'Shape',
