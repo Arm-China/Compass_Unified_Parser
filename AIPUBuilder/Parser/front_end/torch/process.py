@@ -60,6 +60,23 @@ def convert_argmin(g, input, dim=None, keepdim=False):
     return convert_argmax_argmin(g, input, dim, keepdim, 'ArgMin')
 
 
+def convert_bitshift(g, input, other, direction):
+    input_dtype = input.type().dtype()
+    if input_dtype.is_signed:
+        FATAL("[Parser]: Only BitShift with unsigned input is supported to convert to onnx, but got type %s!" % str(input_dtype))
+    return g.op('BitShift', input, other, direction_s=direction)
+
+
+@helper.parse_args('v', 'v')
+def convert_bitshift_left(g, input, other):
+    return convert_bitshift(g, input, other, 'LEFT')
+
+
+@helper.parse_args('v', 'v')
+def convert_bitshift_right(g, input, other):
+    return convert_bitshift(g, input, other, 'RIGHT')
+
+
 @helper.parse_args('v', 'i')
 def convert_channel_shuffle(g, input, groups):
     return g.op('custom::ChannelShuffle', input, group_i=groups)
@@ -280,6 +297,8 @@ def convert_torch_to_onnx(model_path, params):
         # The issue of logical_not is fixed in latest torch.
         # Refer to https://github.com/pytorch/pytorch/pull/96315
         torch.onnx.register_custom_op_symbolic('aten::logical_not', convert_logical_not, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic('aten::bitwise_left_shift', convert_bitshift_left, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic('aten::bitwise_right_shift', convert_bitshift_right, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic('aten::equal', convert_equal, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic('aten::flatten', convert_flatten, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic('aten::gru_cell', convert_gru_cell, onnx_opset_version)
@@ -351,6 +370,8 @@ def convert_torch_to_onnx(model_path, params):
         # Fix hangs issue by set_num_threads if multiprocessing is used.
         # Refer to https://github.com/pytorch/pytorch/issues/36191
         torch.set_num_threads(1)
+        # # Uncomment the following line to debug this code and torch.onnx.export:
+        # _export_to_onnx(model, input_tensors, onnx_model_path, input_names, output_names, onnx_opset_version)
         process = Process(target=_export_to_onnx, args=(model,
                                                         input_tensors,
                                                         onnx_model_path,
