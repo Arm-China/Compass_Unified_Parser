@@ -203,6 +203,22 @@ def convert_equal(g, input, other):
     return g.op('Not', reduce_sum)
 
 
+@helper.parse_args('v', 'i', 'v', 'v')
+def convert_quantized_cat(
+    g,
+    q_inputs,
+    dim,
+    op_scale,
+    op_zero_point,
+):
+    unpacked_inputs = helper._unpack_list(q_inputs)
+    dequantized = [
+        helper.dequantize_helper(g, input)[0] for input in unpacked_inputs
+    ]
+    concatenated = g.op('Concat', *dequantized, axis_i=dim)
+    return helper.quantize_helper(g, concatenated, op_scale, op_zero_point)
+
+
 def convert_torch_to_onnx(model_path, params):
     def _export_to_onnx(model,
                         input_tensors,
@@ -302,6 +318,8 @@ def convert_torch_to_onnx(model_path, params):
     torch.onnx.register_custom_op_symbolic('aten::equal', convert_equal, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic('aten::flatten', convert_flatten, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic('aten::gru_cell', convert_gru_cell, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'quantized::cat', convert_quantized_cat, onnx_opset_version)
     # Only convert prim::DictConstruct to Identity when it's output node.
     dict_nodes = model.graph.findAllNodes('prim::DictConstruct')
     model_output_names = [out.debugName() for out in model.graph.outputs()]
