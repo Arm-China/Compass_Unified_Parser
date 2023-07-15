@@ -8,6 +8,7 @@ import numpy as np
 import onnx
 import torch
 import torch.onnx.symbolic_helper as helper
+from torch.onnx import symbolic_opset9 as opset9
 from multiprocessing import Process
 from .utils import get_tuple_from_tensor_type
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
@@ -138,7 +139,18 @@ def convert_dict_construct(g, key_0, value_0, key_1=None, value_1=None):
     return g.op('Identity', value_0)
 
 
+def convert_quantized_add_relu(g, x, y, op_scale, op_zero_point):
+    x, _, _, _ = helper.dequantize_helper(g, x)
+    y, _, _, _ = helper.dequantize_helper(g, y)
+
+    output = opset9.add(g, x, y)
+    output = opset9.relu(g, output)
+
+    return helper.quantize_helper(g, output, op_scale, op_zero_point)
+
+
 @helper.parse_args('v', 'i', 'i')
+@helper.quantized_args(True, False, False)
 def convert_flatten(g, input, start_dim, end_dim):
     input_rank = helper._get_tensor_rank(input)
     if input_rank == 0:
@@ -298,28 +310,46 @@ def convert_torch_to_onnx(model_path, params):
     if torch_version < '2.0.1':
         # The issue of argmax/argmin is fixed in torch 2.0.1.
         # Refer to https://github.com/pytorch/pytorch/pull/79503
-        torch.onnx.register_custom_op_symbolic('aten::argmax', convert_argmax, onnx_opset_version)
-        torch.onnx.register_custom_op_symbolic('aten::argmin', convert_argmin, onnx_opset_version)
+        torch.onnx.register_custom_op_symbolic(
+            'aten::argmax', convert_argmax, onnx_opset_version)
+        torch.onnx.register_custom_op_symbolic(
+            'aten::argmin', convert_argmin, onnx_opset_version)
         # The alpha issue of add/sub/rsub is fixed in torch 2.0.1.
         # Refer to https://github.com/pytorch/pytorch/pull/81736
-        torch.onnx.register_custom_op_symbolic('aten::add', convert_add, onnx_opset_version)
-        torch.onnx.register_custom_op_symbolic('aten::rsub', convert_rsub, onnx_opset_version)
-        torch.onnx.register_custom_op_symbolic('aten::sub', convert_sub, onnx_opset_version)
+        torch.onnx.register_custom_op_symbolic(
+            'aten::add', convert_add, onnx_opset_version)
+        torch.onnx.register_custom_op_symbolic(
+            'aten::rsub', convert_rsub, onnx_opset_version)
+        torch.onnx.register_custom_op_symbolic(
+            'aten::sub', convert_sub, onnx_opset_version)
     if torch_version < '2.1.0':
         # The issue of string padding is fixed in latest torch.
         # Refer to https://github.com/pytorch/pytorch/pull/89107
         for conv_op in ('aten::conv1d', 'aten::conv2d', 'aten::conv3d'):
-            torch.onnx.register_custom_op_symbolic(conv_op, convert_conv, onnx_opset_version)
+            torch.onnx.register_custom_op_symbolic(
+                conv_op, convert_conv, onnx_opset_version)
         # The issue of logical_not is fixed in latest torch.
         # Refer to https://github.com/pytorch/pytorch/pull/96315
-        torch.onnx.register_custom_op_symbolic('aten::logical_not', convert_logical_not, onnx_opset_version)
-    torch.onnx.register_custom_op_symbolic('aten::bitwise_left_shift', convert_bitshift_left, onnx_opset_version)
-    torch.onnx.register_custom_op_symbolic('aten::bitwise_right_shift', convert_bitshift_right, onnx_opset_version)
-    torch.onnx.register_custom_op_symbolic('aten::equal', convert_equal, onnx_opset_version)
-    torch.onnx.register_custom_op_symbolic('aten::flatten', convert_flatten, onnx_opset_version)
-    torch.onnx.register_custom_op_symbolic('aten::gru_cell', convert_gru_cell, onnx_opset_version)
+        torch.onnx.register_custom_op_symbolic(
+            'aten::logical_not', convert_logical_not, onnx_opset_version)
+
+    torch.onnx.register_custom_op_symbolic(
+        'aten::bitwise_left_shift', convert_bitshift_left, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'aten::bitwise_right_shift', convert_bitshift_right, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'aten::equal', convert_equal, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'aten::flatten', convert_flatten, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'aten::gru_cell', convert_gru_cell, onnx_opset_version)
+
+    # for quantized Ops
+    torch.onnx.register_custom_op_symbolic(
+        'quantized::add_relu', convert_quantized_add_relu, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'quantized::cat', convert_quantized_cat, onnx_opset_version)
+
     # Only convert prim::DictConstruct to Identity when it's output node.
     dict_nodes = model.graph.findAllNodes('prim::DictConstruct')
     model_output_names = [out.debugName() for out in model.graph.outputs()]
