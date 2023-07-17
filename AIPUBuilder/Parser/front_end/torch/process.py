@@ -99,6 +99,7 @@ def convert_bitwise_xor(g, input, other):
 
 
 @helper.parse_args('v', 'i')
+@helper.quantized_args(True, False)
 def convert_channel_shuffle(g, input, groups):
     return g.op('custom::ChannelShuffle', input, group_i=groups)
 
