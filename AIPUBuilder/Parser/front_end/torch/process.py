@@ -73,6 +73,21 @@ def convert_bitshift_left(g, input, other):
     return convert_bitshift(g, input, other, 'LEFT')
 
 
+@helper.quantized_args(True)
+def convert_reduce_mean(g, input, dim=None, keepdim=None, allow_multi_dim_support=True):
+    if dim is None:
+        # all-reduce path
+        return helper._handle_reduce_dim_none(g, self, 'ReduceMean')
+    else:
+        # dim-reduce path
+        desc = 'is' if allow_multi_dim_support else 'i'
+        dim, keepdim = helper._get_const(
+            dim, desc, 'dim'
+        ), helper._get_const(keepdim, 'i', 'keepdim')
+        dim_list = dim if allow_multi_dim_support else [dim]
+        return g.op('ReduceMean', input, axes_i=dim_list, keepdims_i=keepdim)
+
+
 @helper.parse_args('v', 'v')
 def convert_bitshift_right(g, input, other):
     return convert_bitshift(g, input, other, 'RIGHT')
@@ -438,6 +453,9 @@ def convert_torch_to_onnx(model_path, params):
         'aten::avg_pool2d', convert_avg_pool, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'prim::ConstantChunk', convert_constant_chunk, onnx_opset_version)
+
+    torch.onnx.register_custom_op_symbolic(
+        'aten::mean', convert_reduce_mean, onnx_opset_version)
 
     # for quantized Ops
     torch.onnx.register_custom_op_symbolic(
