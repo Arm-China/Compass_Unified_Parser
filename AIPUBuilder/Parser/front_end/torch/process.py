@@ -215,6 +215,40 @@ def convert_equal(g, input, other):
     return g.op('Not', reduce_sum)
 
 
+@helper.quantized_args(True, False, False, False, False, False, False)
+@helper.parse_args('v', 'is', 'is', 'is', 'i', 'i', 'none')
+def convert_avg_pool(
+    g,
+    inp,
+    kernel_size,
+    stride,
+    padding,
+    ceil_mode,
+    count_include_pad,
+    divisor_override=None,
+):
+    if not stride:
+        stride = kernel_size
+    if count_include_pad:
+        padding = tuple(padding)
+        inp = g.op(
+            'Pad',
+            inp,
+            g.op('Constant', value_t=torch.tensor(((0,) * 2 + padding) * 2)),
+            mode_s='constant',
+        )
+        padding = (0,) * len(padding)
+    output = g.op(
+        'AveragePool',
+        inp,
+        kernel_shape_i=tuple(kernel_size),
+        strides_i=tuple(stride),
+        pads_i=padding * 2,
+        ceil_mode_i=ceil_mode,
+    )
+    return output
+
+
 @helper.parse_args('v', 'i', 'v', 'v')
 def convert_quantized_cat(
     g,
@@ -343,6 +377,8 @@ def convert_torch_to_onnx(model_path, params):
         'aten::flatten', convert_flatten, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::gru_cell', convert_gru_cell, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'aten::avg_pool2d', convert_avg_pool, onnx_opset_version)
 
     # for quantized Ops
     torch.onnx.register_custom_op_symbolic(
