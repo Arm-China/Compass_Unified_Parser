@@ -126,3 +126,52 @@ def get_tuple_from_tensor_type(torch_type, tensor_list, start_index=0):
     else:  # self(the class of the model)
         pass
     return tensors, index
+
+
+def quantized_args(*arg_q_descriptors, scale=None, zero_point=None):
+    def decorator(fn):
+        fn._scale = scale
+        fn._zero_point = zero_point
+
+        @functools.wraps(fn)
+        def wrapper(g, *args, **kwargs):
+            _scale = fn._scale
+            if _scale is not None:
+                _scale = g.op('Constant', value_t=torch.tensor(_scale))
+            _zero_point = fn._zero_point
+            if _zero_point is not None:
+                _zero_point = g.op(
+                    'Constant', value_t=torch.tensor(_zero_point))
+
+            arg_q_descriptors_extended = arg_q_descriptors + (False,) * (
+                len(args) - len(arg_q_descriptors)
+            )
+            descriptor_args = tuple(zip(arg_q_descriptors_extended, args))
+            if not any(
+                (descriptor and arg.node().kind() == 'prim::TupleConstruct')
+                for descriptor, arg in descriptor_args
+            ):
+                return fn(g, *args, **kwargs)
+
+            dequantized_args = []
+            for descriptor, arg in descriptor_args:
+                if descriptor:
+                    dequantized_arg, scale, zero_point, _ = helper.dequantize_helper(
+                        g, arg)
+                    dequantized_args.append(dequantized_arg)
+                    if _scale is None:
+                        _scale = scale
+                    if _zero_point is None:
+                        _zero_point = zero_point
+                else:
+                    dequantized_args.append(arg)
+            output = fn(g, *dequantized_args, **kwargs)
+
+            if isinstance(output, list):
+                return quantize_helper_multi(g, output, _scale, _zero_point)
+            else:
+                return quantize_helper(g, output, _scale, _zero_point)
+
+        return wrapper
+
+    return decorator
