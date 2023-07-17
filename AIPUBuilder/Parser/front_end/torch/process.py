@@ -143,6 +143,30 @@ def convert_conv(g, input, weight, bias, stride, padding, dilation, groups):
     return conv
 
 
+@helper.quantized_args(True, False, False)
+def convert_constant_chunk(g, self, chunks, dim):
+    input_shape = g.op('Shape', self)
+    axis = g.op('Constant', value_t=torch.tensor([dim], dtype=torch.long))
+    input_shape_dim = g.op('Gather', input_shape, axis, axis_i=0)
+    start = g.op('Constant', value_t=torch.tensor([0], dtype=torch.long))
+    chunk_size = g.op('Constant', value_t=torch.tensor(
+        [chunks], dtype=torch.long))
+    chunk_size_minus_1 = g.op(
+        'Constant', value_t=torch.tensor([chunks - 1], dtype=torch.long)
+    )
+    input_shape_dim_shift = g.op(
+        'Add', input_shape_dim, chunk_size_minus_1)
+    chunk_dim = g.op('Div', input_shape_dim_shift, chunk_size)
+    res = []
+    for i in range(chunks):
+        index = g.op('Constant', value_t=torch.tensor(
+            [i + 1], dtype=torch.long))
+        end = g.op('Mul', chunk_dim, index)
+        res.append(g.op('Slice', self, start, end, axis))
+        start = end
+    return res
+
+
 @helper.parse_args('v', 'i', 'i')
 def convert_cumprod(g, input, dim, dtype):
     if dtype is not None:
@@ -412,6 +436,8 @@ def convert_torch_to_onnx(model_path, params):
         'aten::gru_cell', convert_gru_cell, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::avg_pool2d', convert_avg_pool, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'prim::ConstantChunk', convert_constant_chunk, onnx_opset_version)
 
     # for quantized Ops
     torch.onnx.register_custom_op_symbolic(
