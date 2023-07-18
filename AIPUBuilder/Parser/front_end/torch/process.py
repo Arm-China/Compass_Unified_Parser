@@ -10,7 +10,8 @@ import torch
 import torch.onnx.symbolic_helper as helper
 from torch.onnx import symbolic_opset9 as opset9
 from multiprocessing import Process
-from .utils import get_tuple_from_tensor_type, quantized_args, quantize_helper, quantize_helper_multi
+from .utils import get_tuple_from_tensor_type, quantized_args, quantize_helper, quantize_helper_multi, \
+    get_onnx_pool_output_shape, get_torch_pool_output_shape
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 from ...common.utils import get_version
 from ...common.defs import FLOAT_EQUAL
@@ -275,54 +276,72 @@ def convert_equal(g, input, other):
     return g.op('Not', reduce_sum)
 
 
-@helper.quantized_args(True, False, False, False, False, False, False)
-@helper.parse_args('v', 'is', 'is', 'is', 'i', 'i', 'none')
-def convert_avg_pool(
-    g,
-    inp,
-    kernel_size,
-    stride,
-    padding,
-    ceil_mode,
-    count_include_pad,
-    divisor_override=None,
-):
-    if not stride:
-        stride = kernel_size
+def convert_avg_pool(g, input, kernel_size, strides, paddings, ceil_mode, count_include_pad, divisor_override, dim):
+    assert isinstance(dim, int) and dim in [1, 2, 3], 'Meets invalid dim in convert_avg_pool!'
+    if not ceil_mode:
+        from torch.onnx.symbolic_opset11 import avg_pool1d, avg_pool2d, avg_pool3d
+        avg_pool_func = avg_pool1d if dim == 1 else (avg_pool2d if dim == 2 else avg_pool3d)
+        return avg_pool_func(g, input, kernel_size, strides, paddings, ceil_mode, count_include_pad, divisor_override)
+
+    input_shape = helper._get_tensor_sizes(input)
+    spatial_input_shape = input_shape[2:]
+    if not strides:
+        strides = kernel_size
+
+    torch_spatial_output_shapes = []
+    for input_size, kernel, stride, pad in zip(spatial_input_shape, kernel_size, strides, paddings):
+        output_shape = get_torch_pool_output_shape(input_size, kernel, pad, pad, stride)
+        torch_spatial_output_shapes.append(output_shape)
+
+    adjusted_padding = paddings
     if count_include_pad:
-        padding = tuple(padding)
-        inp = g.op(
+        input = g.op(
             'Pad',
-            inp,
-            g.op('Constant', value_t=torch.tensor(((0,) * 2 + padding) * 2)),
+            input,
+            g.op('Constant', value_t=torch.tensor(([0, 0] + paddings) * 2)),
             mode_s='constant',
         )
-        padding = (0,) * len(padding)
-    output = g.op(
-        'AveragePool',
-        inp,
-        kernel_shape_i=tuple(kernel_size),
-        strides_i=tuple(stride),
-        pads_i=padding * 2,
-        ceil_mode_i=ceil_mode,
-    )
-    return output
+        adjusted_padding = [0] * len(paddings)
+        spatial_input_shape = [(a + 2 * b) for (a, b) in zip(spatial_input_shape, paddings)]
+
+    avg_pool = g.op('AveragePool', input, kernel_shape_i=kernel_size, strides_i=strides,
+                    pads_i=(adjusted_padding * 2), ceil_mode_i=ceil_mode)
+
+    slice_ends = []
+    for idx, (input_size, kernel, stride, pad) in enumerate(zip(spatial_input_shape, kernel_size, strides, adjusted_padding)):
+        onnx_output_shape = get_onnx_pool_output_shape(input_size, kernel, pad, pad, stride)
+        assert len(torch_spatial_output_shapes) > idx, 'Meets invalid torch_spatial_output_shapes in convert_avg_pool!'
+        if torch_spatial_output_shapes[idx] > onnx_output_shape:
+            FATAL('[Parser]: Meets unsupported output shape of avg_pool in convert_avg_pool!')
+        slice_ends.append(torch_spatial_output_shapes[idx])
+    ends_input = g.op('Constant', value_t=torch.tensor(slice_ends))
+    starts_input = g.op('Constant', value_t=torch.tensor([0] * len(slice_ends)))
+    axes_input = g.op('Constant', value_t=torch.tensor(list(range(2, len(input_shape)))))
+    slice_out = g.op('Slice', avg_pool, starts_input, ends_input, axes_input)
+    return slice_out
+
+
+@helper.quantized_args(True, False, False, False, False, False, False)
+@helper.parse_args('v', 'is', 'is', 'is', 'i', 'i', 'none')
+def convert_avg_pool1d(g, inp, kernel_size, stride, padding, ceil_mode, count_include_pad, divisor_override=None):
+    return convert_avg_pool(g, inp, kernel_size, stride, padding, ceil_mode, count_include_pad, divisor_override, 1)
+
+
+@helper.quantized_args(True, False, False, False, False, False, False)
+@helper.parse_args('v', 'is', 'is', 'is', 'i', 'i', 'none')
+def convert_avg_pool2d(g, inp, kernel_size, stride, padding, ceil_mode, count_include_pad, divisor_override=None):
+    return convert_avg_pool(g, inp, kernel_size, stride, padding, ceil_mode, count_include_pad, divisor_override, 2)
+
+
+@helper.quantized_args(True, False, False, False, False, False, False)
+@helper.parse_args('v', 'is', 'is', 'is', 'i', 'i', 'none')
+def convert_avg_pool3d(g, inp, kernel_size, stride, padding, ceil_mode, count_include_pad, divisor_override=None):
+    return convert_avg_pool(g, inp, kernel_size, stride, padding, ceil_mode, count_include_pad, divisor_override, 3)
 
 
 @quantized_args(True, False, False, False, False, False, False)
 def convert_max_pool(g, input, kernel_size, strides, paddings, dilations, ceil_mode, dim, return_indices=False):
-    def _get_torch_output_shape(input_size, kernel_size, pad_head, pad_tail, stride, dilation):
-        extra = (stride - 1)
-        output_size = int((input_size + pad_head + pad_tail - dilation * (kernel_size - 1) - 1 + extra) / stride) + 1
-        if (output_size - 1) * stride >= (input_size + pad_head):
-            output_size = output_size - 1
-        return output_size
-
-    def _get_onnx_output_shape(input_size, kernel_size, pad_head, pad_tail, stride, dilation):
-        output_size = int(np.ceil((input_size + pad_head + pad_tail - dilation * (kernel_size - 1) - 1) / stride)) + 1
-        return output_size
-
-    assert isinstance(dim, int) and dim in [1, 2, 3], 'Meets invalid dim in convert_max_pool_in_ceil_mode!'
+    assert isinstance(dim, int) and dim in [1, 2, 3], 'Meets invalid dim in convert_max_pool!'
     if not ceil_mode:
         if return_indices:
             from torch.onnx.symbolic_opset10 import max_pool1d_with_indices, max_pool2d_with_indices, max_pool3d_with_indices
@@ -349,10 +368,10 @@ def convert_max_pool(g, input, kernel_size, strides, paddings, dilations, ceil_m
     input_shape = helper._get_tensor_sizes(input)
     slice_ends = []
     for input_size, kernel, stride, pad, dilation in zip(input_shape[2:], kernel_size, strides, paddings, dilations):
-        torch_output_shape = _get_torch_output_shape(input_size, kernel, pad, pad, stride, dilation)
-        onnx_output_shape = _get_onnx_output_shape(input_size, kernel, pad, pad, stride, dilation)
+        torch_output_shape = get_torch_pool_output_shape(input_size, kernel, pad, pad, stride, dilation)
+        onnx_output_shape = get_onnx_pool_output_shape(input_size, kernel, pad, pad, stride, dilation)
         if torch_output_shape > onnx_output_shape:
-            FATAL('[Parser]: Meets unsupported output shape of max_pool in convert_max_pool_in_ceil_mode!')
+            FATAL('[Parser]: Meets unsupported output shape of max_pool in convert_max_pool!')
         slice_ends.append(torch_output_shape)
     ends_input = g.op('Constant', value_t=torch.tensor(slice_ends))
     starts_input = g.op('Constant', value_t=torch.tensor([0] * len(slice_ends)))
@@ -539,7 +558,11 @@ def convert_torch_to_onnx(model_path, params):
         torch.onnx.register_custom_op_symbolic(
             'aten::bitwise_xor', convert_bitwise_xor, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
-        'aten::avg_pool2d', convert_avg_pool, onnx_opset_version)
+        'aten::avg_pool1d', convert_avg_pool1d, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'aten::avg_pool2d', convert_avg_pool2d, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'aten::avg_pool3d', convert_avg_pool3d, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::bitwise_left_shift', convert_bitshift_left, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(

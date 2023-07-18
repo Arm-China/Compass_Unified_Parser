@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 
+import numpy as np
 import torch
 import torch.onnx.symbolic_helper as helper
 import functools
@@ -105,6 +106,19 @@ def quantize_helper_multi(
         res.append(g.op('prim::TupleConstruct', *args))
 
     return res
+
+
+def get_onnx_pool_output_shape(input_size, kernel_size, pad_head, pad_tail, stride, dilation=1):
+    output_size = int(np.ceil((input_size + pad_head + pad_tail - dilation * (kernel_size - 1) - 1) / stride)) + 1
+    return output_size
+
+
+def get_torch_pool_output_shape(input_size, kernel_size, pad_head, pad_tail, stride, dilation=1):
+    extra = (stride - 1)
+    output_size = int((input_size + pad_head + pad_tail - dilation * (kernel_size - 1) - 1 + extra) / stride) + 1
+    if (output_size - 1) * stride >= (input_size + pad_head):
+        output_size = output_size - 1
+    return output_size
 
 
 def get_tuple_from_tensor_type(torch_type, tensor_list, start_index=0):
