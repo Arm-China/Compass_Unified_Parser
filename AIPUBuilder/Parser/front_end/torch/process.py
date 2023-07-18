@@ -10,7 +10,7 @@ import torch
 import torch.onnx.symbolic_helper as helper
 from torch.onnx import symbolic_opset9 as opset9
 from multiprocessing import Process
-from .utils import get_tuple_from_tensor_type
+from .utils import get_tuple_from_tensor_type, quantized_args, quantize_helper, quantize_helper_multi
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 from ...common.utils import get_version
 from ...common.defs import FLOAT_EQUAL
@@ -73,7 +73,7 @@ def convert_bitshift_left(g, input, other):
     return convert_bitshift(g, input, other, 'LEFT')
 
 
-@helper.quantized_args(True)
+@quantized_args(True)
 def convert_reduce_mean(g, input, dim=None, keepdim=None, allow_multi_dim_support=True):
     if dim is None:
         # all-reduce path
@@ -114,7 +114,7 @@ def convert_bitwise_xor(g, input, other):
 
 
 @helper.parse_args('v', 'i')
-@helper.quantized_args(True, False)
+@quantized_args(True, False)
 def convert_channel_shuffle(g, input, groups):
     return g.op('custom::ChannelShuffle', input, group_i=groups)
 
@@ -158,7 +158,7 @@ def convert_conv(g, input, weight, bias, stride, padding, dilation, groups):
     return conv
 
 
-@helper.quantized_args(True, False, False)
+@quantized_args(True, False, False)
 def convert_constant_chunk(g, self, chunks, dim):
     input_shape = g.op('Shape', self)
     axis = g.op('Constant', value_t=torch.tensor([dim], dtype=torch.long))
@@ -467,11 +467,14 @@ def convert_torch_to_onnx(model_path, params):
     dict_nodes = model.graph.findAllNodes('prim::DictConstruct')
     model_output_names = [out.debugName() for out in model.graph.outputs()]
     if dict_nodes and all(node.output().debugName() in model_output_names for node in dict_nodes):
-        torch.onnx.register_custom_op_symbolic('prim::DictConstruct', convert_dict_construct, onnx_opset_version)
+        torch.onnx.register_custom_op_symbolic(
+            'prim::DictConstruct', convert_dict_construct, onnx_opset_version)
 
     # Convert torch op to custom onnx op
-    torch.onnx.register_custom_op_symbolic('aten::channel_shuffle', convert_channel_shuffle, onnx_opset_version)
-    torch.onnx.register_custom_op_symbolic('aten::cumprod', convert_cumprod, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'aten::channel_shuffle', convert_channel_shuffle, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'aten::cumprod', convert_cumprod, onnx_opset_version)
 
     # Get input_tensors and input_names
     input_names = []
