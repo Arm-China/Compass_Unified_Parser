@@ -559,10 +559,19 @@ def convert_upsample(graph):
             graph.add_edge(cast_to_int, upsample, **
                            {'src_out_port': 0, 'dst_in_port': 1})
 
-            n, c, h, w = input_shapes[0]
-            offset = np.reshape(np.arange(0, n), (n, 1, 1, 1)) * c * h * w + \
-                np.reshape(np.arange(0, c), (c, 1, 1)) * h * w
-            offset = np.tile(offset, [1, 1, h, w]).astype(np.float32)
+            n, c, in_h, in_w = input_shapes[0]
+            # Rename upsample to maxunpool in onnx
+            if upsample_obj.upsample_h and upsample_obj.upsample_w:
+                output_shape = np.array([n, c, upsample_obj.upsample_h,
+                                         upsample_obj.upsample_w]).astype(np.int64)
+            else:
+                output_shape = np.array([n, c, in_h * upsample_obj.scale,
+                                         in_w * upsample_obj.scale]).astype(np.int64)
+
+            out_h, out_w = output_shape[2:]
+            offset = np.reshape(np.arange(0, n), (n, 1, 1, 1)) * c * out_h * out_w + \
+                np.reshape(np.arange(0, c), (c, 1, 1)) * out_h * out_w
+            offset = np.tile(offset, [1, 1, in_h, in_w]).astype(np.float32)
             insert_constant(graph, add + '_oprand',
                             offset, add, in_port=1)
 
@@ -571,13 +580,6 @@ def convert_upsample(graph):
             NodeWrap(graph, cast_to_int).replace_obj(
                 'Cast', {'name': cast_to_int, 'opset_version': 1, 'to': 'int32'})
 
-            # Rename upsample to maxunpool in onnx
-            if upsample_obj.upsample_h and upsample_obj.upsample_w:
-                output_shape = np.array([n, c, upsample_obj.upsample_h,
-                                         upsample_obj.upsample_w]).astype(np.int64)
-            else:
-                output_shape = np.array([n, c, h * upsample_obj.scale,
-                                         w * upsample_obj.scale]).astype(np.int64)
             insert_constant(graph, upsample + '_output_shape',
                             output_shape, upsample, in_port=2)
 
