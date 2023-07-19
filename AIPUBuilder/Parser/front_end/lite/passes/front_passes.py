@@ -113,6 +113,62 @@ def convert_negative_pool_pad(graph):
                         'AveragePool', new_node_attr)
 
 
+def convert_sparse_to_dense(graph):
+    matched = False
+    matches = single_node_matcher(graph, 'LiteSPARSE_TO_DENSE')
+    for m in matches:
+        sd = m['target']
+        sd_obj = NodeWrap(graph, sd)['object']
+        in_edges = graph.sorted_in_edges(sd, data=True)
+
+        if sd_obj is None or \
+                len(in_edges) < 4:
+            ERROR(
+                '[Parser]: Meets invalid LiteSPARSE_TO_DENSE(%s) in convert_sparse_to_dense!' % sd)
+            continue
+
+        input_tensors = sd_obj.get_input_tensors()
+
+        if len(sd_obj.get_input_tensors()) < 4 or \
+                not in_edges[1][2]['tensor'].is_const or \
+                np.any([input_tensor is None for input_tensor in input_tensors]):
+            continue
+
+        matched = True
+
+        sd_src0, _, _ = in_edges[0]
+        sd_src2, _, _ = in_edges[2]
+        sd_src3, _, _ = in_edges[3]
+
+        output_shape = input_tensors[1]
+        sparse_values = input_tensors[2]
+        mul_value = np.ones(output_shape, dtype=sparse_values.dtype)
+
+        inp0_attr = copy.deepcopy(in_edges[0][2])
+        inp0_attr.update({'dst_in_port': 1})
+        inp2_attr = copy.deepcopy(in_edges[2][2])
+        inp3_mul_attr = copy.deepcopy(in_edges[3][2])
+        inp3_mul_attr.update({'dst_in_port': 0})
+
+        mul = get_valid_node_name(graph, sd + '_mul')
+
+        graph.remove_edges_from(in_edges)
+
+        graph.add_edge(sd_src0, sd, **inp0_attr)
+        graph.add_edge(sd_src2, sd, **inp2_attr)
+        graph.add_edge(sd_src3, mul, **inp3_mul_attr)
+        graph.add_edge(mul, sd)
+        insert_constant(graph, mul + '_value', mul_value, mul, in_port=1)
+
+        NodeWrap(graph, mul).replace_obj(
+            'Mul', {'name': mul, 'opset_version': 7})
+        NodeWrap(graph, sd).replace_obj(
+            'ScatterND', {'name': sd, 'opset_version': 16, 'reduction': 'none'})
+
+    if matched:
+        clear_redundant_nodes(graph)
+
+
 def convert_square(graph, op_type='TfSquare'):
     if op_type not in ('TfSquare', 'Tfsquare', 'LiteSQUARE'):
         ERROR('[Parser]: Meets invalid Op type (%s) in convert_square_diff!' % op_type)

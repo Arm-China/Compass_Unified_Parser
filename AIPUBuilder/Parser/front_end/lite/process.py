@@ -9,7 +9,7 @@ from .passes.front_passes import split_op_has_activation, split_fc, split_greate
     convert_broadcast_to, remove_redundant_broadcast_to, remove_sub_equal_select, \
     merge_special_cast_quantize, convert_special_quantize, convert_special_dequantize, split_quatized_mean, \
     merge_quantized_instance_norm, merge_quantized_lstm_cell, convert_dequantize, merge_min_quant_max_to_clip, merge_quantized_ln, \
-    merge_dqd
+    merge_dqd, convert_sparse_to_dense
 # merge_quantized_lstm_cell2, merge_quantized_lstm2
 from ..onnx.passes.front_passes import fuse_weights_const, convert_deconv
 from ..onnx.passes.common_passes import apply_subgraph_plugin, record_output_tensors, remove_useless_op, fuse_const
@@ -29,7 +29,8 @@ def process_tflite(model_path, params):
         split_op_has_activation(graph)
 
         if graph._attr.get('quantize', False):
-            merge_dqd(graph, ['LiteMIRROR_PAD', 'LiteRSQRT', 'LiteSQUARED_DIFFERENCE'])
+            merge_dqd(graph, ['LiteMIRROR_PAD', 'LiteRSQRT',
+                      'LiteSQUARED_DIFFERENCE'])
             merge_special_cast_quantize(graph)
             convert_special_quantize(graph)
             convert_special_dequantize(graph)
@@ -65,6 +66,7 @@ def process_tflite(model_path, params):
         convert_scatternd(graph, 'LiteSCATTER_ND')
         convert_scatternd2(graph, 'LiteSCATTER_ND')
         convert_reverse(graph, op_type='LiteREVERSE_V2')
+        convert_sparse_to_dense(graph)
         merge_overlap_and_add(graph)
 
         convert_reverse_sequence(graph, 'LiteREVERSE_SEQUENCE')
