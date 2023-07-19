@@ -5,8 +5,10 @@
 import copy
 import os
 import numpy as np
+import math
 import onnx
 import torch
+import torch.nn as nn
 import torch.onnx.symbolic_helper as helper
 from torch.onnx import symbolic_opset9 as opset9
 from multiprocessing import Process
@@ -65,8 +67,13 @@ def convert_argmin(g, input, dim=None, keepdim=False):
 def convert_bitshift(g, input, other, direction):
     input_dtype = input.type().dtype()
     if input_dtype.is_signed:
-        FATAL('[Parser]: Only BitShift with unsigned input is supported to convert to onnx, but got type %s!' % str(input_dtype))
+        FATAL('[Parser]: Only BitShift with unsigned input is supported to convert to onnx, but got type %s!' % str(
+            input_dtype))
     return g.op('BitShift', input, other, direction_s=direction)
+
+
+def convert_iand(g, input1, input2):
+    return convert_bitwise_and(g, input1, input2)
 
 
 @helper.parse_args('v', 'v')
@@ -141,7 +148,8 @@ def convert_conv(g, input, weight, bias, stride, padding, dilation, groups):
         else:
             need_separate_add = True
 
-    kwargs = {'kernel_shape_i': kernel_shape, 'strides_i': stride, 'dilations_i': dilation, 'group_i': groups}
+    kwargs = {'kernel_shape_i': kernel_shape, 'strides_i': stride,
+              'dilations_i': dilation, 'group_i': groups}
 
     str_padding = helper._parse_arg(padding, 's')
     if str_padding in ('valid', 'same'):
@@ -196,7 +204,8 @@ def convert_dict_construct(g, key_0, value_0, key_1=None, value_1=None):
     WARN('[Parser]: prim::DictConstruct is unsupported and is changed to return a tensor or a list of tensors(key(s): %s) instead!' % keys)
     if value_1 is not None:
         g.registerOutput(value_0)  # value_0 is the first output of graph
-        return g.op('Identity', value_1)  # value_1 is the second output of graph if this node is output
+        # value_1 is the second output of graph if this node is output
+        return g.op('Identity', value_1)
     return g.op('Identity', value_0)
 
 
@@ -245,7 +254,8 @@ def convert_gru_cell(g, input, hidden, w_ih, w_hh, b_ih, b_hh):
 def convert_to_bool(g, input):
     input_dtype_str = input.type().scalarType()
     if input_dtype_str != 'Bool':
-        input = g.op('Cast', input, to_i=torch._C._onnx.TensorProtoDataType.BOOL)
+        input = g.op(
+            'Cast', input, to_i=torch._C._onnx.TensorProtoDataType.BOOL)
     return input
 
 
@@ -415,14 +425,17 @@ def convert_max_unpool2d(g, input, indices, output_size):
     input_shape = helper._get_tensor_sizes(input)
     n, c, in_h, in_w = input_shape
     if len(output_size) != 2:
-        FATAL('[Parser]: Meets invalid output_size of max_unpool2d in convert_max_unpool2d!')
+        FATAL(
+            '[Parser]: Meets invalid output_size of max_unpool2d in convert_max_unpool2d!')
     out_h, out_w = output_size
     offset = np.reshape(np.arange(0, n), (n, 1, 1, 1)) * c * out_h * out_w + \
         np.reshape(np.arange(0, c), (c, 1, 1)) * out_h * out_w
     offset = np.tile(offset, [1, 1, in_h, in_w])
-    offset_node = g.op('Constant', value_t=torch.tensor(offset, dtype=torch.int64))
+    offset_node = g.op('Constant', value_t=torch.tensor(
+        offset, dtype=torch.int64))
     indices = g.op('Add', indices, offset_node)
-    output_shape = g.op('Constant', value_t=torch.tensor([n, c] + output_size, dtype=torch.int64))
+    output_shape = g.op('Constant', value_t=torch.tensor(
+        [n, c] + output_size, dtype=torch.int64))
     # Need set output type for MaxUnpool here because there is no type inference for this op in torch.
     return g.op('MaxUnpool', input, indices, output_shape, kernel_shape_i=[1, 1]).setType(input.type())
 
@@ -441,6 +454,27 @@ def convert_quantized_cat(
     ]
     concatenated = g.op('Concat', *dequantized, axis_i=dim)
     return helper.quantize_helper(g, concatenated, op_scale, op_zero_point)
+
+
+def convert_atan2(g, self, other):
+    slope = g.op('Div', self, other)
+    atan = g.op('Atan', slope)
+    const_zero = g.op('Constant', value_t=torch.tensor(0))
+    const_pi = g.op('Constant', value_t=torch.tensor(math.pi))
+
+    condition_second_or_third_quadrant = g.op('Greater', self, const_zero)
+    second_third_quadrant = g.op(
+        'Where',
+        condition_second_or_third_quadrant,
+        g.op('Add', atan, const_pi),
+        g.op('Sub', atan, const_pi),
+    )
+
+    condition_14_or_23_quadrant = g.op('Less', other, const_zero)
+    result = g.op('Where', condition_14_or_23_quadrant,
+                  second_third_quadrant, atan)
+
+    return result
 
 
 def convert_torch_to_onnx(model_path, params):
@@ -496,7 +530,8 @@ def convert_torch_to_onnx(model_path, params):
     # From https://onnxruntime.ai/docs/reference/compatibility.html,
     # for onnx version 1.x, onnx opset version=x+5
     onnx_version = str(get_version(onnx)).split('.')
-    onnx_opset_version = (int(onnx_version[-1]) + 5) if int(onnx_version[0]) == 1 else None
+    onnx_opset_version = (
+        int(onnx_version[-1]) + 5) if int(onnx_version[0]) == 1 else None
     torch_version = str(torch.onnx.producer_version)
     if onnx_opset_version is not None:
         default_onnx_main_opset = None
@@ -510,14 +545,16 @@ def convert_torch_to_onnx(model_path, params):
                 default_onnx_main_opset = Constant.onnx_main_opset
                 default_onnx_stable_opsets = Constant.onnx_stable_opsets
         except Exception as e:
-            DEBUG('[Parser]: Fail to get default onnx opset version because %s' % str(e))
+            DEBUG(
+                '[Parser]: Fail to get default onnx opset version because %s' % str(e))
         if default_onnx_main_opset is None:
             onnx_opset_version = None
         elif onnx_opset_version >= default_onnx_main_opset or onnx_opset_version not in default_onnx_stable_opsets:
             onnx_opset_version = default_onnx_main_opset
     if onnx_opset_version is None:
         onnx_opset_version = 9
-    DEBUG('[Parser]: Will convert to onnx opset version (%s)!' % str(onnx_opset_version))
+    DEBUG('[Parser]: Will convert to onnx opset version (%s)!' %
+          str(onnx_opset_version))
 
     # Convert torch op to non-custom onnx op
     if torch_version < '2.0.1':
@@ -545,6 +582,8 @@ def convert_torch_to_onnx(model_path, params):
         # Refer to https://github.com/pytorch/pytorch/pull/96315
         torch.onnx.register_custom_op_symbolic(
             'aten::logical_not', convert_logical_not, onnx_opset_version)
+        torch.onnx.register_custom_op_symbolic(
+            'aten::atan2', convert_atan2, onnx_opset_version)
 
     if onnx_opset_version < 18:
         # The lowest version of onnx BitwiseAnd/Not/Or/Xor is 18
@@ -586,6 +625,8 @@ def convert_torch_to_onnx(model_path, params):
     torch.onnx.register_custom_op_symbolic(
         'aten::mean', convert_reduce_mean, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
+        'aten::__iand_', convert_iand, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
         'prim::ConstantChunk', convert_constant_chunk, onnx_opset_version)
 
     # for quantized Ops
@@ -613,30 +654,38 @@ def convert_torch_to_onnx(model_path, params):
     input_info_dict = copy.deepcopy(params['input_shapes'])
     input_dtype = params['input_dtype']
     for idx, (input_name, input_shape) in enumerate(input_info_dict.items()):
-        if len(input_name) >= 1 and input_name[0].isdigit():  # Starting with numbers is not legal in pytorch
+        # Starting with numbers is not legal in pytorch
+        if len(input_name) >= 1 and input_name[0].isdigit():
             new_input_name = 'input_' + input_name
-            WARN('[Parser]: Input name %s is invalid; rename it to %s!' % (input_name, new_input_name))
+            WARN('[Parser]: Input name %s is invalid; rename it to %s!' %
+                 (input_name, new_input_name))
             params['input_shapes'].pop(input_name)
             params['input_shapes'][new_input_name] = input_shape
             input_name = new_input_name
         input_names.append(input_name)
-        assert len(input_dtype) > idx, 'Meets invalid input_dtype in convert_torch_to_onnx'
+        assert len(
+            input_dtype) > idx, 'Meets invalid input_dtype in convert_torch_to_onnx'
         try:
             tensor_dtype = getattr(torch, input_dtype[idx])
-            INFO('[Parser]: Input dtype of input %s is set to %s!' % (input_name, input_dtype[idx]))
+            INFO('[Parser]: Input dtype of input %s is set to %s!' %
+                 (input_name, input_dtype[idx]))
         except Exception as e:
             tensor_dtype = torch.float32
-            WARN('[Parser]: Input dtype %s is changed to float32 because %s' % (input_dtype[idx], str(e)))
+            WARN('[Parser]: Input dtype %s is changed to float32 because %s' %
+                 (input_dtype[idx], str(e)))
         if 'float' in str(tensor_dtype):
             tensor = torch.randn(input_shape, dtype=tensor_dtype)
         else:
             tensor = torch.zeros(input_shape, dtype=tensor_dtype)
+        if torch.cuda.is_available():
+            tensor = tensor.cuda()
         tensor_list.append(tensor)
 
     input_tensors = ()
     input_index = 0
     for inp in model.graph.inputs():
-        tensors, input_index = get_tuple_from_tensor_type(inp.type(), tensor_list, input_index)
+        tensors, input_index = get_tuple_from_tensor_type(
+            inp.type(), tensor_list, input_index)
         if len(tensors) > 0:
             input_tensors += tensors
 
@@ -649,7 +698,8 @@ def convert_torch_to_onnx(model_path, params):
             outputs_num = inputs_num // 2
         else:
             outputs_num = len(_flatten_type(out.type()))
-        output_names.extend([out_name + str(idx) for idx in range(outputs_num)])
+        output_names.extend([out_name + str(idx)
+                            for idx in range(outputs_num)])
     for idx, output_name in enumerate(output_names):
         if output_name[0].isdigit():
             output_names[idx] = 'output_' + output_name
@@ -658,33 +708,44 @@ def convert_torch_to_onnx(model_path, params):
     onnx_model_path = os.path.join(params.get('output_dir', './'),
                                    os.path.basename(model_path) + '.onnx')
     INFO('[Parser]: Convert TorchScript (%s) to onnx model...' % model_path)
-
-    # Call torch.onnx.export to convert TorchScript model to onnx model
-    exit_code = 1
-    try:
-        # Fix hangs issue by set_num_threads if multiprocessing is used.
-        # Refer to https://github.com/pytorch/pytorch/issues/36191
-        torch.set_num_threads(1)
-        # # Uncomment the following line to debug this code and torch.onnx.export:
-        # _export_to_onnx(model, input_tensors, onnx_model_path, input_names, output_names, onnx_opset_version)
-        process = Process(target=_export_to_onnx, args=(model,
-                                                        input_tensors,
-                                                        onnx_model_path,
-                                                        input_names,
-                                                        output_names,
-                                                        onnx_opset_version))
-        process.start()
-        process.join()
-        exit_code = process.exitcode
+    if torch.cuda.is_available():
         try:
-            process.close()
+            parallel_model = nn.DataParallel(model)
+            _export_to_onnx(parallel_model.module, input_tensors, onnx_model_path,
+                            input_names, output_names, onnx_opset_version)
         except Exception as e:
-            DEBUG('[Parser]: Fail to close process because %s' % str(e))
-    except Exception as e:
-        FATAL('[Parser]: Fail to convert model (%s) to onnx because %s' % (model_path, str(e)))
+            FATAL('[Parser]: Fail to convert model (%s) to onnx because %s' %
+                  (model_path, str(e)))
 
-    if exit_code != 0:
-        FATAL('[Parser]: Fail to convert model (%s) to onnx! Suggest to set env var PYTORCH_JIT_LOG_LEVEL=onnx for debug!' % model_path)
+    else:
+
+        # Call torch.onnx.export to convert TorchScript model to onnx model
+        exit_code = 1
+        try:
+            # Fix hangs issue by set_num_threads if multiprocessing is used.
+            # Refer to https://github.com/pytorch/pytorch/issues/36191
+            torch.set_num_threads(1)
+            # # Uncomment the following line to debug this code and torch.onnx.export:
+            # _export_to_onnx(model, input_tensors, onnx_model_path, input_names, output_names, onnx_opset_version)
+            process = Process(target=_export_to_onnx, args=(model,
+                                                            input_tensors,
+                                                            onnx_model_path,
+                                                            input_names,
+                                                            output_names,
+                                                            onnx_opset_version))
+            process.start()
+            process.join()
+            exit_code = process.exitcode
+            try:
+                process.close()
+            except Exception as e:
+                DEBUG('[Parser]: Fail to close process because %s' % str(e))
+        except Exception as e:
+            FATAL('[Parser]: Fail to convert model (%s) to onnx because %s' %
+                  (model_path, str(e)))
+
+        if exit_code != 0:
+            FATAL('[Parser]: Fail to convert model (%s) to onnx! Suggest to set env var PYTORCH_JIT_LOG_LEVEL=onnx for debug!' % model_path)
 
     INFO('[Parser]: Torch model has been converted to onnx model (%s) with opset version (%d)!' %
          (onnx_model_path, 'default' if onnx_opset_version is None else onnx_opset_version))
