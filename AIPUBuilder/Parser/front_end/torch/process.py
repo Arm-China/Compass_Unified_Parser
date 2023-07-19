@@ -64,7 +64,7 @@ def convert_argmin(g, input, dim=None, keepdim=False):
 def convert_bitshift(g, input, other, direction):
     input_dtype = input.type().dtype()
     if input_dtype.is_signed:
-        FATAL("[Parser]: Only BitShift with unsigned input is supported to convert to onnx, but got type %s!" % str(input_dtype))
+        FATAL('[Parser]: Only BitShift with unsigned input is supported to convert to onnx, but got type %s!' % str(input_dtype))
     return g.op('BitShift', input, other, direction_s=direction)
 
 
@@ -309,6 +309,24 @@ def convert_avg_pool(
     return output
 
 
+@helper.parse_args('v', 'v', 'is')
+def convert_max_unpool2d(g, input, indices, output_size):
+    # Convert indices from HW format to NCHW format
+    input_shape = helper._get_tensor_sizes(input)
+    n, c, in_h, in_w = input_shape
+    if len(output_size) != 2:
+        FATAL('[Parser]: Meets invalid output_size of max_unpool2d in convert_max_unpool2d!')
+    out_h, out_w = output_size
+    offset = np.reshape(np.arange(0, n), (n, 1, 1, 1)) * c * out_h * out_w + \
+        np.reshape(np.arange(0, c), (c, 1, 1)) * out_h * out_w
+    offset = np.tile(offset, [1, 1, in_h, in_w])
+    offset_node = g.op('Constant', value_t=torch.tensor(offset, dtype=torch.int64))
+    indices = g.op('Add', indices, offset_node)
+    output_shape = g.op('Constant', value_t=torch.tensor([n, c] + output_size, dtype=torch.int64))
+    # Need set output type for MaxUnpool here because there is no type inference for this op in torch.
+    return g.op('MaxUnpool', input, indices, output_shape, kernel_shape_i=[1, 1]).setType(input.type())
+
+
 @helper.parse_args('v', 'i', 'v', 'v')
 def convert_quantized_cat(
     g,
@@ -440,6 +458,8 @@ def convert_torch_to_onnx(model_path, params):
         torch.onnx.register_custom_op_symbolic(
             'aten::bitwise_xor', convert_bitwise_xor, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
+        'aten::avg_pool2d', convert_avg_pool, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
         'aten::bitwise_left_shift', convert_bitshift_left, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::bitwise_right_shift', convert_bitshift_right, onnx_opset_version)
@@ -450,12 +470,11 @@ def convert_torch_to_onnx(model_path, params):
     torch.onnx.register_custom_op_symbolic(
         'aten::gru_cell', convert_gru_cell, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
-        'aten::avg_pool2d', convert_avg_pool, onnx_opset_version)
-    torch.onnx.register_custom_op_symbolic(
-        'prim::ConstantChunk', convert_constant_chunk, onnx_opset_version)
-
+        'aten::max_unpool2d', convert_max_unpool2d, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::mean', convert_reduce_mean, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'prim::ConstantChunk', convert_constant_chunk, onnx_opset_version)
 
     # for quantized Ops
     torch.onnx.register_custom_op_symbolic(

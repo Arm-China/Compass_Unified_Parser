@@ -1847,8 +1847,19 @@ def merge_hw_maxunpool(graph):
                                       ('transpose', 'maxunpool', {
                                        'src_out_port': 0, 'dst_in_port': 1}),
                                       ])
-    for m in matches:
-        names = ['const', 'add', 'cast', 'transpose', 'maxunpool']
+    matches2 = matched_patterns(graph,
+                                nodes=[('const', {'op': 'Constant'}),
+                                       ('add', {'op': 'ArmEltwise'}),
+                                       ('transpose', {'op': 'ArmTranspose'}),
+                                       ('maxunpool', {'op': 'ArmMaxUnpool'}),
+                                       ],
+                                edges=[('const', 'add'),
+                                       ('add', 'transpose'),
+                                       ('transpose', 'maxunpool', {
+                                           'src_out_port': 0, 'dst_in_port': 1}),
+                                       ])
+    for m in matches + matches2:
+        names = ['const', 'add', 'transpose', 'maxunpool'] + (['cast'] if 'cast' in m else [])
         obj_dict = {n: NodeWrap(graph, m[n])['object'] for n in names}
         if all([obj is not None for obj in obj_dict.values()]):
             if obj_dict['add'].method != 'ADD' \
@@ -1864,13 +1875,14 @@ def merge_hw_maxunpool(graph):
             if len(input_shapes) != 2 \
                     or len(input_shapes[0]) != 4 \
                     or len(input_shapes[1]) != 4 \
-                    or len(output_shapes) != 1 \
+                    or len(output_shapes) < 1 \
                     or len(output_shapes[0]) != 4:
                 continue
-            n, h, w, c = input_shapes[0]
+            n, in_h, in_w, c = input_shapes[0]
+            out_h, out_w = output_shapes[0][1:-1]
             add_oprand = np.reshape(np.arange(
-                0, n), (n, 1, 1, 1)) * c * h * w + np.reshape(np.arange(0, c), (c, 1, 1)) * h * w
-            add_oprand = np.tile(add_oprand, [1, 1, h, w]).astype(np.float32)
+                0, n), (n, 1, 1, 1)) * c * out_h * out_w + np.reshape(np.arange(0, c), (c, 1, 1)) * out_h * out_w
+            add_oprand = np.tile(add_oprand, [1, 1, in_h, in_w]).astype(np.float32)
             if not FLOAT_EQUAL(obj_dict['const'].value, add_oprand):
                 continue
             matched = True
@@ -1880,7 +1892,10 @@ def merge_hw_maxunpool(graph):
             for src, _, in_attr in add_in_edges:
                 graph.remove_edge(src, m['add'])
                 if src != m['const']:
-                    graph.add_edge(src, m['cast'], **in_attr)
+                    indices_inp = m['cast'] if 'cast' in m else m['transpose']
+                    indices_inp_in_attr = copy.deepcopy(in_attr)
+                    indices_inp_in_attr.update({'dst_in_port': 0})
+                    graph.add_edge(src, indices_inp, **indices_inp_in_attr)
             maxunpool_obj.flatten_dim = 'HW'
         else:
             ERROR('[Parser]: Meets invalid Node in merge_hw_maxunpool!')
