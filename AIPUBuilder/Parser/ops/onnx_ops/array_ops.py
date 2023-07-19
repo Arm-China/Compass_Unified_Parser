@@ -391,10 +391,16 @@ class GatherOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
             out_tensor = np.take(inputs[0], np.array(
                 indices, np.int32), axis=self.axis)
         except:
-            if self.is_all_inputs_const():
+            in_consts = self.sorted_in_consts()
+            if len(in_consts) == 2 \
+                    or (len(in_consts) == 1 and in_consts[0][1] == 1):
+                # if exception met when const indices, that's error
                 ERROR('[Parser]: Meets invalid indices input of Gather Op (%s) in infer_shape!' % self.name)
-            indices = np.zeros_like(indices)
-            out_tensor = np.take(inputs[0], indices, axis=self.axis)
+                out_tensor = None
+            else:
+                WARN('[Parser]: Random indices of Gather Op (%s) are replaced by zeors indices in infer_shape!' % self.name)
+                indices = np.zeros_like(indices)
+                out_tensor = np.take(inputs[0], indices, axis=self.axis)
         self.set_out_tensor(out_tensor)
 
 
