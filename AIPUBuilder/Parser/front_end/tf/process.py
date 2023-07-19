@@ -11,7 +11,7 @@ from .passes.front_passes import merge_gru, merge_gru2, merge_lstm, merge_zero_f
     remove_switch, remove_merge, \
     convert_to_onnx, split_b2s, split_s2b, split_special_floormod, \
     convert_resize_bilinear_nearest, remove_identity_n, convert_conv_backpropinput, \
-    convert_special_fakequantminmaxvars, convert_maxpoolwithargmax, convert_nms, convert_fusebatchnormv3, \
+    convert_special_fakequantminmaxvars, convert_maxpoolwithargmax, convert_nms, convert_fusebatchnorm, \
     convert_matmul, convert_invert_permutation, convert_reverse, convert_d2s_or_s2d, convert_onehot, \
     remove_isfinite_select, merge_fasterrcnn, merge_keras_maskrcnn, merge_lstm2, \
     merge_embedding_lookup_sparse, merge_embedding_lookup_sparse_with_weights, merge_overlap_and_add, \
@@ -79,7 +79,7 @@ def process_tf(model_path, params):
         remove_merge(graph)
         remove_isfinite_select(graph)
         convert_resize_bilinear_nearest(graph)
-        convert_fusebatchnormv3(graph)
+        convert_fusebatchnorm(graph)
         convert_matmul(graph)
         convert_unpack(graph, op_type='TfUnpack')
         convert_conv_backpropinput(graph)
