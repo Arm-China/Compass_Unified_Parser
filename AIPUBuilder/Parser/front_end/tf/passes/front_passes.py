@@ -928,42 +928,75 @@ def convert_special_fakequantminmaxvars(graph):
         clear_redundant_nodes(graph)
 
 
-def convert_fusebatchnormv3(graph):
+def convert_fusebatchnorm(graph):
     matched = False
-    matches = single_node_matcher(graph, 'TfFusedBatchNormV3')
+    matches = single_node_matcher(graph, ['TfFusedBatchNormV3', 'TfFusedBatchNorm'])
     for m in matches:
-        fusebnv3 = m['target']
-        fusebnv3_obj = NodeWrap(graph, fusebnv3)['object']
-        fusebnv3_in_edges = graph.sorted_in_edges(fusebnv3, data=True)
-        if fusebnv3_obj is not None \
-                and len(fusebnv3_in_edges) == 5 \
-                and len(fusebnv3_obj.get_input_tensors()) == 5 \
-                and all(inp is not None for inp in fusebnv3_obj.get_input_tensors()):
-            if not all(fusebnv3_in_edges[idx][2]['tensor'].is_const for idx in range(1, 5)):
+        fusebn = m['target']
+        fusebn_obj = NodeWrap(graph, fusebn)['object']
+        fusebn_in_edges = graph.sorted_in_edges(fusebn, data=True)
+        if fusebn_obj is not None \
+                and len(fusebn_in_edges) == 5 \
+                and len(fusebn_obj.get_input_tensors()) == 5 \
+                and all(inp is not None for inp in fusebn_obj.get_input_tensors()):
+            if not all(fusebn_in_edges[idx][2]['tensor'].is_const for idx in range(1, 5)):
                 WARN(
-                    '[Parser]: Meets unsupported non-constant inputs(1-4) of Node(%s) in convert_fusebatchnormv3!' % fusebnv3)
+                    '[Parser]: Meets unsupported non-constant inputs(1-4) of Node(%s) in convert_fusebatchnorm!' % fusebn)
                 continue
-            if fusebnv3_obj.is_training \
-                    or fusebnv3_in_edges[3][2]['tensor'].value.size != 0 \
-                    or fusebnv3_in_edges[4][2]['tensor'].value.size != 0:
+            if 0 not in fusebn_obj.get_out_ports():
                 continue
+            valid_out_num = 1
+            if fusebn_obj.is_training:
+                if not FLOAT_EQUAL(fusebn_obj.exponential_avg_factor, 1.0):
+                    WARN('[Parser]: Meets unsupported exponential_avg_factor in %s Node(%s) in convert_fusebatchnorm!' %
+                         (fusebn_obj.type, fusebn))
+                    continue
+                valid_out_num = 3
+            found_non_out_child = False
+            fusebn_out_edges = graph.sorted_out_edges(fusebn, keys=True, data=True)
+            for _, dst, _, out_attr in fusebn_out_edges:
+                if out_attr['src_out_port'] < valid_out_num:
+                    continue
+                dst_obj = NodeWrap(graph, dst)['object']
+                if dst_obj is None:
+                    ERROR('[Parser]: Meets invalid out Node(%s) in convert_fusebatchnorm!' % fusebn)
+                    continue
+                if dst_obj.type != 'Out':
+                    found_non_out_child = True
+                    break
+            if found_non_out_child:
+                if fusebn_obj.is_training:
+                    WARN('[Parser]: Meets unsupported output reserve_space_* in training %s(%s)!'
+                         % (fusebn_obj.type, fusebn))
+                    continue
+                else:
+                    WARN('[Parser]: Meets unsupported output batch_mean/batch_variance/reserve_space_* in non-training %s(%s)!'
+                         % (fusebn_obj.type, fusebn))
+                    continue
             matched = True
-            num_output = fusebnv3_obj.get_input_tensors()[1].shape
-            new_mean = np.zeros(num_output, np.float32)
-            new_var = np.ones(num_output, np.float32)
-            graph.remove_edges_from(fusebnv3_in_edges[3:])
-            fusebnv3_attr = fusebnv3_obj.copied_attr()
-            insert_constant(graph, fusebnv3 + '_mean',
-                            new_mean, fusebnv3, in_port=3, data_format='NHWC')
-            insert_constant(graph, fusebnv3 + '_var',
-                            new_var, fusebnv3, in_port=4, data_format='NHWC')
-            fusebnv3_attr.update({'opset_version': 9})
-            NodeWrap(graph, fusebnv3).replace_obj(
-                'BatchNormalization', fusebnv3_attr)
+            fusebn_attr = fusebn_obj.copied_attr()
+            if fusebn_obj.is_training:
+                fusebn_attr.update({'training_mode': 1})
+            elif fusebn_in_edges[3][2]['tensor'].value.size == 0 \
+                    and fusebn_in_edges[4][2]['tensor'].value.size == 0:
+                num_output = fusebn_obj.get_input_tensors()[1].shape
+                new_mean = np.zeros(num_output, np.float32)
+                new_var = np.ones(num_output, np.float32)
+                graph.remove_edges_from(fusebn_in_edges[3:])
+                insert_constant(graph, fusebn + '_mean',
+                                new_mean, fusebn, in_port=3, data_format='NHWC')
+                insert_constant(graph, fusebn + '_var',
+                                new_var, fusebn, in_port=4, data_format='NHWC')
+            for _, dst, k, out_attr in fusebn_out_edges:
+                if out_attr['src_out_port'] >= valid_out_num:
+                    graph.remove_edge(fusebn, dst, key=k)
+            fusebn_attr.update({'opset_version': 15})
+            NodeWrap(graph, fusebn).replace_obj(
+                'BatchNormalization', fusebn_attr)
         else:
             ERROR(
-                '[Parser]: Meets invalid Node(%s) in convert_fusebatchnormv3!'
-                % (fusebnv3))
+                '[Parser]: Meets invalid Node(%s) in convert_fusebatchnorm!'
+                % (fusebn))
     if matched:
         clear_redundant_nodes(graph)
 
@@ -4442,19 +4475,6 @@ def convert_to_onnx(graph):
                                           'pseudo': node_obj.pseudo_random,
                                           'overlap': node_obj.overlapping,
                                           })
-                elif pure_type in ('FusedBatchNorm', 'FusedBatchNormV3'):
-                    if node_obj.is_training:
-                        if not FLOAT_EQUAL(node_obj.exponential_avg_factor, 1.0):
-                            WARN(
-                                '[Parser]: Meets unsupported exponential_avg_factor in TF FusedBatchNorm/FusedBatchNormV3 Node(%s) to convert to Onnx!' % node_name)
-                            continue
-                        new_node_attr.update({'training_mode': 1})
-                    else:
-                        out_edges = graph.sorted_out_edges(
-                            node_name, keys=True, data=True)
-                        for _, dst, k, out_attr in out_edges:
-                            if out_attr['src_out_port'] > 0:
-                                graph.remove_edge(node_name, dst, key=k)
                 elif pure_type == 'InTopKV2':
                     graph.remove_edges_from(in_edges[2:])
                 elif pure_type == 'LeftShift':

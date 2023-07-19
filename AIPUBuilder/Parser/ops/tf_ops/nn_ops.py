@@ -550,10 +550,12 @@ class TfFusedBatchNormOp(LayoutConcernedOp, OpHasVariableOutPorts, TfOp):
     def infer_shape(self):
         super(TfFusedBatchNormOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_list = tf.compat.v1.nn.fused_batch_norm(*inputs,
-                                                    epsilon=self.epsilon,
-                                                    data_format=self.data_format,
-                                                    is_training=self.is_training)
+        assert len(inputs) == 5, 'TfFusedBatchNormOp expects 5 inputs, but got %d.' % len(inputs)
+        out_list = tf.raw_ops.FusedBatchNorm(x=inputs[0], scale=inputs[1], offset=inputs[2],
+                                             mean=inputs[3], variance=inputs[4],
+                                             epsilon=self.epsilon,
+                                             data_format=self.data_format,
+                                             is_training=self.is_training)
         out_tensor_list = [o.numpy() for o in out_list]
         self.set_out_tensor(out_tensor_list)
 
@@ -579,10 +581,12 @@ class TfFusedBatchNormV3Op(LayoutConcernedOp, OpHasVariableOutPorts, TfOp):
     def infer_shape(self):
         super(TfFusedBatchNormV3Op, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_list = tf.compat.v1.nn.fused_batch_norm(*inputs,
-                                                    epsilon=self.epsilon,
-                                                    data_format=self.data_format,
-                                                    is_training=self.is_training)
+        assert len(inputs) == 5, 'TfFusedBatchNormV3Op expects 5 inputs, but got %d.' % len(inputs)
+        out_list = tf.raw_ops.FusedBatchNormV3(x=inputs[0], scale=inputs[1], offset=inputs[2],
+                                               mean=inputs[3], variance=inputs[4],
+                                               epsilon=self.epsilon,
+                                               data_format=self.data_format,
+                                               is_training=self.is_training)
         out_tensor_list = [o.numpy() for o in out_list]
         self.set_out_tensor(out_tensor_list)
 
