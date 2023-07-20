@@ -32,6 +32,7 @@ def build_subgraph(params, root_graph_info, opset_ver):
     outputs = params.get('outputs', [])
     consts = params.get('consts', [])
     nodes_names = [n['name'] for n in nodes]
+    const_nodes_names = [n['name'] for n in consts]
 
     root_graph = root_graph_info['graph']
     root_nodes = root_graph_info['nodes']
@@ -46,6 +47,15 @@ def build_subgraph(params, root_graph_info, opset_ver):
     for oi, op_info in enumerate(all_nodes):
         out_tensor_operator_map.update({k: oi for k in [(
             out_info['name'], out_info['out_port']) for out_info in op_info['output']]})
+        node_name = op_info['name']
+        if node_name in nodes_names \
+                and node_name not in const_nodes_names \
+                and op_info['type'] in ('Constant', 'ConstantOfShape') \
+                and isinstance(op_info.get('value'), dict) \
+                and op_info['value'].get('tensor', None) is not None:
+            op_info.update({'tensor': op_info['value']['tensor']})
+            consts.append(op_info)
+            const_nodes_names.append(node_name)
     const_tensor_operator_map = {}
     for oi, op_info in enumerate(consts):
         const_node_name = op_info['name']
@@ -62,8 +72,10 @@ def build_subgraph(params, root_graph_info, opset_ver):
             filter_nodes.append(const_node_name)
 
     for n in nodes:
-        n.update({'opset_version': opset_ver})
         name = n.get('name', '')
+        if name in const_nodes_names:
+            continue
+        n.update({'opset_version': opset_ver})
         root_graph.add_node(name)
         NodeWrap(root_graph, name).replace_obj(n['type'], n)
         filter_nodes.append(name)
