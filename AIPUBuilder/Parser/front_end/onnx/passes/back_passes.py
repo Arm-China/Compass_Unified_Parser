@@ -29,7 +29,7 @@ from ....plugin_loader import PARSER_OP_DICT
 
 def adjust_5d_to_4d(graph):
     matches = [single_node_matcher(graph, type_name) for type_name in (
-        'ArmActivation', 'ArmBatchNorm', 'ArmLRN', 'ArmMatMul', 'ArmSlice')]
+        'ArmActivation', 'ArmBatchNorm', 'ArmDiv', 'ArmLRN', 'ArmMatMul', 'ArmSlice')]
     matches = extend_lists(matches)
     for m in matches:
         node_name = m['target']
@@ -42,6 +42,11 @@ def adjust_5d_to_4d(graph):
                 if node_obj.type == 'ArmMatMul':
                     if len(input_shapes) != 2 \
                             or any((in_s is None or None in in_s or len(in_s) < 5) for in_s in input_shapes) \
+                            or (output_shapes[0] is None or None in output_shapes[0]):
+                        continue
+                elif node_obj.type == 'ArmDiv':
+                    if len(input_shapes) != 2 \
+                            or any((in_s is None or None in in_s or len(in_s) < 6) for in_s in input_shapes) \
                             or (output_shapes[0] is None or None in output_shapes[0]):
                         continue
                 else:
@@ -77,7 +82,7 @@ def adjust_5d_to_4d(graph):
                     insert_reshape(graph, src, node_name, in_attr,
                                    pre_dim, type='ArmReshape')
 
-                if node_obj.type == 'ArmMatMul':
+                if node_obj.type in ('ArmMatMul', 'ArmDiv'):
                     old_dim = [output_shapes[0][0],
                                int(np.prod(output_shapes[0][1:-2])),
                                output_shapes[0][-2],
