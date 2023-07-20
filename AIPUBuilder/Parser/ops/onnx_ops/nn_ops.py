@@ -615,18 +615,18 @@ class GridSampleOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
         if self.cur_version == 16 and len(inputs[0].shape) != 4:
             ERROR('[Parser]: GridSampleOp (%s) only supports spatial (4-D) inputs in Op version [%s]!' %
                   (self.name, self.cur_version))
+        inp = inputs[0].astype(np.float32) if inputs[0].dtype != np.float32 else inputs[0]
         input_tensor = np.transpose(
-            inputs[0], [0, 3, 1, 2]) if self.data_format == 'NHWC' else inputs[0]
+            inp, [0, 3, 1, 2]) if self.data_format == 'NHWC' else inputs[0]
         out_tensor = torch.nn.functional.grid_sample(torch.from_numpy(input_tensor),
                                                      torch.from_numpy(
-                                                         inputs[1]),
+                                                         inputs[1].astype(np.float32)),
                                                      mode=self.mode,
                                                      padding_mode=self.padding_mode,
                                                      align_corners=bool(self.align_corners)).numpy()
-        # .astype(inputs[0].dtype)
         out_tensor = np.transpose(
             out_tensor, [0, 2, 3, 1]) if self.data_format == 'NHWC' else out_tensor
-        self.set_out_tensor(out_tensor)
+        self.set_out_tensor(out_tensor.astype(inputs[0].dtype))
 
 
 class GroupNormalizationOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):

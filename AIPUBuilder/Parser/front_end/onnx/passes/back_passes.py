@@ -38,13 +38,21 @@ def adjust_5d_to_4d(graph):
             input_shapes = node_obj.get_input_shapes()
             output_shapes = node_obj.get_output_shapes()
             if len(input_shapes) in (1, 2) \
-                    and all([(in_s is not None and len(in_s) == 5) for in_s in input_shapes]) \
                     and len(output_shapes) >= 1:
+                if node_obj.type == 'ArmMatMul':
+                    if len(input_shapes) != 2 \
+                            or any((in_s is None or None in in_s or len(in_s) < 5) for in_s in input_shapes) \
+                            or (output_shapes[0] is None or None in output_shapes[0]):
+                        continue
+                else:
+                    if any((in_s is None or None in in_s or len(in_s) != 5) for in_s in input_shapes):
+                        continue
                 if node_obj.type == 'ArmSlice' and input_shapes[0][0] != 1:
                     continue
                 in_shape = input_shapes[0]
                 in_edges = graph.sorted_in_edges(node_name, data=True)
                 pre_dim = None
+                old_dim = None
                 if node_obj.type == 'ArmBatchNorm':
                     last_2_dim = np.gcd(int(np.prod(in_shape[1:-1])), 1920)
                     pre_dim = [in_shape[0],
@@ -62,16 +70,21 @@ def adjust_5d_to_4d(graph):
                     if pre_dim is None or idx != 0:
                         in_shape_idx = input_shapes[idx]
                         pre_dim = [in_shape_idx[0],
-                                   int(np.prod(in_shape_idx[1:3])),
-                                   in_shape_idx[3],
+                                   int(np.prod(in_shape_idx[1:-2])),
+                                   in_shape_idx[-2],
                                    in_shape_idx[-1]]
                     src, _, in_attr = in_edge
                     insert_reshape(graph, src, node_name, in_attr,
                                    pre_dim, type='ArmReshape')
 
+                if node_obj.type == 'ArmMatMul':
+                    old_dim = [output_shapes[0][0],
+                               int(np.prod(output_shapes[0][1:-2])),
+                               output_shapes[0][-2],
+                               output_shapes[0][-1]]
                 post_dim = copy.deepcopy(output_shapes[0])
                 post_reshape = insert_reshape_after(
-                    graph, node_name, post_dim, type='ArmReshape')
+                    graph, node_name, post_dim, old_dim, type='ArmReshape')
 
                 if node_name in graph._attr['output_names']:
                     index = graph._attr['output_names'].index(node_name)
