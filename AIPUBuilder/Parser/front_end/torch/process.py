@@ -309,6 +309,86 @@ def convert_avg_pool(
     return output
 
 
+def convert_max_pool(g, input, kernel_size, strides, paddings, dilations, ceil_mode, dim, return_indices=False):
+    def _get_torch_output_shape(input_size, kernel_size, pad_head, pad_tail, stride, dilation):
+        extra = (stride - 1)
+        output_size = int((input_size + pad_head + pad_tail - dilation * (kernel_size - 1) - 1 + extra) / stride) + 1
+        if (output_size - 1) * stride >= (input_size + pad_head):
+            output_size = output_size - 1
+        return output_size
+
+    def _get_onnx_output_shape(input_size, kernel_size, pad_head, pad_tail, stride, dilation):
+        output_size = int(np.ceil((input_size + pad_head + pad_tail - dilation * (kernel_size - 1) - 1) / stride)) + 1
+        return output_size
+
+    assert isinstance(dim, int) and dim in [1, 2, 3], 'Meets invalid dim in convert_max_pool_in_ceil_mode!'
+    if not ceil_mode:
+        if return_indices:
+            from torch.onnx.symbolic_opset10 import max_pool1d_with_indices, max_pool2d_with_indices, max_pool3d_with_indices
+            max_pool_func = max_pool1d_with_indices if dim == 1 else (
+                max_pool2d_with_indices if dim == 2 else max_pool3d_with_indices)
+            max_pool, indices = max_pool_func(g, input, kernel_size, strides, paddings, dilations, ceil_mode)
+            return (max_pool, indices)
+        else:
+            from torch.onnx.symbolic_opset10 import max_pool1d, max_pool2d, max_pool3d
+            max_pool_func = max_pool1d if dim == 1 else (max_pool2d if dim == 2 else max_pool3d)
+            max_pool = max_pool_func(g, input, kernel_size, strides, paddings, dilations, ceil_mode)
+            return max_pool
+
+    if not strides:
+        strides = kernel_size
+    kwargs = {'kernel_shape_i': kernel_size, 'pads_i': paddings * 2,
+              'strides_i': strides, 'ceil_mode_i': ceil_mode, 'dilations_i': dilations}
+    if return_indices:
+        max_pool, indices = g.op('MaxPool', input, outputs=2, **kwargs)
+    else:
+        max_pool = g.op('MaxPool', input, outputs=1, **kwargs)
+        indices = None
+
+    input_shape = helper._get_tensor_sizes(input)
+    slice_ends = []
+    for input_size, kernel, stride, pad, dilation in zip(input_shape[2:], kernel_size, strides, paddings, dilations):
+        torch_output_shape = _get_torch_output_shape(input_size, kernel, pad, pad, stride, dilation)
+        onnx_output_shape = _get_onnx_output_shape(input_size, kernel, pad, pad, stride, dilation)
+        if torch_output_shape > onnx_output_shape:
+            FATAL('[Parser]: Meets unsupported output shape of max_pool in convert_max_pool_in_ceil_mode!')
+        slice_ends.append(torch_output_shape)
+    ends_input = g.op('Constant', value_t=torch.tensor(slice_ends))
+    starts_input = g.op('Constant', value_t=torch.tensor([0] * len(slice_ends)))
+    axes_input = g.op('Constant', value_t=torch.tensor(list(range(2, len(input_shape)))))
+    slice_out = g.op('Slice', max_pool, starts_input, ends_input, axes_input)
+
+    if indices is not None:
+        ndims = len(input_shape) - 2
+        slice_indices = g.op('Slice', indices, starts_input, ends_input, axes_input)
+        _, flattened_indices = g.op('MaxPool', input, outputs=2, kernel_shape_i=[1] * ndims)
+        sub_indices = helper._slice_helper(g, flattened_indices,
+                                           axes=list(range(2, len(input_shape))),
+                                           starts=[0] * ndims, ends=[1] * ndims)
+        indices = g.op('Sub', slice_indices, sub_indices)
+    return (slice_out, indices) if return_indices else slice_out
+
+
+@helper.parse_args('v', 'is', 'is', 'is', 'is', 'i')
+def convert_max_pool1d(g, input, kernel_size, stride, padding, dilation, ceil_mode):
+    return convert_max_pool(g, input, kernel_size, stride, padding, dilation, ceil_mode, 1)
+
+
+@helper.parse_args('v', 'is', 'is', 'is', 'is', 'i')
+def convert_max_pool2d(g, input, kernel_size, stride, padding, dilation, ceil_mode):
+    return convert_max_pool(g, input, kernel_size, stride, padding, dilation, ceil_mode, 2)
+
+
+@helper.parse_args('v', 'is', 'is', 'is', 'is', 'i')
+def convert_max_pool3d(g, input, kernel_size, stride, padding, dilation, ceil_mode):
+    return convert_max_pool(g, input, kernel_size, stride, padding, dilation, ceil_mode, 3)
+
+
+@helper.parse_args('v', 'is', 'is', 'is', 'is', 'i')
+def convert_max_pool2d_with_indices(g, input, kernel_size, stride, padding, dilation, ceil_mode):
+    return convert_max_pool(g, input, kernel_size, stride, padding, dilation, ceil_mode, 2, return_indices=True)
+
+
 @helper.parse_args('v', 'v', 'is')
 def convert_max_unpool2d(g, input, indices, output_size):
     # Convert indices from HW format to NCHW format
@@ -469,6 +549,14 @@ def convert_torch_to_onnx(model_path, params):
         'aten::flatten', convert_flatten, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::gru_cell', convert_gru_cell, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'aten::max_pool1d', convert_max_pool1d, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'aten::max_pool2d', convert_max_pool2d, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'aten::max_pool3d', convert_max_pool3d, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'aten::max_pool2d_with_indices', convert_max_pool2d_with_indices, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::max_unpool2d', convert_max_unpool2d, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
