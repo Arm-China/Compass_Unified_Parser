@@ -1892,6 +1892,9 @@ def convert_reducemean_to_avgpool(graph):
         if axes != list(range(len(input_shape)))[1:-1] \
                 and axes != list(range(len(input_shape)))[2:]:
             continue
+        kernel_shape = np.array(input_shape)[np.array(axes)].tolist()
+        if len(input_shape) == 5 and int(np.prod(kernel_shape)) > 256:
+            continue
         keepdim_out_shape = []
         for index in range(len(input_shape)):
             keepdim_out_shape.append(
@@ -1901,7 +1904,6 @@ def convert_reducemean_to_avgpool(graph):
         if (cur_data_format == 'NCHW' and axes == list(range(len(input_shape)))[1:-1]) \
                 or (cur_data_format == 'NHWC' and axes == list(range(len(input_shape)))[2:]):
             need_transpose = True
-        kernel_shape = np.array(input_shape)[np.array(axes)].tolist()
         last_name = mean
         in_edges = graph.sorted_in_edges(mean, data=True)
         if need_transpose:
