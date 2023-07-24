@@ -34,7 +34,7 @@ model_path = TEST_NAME + '.tflite'
 # tflite only supports float32, int32 and uint8
 create_cast_model(model_path, input_shape, to_dtype='uint8')
 
-expected_keywords = 'clip_mode=TRUNCATION'
+expected_keywords = ['clip_mode=TRUNCATION', 'ignore_scale_zp=true']
 exit_status = run_parser(
     model_path, feed_dict, verify=True,
     expected_keywords=expected_keywords)
