@@ -40,7 +40,7 @@ model_path = TEST_NAME + '.pb'
 # Create model
 create_cast_model(model_path, input_shape, to_dtype='int8')
 
-expected_keywords = 'clip_mode=TRUNCATION'
+expected_keywords = ['clip_mode=TRUNCATION', 'ignore_scale_zp=true']
 exit_status = run_parser(
     model_path, feed_dict, model_type='tf', verify=True,
     expected_keywords=expected_keywords)

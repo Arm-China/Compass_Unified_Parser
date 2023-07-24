@@ -2113,9 +2113,11 @@ def rename_cast(graph):
                     to_dtype = cast_obj.to
                 if cast_obj.saturate:
                     mode = 'saturation'
+                    ignore_scale_zp = False
                 else:
                     mode = 'truncation'
-                cast_attr.update({'to_dtype': to_dtype, 'clip_mode': mode})
+                    ignore_scale_zp = True
+                cast_attr.update({'to_dtype': to_dtype, 'clip_mode': mode, 'ignore_scale_zp': ignore_scale_zp})
                 NodeWrap(graph, cast).replace_obj('ArmCast', cast_attr)
             else:
                 ERROR('[Parser]: Meets Cast Op (%s) with invalid dtype (%s) that cannot be converted in rename_cast!' % (
