@@ -726,7 +726,7 @@ def rename_dilation_erosion(graph):
         ero_dila = m['target']
         ero_dila_obj = NodeWrap(graph, ero_dila)['object']
         if ero_dila_obj is None:
-            ERROR('[Parser]: Meets invalid node(%s) in convert_ero_dila_weights!' % ero_dila)
+            ERROR('[Parser]: Meets invalid node(%s) in rename_dilation_erosion!' % ero_dila)
             continue
         ero_dila_attr = ero_dila_obj.copied_attr()
         if len(ero_dila_obj.weights.shape) == 3:
@@ -737,7 +737,36 @@ def rename_dilation_erosion(graph):
             elif ero_dila_obj.type == 'Dilation':
                 NodeWrap(graph, ero_dila).replace_obj('ArmDilation', ero_dila_attr)
         else:
-            ERROR('[Parser]: Meets invalid weights(%s) in convert_ero_dila_weights!' % ero_dila)
+            ERROR('[Parser]: Meets invalid weights(%s) in rename_dilation_erosion!' % ero_dila)
+
+
+def rename_div(graph):
+    matches = single_node_matcher(graph, 'Div')
+    for m in matches:
+        div = m['target']
+        div_obj = NodeWrap(graph, div)['object']
+        if div_obj is None:
+            ERROR('[Parser]: Meets invalid Div node(%s) in rename_div!' % div)
+            continue
+        div_in_edges = graph.sorted_in_edges(div, data=True)
+        if len(div_in_edges) < 2 or div_in_edges[0][2]['tensor'] is None \
+                or div_in_edges[0][2]['tensor'].value is None \
+                or div_in_edges[1][2]['tensor'] is None \
+                or div_in_edges[1][2]['tensor'].value is None:
+            ERROR('[Parser]: Meets invalid inputs of Div node(%s) in rename_div!' % div)
+            continue
+        div_attr = div_obj.copied_attr()
+        src1_type = str(div_in_edges[0][2]['tensor'].value.dtype)
+        src2_type = str(div_in_edges[1][2]['tensor'].value.dtype)
+        if 'int' in src1_type and 'int' in src2_type:
+            # DivMod op has 2 outputs, which are quotient(x//y) and remainder(x%y).
+            # Need to add Out node after the second output.
+            remainder_out = get_valid_node_name(graph, div + '_remainder')
+            graph.add_edge(div, remainder_out, **{'src_out_port': 1})
+            NodeWrap(graph, remainder_out).replace_obj('Out', {'name': remainder_out})
+            NodeWrap(graph, div).replace_obj('ArmDivMod', div_attr)
+        else:
+            NodeWrap(graph, div).replace_obj('ArmDiv', div_attr)
 
 
 def convert_bi_lstm(graph):
@@ -4851,6 +4880,7 @@ def back_passes(graph, params):
     rename_compress(graph)
     rename_conv(graph)
     rename_dilation_erosion(graph)
+    rename_div(graph)
     rename_gemm(graph)
     rename_generate_proposals(graph)
     rename_gridsample(graph)
@@ -4896,7 +4926,6 @@ def back_passes(graph, params):
     simple_rename(graph, 'CropAndResize', 'ArmCropAndResize')
     simple_rename(graph, 'CTCGreedyDecoder', 'ArmCTCGreedyDecoder')
     simple_rename(graph, 'DepthToSpace', 'ArmDepthToSpace')
-    simple_rename(graph, 'Div', 'ArmDiv')
     simple_rename(graph, 'Erf', 'ArmErf')
     simple_rename(graph, 'Exp', 'ArmExp')
     simple_rename(graph, 'Filter', 'ArmFilter')

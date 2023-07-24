@@ -4,12 +4,12 @@ from utils.run import run_parser
 from onnx import TensorProto, helper
 
 
-def create_div_model(onnx_path, input_size, output_size, version=13):
+def create_div_model(onnx_path, input_size, output_size, onnx_dtype, version=13):
     ''' Create onnx model for div op.
     '''
-    X1 = helper.make_tensor_value_info('X1', TensorProto.FLOAT, input_size)
-    X2 = helper.make_tensor_value_info('X2', TensorProto.FLOAT, input_size)
-    Y = helper.make_tensor_value_info('Y', TensorProto.FLOAT, output_size)
+    X1 = helper.make_tensor_value_info('X1', onnx_dtype, input_size)
+    X2 = helper.make_tensor_value_info('X2', onnx_dtype, input_size)
+    Y = helper.make_tensor_value_info('Y', onnx_dtype, output_size)
 
     div = helper.make_node(
         OP_NAME, ['X1', 'X2'],
@@ -33,10 +33,15 @@ OP_NAME = 'Div'
 input_shapes = [[3, 2], [1, 2, 3, 4, 5], [3, 4, 5, 6, 7, 8]]
 
 for input_shape in input_shapes:
-    model_path = '-'.join([OP_NAME, str(len(input_shape))]) + '.onnx'
-    feed_dict = {'X1': np.random.ranf(input_shape).astype(np.float32),
-                 'X2': np.random.ranf(input_shape).astype(np.float32)}
-    create_div_model(model_path, input_shape, input_shape)
-    exit_status = run_parser(model_path, feed_dict, expected_keywords=(
-        ['Reshape'] if len(input_shape) > 5 else []), verify=True)
-    assert exit_status
+    X1_data = np.random.randint(-10, 20, input_shape)
+    X2_data = np.random.randint(-20, -10, input_shape)
+    for dtype in ('float32', 'int32'):
+        model_path = '-'.join([OP_NAME, str(len(input_shape)), dtype]) + '.onnx'
+        onnx_dtype = TensorProto.FLOAT if dtype == 'float32' else TensorProto.INT32
+        create_div_model(model_path, input_shape, input_shape, onnx_dtype)
+        feed_dict = {'X1': X1_data.astype(dtype), 'X2': X2_data.astype(dtype)}
+        # FIXME: Enable verify after opt supports DivMod
+        verify = True if dtype == 'float32' else False
+        exit_status = run_parser(model_path, feed_dict, expected_keywords=(
+            ['Reshape'] if (len(input_shape) > 5 and dtype == 'float32') else []), verify=verify)
+        assert exit_status
