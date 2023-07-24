@@ -1659,6 +1659,23 @@ class ArmDivOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
         self.set_out_tensor(out_tensors)
 
 
+class ArmDivModOp(LayoutUnawareOp, OpHasMultipleOutPorts, ArmOp):
+    @classmethod
+    def cast_in_ports(cls):
+        return {0: ['int8', 'uint8', 'int32', 'uint32'], 1: ['int8', 'uint8', 'int32', 'uint32']}
+
+    @classmethod
+    def num_in_ports(cls):
+        return 2
+
+    def infer_shape(self):
+        super(ArmDivModOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        assert len(inputs) == 2, 'Expects 2 inputs for ArmDivMod op (%s), but got %d' % (self.name, len(inputs))
+        out1, out2 = np.divmod(*inputs)
+        self.set_out_tensor([out1, out2])
+
+
 class ArmEltwiseOp(LayoutUnawareOp, OpHasMethod, BaseActivationOp, ArmOp):
     FUNC_MAP = {'ADD': np.add,
                 'SUB': np.subtract,

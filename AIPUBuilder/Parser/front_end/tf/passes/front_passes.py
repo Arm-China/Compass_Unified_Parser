@@ -161,7 +161,8 @@ def convert_d2s_or_s2d(graph):
 
 
 def convert_floordiv(graph, op_type='TfFloorDiv'):
-    '''Convert tf/tflite floordiv to Div+Floor(+Cast if output dtype is int).
+    '''Convert tf/tflite floordiv to (int) Div if both inputs are int type, otherwise
+    convert to Div+Floor.
     '''
     if op_type not in ('TfFloorDiv', 'Tffloor_div', 'LiteFLOOR_DIV'):
         ERROR('[Parser]: Meets invalid Op type (%s) in convert_floordiv!' % op_type)
@@ -172,45 +173,39 @@ def convert_floordiv(graph, op_type='TfFloorDiv'):
     for m in matches:
         floordiv = m['target']
         floordiv_obj = NodeWrap(graph, floordiv)['object']
-        in_edges = graph.sorted_in_edges(floordiv, data=True, keys=True)
-        out_edges = graph.sorted_out_edges(floordiv, data=True, keys=True)
+        in_edges = graph.sorted_in_edges(floordiv, data=True)
+        out_edges = graph.sorted_out_edges(floordiv, data=True)
         if floordiv_obj is None or len(out_edges) < 1 or len(in_edges) < 2:
             ERROR('[Parser]: Meets invalid Op (%s) in convert_floordiv!' % floordiv)
             continue
-        src_x, _, k_x, in_attr_x = in_edges[0]
-        src_y, _, k_y, in_attr_y = in_edges[1]
+        _, _, in_attr_x = in_edges[0]
+        _, _, in_attr_y = in_edges[1]
         if in_attr_x['tensor'] is None or in_attr_x['tensor'].value is None \
                 or in_attr_y['tensor'] is None or in_attr_y['tensor'].value is None:
             ERROR('[Parser]: Meets invalid input tensors of Op (%s) in convert_floordiv!' % floordiv)
             continue
 
-        dtype_x = str(in_attr_x['tensor'].value.dtype)
-        if 'int' in dtype_x:
-            insert_cast(graph, src_x, floordiv, 'float32', in_attr=in_attr_x, key=k_x)
-        dtype_y = str(in_attr_y['tensor'].value.dtype)
-        if 'int' in dtype_y:
-            insert_cast(graph, src_y, floordiv, 'float32', in_attr=in_attr_y, key=k_y)
         if len(in_edges) > 2:
             need_clear = True
             graph.remove_edges_from(in_edges[2:])
-        graph.remove_edges_from(out_edges)
-        floor_name = get_valid_node_name(graph, floordiv + '_floor')
-        div_out_attr = copy.deepcopy(out_edges[0][3])
-        if div_out_attr['tensor'] is not None and div_out_attr['tensor'].value is not None:
-            div_out_attr['tensor'].value = np.array(div_out_attr['tensor'].value, np.float32)
-        div_out_attr['dst_in_port'] = 0
-        graph.add_edge(floordiv, floor_name, **div_out_attr)
-        for _, dst, k, out_attr in out_edges:
-            graph.add_edge(floor_name, dst, **out_attr)
-        floor_attr = {'name': floor_name, 'opset_version': 13}
-        NodeWrap(graph, floor_name).replace_obj('Floor', floor_attr)
+        dtype_x = str(in_attr_x['tensor'].value.dtype)
+        dtype_y = str(in_attr_y['tensor'].value.dtype)
+        if 'float' in dtype_x or 'float' in dtype_y:
+            graph.remove_edges_from(out_edges)
+            floor_name = get_valid_node_name(graph, floordiv + '_floor')
+            div_out_attr = copy.deepcopy(out_edges[0][2])
+            if div_out_attr['tensor'] is not None and div_out_attr['tensor'].value is not None:
+                div_out_attr['tensor'].value = np.array(div_out_attr['tensor'].value, np.float32)
+            div_out_attr['dst_in_port'] = 0
+            graph.add_edge(floordiv, floor_name, **div_out_attr)
+            for _, dst, out_attr in out_edges:
+                graph.add_edge(floor_name, dst, **out_attr)
+            floor_attr = {'name': floor_name, 'opset_version': 13}
+            NodeWrap(graph, floor_name).replace_obj('Floor', floor_attr)
 
-        out_node_name = floor_name
-        if 'int' in dtype_x and 'int' in dtype_y:
-            out_node_name = insert_cast_after(graph, floor_name, 'float32', 'int32')
-        if floordiv in graph._attr['output_names']:
-            index = graph._attr['output_names'].index(floordiv)
-            graph._attr['output_names'][index] = out_node_name
+            if floordiv in graph._attr['output_names']:
+                index = graph._attr['output_names'].index(floordiv)
+                graph._attr['output_names'][index] = floor_name
 
         div_attr = floordiv_obj.copied_attr()
         div_attr.update({'opset_version': 13})

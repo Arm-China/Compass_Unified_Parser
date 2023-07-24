@@ -1634,6 +1634,12 @@ def fuse_mul_add_or_sub(graph):
             input_shapes = input_obj.get_output_shapes()
             if len(input_shapes) < 1:
                 continue
+            mul_in_edges = graph.sorted_in_edges(mul, data=True)
+            mul_in_attr = [in_attr for (src, _, in_attr) in mul_in_edges if src != const_1]
+            if len(mul_in_attr) < 1 or mul_in_attr[0]['tensor'] is None \
+                    or mul_in_attr[0]['tensor'].value is None \
+                    or 'float' not in str(mul_in_attr[0]['tensor'].value.dtype):
+                continue
 
             input_out_shape = input_shapes[0]
             if input_out_shape is None or input_out_shape == []:
@@ -6969,11 +6975,8 @@ def rename_single_mul_or_add_or_sub(graph):
 
                 src, _, k, in_attr = in_edges[main_input_port]
                 input_dtype = str(in_attr['tensor'].value.dtype)
-                cast_inserted = False
-                if 'float' not in input_dtype:
-                    insert_cast(graph, src, n, 'float32', in_attr, key=k)
-                    cast_inserted = True
-                    in_edges = graph.sorted_in_edges(n, keys=True, data=True)
+                if 'int' in input_dtype:
+                    continue
 
                 original_shape = output_shapes[0]
                 reshape_inserted = False
@@ -7052,24 +7055,6 @@ def rename_single_mul_or_add_or_sub(graph):
                 NodeWrap(graph, mean).replace_obj('Constant', mean_attr)
                 NodeWrap(graph, var).replace_obj('Constant', var_attr)
 
-                post_cast = None
-                if cast_inserted:
-                    to_dtype = get_converted_dtype(input_dtype, True) if input_dtype in (
-                        'uint64', 'int64') else input_dtype
-                    post_cast = get_valid_node_name(graph, n + '_post_cast')
-                    graph.add_node(post_cast)
-                    post_cast_attr = {'name': post_cast,
-                                      'opset_version': 1, 'to': to_dtype}
-                    NodeWrap(graph, post_cast).replace_obj(
-                        'Cast', post_cast_attr)
-                    for _, dst, out_attr in out_edges:
-                        if out_attr.get('src_out_port', 0) == 0:
-                            graph.remove_edge(n, dst)
-                            new_out_attr = copy.deepcopy(out_attr)
-                            new_out_attr['src_out_port'] = 0
-                            graph.add_edge(post_cast, dst, **new_out_attr)
-                    graph.add_edge(n, post_cast)
-
                 post_reshape = None
                 if reshape_inserted:
                     post_reshape = insert_reshape_after(
@@ -7077,9 +7062,7 @@ def rename_single_mul_or_add_or_sub(graph):
 
                 if n in graph._attr['output_names']:
                     index = graph._attr['output_names'].index(n)
-                    if cast_inserted and post_cast is not None:
-                        graph._attr['output_names'][index] = post_cast
-                    elif reshape_inserted and post_reshape is not None:
+                    if reshape_inserted and post_reshape is not None:
                         graph._attr['output_names'][index] = post_reshape
 
 
