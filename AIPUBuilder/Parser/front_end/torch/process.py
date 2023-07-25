@@ -9,6 +9,7 @@ import math
 import onnx
 import torch
 import torch.nn as nn
+import math
 import torch.onnx.symbolic_helper as helper
 from torch.onnx import symbolic_opset9 as opset9
 from multiprocessing import Process
@@ -399,6 +400,78 @@ def convert_max_pool(g, input, kernel_size, strides, paddings, dilations, ceil_m
     return (slice_out, indices) if return_indices else slice_out
 
 
+@helper.parse_args('v', 'f', 'is', 'i', 'v')
+def convert_linalg_vector_norm(
+    g,
+    self,
+    ord,
+    dim,
+    keepdim,
+    dtype,
+):
+    if dim is None and not keepdim:
+        self = helper._reshape_helper(g, self, [-1])
+
+    if ord == math.inf:
+        result = g.op('ReduceMax', g.op('Abs', self),
+                      axes_i=dim, keepdims_i=keepdim)
+    elif ord == -math.inf:
+        result = g.op('ReduceMin', g.op('Abs', self),
+                      axes_i=dim, keepdims_i=keepdim)
+    elif ord == 0:
+        return helper._onnx_opset_unsupported_detailed(
+            'linalg_vector_norm', 9, 11, 'ord=0 not supported')
+    else:
+        ord_op = g.op('Constant', value_t=torch.tensor(
+            ord, dtype=torch.float32))
+        result = helper._reducesum_helper(
+            g, g.op('Pow', g.op('Abs', self), ord_op), axes_i=dim, keepdims_i=keepdim
+        )
+        result = g.op(
+            'Pow',
+            result,
+            g.op(
+                'Div',
+                g.op('Constant', value_t=torch.tensor(1, dtype=torch.float32)),
+                ord_op,
+            ),
+        )
+    return result
+
+
+@helper.parse_args('v', 'v', 'is', 'i', 'v')
+def convert_linalg_norm(
+    g,
+    self,
+    ord,
+    dim,
+    keepdim,
+    dtype,
+):
+    ord_value = None
+    if dim is None:
+        if helper._is_none(ord):
+            self = helper._reshape_helper(g, self, [-1])
+            ord = g.op('Constant', value_t=torch.LongTensor([2]))
+        self_dim = helper._get_tensor_rank(self)
+        if self_dim is None:
+            return helper._unimplemented(
+                'linalg_norm', 'Input rank must be known at export time.', self
+            )
+        if self_dim == 1:
+            ord_value = helper._parse_arg(ord, 'f')
+        else:
+            dim = [0, 1]
+    else:
+        if len(dim) == 1:
+            if helper._is_none(ord):
+                ord = g.op('Constant', value_t=torch.LongTensor([2]))
+            ord_value = helper._parse_arg(ord, 'f')
+    if ord_value:
+        return convert_linalg_vector_norm(g, self, ord_value, dim, keepdim, dtype)
+    return opset9.linalg_matrix_norm(g, self, ord, dim, keepdim, dtype)
+
+
 @helper.parse_args('v', 'is', 'is', 'is', 'is', 'i')
 def convert_max_pool1d(g, input, kernel_size, stride, padding, dilation, ceil_mode):
     return convert_max_pool(g, input, kernel_size, stride, padding, dilation, ceil_mode, 1)
@@ -612,6 +685,8 @@ def convert_torch_to_onnx(model_path, params):
         'aten::flatten', convert_flatten, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::gru_cell', convert_gru_cell, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'aten::linalg_norm', convert_linalg_norm, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::max_pool1d', convert_max_pool1d, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
