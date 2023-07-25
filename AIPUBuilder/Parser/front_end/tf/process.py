@@ -26,7 +26,7 @@ def process_tf(model_path, params):
 
     if graph is not None and len(graph) > 0:
         from ..lite.passes.front_passes import convert_scatternd, convert_scatternd2, split_rsqrt, convert_strided_slice, \
-            convert_square, convert_square_diff, split_not_equal, convert_reverse_sequence, convert_unpack
+            convert_square, convert_square_diff, split_not_equal, convert_reverse_sequence, convert_unpack, convert_sparse_to_dense
 
         apply_subgraph_plugin(graph)
         remove_useless_op(
@@ -74,6 +74,7 @@ def process_tf(model_path, params):
         convert_square_diff(graph, op_type='TfSquaredDifference')
         convert_squeeze(graph, op_type='TfSqueeze')
         convert_onehot(graph, op_type='TfOneHot')
+        convert_sparse_to_dense(graph, 'TfSparseToDense')
 
         remove_switch(graph)
         remove_merge(graph)

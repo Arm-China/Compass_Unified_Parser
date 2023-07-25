@@ -46,7 +46,7 @@ class TfDenseToDenseSetOperationOp(OpHasMultipleOutPorts, TfOp):
 class TfSparseToDenseOp(OpHasOneOutPort, TfOp):
     @classmethod
     def attributes(cls):
-        return {1: {'validate_indices': {'type': AttrType.INT, 'default': 1}
+        return {1: {'validate_indices': {'type': AttrType.BOOL, 'default': True}
                     }
                 }
 
@@ -55,20 +55,13 @@ class TfSparseToDenseOp(OpHasOneOutPort, TfOp):
         self.update_attributes(TfSparseToDenseOp, attr_dict)
         assert self.check_required(), 'TfSparseToDenseOp is missing a required parameter.'
 
-    def __getattr__(self, item):
-        ret = None
-        try:
-            if item == 'validate_indices':
-                ret = bool(self.__dict__['_attr'][item].value)
-        except:
-            ret = None
-        if ret is None:
-            ret = super(TfSparseToDenseOp, self).__getattr__(item)
-        return ret
-
     def infer_shape(self):
         super(TfSparseToDenseOp, self).infer_shape()
         inputs = self.get_input_tensors()
+        in_edges = self._graph.sorted_in_edges(self.name, data=True)
+
+        if in_edges[0][2]['tensor'].is_const is False and self.validate_indices is True:
+            WARN('[Parser]: Meets non-const indices input of TfSparseToDense Op (%s) in infer_shape!' % self.name)
         out_tensor = tf.raw_ops.SparseToDense(sparse_indices=inputs[0],
                                               output_shape=inputs[1],
                                               sparse_values=inputs[2],
