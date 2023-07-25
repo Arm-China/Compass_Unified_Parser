@@ -111,6 +111,27 @@ def convert_special_prelu(graph):
             NodeWrap(graph, prelu).replace_obj('LeakyRelu', leaky_attr)
 
 
+def convert_special_sequence_construct(graph):
+    matches = single_node_matcher(graph, 'SequenceConstruct')
+    for m in matches:
+        seq_construct = m['target']
+        seq_construct_obj = NodeWrap(graph, seq_construct)['object']
+        if seq_construct_obj is None:
+            ERROR(
+                '[Parser]: Meets invalid SequenceConstruct Op (%s) in convert_special_sequence_construct!' % seq_construct)
+            continue
+        in_edges = graph.sorted_in_edges(seq_construct)
+        if len(in_edges) != 1:
+            WARN('[Parser]: Only supports SequenceConstruct Op (%s) with 1 input now, but got %d in convert_special_sequence_construct!' % (
+                seq_construct, len(in_edges)))
+            continue
+
+        WARN('[Parser]: SequenceConstruct Op (%s) is unsupported and will be treated as Identity!' % seq_construct)
+        identity_attr = seq_construct_obj.copied_attr()
+        identity_attr.update({'opset_version': 1})
+        NodeWrap(graph, seq_construct).replace_obj('Identity', identity_attr)
+
+
 def convert_deconv(graph):
     deconv_ops = BaseDeconvOp.get_concrete_subclass_names()
     framework_ops = Op.framework_op_types(graph._attr['framework'])

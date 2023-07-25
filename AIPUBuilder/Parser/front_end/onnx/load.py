@@ -286,10 +286,12 @@ def convert_onnx_to_graph(model_path, params):
                     WARN('[Parser]: The model does not have any inputs! Ignore input names from config file.')
                     params['input_names'] = []
                 else:
-                    for name in params.get('input_names', []):
+                    input_names = copy.deepcopy(params.get('input_names', []))
+                    for name in input_names:
                         if name not in tensor_name_map and name not in [n.get('name', '') for n in nodes]:
-                            FATAL(
-                                '[Parser]: Input name (%s) does not exit in node names or tensor names. Please check config file.' % name)
+                            WARN(
+                                '[Parser]: Input name (%s) does not exit in node names or tensor names! Will ignore it!' % name)
+                            params['input_names'].remove(name)
 
                 anchor_tensors = params.get('anchor_tensor_name', [])
                 anchor_tensors_value = []
