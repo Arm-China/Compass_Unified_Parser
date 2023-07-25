@@ -66,7 +66,7 @@ def process_tflite(model_path, params):
         convert_scatternd(graph, 'LiteSCATTER_ND')
         convert_scatternd2(graph, 'LiteSCATTER_ND')
         convert_reverse(graph, op_type='LiteREVERSE_V2')
-        convert_sparse_to_dense(graph)
+        convert_sparse_to_dense(graph, 'LiteSPARSE_TO_DENSE')
         merge_overlap_and_add(graph)
 
         convert_reverse_sequence(graph, 'LiteREVERSE_SEQUENCE')

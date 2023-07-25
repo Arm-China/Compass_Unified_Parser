@@ -113,9 +113,13 @@ def convert_negative_pool_pad(graph):
                         'AveragePool', new_node_attr)
 
 
-def convert_sparse_to_dense(graph):
+def convert_sparse_to_dense(graph, op_type='LiteSPARSE_TO_DENSE'):
     matched = False
-    matches = single_node_matcher(graph, 'LiteSPARSE_TO_DENSE')
+    if op_type not in ('TfSparseToDense', 'LiteSPARSE_TO_DENSE'):
+        ERROR(
+            '[Parser]: Meets invalid Op type (%s) in convert_sparse_to_dense!' % op_type)
+        return
+    matches = single_node_matcher(graph, op_type)
     for m in matches:
         sd = m['target']
         sd_obj = NodeWrap(graph, sd)['object']
@@ -133,6 +137,9 @@ def convert_sparse_to_dense(graph):
                 not in_edges[1][2]['tensor'].is_const or \
                 any([input_tensor is None for input_tensor in input_tensors]):
             continue
+
+        if in_edges[0][2]['tensor'].is_const is False and sd_obj.validate_indices is True:
+            WARN('[Parser]: Meets non-const indices input of SparseToDense Op (%s) in convert_sparse_to_dense!' % sd)
 
         matched = True
 
