@@ -309,6 +309,7 @@ def convert_avg_pool(
     return output
 
 
+@quantized_args(True, False, False, False, False, False, False)
 def convert_max_pool(g, input, kernel_size, strides, paddings, dilations, ceil_mode, dim, return_indices=False):
     def _get_torch_output_shape(input_size, kernel_size, pad_head, pad_tail, stride, dilation):
         extra = (stride - 1)
