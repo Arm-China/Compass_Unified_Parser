@@ -1420,6 +1420,27 @@ class LiteMAX_POOL_2DOp(BaseActivationOp, OpHasPaddingStrides, TfliteOp):
         return {'type': 'MaxPool', 'version': 10}
 
 
+class LiteSPARSE_TO_DENSEOp(OpHasOneOutPort, TfliteOp):
+    @classmethod
+    def attributes(cls):
+        return {1: {}}
+
+    def __init__(self, graph, attr_dict=None):
+        super(LiteSPARSE_TO_DENSEOp, self).__init__(graph, attr_dict)
+        self.update_attributes(LiteSPARSE_TO_DENSEOp, attr_dict)
+        assert self.check_required(), 'LiteSPARSE_TO_DENSEOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(LiteSPARSE_TO_DENSEOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = tf.raw_ops.SparseToDense(sparse_indices=inputs[0],
+                                              output_shape=inputs[1],
+                                              sparse_values=inputs[2],
+                                              default_value=inputs[3],
+                                              validate_indices=False).numpy()
+        self.set_out_tensor(out_tensor)
+
+
 class LiteMEANOp(OpHasAxis, OpHasOneOutPort, TfliteOp):
     @classmethod
     def attributes(cls):

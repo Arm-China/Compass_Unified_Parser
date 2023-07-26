@@ -6991,13 +6991,16 @@ def rename_single_mul_or_add_or_sub(graph):
             continue
         if n_obj.quantize:
             continue
+        in_tensors = n_obj.get_input_tensors()
         in_shapes = n_obj.get_input_shapes()
         in_consts = n_obj.sorted_in_consts()
         in_edges = graph.sorted_in_edges(n, keys=True, data=True)
         out_edges = graph.sorted_out_edges(n, data=True)
         if len(in_edges) == 2 \
+                and len(in_tensors) == 2 \
                 and len(in_shapes) == 2 \
                 and len(in_consts) == 1 \
+                and all([in_tensor is not None for in_tensor in in_tensors])\
                 and ((in_shapes[0] is not None and len(in_shapes[0]) in (0, 1, 2, 3, 4, 5) and in_consts[0][1] == 1)
                      or (in_shapes[1] is not None and len(in_shapes[1]) in (0, 1, 2, 3, 4, 5) and in_consts[0][1] == 0)) \
                 and in_consts[0][2] is not None \
@@ -7016,7 +7019,7 @@ def rename_single_mul_or_add_or_sub(graph):
                              )):
                 continue
 
-            if (n_obj.type in ('Mul', 'Div') and FLOAT_EQUAL(in_consts[0][2], 1.)) \
+            if (n_obj.type in ('Mul', 'Div') and FLOAT_EQUAL(in_consts[0][2], 1.) and in_tensors[main_input_port].size > in_tensors[const_in_port].size) \
                     or (n_obj.type == 'Add' and FLOAT_EQUAL(in_consts[0][2], 0.)) \
                     or (n_obj.type == 'Sub' and FLOAT_EQUAL(in_consts[0][2], 0.) and const_in_port == 1):
                 src, _, k, const_in_attr = in_edges[const_in_port]
