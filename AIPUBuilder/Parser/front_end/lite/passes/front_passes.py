@@ -131,7 +131,7 @@ def convert_sparse_to_dense(graph):
 
         if len(sd_obj.get_input_tensors()) < 4 or \
                 not in_edges[1][2]['tensor'].is_const or \
-                np.any([input_tensor is None for input_tensor in input_tensors]):
+                any([input_tensor is None for input_tensor in input_tensors]):
             continue
 
         matched = True
@@ -140,6 +140,7 @@ def convert_sparse_to_dense(graph):
         sd_src2, _, _ = in_edges[2]
         sd_src3, _, _ = in_edges[3]
 
+        sparse_indices = input_tensors[0]
         output_shape = input_tensors[1]
         sparse_values = input_tensors[2]
         mul_value = np.ones(output_shape, dtype=sparse_values.dtype)
@@ -159,6 +160,12 @@ def convert_sparse_to_dense(graph):
         graph.add_edge(sd_src3, mul, **inp3_mul_attr)
         graph.add_edge(mul, sd)
         insert_constant(graph, mul + '_value', mul_value, mul, in_port=1)
+
+        if np.ndim(sparse_indices) == 1 and np.ndim(sparse_values) == 1:
+            reshape_dim = [sparse_indices.shape[0], 1]
+            insert_reshape(graph, sd_src0, sd, inp0_attr, reshape_dim)
+        elif np.ndim(sparse_indices) == 0 and np.ndim(sparse_values) == 0:
+            insert_reshape(graph, sd_src0, sd, inp0_attr, [1])
 
         NodeWrap(graph, mul).replace_obj(
             'Mul', {'name': mul, 'opset_version': 7})
