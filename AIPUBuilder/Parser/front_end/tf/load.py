@@ -213,14 +213,15 @@ def parse_pb(graph, model_path, params, anchor_tensors):
             nodes_dict.update({n['name']: n})
             if n['type'] == 'Placeholder':
                 tensor_shape = n['output'][0][1]
-                if any(d is not None for d in tensor_shape) or tensor_shape == []:
-                    tensor_shape = [d if d is not None else 1 for d in tensor_shape]
-                    if n['name'] not in input_shapes:
+                if n['name'] not in input_shapes:
+                    if tensor_shape is not None and None not in tensor_shape:
                         input_shapes.update({n['name']: tensor_shape})
-                    elif input_shapes[n['name']] != tensor_shape:
-                        WARN('[Parser]: Original model expects input shape of input %s to be %s. '
-                             'Now reset it to %s basing on config file!' % (
-                                 n['name'], str(tensor_shape), str(input_shapes[n['name']])))
+                    elif not params['input_shapes']:
+                        FATAL('[Parser]: Input shape of %s is partially known(%s). '
+                              'Please provide input_shape in config file!' % (n['name'], str(tensor_shape)))
+                elif tensor_shape is not None and input_shapes[n['name']] != tensor_shape:
+                    WARN('[Parser]: Original input shape %s of input %s is replaced by %s!'
+                         % (str(tensor_shape), n['name'], str(input_shapes[n['name']])))
 
         tensors, feed_dict = OrderedDict(), OrderedDict()
         for k, v in input_shapes.items():
@@ -389,6 +390,7 @@ def convert_tf_to_graph(model_path, params):
                                     and len(nodes_outputs[src_name]) > src_out_port \
                                     and len(nodes_outputs[src_name][src_out_port]) == 2:
                                 tensor_name, tensor_shape = nodes_outputs[src_name][src_out_port]
+                                tensor_shape = [] if tensor_shape is None else tensor_shape
                                 if tensor_name in np_tensors:
                                     tensor_value = np_tensors[tensor_name]
                                     if type(tensor_value).__name__ == 'bytes':
@@ -469,7 +471,7 @@ def convert_tf_to_graph(model_path, params):
                         nodes_dict[n_name]['type'] = 'Placeholder'
                         try:
                             t_shape = nodes_dict[n_name]['output'][0][1]
-                            if None in t_shape:
+                            if t_shape is None or None in t_shape:
                                 try:
                                     t_shape = list(np_tensors[nodes_dict[n_name]
                                                               ['output'][0][0]].shape)
@@ -520,11 +522,10 @@ def convert_tf_to_graph(model_path, params):
                     for placeholder in unusual_placeholders:
                         try:
                             t_shape = nodes_dict[placeholder]['output'][0][1]
-                            if any(d is not None for d in t_shape) or t_shape == []:
-                                if None in t_shape:
-                                    WARN(
-                                        '[Parser]: Input shape of %s is partially known; will set the unknown shape to 1!' % placeholder)
-                                    t_shape = [d if d is not None else 1 for d in t_shape]
+                            if t_shape is None or None in t_shape:
+                                FATAL(
+                                    '[Parser]: Input shape of %s is partially known(%s). Please provide input_shape in config file!' % (placeholder, str(t_shape)))
+                            else:
                                 tensor_name = placeholder + ':0'
                                 if tensor_name in np_tensors:
                                     tensor_value = np_tensors[tensor_name]
@@ -537,9 +538,6 @@ def convert_tf_to_graph(model_path, params):
                                     value=tensor_value, shape=t_shape, name=tensor_name)
                                 graph._attr['input_tensors'].update(
                                     {placeholder: tensor})
-                            else:
-                                found_valid = False
-                                break
                         except:
                             found_valid = False
                             break
