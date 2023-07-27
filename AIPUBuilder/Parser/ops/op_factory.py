@@ -3,6 +3,7 @@
 
 
 from .onnx_ops.array_ops import *
+from .onnx_ops.contrib_ops import *
 from .onnx_ops.control_ops import *
 from .onnx_ops.detection_ops import *
 from .onnx_ops.logic_ops import *
