@@ -180,9 +180,13 @@ def read_tf_model(frozen_pb, save_cfg=False, model_type='tensorflow'):
         model_content += '\n--------------- node ---------------\n'
         model_content += str(node)
         if node.op.lower() == 'placeholder':
+            try:
+                shape = tf.TensorShape(node.attr['shape'].shape).as_list()
+            except:
+                WARN('Unknown TensorShape is not supported in read_tf_model!')
+                continue
             inputs = inputs + ',' + node.name if inputs != '' else node.name
-            shape = tf.TensorShape(node.attr['shape'].shape)
-            inputs_shape.append(shape.as_list())
+            inputs_shape.append(shape)
         try:
             tensor_content = tensor_util.MakeNdarray(node.attr['value'].tensor)
             model_content += '\n------ tensor content of ' + node.name + ' ------\n'

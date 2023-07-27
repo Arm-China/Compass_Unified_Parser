@@ -160,7 +160,7 @@ def get_node_content(node_proto):
 
 def get_op_content(operation):
     ret = get_node_content(operation.node_def)
-    output = [(out.name, out.shape.as_list() if out.shape.dims is not None else [])
+    output = [(out.name, out.shape.as_list() if out.shape.dims is not None else None)
               for out in operation.outputs]
     ret.update({'output': output})
     return ret
