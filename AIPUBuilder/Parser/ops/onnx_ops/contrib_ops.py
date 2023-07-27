@@ -54,3 +54,51 @@ class QLinearAddMsOp(OpHasOneOutPort, OnnxOp):
         out_tensor = np.clip(np.around(float_y / self.C_scale) + self.C_zero_point,
                              out_min, out_max).astype(self.C_zero_point.dtype)
         self.set_out_tensor(out_tensor)
+
+
+class QLinearGlobalAveragePoolMsOp(OpHasOneOutPort, OnnxOp):
+    @classmethod
+    def attributes(cls):
+        return {1: {'channels_last': {'type': AttrType.INT, 'required': True}}}
+
+    def __init__(self, graph, attr_dict=None):
+        super(QLinearGlobalAveragePoolMsOp, self).__init__(graph, attr_dict)
+        self.update_attributes(QLinearGlobalAveragePoolMsOp, attr_dict)
+        assert self.check_required(), 'QLinearGlobalAveragePoolMsOp is missing a required parameter.'
+
+    def __getattr__(self, item):
+        try:
+            ret = self.__dict__['_attr'][item].value
+        except:
+            ret = None
+        try:
+            input_names = ['x', 'x_scale', 'x_zero_point', 'y_scale', 'y_zero_point']
+            if item in input_names:
+                item_idx = input_names.index(item)
+                inputs = self.get_input_tensors()
+                if len(inputs) > item_idx:
+                    ret = inputs[item_idx]
+                    if 'scale' in item:
+                        ret = np.array(ret).astype(np.float32)
+                    self.__dict__['_attr'][item] = Attribute(item, {'type': AttrType.TENSOR, 'value': ret})
+        except:
+            ret = None
+        if ret is None:
+            ret = super(QLinearGlobalAveragePoolMsOp, self).__getattr__(item)
+        return ret
+
+    def infer_shape(self):
+        super(QLinearGlobalAveragePoolMsOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        assert len(inputs) == 5, 'Meets invalid inputs length of QLinearGlobalAveragePoolMsOp(%s)' % self.name
+        if self.channels_last == 0:
+            axes = list(range(2, len(inputs[0].shape)))
+        else:
+            axes = list(range(1, len(inputs[0].shape) - 1))
+        float_x = (self.x.astype(np.int32) - self.x_zero_point) * self.x_scale
+        float_y = np.mean(float_x, axis=tuple(axes), keepdims=True)
+        out_min = np.iinfo(self.y_zero_point.dtype).min
+        out_max = np.iinfo(self.y_zero_point.dtype).max
+        out_tensor = np.clip(np.around(float_y / self.y_scale) + self.y_zero_point,
+                             out_min, out_max).astype(self.y_zero_point.dtype)
+        self.set_out_tensor(out_tensor)

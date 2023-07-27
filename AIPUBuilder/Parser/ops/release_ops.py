@@ -3246,7 +3246,7 @@ class ArmPadOp(OpHasOneOutPort, ArmOp):
 class ArmPoolingOp(OpHasMethod, OpHasPaddingStrides, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
-        return {0: 'float32'}
+        return {0: ['float32', 'int8', 'uint8']}
 
     @classmethod
     def attributes(cls):
