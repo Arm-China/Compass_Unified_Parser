@@ -77,7 +77,10 @@ def build_subgraph(params, root_graph_info, opset_ver):
             continue
         n.update({'opset_version': opset_ver})
         root_graph.add_node(name)
-        NodeWrap(root_graph, name).replace_obj(n['type'], n)
+        op_type = n['type']
+        if n.get('domain', '') == 'com.microsoft':
+            op_type = op_type + 'Ms'
+        NodeWrap(root_graph, name).replace_obj(op_type, n)
         filter_nodes.append(name)
 
         for in_port, in_tensor_info in enumerate(n['input']):
@@ -305,6 +308,7 @@ def convert_onnx_to_graph(model_path, params):
                 in_tensor_names = set()
                 for ni, node in enumerate(nodes):
                     op_attr = {k: v for k, v in node.items()}
+                    node_type = node['type']
                     domain = op_attr.get('domain', '')
                     if not domain or domain == 'ai.onnx':
                         opset_version = opset_ver
@@ -312,6 +316,8 @@ def convert_onnx_to_graph(model_path, params):
                         assert domain in opset_import_map, \
                             'Meets domain(%s) with unknown opset version in convert_onnx_to_graph!' % domain
                         opset_version = opset_import_map[domain]
+                        if domain == 'com.microsoft':
+                            node_type = node_type + 'Ms'
                     op_attr.update({'data_format': params.get('input_data_format', 'NCHW'),
                                     'opset_version': opset_version
                                     })
@@ -330,7 +336,7 @@ def convert_onnx_to_graph(model_path, params):
                     assert not graph.has_node(
                         op_name), 'Node %s does not exist in convert_onnx_to_graph.' % (op_name)
                     graph.add_node(op_name)
-                    NodeWrap(graph, op_name).replace_obj(node['type'], op_attr)
+                    NodeWrap(graph, op_name).replace_obj(node_type, op_attr)
 
                     for in_port, in_tensor_info in enumerate(node['input']):
                         in_tensor_name, in_tensor_out_port = in_tensor_info[

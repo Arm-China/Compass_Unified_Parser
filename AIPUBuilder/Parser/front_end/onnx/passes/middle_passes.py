@@ -2104,6 +2104,63 @@ def convert_quantizelinear(graph):
         NodeWrap(graph, quant).replace_obj('Cast', post_cast_attr)
 
 
+def convert_qadd(graph):
+    matched = False
+    matches = single_node_matcher(graph, 'QLinearAddMs')
+    for m in matches:
+        qadd = m['target']
+        qadd_obj = NodeWrap(graph, qadd)['object']
+        in_edges = graph.sorted_in_edges(qadd, data=True)
+        if qadd_obj is None or len(in_edges) < 7:
+            ERROR('[Parser]: Meets invalid QLinearAddMs node(%s) in convert_qadd!' % qadd)
+            continue
+        if any(e[2]['tensor'] is None or not e[2]['tensor'].is_const for e in (in_edges[1:3] + in_edges[4:])):
+            WARN('[Parser]: Only supports QLinearAddMs(%s) with constant scale/zp in convert_qadd!' % qadd)
+            continue
+        a_dtype = str(qadd_obj.A_zero_point.dtype)
+        b_dtype = str(qadd_obj.B_zero_point.dtype)
+        y_dtype = str(qadd_obj.C_zero_point.dtype)
+        if any(dtype not in ('int8', 'uint8') for dtype in (a_dtype, b_dtype, y_dtype)):
+            ERROR('[Parser]: Meets invalid zero_point dtype of QLinearAddMs node(%s) in convert_qadd!' % qadd)
+            continue
+        matched = True
+        graph.remove_edges_from(in_edges[1:])
+        a_scale, a_zp = qadd_obj.A_scale, qadd_obj.A_zero_point
+        b_scale, b_zp = qadd_obj.B_scale, qadd_obj.B_zero_point
+        y_scale, y_zp = qadd_obj.C_scale, qadd_obj.C_zero_point
+        qadd_attr = qadd_obj.copied_attr()
+        input_a, _, input_a_in_attr = in_edges[0]
+        input_b, _, input_b_in_attr = in_edges[3]
+        input_b_in_attr.update({'dst_in_port': 1})
+        graph.add_edge(input_b, qadd, **input_b_in_attr)
+        if graph._attr.get('quantize', False):
+            input_a_in_attr['tensor'].dtype = a_dtype
+            input_a_in_attr['tensor'].scale_zp = (a_scale, a_zp)
+            input_b_in_attr['tensor'].dtype = b_dtype
+            input_b_in_attr['tensor'].scale_zp = (b_scale, b_zp)
+
+            out_edges = graph.sorted_out_edges(qadd, data=True)
+            for _, _, out_attr in out_edges:
+                out_attr['tensor'].dtype = y_dtype
+                out_attr['tensor'].scale_zp = (y_scale, y_zp)
+
+            qadd_attr.update({'opset_version': 13, 'quantize': True})
+        else:
+            insert_cast_sub_mul_for_quant(graph, input_a, qadd, a_scale, a_zp,
+                                          input_a_in_attr)
+            insert_cast_sub_mul_for_quant(graph, input_b, qadd, b_scale, b_zp,
+                                          input_b_in_attr)
+            out_cast = insert_mul_add_cast_after_for_dequant(graph, qadd, y_dtype, y_scale,
+                                                             y_zp)
+            qadd_attr.update({'opset_version': 13})
+            if qadd in graph._attr['output_names']:
+                index = graph._attr['output_names'].index(qadd)
+                graph._attr['output_names'][index] = out_cast
+        NodeWrap(graph, qadd).replace_obj('Add', qadd_attr)
+    if matched:
+        clear_redundant_nodes(graph)
+
+
 def convert_qconv(graph):
     matched = False
     matches = single_node_matcher(graph, 'QLinearConv')
@@ -8157,6 +8214,7 @@ def middle_passes(graph, params):
 
     fuse_const(graph)
 
+    convert_qadd(graph)
     convert_qconv(graph)
     convert_qmatmul(graph)
 
