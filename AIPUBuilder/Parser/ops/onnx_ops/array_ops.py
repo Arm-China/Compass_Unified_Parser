@@ -28,6 +28,8 @@ class BitShiftOp(OpNeedBroadcast, OpHasOneOutPort, OnnxOp):
         if inputs[0].dtype == 'uint64':
             WARN(
                 '[Parser]: input dtype will be converted to uint32 with possible loss of precision!')
+        # Extend onnx BitShift to support both unsigned and signed inputs.
+        # opset 11 only supports BitShift with unsigned inputs, but numpy and torch supports unsigned and signed inputs.
         if self.direction == 'LEFT':
             out_tensor = np.left_shift(inputs[0], inputs[1])
         else:
