@@ -67,10 +67,8 @@ def convert_argmin(g, input, dim=None, keepdim=False):
 
 def convert_bitshift(g, input, other, direction):
     input_dtype = input.type().dtype()
-    if input_dtype.is_signed:
-        FATAL('[Parser]: Only BitShift with unsigned input is supported to convert to onnx, but got type %s!' % str(
-            input_dtype))
-    return g.op('BitShift', input, other, direction_s=direction)
+    onnx_op = 'opset_11::BitShift' if input_dtype.is_signed else 'BitShift'
+    return g.op(onnx_op, input, other, direction_s=direction)
 
 
 def convert_iand(g, input1, input2):
@@ -567,7 +565,7 @@ def convert_torch_to_onnx(model_path, params):
                           output_names=output_names,
                           opset_version=onnx_opset_version,
                           training=torch._C._onnx.TrainingMode.PRESERVE,
-                          custom_opsets={'opset_18': 18})
+                          custom_opsets={'opset_11': 11, 'opset_18': 18})
         return
 
     def _flatten_type(torch_type):
