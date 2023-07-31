@@ -2154,7 +2154,7 @@ class ArmGatherNDOp(OpHasOneOutPort, ArmOp):
 class ArmGemmOp(OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
-        return {0: 'float32', 1: 'float32', 2: 'float32'}
+        return {0: ['float32', 'int8', 'uint8'], 1: ['float32', 'int8', 'uint8'], 2: ['float32', 'int32']}
 
     @classmethod
     def num_in_ports(cls):

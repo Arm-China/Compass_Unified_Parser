@@ -888,7 +888,10 @@ def convert_gemm_to_fc(graph):
     for m in matches:
         gemm = m['target']
         gemm_in_edges = graph.sorted_in_edges(gemm, data=True)
-        if len(gemm_in_edges) in (2, 3) and len(gemm_in_edges[0][2]['tensor'].value.shape) == 2:
+        if len(gemm_in_edges) in (2, 3) \
+                and gemm_in_edges[0][2]['tensor'] is not None \
+                and gemm_in_edges[0][2]['tensor'].value is not None \
+                and len(gemm_in_edges[0][2]['tensor'].value.shape) == 2:
             input2 = gemm_in_edges[1][0]
             input3 = gemm_in_edges[2][0] if len(gemm_in_edges) == 3 else ''
             if NodeWrap(graph, input2)['object'].type == 'Constant' \
@@ -905,19 +908,9 @@ def convert_gemm_to_fc(graph):
                 NodeWrap(graph, gemm).replace_obj('FullyConnected', fc_attr)
                 graph.remove_nodes_from([input2, input3])
                 if bool(gemm_obj.transA):
-                    transpose = get_valid_node_name(
-                        graph, gemm + '_pre_transpose')
-                    graph.add_node(transpose)
-                    for src, _, in_attr in gemm_in_edges:
-                        graph.remove_edge(src, gemm)
-                        graph.add_edge(src, transpose, **in_attr)
-                    graph.add_edge(transpose, gemm)
+                    src, _, in_attr = gemm_in_edges[0]
                     perm = [1, 0]
-                    transpose_attr = gemm_obj.copied_attr()
-                    transpose_attr.update(
-                        {'name': transpose, 'opset_version': 1, 'perm': perm})
-                    NodeWrap(graph, transpose).replace_obj(
-                        'Transpose', transpose_attr)
+                    insert_transpose(graph, src, gemm, in_attr, perm)
 
 
 def convert_global_pool(graph):
@@ -2280,6 +2273,112 @@ def convert_qconv(graph):
 
         NodeWrap(graph, qconv).replace_obj('Conv', conv_attr)
 
+    if matched:
+        clear_redundant_nodes(graph)
+
+
+def convert_qgemm(graph):
+    matched = False
+    matches = single_node_matcher(graph, 'QGemmMs')
+    for m in matches:
+        qgemm = m['target']
+        qgemm_obj = NodeWrap(graph, qgemm)['object']
+        in_edges = graph.sorted_in_edges(qgemm, data=True)
+        if qgemm_obj is None or len(in_edges) < 6:
+            ERROR('[Parser]: Meets invalid QLinearGemmMs node(%s) in convert_qgemm!' % qgemm)
+            continue
+        if any((e[2]['tensor'] is None or not e[2]['tensor'].is_const) for e in (in_edges[1:3] + in_edges[4:6] + in_edges[7:])):
+            WARN('[Parser]: Only supports QLinearGemmMs(%s) with constant scale/zp in convert_qgemm!' % qgemm)
+            continue
+        a_dtype = str(qgemm_obj.a_zero_point.dtype)
+        b_dtype = str(qgemm_obj.b_zero_point.dtype)
+        if any(dtype not in ('int8', 'uint8') for dtype in (a_dtype, b_dtype)):
+            ERROR('[Parser]: Meets invalid zero_point dtype of QLinearGemmMs node(%s) in convert_qgemm!' % qgemm)
+            continue
+        matched = True
+        graph.remove_edges_from(in_edges[1:])
+        a_scale, a_zp = qgemm_obj.a_scale, qgemm_obj.a_zero_point
+        b_scale, b_zp = qgemm_obj.b_scale, qgemm_obj.b_zero_point
+        y_scale, y_zp = qgemm_obj.y_scale, qgemm_obj.y_zero_point
+        c_scale = qgemm_obj.alpha * a_scale * b_scale
+        c_zp = np.array(0, dtype=np.int32)
+        qgemm_attr = qgemm_obj.copied_attr()
+        qgemm_attr.update({'opset_version': 13})
+        a_src, _, a_src_in_attr = in_edges[0]
+        b_src, _, b_src_in_attr = in_edges[3]
+        c_src, _, c_src_in_attr = in_edges[6]
+        c_is_not_none = (c_src_in_attr['tensor'] is None
+                         or not c_src_in_attr['tensor'].is_const
+                         or c_src_in_attr['tensor'].value is not None)
+
+        if graph._attr.get('quantize', False):
+            if y_scale is None:  # y_dtype is float32
+                graph.remove_edge(a_src, qgemm)
+                a_dequant = get_valid_node_name(graph, qgemm + '_dequant_A')
+                graph.add_edge(a_src, a_dequant, **a_src_in_attr)
+                insert_constant(graph, a_dequant + '_scale', np.array(a_scale), a_dequant, in_port=1)
+                insert_constant(graph, a_dequant + '_zp', np.array(a_zp), a_dequant, in_port=2)
+                graph.add_edge(a_dequant, qgemm)
+                NodeWrap(graph, a_dequant).replace_obj('DequantizeLinear',
+                                                       {'name': a_dequant, 'opset_version': 13, 'axis': -1})
+                b_dequant = get_valid_node_name(graph, qgemm + '_dequant_B')
+                b_dequant_in_attr = copy.deepcopy(b_src_in_attr)
+                b_dequant_in_attr.update({'dst_in_port': 0})
+                graph.add_edge(b_src, b_dequant, **b_dequant_in_attr)
+                insert_constant(graph, b_dequant + '_scale', np.array(b_scale), b_dequant, in_port=1)
+                insert_constant(graph, b_dequant + '_zp', np.array(b_zp), b_dequant, in_port=2)
+                graph.add_edge(b_dequant, qgemm, **{'dst_in_port': 1})
+                NodeWrap(graph, b_dequant).replace_obj('DequantizeLinear',
+                                                       {'name': b_dequant, 'opset_version': 13, 'axis': -1})
+                if c_is_not_none:
+                    c_dequant = get_valid_node_name(graph, qgemm + '_dequant_C')
+                    c_dequant_in_attr = copy.deepcopy(c_src_in_attr)
+                    c_dequant_in_attr.update({'dst_in_port': 0})
+                    graph.add_edge(c_src, c_dequant, **c_dequant_in_attr)
+                    insert_constant(graph, c_dequant + '_scale', np.array(c_scale), c_dequant, in_port=1)
+                    insert_constant(graph, c_dequant + '_zp', np.array(c_zp), c_dequant, in_port=2)
+                    graph.add_edge(c_dequant, qgemm, **{'dst_in_port': 2})
+                    NodeWrap(graph, c_dequant).replace_obj('DequantizeLinear',
+                                                           {'name': c_dequant, 'opset_version': 13, 'axis': -1})
+
+                qgemm_attr.update({'quantize': False})
+            else:
+                a_src_in_attr['tensor'].dtype = a_dtype
+                a_src_in_attr['tensor'].scale_zp = (a_scale, a_zp)
+                b_src_in_attr['tensor'].dtype = b_dtype
+                b_src_in_attr['tensor'].scale_zp = (b_scale, b_zp)
+                b_src_in_attr['dst_in_port'] = 1
+                graph.add_edge(b_src, qgemm, **b_src_in_attr)
+                if c_is_not_none:
+                    c_src_in_attr['tensor'].dtype = 'int32'
+                    c_src_in_attr['tensor'].scale_zp = (c_scale, c_zp)
+                    c_src_in_attr['dst_in_port'] = 2
+                    graph.add_edge(c_src, qgemm, **c_src_in_attr)
+                out_edges = graph.sorted_out_edges(qgemm, data=True)
+                for _, _, out_attr in out_edges:
+                    out_attr['tensor'].dtype = np.dtype(a_dtype)
+                    out_attr['tensor'].scale_zp = (y_scale, y_zp)
+
+                qgemm_attr.update({'quantize': True})
+        else:
+            insert_cast_sub_mul_for_quant(graph, a_src, qgemm, a_scale, a_zp,
+                                          a_src_in_attr)
+            b_src_in_attr['dst_in_port'] = 1
+            graph.add_edge(b_src, qgemm, **b_src_in_attr)
+            insert_cast_sub_mul_for_quant(graph, b_src, qgemm, b_scale, b_zp,
+                                          b_src_in_attr)
+            if c_is_not_none:
+                c_src_in_attr['dst_in_port'] = 2
+                graph.add_edge(c_src, qgemm, **c_src_in_attr)
+                insert_cast_sub_mul_for_quant(graph, c_src, qgemm, c_scale, c_zp,
+                                              c_src_in_attr)
+            if y_scale is not None and y_zp is not None:
+                out_cast = insert_mul_add_cast_after_for_dequant(graph, qgemm, a_dtype, y_scale,
+                                                                 y_zp)
+                if qgemm in graph._attr['output_names']:
+                    index = graph._attr['output_names'].index(qgemm)
+                    graph._attr['output_names'][index] = out_cast
+        NodeWrap(graph, qgemm).replace_obj('Gemm', qgemm_attr)
     if matched:
         clear_redundant_nodes(graph)
 
@@ -8319,6 +8418,7 @@ def middle_passes(graph, params):
 
     convert_qadd(graph)
     convert_qconv(graph)
+    convert_qgemm(graph)
     convert_qglobal_avgpool(graph)
     convert_qmatmul(graph)
     convert_special_conv_to_mul(graph)
