@@ -235,13 +235,27 @@ class ConvOp(BaseConvOp, OnnxOp):
     def infer_shape(self):
         super(ConvOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        if self.biases is None:
-            self.biases = np.zeros(self.num_output, np.float32)
-        if self.weights.shape[1] * self.group != (inputs[0].shape[-1] if self.data_format == 'NHWC' else inputs[0].shape[1]):
+        if self.weights is not None:
+            w = self.weights
+        elif self.weights is None and len(inputs) >= 2:
+            w = inputs[1]
+        else:
+            w = None
+            ERROR('[Parser]: Meets invalid weights for Conv (%s)!' % self.name)
+
+        if w.shape[1] * self.group != (inputs[0].shape[-1] if self.data_format == 'NHWC' else inputs[0].shape[1]):
             ERROR(
                 '[Parser]: Meets invalid weights shape or input shape for Conv (%s)!' % self.name)
+
+        if self.num_output is None:
+            self.num_output = w.shape[0]
+
         if self.kernel_shape is None:
-            self.kernel_shape = list(self.weights.shape[2:])
+            self.kernel_shape = list(w.shape[2:])
+
+        if self.biases is None and self.weights is not None and len(inputs) < 3:
+            self.biases = np.zeros(self.num_output, np.float32)
+
         if self.data_format == 'NHWC':
             # inp = tf.pad(inputs[0], self.tf_pads) if self.auto_pad == 'NOTSET' else inputs[0]
             # if self.group == 1:

@@ -1134,6 +1134,53 @@ def convert_special_cast(graph):
         NodeWrap(graph, cast).replace_obj('Not', cast_attr)
 
 
+def convert_special_conv_to_mul(graph):
+    matches = single_node_matcher(graph, 'Conv')
+    for m in matches:
+        conv = m['target']
+        conv_obj = NodeWrap(graph, conv)['object']
+        if conv_obj is None:
+            ERROR('[Parser]: Meets invalid Conv(%s) in convert_special_conv_to_mul!' % conv)
+            continue
+        if conv_obj.weights is not None:
+            continue
+        in_edges = graph.sorted_in_edges(conv, keys=True, data=True)
+        inputs = conv_obj.get_input_tensors()
+        if len(in_edges) < 2 \
+                or in_edges[1][3]['tensor'].is_const \
+                or len(inputs) < 2 \
+                or any(inp is None for inp in inputs) \
+                or len(inputs[1].shape) < 3:
+            WARN('[Parser]: Meets invalid Conv(%s) in convert_special_conv_to_mul!' % conv)
+            continue
+        inp, w = inputs[:2]
+        if inp.shape[1] != w.shape[0] or any(s != 1 for s in w.shape[1:]):
+            continue
+        if any(d != 1 for d in conv_obj.dilations) \
+                or any(s != 1 for s in conv_obj.strides) \
+                or any(p != 0 for p in conv_obj.pads) \
+                or conv_obj.auto_pad != 'NOTSET':
+            continue
+        w_name, _, w_k, w_in_attr = in_edges[1]
+        dim = [w.shape[0]] + [1] * (len(w.shape) - 2)
+        insert_reshape(graph, w_name, conv, w_in_attr, dim, key=w_k, data_format='NCHW')
+        NodeWrap(graph, conv).replace_obj('Mul', {'name': conv, 'opset_version': 7})
+        if len(in_edges) == 3:
+            add = get_valid_node_name(graph, conv + '_add')
+            b_name, _, b_k, b_in_attr = in_edges[2]
+            graph.remove_edges_from(in_edges[2:])
+            reshape = insert_reshape(graph, b_name, add, b_in_attr, dim, key=b_k, data_format='NCHW')
+            graph.add_edge(reshape, add, **{'dst_in_port': 1})
+            for _, dst, out_attr in graph.sorted_out_edges(conv, data=True):
+                graph.remove_edge(conv, dst)
+                graph.add_edge(add, dst, **out_attr)
+            graph.add_edge(conv, add)
+            NodeWrap(graph, add).replace_obj('Add', {'name': add, 'opset_version': 7})
+            if conv in graph._attr['output_names']:
+                index = graph._attr['output_names'].index(conv)
+                graph._attr['output_names'][index] = add
+
+
 def convert_special_resize(graph):
     matches = single_node_matcher(graph, 'Resize')
     for m in matches:
@@ -1551,6 +1598,9 @@ def fuse_linear_bn(graph):
         bn_obj = NodeWrap(graph, bn)['object']
         transpose_obj = NodeWrap(graph, transpose)['object']
         if linear_obj is not None and bn_obj is not None and (transpose is None or transpose_obj is not None):
+            if linear_obj.weights is None or linear_obj.biases is None:
+                WARN('[Parser]: Meets invalid Linear Op (%s) in fuse_linear_bn!' % linear)
+                continue
             if bn_obj.training_mode:
                 continue
             if len(graph.sorted_out_edges(linear)) != 1:
@@ -8271,6 +8321,7 @@ def middle_passes(graph, params):
     convert_qconv(graph)
     convert_qglobal_avgpool(graph)
     convert_qmatmul(graph)
+    convert_special_conv_to_mul(graph)
 
     convert_abnormal_reshape(graph)
     convert_fill(graph)
