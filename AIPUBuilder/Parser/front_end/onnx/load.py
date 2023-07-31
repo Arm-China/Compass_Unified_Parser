@@ -426,7 +426,7 @@ def convert_onnx_to_graph(model_path, params):
                                 if_in_port += 1
 
                     if not graph_is_quantized and not force_not_quantize \
-                            and (node['type'] in ('QuantizeLinear', 'DequantizeLinear')
+                            and (node['type'] in ('QuantizeLinear', 'DequantizeLinear', 'QGemm')
                                  or node['type'].startswith('QLinear')):
                         graph_is_quantized = True
 
