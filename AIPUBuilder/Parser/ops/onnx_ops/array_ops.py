@@ -84,6 +84,70 @@ class CastOp(OpHasOneOutPort, OnnxOp):
         self.set_out_tensor(out_tensor)
 
 
+class CenterCropPadOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
+    @classmethod
+    def attributes(cls):
+        return {18: {'axes': {'required': False}}}
+
+    def __init__(self, graph, attr_dict=None):
+        super(CenterCropPadOp, self).__init__(graph, attr_dict)
+        self.update_attributes(CenterCropPadOp, attr_dict)
+        assert self.check_required(), 'CenterCropPadOp is missing a required parameter.'
+
+    def __getattr__(self, item):
+        ret = None
+        try:
+            if item == 'axes':
+                ret = self.__dict__['_attr'][item].value
+                if ret is None:
+                    inputs = self.get_input_tensors()
+                    ret = list(range(len(inputs[0].shape)))
+                    self.__dict__['_attr'][item].value = ret
+        except:
+            ret = None
+        if ret is None:
+            ret = super(CenterCropPadOp, self).__getattr__(item)
+        return ret
+
+    @staticmethod
+    def get_shape_and_crop_pad_slices(input_shape, new_shape_at_axes, axes):
+        '''Return new shape, slice object of crop and pad calculated basing on input_shape,
+        new_shape_at_axes and axes.
+        '''
+        new_shape = copy.deepcopy(input_shape)
+        pad_slices = [slice(0, None)] * len(input_shape)
+        crop_slices = copy.deepcopy(pad_slices)
+        for axis, shape in zip(axes, new_shape_at_axes):
+            if input_shape[axis] == shape:
+                continue
+            elif input_shape[axis] > shape:  # need slice
+                new_shape[axis] = shape
+                begin = (input_shape[axis] - shape) // 2
+                end = begin + shape
+                crop_slices[axis] = slice(begin, end)
+            else:  # input_shape[axis] < shape, need pad
+                new_shape[axis] = shape
+                begin = (shape - input_shape[axis]) // 2
+                end = begin + input_shape[axis]
+                pad_slices[axis] = slice(begin, end)
+        return (new_shape, crop_slices, pad_slices)
+
+    def infer_shape(self):
+        super(CenterCropPadOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        assert len(inputs) == 2, 'CenterCropPadOp expects 2 inputs, but got %d' % len(inputs)
+        input_data = inputs[0]
+        new_shape_at_axes = inputs[1].tolist()
+        original_input_shape = list(input_data.shape)
+        self.axes = OpHasAxis.make_axes_non_negative(self.axes, len(original_input_shape))
+        new_shape, crop_slices, pad_slices = self.get_shape_and_crop_pad_slices(
+            original_input_shape, new_shape_at_axes, self.axes)
+        cropped = input_data[tuple(crop_slices)]
+        out_tensor = np.zeros(new_shape, dtype=inputs[0].dtype)
+        out_tensor[tuple(pad_slices)] = cropped
+        self.set_out_tensor(out_tensor)
+
+
 class CompressOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
     @classmethod
     def attributes(cls):

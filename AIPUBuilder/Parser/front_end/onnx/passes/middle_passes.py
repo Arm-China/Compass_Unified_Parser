@@ -15,7 +15,7 @@ from ....graph.pattern_match import matched_patterns, single_node_matcher, two_n
 from ....graph.graph_algo import get_valid_node_name, clear_redundant_nodes, determined_sort, all_simple_paths, has_path
 from ....ops.op import Op, BaseLinearOp, BaseConvOp, BaseDeconvOp, BaseOnnxPoolOp, OpHasOneOutPort, OpHasPaddingStrides, OpHasAxis, \
     OnnxOp, CommonOp, OpNeedBroadcast, OpNeedUniBroadcast, OnnxReduceOp
-from ....ops.onnx_ops.array_ops import ReshapeOp
+from ....ops.onnx_ops.array_ops import ReshapeOp, CenterCropPadOp
 from .common_passes import fuse_const, remove_useless_op, remove_node_safely, insert_reshape, insert_reshape_after, \
     insert_cast, insert_constant, insert_slice, insert_slice_after, insert_tile, insert_transpose, insert_transpose_after, \
     remove_redundant_reshape, remove_redundant_transpose, insert_cast_sub_mul_for_quant, insert_mul_add_cast_after_for_dequant, \
@@ -1837,6 +1837,52 @@ def convert_abnormal_reshape(graph):
                     transpose_attr.update({'opset_version': 1, 'perm': perm})
                     NodeWrap(graph, reshape).replace_obj(
                         'Transpose', transpose_attr)
+
+
+def convert_center_crop_pad(graph):
+    '''Convert onnx CenterCropPad to Slice+Pad.
+    '''
+    matched = False
+    matches = single_node_matcher(graph, 'CenterCropPad')
+    for m in matches:
+        crop_pad = m['target']
+        crop_pad_obj = NodeWrap(graph, crop_pad)['object']
+        input_shapes = crop_pad_obj.get_input_shapes()
+        in_edges = graph.sorted_in_edges(crop_pad, data=True)
+        if crop_pad_obj is None or len(input_shapes) < 2 or len(in_edges) < 2:
+            ERROR(
+                '[Parser]: Meets invalid CenterCropPad Op(%s) in convert_center_crop_pad!' % crop_pad)
+            continue
+        input_shape = input_shapes[0]
+        if input_shape is None or None in input_shape:
+            ERROR(
+                '[Parser]: Meets invalid input of CenterCropPad Op(%s) in convert_center_crop_pad!' % crop_pad)
+            continue
+        new_shape_in_attr = in_edges[1][2]
+        if new_shape_in_attr['tensor'] is None \
+                or not new_shape_in_attr['tensor'].is_const:
+            WARN(
+                '[Parser]: Meets unsupported non-constant shape(second input) of CenterCropPad Op(%s) in convert_center_crop_pad!'
+                % crop_pad)
+            continue
+        matched = True
+        new_shape_at_axes = new_shape_in_attr['tensor'].value
+        axes = OpHasAxis.make_axes_non_negative(crop_pad_obj.axes, len(input_shape))
+        new_shape, crop_slices, pad_slices = CenterCropPadOp.get_shape_and_crop_pad_slices(
+            input_shape, new_shape_at_axes, axes)
+        slice_begin = [sl.start for sl in crop_slices]
+        slice_size = [input_shape[idx] if sl.stop is None else (
+            sl.stop - sl.start) for idx, sl in enumerate(crop_slices)]
+        pad_begin = [sl.start for sl in pad_slices]
+        pad_end = [0 if sl.stop is None else (new_shape[idx] - sl.stop) for idx, sl in enumerate(pad_slices)]
+        graph.remove_edges_from(in_edges)
+        src, _, in_attr = in_edges[0]
+        insert_slice(graph, src, crop_pad, in_attr, slice_begin, slice_size)
+        pad_attr = crop_pad_obj.copied_attr()
+        pad_attr.update({'mode': 'constant', 'paddings': pad_begin + pad_end, 'opset_version': 1})
+        NodeWrap(graph, crop_pad).replace_obj('Pad', pad_attr)
+    if matched:
+        clear_redundant_nodes(graph)
 
 
 def convert_to_const(graph, op_type_name_list):
@@ -8424,6 +8470,7 @@ def middle_passes(graph, params):
     convert_special_conv_to_mul(graph)
 
     convert_abnormal_reshape(graph)
+    convert_center_crop_pad(graph)
     convert_fill(graph)
     convert_dequantizelinear(graph)
     convert_quantizelinear(graph)
