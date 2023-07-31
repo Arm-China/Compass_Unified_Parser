@@ -2769,16 +2769,17 @@ def merge_gelu_2(graph):
         if all([obj is not None for obj in node_objs.values()]):
 
             pow_in_edges = graph.sorted_in_edges(m['pow'], data=True)
-            mul_4_in_edges = graph.sorted_in_edges(m['mul_4'], data=True)
             add_1_in_edges = graph.sorted_in_edges(m['add_1'], data=True)
-
+            mul_4_in_edges = graph.sorted_in_edges(m['mul_4'], data=True)
             if len(pow_in_edges) != 2 \
-                    or len(mul_4_in_edges) != 2 \
-                    or len(add_1_in_edges) != 2:
+                    or len(add_1_in_edges) != 2 \
+                    or len(mul_4_in_edges) != 2:
                 continue
+            add_1_main_in_port = [e[2]['dst_in_port'] for e in add_1_in_edges if e[0] != m['mul_1']][0]
+            mul_4_main_in_port = [e[2]['dst_in_port'] for e in mul_4_in_edges if e[0] != m['mul_4c']][0]
             pow_src, _, in_attr1 = pow_in_edges[0]
-            mul_4_src, _, in_attr2 = mul_4_in_edges[1]
-            add_1_src, _, in_attr3 = add_1_in_edges[0]
+            add_1_src, _, in_attr3 = add_1_in_edges[add_1_main_in_port]
+            mul_4_src, _, in_attr2 = mul_4_in_edges[mul_4_main_in_port]
 
             if pow_src != mul_4_src \
                     or pow_src != add_1_src \
