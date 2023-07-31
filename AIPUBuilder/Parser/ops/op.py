@@ -917,13 +917,13 @@ class OpHasPaddingStrides(LayoutConcernedOp):
             fc:             [output_channel, input_channel]
 
         ONNX:  (M x C/group x kH x kW)
-            conv:           [out_channels, in_channels, filter_height, filter_width]
+            conv:           [out_channels, in_channels/group, filter_height, filter_width]
             conv1d:         [out_channels, in_channels, filter_width]
             depthwise conv: [in/out_channels, channel_multiplier, filter_height, filter_width]
             deconv:         [in_channels, output_channels, filter_height, filter_width]
             fc:             [output_channel, input_channel]
 
-        torch: conv         [out_channels, in_channels, filter_height, filter_width]
+        torch: conv         [out_channels, in_channels/group, filter_height, filter_width]
             depthwise conv: [in_channels(out), channel_multiplier, filter_height, filter_width]
 
         caffe: conv         [out_channels, in_channels, filter_height, filter_width]
