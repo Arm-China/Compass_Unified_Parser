@@ -260,7 +260,7 @@ def parse_pb(graph, model_path, params, anchor_tensors):
                 if n['name'] in graph._attr['input_names'] \
                         or (not graph._attr['input_names'] and n['name'] in input_shapes) \
                         or n_type.startswith('TensorArray') \
-                        or n_type in ('Range', 'Shape', ):
+                        or n_type in ('Range', 'Shape', 'StatelessIf'):
                     tensors.update(
                         {out[0]: default_graph.get_tensor_by_name(out[0])})
 
