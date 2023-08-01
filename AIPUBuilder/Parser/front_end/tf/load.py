@@ -213,6 +213,11 @@ def parse_pb(graph, model_path, params, anchor_tensors):
             nodes_dict.update({n['name']: n})
             if n['type'] == 'Placeholder':
                 tensor_shape = n['output'][0][1]
+                if tensor_shape is None:
+                    try:
+                        tensor_shape = n['attr']['shape']['dim'].tolist()
+                    except:
+                        tensor_shape = None
                 if n['name'] not in input_shapes:
                     if tensor_shape is not None and None not in tensor_shape:
                         input_shapes.update({n['name']: tensor_shape})
@@ -253,6 +258,7 @@ def parse_pb(graph, model_path, params, anchor_tensors):
                 elif n.get('from_function', False):
                     continue
                 if n['name'] in graph._attr['input_names'] \
+                        or (not graph._attr['input_names'] and n['name'] in input_shapes) \
                         or n_type.startswith('TensorArray') \
                         or n_type in ('Range', 'Shape', ):
                     tensors.update(
@@ -522,6 +528,8 @@ def convert_tf_to_graph(model_path, params):
                     for placeholder in unusual_placeholders:
                         try:
                             t_shape = nodes_dict[placeholder]['output'][0][1]
+                            if t_shape is None and placeholder in input_shapes:
+                                t_shape = input_shapes[placeholder]
                             if t_shape is None or None in t_shape:
                                 FATAL(
                                     '[Parser]: Input shape of %s is partially known(%s). Please provide input_shape in config file!' % (placeholder, str(t_shape)))
