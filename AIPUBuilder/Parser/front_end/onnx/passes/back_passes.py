@@ -4568,10 +4568,12 @@ def sink_transpose_through_special_reshape(graph):
                 new_dim.pop(change_pos)
 
             if int(np.prod(new_dim)) != int(np.prod(reshape_in_shape)):
-                WARN('[Parser]: Meets invalid Reshape(%s) dim in sink_transpose_through_special_reshape!' % reshape)
+                WARN(
+                    '[Parser]: Meets invalid Reshape(%s) dim in sink_transpose_through_special_reshape!' % reshape)
                 continue
 
             matched = True
+
             new_perm = []
             for d in reshape_out_shape:
                 for new_i, new_d in enumerate(new_dim):
@@ -4981,6 +4983,7 @@ def back_passes(graph, params):
     merge_s2b_pool_b2s(graph)
 
     remove_redundant_bn(graph)
+    sink_transpose_through_special_reshape(graph)
     remove_redundant_reshape_transpose(graph)
     remove_redundant_reshape(graph, 'ArmReshape')
     remove_redundant_transpose(graph)
