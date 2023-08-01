@@ -40,5 +40,5 @@ for input_shape in input_shapes:
 
     # Run tests with parser and compare result with runtime
     exit_status = run_parser(
-        model_path, feed_dict, model_type='tensorflow', save_output=False, verify=True)
+        model_path, feed_dict, model_type='tensorflow', verify=True)
     assert exit_status
