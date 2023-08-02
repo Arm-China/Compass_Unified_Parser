@@ -2160,6 +2160,34 @@ def rename_cast(graph):
             ERROR('[Parser]: Meets invalid Cast Op (%s) in rename_cast!' % cast)
 
 
+def rename_col2im(graph):
+    matched = False
+    matches = single_node_matcher(graph, 'Col2Im')
+    for m in matches:
+        col2im = m['target']
+        col2im_obj = NodeWrap(graph, col2im)['object']
+        in_edges = graph.sorted_in_edges(col2im, data=True)
+        if col2im_obj is None or len(in_edges) != 3:
+            ERROR('[Parser]: Meets invalid Col2Im Op (%s) in rename_col2im!' % col2im)
+            continue
+        image_shape_tensor = in_edges[1][2]['tensor']
+        block_shape_tensor = in_edges[2][2]['tensor']
+        if image_shape_tensor is None or not image_shape_tensor.is_const \
+                or block_shape_tensor is None or not block_shape_tensor.is_const:
+            WARN('[Parser]: Meets unsupported non-constant image_shape/block_shape of Col2Im Op (%s) in rename_col2im!' % col2im)
+            continue
+        image_shape = image_shape_tensor.value.tolist()
+        block_shape = block_shape_tensor.value.tolist()
+        if len(image_shape) > 3 or len(block_shape) > 3:
+            WARN('[Parser]: Meets unsupported non-constant image_shape/block_shape of Col2Im Op (%s) in rename_col2im!' % col2im)
+            continue
+        matched = True
+        col2im_attr = col2im_obj.copied_attr()
+        NodeWrap(graph, col2im).replace_obj('ArmCol2Im', col2im_attr)
+    if matched:
+        clear_redundant_nodes(graph)
+
+
 def rename_compress(graph):
     need_clear = False
     matches = single_node_matcher(graph, 'Compress')
@@ -4884,6 +4912,7 @@ def back_passes(graph, params):
     rename_cum(graph)
     rename_bn(graph)
     rename_cast(graph)
+    rename_col2im(graph)
     rename_compress(graph)
     rename_conv(graph)
     rename_dilation_erosion(graph)

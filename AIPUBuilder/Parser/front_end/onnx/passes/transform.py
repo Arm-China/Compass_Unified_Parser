@@ -82,7 +82,7 @@ def insert_transpose_for_layoutconcern(graph):
         current_op_types = current_op_types.union(
             set(fr.get_concrete_subclass_names()))
     layout_types = list(set(LayoutConcernedOp.get_concrete_subclass_names(
-    )).intersection(current_op_types))
+    )).intersection(current_op_types).difference(['Col2Im']))
     layout_types = sorted(layout_types)
     matches = extend_lists([single_node_matcher(graph, type_name)
                             for type_name in layout_types])

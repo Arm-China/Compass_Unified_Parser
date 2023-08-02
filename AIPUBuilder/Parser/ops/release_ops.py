@@ -711,6 +711,28 @@ class ArmChannelShuffleOp(LayoutConcernedOp, OpHasMultipleOutPorts, ArmOp):
         return ret
 
 
+class ArmCol2ImOp(OpHasPaddingStrides, OpHasOneOutPort, ArmOp):
+    @classmethod
+    def num_in_ports(cls):
+        return 3
+
+    @classmethod
+    def cast_in_ports(cls):
+        return {1: 'int32', 2: 'int32'}
+
+    def infer_shape(self):
+        super(ArmCol2ImOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        input_shape = list(inputs[0].shape)
+        batch = input_shape[0]
+        image_shape = inputs[1].tolist()
+        block_shape = inputs[2].tolist()
+        channels = input_shape[1] // int(np.prod(block_shape))
+        out_shape = [batch, channels] + image_shape
+        out_tensor = np.random.ranf(size=out_shape).astype(inputs[0].dtype)
+        self.set_out_tensor(out_tensor)
+
+
 class ArmCompressOp(OpHasAxis, OpHasOneOutPort, ArmOp):
     @classmethod
     def num_in_ports(cls):
