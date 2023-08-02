@@ -216,6 +216,33 @@ class CeluOp(LayoutUnawareOp, BaseActivationOp, OnnxOp):
         self.set_out_tensor(out_tensor)
 
 
+class Col2ImOp(OpHasPaddingStrides, OpHasOneOutPort, OnnxOp):
+    @classmethod
+    def attributes(cls):
+        return {18: {}}
+
+    def __init__(self, graph, attr_dict=None):
+        super(Col2ImOp, self).__init__(graph, attr_dict)
+        self.update_attributes(Col2ImOp, attr_dict)
+        assert self.check_required(), 'Col2ImOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(Col2ImOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        assert len(inputs) == 3, 'Col2ImOp expects 3 inputs, but got %d' % len(inputs)
+        # Implementation: https://github.com/onnx/onnx/blob/main/onnx/reference/ops/op_col2im.py
+        input_shape = list(inputs[0].shape)
+        batch = input_shape[0]
+        image_shape = inputs[1].tolist()
+        block_shape = inputs[2].tolist()
+        if not self.kernel_shape:
+            self.kernel_shape = block_shape
+        channels = input_shape[1] // int(np.prod(block_shape))
+        out_shape = [batch, channels] + image_shape
+        out_tensor = np.random.ranf(size=out_shape).astype(inputs[0].dtype)
+        self.set_out_tensor(out_tensor)
+
+
 class ConvOp(BaseConvOp, OnnxOp):
     @classmethod
     def attributes(cls):
