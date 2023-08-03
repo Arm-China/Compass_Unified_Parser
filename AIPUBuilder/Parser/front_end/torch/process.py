@@ -126,6 +126,32 @@ def convert_channel_shuffle(g, input, groups):
     return g.op('custom::ChannelShuffle', input, group_i=groups)
 
 
+@helper.parse_args('v', 'i', 'i')
+@quantized_args(True, False, False)
+def convert_chunk(g, input, chunks, dim):
+    from torch.onnx.symbolic_opset13 import split
+    input_shape = helper._get_tensor_sizes(input)
+    if input_shape is None or None in input_shape:
+        from torch.onnx.symbolic_opset11 import Prim
+        return Prim.ConstantChunk(g, input, chunks, dim)
+    dim_size = input_shape[dim]
+    chunk_size = (dim_size + chunks - 1) // chunks
+    split_sizes = [chunk_size] * (dim_size // chunk_size)
+    leftover = dim_size % chunk_size
+    if leftover:
+        split_sizes.append(leftover)
+    splits = g.op('Constant',
+                  value_t=torch.tensor(split_sizes, dtype=torch.long))
+    split_outs = split(g, input, splits, dim, len(split_sizes))
+    return g.op('prim::ListConstruct', *split_outs)
+
+
+@quantized_args(True, False, False)
+def convert_constant_chunk(g, input, chunks, dim):
+    from torch.onnx.symbolic_opset11 import Prim
+    return Prim.ConstantChunk(g, input, chunks, dim)
+
+
 @helper.parse_args('v', 'v', 'v', 'is', 'v', 'is', 'i')
 def convert_conv(g, input, weight, bias, stride, padding, dilation, groups):
     # Support padding as string. Refer to https://github.com/pytorch/pytorch/pull/89107
@@ -166,30 +192,6 @@ def convert_conv(g, input, weight, bias, stride, padding, dilation, groups):
     return conv
 
 
-@quantized_args(True, False, False)
-def convert_constant_chunk(g, self, chunks, dim):
-    input_shape = g.op('Shape', self)
-    axis = g.op('Constant', value_t=torch.tensor([dim], dtype=torch.long))
-    input_shape_dim = g.op('Gather', input_shape, axis, axis_i=0)
-    start = g.op('Constant', value_t=torch.tensor([0], dtype=torch.long))
-    chunk_size = g.op('Constant', value_t=torch.tensor(
-        [chunks], dtype=torch.long))
-    chunk_size_minus_1 = g.op(
-        'Constant', value_t=torch.tensor([chunks - 1], dtype=torch.long)
-    )
-    input_shape_dim_shift = g.op(
-        'Add', input_shape_dim, chunk_size_minus_1)
-    chunk_dim = g.op('Div', input_shape_dim_shift, chunk_size)
-    res = []
-    for i in range(chunks):
-        index = g.op('Constant', value_t=torch.tensor(
-            [i + 1], dtype=torch.long))
-        end = g.op('Mul', chunk_dim, index)
-        res.append(g.op('Slice', self, start, end, axis))
-        start = end
-    return res
-
-
 @helper.parse_args('v', 'i', 'i')
 def convert_cumprod(g, input, dim, dtype):
     if dtype is not None:
@@ -206,6 +208,13 @@ def convert_dict_construct(g, key_0, value_0, key_1=None, value_1=None):
         # value_1 is the second output of graph if this node is output
         return g.op('Identity', value_1)
     return g.op('Identity', value_0)
+
+
+@helper.parse_args('v', 'v', 'v')
+@helper.quantized_args(True, False, False)
+def convert_div(g, input, other, *args):
+    from torch.onnx.symbolic_opset10 import div
+    return div(g, input, other, *args)
 
 
 def convert_quantized_add_relu(g, x, y, op_scale, op_zero_point):
@@ -527,6 +536,35 @@ def convert_quantized_cat(
     return helper.quantize_helper(g, concatenated, op_scale, op_zero_point)
 
 
+def convert_size(g, input, dim=None):
+    from torch.onnx.symbolic_opset11 import size
+    if input.node().kind() in ('prim::TupleConstruct'):
+        # if input is TupleConstruct, then it could be a tuple of quantize info, which will
+        # make the output of this op incorrect.
+        input = list(input.node().inputs())[0]
+    return size(g, input, dim)
+
+
+@helper.parse_args('v', 'v', 'i', 'i')
+@quantized_args(True, False, False, False)
+def convert_split(g, input, split_size_or_sizes, dim, _outputs=None):
+    from torch.onnx.symbolic_opset11 import split
+    return opset9.split(g, input, split_size_or_sizes, dim, _outputs)
+
+
+@helper.parse_args('v', 'i', 'i')
+@quantized_args(True, False, False)
+def convert_transpose(g, self, dim0, dim1):
+    return opset9.transpose(g, self, dim0, dim1)
+
+
+@helper.parse_args('v', 'v')
+@quantized_args(True, False)
+def convert_view(g, self, shape):
+    from torch.onnx.symbolic_opset14 import reshape
+    return reshape(g, self, shape)
+
+
 def convert_atan2(g, self, other):
     slope = g.op('Div', self, other)
     atan = g.op('Atan', slope)
@@ -678,6 +716,10 @@ def convert_torch_to_onnx(model_path, params):
     torch.onnx.register_custom_op_symbolic(
         'aten::bitwise_right_shift', convert_bitshift_right, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
+        'aten::chunk', convert_chunk, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'aten::div', convert_div, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
         'aten::equal', convert_equal, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::flatten', convert_flatten, onnx_opset_version)
@@ -697,6 +739,14 @@ def convert_torch_to_onnx(model_path, params):
         'aten::max_unpool2d', convert_max_unpool2d, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::mean', convert_reduce_mean, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'aten::size', convert_size, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'aten::split', convert_split, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'aten::transpose', convert_transpose, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'aten::view', convert_view, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::__iand_', convert_iand, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
