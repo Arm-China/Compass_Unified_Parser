@@ -520,3 +520,43 @@ def merge_q_unary(graph, op_list):
 
     if matched:
         clear_redundant_nodes(graph)
+
+
+def merge_sequence_construct_and_at(graph):
+    matched = False
+    matches = two_nodes_matcher(graph, 'SequenceConstruct', 'SequenceAt')
+    for m in matches:
+        seq_construct, seq_at = m['begin'], m['end']
+        seq_construct_obj = NodeWrap(graph, seq_construct)['object']
+        seq_at_obj = NodeWrap(graph, seq_at)['object']
+        construct_in_edges = graph.sorted_in_edges(seq_construct, data=True)
+        seq_num = len(construct_in_edges)
+        if seq_construct_obj is None or seq_at_obj is None or seq_num < 1:
+            ERROR(
+                '[Parser]: Meets invalid SequenceConstruct/SequenceAt Op in merge_sequence_construct_and_at!')
+            continue
+        at_in_edges = graph.sorted_in_edges(seq_at, data=True)
+        if len(at_in_edges) != 2 or at_in_edges[1][2]['tensor'] is None \
+                or not at_in_edges[1][2]['tensor'].is_const:
+            WARN('[Parser]: Only supports SequenceAt Op (%s) with constant position in merge_sequence_construct_and_at!' % seq_construct)
+            continue
+        position = at_in_edges[1][2]['tensor'].value
+        if position < 0:
+            position = position + seq_num
+        if position < 0 or position >= seq_num:
+            ERROR(
+                '[Parser]: Meets invalid position(%d) of SequenceAt Op (%s) in merge_sequence_construct_and_at!' % (position, seq_at))
+            continue
+        matched = True
+        at_out_edges = graph.sorted_out_edges(seq_at, data=True)
+        graph.remove_edges_from(at_out_edges)
+        src, _, in_attr = construct_in_edges[position]
+        for _, dst, out_attr in at_out_edges:
+            dst_in_attr = copy.deepcopy(in_attr)
+            dst_in_attr.update({'dst_in_port': out_attr['dst_in_port']})
+            graph.add_edge(src, dst, **dst_in_attr)
+        if seq_at in graph._attr['output_names']:
+            index = graph._attr['output_names'].index(seq_at)
+            graph._attr['output_names'][index] = src
+    if matched:
+        clear_redundant_nodes(graph)

@@ -181,7 +181,7 @@ def quantized_args(*arg_q_descriptors, scale=None, zero_point=None):
                     dequantized_args.append(arg)
             output = fn(g, *dequantized_args, **kwargs)
 
-            if isinstance(output, list):
+            if isinstance(output, (list, tuple)):
                 return quantize_helper_multi(g, output, _scale, _zero_point)
             else:
                 return quantize_helper(g, output, _scale, _zero_point)
