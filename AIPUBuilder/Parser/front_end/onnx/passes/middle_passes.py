@@ -2272,15 +2272,16 @@ def convert_qconv(graph):
             ERROR('[Parser]: Meets invalid QLinearConv node(%s) in convert_qconv!' % qconv)
             continue
         matched = True
+        x_scale, x_zp = qconv_obj.x_scale, qconv_obj.x_zero_point
+        w_scale, w_zp = qconv_obj.w_scale, qconv_obj.w_zero_point
+        y_scale, y_zp = qconv_obj.y_scale, qconv_obj.y_zero_point
+        weights = qconv_obj.w
+        biases = qconv_obj.B
         graph.remove_edges_from(in_edges[1:])
         conv_attr = qconv_obj.copied_attr()
         if graph._attr.get('quantize', False):
-            x_scale, x_zp = qconv_obj.x_scale, qconv_obj.x_zero_point
-            w_scale, w_zp = qconv_obj.w_scale, qconv_obj.w_zero_point
-            b_scale = qconv_obj.x_scale * qconv_obj.w_scale
+            b_scale = x_scale * w_scale
             b_zp = np.zeros(b_scale.shape, np.int32)
-            y_scale, y_zp = qconv_obj.y_scale, qconv_obj.y_zero_point
-
             in_edges[0][2]['tensor'].dtype = str(x_dtype)
             in_edges[0][2]['tensor'].scale_zp = (x_scale, x_zp)
 
@@ -2291,26 +2292,26 @@ def convert_qconv(graph):
 
             conv_attr.update({'opset_version': 1,
                               'quantize': True,
-                              'weights': qconv_obj.w,
+                              'weights': weights,
                               'weights_scale_zp': [w_scale, w_zp],
-                              'biases': qconv_obj.B,
+                              'biases': biases,
                               'biases_scale_zp': [b_scale, b_zp]})
 
         else:
-            spatial_len = len(qconv_obj.w.shape) - 2
+            spatial_len = len(weights.shape) - 2
             w_scal_zp_reshape_dim = [-1] + [1] * (spatial_len + 1)
-            weights = (qconv_obj.w.astype(np.int32) - np.reshape(qconv_obj.w_zero_point, w_scal_zp_reshape_dim)) \
-                * np.reshape(qconv_obj.w_scale, w_scal_zp_reshape_dim)
+            weights = (weights.astype(np.int32) - np.reshape(w_zp, w_scal_zp_reshape_dim)) \
+                * np.reshape(w_scale, w_scal_zp_reshape_dim)
             weights = weights.astype(np.float32)
-            biases = qconv_obj.B.astype(np.int32) * qconv_obj.x_scale * qconv_obj.w_scale
+            biases = biases.astype(np.int32) * x_scale * w_scale
             biases = biases.astype(np.float32)
             conv_attr.update({'opset_version': 1, 'weights': weights, 'biases': biases})
 
             src, _, in_attr = in_edges[0]
-            insert_cast_sub_mul_for_quant(graph, src, qconv, qconv_obj.x_scale, qconv_obj.x_zero_point,
+            insert_cast_sub_mul_for_quant(graph, src, qconv, x_scale, x_zp,
                                           in_attr, data_format=qconv_obj.data_format)
-            out_cast = insert_mul_add_cast_after_for_dequant(graph, qconv, y_dtype, qconv_obj.y_scale,
-                                                             qconv_obj.y_zero_point,
+            out_cast = insert_mul_add_cast_after_for_dequant(graph, qconv, y_dtype, y_scale,
+                                                             y_zp,
                                                              data_format=qconv_obj.data_format)
 
             if qconv in graph._attr['output_names']:
