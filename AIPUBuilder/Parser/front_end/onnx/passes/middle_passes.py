@@ -887,6 +887,13 @@ def convert_gemm_to_fc(graph):
     matches = single_node_matcher(graph, 'Gemm')
     for m in matches:
         gemm = m['target']
+        gemm_obj = NodeWrap(graph, gemm)['object']
+        if gemm_obj is None:
+            ERROR('[Parser]: Meets invalid Gemm (%s) in convert_gemm_to_fc!' % gemm)
+            continue
+        is_quantized = gemm_obj.quantize
+        if is_quantized and (not FLOAT_EQUAL(gemm_obj.alpha, 1) or not FLOAT_EQUAL(gemm_obj.beta, 1)):
+            continue
         gemm_in_edges = graph.sorted_in_edges(gemm, data=True)
         if len(gemm_in_edges) in (2, 3) \
                 and gemm_in_edges[0][2]['tensor'] is not None \
@@ -896,14 +903,24 @@ def convert_gemm_to_fc(graph):
             input3 = gemm_in_edges[2][0] if len(gemm_in_edges) == 3 else ''
             if NodeWrap(graph, input2)['object'].type == 'Constant' \
                     and (not input3 or NodeWrap(graph, input3)['object'].type == 'Constant'):
-                gemm_obj = NodeWrap(graph, gemm)['object']
-                W = NodeWrap(graph, input2)['object'].value * gemm_obj.alpha
-                if bool(gemm_obj.transB):
-                    W = np.transpose(W)
+                W = NodeWrap(graph, input2)['object'].value
                 num_output = W.shape[-1]
                 b = NodeWrap(graph, input3)[
-                    'object'].value * gemm_obj.beta if input3 else np.zeros((num_output,), np.float32)
+                    'object'].value if input3 else np.zeros((num_output,), np.float32)
                 fc_attr = gemm_obj.copied_attr()
+                if is_quantized:
+                    b = np.array(b, np.int32)
+                    if len(gemm_in_edges) == 3:
+                        biases_scale_zp = list(gemm_in_edges[2][2]['tensor'].scale_zp)
+                    else:
+                        biases_scale_zp = [np.array(1.0, dtype=np.float32), np.array(0, dtype=np.int32)]
+                    fc_attr.update({'weights_scale_zp': list(gemm_in_edges[1][2]['tensor'].scale_zp),
+                                    'biases_scale_zp': biases_scale_zp})
+                else:
+                    W = W * gemm_obj.alpha
+                    b = np.array(b * gemm_obj.beta, dtype=np.float32)
+                if bool(gemm_obj.transB):
+                    W = np.transpose(W)
                 fc_attr.update({'weights': np.transpose(W), 'biases': b})
                 NodeWrap(graph, gemm).replace_obj('FullyConnected', fc_attr)
                 graph.remove_nodes_from([input2, input3])
