@@ -5477,8 +5477,15 @@ def merge_ln4(graph):
                 bias, axes, [input_shape[axis] for axis in axes])
             if weight is None or bias is None:
                 continue
+            if node_objs['eps'].value is None \
+                    or (node_objs['eps'].value.size > 1 and np.any(node_objs['eps'].value.flatten()[0] != node_objs['eps'].value)):
+                continue
+
             matched = True
-            eps = float(node_objs['eps'].value)
+            if node_objs['eps'].value.size == 1:
+                eps = float(node_objs['eps'].value)
+            else:
+                eps = float(node_objs['eps'].value.flatten()[0])
             inp, _, in_attr = mean_1_in_edges[0]
             graph.remove_edges_from(add_2_in_edges)
             graph.add_edge(inp, m['add_2'], **in_attr)
