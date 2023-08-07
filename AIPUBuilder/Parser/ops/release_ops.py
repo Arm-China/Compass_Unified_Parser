@@ -642,7 +642,7 @@ class ArmCastOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
                              'options': ['int8', 'uint8', 'int16', 'uint32', 'uint16', 'int32', 'float32', 'float16', 'bfloat16']
                              },
                 'clip_mode': {'type': AttrType.STRING, 'options': ['saturation', 'truncation'], 'default': 'saturation'},
-                'ignore_scale_zp': {'type': AttrType.BOOL, 'default': False}
+                'ignore_scale_zp': {'type': AttrType.BOOL, 'default': True}
                 }
 
     def __init__(self, graph, attr_dict=None):

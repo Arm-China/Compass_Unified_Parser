@@ -2133,19 +2133,24 @@ def rename_cast(graph):
     for m in matches:
         cast = m['target']
         cast_obj = NodeWrap(graph, cast)['object']
-        if cast_obj is not None:
+        out_edges = graph.sorted_out_edges(cast, data=True)
+        if cast_obj is not None and len(out_edges) > 0:
             if cast_obj.to in ArmCastOp.attributes()['to_dtype']['options'] + ['bool']:
                 cast_attr = cast_obj.copied_attr()
                 if cast_obj.to == 'bool':
                     to_dtype = 'uint8'
                 else:
                     to_dtype = cast_obj.to
+                ignore_scale_zp = True
                 if cast_obj.saturate:
                     mode = 'saturation'
-                    ignore_scale_zp = False
+                    # ignore_scale_zp cannot be true if there is no scale/zp
+                    out_attr = out_edges[0][2]
+                    if out_attr.get('tensor', None) is not None \
+                            and len(out_attr['tensor'].scale_zp) == 2:
+                        ignore_scale_zp = False
                 else:
                     mode = 'truncation'
-                    ignore_scale_zp = True
                 cast_attr.update({'to_dtype': to_dtype, 'clip_mode': mode, 'ignore_scale_zp': ignore_scale_zp})
                 NodeWrap(graph, cast).replace_obj('ArmCast', cast_attr)
             else:
