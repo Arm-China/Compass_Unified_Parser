@@ -191,21 +191,24 @@ def merge_qconv(graph):
             continue
         x_dequant_in_edges = graph.sorted_in_edges(m['x_dequant'], data=True)
         if len(x_dequant_in_edges) not in (2, 3):
-            ERROR('[Parser]: Meets invalid Dequantize Op(%s) in merge_qconv!' % m['x_dequant'])
+            ERROR(
+                '[Parser]: Meets invalid Dequantize Op(%s) in merge_qconv!' % m['x_dequant'])
             continue
         if any(e[2]['tensor'].value is None for e in x_dequant_in_edges[1:]) \
                 or any(not e[2]['tensor'].is_const for e in x_dequant_in_edges[1:]):
             continue
         w_dequant_in_edges = graph.sorted_in_edges(m['w_dequant'], data=True)
         if len(w_dequant_in_edges) not in (2, 3):
-            ERROR('[Parser]: Meets invalid Dequantize Op(%s) in merge_qconv!' % m['w_dequant'])
+            ERROR(
+                '[Parser]: Meets invalid Dequantize Op(%s) in merge_qconv!' % m['w_dequant'])
             continue
         if any(e[2]['tensor'].value is None for e in w_dequant_in_edges) \
                 or any(not e[2]['tensor'].is_const for e in w_dequant_in_edges):
             continue
         b_dequant_in_edges = graph.sorted_in_edges(m['b_dequant'], data=True)
         if len(b_dequant_in_edges) not in (2, 3):
-            ERROR('[Parser]: Meets invalid Dequantize Op(%s) in merge_qconv!' % m['b_dequant'])
+            ERROR(
+                '[Parser]: Meets invalid Dequantize Op(%s) in merge_qconv!' % m['b_dequant'])
             continue
         if any(e[2]['tensor'].value is None for e in b_dequant_in_edges) \
                 or any(not e[2]['tensor'].is_const for e in b_dequant_in_edges):
@@ -215,7 +218,8 @@ def merge_qconv(graph):
             continue
         y_quant_in_edges = graph.sorted_in_edges(m['y_quant'], data=True)
         if len(y_quant_in_edges) not in (2, 3):
-            ERROR('[Parser]: Meets invalid Quantize Op(%s) in merge_qconv!' % m['y_quant'])
+            ERROR('[Parser]: Meets invalid Quantize Op(%s) in merge_qconv!' %
+                  m['y_quant'])
             continue
         if any(e[2]['tensor'].value is None for e in y_quant_in_edges[1:]) \
                 or any(not e[2]['tensor'].is_const for e in y_quant_in_edges[1:]):
@@ -235,6 +239,10 @@ def merge_qconv(graph):
         b_scale, b_zp = obj_dict['b_dequant'].x_scale, obj_dict['b_dequant'].x_zero_point
         y_scale, y_zp = obj_dict['y_quant'].y_scale, obj_dict['y_quant'].y_zero_point
 
+        if not np.all(w_scale*x_scale == b_scale) \
+                or not np.all(b_zp == 0):
+            continue
+
         graph.remove_edges_from(graph.sorted_in_edges(m['conv']))
         graph.remove_edge(m['conv'], m['y_quant'])
         graph.add_edge(src, m['conv'], **new_in_attr)
@@ -248,14 +256,26 @@ def merge_qconv(graph):
             index = graph._attr['output_names'].index(m['y_quant'])
             graph._attr['output_names'][index] = m['conv']
 
+        insert_constant(graph, m['conv'] + '_x_scale',
+                        x_scale, m['conv'], in_port=1, data_format='NHWC')
+        insert_constant(graph, m['conv'] + '_x_zero_point',
+                        x_zp, m['conv'], in_port=2, data_format='NHWC')
+        insert_constant(graph, m['conv'] + '_w', weights,
+                        m['conv'], in_port=3, data_format='NHWC')
+        insert_constant(graph, m['conv'] + '_w_scale',
+                        w_scale, m['conv'], in_port=4, data_format='NHWC')
+        insert_constant(graph, m['conv'] + '_w_zero_point',
+                        w_zp, m['conv'], in_port=5, data_format='NHWC')
+        insert_constant(graph, m['conv'] + '_y_scale',
+                        y_scale, m['conv'], in_port=6, data_format='NHWC')
+        insert_constant(graph, m['conv'] + '_y_zero_point',
+                        y_zp, m['conv'], in_port=7, data_format='NHWC')
+        insert_constant(graph, m['conv'] + '_B', biases,
+                        m['conv'], in_port=8, data_format='NHWC')
+
         conv_attr = obj_dict['conv'].copied_attr()
-        conv_attr.update({'quantize': True,
-                          'weights': weights,
-                          'weights_scale_zp': [w_scale, w_zp],
-                          'biases': biases,
-                          'biases_scale_zp': [b_scale, b_zp]
-                          })
-        NodeWrap(graph, m['conv']).replace_obj('Conv', conv_attr)
+        conv_attr.update({'opset_version': 10})
+        NodeWrap(graph, m['conv']).replace_obj('QLinearConv', conv_attr)
 
     if matched:
         clear_redundant_nodes(graph)
