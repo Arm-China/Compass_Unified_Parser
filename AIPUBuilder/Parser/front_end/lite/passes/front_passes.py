@@ -138,8 +138,14 @@ def convert_sparse_to_dense(graph, op_type='LiteSPARSE_TO_DENSE'):
                 any([input_tensor is None for input_tensor in input_tensors]):
             continue
 
-        if in_edges[0][2]['tensor'].is_const is False and sd_obj.validate_indices is True:
-            WARN('[Parser]: Meets non-const indices input of SparseToDense Op (%s) in convert_sparse_to_dense!' % sd)
+        if op_type == 'LiteSPARSE_TO_DENSE':
+            if in_edges[0][2]['tensor'].is_const is False:
+                WARN(
+                    '[Parser]: Meets non-const indices input of SparseToDense Op (%s) in convert_sparse_to_dense!' % sd)
+        else:
+            if in_edges[0][2]['tensor'].is_const is False and sd_obj.validate_indices is True:
+                WARN(
+                    '[Parser]: Meets non-const indices input of SparseToDense Op (%s) in convert_sparse_to_dense!' % sd)
 
         matched = True
 
