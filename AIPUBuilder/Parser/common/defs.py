@@ -59,7 +59,8 @@ def get_opset_version(version_number):
         '1.10': 15,
         '1.11': 16,
         '1.12': 17,
-        '1.13': 18
+        '1.13': 18,
+        '1.14': 19
     }
     version_str = '%1.2f' % float(version_number)
     versions = sorted(
