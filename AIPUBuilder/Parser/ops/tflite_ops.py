@@ -1433,11 +1433,15 @@ class LiteSPARSE_TO_DENSEOp(OpHasOneOutPort, TfliteOp):
     def infer_shape(self):
         super(LiteSPARSE_TO_DENSEOp, self).infer_shape()
         inputs = self.get_input_tensors()
+        in_edges = self._graph.sorted_in_edges(self.name, data=True)
+
+        if in_edges[0][2]['tensor'].is_const is False:
+            WARN('[Parser]: Meets non-const indices input of TfliteSparseToDense Op (%s) in infer_shape!' % self.name)
         out_tensor = tf.raw_ops.SparseToDense(sparse_indices=inputs[0],
                                               output_shape=inputs[1],
                                               sparse_values=inputs[2],
                                               default_value=inputs[3],
-                                              validate_indices=False).numpy()
+                                              validate_indices=True).numpy()
         self.set_out_tensor(out_tensor)
 
 
