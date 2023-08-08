@@ -1368,6 +1368,8 @@ class BaseConvOp(OpHasPaddingStrides, BaseLinearOp, LayoutConcernedOp):
         '''Calculate the output shape of the OP according to in_shape, pads, strides, kernel_shape, auto_pad and other parameters.'''
         if dilations is None:
             dilations = [1] * len(kernel_shape)
+        if pads is None:
+            pads = [0] * len(in_shape)
         params = [in_shape, strides, kernel_shape, dilations]
         in_shape, strides, kernel_shape, dilations = [
             np.array(p, np.int64) for p in params]
