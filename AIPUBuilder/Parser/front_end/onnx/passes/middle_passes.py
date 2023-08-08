@@ -2139,11 +2139,6 @@ def convert_quantizelinear(graph):
             ERROR(
                 '[Parser]: Meets invalid QuantizeLinear Op(%s) in convert_quantizelinear!' % quant)
             continue
-        scale, _, scale_in_attr = quant_in_edges[1]
-        zp, _, zp_in_attr = quant_in_edges[2]
-        if scale_in_attr['tensor'].is_const and zp_in_attr['tensor'].is_const:
-            continue
-
         input_shapes = quant_obj.get_input_shapes()
         if quant_obj.axis is not None and len(input_shapes[1]) == 1:
             quant_axis = quant_obj.axis
@@ -2157,57 +2152,77 @@ def convert_quantizelinear(graph):
             ERROR(
                 '[Parser]: Meets different shapes of y_scale and y_zero_point in QuantizeLinear Op(%s) in convert_quantizelinear!' % quant)
             continue
-        inp, _, inp_in_attr = quant_in_edges[0]
-        graph.remove_edges_from(quant_in_edges)
-
-        div = get_valid_node_name(graph, quant + '_div')
-        graph.add_edge(inp, div, **inp_in_attr)
-        div_in_attr = copy.deepcopy(scale_in_attr)
-        div_in_attr.update({'dst_in_port': 1})
-        graph.add_edge(scale, div, **div_in_attr)
-        NodeWrap(graph, div).replace_obj(
-            'Div', {'name': div, 'opset_version': 13})
-        # Insert cast before quant if input dtype is not float32
-        if inp_in_attr['tensor'].value.dtype != 'float32':
-            insert_cast(graph, inp, div, 'float32')
-
-        # For (x / y_scale), it's rounding to nearest ties to even
-        round_div = get_valid_node_name(graph, quant + '_round')
-        common_attr = copy.deepcopy(inp_in_attr)
-        common_attr.update({'src_out_port': 0,
-                            'tensor': Tensor(value=np.random.ranf(input_shapes[0]).astype(np.float32))})
-        graph.add_edge(div, round_div, **common_attr)
-        NodeWrap(graph, round_div).replace_obj(
-            'Round', {'name': round_div, 'opset_version': 11})
-
-        add = get_valid_node_name(graph, quant + '_add')
-        add_in_attr = copy.deepcopy(zp_in_attr)
-        add_in_attr.update({'dst_in_port': 1})
-        graph.add_edge(zp, add, **add_in_attr)
-        graph.add_edge(round_div, add, **common_attr)
-        NodeWrap(graph, add).replace_obj(
-            'Add', {'name': add, 'opset_version': 13})
-        add_operand = zp
-        if len(input_shapes[1]) == 1 and quant_axis != len(input_shapes[0]) - 1:
-            dim = [1 if idx != quant_axis else input_shapes[0][quant_axis]
-                   for idx in range(len(input_shapes[0]))]
-            insert_reshape(graph, scale, div, div_in_attr, dim)
-            add_operand = insert_reshape(graph, zp, add, add_in_attr, dim)
-        insert_cast(graph, add_operand, add, 'float32')
-
-        # Insert clip and cast after quant
-        clip = get_valid_node_name(graph, quant + '_clip')
-        graph.add_edge(add, clip, **common_attr)
+        quant_out_edges = graph.sorted_out_edges(quant, data=True)
+        scale, _, scale_in_attr = quant_in_edges[1]
+        zp, _, zp_in_attr = quant_in_edges[2]
+        if zp_in_attr['tensor'] is None or zp_in_attr['tensor'].value is None:
+            continue
         zp_dtype = zp_in_attr['tensor'].value.dtype
-        NodeWrap(graph, clip).replace_obj('Clip', {'name': clip,
-                                                   'opset_version': 1,
-                                                   'max': np.iinfo(zp_dtype).max,
-                                                   'min': np.iinfo(zp_dtype).min})
+        zp_value = zp_in_attr['tensor'].value
+        if scale_in_attr['tensor'].is_const and zp_in_attr['tensor'].is_const:
+            if graph._attr.get('quantize', False):
+                for _, dst, out_attr in quant_out_edges:
+                    if out_attr['tensor'] is None:
+                        out_attr['tensor'] = Tensor()
+                    out_attr['tensor'].dtype = str(zp_dtype)
+                    out_attr['tensor'].scale_zp = (scale_in_attr['tensor'].value, zp_value)
+        else:
+            inp, _, inp_in_attr = quant_in_edges[0]
+            graph.remove_edges_from(quant_in_edges)
 
-        graph.add_edge(clip, quant, **common_attr)
-        post_cast_attr = quant_obj.copied_attr()
-        post_cast_attr.update({'opset_version': 1, 'to': str(zp_dtype)})
-        NodeWrap(graph, quant).replace_obj('Cast', post_cast_attr)
+            div = get_valid_node_name(graph, quant + '_div')
+            graph.add_edge(inp, div, **inp_in_attr)
+            div_in_attr = copy.deepcopy(scale_in_attr)
+            div_in_attr.update({'dst_in_port': 1})
+            graph.add_edge(scale, div, **div_in_attr)
+            NodeWrap(graph, div).replace_obj(
+                'Div', {'name': div, 'opset_version': 13})
+            # Insert cast before quant if input dtype is not float32
+            if inp_in_attr['tensor'].value.dtype != 'float32':
+                insert_cast(graph, inp, div, 'float32')
+
+            # For (x / y_scale), it's rounding to nearest ties to even
+            round_div = get_valid_node_name(graph, quant + '_round')
+            common_attr = copy.deepcopy(inp_in_attr)
+            common_attr.update({'src_out_port': 0,
+                                'tensor': Tensor(value=np.random.ranf(input_shapes[0]).astype(np.float32))})
+            graph.add_edge(div, round_div, **common_attr)
+            NodeWrap(graph, round_div).replace_obj(
+                'Round', {'name': round_div, 'opset_version': 11})
+
+            add = get_valid_node_name(graph, quant + '_add')
+            add_in_attr = copy.deepcopy(zp_in_attr)
+            add_in_attr.update({'dst_in_port': 1})
+            graph.add_edge(zp, add, **add_in_attr)
+            graph.add_edge(round_div, add, **common_attr)
+            NodeWrap(graph, add).replace_obj(
+                'Add', {'name': add, 'opset_version': 13})
+            add_operand = zp
+            if len(input_shapes[1]) == 1 and quant_axis != len(input_shapes[0]) - 1:
+                dim = [1 if idx != quant_axis else input_shapes[0][quant_axis]
+                       for idx in range(len(input_shapes[0]))]
+                insert_reshape(graph, scale, div, div_in_attr, dim)
+                add_operand = insert_reshape(graph, zp, add, add_in_attr, dim)
+            insert_cast(graph, add_operand, add, 'float32')
+
+            # Insert clip and cast after quant
+            clip = get_valid_node_name(graph, quant + '_clip')
+            graph.add_edge(add, clip, **common_attr)
+            NodeWrap(graph, clip).replace_obj('Clip', {'name': clip,
+                                                       'opset_version': 1,
+                                                       'max': np.iinfo(zp_dtype).max,
+                                                       'min': np.iinfo(zp_dtype).min})
+
+            graph.add_edge(clip, quant, **common_attr)
+            if graph._attr.get('quantize', False):
+                for _, dst, out_attr in quant_out_edges:
+                    if out_attr['tensor'] is None:
+                        out_attr['tensor'] = Tensor()
+                    out_attr['tensor'].dtype = str(zp_dtype)
+                    out_attr['tensor'].scale_zp = [np.array([1.0]).astype(np.float32), np.array([0]).astype(np.int32)]
+            post_cast_attr = quant_obj.copied_attr()
+            post_cast_attr.update({'opset_version': 1, 'to': str(zp_dtype)})
+            NodeWrap(graph, quant).replace_obj('Cast', post_cast_attr)
 
 
 def convert_qadd(graph):

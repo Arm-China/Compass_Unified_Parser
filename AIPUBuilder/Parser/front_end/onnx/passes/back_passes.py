@@ -4233,25 +4233,28 @@ def sink_single_transpose(graph):
                     ERROR(
                         '[Parser]: Meets invalid input shape of Node(%s) in sink_single_transpose!' % unaware)
                     continue
+                unaware_out_edges = graph.sorted_out_edges(unaware, data=True)
+                if len(unaware_out_edges) < 1:
+                    continue
                 trans_in_edges = graph.sorted_in_edges(transpose, data=True)
                 src, _, trans_in_attr = trans_in_edges[0]
                 _, _, trans_out_attr = trans_out_edges[0]
                 graph.remove_edge(src, transpose)
                 graph.remove_edges_from(trans_out_edges)
-                unaware_out_tensor = None
-                for _, dst, out_attr in graph.sorted_out_edges(unaware, data=True):
+                for _, dst, out_attr in unaware_out_edges:
                     graph.remove_edge(unaware, dst)
                     new_out_attr = copy.deepcopy(out_attr)
                     new_out_attr['src_out_port'] = 0
                     graph.add_edge(transpose, dst, **new_out_attr)
-                    if out_attr['tensor'].value is not None:
-                        unaware_out_tensor = np.transpose(out_attr['tensor'].value, [
-                                                          transpose_obj.perm.index(i) for i in range(len(transpose_obj.perm))])
+                unaware_out_tensor = copy.deepcopy(unaware_out_edges[0][2]['tensor'])
+                if unaware_out_tensor is not None and unaware_out_tensor.value is not None:
+                    unaware_out_tensor.value = np.transpose(unaware_out_tensor.value, [
+                        transpose_obj.perm.index(i) for i in range(len(transpose_obj.perm))])
                 new_in_attr = copy.deepcopy(trans_in_attr)
                 new_in_attr['dst_in_port'] = trans_out_attr['dst_in_port']
                 graph.add_edge(src, unaware, **new_in_attr)
                 graph.add_edge(unaware, transpose, **{
-                               'src_out_port': 0, 'dst_in_port': 0, 'tensor': Tensor(value=unaware_out_tensor)})
+                               'src_out_port': 0, 'dst_in_port': 0, 'tensor': unaware_out_tensor})
                 if unaware_obj.type == 'ArmActivation' and unaware_obj.method == 'PRELU':
                     if len(unaware_obj.negative_slope.shape) < len(unaware_input_shape):
                         new_slope_shape = [1] * (len(unaware_input_shape) - len(unaware_obj.negative_slope.shape)) + \
@@ -4470,6 +4473,9 @@ def sink_transpose_through_concat(graph):
             ERROR(
                 '[Parser]: Meets invalid Concat Node(%s) in sink_transpose_through_concat!' % concat)
             continue
+        concat_out_edges = graph.sorted_out_edges(concat, data=True)
+        if len(concat_out_edges) < 1:
+            continue
         all_src_are_trans = True
         in_trans_names = []
         in_trans_objs = {}
@@ -4492,24 +4498,9 @@ def sink_transpose_through_concat(graph):
         perm = in_trans_objs[in_trans_names[0]].perm
         inverse_perm = [perm.index(i) for i in range(len(perm))]
         for i, (trans, _, concat_in_attr) in enumerate(concat_in_edges):
-            inverse_trans = get_valid_node_name(
-                graph, concat + '_pre_trans' + str(i))
-            graph.remove_edge(trans, concat)
-            new_in_attr = copy.deepcopy(concat_in_attr)
-            new_in_attr['dst_in_port'] = 0
-            graph.add_edge(trans, inverse_trans, **new_in_attr)
-            inverse_trans_out_tensor = np.transpose(new_in_attr.get('tensor').value, inverse_perm) \
-                if new_in_attr.get('tensor').value is not None \
-                else None
-            graph.add_edge(inverse_trans, concat, **{
-                'src_out_port': 0, 'dst_in_port': i, 'tensor': Tensor(value=inverse_trans_out_tensor)})
-            inverse_trans_attr = concat_obj.copied_attr()
-            inverse_trans_attr.update(
-                {'name': inverse_trans, 'perm': inverse_perm})
-            NodeWrap(graph, inverse_trans).replace_obj(
-                'ArmTranspose', inverse_trans_attr)
+            insert_transpose(graph, trans, concat, concat_in_attr, inverse_perm, type='ArmTranspose')
         post_trans = get_valid_node_name(graph, concat + '_post_transpose')
-        for _, dst, out_attr in graph.sorted_out_edges(concat, data=True):
+        for _, dst, out_attr in concat_out_edges:
             graph.remove_edge(concat, dst)
             graph.add_edge(post_trans, dst, **out_attr)
         axis = concat_obj.axis
@@ -4523,8 +4514,13 @@ def sink_transpose_through_concat(graph):
             concat_output = np.concatenate(concat_inputs, concat_obj.axis)
         else:
             concat_output = None
-        graph.add_edge(concat, post_trans, **
-                       {'tensor': Tensor(value=concat_output)})
+        concat_out_attr = copy.deepcopy(concat_out_edges[0][2])
+        concat_out_attr.update({'dst_in_port': 0})
+        if concat_out_attr['tensor'] is not None:
+            concat_out_attr['tensor'].value = concat_output
+        else:
+            concat_out_attr['tensor'] = Tensor(value=concat_output)
+        graph.add_edge(concat, post_trans, **concat_out_attr)
         if concat in graph._attr['output_names']:
             index = graph._attr['output_names'].index(concat)
             graph._attr['output_names'][index] = post_trans
