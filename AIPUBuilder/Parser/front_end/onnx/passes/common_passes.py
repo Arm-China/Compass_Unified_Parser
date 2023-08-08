@@ -969,7 +969,7 @@ def insert_transpose(graph, src, dst, in_attr, perm, key=None, type='Transpose')
         transpose_attr = {'name': transpose, 'perm': perm}
         if type == 'Transpose':
             transpose_attr.update({'opset_version': 1})
-        NodeWrap(graph, transpose).replace_obj('Transpose', transpose_attr)
+        NodeWrap(graph, transpose).replace_obj(type, transpose_attr)
 
         transpose_in_attr = copy.deepcopy(in_attr)
         transpose_in_attr.update({'dst_in_port': 0})

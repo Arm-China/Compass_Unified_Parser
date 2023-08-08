@@ -476,12 +476,12 @@ def merge_q_unary(graph, op_list):
     matched = False
     matches = matched_patterns(graph,
                                nodes=[
-                                   ('dequant', {'op': 'DequantizeLinear'}),
+                                   ('dequant', {'op': 'DequantizeLinear', 'unique': False}),
                                    ('float_op', {'op': op_list}),
                                    ('quant', {'op': 'QuantizeLinear'}),
                                ],
                                edges=[
-                                   ('dequant', 'float_op'),
+                                   ('dequant', 'float_op', {'dst_in_port': 0}),
                                    ('float_op', 'quant')
                                ])
     for m in matches:

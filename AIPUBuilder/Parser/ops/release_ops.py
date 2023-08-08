@@ -680,7 +680,7 @@ class ArmCeilOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
 class ArmChannelShuffleOp(LayoutConcernedOp, OpHasMultipleOutPorts, ArmOp):
     @classmethod
     def cast_in_ports(cls):
-        return {0: ['float32', 'int8']}
+        return {0: ['float32', 'int8', 'uint8']}
 
     @classmethod
     def attributes(cls):
@@ -1498,7 +1498,7 @@ class ArmDepthToSpaceOp(OpHasOneOutPort, ArmOp):
 class ArmDepthwiseConvOp(BaseActivationOp, BaseConvOp, ArmOp):
     @classmethod
     def cast_in_ports(cls):
-        return {0: ['float32', 'int8']}
+        return {0: ['float32', 'int8', 'uint8']}
 
     @classmethod
     def attributes(cls):
@@ -2000,7 +2000,7 @@ class ArmFractionalPoolOp(OpHasMethod, OpHasMultipleOutPorts, ArmOp):
 class ArmFullyConnectedOp(BaseActivationOp, BaseLinearOp, ArmOp):
     @classmethod
     def cast_in_ports(cls):
-        return {0: ['float32', 'int8']}
+        return {0: ['float32', 'int8', 'uint8']}
 
     @classmethod
     def perm_onnx_to_ir(cls):
