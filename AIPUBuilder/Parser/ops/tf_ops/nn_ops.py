@@ -141,23 +141,25 @@ class TfConv2DOp(TfHasPaddingStrides, OpHasWeights, OpHasOneOutPort):
             assert isinstance(
                 self.weights, np.ndarray), 'TfConv2DOp only supports constant filter'
             self.kernel_shape = self.weights.shape[0:2]
-        if self.auto_pad == 'VALID':
-            padding = 'VALID'
-        elif self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
-            padding = 'SAME'
+
+        if self.auto_pad == 'NOTSET':
+            padding = np.reshape(np.array(self.explicit_paddings), (4, 2)).tolist()
         else:
-            padding = np.reshape(
-                np.array(self.explicit_paddings), (4, 2)).tolist()
-            if self.data_format == 'NCHW':
-                padding = padding[0:1] + padding[2:4] + padding[1:2]
-        inp = np.transpose(inputs[0], [0, 2, 3, 1]
-                           ) if self.data_format == 'NCHW' else inputs[0]
-        out_tensor = tf.nn.conv2d(inp,
-                                  self.weights,
-                                  strides=self.strides,
-                                  padding=padding,
-                                  dilations=self.dilations,
-                                  data_format='NHWC').numpy()
+            padding = [0] * (len(inputs[0].shape) - 2)
+        if self.data_format == 'NHWC':
+            inp = inputs[0]
+        else:
+            inp = np.transpose(inputs[0], [0, 2, 3, 1])
+            padding = padding[0:1] + padding[2:4] + padding[1:2]
+        out_shape = BaseConvOp.cal_out_shape(inp.shape[1:-1],
+                                             padding,
+                                             self.strides,
+                                             self.kernel_shape,
+                                             self.auto_pad,
+                                             dilations=self.dilations,
+                                             data_format='NHWC')
+        full_out_shape = [inputs[0].shape[0]] + out_shape + [self.weights.shape[-1]]
+        out_tensor = np.random.ranf(size=full_out_shape).astype(np.float32)
         if self.data_format == 'NCHW':
             out_tensor = np.transpose(out_tensor, [0, 3, 1, 2])
         self.set_out_tensor(out_tensor)
