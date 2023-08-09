@@ -1705,32 +1705,39 @@ def fuse_mul_add_or_sub(graph):
             if input_out_shape is None or input_out_shape == []:
                 continue
 
-            num_output = input_out_shape[-1]
-
             weights = NodeWrap(graph, const_1)['object'].value
             biases = NodeWrap(graph, const_2)['object'].value
-            if weights is None \
-                    or biases is None \
-                    or (weights.size != num_output and weights.size != 1) \
+            if weights is None or biases is None:
+                continue
+
+            if len(input_out_shape) > 2 and input_out_shape[1] == weights.size \
+                    and len(weights.shape) > 1 and weights.shape[-1] == 1:
+                num_output = input_out_shape[1]
+                data_format = 'NCHW'
+            else:
+                num_output = input_out_shape[-1]
+                data_format = 'NHWC'
+
+            if (weights.size != num_output and weights.size != 1) \
                     or (biases.size != num_output and biases.size != 1):
                 continue
 
             if len(input_out_shape) > 1 \
                     and len(weights.shape) > 1 \
-                    and input_out_shape[-1] != weights.shape[-1]:
+                    and num_output not in list(weights.shape):
                 continue
 
             if len(input_out_shape) > 1 \
                     and len(biases.shape) > 1 \
-                    and input_out_shape[-1] != biases.shape[-1]:
+                    and num_output not in list(biases.shape):
                 continue
 
             matched = True
 
             if weights.size < num_output and weights.size == 1:
-                weights = np.tile(weights, num_output)
+                weights = np.tile(np.reshape(weights, [-1]), num_output)
             if biases.size < num_output and biases.size == 1:
-                biases = np.tile(biases, num_output)
+                biases = np.tile(np.reshape(biases, [-1]), num_output)
             if add_sub_obj.type == 'Sub':
                 biases = (-1.0 * biases).astype(np.float32)
             if np.ndim(weights) > 1:
@@ -1772,7 +1779,7 @@ def fuse_mul_add_or_sub(graph):
             NodeWrap(graph, var).replace_obj('Constant', var_attr)
 
             bn_attr = mul_obj.copied_attr()
-            bn_attr.update({'epsilon': 0, 'data_format': 'NHWC'})
+            bn_attr.update({'epsilon': 0, 'data_format': data_format})
             NodeWrap(graph, mul).replace_obj('BatchNormalization', bn_attr)
 
             graph.add_edge(
