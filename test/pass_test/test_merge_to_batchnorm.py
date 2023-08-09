@@ -8,13 +8,15 @@ import tensorflow.compat.v1 as tf
 from utils.run import run_parser
 
 
-def create_mul_add_model(pb_file_path, input_size):
+def create_mul_add_model(pb_file_path, input_size, const_is_scalar=True):
     ''' Create tensorflow model for mul_add op.
     '''
     with tf.Session(graph=tf.Graph()) as sess:
         x = tf.placeholder(tf.float32, shape=input_size, name='X')
-        mul = tf.math.multiply(x, 1.23, name='mul')
-        y = tf.add(mul, 10.0, name='Y')
+        mul_const = 1.23 if const_is_scalar else np.random.ranf([input_size[1], 1, 1]).astype(np.float32)
+        mul = tf.math.multiply(x, mul_const, name='mul')
+        add_const = 10.0 if const_is_scalar else np.random.ranf([input_size[1], 1, 1]).astype(np.float32)
+        y = tf.add(mul, add_const, name='Y')
 
         sess.run(tf.global_variables_initializer())
         constant_graph = tf.graph_util.convert_variables_to_constants(
@@ -32,11 +34,12 @@ input_shape = [1, 3, 10, 16]
 feed_dict = dict()
 feed_dict['X:0'] = np.random.ranf(input_shape).astype(np.float32)
 
-model_path = TEST_NAME + '.pb'
-# Create model
-create_mul_add_model(model_path, input_shape)
+for const_is_scalar in (True, False):
+    model_path = '-'.join([TEST_NAME, str(const_is_scalar)]) + '.pb'
+    # Create model
+    create_mul_add_model(model_path, input_shape, const_is_scalar)
 
-# Run tests with parser and compare result with runtime
-exit_status = run_parser(
-    model_path, feed_dict, model_type='tensorflow', save_output=False, verify=True)
-assert exit_status
+    # Run tests with parser and compare result with runtime
+    exit_status = run_parser(
+        model_path, feed_dict, model_type='tensorflow', verify=True)
+    assert exit_status
