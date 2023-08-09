@@ -6442,6 +6442,101 @@ def merge_gn2(graph):
         clear_redundant_nodes(graph)
 
 
+def merge_gn3(graph):
+    '''Merge the following pattern to GroupNorm:
+    Reshape([N,C,H,W]->[N,G,...])->InstanceNorm->Reshape([N,G,...]->[N,C,H,W])->Mul(*[C,1,1])->Add(+[C,1,1])
+    '''
+    matched = False
+    matches = matched_patterns(graph,
+                               nodes=[
+                                   ('reshape1', {'op': 'Reshape'}),
+                                   ('norm', {'op': 'InstanceNormalization'}),
+                                   ('reshape2', {'op': 'Reshape'}),
+                                   ('mul', {'op': 'Mul'}),
+                                   ('add', {'op': 'Add'}),
+                                   ('reshape1_dim', {'op': 'Constant'}),
+                                   ('reshape2_dim', {'op': 'Constant'}),
+                                   ('weights', {'op': 'Constant'}),
+                                   ('biases', {'op': 'Constant'}),
+                               ],
+                               edges=[
+                                   ('reshape1', 'norm'),
+                                   ('reshape1_dim', 'reshape1', {
+                                    'src_out_port': 0, 'dst_in_port': 1}),
+                                   ('norm', 'reshape2'),
+                                   ('reshape2_dim', 'reshape2', {
+                                    'src_out_port': 0, 'dst_in_port': 1}),
+                                   ('reshape2', 'mul'),
+                                   ('weights', 'mul'),
+                                   ('mul', 'add'),
+                                   ('biases', 'add'),
+                               ]
+                               )
+    for m in matches:
+        key_names = ['reshape1', 'norm', 'reshape2', 'mul', 'add',
+                     'reshape1_dim', 'reshape2_dim', 'weights', 'biases']
+        node_objs = {k: NodeWrap(graph, m[k])['object'] for k in key_names}
+        if any(obj is None for obj in node_objs.values()):
+            ERROR('[Parser]: Meets invalid nodes in merge_gn3!')
+            continue
+        if node_objs['norm'].data_format != 'NCHW' \
+                or not FLOAT_EQUAL(node_objs['norm'].weights, 1.0) \
+                or not FLOAT_EQUAL(node_objs['norm'].biases, 0.0):
+            continue
+        reshape1_in_edges = graph.sorted_in_edges(m['reshape1'], data=True)
+        if len(reshape1_in_edges) < 1:
+            continue
+        input_shapes = node_objs['reshape1'].get_input_shapes()
+        if len(input_shapes) < 1 \
+                or input_shapes[0] is None \
+                or None in input_shapes[0] \
+                or len(input_shapes[0]) < 3:
+            continue
+        input_ndim = len(input_shapes[0])
+        reshape1_dim = node_objs['reshape1_dim'].value
+        reshape2_dim = node_objs['reshape2_dim'].value
+        if reshape1_dim is None or reshape2_dim is None \
+                or len(reshape1_dim) < 3 or reshape1_dim[0] not in (0, input_shapes[0][0]) \
+                or reshape1_dim[1] == 0 \
+                or reshape2_dim.tolist() != input_shapes[0]:
+            continue
+        channels = input_shapes[0][1]
+        groups = reshape1_dim[1]
+        weights = node_objs['weights'].value
+        biases = node_objs['biases'].value
+        if weights is None or biases is None \
+                or weights.size not in (1, channels) or biases.size not in (1, channels) \
+                or len(weights.shape) > input_ndim or len(biases.shape) > input_ndim:
+            continue
+        exp_weight_shape1 = [channels] + [1] * (input_ndim - 2)
+        exp_weight_shape2 = [1] + exp_weight_shape1
+        if weights.size == 1:
+            weights = np.tile(np.reshape(weights, [1]), [channels])
+        elif list(weights.shape) == exp_weight_shape1 or list(weights.shape) == exp_weight_shape2:
+            weights = np.reshape(weights, [-1])
+        else:
+            continue
+        if biases.size == 1:
+            biases = np.tile(np.reshape(biases, [1]), [channels])
+        elif list(biases.shape) == exp_weight_shape1 or list(biases.shape) == exp_weight_shape2:
+            biases = np.reshape(biases, [-1])
+        else:
+            continue
+
+        matched = True
+        src, _, in_attr = reshape1_in_edges[0]
+        add_in_edges = graph.sorted_in_edges(m['add'])
+        graph.remove_edges_from(add_in_edges)
+        graph.add_edge(src, m['add'], **in_attr)
+
+        gn_attr = node_objs['add'].copied_attr()
+        gn_attr.update({'group': groups, 'epsilon': node_objs['norm'].epsilon,
+                        'weights': weights, 'biases': biases, 'axis': 1})
+        NodeWrap(graph, m['add']).replace_obj('ArmGroupNorm', gn_attr)
+    if matched:
+        clear_redundant_nodes(graph)
+
+
 def merge_in(graph):
     matched = False
     matches = matched_patterns(graph,
@@ -8573,6 +8668,7 @@ def middle_passes(graph, params):
     merge_mvn3(graph)
     merge_gn(graph)
     merge_gn2(graph)
+    merge_gn3(graph)
     merge_in(graph)
     broadcast_ln_weights_biases(graph)
     merge_norm(graph)
