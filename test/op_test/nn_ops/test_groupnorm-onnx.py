@@ -65,5 +65,6 @@ for groups in (3, 6):
     create_groupnorm_model(model_path, input_shape, groups)
 
     # Run tests with parser and compare result with runtime
-    exit_status = run_parser(model_path, feed_dict, verify=True)
+    exit_status = run_parser(model_path, feed_dict, verify=True,
+                             unexpected_keywords=['layer_type=Transpose'])
     assert exit_status

@@ -4535,6 +4535,52 @@ def sink_transpose_through_concat(graph):
             'ArmTranspose', post_trans_attr)
 
 
+def sink_transpose_through_norm(graph):
+    '''Lower Transpose node from Transpose(perm=P)+GN(axis=C) to GN(axis=C')+Transpose(perm=P),
+    in which perm of Transpose keeps unchanged, axis of GN needs changed.
+    '''
+    matched = False
+    matches = two_nodes_matcher(graph, 'ArmTranspose', 'ArmGroupNorm')
+    for m in matches:
+        trans, norm = m['begin'], m['end']
+        trans_obj = NodeWrap(graph, trans)['object']
+        norm_obj = NodeWrap(graph, norm)['object']
+        if trans_obj is None or norm_obj is None:
+            ERROR('[Parser]: Meets invalid Node object in sink_transpose_through_norm!')
+            continue
+        trans_in_edges = graph.sorted_in_edges(trans, data=True)
+        norm_in_edges = graph.sorted_in_edges(norm, data=True)
+        if len(trans_in_edges) < 1 or len(norm_in_edges) < 1:
+            continue
+        trans_perm = trans_obj.perm
+        input_length = len(trans_perm)
+        nchw_to_nhwc = [0] + list(range(2, input_length)) + [1]
+        nhwc_to_nchw = Op.cal_inverse_perm(nchw_to_nhwc)
+        norm_axis = OpHasAxis.make_axes_non_negative(norm_obj.axis, input_length)
+        if norm_axis not in (1, input_length - 1):
+            continue
+        if norm_axis == 1:
+            if trans_perm != nhwc_to_nchw:
+                continue
+            norm_new_axis = input_length - 1
+        else:
+            if trans_perm != nchw_to_nhwc:
+                continue
+            norm_new_axis = 1
+        matched = True
+        norm_obj.axis = norm_new_axis
+        inverse_perm = Op.cal_inverse_perm(trans_perm)
+        src, _, in_attr = trans_in_edges[0]
+        graph.remove_edges_from(norm_in_edges)
+        graph.add_edge(src, norm, **in_attr)
+        post_trans = insert_transpose_after(graph, norm, trans_perm, type='ArmTranspose')
+        if norm in graph._attr['output_names']:
+            index = graph._attr['output_names'].index(norm)
+            graph._attr['output_names'][index] = post_trans
+    if matched:
+        clear_redundant_nodes(graph)
+
+
 def sink_transpose_through_special_reshape(graph):
     matches = single_node_matcher(graph, 'ArmTranspose')
     matched = False
@@ -5036,6 +5082,7 @@ def back_passes(graph, params):
                           sink_transpose_through_special_reshape,
                           sink_transpose_through_tile,
                           sink_transpose_through_slice_pair,
+                          sink_transpose_through_norm,
                           sink_reshape_through_cast,
                           sink_single_transpose,
                           sink_double_transpose,
