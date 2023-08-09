@@ -3780,6 +3780,7 @@ def merge_sufficient_statistics(graph):
 
         matched = True
         graph.remove_edge(m['sum1_const'], m['sum1'])
+        graph.remove_edge(m['inp'], m['square'])
 
         inp1_data = np.zeros(input_tensors[0].shape).astype(
             input_tensors[0].dtype)
