@@ -3385,6 +3385,8 @@ def detection_post_process(graph, params):
                 graph, class_pred_parent)['object']
             class_predict_tensor = copy.deepcopy(
                 class_predict_out_edges[0][2]['tensor'])
+            box_predict_tensor = copy.deepcopy(
+                box_predict_out_edges[0][2]['tensor'])
             # Add Softmax if class_predict is not sigmoid or softmax
             if class_pred_obj.type not in ('ArmActivation', 'ArmSoftmax') and \
                     class_pred_parent_obj.type not in ('ArmActivation', 'ArmSoftmax'):
@@ -3401,10 +3403,62 @@ def detection_post_process(graph, params):
             class_predict_out_attr = {'src_out_port': 0,
                                       'dst_in_port': 0,
                                       'tensor': class_predict_tensor}
+            box_predict_out_attr = {'src_out_port': 0,
+                                    'dst_in_port': 1,
+                                    'tensor': box_predict_tensor}
+
+            if graph._attr.get('quantize', False):
+                if not class_predict_tensor.scale_zp \
+                        or not box_predict_tensor.scale_zp \
+                        or len(class_predict_tensor.scale_zp) != 2 \
+                        or len(box_predict_tensor.scale_zp) != 2:
+                    ERROR(
+                        '[Parser]: Meet invalid scale/zp for SSD model in detection_post_process.')
+                class_predict_scale = np.array(
+                    class_predict_tensor.scale_zp[0]).astype(np.float32)
+                class_predict_zp = class_predict_tensor.scale_zp[1]
+                box_predict_scale = np.array(
+                    box_predict_tensor.scale_zp[0]).astype(np.float32)
+                box_predict_zp = box_predict_tensor.scale_zp[1]
+
+                class_predict_dequant = get_valid_node_name(
+                    graph, class_predict + '_dequant_class_predict')
+                graph.add_edge(class_predict, class_predict_dequant,
+                               **class_predict_out_attr)
+
+                box_predict_dequant = get_valid_node_name(
+                    graph, box_predict + '_dequant_box_predict')
+                box_predict_dequant_in_attr = copy.deepcopy(
+                    box_predict_out_attr)
+                box_predict_dequant_in_attr.update({'dst_in_port': 0})
+                graph.add_edge(box_predict, box_predict_dequant,
+                               **box_predict_dequant_in_attr)
+
+                NodeWrap(graph, class_predict_dequant).replace_obj('ArmDeQuantize', {'name': class_predict_dequant,
+                                                                                     'from_dtype': class_predict_tensor.dtype,
+                                                                                     'scale': class_predict_scale,
+                                                                                     'zero_point': class_predict_zp})
+                NodeWrap(graph, box_predict_dequant).replace_obj('ArmDeQuantize', {'name': box_predict_dequant,
+                                                                                   'from_dtype': box_predict_tensor.dtype,
+                                                                                   'scale': box_predict_scale,
+                                                                                   'zero_point': box_predict_zp})
+
+                class_predict_float_tensor = ((class_predict_tensor.value.astype(
+                    np.int32) - class_predict_zp) * class_predict_scale).astype(np.float32)
+                box_predict_float_tensor = ((box_predict_tensor.value.astype(
+                    np.int32) - box_predict_zp) * box_predict_scale).astype(np.float32)
+                class_predict_out_attr = {'src_out_port': 0,
+                                          'dst_in_port': 0,
+                                          'tensor': Tensor(value=class_predict_float_tensor)}
+
+                box_predict_out_attr = {'src_out_port': 0,
+                                        'dst_in_port': 1,
+                                        'tensor': Tensor(value=box_predict_float_tensor)}
+                class_predict = class_predict_dequant
+                box_predict = box_predict_dequant
+
             graph.add_edge(class_predict, decode_box, **class_predict_out_attr)
-            graph.add_edge(box_predict, decode_box, **{'src_out_port': 0,
-                                                       'dst_in_port': 1,
-                                                       'tensor': copy.deepcopy(box_predict_out_edges[0][2]['tensor'])})
+            graph.add_edge(box_predict, decode_box, **box_predict_out_attr)
 
             feature_map = []
             if params.get('feature_map', []):
