@@ -145,14 +145,15 @@ class TfConv2DOp(TfHasPaddingStrides, OpHasWeights, OpHasOneOutPort):
         if self.auto_pad == 'NOTSET':
             padding = np.reshape(np.array(self.explicit_paddings), (4, 2)).tolist()
         else:
-            padding = [0] * (len(inputs[0].shape) - 2)
+            padding = [[0, 0] for _ in range(len(inputs[0].shape))]
         if self.data_format == 'NHWC':
             inp = inputs[0]
         else:
             inp = np.transpose(inputs[0], [0, 2, 3, 1])
             padding = padding[0:1] + padding[2:4] + padding[1:2]
+        spatial_padding = (np.transpose(np.array(padding))[:, 1:-1]).flatten().tolist()
         out_shape = BaseConvOp.cal_out_shape(inp.shape[1:-1],
-                                             padding,
+                                             spatial_padding,
                                              self.strides,
                                              self.kernel_shape,
                                              self.auto_pad,
