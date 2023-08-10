@@ -494,6 +494,10 @@ def convert_onnx_to_graph(model_path, params):
                         graph._attr['output_tensor_names'] = out_tensors
                 else:
                     for out_index, output in enumerate(outputs):
+                        if (output['name'], output['out_port']) not in out_tensor_operator_map \
+                                and output['name'] in const_names:
+                            # Ignore the const outputs because they will make the graph not connected
+                            continue
                         op_index_has_output = out_tensor_operator_map[(
                             output['name'], output['out_port'])]
                         out_node_name = nodes[op_index_has_output]['name']

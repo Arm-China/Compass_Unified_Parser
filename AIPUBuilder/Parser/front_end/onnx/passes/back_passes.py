@@ -4068,6 +4068,8 @@ def remove_const(graph):
                         if node_name in graph._attr['output_names']:
                             WARN('[Parser]: Remove isolated Constant Node(%s) from output in remove_const!' % node_name)
                             graph._attr['output_names'].remove(node_name)
+                        if const_child_obj.name in graph._attr['output_nodes']:
+                            graph._attr['output_nodes'].remove(const_child_obj.name)
                     else:
                         const_attr = node_obj.copied_attr()
                         const_attr.update({'weights': node_obj.value})
