@@ -2826,7 +2826,7 @@ def split_fc(graph):
                 if len(input_shapes[0]) > 2:
                     dim = [-1, fc_obj.weights.shape[-1]]
                     insert_reshape(graph, src, fc, in_attr, dim, key=k)
-                biases = fc_obj.biases \
+                biases = np.reshape(fc_obj.biases, [-1]) \
                     if fc_obj.biases is not None \
                     else np.zeros((fc_obj.weights.shape[0],),
                                   dtype=np.int32 if np.issubdtype(
