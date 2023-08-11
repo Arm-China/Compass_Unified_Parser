@@ -190,6 +190,7 @@ def convert_floordiv(graph, op_type='TfFloorDiv'):
             graph.remove_edges_from(in_edges[2:])
         dtype_x = str(in_attr_x['tensor'].value.dtype)
         dtype_y = str(in_attr_y['tensor'].value.dtype)
+        div_attr = floordiv_obj.copied_attr()
         if 'float' in dtype_x or 'float' in dtype_y:
             graph.remove_edges_from(out_edges)
             floor_name = get_valid_node_name(graph, floordiv + '_floor')
@@ -207,9 +208,11 @@ def convert_floordiv(graph, op_type='TfFloorDiv'):
                 index = graph._attr['output_names'].index(floordiv)
                 graph._attr['output_names'][index] = floor_name
 
-        div_attr = floordiv_obj.copied_attr()
-        div_attr.update({'opset_version': 13})
-        NodeWrap(graph, floordiv).replace_obj('Div', div_attr)
+            div_attr.update({'opset_version': 13})
+            NodeWrap(graph, floordiv).replace_obj('Div', div_attr)
+        else:
+            div_attr.update({'opset_version': 1})
+            NodeWrap(graph, floordiv).replace_obj('DivMod', div_attr)
     if need_clear:
         clear_redundant_nodes(graph)
 
