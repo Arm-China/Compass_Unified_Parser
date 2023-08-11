@@ -317,9 +317,10 @@ def remove_redundant_reshape(graph, type='Reshape'):
 
 
 def remove_redundant_transpose(graph):
+    matched = False
     transpose_types = ['Transpose', 'ArmTranspose']
     matches = [matched_patterns(graph,
-                                nodes=[('transpose1', {'op': tt}),
+                                nodes=[('transpose1', {'op': tt, 'unique': False}),
                                        ('transpose2', {'op': tt})],
                                 edges=[('transpose1', 'transpose2')]
                                 ) for tt in transpose_types]
@@ -331,62 +332,21 @@ def remove_redundant_transpose(graph):
         if trans1_obj is not None \
                 and trans2_obj is not None \
                 and len(trans1_obj.perm) == len(trans2_obj.perm):
-            trans1_out_edges = graph.sorted_out_edges(trans1)
-            if len(trans1_out_edges) == 1:
-                trans2_obj.perm = ArmTransposeOp.cal_merged_perm(
-                    trans1_obj.perm, trans2_obj.perm)
-                remove_node_safely(graph, trans1)
+            trans1_in_edges = graph.sorted_in_edges(trans1, data=True)
+            if len(trans1_in_edges) < 1:
+                continue
+            matched = True
+            src, _, in_attr = trans1_in_edges[0]
+            trans2_in_edges = graph.sorted_in_edges(trans2, data=True)
+            graph.remove_edges_from(trans2_in_edges)
+            graph.add_edge(src, trans2, **in_attr)
+            trans2_obj.perm = ArmTransposeOp.cal_merged_perm(
+                trans1_obj.perm, trans2_obj.perm)
         else:
             ERROR('[Parser]: Meets invalid Transpose (%s or %s) in remove_redundant_transpose!'
                   % (trans1, trans2))
-
-
-def remove_redundant_transpose_pro(graph, trans_type='Transpose', max_branches=6):
-    assert max_branches > 0 and trans_type in (
-        'Transpose', 'ArmTranspose'), 'trans_type and max_branches are not valid in remove_redundant_transpose_pro.'
-    for b in range(max_branches, 0, -1):
-        matched = False
-        nodes = [('trans', {'op': trans_type})] + \
-            [('trans_out_%s' % str(i + 1), {}) for i in range(b)]
-        edges = [('trans', 'trans_out_%s' % str(i + 1), {'src_out_port': 0}) for i in range(b)]
-        matches = matched_patterns(graph, nodes, edges)
-        for m in matches:
-            trans = m['trans']
-            trans_out_names = [m['trans_out_%s' %
-                                 str(i + 1)] for i in range(b)]
-            if any([not graph.has_node(name) for name in [trans] + trans_out_names]):
-                DEBUG(
-                    '[Parser]: Meets invalid name that does not exist in graph in remove_redundant_transpose_pro!')
-                continue
-            trans_obj = NodeWrap(graph, trans)['object']
-            trans_out_objs = [NodeWrap(graph, name)['object']
-                              for name in trans_out_names]
-            if trans_obj is None or any([out_obj is None for out_obj in trans_out_objs]):
-                ERROR(
-                    '[Parser]: Meets invalid Node object in remove_redundant_transpose_pro!')
-                continue
-            out_trans_objs = {
-                out_obj.name: out_obj for out_obj in trans_out_objs if out_obj.type == trans_type}
-            if len(out_trans_objs) == 0:
-                continue
-            matched = True
-            trans_in_edges = graph.sorted_in_edges(trans, data=True)
-            trans_out_edges = graph.sorted_out_edges(trans, data=True)
-            src, _, in_attr = trans_in_edges[0]
-            for _, dst, out_attr in trans_out_edges:
-                if dst in out_trans_objs:
-                    graph.remove_edge(trans, dst)
-                    new_out_attr = copy.deepcopy(out_attr)
-                    new_out_attr.update(
-                        {'src_out_port': in_attr['src_out_port']})
-                    graph.add_edge(src, dst, **new_out_attr)
-                    out_trans_objs[dst].perm = ArmTransposeOp.cal_merged_perm(
-                        trans_obj.perm, out_trans_objs[dst].perm)
-            trans_out_edges = graph.sorted_out_edges(trans)
-            if len(trans_out_edges) == 0:
-                graph.remove_edge(src, trans)
-        if matched:
-            clear_redundant_nodes(graph)
+    if matched:
+        clear_redundant_nodes(graph)
 
 
 def remove_redundant_cast(graph):
