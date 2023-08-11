@@ -227,6 +227,26 @@ class DilationOp(OpHasPaddingStrides, OpHasWeights, OpHasOneOutPort, LayoutConce
         self.set_out_tensor(out_tensor)
 
 
+class DivModOp(LayoutUnawareOp, OpHasMultipleOutPorts, CommonOp):
+    def infer_shape(self):
+        super(DivModOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        assert len(inputs) == 2, 'Expects 2 inputs for ArmDivMod op (%s), but got %d' % (self.name, len(inputs))
+        if np.any(inputs[1] == 0):
+            in_consts = self.sorted_in_consts()
+            if len(in_consts) == 2 \
+                    or (len(in_consts) == 1 and in_consts[0][1] == 1):
+                ERROR('[Parser]: Meets invalid second input of DivMod Op (%s) in infer_shape!' % self.name)
+                out0, out1 = None, None
+            else:
+                WARN('[Parser]: The second input of DivMod Op (%s) is replaced by ones in infer_shape!' % self.name)
+                second_input = np.ones_like(inputs[1])
+                out0, out1 = np.divmod(inputs[0], second_input)
+        else:
+            out0, out1 = np.divmod(*inputs)
+        self.set_out_tensor([out0, out1])
+
+
 class DummyOp(OpHasOneOutPort, ConstLikeOp, CommonOp):
     def __init__(self, graph, attr_dict=None):
         super(DummyOp, self).__init__(graph, attr_dict)

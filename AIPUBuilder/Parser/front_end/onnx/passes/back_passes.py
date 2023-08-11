@@ -764,6 +764,7 @@ def rename_div(graph):
             remainder_out = get_valid_node_name(graph, div + '_remainder')
             graph.add_edge(div, remainder_out, **{'src_out_port': 1})
             NodeWrap(graph, remainder_out).replace_obj('Out', {'name': remainder_out})
+            div_attr.update({'mode': 'trunc'})
             NodeWrap(graph, div).replace_obj('ArmDivMod', div_attr)
         else:
             NodeWrap(graph, div).replace_obj('ArmDiv', div_attr)
@@ -5058,6 +5059,7 @@ def back_passes(graph, params):
     simple_rename(graph, 'CropAndResize', 'ArmCropAndResize')
     simple_rename(graph, 'CTCGreedyDecoder', 'ArmCTCGreedyDecoder')
     simple_rename(graph, 'DepthToSpace', 'ArmDepthToSpace')
+    simple_rename(graph, 'DivMod', 'ArmDivMod')
     simple_rename(graph, 'Erf', 'ArmErf')
     simple_rename(graph, 'Exp', 'ArmExp')
     simple_rename(graph, 'Filter', 'ArmFilter')

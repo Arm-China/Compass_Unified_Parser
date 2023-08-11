@@ -1690,12 +1690,38 @@ class ArmDivModOp(LayoutUnawareOp, OpHasMultipleOutPorts, ArmOp):
     def num_in_ports(cls):
         return 2
 
+    @classmethod
+    def attributes(cls):
+        return {'mode': {'type': AttrType.STRING, 'default': 'floor', 'options': ['trunc', 'floor']}}
+
+    def __init__(self, graph, attr_dict=None):
+        super(ArmDivModOp, self).__init__(graph, attr_dict)
+        self.update_attributes(ArmDivModOp, attr_dict)
+        assert self.check_required(), 'ArmDivModOp is missing a required parameter.'
+
     def infer_shape(self):
         super(ArmDivModOp, self).infer_shape()
         inputs = self.get_input_tensors()
         assert len(inputs) == 2, 'Expects 2 inputs for ArmDivMod op (%s), but got %d' % (self.name, len(inputs))
-        out1, out2 = np.divmod(*inputs)
-        self.set_out_tensor([out1, out2])
+        try:
+            out0 = torch.div(torch.tensor(inputs[0]), torch.tensor(inputs[1]), rounding_mode=self.mode).numpy()
+        except:
+            in_consts = self.sorted_in_consts()
+            if len(in_consts) == 2 \
+                    or (len(in_consts) == 1 and in_consts[0][1] == 1):
+                ERROR('[Parser]: Meets invalid second input of ArmDivMod Op (%s) in infer_shape!' % self.name)
+                out0 = None
+            else:
+                WARN('[Parser]: The second input of ArmDivMod Op (%s) is replaced by ones in infer_shape!' % self.name)
+                second_input = np.ones_like(inputs[1])
+                out0 = torch.div(torch.tensor(inputs[0]), torch.tensor(second_input), rounding_mode=self.mode).numpy()
+        out1 = (inputs[0] - out0 * inputs[1]) if out0 is not None else None
+        self.set_out_tensor([out0, out1])
+
+    def write_attrs(self, txt_file):
+        ret = super(ArmDivModOp, self).write_attrs(txt_file)
+        if ret:
+            txt_file.write('mode=%s\n' % self.mode.upper())
 
 
 class ArmEltwiseOp(LayoutUnawareOp, OpHasMethod, BaseActivationOp, ArmOp):

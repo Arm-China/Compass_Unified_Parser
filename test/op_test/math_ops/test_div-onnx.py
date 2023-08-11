@@ -9,14 +9,19 @@ def create_div_model(onnx_path, input_size, output_size, onnx_dtype, version=13)
     '''
     X1 = helper.make_tensor_value_info('X1', onnx_dtype, input_size)
     X2 = helper.make_tensor_value_info('X2', onnx_dtype, input_size)
+    Y0 = helper.make_tensor_value_info('Y0', onnx_dtype, output_size)
     Y = helper.make_tensor_value_info('Y', onnx_dtype, output_size)
 
     div = helper.make_node(
         OP_NAME, ['X1', 'X2'],
-        ['Y'],
+        ['Y0'],
+    )
+    add = helper.make_node(
+        'Add', ['Y0', 'Y0'],
+        ['Y']
     )
     graph_def = helper.make_graph(
-        [div],  # nodes
+        [div, add],  # nodes
         OP_NAME + '-model',  # name
         [X1, X2],  # inputs
         [Y],  # outputs
@@ -40,8 +45,10 @@ for input_shape in input_shapes:
         onnx_dtype = TensorProto.FLOAT if dtype == 'float32' else TensorProto.INT32
         create_div_model(model_path, input_shape, input_shape, onnx_dtype)
         feed_dict = {'X1': X1_data.astype(dtype), 'X2': X2_data.astype(dtype)}
-        # FIXME: Enable verify after opt supports DivMod
-        verify = True if dtype == 'float32' else False
-        exit_status = run_parser(model_path, feed_dict, expected_keywords=(
-            ['Reshape'] if (len(input_shape) > 5 and dtype == 'float32') else []), verify=verify)
+        expected_keywords = []
+        if len(input_shape) > 5 and dtype == 'float32':
+            expected_keywords = ['Reshape']
+        elif dtype == 'int32':
+            expected_keywords = ['layer_type=DivMod', 'mode=TRUNC']
+        exit_status = run_parser(model_path, feed_dict, expected_keywords=expected_keywords, verify=True)
         assert exit_status
