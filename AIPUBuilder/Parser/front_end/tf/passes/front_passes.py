@@ -3888,6 +3888,8 @@ def merge_sufficient_statistics2(graph):
 
         matched = True
         graph.remove_edges_from(sum1_in_edges)
+        graph.remove_edges_from(square_diff_in_edges)
+        graph.remove_edges_from(sub_in_edges)
         src1, _, in_attr1 = sub_in_edges[0]
         src2, _, in_attr2 = sub_in_edges[1]
 
