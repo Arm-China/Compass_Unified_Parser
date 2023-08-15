@@ -280,6 +280,7 @@ def parse_pb(graph, model_path, params, anchor_tensors):
                         except:
                             np_res = None
                         ret.append((mt[0], np_res))
+                    sess.close()
 
                 tensors_list = [(k, v) for k, v in tensors.items()]
                 tensors_num = len(tensors_list)
