@@ -101,10 +101,22 @@ def remove_useless_op(graph, op_type_list):
                 else:
                     continue
             elif op_type == 'ArmCast':
+                in_edges = graph.sorted_in_edges(node_name, data=True)
+                out_edges = graph.sorted_out_edges(node_name, data=True)
                 if len(in_tensors) > 0 \
                         and in_tensors[0] is not None \
                         and not node_obj.quantize \
                         and str(in_tensors[0].dtype) == node_obj.to_dtype:
+                    removing_nodes.append(node_name)
+                elif len(in_edges) > 0 \
+                        and len(out_edges) > 0 \
+                        and in_edges[0][2]['tensor'] is not None \
+                        and in_edges[0][2]['tensor'].scale_zp \
+                        and out_edges[0][2]['tensor'] is not None \
+                        and out_edges[0][2]['tensor'].scale_zp \
+                        and str(in_edges[0][2]['tensor'].dtype) == node_obj.to_dtype\
+                        and FLOAT_EQUAL(out_edges[0][2]['tensor'].scale_zp[0], in_edges[0][2]['tensor'].scale_zp[0])\
+                        and FLOAT_EQUAL(out_edges[0][2]['tensor'].scale_zp[1], in_edges[0][2]['tensor'].scale_zp[1]):
                     removing_nodes.append(node_name)
                 else:
                     continue
