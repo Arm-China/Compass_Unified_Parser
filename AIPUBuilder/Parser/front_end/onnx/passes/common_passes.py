@@ -349,6 +349,80 @@ def remove_redundant_transpose(graph):
         clear_redundant_nodes(graph)
 
 
+def remove_redundant_transpose2(graph):
+    '''Remove redundant transpose and change dim of Reshape if the following patterns are matched:
+    Transpose(NHWC to NCHW) + Reshape(NCHW to NCH'W') + Transpose(NCH'W' to NH'W'C) [=> Reshape(NHWC to NH'W'C)]
+    or
+    Transpose(NCHW to NHWC) + Reshape(NHWC to NH'W'C) + Transpose(NH'W'C to NCH'W') [=> Reshape(NCHW to NCH'W')]
+    '''
+    matched = False
+    matches = matched_patterns(graph,
+                               nodes=[('transpose1', {'op': ['Transpose', 'ArmTranspose'], 'unique': False}),
+                                      ('reshape', {'op': ['Reshape', 'ArmReshape']}),
+                                      ('transpose2', {'op': ['Transpose', 'ArmTranspose']})],
+                               edges=[('transpose1', 'reshape'),
+                                      ('reshape', 'transpose2')]
+                               )
+    for m in matches:
+        trans1, reshape, trans2 = m['transpose1'], m['reshape'], m['transpose2']
+        trans1_obj, reshape_obj, trans2_obj = [NodeWrap(
+            graph, node)['object'] for node in [trans1, reshape, trans2]]
+        trans1_in_edges = graph.sorted_in_edges(trans1, data=True)
+        if trans1_obj is None or reshape_obj is None or trans2_obj is None or len(trans1_in_edges) < 1:
+            ERROR('[Parser]: Meets invalid Transpose/Reshape Node in remove_redundant_transpose2!')
+            continue
+        reshape_in_shapes = reshape_obj.get_input_shapes()
+        if len(reshape_in_shapes) < 1 or reshape_in_shapes[0] is None or None in reshape_in_shapes[0]:
+            continue
+        reshape_out_shapes = reshape_obj.get_output_shapes()
+        if len(reshape_out_shapes) < 1 or reshape_out_shapes[0] is None or None in reshape_out_shapes[0]:
+            continue
+        reshape_in_shape = reshape_in_shapes[0]
+        reshape_dim = reshape_out_shapes[0]
+        if len(reshape_in_shape) != len(reshape_dim):
+            continue
+        trans1_perm = trans1_obj.perm
+        trans2_perm = trans2_obj.perm
+        if len(trans1_perm) != len(trans2_perm) or len(trans1_perm) != len(reshape_dim):
+            continue
+        rank = len(trans1_perm)
+        nhwc_to_nchw = [0, rank - 1] + list(range(1, rank - 1))
+        nchw_to_nhwc = [0] + list(range(2, rank)) + [1]
+        input_data_format = None
+        if trans1_perm == nhwc_to_nchw and trans2_perm == nchw_to_nhwc:
+            input_data_format = 'NHWC'
+        elif trans1_perm == nchw_to_nhwc and trans2_perm == nhwc_to_nchw:
+            input_data_format = 'NCHW'
+        else:
+            continue
+        if input_data_format == 'NHWC':
+            # If input data format is NHWC, then data format of reshape is NCHW.
+            if reshape_in_shape[:2] != reshape_dim[:2]:
+                continue
+            new_dim = [reshape_dim[0]] + reshape_dim[2:] + [reshape_dim[1]]
+        else:  # input_data_format == 'NCHW'
+            # If input data format is NCHW, then data format of reshape is NHWC.
+            if reshape_in_shape[0] != reshape_dim[0] or reshape_in_shape[-1] != reshape_dim[-1]:
+                continue
+            new_dim = [reshape_dim[0]] + [reshape_dim[-1]] + reshape_dim[1:-1]
+        matched = True
+        src, _, in_attr = trans1_in_edges[0]
+        trans2_out_edges = graph.sorted_out_edges(trans2, data=True)
+        graph.remove_edges_from(trans2_out_edges)
+        new_reshape = get_valid_node_name(graph, trans2 + '_reshape')
+        graph.add_edge(src, new_reshape, **in_attr)
+        for _, dst, out_attr in trans2_out_edges:
+            graph.add_edge(new_reshape, dst, **out_attr)
+        new_reshape_attr = reshape_obj.copied_attr()
+        new_reshape_attr.update({'name': new_reshape, 'dim': new_dim})
+        NodeWrap(graph, new_reshape).replace_obj('ArmReshape', new_reshape_attr)
+        if trans2 in graph._attr['output_names']:
+            index = graph._attr['output_names'].index(trans2)
+            graph._attr['output_names'][index] = new_reshape
+    if matched:
+        clear_redundant_nodes(graph)
+
+
 def remove_redundant_cast(graph):
     cast_types = ['Cast', 'ArmCast']
     cast_combinations = itertools.product(cast_types, cast_types)
