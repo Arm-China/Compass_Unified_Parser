@@ -6,6 +6,7 @@ import math
 import torch
 import tensorflow as tf
 import numpy as np
+from dataclasses import dataclass
 from ..op import *
 from ...common.defs import FLOAT_MIN, FLOAT_MAX, FLOAT_EQUAL, TYPE_MIN, TYPE_MAX
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
@@ -1316,6 +1317,41 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
                 'cubic': 'cubic',
                 }
 
+    @dataclass(eq=False)
+    class _FilterParamsBaseAntiAlias:
+        bound = []
+        out_of_bound_idx = []
+        window_size = 2
+        weight_coefficents = None
+
+    @dataclass
+    class _FilterParamsAntiAlias:
+        dim_x: object
+        dim_y: object
+        dim_z: object
+
+        def __init__(self, mode, cubic_coeff_a=-0.75):
+            self.mode = mode
+            self.support_size = 4.0 if mode == 'bicubic' else 2.0
+            self.cubic_coeff_a = cubic_coeff_a
+
+        def filter(self, x):
+            if self.mode in ('bilinear', 'trilinear'):
+                x = -x if x < 0.0 else x
+                x = (1.0 - x) if x < 1.0 else 0.0
+                return x
+            if self.mode == 'bicubic':
+                x = -x if x < 0.0 else x
+                if x < 1.0:
+                    x = ((self.cubic_coeff_a + 2.0) * x - (self.cubic_coeff_a + 3.0)) * x * x + 1
+                    return x
+                if x < 2.0:
+                    x = (((x - 5.0) * x + 8.0) * x - 4.0) * self.cubic_coeff_a
+                    return x
+                return 0.0
+            ERROR('[Parser]: Meets invalid mode %s in _FilterParamsAntiAlias of ResizeOp!' % self.mode)
+            return None
+
     def __init__(self, graph, attr_dict=None):
         super(ResizeOp, self).__init__(graph, attr_dict)
         self.update_attributes(ResizeOp, attr_dict)
@@ -1604,6 +1640,224 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
         return y_data.astype(x_data.dtype)
 
     @staticmethod
+    def setup_upsample_filter_antialias(p, input_h_w_c, output_h_w_c, scale_h_w_c, roi, coordinate_transform_mode,
+                                        exclude_outside, is_nchw=True):
+        def _compute_weight_coefficients(p, input_size, output_size, rindex, param_base, rscale):
+            scale = 1.0 / rscale
+            support = (p.support_size * 0.5) * (scale if scale >= 1.0 else 1.0)
+            window_size = int(np.ceil(support)) * 2 + 1
+            scale_data = np.zeros([output_size, window_size], dtype=np.float32)
+            xmin, xmax = 0, 0
+            inv_scale = (1.0 / scale) if scale >= 1.0 else 1.0
+
+            if roi is None or not roi:
+                roi_start, roi_end = None, None
+            else:
+                roi_start = (roi.size() / 2 - (rindex + 1))
+                roi_end = roi.size() - (rindex + 1)
+
+            param_base.out_of_bound_idx = []
+            param_base.bound = []
+            param_base.weight_coefficents = scale_data
+            for y in range(output_size):
+                center = 0.5 + (float(y) if FLOAT_EQUAL(scale, 1.0)
+                                else ResizeOp.get_original_coordinate(coordinate_transform_mode, y, rscale,
+                                                                      output_size, input_size, roi_start, roi_end))
+                if (center - 0.5 < 0) or (center - 0.5 > input_size - 1):
+                    param_base.out_of_bound_idx.append(y)
+                total_weight = 0.0
+
+                xmin_real = int(np.floor(center - support + 0.5))
+                xmax_real = int(np.floor(center + support + 0.5))
+                xmin_cut = max(xmin_real, 0)
+                xmax_cut = min(xmax_real, input_size)
+
+                xmin = xmin_cut if exclude_outside else xmin_real
+                xmax = xmax_cut if exclude_outside else xmax_real
+                param_base.bound.extend([xmin_cut, xmax_cut])
+
+                xmax = xmax - xmin
+                for x in range(0, xmax):
+                    w = p.filter((x + xmin - center + 0.5) * inv_scale)
+                    scale_data[y, x] = w
+                    total_weight = total_weight + w
+
+                if not exclude_outside:
+                    neg_xsize = -xmin if xmin < 0 else 0
+                    scale_data[y, neg_xsize] += np.sum(scale_data[y, :neg_xsize])
+
+                    bound_xsize = (xmax + xmin - input_size) if (xmax + xmin > input_size) else 0
+                    scale_data[y, xmax - bound_xsize - 1] += np.sum(scale_data[y, (xmax - bound_xsize):xmax])
+
+                    if neg_xsize > 0 or bound_xsize > 0:
+                        xdiff_cut = xmax_cut - xmin_cut
+                        scale_data[y, :xdiff_cut] = scale_data[y, neg_xsize:(xdiff_cut + neg_xsize)]
+
+                total_weight_inv = 1.0 if FLOAT_EQUAL(total_weight, 0) else 1.0 / total_weight
+                scale_data[y, :(xmax_cut - xmin_cut)] *= total_weight_inv
+            param_base.weight_coefficents = scale_data
+            return window_size
+
+        if is_nchw:
+            width_rindex, height_rindex, channel_rindex = 0, 1, 2
+        else:
+            width_rindex, height_rindex, channel_rindex = 1, 2, 2
+        p.dim_x.window_size = _compute_weight_coefficients(
+            p, input_h_w_c[1], output_h_w_c[1], width_rindex, p.dim_x, scale_h_w_c[1])
+        p.dim_y.window_size = _compute_weight_coefficients(
+            p, input_h_w_c[0], output_h_w_c[0], height_rindex, p.dim_y, scale_h_w_c[0])
+        if len(input_h_w_c) == 3:
+            p.dim_z.window_size = _compute_weight_coefficients(
+                p, input_h_w_c[2], output_h_w_c[2], channel_rindex, p.dim_z, scale_h_w_c[2])
+
+    @staticmethod
+    def compute_interpolation_at_level(num_channels, input_height, input_width, output_height, output_width,
+                                       Xdata, Ydata, p_dim, level, input_depth=None, output_depth=None):
+        if level == 1:
+            if output_width == input_width:
+                min_height = min(input_height, output_height)
+                Ydata[:, :min_height, :output_width] = Xdata[:, :min_height, :output_width]
+                return
+            for c in range(num_channels):
+                for y in range(output_height):
+                    idx = 0
+                    for x in range(output_width):
+                        xmin, xmax = p_dim.bound[idx: idx + 2]
+                        idx = idx + 2
+                        outputs = [(Xdata[c, y, _x] * p_dim.weight_coefficents[x, i])
+                                   for i, _x in enumerate(list(range(xmin, xmax)))]
+                        Ydata[c, y, x] = np.sum(outputs)
+        elif level == 2:
+            if output_height == input_height:
+                min_width = min(input_width, output_width)
+                Ydata[:, :output_height, :min_width] = Xdata[:, :output_height, :min_width]
+                return
+            for c in range(num_channels):
+                idx = 0
+                for y in range(output_height):
+                    ymin, ymax = p_dim.bound[idx: idx + 2]
+                    idx = idx + 2
+                    for x in range(output_width):
+                        outputs = [(Xdata[c, _y, x] * p_dim.weight_coefficents[y, i])
+                                   for i, _y in enumerate(list(range(ymin, ymax)))]
+                        Ydata[c, y, x] = np.sum(outputs)
+        elif level == 3:
+            if output_depth == input_depth:
+                min_height = min(input_height, output_height)
+                min_width = min(input_width, output_width)
+                Ydata[:, :output_depth, :min_height, :min_width] = Xdata[:, :output_depth, :min_height, :min_width]
+                return
+            for c in range(num_channels):
+                idx = 0
+                for d in range(output_depth):
+                    zmin, zmax = p_dim.bound[idx: idx + 2]
+                    idx = idx + 2
+                    for y in range(output_height):
+                        for x in range(output_width):
+                            outputs = [(Xdata[c, _z, y, x] * p_dim.weight_coefficents[d, i])
+                                       for i, _z in enumerate(list(range(zmin, zmax)))]
+                            Ydata[c, d, y, x] = np.sum(outputs)
+
+    @staticmethod
+    def handle_extrapolation(batch_size, num_channels, output_height, output_width, output_depth, extrapolation_value, Ydata, p):
+        reshape_dim = None
+        if len(Ydata.shape) == 4:
+            reshape_dim = [batch_size, num_channels, 1] + [output_height, output_width]
+            Ydata = np.reshape(Ydata, reshape_dim)
+        if len(p.dim_x.out_of_bound_idx) > 0:
+            Ydata[:, :, :, :, tuple(p.dim_x.out_of_bound_idx)] = extrapolation_value
+        if len(p.dim_y.out_of_bound_idx) > 0:
+            Ydata[:, :, :, tuple(p.dim_y.out_of_bound_idx)] = extrapolation_value
+        if len(p.dim_z.out_of_bound_idx) > 0:
+            Ydata[:, :, tuple(p.dim_z.out_of_bound_idx)] = extrapolation_value
+        if reshape_dim is not None:
+            Ydata = np.reshape(Ydata, [batch_size, num_channels, output_height, output_width])
+
+    @staticmethod
+    def upsample_base_antialias(p, batch_size, num_channels, input_height, input_width, output_height, output_width,
+                                use_extrapolation, extrapolation_value, Xdata, Ydata, input_depth=None, output_depth=None):
+        if input_depth is None and output_depth is None:
+            image_temp_buffer = np.zeros([num_channels, input_height, output_width], dtype=Xdata.dtype)
+        else:
+            assert input_depth is not None, 'Meets invalid input_depth in upsample_base_antialias!'
+            image_temp_buffer = np.zeros([num_channels, input_depth, input_height, output_width], dtype=Xdata.dtype)
+        for n in range(batch_size):
+            ResizeOp.compute_interpolation_at_level(num_channels, input_height, input_width, input_height, output_width,
+                                                    Xdata[n], image_temp_buffer, p.dim_x, 1)
+            ResizeOp.compute_interpolation_at_level(num_channels, input_height, output_width, output_height, output_width,
+                                                    image_temp_buffer, Ydata[n], p.dim_y, 2)
+        if use_extrapolation:
+            ResizeOp.handle_extrapolation(batch_size, num_channels, output_height,
+                                          output_width, 1, extrapolation_value, Ydata, p)
+
+    @staticmethod
+    def upsample_bilinear_antialias(x_data, output_spatial_sizes, spatial_scales, roi,
+                                    coordinate_transform_mode, extrapolation_value,
+                                    exclude_outside, is_nchw=True):
+        if not is_nchw:
+            x_data = np.transpose(x_data, [0, 3, 1, 2])
+        batch_size, num_channels, input_height, input_width = x_data.shape
+        output_height, output_width = output_spatial_sizes
+        y_data = np.zeros([batch_size, num_channels] + output_spatial_sizes, dtype=x_data.dtype)
+
+        p = ResizeOp._FilterParamsAntiAlias('bilinear')
+        p.dim_x = ResizeOp._FilterParamsBaseAntiAlias()
+        p.dim_y = ResizeOp._FilterParamsBaseAntiAlias()
+        p.dim_z = ResizeOp._FilterParamsBaseAntiAlias()
+        ResizeOp.setup_upsample_filter_antialias(p, [input_height, input_width], output_spatial_sizes, spatial_scales,
+                                                 roi, coordinate_transform_mode, exclude_outside, is_nchw=True)
+
+        use_extrapolation = (coordinate_transform_mode == 'tf_crop_and_resize')
+        ResizeOp.upsample_base_antialias(p, batch_size, num_channels, input_height, input_width, output_height, output_width,
+                                         use_extrapolation, extrapolation_value, x_data, y_data)
+
+        if not is_nchw:
+            y_data = np.transpose(y_data, [0, 2, 3, 1])
+        return y_data
+
+    @staticmethod
+    def upsample_trilinear_antialias(x_data, output_spatial_sizes, spatial_scales, roi,
+                                     coordinate_transform_mode, extrapolation_value,
+                                     exclude_outside, is_nchw=True):
+        if not is_nchw:
+            x_data = np.transpose(x_data, [0, 4, 1, 2, 3])
+        batch_size, num_channels, input_depth, input_height, input_width = x_data.shape
+        output_depth, output_height, output_width = output_spatial_sizes
+        depth_scale, height_scale, width_scale = spatial_scales
+        y_data = np.zeros([batch_size, num_channels * output_depth] + output_spatial_sizes[1:], dtype=x_data.dtype)
+
+        p = ResizeOp._FilterParamsAntiAlias('trilinear')
+        p.dim_x = ResizeOp._FilterParamsBaseAntiAlias()
+        p.dim_y = ResizeOp._FilterParamsBaseAntiAlias()
+        p.dim_z = ResizeOp._FilterParamsBaseAntiAlias()
+        ResizeOp.setup_upsample_filter_antialias(p, [input_height, input_width, input_depth],
+                                                 [output_height, output_width, output_depth],
+                                                 [height_scale, width_scale, depth_scale],
+                                                 roi, coordinate_transform_mode, exclude_outside, is_nchw=True)
+
+        x_reshaped = np.reshape(x_data, [batch_size, -1, input_height, input_width])
+        image_temp_buffer = np.zeros([batch_size, num_channels * input_depth,
+                                     output_height, output_width], dtype=x_data.dtype)
+        use_extrapolation = (coordinate_transform_mode == 'tf_crop_and_resize')
+        ResizeOp.upsample_base_antialias(p, batch_size, num_channels * input_depth, input_height, input_width, output_height, output_width,
+                                         False, extrapolation_value, x_reshaped, image_temp_buffer)
+        y_data = np.reshape(y_data, [batch_size, num_channels] + output_spatial_sizes)
+
+        for n in range(batch_size):
+            ResizeOp.compute_interpolation_at_level(num_channels, output_height, output_width, output_height, output_width,
+                                                    np.reshape(image_temp_buffer[n], [
+                                                               num_channels, input_depth, output_height, output_width]),
+                                                    y_data[n], p.dim_z, 3, input_depth, output_depth)
+
+        if use_extrapolation:
+            ResizeOp.handle_extrapolation(batch_size, num_channels, output_height,
+                                          output_width, output_depth, extrapolation_value, y_data, p)
+
+        if not is_nchw:
+            y_data = np.transpose(y_data, [0, 2, 3, 4, 1])
+        return y_data
+
+    @staticmethod
     def upsample_nearest(x_data, output_spatial_sizes, spatial_scales, roi=None,
                          coordinate_transform_mode='asymmetric', nearest_mode='simple',
                          extrapolation_value=0.0, is_nchw=True):
@@ -1698,12 +1952,9 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
     def upsample_cubic(x_data, output_spatial_sizes, spatial_scales, roi=None,
                        coordinate_transform_mode='asymmetric', cubic_coeff_a=-0.75,
                        exclude_outside=False, extrapolation_value=0.0, is_nchw=True):
-        input_shape = list(x_data.shape)
-        if len(input_shape) != 4:
-            ERROR('[Parser]: Resize op only supports cubic mode with 4d input, but got %dd!' % len(input_shape))
-            return None
         if not is_nchw:
             x_data = np.transpose(x_data, [0, 3, 1, 2])
+        input_shape = list(x_data.shape)
         cubic_coeffs = {}
         coeff_to_1Dinterpolation_map = {}
         original_lists = []
@@ -1794,6 +2045,30 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
             y_data = np.transpose(y_data, [0, 2, 3, 1])
         return y_data.astype(x_data.dtype)
 
+    @staticmethod
+    def upsample_cubic_antialias(x_data, output_spatial_sizes, spatial_scales, roi=None,
+                                 coordinate_transform_mode='asymmetric', cubic_coeff_a=-0.75,
+                                 exclude_outside=False, extrapolation_value=0.0, is_nchw=True):
+        if not is_nchw:
+            x_data = np.transpose(x_data, [0, 3, 1, 2])
+        batch_size, num_channels = x_data.shape[:2]
+        input_height, input_width = x_data.shape[2:]
+        output_height, output_width = output_spatial_sizes
+        height_scale, width_scale = spatial_scales
+        y_data = np.zeros([batch_size, num_channels, output_height, output_width], dtype=x_data.dtype)
+
+        p = ResizeOp._FilterParamsAntiAlias('bicubic', cubic_coeff_a)
+        p.dim_x = ResizeOp._FilterParamsBaseAntiAlias()
+        p.dim_y = ResizeOp._FilterParamsBaseAntiAlias()
+        ResizeOp.setup_upsample_filter_antialias(p, [input_height, input_width], output_spatial_sizes, spatial_scales,
+                                                 roi, coordinate_transform_mode, exclude_outside, is_nchw=True)
+        use_extrapolation = (coordinate_transform_mode == 'tf_crop_and_resize')
+        ResizeOp.upsample_base_antialias(p, batch_size, num_channels, input_height, input_width, output_height, output_width,
+                                         use_extrapolation, extrapolation_value, x_data, y_data)
+        if not is_nchw:
+            y_data = np.transpose(y_data, [0, 2, 3, 1])
+        return y_data
+
     def infer_shape(self):
         super(ResizeOp, self).infer_shape()
         inputs = self.get_input_tensors()
@@ -1836,31 +2111,39 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
                             (np.reshape(self.roi, (2, -1))
                              [1, :] - np.reshape(self.roi, (2, -1))[0, :])
                 out_shape = np.floor(base_shape).astype(np.int64).tolist()
-        if self.antialias:
-            # TODO: Add the implementation of antialias to support const inputs.
-            WARN('[Parser]: Meets unsupported attribute antialias of Resize Op (%s) in infer_shape!' % self.name)
+
         if self.is_all_inputs_const():
             if FLOAT_EQUAL(inputs[0], 0):
                 out_tensor = np.zeros(out_shape).astype(inputs[0].dtype)
             else:
                 assert self.mode in ResizeOp.MODE_MAP, \
-                    'Meet unsupported mode (%s) of Resize Op (%s) in infer_shape' % (mode, self.name)
+                    'Meet unsupported mode (%s) of Resize Op (%s) in infer_shape' % (self.mode, self.name)
                 mode = ResizeOp.MODE_MAP[self.mode]
                 is_nchw = (self.data_format == 'NCHW')
                 out_spatial_shape = out_shape[2:] if is_nchw else out_shape[1:-1]
                 spatial_scales = list(self.scales[2:]) if is_nchw else list(self.scales[1:-1])
                 if mode == 'linear':
-                    out_tensor = ResizeOp.upsample_linear(inputs[0], out_spatial_shape, spatial_scales, self.roi,
-                                                          self.coordinate_transformation_mode, is_nchw)
+                    if self.antialias:
+                        func = ResizeOp.upsample_trilinear_antialias if len(
+                            out_spatial_shape) == 3 else ResizeOp.upsample_bilinear_antialias
+                        out_tensor = func(inputs[0], out_spatial_shape, spatial_scales, self.roi,
+                                          self.coordinate_transform_mode, self.extrapolation_value,
+                                          self.exclude_outside, is_nchw)
+                    else:
+                        out_tensor = ResizeOp.upsample_linear(inputs[0], out_spatial_shape, spatial_scales, self.roi,
+                                                              self.coordinate_transformation_mode, is_nchw)
                 elif mode == 'nearest':
                     out_tensor = ResizeOp.upsample_nearest(inputs[0], out_spatial_shape, spatial_scales, self.roi,
                                                            self.coordinate_transformation_mode, self.nearest_mode,
                                                            self.extrapolation_value, is_nchw)
                 else:  # mode == 'cubic'
                     assert self.cur_version > 10, 'Mode cubic in Resize Op (%s) is not supported until opset 11' % self.name
-                    out_tensor = ResizeOp.upsample_cubic(inputs[0], out_spatial_shape, spatial_scales, self.roi,
-                                                         self.coordinate_transformation_mode, self.cubic_coeff_a,
-                                                         self.exclude_outside, self.extrapolation_value, is_nchw)
+                    assert len(input_dim_np) == 4, 'Resize op only supports cubic mode with 4d input, but got %dd!' % \
+                        len(input_dim_np)
+                    func = ResizeOp.upsample_cubic_antialias if self.antialias else ResizeOp.upsample_cubic
+                    out_tensor = func(inputs[0], out_spatial_shape, spatial_scales, self.roi,
+                                      self.coordinate_transformation_mode, self.cubic_coeff_a,
+                                      self.exclude_outside, self.extrapolation_value, is_nchw)
         else:
             # Still use random output here to speedup parsing if inputs are non-const
             out_tensor = np.random.ranf(out_shape).astype(inputs[0].dtype)
