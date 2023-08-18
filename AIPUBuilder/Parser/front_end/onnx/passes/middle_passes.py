@@ -8604,6 +8604,8 @@ def middle_passes(graph, params):
 
     fuse_const(graph)
 
+    decompose_const_if(graph, params)
+
     convert_qadd(graph)
     convert_qconv(graph)
     convert_qgemm(graph)
@@ -8626,7 +8628,6 @@ def middle_passes(graph, params):
                       + OnnxReduceOp.get_concrete_subclass_names())
     remove_redundant_transpose(graph)
 
-    decompose_const_if(graph, params)
     rename_reshape_like(graph)
 
     split_negative_pads(graph)
