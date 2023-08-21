@@ -2023,7 +2023,8 @@ def rename_activations(graph):
         if act_obj.type in ['Clip', 'Relu', 'Shrink'] \
                 and len(act_obj.get_input_tensors()) >= 1 \
                 and act_obj.get_input_tensors()[0] is not None \
-                and np.issubdtype(act_obj.get_input_tensors()[0].dtype, np.integer):
+                and np.issubdtype(act_obj.get_input_tensors()[0].dtype, np.integer)\
+                and not graph._attr.get('quantize', False):
             in_edges = graph.sorted_in_edges(act, keys=True, data=True)
             src, _, k, in_attr = in_edges[0]
             insert_cast(graph, src, act, 'float32',

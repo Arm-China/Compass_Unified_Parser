@@ -19,14 +19,14 @@ def process_onnx(model_path, params):
 
         for i in range(2):
             remove_useless_op(
-                graph, ['Dummy', 'Transpose', 'Reshape', 'Upsample', 'Identity'])
+                graph, ['Dummy', 'Transpose', 'Reshape', 'Upsample', 'Identity', 'Cast'])
 
         infer(graph, partial=True)
         merge_qconv(graph)
         merge_qmatmul(graph)
         merge_q_multiple(graph, ['Add', 'Concat', 'Gemm', 'Mul'])
         merge_q_unary(graph, ['MaxPool', 'ReduceMean', 'Relu', 'Reshape', 'Slice',
-                      'Transpose', 'HardSwish', 'GlobalAveragePool', 'HardSigmoid'])
+                      'Transpose', 'HardSwish', 'GlobalAveragePool', 'HardSigmoid', 'Clip'])
 
         fuse_weights_const(graph)
         convert_special_prelu(graph)
