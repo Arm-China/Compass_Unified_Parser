@@ -80,31 +80,6 @@ def convert_bitshift_left(g, input, other):
     return convert_bitshift(g, input, other, 'LEFT')
 
 
-@quantized_args(True)
-def convert_reduce_mean(g, input, dim=None, keepdim=None, allow_multi_dim_support=True):
-    if dim is None:
-        # all-reduce path
-        return helper._handle_reduce_dim_none(g, self, 'ReduceMean')
-    else:
-        # dim-reduce path
-        desc = 'is' if allow_multi_dim_support else 'i'
-        dim, keepdim = helper._get_const(
-            dim, desc, 'dim'
-        ), helper._get_const(keepdim, 'i', 'keepdim')
-        dim_list = dim if allow_multi_dim_support else [dim]
-        return g.op('ReduceMean', input, axes_i=dim_list, keepdims_i=keepdim)
-
-
-@quantized_args(True)
-@helper.parse_args('v', 'i')
-def convert_round(g, input, decimals=0):
-    if decimals == 0:
-        return g.op('Round', input)
-    pre_mul = g.op('Mul', input, g.op('Constant', value_t=torch.tensor(pow(10, decimals))))
-    round_node = g.op('Round', pre_mul)
-    return g.op('Mul', round_node, g.op('Constant', value_t=torch.tensor(pow(10, -1 * decimals))))
-
-
 @helper.parse_args('v', 'v')
 def convert_bitshift_right(g, input, other):
     return convert_bitshift(g, input, other, 'RIGHT')
@@ -546,6 +521,44 @@ def convert_quantized_cat(
     return helper.quantize_helper(g, concatenated, op_scale, op_zero_point)
 
 
+@quantized_args(True)
+def convert_reduce_mean(g, input, dim=None, keepdim=None, allow_multi_dim_support=True):
+    if dim is None:
+        # all-reduce path
+        return helper._handle_reduce_dim_none(g, self, 'ReduceMean')
+    else:
+        # dim-reduce path
+        desc = 'is' if allow_multi_dim_support else 'i'
+        dim, keepdim = helper._get_const(
+            dim, desc, 'dim'
+        ), helper._get_const(keepdim, 'i', 'keepdim')
+        dim_list = dim if allow_multi_dim_support else [dim]
+        return g.op('ReduceMean', input, axes_i=dim_list, keepdims_i=keepdim)
+
+
+@quantized_args(True)
+@helper.parse_args('v', 'i')
+def convert_round(g, input, decimals=0):
+    if decimals == 0:
+        return g.op('Round', input)
+    pre_mul = g.op('Mul', input, g.op('Constant', value_t=torch.tensor(pow(10, decimals))))
+    round_node = g.op('Round', pre_mul)
+    return g.op('Mul', round_node, g.op('Constant', value_t=torch.tensor(pow(10, -1 * decimals))))
+
+
+@helper.parse_args('v', 'i', 'v', 'v', 'v')
+def convert_scatter(g, self, dim, index, src, reduce=None):
+    if reduce is None:
+        from torch.onnx.symbolic_opset11 import scatter
+        return scatter(g, self, dim, index, src)
+    reduce = helper._parse_arg(reduce, 's')
+    assert reduce in ('add', 'multiply'), 'Meets invalid reduce (%s) of aten::scatter in convert_scatter' % reduce
+    reduction = 'mul' if reduce == 'multiply' else 'add'
+    if helper._is_value(src):
+        return g.op('ScatterElements', self, index, src, axis_i=dim, reduction_s=reduction)
+    return g.op('ScatterElements', self, index, opset9.expand_as(g, src, index), axis_i=dim, reduction_s=reduction)
+
+
 def convert_size(g, input, dim=None):
     from torch.onnx.symbolic_opset11 import size
     if input.node().kind() in ('prim::TupleConstruct'):
@@ -704,6 +717,9 @@ def convert_torch_to_onnx(model_path, params):
         torch.onnx.register_custom_op_symbolic(
             'aten::atan2', convert_atan2, onnx_opset_version)
 
+    if onnx_opset_version >= 16:
+        torch.onnx.register_custom_op_symbolic(
+            'aten::scatter', convert_scatter, onnx_opset_version)
     if onnx_opset_version < 18:
         # The lowest version of onnx BitwiseAnd/Not/Or/Xor is 18
         # (onnx_opset_version is 16 for torch 1.12.0).
