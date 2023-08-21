@@ -95,6 +95,16 @@ def convert_reduce_mean(g, input, dim=None, keepdim=None, allow_multi_dim_suppor
         return g.op('ReduceMean', input, axes_i=dim_list, keepdims_i=keepdim)
 
 
+@quantized_args(True)
+@helper.parse_args('v', 'i')
+def convert_round(g, input, decimals=0):
+    if decimals == 0:
+        return g.op('Round', input)
+    pre_mul = g.op('Mul', input, g.op('Constant', value_t=torch.tensor(pow(10, decimals))))
+    round_node = g.op('Round', pre_mul)
+    return g.op('Mul', round_node, g.op('Constant', value_t=torch.tensor(pow(10, -1 * decimals))))
+
+
 @helper.parse_args('v', 'v')
 def convert_bitshift_right(g, input, other):
     return convert_bitshift(g, input, other, 'RIGHT')
@@ -739,6 +749,8 @@ def convert_torch_to_onnx(model_path, params):
         'aten::max_unpool2d', convert_max_unpool2d, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::mean', convert_reduce_mean, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'aten::round', convert_round, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::size', convert_size, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
