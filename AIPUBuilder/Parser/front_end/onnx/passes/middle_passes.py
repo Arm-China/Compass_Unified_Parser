@@ -1740,10 +1740,10 @@ def fuse_mul_add_or_sub(graph):
                 biases = np.tile(np.reshape(biases, [-1]), num_output)
             if add_sub_obj.type == 'Sub':
                 biases = (-1.0 * biases).astype(np.float32)
-            if np.ndim(weights) > 1:
-                weights = np.squeeze(weights)
-            if np.ndim(biases) > 1:
-                biases = np.squeeze(biases)
+            if np.ndim(weights) != 1:
+                weights = np.reshape(weights, [-1])
+            if np.ndim(biases) != 1:
+                biases = np.reshape(biases, [-1])
             mean_value = np.zeros((num_output,), np.float32)
             var_value = np.ones((num_output,), np.float32)
 
