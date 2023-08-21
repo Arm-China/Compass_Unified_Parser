@@ -280,10 +280,12 @@ def convert_equal(g, input, other):
 
 
 def convert_avg_pool(g, input, kernel_size, strides, paddings, ceil_mode, count_include_pad, divisor_override, dim):
-    assert isinstance(dim, int) and dim in [1, 2, 3], 'Meets invalid dim in convert_avg_pool!'
+    assert isinstance(dim, int) and dim in [
+        1, 2, 3], 'Meets invalid dim in convert_avg_pool!'
     if not ceil_mode:
         from torch.onnx.symbolic_opset11 import avg_pool1d, avg_pool2d, avg_pool3d
-        avg_pool_func = avg_pool1d if dim == 1 else (avg_pool2d if dim == 2 else avg_pool3d)
+        avg_pool_func = avg_pool1d if dim == 1 else (
+            avg_pool2d if dim == 2 else avg_pool3d)
         return avg_pool_func(g, input, kernel_size, strides, paddings, ceil_mode, count_include_pad, divisor_override)
 
     input_shape = helper._get_tensor_sizes(input)
@@ -293,7 +295,8 @@ def convert_avg_pool(g, input, kernel_size, strides, paddings, ceil_mode, count_
 
     torch_spatial_output_shapes = []
     for input_size, kernel, stride, pad in zip(spatial_input_shape, kernel_size, strides, paddings):
-        output_shape = get_torch_pool_output_shape(input_size, kernel, pad, pad, stride)
+        output_shape = get_torch_pool_output_shape(
+            input_size, kernel, pad, pad, stride)
         torch_spatial_output_shapes.append(output_shape)
 
     adjusted_padding = paddings
@@ -305,21 +308,27 @@ def convert_avg_pool(g, input, kernel_size, strides, paddings, ceil_mode, count_
             mode_s='constant',
         )
         adjusted_padding = [0] * len(paddings)
-        spatial_input_shape = [(a + 2 * b) for (a, b) in zip(spatial_input_shape, paddings)]
+        spatial_input_shape = [(a + 2 * b)
+                               for (a, b) in zip(spatial_input_shape, paddings)]
 
     avg_pool = g.op('AveragePool', input, kernel_shape_i=kernel_size, strides_i=strides,
                     pads_i=(adjusted_padding * 2), ceil_mode_i=ceil_mode)
 
     slice_ends = []
     for idx, (input_size, kernel, stride, pad) in enumerate(zip(spatial_input_shape, kernel_size, strides, adjusted_padding)):
-        onnx_output_shape = get_onnx_pool_output_shape(input_size, kernel, pad, pad, stride)
-        assert len(torch_spatial_output_shapes) > idx, 'Meets invalid torch_spatial_output_shapes in convert_avg_pool!'
+        onnx_output_shape = get_onnx_pool_output_shape(
+            input_size, kernel, pad, pad, stride)
+        assert len(
+            torch_spatial_output_shapes) > idx, 'Meets invalid torch_spatial_output_shapes in convert_avg_pool!'
         if torch_spatial_output_shapes[idx] > onnx_output_shape:
-            FATAL('[Parser]: Meets unsupported output shape of avg_pool in convert_avg_pool!')
+            FATAL(
+                '[Parser]: Meets unsupported output shape of avg_pool in convert_avg_pool!')
         slice_ends.append(torch_spatial_output_shapes[idx])
     ends_input = g.op('Constant', value_t=torch.tensor(slice_ends))
-    starts_input = g.op('Constant', value_t=torch.tensor([0] * len(slice_ends)))
-    axes_input = g.op('Constant', value_t=torch.tensor(list(range(2, len(input_shape)))))
+    starts_input = g.op(
+        'Constant', value_t=torch.tensor([0] * len(slice_ends)))
+    axes_input = g.op('Constant', value_t=torch.tensor(
+        list(range(2, len(input_shape)))))
     slice_out = g.op('Slice', avg_pool, starts_input, ends_input, axes_input)
     return slice_out
 
@@ -344,18 +353,22 @@ def convert_avg_pool3d(g, inp, kernel_size, stride, padding, ceil_mode, count_in
 
 @quantized_args(True, False, False, False, False, False, False)
 def convert_max_pool(g, input, kernel_size, strides, paddings, dilations, ceil_mode, dim, return_indices=False):
-    assert isinstance(dim, int) and dim in [1, 2, 3], 'Meets invalid dim in convert_max_pool!'
+    assert isinstance(dim, int) and dim in [
+        1, 2, 3], 'Meets invalid dim in convert_max_pool!'
     if not ceil_mode:
         if return_indices:
             from torch.onnx.symbolic_opset10 import max_pool1d_with_indices, max_pool2d_with_indices, max_pool3d_with_indices
             max_pool_func = max_pool1d_with_indices if dim == 1 else (
                 max_pool2d_with_indices if dim == 2 else max_pool3d_with_indices)
-            max_pool, indices = max_pool_func(g, input, kernel_size, strides, paddings, dilations, ceil_mode)
+            max_pool, indices = max_pool_func(
+                g, input, kernel_size, strides, paddings, dilations, ceil_mode)
             return (max_pool, indices)
         else:
             from torch.onnx.symbolic_opset10 import max_pool1d, max_pool2d, max_pool3d
-            max_pool_func = max_pool1d if dim == 1 else (max_pool2d if dim == 2 else max_pool3d)
-            max_pool = max_pool_func(g, input, kernel_size, strides, paddings, dilations, ceil_mode)
+            max_pool_func = max_pool1d if dim == 1 else (
+                max_pool2d if dim == 2 else max_pool3d)
+            max_pool = max_pool_func(
+                g, input, kernel_size, strides, paddings, dilations, ceil_mode)
             return max_pool
 
     if not strides:
@@ -371,22 +384,30 @@ def convert_max_pool(g, input, kernel_size, strides, paddings, dilations, ceil_m
     input_shape = helper._get_tensor_sizes(input)
     slice_ends = []
     for input_size, kernel, stride, pad, dilation in zip(input_shape[2:], kernel_size, strides, paddings, dilations):
-        torch_output_shape = get_torch_pool_output_shape(input_size, kernel, pad, pad, stride, dilation)
-        onnx_output_shape = get_onnx_pool_output_shape(input_size, kernel, pad, pad, stride, dilation)
+        torch_output_shape = get_torch_pool_output_shape(
+            input_size, kernel, pad, pad, stride, dilation)
+        onnx_output_shape = get_onnx_pool_output_shape(
+            input_size, kernel, pad, pad, stride, dilation)
         if torch_output_shape > onnx_output_shape:
-            FATAL('[Parser]: Meets unsupported output shape of max_pool in convert_max_pool!')
+            FATAL(
+                '[Parser]: Meets unsupported output shape of max_pool in convert_max_pool!')
         slice_ends.append(torch_output_shape)
     ends_input = g.op('Constant', value_t=torch.tensor(slice_ends))
-    starts_input = g.op('Constant', value_t=torch.tensor([0] * len(slice_ends)))
-    axes_input = g.op('Constant', value_t=torch.tensor(list(range(2, len(input_shape)))))
+    starts_input = g.op(
+        'Constant', value_t=torch.tensor([0] * len(slice_ends)))
+    axes_input = g.op('Constant', value_t=torch.tensor(
+        list(range(2, len(input_shape)))))
     slice_out = g.op('Slice', max_pool, starts_input, ends_input, axes_input)
 
     if indices is not None:
         ndims = len(input_shape) - 2
-        slice_indices = g.op('Slice', indices, starts_input, ends_input, axes_input)
-        _, flattened_indices = g.op('MaxPool', input, outputs=2, kernel_shape_i=[1] * ndims)
+        slice_indices = g.op('Slice', indices, starts_input,
+                             ends_input, axes_input)
+        _, flattened_indices = g.op(
+            'MaxPool', input, outputs=2, kernel_shape_i=[1] * ndims)
         sub_indices = helper._slice_helper(g, flattened_indices,
-                                           axes=list(range(2, len(input_shape))),
+                                           axes=list(
+                                               range(2, len(input_shape))),
                                            starts=[0] * ndims, ends=[1] * ndims)
         indices = g.op('Sub', slice_indices, sub_indices)
     return (slice_out, indices) if return_indices else slice_out
@@ -588,6 +609,15 @@ def convert_view(g, self, shape):
     return reshape(g, self, shape)
 
 
+@quantized_args(True, False)
+@helper.parse_args('v', 'b')
+def convert_quantized_relu6(g, x, inplace):
+    assert inplace is False
+    const_min = g.op('Constant', value_t=torch.tensor(0))
+    const_max = g.op('Constant', value_t=torch.tensor(6))
+    return g.op('Clip', x, const_min, const_max)
+
+
 def convert_atan2(g, self, other):
     slope = g.op('Div', self, other)
     atan = g.op('Atan', slope)
@@ -785,6 +815,8 @@ def convert_torch_to_onnx(model_path, params):
         'quantized::add_relu', convert_quantized_add_relu, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'quantized::cat', convert_quantized_cat, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'quantized::relu6', convert_quantized_relu6, onnx_opset_version)
 
     # Only convert prim::DictConstruct to Identity when it's output node.
     dict_nodes = model.graph.findAllNodes('prim::DictConstruct')
