@@ -37,7 +37,8 @@ onnx_tensor_np_mapping = [
     ('INT64', np.int64, lambda pb: pb.int64_data if len(pb.int64_data) > 0 else np.frombuffer(pb.raw_data, dtype=np.int64)),
     ('STRING', str, lambda pb: pb.string_data),
     ('BOOL', bool, lambda pb: pb.int32_data if len(pb.int32_data) > 0 else np.frombuffer(pb.raw_data, dtype=bool)),
-    ('FLOAT16', np.float16, lambda pb: pb.int32_data),
+    ('FLOAT16', np.float16, lambda pb: pb.int32_data if len(pb.int32_data)
+     > 0 else np.frombuffer(pb.raw_data, dtype=np.float16)),
     ('DOUBLE', np.double, lambda pb: pb.double_data if len(pb.double_data)
      > 0 else np.frombuffer(pb.raw_data, dtype=np.float64)),
     ('UINT32', np.uint32, lambda pb: pb.uint64_data if len(pb.uint64_data)
@@ -127,6 +128,9 @@ def get_tensor_content(tensor_proto):
                 ret.update({'tensor': flat.reshape(tensor_shape)})
             else:
                 ret.update({'tensor': flat})
+        if ret.get('tensor', None) is not None \
+                and ret['tensor'].dtype == 'float16':
+            ret['tensor'] = ret['tensor'].astype(np.float32)
     return ret
 
 

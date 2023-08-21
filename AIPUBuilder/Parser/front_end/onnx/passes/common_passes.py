@@ -33,7 +33,7 @@ def fuse_const(graph):
                     const_value = out_edge[0][2]['tensor'].value
                     if str(const_value.dtype) == 'int64':
                         const_value = const_value.astype(np.int32)
-                    elif str(const_value.dtype) == 'float64':
+                    elif str(const_value.dtype) in ['float64', 'float16']:
                         const_value = const_value.astype(np.float32)
                     const_attr = {'name': node_name,
                                   'value': const_value,

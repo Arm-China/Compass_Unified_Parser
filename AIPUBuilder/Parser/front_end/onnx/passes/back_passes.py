@@ -2140,6 +2140,8 @@ def rename_cast(graph):
                 cast_attr = cast_obj.copied_attr()
                 if cast_obj.to == 'bool':
                     to_dtype = 'uint8'
+                elif cast_obj.to == 'float16':
+                    to_dtype = 'float32'
                 else:
                     to_dtype = cast_obj.to
                 ignore_scale_zp = True

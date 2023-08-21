@@ -829,7 +829,7 @@ class ArmConstantOp(OpHasWeights, OpHasOneOutPort, ConstLikeOp, ArmOp):
             self.weights = np.array(self.weights).astype(np.int32)
         elif self.weights.dtype == 'uint64':
             self.weights = np.array(self.weights).astype(np.uint32)
-        elif self.weights.dtype == 'float64':
+        elif self.weights.dtype in ['float64', 'float16']:
             self.weights = np.array(self.weights).astype(np.float32)
         elif self.weights.dtype == 'bool':
             self.weights = np.array(self.weights).astype(np.uint8)
