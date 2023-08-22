@@ -26,7 +26,7 @@ def process_onnx(model_path, params):
         merge_qmatmul(graph)
         merge_q_multiple(graph, ['Add', 'Concat', 'Gemm', 'Mul'])
         merge_q_unary(graph, ['MaxPool', 'ReduceMean', 'Relu', 'Reshape', 'Slice',
-                      'Transpose', 'HardSwish', 'GlobalAveragePool', 'HardSigmoid', 'Clip'])
+                      'Transpose', 'HardSwish', 'GlobalAveragePool', 'HardSigmoid', 'Clip', 'BatchNormalization'])
 
         fuse_weights_const(graph)
         convert_special_prelu(graph)

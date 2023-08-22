@@ -351,6 +351,65 @@ def convert_avg_pool3d(g, inp, kernel_size, stride, padding, ceil_mode, count_in
     return convert_avg_pool(g, inp, kernel_size, stride, padding, ceil_mode, count_include_pad, divisor_override, 3)
 
 
+@helper.parse_args('v', 'v', 'v', 'v', 'v', 'f', 'v', 'v')
+def convert_quant_batch_norm_relu(
+    g,
+    input,
+    weight,
+    bias,
+    running_mean,
+    running_var,
+    eps,
+    s,
+    zp,
+):
+    from torch.onnx.symbolic_opset9 import relu
+    input, _, _, _ = helper.dequantize_helper(g, input)
+    weight, bias, running_mean, running_var = helper._batchnorm_helper(
+        g, input, weight, bias, running_mean, running_var)
+    out = g.op(
+        'BatchNormalization',
+        input,
+        weight,
+        bias,
+        running_mean,
+        running_var,
+        epsilon_f=eps,
+        outputs=1,
+    )
+    out = relu(g, out)
+    return helper.quantize_helper(g, out, s, zp)
+
+
+@helper.parse_args('v', 'v', 'v', 'v', 'v', 'f', 'v', 'v')
+def convert_quant_batch_norm(
+    g,
+    input,
+    weight,
+    bias,
+    running_mean,
+    running_var,
+    eps,
+    s,
+    zp,
+):
+    input, _, _, _ = helper.dequantize_helper(g, input)
+    weight, bias, running_mean, running_var = helper._batchnorm_helper(
+        g, input, weight, bias, running_mean, running_var
+    )
+    out = g.op(
+        'BatchNormalization',
+        input,
+        weight,
+        bias,
+        running_mean,
+        running_var,
+        epsilon_f=eps,
+        outputs=1,
+    )
+    return helper.quantize_helper(g, out, s, zp)
+
+
 @quantized_args(True, False, False, False, False, False, False)
 def convert_max_pool(g, input, kernel_size, strides, paddings, dilations, ceil_mode, dim, return_indices=False):
     assert isinstance(dim, int) and dim in [
@@ -562,7 +621,8 @@ def convert_reduce_mean(g, input, dim=None, keepdim=None, allow_multi_dim_suppor
 def convert_round(g, input, decimals=0):
     if decimals == 0:
         return g.op('Round', input)
-    pre_mul = g.op('Mul', input, g.op('Constant', value_t=torch.tensor(pow(10, decimals))))
+    pre_mul = g.op('Mul', input, g.op(
+        'Constant', value_t=torch.tensor(pow(10, decimals))))
     round_node = g.op('Round', pre_mul)
     return g.op('Mul', round_node, g.op('Constant', value_t=torch.tensor(pow(10, -1 * decimals))))
 
@@ -573,7 +633,8 @@ def convert_scatter(g, self, dim, index, src, reduce=None):
         from torch.onnx.symbolic_opset11 import scatter
         return scatter(g, self, dim, index, src)
     reduce = helper._parse_arg(reduce, 's')
-    assert reduce in ('add', 'multiply'), 'Meets invalid reduce (%s) of aten::scatter in convert_scatter' % reduce
+    assert reduce in (
+        'add', 'multiply'), 'Meets invalid reduce (%s) of aten::scatter in convert_scatter' % reduce
     reduction = 'mul' if reduce == 'multiply' else 'add'
     if helper._is_value(src):
         return g.op('ScatterElements', self, index, src, axis_i=dim, reduction_s=reduction)
@@ -817,6 +878,10 @@ def convert_torch_to_onnx(model_path, params):
         'quantized::cat', convert_quantized_cat, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'quantized::relu6', convert_quantized_relu6, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'quantized::batch_norm2d', convert_quant_batch_norm, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'quantized::batch_norm2d_relu', convert_quant_batch_norm_relu, onnx_opset_version)
 
     # Only convert prim::DictConstruct to Identity when it's output node.
     dict_nodes = model.graph.findAllNodes('prim::DictConstruct')
