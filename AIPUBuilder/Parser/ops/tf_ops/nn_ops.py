@@ -797,12 +797,12 @@ class TfRelu6Op(BaseReluOp, TfOp):
         super(TfRelu6Op, self).__init__(graph, attr_dict)
         self.update_attributes(TfRelu6Op, attr_dict)
         assert self.check_required(), 'TfRelu6Op is missing a required parameter.'
-        self.activations = 'CLIP'
+        self.activations = 'RELU6'
 
     def infer_shape(self):
         super(TfRelu6Op, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.nn.relu6(inputs[0]).numpy()
+        out_tensor = self.cal_activation(inputs[0])
         self.set_out_tensor(out_tensor)
 
     @property
