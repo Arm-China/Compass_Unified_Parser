@@ -52,6 +52,52 @@ class TfAcoshOp(LayoutUnawareOp, OpHasOneOutPort, TfOp):
         return {'type': 'Acosh', 'version': 9}
 
 
+class TfAddOp(OpHasOneOutPort, TfOp):
+    @classmethod
+    def attributes(cls):
+        return {1: {}}
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfAddOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfAddOp, attr_dict)
+        assert self.check_required(), 'TfAddOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(TfAddOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = tf.add(*inputs).numpy()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'Add', 'version': 7}
+
+
+class TfAddNOp(OpHasOneOutPort, TfOp):
+    @classmethod
+    def attributes(cls):
+        return {1: {}}
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfAddNOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfAddNOp, attr_dict)
+        assert self.check_required(), 'TfAddNOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(TfAddNOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = tf.math.add_n([*inputs]).numpy()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'Sum', 'version': 6}
+
+
+class TfAddV2Op(TfAddOp):
+    pass
+
+
 class TfAllOp(OpHasAxis, OpHasOneOutPort, TfOp):
     @classmethod
     def attributes(cls):
@@ -128,76 +174,6 @@ class TfAnyOp(OpHasAxis, OpHasOneOutPort, TfOp):
     @property
     def correspond_onnx_op(self):
         return {'type': 'ReduceAny', 'version': 1}
-
-
-class TfAsinOp(LayoutUnawareOp, OpHasOneOutPort, TfOp):
-    def infer_shape(self):
-        super(TfAsinOp, self).infer_shape()
-        inputs = self.get_input_tensors()
-        out_tensor = np.arcsin(inputs[0])
-        self.set_out_tensor(out_tensor)
-
-    @property
-    def correspond_onnx_op(self):
-        return {'type': 'Asin', 'version': 7}
-
-
-class TfAsinhOp(LayoutUnawareOp, OpHasOneOutPort, TfOp):
-    def infer_shape(self):
-        super(TfAsinhOp, self).infer_shape()
-        inputs = self.get_input_tensors()
-        out_tensor = np.arcsinh(inputs[0])
-        self.set_out_tensor(out_tensor)
-
-    @property
-    def correspond_onnx_op(self):
-        return {'type': 'Asinh', 'version': 9}
-
-
-class TfAddOp(OpHasOneOutPort, TfOp):
-    @classmethod
-    def attributes(cls):
-        return {1: {}}
-
-    def __init__(self, graph, attr_dict=None):
-        super(TfAddOp, self).__init__(graph, attr_dict)
-        self.update_attributes(TfAddOp, attr_dict)
-        assert self.check_required(), 'TfAddOp is missing a required parameter.'
-
-    def infer_shape(self):
-        super(TfAddOp, self).infer_shape()
-        inputs = self.get_input_tensors()
-        out_tensor = tf.add(*inputs).numpy()
-        self.set_out_tensor(out_tensor)
-
-    @property
-    def correspond_onnx_op(self):
-        return {'type': 'Add', 'version': 7}
-
-
-class TfAddNOp(OpHasOneOutPort, TfOp):
-    @classmethod
-    def attributes(cls):
-        return {1: {}}
-
-    def __init__(self, graph, attr_dict=None):
-        super(TfAddNOp, self).__init__(graph, attr_dict)
-        self.update_attributes(TfAddNOp, attr_dict)
-        assert self.check_required(), 'TfAddNOp is missing a required parameter.'
-
-    def infer_shape(self):
-        super(TfAddNOp, self).infer_shape()
-        inputs = self.get_input_tensors()
-        out_tensor = tf.math.add_n([*inputs]).numpy()
-        self.set_out_tensor(out_tensor)
-
-    @property
-    def correspond_onnx_op(self):
-        return {'type': 'Sum', 'version': 6}
-
-
-class TfAddV2Op(TfAddOp):
-    pass
 
 
 class TfArgMaxOp(OpHasAxis, OpHasOneOutPort, TfOp):
@@ -286,6 +262,30 @@ class TfArgMinOp(OpHasAxis, OpHasOneOutPort, TfOp):
     @property
     def correspond_onnx_op(self):
         return {'type': 'ArgMin', 'version': 13}
+
+
+class TfAsinOp(LayoutUnawareOp, OpHasOneOutPort, TfOp):
+    def infer_shape(self):
+        super(TfAsinOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = np.arcsin(inputs[0])
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'Asin', 'version': 7}
+
+
+class TfAsinhOp(LayoutUnawareOp, OpHasOneOutPort, TfOp):
+    def infer_shape(self):
+        super(TfAsinhOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = np.arcsinh(inputs[0])
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'Asinh', 'version': 9}
 
 
 class TfAtanOp(OpHasOneOutPort, TfOp):
