@@ -272,6 +272,7 @@ def parse_pb(graph, model_path, params, anchor_tensors):
         with tfv1.Session() as sess:
             try:
                 np_tensors = sess.run(tensors, feed_dict=feed_dict)
+                sess.close()
             except:
                 def _run_tensor(meta_tensors, sess, feed_dict, ret):
                     for mt in meta_tensors:

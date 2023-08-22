@@ -1666,15 +1666,19 @@ class BaseActivationOp(OpHasOneOutPort):
         )['activations']['options'], 'act is not in the parameters of BaseActivationOp.'
         if not isinstance(tensor, np.ndarray):
             tensor = np.asarray(tensor)
+        if len(self._graph.parents(self.name)) > 0 \
+                and len(self._graph.children(self._graph.parents(self.name)[0])) == 1:
+            in_place = True
+        else:
+            in_place = False
         torch_tensor = torch.from_numpy(tensor)
         if act == 'RELU':
-            ret = torch.nn.functional.relu(torch_tensor, inplace=False).numpy()
+            ret = torch.nn.functional.relu(torch_tensor, inplace=in_place).numpy()
         elif act == 'RELU6':
-            ret = torch.nn.functional.relu6(
-                torch_tensor, inplace=False).numpy()
+            ret = torch.nn.functional.relu6(torch_tensor, inplace=in_place).numpy()
         elif act == 'LEAKYRELU':
             ret = torch.nn.functional.leaky_relu(torch_tensor, negative_slope=float(
-                self.negative_slope), inplace=False).numpy()
+                self.negative_slope), inplace=in_place).numpy()
         elif act == 'PRELU':
             if weights is None:
                 weights = self.negative_slope
