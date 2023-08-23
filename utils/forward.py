@@ -191,11 +191,17 @@ def torch_forward(model_path, ordered_feed_dict, output_names=None, save_output=
             outputs.append(data)
         return outputs
 
-    model = torch.jit.load(model_path)
+    try:
+        model = torch.jit.load(model_path)
+        jit_model = model
+    except:
+        model = torch.load(model_path)
+        model.eval()
+        jit_model = torch.jit.freeze(torch.jit.script(model))
     inputs = [torch.tensor(inp) for inp in ordered_feed_dict.values()]
     input_tensors = ()
     input_index = 0
-    for inp in model.graph.inputs():
+    for inp in jit_model.graph.inputs():
         tensors, input_index = get_tuple_from_tensor_type(inp.type(), inputs, input_index)
         if len(tensors) > 0:
             input_tensors += tensors

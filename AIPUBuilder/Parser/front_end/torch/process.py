@@ -742,11 +742,17 @@ def convert_torch_to_onnx(model_path, params):
         DEBUG('[Parser]: Fail to import torchvision!')
         pass
 
-    # Load TorchScript model
+    # Load TorchScript/non-TorchScript model
+    is_torch_script_model = False
     try:
-        model = torch.jit.load(model_path)
+        try:
+            model = torch.jit.load(model_path)
+            is_torch_script_model = True
+        except RuntimeError:
+            model = torch.load(model_path)
+            model.eval()
     except Exception as e:
-        FATAL('[Parser]: Fail to load model (%s) because %s! Only TorchScript format is supported.' %
+        FATAL('[Parser]: Fail to load model (%s) because %s!' %
               (model_path, str(e)))
 
     # Get onnx opset version to target
@@ -883,12 +889,13 @@ def convert_torch_to_onnx(model_path, params):
     torch.onnx.register_custom_op_symbolic(
         'quantized::batch_norm2d_relu', convert_quant_batch_norm_relu, onnx_opset_version)
 
-    # Only convert prim::DictConstruct to Identity when it's output node.
-    dict_nodes = model.graph.findAllNodes('prim::DictConstruct')
-    model_output_names = [out.debugName() for out in model.graph.outputs()]
-    if dict_nodes and all(node.output().debugName() in model_output_names for node in dict_nodes):
-        torch.onnx.register_custom_op_symbolic(
-            'prim::DictConstruct', convert_dict_construct, onnx_opset_version)
+    if is_torch_script_model:
+        # Only convert prim::DictConstruct to Identity when it's output node.
+        dict_nodes = model.graph.findAllNodes('prim::DictConstruct')
+        model_output_names = [out.debugName() for out in model.graph.outputs()]
+        if dict_nodes and all(node.output().debugName() in model_output_names for node in dict_nodes):
+            torch.onnx.register_custom_op_symbolic(
+                'prim::DictConstruct', convert_dict_construct, onnx_opset_version)
 
     # Convert torch op to custom onnx op
     torch.onnx.register_custom_op_symbolic(
@@ -929,9 +936,10 @@ def convert_torch_to_onnx(model_path, params):
             tensor = tensor.cuda()
         tensor_list.append(tensor)
 
+    jit_model = model if is_torch_script_model else torch.jit.freeze(torch.jit.script(model))
     input_tensors = ()
     input_index = 0
-    for inp in model.graph.inputs():
+    for inp in jit_model.graph.inputs():
         tensors, input_index = get_tuple_from_tensor_type(
             inp.type(), tensor_list, input_index)
         if len(tensors) > 0:
@@ -939,7 +947,7 @@ def convert_torch_to_onnx(model_path, params):
 
     # Get output_names. When the output is a tuple, it's actually multiple outputs constructed in that tuple.
     output_names = []
-    for out_idx, out in enumerate(model.graph.outputs()):
+    for out_idx, out in enumerate(jit_model.graph.outputs()):
         out_name = out.debugName() + '_' + str(out_idx) + '_'
         if isinstance(out.type(), torch._C.DictType):
             inputs_num = len([inp for inp in out.node().inputs()])
@@ -955,7 +963,7 @@ def convert_torch_to_onnx(model_path, params):
     # Get the file name of the onnx model to be exported
     onnx_model_path = os.path.join(params.get('output_dir', './'),
                                    os.path.basename(model_path) + '.onnx')
-    INFO('[Parser]: Convert TorchScript (%s) to onnx model...' % model_path)
+    INFO('[Parser]: Convert torch model (%s) to onnx model...' % model_path)
     if torch.cuda.is_available():
         try:
             parallel_model = nn.DataParallel(model)
