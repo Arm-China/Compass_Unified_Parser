@@ -133,6 +133,13 @@ def get_tuple_from_tensor_type(torch_type, tensor_list, start_index=0):
             out_tensors, index = get_tuple_from_tensor_type(nested_type, tensor_list, index)
             nested_tensors += out_tensors
         tensors += (nested_tensors, )
+    elif isinstance(torch_type, torch._C.ListType):
+        nested_tensors = []
+        if isinstance(torch_type.getElementType(), torch._C.TensorType):
+            for idx in range(index, len(tensor_list)):
+                nested_tensors.append(tensor_list[idx])
+            index = len(tensor_list)
+        tensors += (nested_tensors, )
     elif isinstance(torch_type, torch._C.TensorType):
         assert len(tensor_list) > index, 'Meets invalid tensors in get_tuple_from_tensor_type!'
         tensors += (tensor_list[index], )
