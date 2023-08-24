@@ -126,7 +126,7 @@ optional arguments in Common section of <net.cfg>:
 
             if get_error_count() > 0:
                 exit_code = -1
-                ERROR('Parser Failed!')
+                ERROR('Parser failed!')
             else:
                 INFO('Parser done!')
         else:

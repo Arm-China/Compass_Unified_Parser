@@ -2,6 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 
 
+import re
+import numpy as np
 import onnx
 import torch
 import tensorflow as tf
@@ -52,6 +54,23 @@ def univ_parser(params):
         params['output_names'] = list(out_names_dict.keys())
         params['input_shapes'] = list_string_to_list(
             params['input_shapes']) if 'input_shapes' in params else []
+
+        input_npy = {}
+        if params.get('input_npy', ''):
+            npy_pattern = re.compile(r'^[\s*.*\s*,]*\s*.*s*$')
+            npy_matched = re.search(npy_pattern, params['input_npy'])
+            if npy_matched is not None:
+                npy_paths = npy_matched[0].split(',')
+                for p in npy_paths:
+                    try:
+                        data = np.load(p, allow_pickle=True)
+                        if isinstance(data, np.ndarray) \
+                                and data.size == 1 \
+                                and isinstance(data.item(), dict):
+                            input_npy.update(data.item())
+                    except:
+                        pass
+        params['input_npy'] = input_npy
 
         if model_type == 'torch':
             # For torch, input_names and output_names are useless because it's not allowed to change

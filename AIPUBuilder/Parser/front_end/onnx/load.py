@@ -246,8 +246,7 @@ def convert_onnx_to_graph(model_path, params):
                                          'input': [],
                                          'output': [{'name': single_input['name'], 'out_port': 0}]}
                                      )
-                        input_shape = single_input['type']['tensor_type']['shape'].tolist(
-                        )
+                        input_shape = single_input['type']['tensor_type']['shape'].tolist()
                         if 'input_shapes' in params and len(input_shape) >= 1:
                             name = single_input['name']
                             if name not in params['input_shapes']:
@@ -259,19 +258,22 @@ def convert_onnx_to_graph(model_path, params):
                             if name in params['input_shapes'] and len(input_shape) == len(params['input_shapes'][name]):
                                 input_shape[:] = params['input_shapes'][name][:]
 
-                        input_shape = [1 if s == 0 else s for s in input_shape]
-                        input_type = np.dtype(
-                            single_input['type']['tensor_type']['elem_type'])
-                        if input_type.name in ('int32', 'int64'):
-                            input_tensor = np.zeros(shape=input_shape).astype(np.int32)
-                        elif input_type.name in ('float32', 'float64', 'float16'):
-                            input_tensor = np.random.ranf(size=input_shape).astype(np.float32)
-                        elif input_type.name == 'bool':
-                            input_tensor = np.random.randint(
-                                0, 2, size=input_shape).astype(np.uint8)
+                        if single_input['name'] in params['input_npy']:
+                            input_tensor = params['input_npy'][single_input['name']]
                         else:
-                            input_tensor = np.random.ranf(
-                                size=input_shape).astype(input_type)
+                            input_shape = [1 if s == 0 else s for s in input_shape]
+                            input_type = np.dtype(
+                                single_input['type']['tensor_type']['elem_type'])
+                            if input_type.name in ('int32', 'int64'):
+                                input_tensor = np.zeros(shape=input_shape).astype(np.int32)
+                            elif input_type.name in ('float32', 'float64', 'float16'):
+                                input_tensor = np.random.ranf(size=input_shape).astype(np.float32)
+                            elif input_type.name == 'bool':
+                                input_tensor = np.random.randint(
+                                    0, 2, size=input_shape).astype(np.uint8)
+                            else:
+                                input_tensor = np.random.ranf(
+                                    size=input_shape).astype(input_type)
 
                         graph._attr['input_tensors'].update({
                             single_input['name']: Tensor(
