@@ -673,6 +673,20 @@ def convert_split(g, input, split_size_or_sizes, dim, _outputs=None):
     return opset9.split(g, input, split_size_or_sizes, dim, _outputs)
 
 
+@helper.parse_args('v', 'is')
+@quantized_args(True, False)
+def convert_tile(g, input, dims):
+    rank = helper._get_tensor_rank(input)
+    dims_len = len(dims)
+    if dims_len < rank:
+        dims = [1] * (rank - dims_len) + dims
+    elif dims_len > rank:
+        input_shape = helper._get_tensor_sizes(input)
+        new_input_shape = [1] * (dims_len - rank) + input_shape
+        input = helper._reshape_helper(g, input, new_input_shape)
+    return g.op('Tile', input, g.op('Constant', value_t=torch.tensor(dims, dtype=torch.int64)))
+
+
 @helper.parse_args('v', 'i', 'i')
 @quantized_args(True, False, False)
 def convert_transpose(g, self, dim0, dim1):
@@ -888,6 +902,8 @@ def convert_torch_to_onnx(model_path, params):
         'aten::softshrink', convert_softshrink, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::split', convert_split, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'aten::tile', convert_tile, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::transpose', convert_transpose, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
