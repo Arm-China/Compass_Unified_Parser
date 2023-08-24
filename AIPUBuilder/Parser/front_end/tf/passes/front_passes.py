@@ -2899,6 +2899,9 @@ def merge_fasterrcnn(graph):
         clipped = clipped[areas > 0]
         return clipped.reshape([-1, 4]).astype(np.float32)
 
+    if graph._attr.get('md5', None) != '8b6edeb143566f830e35765438b452ff':
+        return
+
     inp = 'Preprocessor/sub'
     roi_pooling = 'CropAndResize'
     outputs = ['Squeeze',
@@ -2944,7 +2947,8 @@ def merge_fasterrcnn(graph):
 
     in_shape = input_shapes[0]
     batch, img_height, img_width = in_shape[:3]
-    proposal_count = crop_and_resize_in_shapes[2][0] // batch
+    class_num = 90
+    proposal_count = crop_and_resize_in_shapes[2][0] // batch  # 100
 
     _, _, proposal_box_out_attr = proposal_box_out_edges[0]
     _, _, proposal_prediction_out_attr = proposal_prediction_out_edges[0]
@@ -2971,8 +2975,7 @@ def merge_fasterrcnn(graph):
     post_nms1 = get_valid_node_name(graph, proposal + '_post_nms1')
     post_nms1_reshape = get_valid_node_name(
         graph, post_nms1 + '_reshape')  # [batch_size*100, 4]
-    secondstage_box_transpose = get_valid_node_name(
-        graph, secondstage_boxpredictor + '_post_transpose')  # [1, 0, 2]
+    secondstage_box_reshape = get_valid_node_name(graph, secondstage_boxpredictor + '_post_reshape')
     softmax2 = get_valid_node_name(
         graph, secondstage_boxpredictor + '_softmax')  # axis = 2
     detection_output = get_valid_node_name(
@@ -3010,9 +3013,9 @@ def merge_fasterrcnn(graph):
                    {'src_out_port': 0, 'dst_in_port': 1})
     graph.add_edge(secondstage_reshape, detection_output,
                    **new_secondstage_reshape_out_attr)
-    graph.add_edge(secondstage_boxpredictor, secondstage_box_transpose,
+    graph.add_edge(secondstage_boxpredictor, secondstage_box_reshape,
                    **secondstage_boxpredictor_out_attr)
-    graph.add_edge(secondstage_box_transpose, softmax2)
+    graph.add_edge(secondstage_box_reshape, softmax2)
     graph.add_edge(softmax2, detection_output, **
                    {'src_out_port': 0, 'dst_in_port': 0})
 
@@ -3085,11 +3088,16 @@ def merge_fasterrcnn(graph):
                     post_nms1_reshape,
                     in_port=1,
                     data_format='NHWC')
-    NodeWrap(graph, secondstage_box_transpose).replace_obj('Transpose',
-                                                           {'name': secondstage_box_transpose,
-                                                            'opset_version': 1,
-                                                            'perm': [1, 0, 2]
-                                                            })
+    NodeWrap(graph, secondstage_box_reshape).replace_obj('Reshape',
+                                                         {'name': secondstage_box_reshape,
+                                                          'opset_version': 5
+                                                          })
+    insert_constant(graph,
+                    secondstage_box_reshape + '_shape',
+                    np.array([-1, proposal_count, class_num + 1], np.int32),
+                    secondstage_box_reshape,
+                    in_port=1,
+                    data_format='NHWC')
     NodeWrap(graph, softmax2).replace_obj('Softmax',
                                           {'name': softmax2,
                                            'opset_version': 13,
@@ -3099,7 +3107,7 @@ def merge_fasterrcnn(graph):
                                                   {'name': detection_output,
                                                    'image_width': img_width,
                                                    'image_height': img_height,
-                                                   'class_num': 90,
+                                                   'class_num': class_num,
                                                    'max_box_num': 9000,
                                                    'score_threshold': 0.7,
                                                    'variance': [10.0, 10.0, 5.0, 5.0]

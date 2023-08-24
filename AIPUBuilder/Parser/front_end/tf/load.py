@@ -3,13 +3,14 @@
 
 
 from collections import OrderedDict, Iterable
-import tensorflow as tf
-import tensorflow.compat.v1 as tfv1
-import onnx
 import os
 import itertools
 import multiprocessing as mp
 import threading
+import subprocess
+import tensorflow as tf
+import tensorflow.compat.v1 as tfv1
+import onnx
 from ...common.defs import Framework, get_opset_version, Tensor
 from ...common.utils import is_dir, is_file, get_version, extend_lists, multi_string_to_list
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
@@ -282,8 +283,7 @@ def parse_pb(graph, model_path, params, anchor_tensors):
                         except:
                             np_res = None
                         ret.append((mt[0], np_res))
-                    sess.close()
-
+                    # sess.close() # do not close for TF Fasterrcnn
                 tensors_list = [(k, v) for k, v in tensors.items()]
                 tensors_num = len(tensors_list)
                 threads_num = max(1, mp.cpu_count() - 1)
@@ -320,6 +320,14 @@ def convert_tf_to_graph(model_path, params):
     graph._attr['framework'] = Framework.TENSORFLOW
     graph._attr['output_tensor_names'] = params.get('output_tensor_names', [])
     graph._attr['is_keras_model'] = is_keras_model
+    if not is_dir(model_path):
+        try:
+            graph._attr['md5'] = subprocess.run(['md5sum %s' % model_path], shell=True,
+                                                capture_output=True, text=True).stdout.split(' ')[0]
+        except:
+            graph._attr['md5'] = None
+    else:
+        graph._attr['md5'] = None
 
     if not is_keras_model:
         if params.get('output_names', []):
