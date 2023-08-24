@@ -984,9 +984,12 @@ def convert_quantized_cat(
 def convert_reduce_op(g, x, onnx_op, dim=None, keepdim=None, dtype=None, allow_multi_dim_support=True):
     if dim is None:
         # all-reduce path
-        x_rank = helper._get_tensor_rank(x)
-        dim_list = list(range(x_rank))
-        return g.op(onnx_op, x, axes_i=dim_list, keepdims_i=0)
+        if g.opset < 18:
+            x_rank = helper._get_tensor_rank(x)
+            dim_list = list(range(x_rank))
+            return g.op(onnx_op, x, axes_i=dim_list, keepdims_i=0)
+        else:
+            return g.op(onnx_op, x, keepdims_i=0)
     else:
         # dim-reduce path
         desc = 'is' if allow_multi_dim_support else 'i'
@@ -1000,7 +1003,13 @@ def convert_reduce_op(g, x, onnx_op, dim=None, keepdim=None, dtype=None, allow_m
                 x = g.op('Cast', x, to_i=helper.scalar_type_to_onnx[dtype])
             else:
                 WARN('[Parser]: Meets non-constant dtype in convert_reduce_op; dtype will be ignored!')
-        return g.op(onnx_op, x, axes_i=dim_list, keepdims_i=keepdim)
+        if g.opset < 18:
+            return g.op(onnx_op, x, axes_i=dim_list, keepdims_i=keepdim)
+        else:
+            axes = g.op(
+                "Constant", value_t=torch.tensor(dim_list, dtype=torch.int64)
+            )
+            return g.op(onnx_op, x, axes, keepdims_i=keepdim)
 
 
 @quantized_args(True)
@@ -1358,6 +1367,44 @@ def convert_unflatten(g, self, dim, sizes):
         else:
             reshape_dim.append(shape)
     return helper._reshape_helper(g, self, g.op('Constant', value_t=torch.tensor(reshape_dim)))
+
+
+def convert_upsample_antialias(g, input, size, scales_h, scales_w, align_corners, interpolate_mode):
+    assert interpolate_mode != 'nearest', 'Only linear and cubic are supported for antialias in convert_upsample_antialias'
+    roi = helper._optional_input_placeholder_tensor(g)
+    dim = input.type().dim()
+    if helper._is_none(size):
+        sizes = helper._optional_input_placeholder_tensor(g)
+        assert scales_h is not None, 'scales must not be None as sizes is None in convert_upsample_antialias'
+        if scales_w is None:
+            scales = helper._interpolate_get_scales(g, scales_h, dim)
+        else:
+            scales_h = helper._parse_arg(scales_h, 'f')
+            scales_w = helper._parse_arg(scales_w, 'f')
+            assert scales_h is not None and scales_w is not None, 'Meets unsupported scales in convert_upsample_antialias'
+            scales = g.op('Constant', value_t=torch.tensor([1.0, 1.0, scales_h, scales_w], dtype=torch.float32))
+    else:
+        input_shape = helper._get_tensor_sizes(input)
+        const_hw = g.op('Constant', value_t=torch.tensor(input_shape[:2], dtype=torch.int64))
+        size = g.op('Cast', size, to_i=torch._C._onnx.TensorProtoDataType.INT64)
+        sizes = g.op('Concat', const_hw, size, axis_i=0)
+        scales = helper._optional_input_placeholder_tensor(g)
+    coordinate_transformation_mode = 'align_corners' if align_corners else 'half_pixel'  # asymmetric?
+    return g.op(CUSTOM_OPSET_18 + 'Resize', input, roi, scales, sizes,
+                coordinate_transformation_mode_s=coordinate_transformation_mode,
+                mode_s=interpolate_mode, antialias_i=1)
+
+
+@helper.parse_args('v', 'v', 'b', 'v', 'v')
+@quantized_args(True)
+def convert_upsample_bicubic2d_aa(g, input, size, align_corners, scales_h=None, scales_w=None):
+    return convert_upsample_antialias(g, input, size, scales_h, scales_w, align_corners, 'cubic')
+
+
+@helper.parse_args('v', 'v', 'b', 'v', 'v')
+@quantized_args(True)
+def convert_upsample_bilinear2d_aa(g, input, size, align_corners, scales_h=None, scales_w=None):
+    return convert_upsample_antialias(g, input, size, scales_h, scales_w, align_corners, 'linear')
 
 
 @helper.parse_args('v', 'v')
@@ -1807,6 +1854,8 @@ def convert_torch_to_onnx(model_path, params):
     if onnx_opset_version is not None:
         default_onnx_main_opset = None
         default_onnx_stable_opsets = []
+        from onnx.defs import onnx_opset_version
+        max_onnx_opset = onnx_opset_version()
         try:
             if torch_version_str.startswith('1.11'):
                 default_onnx_main_opset = helper._onnx_main_opset
@@ -1822,9 +1871,12 @@ def convert_torch_to_onnx(model_path, params):
         except Exception as e:
             DEBUG(
                 '[Parser]: Fail to get default onnx opset version because %s' % str(e))
-        if default_onnx_main_opset is None:
-            onnx_opset_version = None
-        elif onnx_opset_version >= default_onnx_main_opset or onnx_opset_version not in default_onnx_stable_opsets:
+        if len(default_onnx_stable_opsets) > 0:
+            onnx_opset_version = min(default_onnx_stable_opsets[-1], max_onnx_opset)
+            # FIXME, remove 17 opset after torch upgrade to 2.4
+            if torch_version < version_to_tuple('2.4'):
+                onnx_opset_version = min(onnx_opset_version, 17)
+        elif default_onnx_main_opset is not None:
             onnx_opset_version = default_onnx_main_opset
     if onnx_opset_version is None:
         onnx_opset_version = 9
@@ -1906,6 +1958,12 @@ def convert_torch_to_onnx(model_path, params):
         # The lowest version of onnx Col2Im is 18.
         torch.onnx.register_custom_op_symbolic(
             'aten::col2im', convert_col2im, onnx_opset_version)
+    # The lowest version of onnx Resize with antialias is 18.
+    # if onnx_opset_version < 18:  # FIXME: remove convert_upsample_xx after it's supported in torch
+    torch.onnx.register_custom_op_symbolic(
+        'aten::_upsample_bicubic2d_aa', convert_upsample_bicubic2d_aa, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'aten::_upsample_bilinear2d_aa', convert_upsample_bilinear2d_aa, onnx_opset_version)
     # if onnx_opset_version < 19:  # not yet supported in torch 2.1
     torch.onnx.register_custom_op_symbolic(
         'torchvision::deform_conv2d', convert_deform_conv, onnx_opset_version)
