@@ -244,6 +244,22 @@ def convert_gru_cell(g, input, hidden, w_ih, w_hh, b_ih, b_hh):
     return helper._squeeze_helper(g, h_out, [0])
 
 
+@helper.parse_args('v', 'f')
+@quantized_args(True, False)
+def convert_hardshrink(g, input, lambd):
+    # The output shape issue for scalar input is fixed in torch 2.0.1.
+    # Refer to https://github.com/pytorch/pytorch/pull/79695
+    # torch converts hard/soft shrink to some logical ops, which is not needed;
+    # convert to onnx Shrink directly.
+    return g.op('Shrink', input, lambd_f=lambd)
+
+
+@helper.parse_args('v', 'f')
+@quantized_args(True, False)
+def convert_softshrink(g, input, lambd):
+    return g.op('Shrink', input, lambd_f=lambd, bias_f=lambd)
+
+
 def convert_to_bool(g, input):
     input_dtype_str = input.type().scalarType()
     if input_dtype_str != 'Bool':
@@ -849,6 +865,8 @@ def convert_torch_to_onnx(model_path, params):
     torch.onnx.register_custom_op_symbolic(
         'aten::gru_cell', convert_gru_cell, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
+        'aten::hardshrink', convert_hardshrink, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
         'aten::linalg_norm', convert_linalg_norm, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::max_pool1d', convert_max_pool1d, onnx_opset_version)
@@ -866,6 +884,8 @@ def convert_torch_to_onnx(model_path, params):
         'aten::round', convert_round, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::size', convert_size, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'aten::softshrink', convert_softshrink, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::split', convert_split, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
