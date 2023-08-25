@@ -6,10 +6,10 @@ import copy
 import os
 import numpy as np
 import math
+import itertools
 import onnx
 import torch
 import torch.nn as nn
-import math
 import torch.onnx.symbolic_helper as helper
 from torch.onnx import symbolic_opset9 as opset9
 from multiprocessing import Process
@@ -666,6 +666,23 @@ def convert_size(g, input, dim=None):
     return size(g, input, dim)
 
 
+@helper.parse_args('v', 'v', 'i', 'i', 'i', 'i')
+@quantized_args(True, True)
+def convert_slice_scatter(g, input, src, dim=0, start=None, end=None, step=1):
+    input_shape = helper._get_tensor_sizes(input)
+    shape_at_dim = input_shape[dim]
+    dim = (dim + len(input_shape)) if dim < 0 else dim
+    start = 0 if start is None else ((start + shape_at_dim) if start < 0 else start)
+    end = shape_at_dim if end is None else min(end, shape_at_dim)
+    step = 1 if step is None else step
+    reshape_dim = [-1 if idx == dim else 1 for idx in range(len(input_shape))]
+    indices_val = np.reshape(list(range(start, end, step)), reshape_dim)
+    tile_reps = [1 if idx == dim else shape for idx, shape in enumerate(input_shape)]
+    indices_tensor = torch.tensor(np.tile(indices_val, tile_reps), dtype=torch.int32)
+    indices = g.op('Constant', value_t=indices_tensor)
+    return g.op('ScatterElements', input, indices, src, axis_i=dim)
+
+
 @helper.parse_args('v', 'v', 'i', 'i')
 @quantized_args(True, False, False, False)
 def convert_split(g, input, split_size_or_sizes, dim, _outputs=None):
@@ -898,6 +915,8 @@ def convert_torch_to_onnx(model_path, params):
         'aten::round', convert_round, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::size', convert_size, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'aten::slice_scatter', convert_slice_scatter, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::softshrink', convert_softshrink, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
