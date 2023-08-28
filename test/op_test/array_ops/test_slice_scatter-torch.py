@@ -27,16 +27,16 @@ def create_slice_scatter_model(model_path, dim=0, start=None, end=None, step=1):
 
 
 TEST_NAME = 'slice_scatter'
-input_shapes = [[8, 7], [8, 8, 5]]
-src_shapes = [[2, 7], [8, 2, 5]]
+input_shapes = [[8, 7], [8, 8, 5], [7]]
+src_shapes = [[2, 7], [8, 2, 5], [1]]
 
 for input_shape, src_shape in zip(input_shapes, src_shapes):
-    input_data = np.random.randint(-10, 20, input_shape).astype(np.float32)
-    src = np.random.ranf(src_shape).astype(np.float32)
+    input_data = np.random.randint(-10, 20, input_shape).astype(np.int32)
+    src = np.random.randint(-5, 15, src_shape).astype(np.float32)
     feed_dict = {'x': input_data, 'src': src}
     model_path = '-'.join([TEST_NAME, str(len(input_shape))]) + '.pt'
     # prepare model and input datas
-    if len(input_shape) == 2:
+    if len(input_shape) <= 2:
         create_slice_scatter_model(model_path, start=6)
     else:
         create_slice_scatter_model(model_path, dim=1, start=2, end=6, step=2)
