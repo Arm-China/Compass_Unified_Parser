@@ -666,9 +666,7 @@ def convert_size(g, input, dim=None):
     return size(g, input, dim)
 
 
-@helper.parse_args('v', 'v', 'i', 'i', 'i', 'i')
-@quantized_args(True, True)
-def convert_slice_scatter(g, input, src, dim=0, start=None, end=None, step=1):
+def convert_scatter_by_slice(g, input, src, dim=0, start=None, end=None, step=1):
     input_shape = helper._get_tensor_sizes(input)
     shape_at_dim = input_shape[dim]
     dim = (dim + len(input_shape)) if dim < 0 else dim
@@ -680,7 +678,26 @@ def convert_slice_scatter(g, input, src, dim=0, start=None, end=None, step=1):
     tile_reps = [1 if idx == dim else shape for idx, shape in enumerate(input_shape)]
     indices_tensor = torch.tensor(np.tile(indices_val, tile_reps), dtype=torch.int32)
     indices = g.op('Constant', value_t=indices_tensor)
+
+    # Cast src to the same dtype of input
+    input_dtype_str = input.type().scalarType()
+    src_dtype_str = src.type().scalarType()
+    if input_dtype_str != src_dtype_str:
+        src = g.op('Cast', src, to_i=helper.cast_pytorch_to_onnx[input_dtype_str])
     return g.op('ScatterElements', input, indices, src, axis_i=dim)
+
+
+@helper.parse_args('v', 'v', 'i', 'i')
+@quantized_args(True, True)
+def convert_select_scatter(g, input, src, dim, index):
+    indices = g.op('Unsqueeze', src, g.op('Constant', value_t=torch.tensor([dim], dtype=torch.int64)))
+    return convert_scatter_by_slice(g, input, indices, dim, start=index, end=index+1)
+
+
+@helper.parse_args('v', 'v', 'i', 'i', 'i', 'i')
+@quantized_args(True, True)
+def convert_slice_scatter(g, input, src, dim=0, start=None, end=None, step=1):
+    return convert_scatter_by_slice(g, input, src, dim, start, end, step)
 
 
 @helper.parse_args('v', 'v', 'i', 'i')
@@ -930,6 +947,8 @@ def convert_torch_to_onnx(model_path, params):
         'aten::mean', convert_reduce_mean, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::round', convert_round, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'aten::select_scatter', convert_select_scatter, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::size', convert_size, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
