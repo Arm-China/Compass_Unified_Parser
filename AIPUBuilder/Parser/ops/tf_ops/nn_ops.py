@@ -82,8 +82,11 @@ class TfBiasAddOp(LayoutConcernedOp, OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfBiasAddOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.nn.bias_add(
-            *inputs, data_format=self.data_format).numpy()
+        if self.data_format.startswith('NC'):
+            bias = np.reshape(inputs[1], [-1] + [1] * (len(inputs[0].shape) - 2))
+        else:
+            bias = inputs[1]
+        out_tensor = inputs[0] + bias
         self.set_out_tensor(out_tensor)
 
     @property
@@ -571,7 +574,7 @@ class TfFusedBatchNormV3Op(LayoutConcernedOp, OpHasVariableOutPorts, TfOp):
     @classmethod
     def attributes(cls):
         return {1: {'epsilon': {'type': AttrType.FLOAT, 'default': 1e-4},
-                    'is_training': {'type': AttrType.INT, 'default': 1},
+                    'is_training': {'type': AttrType.BOOL, 'default': True},
                     'exponential_avg_factor': {'type': AttrType.FLOAT, 'default': 1}
                     }
                 }
@@ -585,12 +588,26 @@ class TfFusedBatchNormV3Op(LayoutConcernedOp, OpHasVariableOutPorts, TfOp):
         super(TfFusedBatchNormV3Op, self).infer_shape()
         inputs = self.get_input_tensors()
         assert len(inputs) == 5, 'TfFusedBatchNormV3Op expects 5 inputs, but got %d.' % len(inputs)
-        out_list = tf.raw_ops.FusedBatchNormV3(x=inputs[0], scale=inputs[1], offset=inputs[2],
-                                               mean=inputs[3], variance=inputs[4],
-                                               epsilon=self.epsilon,
-                                               data_format=self.data_format,
-                                               is_training=self.is_training)
-        out_tensor_list = [o.numpy() for o in out_list]
+        if self.is_training:
+            out_list = tf.raw_ops.FusedBatchNormV3(x=inputs[0], scale=inputs[1], offset=inputs[2],
+                                                   mean=inputs[3], variance=inputs[4],
+                                                   epsilon=self.epsilon,
+                                                   data_format=self.data_format,
+                                                   is_training=self.is_training)
+            out_tensor_list = [o.numpy() for o in out_list]
+        else:
+            scale_type = inputs[1].dtype
+            scale_shape = inputs[1].shape
+            scale, offset, mean, variance = inputs[1:5]
+            if self.data_format.startswith('NC'):
+                spatial_dims = len(inputs[0].shape) - 2
+                scale = np.rehsape(scale, [-1] + [1] * spatial_dims)
+                offset = np.rehsape(offset, [-1] + [1] * spatial_dims)
+                mean = np.rehsape(mean, [-1] + [1] * spatial_dims)
+                variance = np.rehsape(variance, [-1] + [1] * spatial_dims)
+            y = (inputs[0] - mean) / np.sqrt(variance + self.epsilon) * scale + offset
+            random_out = np.random.ranf(scale_shape).astype(scale_type)
+            out_tensor_list = [y] + [random_out] * 5
         self.set_out_tensor(out_tensor_list)
 
     @property

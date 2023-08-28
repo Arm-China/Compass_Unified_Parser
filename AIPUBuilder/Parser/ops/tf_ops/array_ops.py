@@ -107,8 +107,7 @@ class TfConstOp(OpHasOneOutPort, ConstLikeOp, TfOp):
 
     def infer_shape(self):
         super(TfConstOp, self).infer_shape()
-        out_tensor = self.value.copy()
-        self.set_out_tensor(out_tensor)
+        self.set_out_tensor(self.value)
 
     @property
     def correspond_onnx_op(self):
