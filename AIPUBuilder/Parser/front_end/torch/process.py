@@ -690,6 +690,15 @@ def convert_split(g, input, split_size_or_sizes, dim, _outputs=None):
     return opset9.split(g, input, split_size_or_sizes, dim, _outputs)
 
 
+@helper.parse_args('v')
+@quantized_args(True)
+def convert_t(g, self):
+    rank = helper._get_tensor_rank(self)
+    if rank is None or rank < 2:
+        return g.op('Identity', self)
+    return g.op('Tranpose', self, perm_i=[1, 0])
+
+
 @helper.parse_args('v', 'is')
 @quantized_args(True, False)
 def convert_tile(g, input, dims):
@@ -848,6 +857,10 @@ def convert_torch_to_onnx(model_path, params):
             'aten::rsub', convert_rsub, onnx_opset_version)
         torch.onnx.register_custom_op_symbolic(
             'aten::sub', convert_sub, onnx_opset_version)
+        # The issue of transpose with 0d/1d input is fixed in torch 2.0.1.
+        # Refer to https://github.com/pytorch/pytorch/pull/86182
+        torch.onnx.register_custom_op_symbolic(
+            'aten::t', convert_t, onnx_opset_version)
     if torch_version < '2.1.0':
         # The issue of string padding is fixed in latest torch.
         # Refer to https://github.com/pytorch/pytorch/pull/89107
