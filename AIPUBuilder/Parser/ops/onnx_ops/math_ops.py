@@ -2090,7 +2090,7 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
                 original_out_size = self.sizes
                 adjusted_out_size = copy.deepcopy(original_out_size)
                 for axis in axes:
-                    scale_in_policy = min_max_fn(original_out_size[axis]/input_dim_np[axis], scale_in_policy)
+                    scale_in_policy = min_max_fn(original_out_size[axis] / input_dim_np[axis], scale_in_policy)
                 for axis in axes:
                     adjusted_out_size[axis] = int(ResizeOp.get_nearest_pixel(
                         'round_prefer_ceil', scale_in_policy * input_dim_np[axis]))
@@ -2127,7 +2127,7 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
                         func = ResizeOp.upsample_trilinear_antialias if len(
                             out_spatial_shape) == 3 else ResizeOp.upsample_bilinear_antialias
                         out_tensor = func(inputs[0], out_spatial_shape, spatial_scales, self.roi,
-                                          self.coordinate_transform_mode, self.extrapolation_value,
+                                          self.coordinate_transformation_mode, self.extrapolation_value,
                                           self.exclude_outside, is_nchw)
                     else:
                         out_tensor = ResizeOp.upsample_linear(inputs[0], out_spatial_shape, spatial_scales, self.roi,
