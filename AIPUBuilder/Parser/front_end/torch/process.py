@@ -696,7 +696,7 @@ def convert_t(g, self):
     rank = helper._get_tensor_rank(self)
     if rank is None or rank < 2:
         return g.op('Identity', self)
-    return g.op('Tranpose', self, perm_i=[1, 0])
+    return g.op('Transpose', self, perm_i=[1, 0])
 
 
 @helper.parse_args('v', 'is')
