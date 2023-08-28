@@ -686,8 +686,8 @@ def convert_slice_scatter(g, input, src, dim=0, start=None, end=None, step=1):
 @helper.parse_args('v', 'v', 'i', 'i')
 @quantized_args(True, False, False, False)
 def convert_split(g, input, split_size_or_sizes, dim, _outputs=None):
-    from torch.onnx.symbolic_opset11 import split
-    return opset9.split(g, input, split_size_or_sizes, dim, _outputs)
+    from torch.onnx.symbolic_opset13 import split
+    return split(g, input, split_size_or_sizes, dim, _outputs)
 
 
 @helper.parse_args('v')
@@ -838,8 +838,12 @@ def convert_torch_to_onnx(model_path, params):
             onnx_opset_version = default_onnx_main_opset
     if onnx_opset_version is None:
         onnx_opset_version = 9
-    DEBUG('[Parser]: Will convert to onnx opset version (%s)!' %
-          str(onnx_opset_version))
+    if onnx_opset_version < 16:
+        WARN('[Parser]: Default onnx opset version (%d) is lower than 16, which may cause some ops failed to convert!' %
+             onnx_opset_version)
+    else:
+        DEBUG('[Parser]: Will convert to onnx opset version (%d)!' %
+              onnx_opset_version)
 
     # Convert torch op to non-custom onnx op
     if torch_version < '2.0.1':
