@@ -137,6 +137,26 @@ def convert_constant_chunk(g, input, chunks, dim):
     return Prim.ConstantChunk(g, input, chunks, dim)
 
 
+@helper.parse_args('v', 'is', 'is', 'is', 'is', 'is')
+@quantized_args(True)
+def convert_col2im(g, input, output_size, kernel_size, dilation, padding, stride):
+    input_shape = helper._get_tensor_sizes(input)
+    need_reshape = False
+    if len(input_shape) == 2:
+        need_reshape = True
+        # reshape unbatched to batch=1
+        input = helper._reshape_helper(g, input, [1] + input_shape)
+    output_size = g.op('Constant', value_t=torch.tensor(output_size, dtype=torch.int64))
+    kernel_size = g.op('Constant', value_t=torch.tensor(kernel_size, dtype=torch.int64))
+    pads = np.tile(padding, 2)
+    out = g.op('opset_18::Col2Im', input, output_size, kernel_size,
+               dilations_i=dilation, pads_i=pads, strides_i=stride)
+    if need_reshape:
+        # reshape back to unbatched
+        out = helper._squeeze_helper(g, out, [0])
+    return out
+
+
 @helper.parse_args('v', 'v', 'v', 'is', 'v', 'is', 'i')
 def convert_conv(g, input, weight, bias, stride, padding, dilation, groups):
     # Support padding as string. Refer to https://github.com/pytorch/pytorch/pull/89107
@@ -909,6 +929,9 @@ def convert_torch_to_onnx(model_path, params):
             'aten::bitwise_or', convert_bitwise_or, onnx_opset_version)
         torch.onnx.register_custom_op_symbolic(
             'aten::bitwise_xor', convert_bitwise_xor, onnx_opset_version)
+        # The lowest version of onnx Col2Im is 18.
+        torch.onnx.register_custom_op_symbolic(
+            'aten::col2im', convert_col2im, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::avg_pool1d', convert_avg_pool1d, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
