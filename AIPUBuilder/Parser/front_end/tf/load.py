@@ -462,7 +462,7 @@ def convert_tf_to_graph(model_path, params):
             if not graph._attr['output_names']:
                 # Try to find out output nodes
                 output_names = [n['name']
-                                for n in nodes if n['name'] not in nodes_inputs]
+                                for n in nodes if (n['name'] not in nodes_inputs and n.get('output', []))]
                 graph._attr['output_names'] = output_names
             else:
                 for out_name in graph._attr['output_names']:

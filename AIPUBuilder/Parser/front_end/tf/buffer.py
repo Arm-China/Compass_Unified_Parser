@@ -108,10 +108,13 @@ def parse_tensor(tensor_pb):
     else:
         value = np.array(tf_types_convert_mapping[dtype][2](
             tensor_pb), dtype=tf_types_convert_mapping[dtype][1])
-        try:
-            value = np.broadcast_to(value, shape=shape).copy()
-        except:
-            value = np.reshape(value, shape)
+        if len(value) == 0:
+            value = np.zeros(shape, value.dtype)
+        else:
+            try:
+                value = np.broadcast_to(value, shape=shape).copy()
+            except:
+                value = np.reshape(value, shape)
         return value
 
 
@@ -143,8 +146,8 @@ def parse_node_attr(node_attr):
         except Exception as e:
             WARN('[Parser]: Reading TF attr (%s) meets error (%s) in parse_node_attr!' % (
                 k, str(e)))
-        DEBUG('[Parser]: Reading TF node info: key: (%s) ,value: (%s)!' %
-              (str(k), str(value)))
+        # DEBUG('[Parser]: Reading TF node info: key: (%s) ,value: (%s)!' %
+        #       (str(k), str(value)))
     return ret
 
 
