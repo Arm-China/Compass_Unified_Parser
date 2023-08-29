@@ -507,7 +507,8 @@ def merge_q_unary(graph, op_list):
     matched = False
     matches = matched_patterns(graph,
                                nodes=[
-                                   ('dequant', {'op': 'DequantizeLinear', 'unique': False}),
+                                   ('dequant', {
+                                    'op': 'DequantizeLinear', 'unique': False}),
                                    ('float_op', {'op': op_list}),
                                    ('quant', {'op': 'QuantizeLinear'}),
                                ],
@@ -520,11 +521,13 @@ def merge_q_unary(graph, op_list):
         obj_dict = {n: NodeWrap(graph, m[n])['object'] for n in names}
         if any(v is None for v in obj_dict.values()):
             error_node = [n for n in obj_dict if obj_dict[n] is None][0]
-            ERROR('[Parser]: Meets invalid Op(%s) in merge_q_unary!' % error_node)
+            ERROR('[Parser]: Meets invalid Op(%s) in merge_q_unary!' %
+                  error_node)
             continue
         dequant_in_edges = graph.sorted_in_edges(m['dequant'], data=True)
         if len(dequant_in_edges) not in (2, 3):
-            ERROR('[Parser]: Meets invalid Dequantize Op(%s) in merge_q_unary!' % m['dequant'])
+            ERROR(
+                '[Parser]: Meets invalid Dequantize Op(%s) in merge_q_unary!' % m['dequant'])
             continue
         if any(e[2]['tensor'].value is None for e in dequant_in_edges[1:]) \
                 or any(not e[2]['tensor'].is_const for e in dequant_in_edges[1:]):
@@ -532,7 +535,8 @@ def merge_q_unary(graph, op_list):
 
         op_in_edges = graph.sorted_in_edges(m['float_op'], data=True)
         if len(op_in_edges) < 1:
-            ERROR('[Parser]: Meets invalid Op(%s) in merge_q_unary!' % m['float_op'])
+            ERROR('[Parser]: Meets invalid Op(%s) in merge_q_unary!' %
+                  m['float_op'])
             continue
         op_out_edges = graph.sorted_out_edges(m['float_op'], data=True)
         if len(op_out_edges) != 1:
@@ -540,16 +544,44 @@ def merge_q_unary(graph, op_list):
 
         quant_in_edges = graph.sorted_in_edges(m['quant'], data=True)
         if len(quant_in_edges) not in (2, 3):
-            ERROR('[Parser]: Meets invalid Quantize Op(%s) in merge_q_unary!' % m['quant'])
+            ERROR(
+                '[Parser]: Meets invalid Quantize Op(%s) in merge_q_unary!' % m['quant'])
             continue
         if any(e[2]['tensor'].value is None for e in quant_in_edges[1:]) \
                 or any(not e[2]['tensor'].is_const for e in quant_in_edges[1:]):
             continue
+        if obj_dict['float_op'].type == 'Clip':
+            if len(op_in_edges) != 3\
+                    or op_in_edges[1][2]['tensor'] is None \
+                    or not op_in_edges[1][2]['tensor'].is_const\
+                    or op_in_edges[2][2]['tensor'] is None \
+                    or not op_in_edges[2][2]['tensor'].is_const:
+                WARN(
+                    '[Parser]: Meets invaild clip value for Op (%s) in merge_q_unary!' % m['float_op'])
+                continue
 
         matched = True
 
         x_scale, x_zp = obj_dict['dequant'].x_scale, obj_dict['dequant'].x_zero_point
         y_scale, y_zp = obj_dict['quant'].y_scale, obj_dict['quant'].y_zero_point
+
+        if obj_dict['float_op'].type == 'Clip':
+            graph.remove_edges_from(op_in_edges[1:])
+            clip_min = op_in_edges[1][2]['tensor'].value
+            clip_max = op_in_edges[2][2]['tensor'].value
+
+            q_min = np.iinfo(x_zp.dtype).min
+            q_max = np.iinfo(x_zp.dtype).max
+
+            q_clip_min = np.array(
+                np.clip(clip_min/x_scale+x_zp, q_min, q_max)).astype(x_zp.dtype)
+            q_clip_max = np.array(
+                np.clip(clip_max/x_scale+x_zp, q_min, q_max)).astype(x_zp.dtype)
+
+            insert_constant(graph, m['float_op'] + '_q_clip_min',
+                            q_clip_min, m['float_op'], in_port=1)
+            insert_constant(graph, m['float_op'] + '_q_clip_max',
+                            q_clip_max, m['float_op'], in_port=2)
 
         src, _, in_attr = dequant_in_edges[0]
         new_in_attr = copy.deepcopy(in_attr)
