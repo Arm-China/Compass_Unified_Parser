@@ -6,20 +6,13 @@ import re
 import numpy as np
 import onnx
 import torch
-import tensorflow as tf
 from collections import OrderedDict
 from .common.utils import is_file, is_dir, multi_string_to_list, list_string_to_list
 from .logger import *
-from .front_end.onnx.process import process_onnx
 from .front_end.onnx.passes.middle_passes import middle_passes, convert_onnx_version
 from .front_end.onnx.passes.back_passes import back_passes, trim_weights
 from .front_end.onnx.passes.transform import transform_to_nhwc
-from .front_end.lite.process import process_tflite
-from .front_end.caffe.process import process_caffe
 from .front_end.onnx.passes.common_passes import remove_useless_op
-from .front_end.tf.process import process_tf
-from .front_end.tf2.process import process_tf2
-from .front_end.torch.process import convert_torch_to_onnx
 from .graph.graph_algo import infer, has_path
 from .graph.pattern_match import matched_patterns, single_node_matcher
 from .writer import serialize
@@ -113,6 +106,7 @@ def univ_parser(params):
         if (is_file(model_path) or is_dir(model_path)) and is_dir(output_dir):
             graph = None
 
+            import tensorflow as tf
             tf.config.set_visible_devices([], 'GPU')
             if int(tf.__version__.split('.')[0]) < 2:
                 WARN('Require tensorflow version==2.6 but now is in version %s!' % str(tf.__version__))
@@ -120,22 +114,28 @@ def univ_parser(params):
             try:
                 # Convert torch model to onnx before processing
                 if model_type == 'torch':
+                    from .front_end.torch.process import convert_torch_to_onnx
                     model_path, params = convert_torch_to_onnx(model_path, params)
                     model_type = 'onnx'
 
                 '''The models under different frameworks are parsed and finally converted into representations under the onnx framework.'''
                 if model_type == 'onnx':
+                    from .front_end.onnx.process import process_onnx
                     graph = process_onnx(model_path, params)
                 elif model_type == 'tflite':
+                    from .front_end.lite.process import process_tflite
                     graph = process_tflite(model_path, params)
                 elif model_type == 'caffe':
+                    from .front_end.caffe.process import process_caffe
                     graph = process_caffe(model_path, params)
                 elif model_type in ('tf', 'tensorflow'):
                     is_keras_model = model_path.endswith('.h5') or model_path.endswith('.hdf5') or model_path.endswith(
                         '.keras') or is_dir(model_path)
                     if is_keras_model:
+                        from .front_end.tf2.process import process_tf2
                         graph = process_tf2(model_path, params)
                     else:
+                        from .front_end.tf.process import process_tf
                         graph = process_tf(model_path, params)
                 else:
                     ERROR('[Parser]: Framework %s is not supported!' %
