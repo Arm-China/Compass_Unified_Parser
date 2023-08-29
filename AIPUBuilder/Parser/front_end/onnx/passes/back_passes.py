@@ -3840,12 +3840,12 @@ def detection_post_process(graph, params):
                     graph._attr['output_names'] = [final_region_fuse, nms]
                 else:
                     ERROR(
-                        '[Parser]: Yolo3-tiny post-process cannot proceed in detection_post_process!')
+                        '[Parser]: %s post-process cannot proceed in detection_post_process!' % graph.name)
             else:
                 ERROR(
-                    '[Parser]: Yolo3-tiny preprocess output shape error in detection_post_process!')
+                    '[Parser]: %s post-process output shape error in detection_post_process!' % graph.name)
         else:
-            ERROR('[Parser]: Invalid outputs number (%d) before post process in detection_post_process!' %
+            ERROR('[Parser]: Invalid outputs number (%d) before post-process in detection_post_process!' %
                   len(graph._attr['output_names']))
 
     elif params.get('detection_postprocess', '').upper() == 'CAFFE_FASTERRCNN':
