@@ -387,19 +387,7 @@ def convert_avg_pool3d(g, inp, kernel_size, stride, padding, ceil_mode, count_in
     return convert_avg_pool(g, inp, kernel_size, stride, padding, ceil_mode, count_include_pad, divisor_override, 3)
 
 
-@helper.parse_args('v', 'v', 'v', 'v', 'v', 'f', 'v', 'v')
-def convert_quant_batch_norm_relu(
-    g,
-    input,
-    weight,
-    bias,
-    running_mean,
-    running_var,
-    eps,
-    s,
-    zp,
-):
-    from torch.onnx.symbolic_opset9 import relu
+def convert_qat_bn(g, input, weight, bias, running_mean, running_var, eps, s, zp):
     input, _, _, _ = helper.dequantize_helper(g, input)
     weight, bias, running_mean, running_var = helper._batchnorm_helper(
         g, input, weight, bias, running_mean, running_var)
@@ -413,36 +401,38 @@ def convert_quant_batch_norm_relu(
         epsilon_f=eps,
         outputs=1,
     )
+    return out
+
+
+@helper.parse_args('v', 'v', 'v', 'v', 'v', 'f', 'v', 'v')
+def convert_quant_batch_norm_relu_3d(g, input, weight, bias, running_mean, running_var, eps, s, zp,):
+    from torch.onnx.symbolic_opset9 import relu
+    out = convert_qat_bn(g, input, weight, bias,
+                         running_mean, running_var, eps, s, zp)
     out = relu(g, out)
     return helper.quantize_helper(g, out, s, zp)
 
 
 @helper.parse_args('v', 'v', 'v', 'v', 'v', 'f', 'v', 'v')
-def convert_quant_batch_norm(
-    g,
-    input,
-    weight,
-    bias,
-    running_mean,
-    running_var,
-    eps,
-    s,
-    zp,
-):
-    input, _, _, _ = helper.dequantize_helper(g, input)
-    weight, bias, running_mean, running_var = helper._batchnorm_helper(
-        g, input, weight, bias, running_mean, running_var
-    )
-    out = g.op(
-        'BatchNormalization',
-        input,
-        weight,
-        bias,
-        running_mean,
-        running_var,
-        epsilon_f=eps,
-        outputs=1,
-    )
+def convert_quant_batch_norm_relu(g, input, weight, bias, running_mean, running_var, eps, s, zp,):
+    from torch.onnx.symbolic_opset9 import relu
+    out = convert_qat_bn(g, input, weight, bias,
+                         running_mean, running_var, eps, s, zp)
+    out = relu(g, out)
+    return helper.quantize_helper(g, out, s, zp)
+
+
+@helper.parse_args('v', 'v', 'v', 'v', 'v', 'f', 'v', 'v')
+def convert_quant_batch_norm(g, input, weight, bias, running_mean, running_var, eps, s, zp,):
+    out = convert_qat_bn(g, input, weight, bias,
+                         running_mean, running_var, eps, s, zp)
+    return helper.quantize_helper(g, out, s, zp)
+
+
+@helper.parse_args('v', 'v', 'v', 'v', 'v', 'f', 'v', 'v')
+def convert_quant_batch_norm3d(g, input, weight, bias, running_mean, running_var, eps, s, zp,):
+    out = convert_qat_bn(g, input, weight, bias,
+                         running_mean, running_var, eps, s, zp)
     return helper.quantize_helper(g, out, s, zp)
 
 
@@ -1001,7 +991,11 @@ def convert_torch_to_onnx(model_path, params):
     torch.onnx.register_custom_op_symbolic(
         'quantized::batch_norm2d', convert_quant_batch_norm, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
+        'quantized::batch_norm3d', convert_quant_batch_norm3d, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
         'quantized::batch_norm2d_relu', convert_quant_batch_norm_relu, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'quantized::batch_norm3d_relu', convert_quant_batch_norm_relu_3d, onnx_opset_version)
 
     if is_torch_script_model:
         # Only convert prim::DictConstruct to Identity when it's output node.
