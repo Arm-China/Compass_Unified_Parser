@@ -261,7 +261,6 @@ def convert_onnx_to_graph(model_path, params):
                         if single_input['name'] in params['input_npy']:
                             input_tensor = params['input_npy'][single_input['name']]
                         else:
-                            input_shape = [1 if s == 0 else s for s in input_shape]
                             input_type = np.dtype(
                                 single_input['type']['tensor_type']['elem_type'])
                             if input_type.name in ('int32', 'int64'):
