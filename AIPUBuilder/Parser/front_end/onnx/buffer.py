@@ -72,7 +72,10 @@ def get_tensor_shape_content(tensor_shape_proto):
         dim_value = d.dim_value
         if dim_value == 0:
             try:
-                dim_value = int(getattr(d, 'dim_param', '0'))
+                if 'batch' in getattr(d, 'dim_param', ''):
+                    dim_value = 1
+                else:
+                    dim_value = int(getattr(d, 'dim_param', ''))
             except:
                 pass
         shape_list.append(dim_value)
