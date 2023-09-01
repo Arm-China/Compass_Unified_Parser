@@ -30,5 +30,8 @@ feed_dict = {'x': x_data}
 for groups in (1, 2, 7):
     model_path = '-'.join([TEST_NAME, str(groups)]) + '.pt'
     create_channel_shuffle_model(model_path, groups)
-    exit_status = run_parser(model_path, feed_dict)
+    unexpected_keywords = []
+    if groups == 1:
+        unexpected_keywords = ['ChannelShuffle']
+    exit_status = run_parser(model_path, feed_dict, unexpected_keywords=unexpected_keywords)
     assert exit_status
