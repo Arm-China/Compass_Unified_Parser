@@ -120,6 +120,9 @@ def remove_useless_op(graph, op_type_list):
                     removing_nodes.append(node_name)
                 else:
                     continue
+            elif op_type == 'ChannelShuffle':
+                if node_obj.group == 1 and node_obj.splits == 1:
+                    removing_nodes.append(node_name)
             elif op_type == 'Concat':
                 in_edges = graph.sorted_in_edges(node_name)
                 if len(in_edges) <= 1:

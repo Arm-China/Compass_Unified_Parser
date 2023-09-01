@@ -696,10 +696,12 @@ class ArmChannelShuffleOp(LayoutConcernedOp, OpHasMultipleOutPorts, ArmOp):
     def infer_shape(self):
         super(ArmChannelShuffleOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        inp = np.transpose(inputs[0], (0, 3, 1, 2))
+        max_dim = len(inputs[0].shape) - 1
+        pre_perm = [0, max_dim] + list(range(1, max_dim))
+        inp = np.transpose(inputs[0], pre_perm)
         out_tensor = torch.nn.functional.channel_shuffle(
             torch.from_numpy(inp), self.group).numpy()
-        out_tensor = np.transpose(out_tensor, (0, 2, 3, 1))
+        out_tensor = np.transpose(out_tensor, Op.cal_inverse_perm(pre_perm))
         out_tensors = np.split(out_tensor, self.splits, axis=-1)
         self.set_out_tensor(out_tensors)
 

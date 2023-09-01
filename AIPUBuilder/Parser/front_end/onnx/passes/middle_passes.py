@@ -8722,7 +8722,7 @@ def middle_passes(graph, params):
     convert_1d_pooling(graph)
 
     decompose_pack(graph)
-    remove_useless_op(graph, ['Concat', 'Split'])
+    remove_useless_op(graph, ['ChannelShuffle', 'Concat', 'Split'])
     rearrange_pack_concat(graph)
     convert_min_max_to_clip(graph)
     remove_redundant_reshape(graph)

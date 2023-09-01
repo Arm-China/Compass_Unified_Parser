@@ -144,12 +144,17 @@ class ChannelShuffleOp(LayoutConcernedOp, OpHasMultipleOutPorts, CommonOp):
     def infer_shape(self):
         super(ChannelShuffleOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        inp = np.transpose(inputs[0], (0, 3, 1, 2)
-                           ) if self.data_format == 'NHWC' else inputs[0]
+        pre_perm = None
+        if self.data_format == 'NHWC':
+            max_dim = len(inputs[0].shape) - 1
+            pre_perm = [0, max_dim] + list(range(1, max_dim))
+            inp = np.transpose(inputs[0], pre_perm)
+        else:
+            inp = inputs[0]
         out_tensor = torch.nn.functional.channel_shuffle(
             torch.from_numpy(inp), self.group).numpy()
-        if self.data_format == 'NHWC':
-            out_tensor = np.transpose(out_tensor, (0, 2, 3, 1))
+        if pre_perm is not None:
+            out_tensor = np.transpose(out_tensor, Op.cal_inverse_perm(pre_perm))
             out_tensors = np.split(out_tensor, self.splits, axis=-1)
         else:
             out_tensors = np.split(out_tensor, self.splits, axis=1)
