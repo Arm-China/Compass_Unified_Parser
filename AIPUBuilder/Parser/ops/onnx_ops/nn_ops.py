@@ -473,7 +473,7 @@ class DeformConvOp(BaseConvOp, OnnxOp):
         assert self.check_required(), 'DeformConvOp is missing a required parameter.'
 
     @staticmethod
-    def gen_offset_base(weights_shape, offset_shape, kernel_shape, strides, dilations, pads):
+    def gen_offset_base(weights_shape, offset_shape, kernel_shape, strides, dilations, pads, offset_group):
         '''Calculate coordinates of sampling points within kernel.
         '''
         n = offset_shape[0]
@@ -498,7 +498,8 @@ class DeformConvOp(BaseConvOp, OnnxOp):
         # reshape from [oh, ow, kh, kw, 2] to [oh, ow, kh*kw, 2]
         kernel_offset = np.reshape(kernel_offset, [oh, ow, kh*kw, 2])
         kernel_offset = np.transpose(kernel_offset, [2, 3, 0, 1])  # shape: [kh*kw, 2, oh, ow]
-        kernel_offset = np.tile(kernel_offset, [n, 1, 1, 1])  # shape: [n*kh*kw, 2, oh, ow]
+        kernel_offset = np.tile(kernel_offset, [int(n*offset_group), 1, 1, 1]
+                                )  # shape: [n*offset_group*kh*kw, 2, oh, ow]
 
         return kernel_offset
 
