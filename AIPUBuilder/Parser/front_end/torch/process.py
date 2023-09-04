@@ -909,6 +909,10 @@ def convert_torch_to_onnx(model_path, params):
         torch.onnx.register_custom_op_symbolic(
             'aten::t', convert_t, onnx_opset_version)
     if torch_version < '2.1.0':
+        # The issue of training is fixed in latest torch.
+        # Refer to https://github.com/pytorch/pytorch/pull/86745
+        if not hasattr(model, 'training'):
+            model.training = False
         # The issue of string padding is fixed in latest torch.
         # Refer to https://github.com/pytorch/pytorch/pull/89107
         for conv_op in ('aten::conv1d', 'aten::conv2d', 'aten::conv3d'):
