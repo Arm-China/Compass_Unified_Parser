@@ -1677,8 +1677,11 @@ class BaseActivationOp(OpHasOneOutPort):
         elif act == 'RELU6':
             ret = torch.nn.functional.relu6(torch_tensor, inplace=in_place).numpy()
         elif act == 'LEAKYRELU':
-            ret = torch.nn.functional.leaky_relu(torch_tensor, negative_slope=float(
-                self.negative_slope), inplace=in_place).numpy()
+            # torch.nn.functional.leaky_relu only implemented for float/double in cpu
+            float_torch_tensor = torch.from_numpy(np.array(tensor, dtype=np.float32))
+            ret = torch.nn.functional.leaky_relu(float_torch_tensor,
+                                                 negative_slope=float(self.negative_slope),
+                                                 inplace=in_place).numpy().astype(tensor.dtype)
         elif act == 'PRELU':
             if weights is None:
                 weights = self.negative_slope
