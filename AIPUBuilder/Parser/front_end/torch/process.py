@@ -426,7 +426,7 @@ def convert_quant_batch_norm_relu_3d(g, input, weight, bias, running_mean, runni
     out = convert_qat_bn(g, input, weight, bias,
                          running_mean, running_var, eps, s, zp)
     out = relu(g, out)
-    return helper.quantize_helper(g, out, s, zp)
+    return quantize_helper(g, out, s, zp)
 
 
 @helper.parse_args('v', 'v', 'v', 'v', 'v', 'f', 'v', 'v')
@@ -435,21 +435,21 @@ def convert_quant_batch_norm_relu(g, input, weight, bias, running_mean, running_
     out = convert_qat_bn(g, input, weight, bias,
                          running_mean, running_var, eps, s, zp)
     out = relu(g, out)
-    return helper.quantize_helper(g, out, s, zp)
+    return quantize_helper(g, out, s, zp)
 
 
 @helper.parse_args('v', 'v', 'v', 'v', 'v', 'f', 'v', 'v')
 def convert_quant_batch_norm(g, input, weight, bias, running_mean, running_var, eps, s, zp,):
     out = convert_qat_bn(g, input, weight, bias,
                          running_mean, running_var, eps, s, zp)
-    return helper.quantize_helper(g, out, s, zp)
+    return quantize_helper(g, out, s, zp)
 
 
 @helper.parse_args('v', 'v', 'v', 'v', 'v', 'f', 'v', 'v')
 def convert_quant_batch_norm3d(g, input, weight, bias, running_mean, running_var, eps, s, zp,):
     out = convert_qat_bn(g, input, weight, bias,
                          running_mean, running_var, eps, s, zp)
-    return helper.quantize_helper(g, out, s, zp)
+    return quantize_helper(g, out, s, zp)
 
 
 @quantized_args(True, False, False, False, False, False, False)
@@ -769,6 +769,15 @@ def convert_view(g, self, shape):
     return reshape(g, self, shape)
 
 
+def convert_quantize_per_tensor(g, input, scale, zero_point, dtype):
+    dtype = helper._get_const(dtype, 'i', 'dtype')
+    zero_point = g.op(
+        'Cast', zero_point, to_i=helper.scalar_type_to_onnx[dtype]
+    )
+    scale = g.op('Cast', scale, to_i=torch._C._onnx.TensorProtoDataType.FLOAT)
+    return quantize_helper(g, input, scale, zero_point)
+
+
 @quantized_args(True, False)
 @helper.parse_args('v', 'b')
 def convert_quantized_relu6(g, x, inplace):
@@ -1019,6 +1028,8 @@ def convert_torch_to_onnx(model_path, params):
         'quantized::batch_norm2d_relu', convert_quant_batch_norm_relu, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'quantized::batch_norm3d_relu', convert_quant_batch_norm_relu_3d, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'aten::quantize_per_tensor', convert_quantize_per_tensor, onnx_opset_version)
 
     if is_torch_script_model:
         # Only convert prim::DictConstruct to Identity when it's output node.

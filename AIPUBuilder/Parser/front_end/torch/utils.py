@@ -36,11 +36,15 @@ def quantize_helper(
     if scale.type().scalarType() != 'Float':
         scale = g.op(
             'Cast', scale, to_i=torch._C._onnx.TensorProtoDataType.FLOAT)
+    # TODO: In order to ensure the similarity, we keep the dtype of zero_point as int32 in torch model.
+    # Prefer using torch’s quantize_helper instead of redefinded function quantize_helper, use it if necessary.
 
     assert zero_point is not None
-    if zero_point.type().scalarType() not in ('Byte', 'Char'):
-        zero_point = g.op('Cast', zero_point,
-                          to_i=torch._C._onnx.TensorProtoDataType.UINT8)
+    zp_scalar_type = zero_point.type().scalarType()
+    if zp_scalar_type not in ('Byte', 'Char'):
+        to_i = helper.cast_pytorch_to_onnx[zp_scalar_type]
+        zero_point = g.op('Cast', zero_point, to_i=to_i)
+
     output = g.op(
         'QuantizeLinear',
         tensor,
@@ -109,13 +113,15 @@ def quantize_helper_multi(
 
 
 def get_onnx_pool_output_shape(input_size, kernel_size, pad_head, pad_tail, stride, dilation=1):
-    output_size = int(np.ceil((input_size + pad_head + pad_tail - dilation * (kernel_size - 1) - 1) / stride)) + 1
+    output_size = int(np.ceil((input_size + pad_head + pad_tail -
+                      dilation * (kernel_size - 1) - 1) / stride)) + 1
     return output_size
 
 
 def get_torch_pool_output_shape(input_size, kernel_size, pad_head, pad_tail, stride, dilation=1):
     extra = (stride - 1)
-    output_size = int((input_size + pad_head + pad_tail - dilation * (kernel_size - 1) - 1 + extra) / stride) + 1
+    output_size = int((input_size + pad_head + pad_tail -
+                      dilation * (kernel_size - 1) - 1 + extra) / stride) + 1
     if (output_size - 1) * stride >= (input_size + pad_head):
         output_size = output_size - 1
     return output_size
@@ -130,7 +136,8 @@ def get_tuple_from_tensor_type(torch_type, tensor_list, start_index=0):
     if isinstance(torch_type, torch._C.TupleType):
         nested_tensors = ()
         for nested_type in torch_type.elements():
-            out_tensors, index = get_tuple_from_tensor_type(nested_type, tensor_list, index)
+            out_tensors, index = get_tuple_from_tensor_type(
+                nested_type, tensor_list, index)
             nested_tensors += out_tensors
         tensors += (nested_tensors, )
     elif isinstance(torch_type, torch._C.ListType):
@@ -141,7 +148,8 @@ def get_tuple_from_tensor_type(torch_type, tensor_list, start_index=0):
             index = len(tensor_list)
         tensors += (nested_tensors, )
     elif isinstance(torch_type, torch._C.TensorType):
-        assert len(tensor_list) > index, 'Meets invalid tensors in get_tuple_from_tensor_type!'
+        assert len(
+            tensor_list) > index, 'Meets invalid tensors in get_tuple_from_tensor_type!'
         tensors += (tensor_list[index], )
         index += 1
     else:  # self(the class of the model)
