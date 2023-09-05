@@ -2081,7 +2081,8 @@ def convert_dequantizelinear(graph):
             continue
         scale, _, scale_in_attr = dequant_in_edges[1]
         zp, _, zp_in_attr = dequant_in_edges[2]
-        if scale_in_attr['tensor'].is_const and zp_in_attr['tensor'].is_const:
+        if graph._attr.get('quantize', False) \
+                and scale_in_attr['tensor'].is_const and zp_in_attr['tensor'].is_const:
             continue
 
         input_shapes = dequant_obj.get_input_shapes()
@@ -2124,7 +2125,7 @@ def convert_dequantizelinear(graph):
         mul_attr.update({'opset_version': 13})
         NodeWrap(graph, dequant).replace_obj('Mul', mul_attr)
 
-        insert_cast(graph, sub, dequant, 'float32')
+        insert_cast(graph, sub, dequant, 'float32', sub_out_attr)
 
         if len(input_shapes[1]) == 1 and dequant_axis != len(input_shapes[0]) - 1:
             dim = [1 if idx != dequant_axis else axis_dim for idx in range(
@@ -2167,8 +2168,8 @@ def convert_quantizelinear(graph):
             continue
         zp_dtype = zp_in_attr['tensor'].value.dtype
         zp_value = zp_in_attr['tensor'].value
-        if scale_in_attr['tensor'].is_const and zp_in_attr['tensor'].is_const:
-            if graph._attr.get('quantize', False):
+        if graph._attr.get('quantize', False):
+            if scale_in_attr['tensor'].is_const and zp_in_attr['tensor'].is_const:
                 for _, dst, out_attr in quant_out_edges:
                     if out_attr['tensor'] is None:
                         out_attr['tensor'] = Tensor()
@@ -2187,7 +2188,7 @@ def convert_quantizelinear(graph):
                 'Div', {'name': div, 'opset_version': 13})
             # Insert cast before quant if input dtype is not float32
             if inp_in_attr['tensor'].value.dtype != 'float32':
-                insert_cast(graph, inp, div, 'float32')
+                insert_cast(graph, inp, div, 'float32', div_in_attr)
 
             # For (x / y_scale), it's rounding to nearest ties to even
             round_div = get_valid_node_name(graph, quant + '_round')
@@ -2211,7 +2212,7 @@ def convert_quantizelinear(graph):
                        for idx in range(len(input_shapes[0]))]
                 insert_reshape(graph, scale, div, div_in_attr, dim)
                 add_operand = insert_reshape(graph, zp, add, add_in_attr, dim)
-            insert_cast(graph, add_operand, add, 'float32')
+            insert_cast(graph, add_operand, add, 'float32', add_in_attr)
 
             # Insert clip and cast after quant
             clip = get_valid_node_name(graph, quant + '_clip')
