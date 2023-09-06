@@ -847,18 +847,13 @@ def convert_gather_to_slice(graph):
                     and input_shapes[0] is not None \
                     and len(in_consts) == 1 \
                     and in_consts[0][2] is not None \
-                    and np.ndim(in_consts[0][2]) == 0 \
+                    and np.ndim(in_consts[0][2]) in (0, 1) \
                     and in_consts[0][2].size == 1:
                 graph.remove_edges_from(in_edges[1:])
                 in_shape = input_shapes[0]
-                indices = in_consts[0][2]
+                indices_rank = np.ndim(in_consts[0][2])
+                indices = in_consts[0][2].item()
                 indices = in_shape[gather_obj.axis] + indices if indices < 0 else indices
-
-                reshape = get_valid_node_name(graph, gather + '_post_reshape')
-                for _, dst, out_attr in graph.sorted_out_edges(gather, data=True):
-                    graph.remove_edge(gather, dst)
-                    graph.add_edge(reshape, dst, **out_attr)
-                graph.add_edge(gather, reshape)
 
                 starts = [0] * len(in_shape)
                 ends = copy.deepcopy(in_shape)
@@ -869,19 +864,14 @@ def convert_gather_to_slice(graph):
                 slice_attr.update(
                     {'name': gather, 'opset_version': 1, 'axes': axes, 'starts': starts, 'ends': ends})
                 NodeWrap(graph, gather).replace_obj('Slice', slice_attr)
-
-                reshape_dim = np.array(ends, np.int64) - np.array(starts, np.int64)
-                reshape_dim = np.delete(reshape_dim, gather_obj.axis)
-                reshape_attr = gather_obj.copied_attr()
-                reshape_attr.update({'name': reshape, 'opset_version': 5})
-                NodeWrap(graph, reshape).replace_obj('Reshape', reshape_attr)
-                const = get_valid_node_name(graph, reshape + '_shape')
-                insert_constant(graph, const, reshape_dim,
-                                reshape, in_port=1, data_format='NHWC')
-                if gather in graph._attr['output_names']:
-                    index = graph._attr['output_names'].index(gather)
-                    graph._attr['output_names'].remove(gather)
-                    graph._attr['output_names'].insert(index, reshape)
+                if indices_rank == 0:  # No need to reshape if indices_rank is 1(q=1) because output rank=q+(r-1)=r
+                    old_dim = np.array(ends, np.int64) - np.array(starts, np.int64)
+                    reshape_dim = np.delete(old_dim, gather_obj.axis)
+                    reshape = insert_reshape_after(graph, gather, reshape_dim.tolist(), old_dim.tolist())
+                    if gather in graph._attr['output_names']:
+                        index = graph._attr['output_names'].index(gather)
+                        graph._attr['output_names'].remove(gather)
+                        graph._attr['output_names'].insert(index, reshape)
 
 
 def convert_gemm_to_fc(graph):
@@ -1331,6 +1321,137 @@ def convert_special_scatternd(graph):
             concat_attr = scatternd_obj.copied_attr()
             concat_attr.update({'opset_version': 13, 'axis': -1})
             NodeWrap(graph, scatternd).replace_obj('Concat', concat_attr)
+    if matched:
+        clear_redundant_nodes(graph)
+
+
+def convert_special_scatternd2(graph):
+    '''Remove special scatternd that all the inputs are replaced by updates.
+    '''
+    matched = False
+    matches = matched_patterns(graph,
+                               nodes=[('indices', {'op': 'Constant'}),
+                                      ('updates', {}),
+                                      ('scatternd', {'op': 'ScatterND'})],
+                               edges=[('indices', 'scatternd', {'src_out_port': 0, 'dst_in_port': 1}),
+                                      ('updates', 'scatternd', {'dst_in_port': 2})])
+    for m in matches:
+        indices, scatternd, updates = m['indices'], m['scatternd'], m['updates']
+        indices_obj, scatternd_obj = [NodeWrap(graph, name)['object'] for name in [
+            indices, scatternd]]
+        scatternd_in_edges = graph.sorted_in_edges(scatternd, data=True)
+        if indices_obj is None or scatternd_obj is None or len(scatternd_in_edges) < 3:
+            ERROR('[Parser]: Meet invalid node in convert_special_scatternd!')
+            continue
+        if scatternd_obj.reduction != 'none':
+            continue
+        input_shapes = scatternd_obj.get_input_shapes()
+        if len(input_shapes) < 3 \
+                or any((input_shape is None or None in input_shape) for input_shape in input_shapes):
+            continue
+        input_shape = input_shapes[0]
+        indices_shape = input_shapes[1]
+        update_shape = input_shapes[2]
+        if input_shape != update_shape \
+                or indices_shape != update_shape[:-1] + [len(update_shape) - 1]:
+            continue
+        exp_indices = np.expand_dims(np.array(list(np.ndindex(*update_shape[:-1]))), list(range(len(indices_shape)-2)))
+        if not np.array_equal(indices_obj.value, exp_indices):
+            continue
+        matched = True
+        scatternd_out_edges = graph.sorted_out_edges(scatternd, data=True)
+        graph.remove_edges_from(scatternd_out_edges)
+        updates_out_port = scatternd_in_edges[2][2]['src_out_port']
+        for _, dst, out_attr in scatternd_out_edges:
+            out_attr.update({'src_out_port': updates_out_port})
+            graph.add_edge(updates, dst, **out_attr)
+        if scatternd in graph._attr['output_names']:
+            index = graph._attr['output_names'].index(scatternd)
+            graph._attr['output_names'][index] = updates
+    if matched:
+        clear_redundant_nodes(graph)
+
+
+def convert_multi_scatternd_to_concat(graph):
+    '''Convert multiple connected ScatterND whose indice is sorted and regular to one Concat op.
+    '''
+    matched = False
+    matches = matched_patterns(graph,
+                               nodes=[('input', {'unique': False}),
+                                      ('indices', {'op': 'Constant'}),
+                                      ('scatternd', {'op': 'ScatterND'}),
+                                      ],
+                               edges=[('input', 'scatternd', {'dst_in_port': 0}),
+                                      ('indices', 'scatternd', {'src_out_port': 0, 'dst_in_port': 1}),
+                                      ])
+    scatters_dict = {}  # save {scatter_node_name: (input_node_name, start_indice, axis), ...}
+    last_scatters = []  # save the last scatter node names
+    for m in matches:
+        names = ['indices', 'input', 'scatternd']
+        obj_dict = {n: NodeWrap(graph, m[n])['object'] for n in names}
+        if any(obj is None for obj in obj_dict.values()):
+            ERROR('[Parser]: Meet invalid node in convert_multi_scatternd_to_concat!')
+            continue
+        if obj_dict['scatternd'].reduction != 'none':
+            continue
+        input_shapes = obj_dict['scatternd'].get_input_shapes()
+        if len(input_shapes) < 3 \
+                or any((input_shape is None or None in input_shape) for input_shape in input_shapes):
+            continue
+        input_shape = input_shapes[0]
+        indices_shape = input_shapes[1]
+        update_shape = input_shapes[2]
+        indices_depth = indices_shape[-1]
+        if len(indices_shape) != indices_depth + 1 \
+                or indices_shape[:-1] != update_shape[:indices_depth]:
+            continue
+        axes = [idx for idx, (s1, s2) in enumerate(zip(input_shape, indices_shape[:-1])) if s1 != s2]
+        if len(axes) != 1:
+            continue
+        axis = axes[0]
+        concat_nodes_num = input_shape[axis]
+        base_indices = np.expand_dims(list(np.ndindex(*indices_shape[:-1])), list(range(len(indices_shape)-2)))
+        start_indice = obj_dict['indices'].value.item(axis)
+        exp_indices = base_indices + np.array([start_indice if idx == axis else 0 for idx in range(indices_depth)])
+        if not np.array_equal(exp_indices, obj_dict['indices'].value):
+            continue
+        scatters_dict[m['scatternd']] = (m['input'], start_indice, axis)
+        if start_indice == (concat_nodes_num - 1):
+            last_scatters.append(m['scatternd'])
+    for last_scatter in last_scatters:
+        last_scatter_obj = NodeWrap(graph, last_scatter)['object']
+        if last_scatter_obj is None:
+            ERROR('[Parser]: Meet invalid ScatterND node (%s) in convert_multi_scatternd_to_concat!' % last_scatter)
+            continue
+        largest_indice, exp_axis = scatters_dict[last_scatter][1:]
+        concat_nodes_num = largest_indice + 1
+        scatter = last_scatter
+        scatter_nodes = [None] * concat_nodes_num
+        src_nodes_info = []
+        for exp_indice in range(largest_indice, -1, -1):
+            inp, indice, axis = scatters_dict[scatter]
+            if (indice != 0 and inp not in scatters_dict) \
+                    or indice != exp_indice or axis != exp_axis:
+                break
+            scatter_nodes[indice] = scatter
+            scatter_in_edges = graph.sorted_in_edges(scatter, data=True)
+            if len(scatter_in_edges) < 3:
+                break
+            update, _, in_attr = scatter_in_edges[2]
+            src_nodes_info.append((update, in_attr))
+            scatter = inp
+        if len(scatter_nodes) != concat_nodes_num:
+            continue
+        matched = True
+        last_scatter_in_edges = graph.sorted_in_edges(last_scatter, data=True)
+        graph.remove_edges_from(last_scatter_in_edges)
+        for idx, (src, in_attr) in enumerate(src_nodes_info):
+            new_in_attr = copy.deepcopy(in_attr)
+            new_in_attr.update({'dst_in_port': idx})
+            graph.add_edge(src, last_scatter, **new_in_attr)
+        concat_attr = last_scatter_obj.copied_attr()
+        concat_attr.update({'axis': axis, 'opset_version': 13})
+        NodeWrap(graph, last_scatter).replace_obj('Concat', concat_attr)
     if matched:
         clear_redundant_nodes(graph)
 
@@ -7671,6 +7792,50 @@ def remove_sub_add_pair(graph):
             remove_node_safely(graph, inp)
 
 
+def remove_special_gather(graph):
+    '''Remove special gather whose indices are sorted from 0 to input_shape[axis].
+    '''
+    matched = False
+    matches = matched_patterns(graph,
+                               nodes=[
+                                   ('indice', {'op': 'Constant'}),
+                                   ('gather', {'op': 'Gather'}),
+                               ],
+                               edges=[
+                                   ('indice', 'gather', {'dst_in_port': 1}),
+                               ])
+    for m in matches:
+        indice, gather = m['indice'], m['gather']
+        indice_obj, gather_obj = [NodeWrap(graph, name)['object'] for name in (indice, gather)]
+        if indice_obj is None or gather_obj is None:
+            ERROR('[Parser]: Meets invalid Nodes in remove_special_gather!')
+            continue
+        gather_in_edges = graph.sorted_in_edges(gather, data=True)
+        input_shapes = gather_obj.get_input_shapes()
+        if len(gather_in_edges) < 2 or len(input_shapes) < 2:
+            ERROR('[Parser]: Meets invalid inputs of Gather (%s) in remove_special_gather!' % gather)
+            continue
+        input_shape = input_shapes[0]
+        if input_shape is None or None in input_shape:
+            continue
+        exp_indices = list(range(input_shape[gather_obj.axis]))
+        if not np.array_equal(exp_indices, indice_obj.value):
+            continue
+        matched = True
+        src, _, in_attr = gather_in_edges[0]
+        new_src_out_port = in_attr['src_out_port']
+        gather_out_edges = graph.sorted_out_edges(gather, data=True)
+        graph.remove_edges_from(gather_out_edges)
+        for _, dst, out_attr in gather_out_edges:
+            out_attr.update({'src_out_port': new_src_out_port})
+            graph.add_edge(src, dst, **out_attr)
+        if gather in graph._attr['output_names']:
+            index = graph._attr['output_names'].index(gather)
+            graph._attr['output_names'][index] = src
+    if matched:
+        clear_redundant_nodes(graph)
+
+
 def split_special_bn(graph):
     matches = matched_patterns(graph,
                                nodes=[
@@ -8912,7 +9077,9 @@ def middle_passes(graph, params):
     split_roll(graph)
     convert_upsample_to_resize(graph)
     convert_special_resize(graph)
+    convert_multi_scatternd_to_concat(graph)
     convert_special_scatternd(graph)
+    convert_special_scatternd2(graph)
     convert_special_cast(graph)
     convert_global_pool(graph)
     # merge_l2pool(graph)
@@ -8972,6 +9139,7 @@ def middle_passes(graph, params):
     convert_special_matmul_to_fc(graph)
     remove_redundant_mul(graph)
     fuse_mul_add_or_sub(graph)
+    remove_special_gather(graph)
     fuse_gather_const_mul(graph)
     convert_gather_to_slice(graph)
     rearrange_matmul_reshape_bias(graph)
@@ -8985,7 +9153,7 @@ def middle_passes(graph, params):
     convert_1d_pooling(graph)
 
     decompose_pack(graph)
-    remove_useless_op(graph, ['ChannelShuffle', 'Concat', 'Split'])
+    remove_useless_op(graph, ['ChannelShuffle', 'Concat', 'Split', 'Slice'])
     rearrange_pack_concat(graph)
     convert_min_max_to_clip(graph)
     remove_redundant_reshape(graph)
