@@ -36,13 +36,16 @@ def quantize_helper(
     if scale.type().scalarType() != 'Float':
         scale = g.op(
             'Cast', scale, to_i=torch._C._onnx.TensorProtoDataType.FLOAT)
-    # TODO: In order to ensure the similarity, we keep the dtype of zero_point as int32 in torch model.
+    # TODO: In order to ensure the similarity, we keep the dtype of zero_point to be same as in torch model.
     # Prefer using torch’s quantize_helper instead of redefinded function quantize_helper, use it if necessary.
 
     assert zero_point is not None
     zp_scalar_type = zero_point.type().scalarType()
     if zp_scalar_type not in ('Byte', 'Char'):
         to_i = helper.cast_pytorch_to_onnx[zp_scalar_type]
+        # TODO: convert some inviald dtypes.
+        if to_i == torch._C._onnx.TensorProtoDataType.INT64:
+            to_i = torch._C._onnx.TensorProtoDataType.INT32
         zero_point = g.op('Cast', zero_point, to_i=to_i)
 
     output = g.op(
