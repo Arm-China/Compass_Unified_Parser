@@ -144,6 +144,7 @@ class Op(abc.ABC):
     def attributes(cls):
         '''return attributes of OP class.'''
         return {'name': {'type': AttrType.STRING, 'default': '', 'required': True},
+                'in_subgraph': {'type': AttrType.BOOL, 'default': False},
                 'data_format': {'type': AttrType.STRING,
                                 'default': 'NHWC',
                                 'options': ['NWC', 'NCW', 'NHWC', 'NCHW', 'NDHWC', 'NCDHW', 'NCHW_VECT_C'],

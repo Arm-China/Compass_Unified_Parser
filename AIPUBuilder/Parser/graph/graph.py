@@ -247,6 +247,7 @@ class ReadOnlyGraph(object):
 
 class SubGraph(ReadOnlyGraph, Graph):
     def __init__(self, graph, filter_node=None, filter_edge=None):
+        super(SubGraph, self).__init__()
         if filter_node is None:
             filter_node = list()
         if filter_edge is None:
@@ -255,9 +256,25 @@ class SubGraph(ReadOnlyGraph, Graph):
         self._filter_node = filter_node
         self._filter_edge = filter_edge
         self._attr = defaultdict()
-        self._attr['input_tensors'] = {}
+        self._attr['input_tensors'] = OrderedDict()
         self._attr['output_names'] = []
+        self._attr['output_ports'] = OrderedDict()
         self._attr['root_in_ports'] = []
+
+        for n in filter_node:
+            self._succ[n] = {}
+        for e in filter_edge:
+            s, d, attr = e
+            if s not in self._succ:
+                self._succ[s] = {}
+            if d not in self._succ:
+                self._succ[d] = {}
+            if d not in self._succ[s]:
+                self._succ[s][d] = {0: attr}
+            else:
+                max_k = max(list(self._succ[s][d].keys())) + 1
+                self._succ[s][d].update({max_k: attr})
+        pass
 
     # @property
     # def _nodes_dict(self):

@@ -112,6 +112,9 @@ def infer(graph, partial=False, chosen_list=None):
                 continue
             node_obj = NodeWrap(graph, node_name)['object']
             if node_obj is not None:
+                if node_obj.in_subgraph:
+                    DEBUG('[Parser]: Subgraph Node(%s) is in infer, result is not guaranteed!' % node_name)
+
                 if partial and not node_obj.is_all_inputs_const() and not isinstance(node_obj, InputLikeOp):
                     continue
                 try:

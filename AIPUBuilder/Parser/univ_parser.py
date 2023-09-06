@@ -1,7 +1,7 @@
 # Copyright © 2022 Arm Technology (China) Co. Ltd. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-
+import os
 import re
 import numpy as np
 import onnx
@@ -56,13 +56,14 @@ def univ_parser(params):
                 npy_paths = npy_matched[0].split(',')
                 for p in npy_paths:
                     try:
+                        p = p.rstrip(' ').lstrip(' ')
                         data = np.load(p, allow_pickle=True)
                         if isinstance(data, np.ndarray) \
                                 and data.size == 1 \
                                 and isinstance(data.item(), dict):
                             input_npy.update(data.item())
                     except:
-                        pass
+                        WARN('[Parser]: Load input npy(%s) failed!' % os.path.basename(p))
         params['input_npy'] = input_npy
 
         if model_type == 'torch':

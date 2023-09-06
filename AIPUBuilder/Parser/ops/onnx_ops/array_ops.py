@@ -464,7 +464,7 @@ class GatherOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
                 out_tensor = None
             else:
                 WARN('[Parser]: Random indices of Gather Op (%s) are replaced by zeors indices in infer_shape!' % self.name)
-                indices = np.zeros_like(indices)
+                indices = np.zeros_like(indices, dtype=np.int32)
                 out_tensor = np.take(inputs[0], indices, axis=self.axis)
         self.set_out_tensor(out_tensor)
 
@@ -1266,8 +1266,8 @@ class SliceOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
         if len(in_edges) >= 2:
             src, _, k, in_attr = in_edges[1]
             if in_attr.get('tensor', None) is None \
-                    or in_attr['tensor'].value is None \
-                    or np.array(in_attr['tensor'].value).tolist() != self.starts:
+                    or (in_attr['tensor'].is_const
+                        and (in_attr['tensor'].value is None or np.array(in_attr['tensor'].value).tolist() != self.starts)):
                 self._graph.remove_edge(src, self.name, key=k)
                 insert_constant(self._graph, self.name + '_starts',
                                 np.array(self.starts, np.int32), self.name, in_port=1)
@@ -1275,8 +1275,8 @@ class SliceOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
         if len(in_edges) >= 3:
             src, _, k, in_attr = in_edges[2]
             if in_attr.get('tensor', None) is None \
-                    or in_attr['tensor'].value is None \
-                    or np.array(in_attr['tensor'].value).tolist() != self.ends:
+                    or (in_attr['tensor'].is_const
+                        and (in_attr['tensor'].value is None or np.array(in_attr['tensor'].value).tolist() != self.ends)):
                 self._graph.remove_edge(src, self.name, key=k)
                 insert_constant(self._graph, self.name + '_ends',
                                 np.array(self.ends, np.int32), self.name, in_port=2)
@@ -1287,8 +1287,8 @@ class SliceOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
         else:
             src, _, k, in_attr = in_edges[3]
             if in_attr.get('tensor', None) is None \
-                    or in_attr['tensor'].value is None \
-                    or np.array(in_attr['tensor'].value).tolist() != self.axes:
+                    or (in_attr['tensor'].is_const
+                        and (in_attr['tensor'].value is None or np.array(in_attr['tensor'].value).tolist() != self.axes)):
                 self._graph.remove_edge(src, self.name, key=k)
                 insert_constant(self._graph, self.name + '_axes',
                                 np.array(self.axes, np.int32), self.name, in_port=3)
@@ -1299,8 +1299,8 @@ class SliceOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
         else:
             src, _, k, in_attr = in_edges[4]
             if in_attr.get('tensor', None) is None \
-                    or in_attr['tensor'].value is None \
-                    or np.array(in_attr['tensor'].value).tolist() != self.steps:
+                    or (in_attr['tensor'].is_const
+                        and (in_attr['tensor'].value is None or np.array(in_attr['tensor'].value).tolist() != self.steps)):
                 self._graph.remove_edge(src, self.name, key=k)
                 insert_constant(self._graph, self.name + '_steps',
                                 np.array(self.steps, np.int32), self.name, in_port=4)
