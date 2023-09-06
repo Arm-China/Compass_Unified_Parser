@@ -782,8 +782,8 @@ def convert_quantize_per_tensor(g, input, scale, zero_point, dtype):
 @helper.parse_args('v', 'b')
 def convert_quantized_relu6(g, x, inplace):
     assert inplace is False
-    const_min = g.op('Constant', value_t=torch.tensor(0))
-    const_max = g.op('Constant', value_t=torch.tensor(6))
+    const_min = g.op('Constant', value_t=torch.tensor(0, dtype=torch.int32))
+    const_max = g.op('Constant', value_t=torch.tensor(6, dtype=torch.int32))
     return g.op('Clip', x, const_min, const_max)
 
 

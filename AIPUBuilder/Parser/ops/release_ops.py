@@ -218,8 +218,12 @@ class ArmActivationOp(LayoutUnawareOp, OpHasMethod, OpHasOneOutPort, ArmOp):
             if self.method == 'CELU':
                 txt_file.write('alpha=%1.6f\n' % float(self.alpha))
             elif self.method == 'CLIP':
-                txt_file.write('clip_min=%1.6f\n' % float(self.clip_min))
-                txt_file.write('clip_max=%1.6f\n' % float(self.clip_max))
+                if self.quantize:
+                    txt_file.write('clip_min=%d\n' % int(self.clip_min))
+                    txt_file.write('clip_max=%d\n' % int(self.clip_max))
+                else:
+                    txt_file.write('clip_min=%1.6f\n' % float(self.clip_min))
+                    txt_file.write('clip_max=%1.6f\n' % float(self.clip_max))
             elif self.method == 'ELU':
                 txt_file.write('alpha=%1.8f\n' % float(self.alpha))
             elif self.method == 'GELU':
