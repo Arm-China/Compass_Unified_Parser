@@ -466,8 +466,7 @@ class Op(abc.ABC):
             if pred_node_obj is not None:
                 if u in self._graph._attr.get('duplicate_name', {}):
                     u = self._graph._attr['duplicate_name'][u]
-                pre_name_suffix = '' if isinstance(
-                    pred_node_obj, OpHasOneOutPort) else '_' + str(d['src_out_port'])
+                pre_name_suffix = '_' + str(d['src_out_port'])
                 info_dict = OrderedDict()
                 if len(d['tensor'].min_max) == 2:
                     min_max_str = '[%f,%f]' % (float(d['tensor'].min_max[0]), float(d['tensor'].min_max[1]))
@@ -496,8 +495,7 @@ class Op(abc.ABC):
         quantize = self._graph._attr.get('quantize', False)
         info = OrderedDict()
         for u, v, k, d in self._graph.sorted_out_edges(self.name, keys=True, data=True):
-            name_suffix = '' if isinstance(
-                self, OpHasOneOutPort) else '_' + str(d['src_out_port'])
+            name_suffix = '_' + str(d['src_out_port'])
             info_value = []
             if u in self._graph._attr.get('duplicate_name', {}):
                 u = self._graph._attr['duplicate_name'][u]
