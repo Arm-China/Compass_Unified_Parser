@@ -10,9 +10,10 @@ def create_floordiv_model(model_path, input_size, div_num, input_dtype=tf.float3
     '''
     with tf.Session(graph=tf.Graph()) as sess:
         x = tf.placeholder(input_dtype, shape=input_size, name='X')
-        op1 = tf.math.floordiv(x=x, y=div_num, name='floordiv')
-        op2 = tf.cast(op1, 'int32')
-        y = tf.add(op2, 10, name='Y')
+        op1 = tf.math.floordiv(x=x, y=div_num, name='floor')
+        op2 = tf.math.floor(tf.cast(op1, 'float32'), name='floor_1')
+        op3 = tf.cast(op2, 'int32')
+        y = tf.add(op3, 10, name='Y')
 
         sess.run(tf.global_variables_initializer())
         constant_graph = tf.graph_util.convert_variables_to_constants(

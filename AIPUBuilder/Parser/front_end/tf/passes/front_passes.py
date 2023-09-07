@@ -4445,6 +4445,22 @@ def convert_to_onnx(graph):
                     if len(in_edges) == 2 \
                             and len(node_obj.get_input_shapes()) == 2 \
                             and len(node_obj.get_input_shapes()[0]) == 3:
+                        out_edges = graph.sorted_out_edges(node_name, data=True)
+                        found_non_out_child = False
+                        for _, dst, out_attr in out_edges:
+                            if out_attr['src_out_port'] == 0:
+                                continue
+                            dst_obj = NodeWrap(graph, dst)['object']
+                            if dst_obj is None:
+                                ERROR('[Parser]: Meets invalid out Node(%s) in convert_to_onnx!' % dst)
+                                continue
+                            if dst_obj.type != 'Out':
+                                found_non_out_child = True
+                                break
+                        if found_non_out_child:
+                            WARN('[Parser]: Meets unsupported output of Node %s in convert_to_onnx!' % node_name)
+                            continue
+                        graph.remove_edges_from(out_edges[1:])
                         src, _, in_attr = in_edges[0]
                         insert_transpose(graph, src, node_name,
                                          in_attr, [1, 0, 2])

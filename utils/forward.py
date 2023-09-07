@@ -265,7 +265,14 @@ def opt_forward(txt_path, bin_path, feed_dict, output_names=None, save_output=Tr
             tensor_name = name + ':0'
             ordered_feed_dict.update({tensor_name: feed_dict[tensor_name]})
         else:
-            ERROR('Cannot find input name (%s) from feed_dict!' % name)
+            name_without_postfix = name.rsplit('_', 1)[0]
+            if name_without_postfix in feed_dict.keys():
+                ordered_feed_dict.update({name_without_postfix: feed_dict[name_without_postfix]})
+            elif (name_without_postfix + ':0') in feed_dict.keys():
+                tensor_name = name_without_postfix + ':0'
+                ordered_feed_dict.update({tensor_name: feed_dict[tensor_name]})
+            else:
+                ERROR('Cannot find input name (%s) from feed_dict!' % name)
 
     # Get default output names from txt_path if it's not set
     if output_names is None:
