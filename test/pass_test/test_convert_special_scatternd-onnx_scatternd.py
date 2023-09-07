@@ -27,7 +27,7 @@ def create_scatter_model(onnx_path, input_size, update_size, output_size, versio
     X1 = helper.make_tensor_value_info('X1', TensorProto.FLOAT, input_size)
     X2 = helper.make_tensor_value_info('X2', TensorProto.FLOAT, update_size)
     Y = helper.make_tensor_value_info('Y', TensorProto.FLOAT, output_size)
-    indices = np.expand_dims(np.array(list(np.ndindex(*update_size[:-1]))), list(range(len(input_size)-2)))
+    indices = np.reshape(np.array(list(np.ndindex(*update_size))), update_size + [len(update_size)])
 
     indices_tensor = create_initializer_tensor(
         name='indice',
@@ -54,7 +54,7 @@ def create_scatter_model(onnx_path, input_size, update_size, output_size, versio
 
 
 OP_NAME = 'ScatterND'
-input_shapes = [[1, 1, 3, 4], [1, 2500, 256], ]
+input_shapes = [[3, 4, 5, 6], [1, 1, 3, 4], [1, 2500, 256], ]
 update_shapes = input_shapes
 output_shapes = input_shapes
 

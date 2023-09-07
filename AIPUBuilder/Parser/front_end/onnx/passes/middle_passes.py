@@ -1239,8 +1239,8 @@ def convert_special_resize(graph):
 def convert_special_scatternd(graph):
     matched = False
     matches = matched_patterns(graph,
-                               nodes=[('indices', {'op': 'Constant'}),
-                                      ('updates', {}),
+                               nodes=[('indices', {'op': 'Constant', 'unique': False}),
+                                      ('updates', {'unique': False}),
                                       ('scatternd', {'op': 'ScatterND'})],
                                edges=[('indices', 'scatternd', {'src_out_port': 0, 'dst_in_port': 1}),
                                       ('updates', 'scatternd', {'dst_in_port': 2})])
@@ -1292,6 +1292,9 @@ def convert_special_scatternd(graph):
             for _, dst, out_attr in scatternd_out_edges:
                 out_attr['src_out_port'] = updates_out_port
                 graph.add_edge(updates, dst, **out_attr)
+            if scatternd in graph._attr['output_names']:
+                index = graph._attr['output_names'].index(scatternd)
+                graph._attr['output_names'][index] = updates
         else:
             src, _, src_out_attr = scatternd_in_edges[0]
             split_node = get_valid_node_name(graph, scatternd + '_split')
@@ -1410,7 +1413,7 @@ def convert_multi_scatternd_to_concat(graph):
             continue
         axis = axes[0]
         concat_nodes_num = input_shape[axis]
-        base_indices = np.expand_dims(list(np.ndindex(*indices_shape[:-1])), list(range(len(indices_shape)-2)))
+        base_indices = np.reshape(list(np.ndindex(*indices_shape[:-1])), indices_shape)
         start_indice = obj_dict['indices'].value.item(axis)
         exp_indices = base_indices + np.array([start_indice if idx == axis else 0 for idx in range(indices_depth)])
         if not np.array_equal(exp_indices, obj_dict['indices'].value):
@@ -1440,7 +1443,7 @@ def convert_multi_scatternd_to_concat(graph):
             update, _, in_attr = scatter_in_edges[2]
             src_nodes_info.append((update, in_attr))
             scatter = inp
-        if len(scatter_nodes) != concat_nodes_num:
+        if None in scatter_nodes:
             continue
         matched = True
         last_scatter_in_edges = graph.sorted_in_edges(last_scatter, data=True)
