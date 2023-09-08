@@ -1358,7 +1358,8 @@ def convert_special_scatternd2(graph):
         if input_shape != update_shape \
                 or indices_shape != update_shape[:-1] + [len(update_shape) - 1]:
             continue
-        exp_indices = np.expand_dims(np.array(list(np.ndindex(*update_shape[:-1]))), list(range(len(indices_shape)-2)))
+        exp_indices = np.expand_dims(
+            np.array(list(np.ndindex(*update_shape[:-1]))), list(range(len(indices_shape) - 2)))
         if not np.array_equal(indices_obj.value, exp_indices):
             continue
         matched = True
@@ -1633,11 +1634,12 @@ def decompose_const_loop(graph, params):
                                 new_in_attr['tensor'].name = new_const
                                 graph.add_edge(new_const, new_n, **new_in_attr)
                                 NodeWrap(graph, new_const).replace_obj('Constant', {
-                                    'name': sub_src, 'opset_version': 9, 'value': cur_count_value})
+                                    'name': new_const, 'opset_version': 9, 'value': cur_count_value})
                             elif src not in subgraph_main_nodes and not src.endswith(name_suffix):
                                 graph.add_edge(src, new_n, **in_attr)
                             elif src in subgraph_main_nodes:
-                                graph.add_edge(src + name_suffix, new_n, **in_attr)
+                                new_in_attr = copy.deepcopy(in_attr)
+                                graph.add_edge(src + name_suffix, new_n, **new_in_attr)
                             else:
                                 WARN('[Parser]: Invalid in edges for Node(%s)!' % new_n)
                         cur_obj_attr = n_obj.copied_attr()
