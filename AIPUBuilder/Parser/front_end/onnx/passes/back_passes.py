@@ -5129,7 +5129,7 @@ def back_passes(graph, params):
     remove_redundant_reshape(graph, 'ArmReshape')
     remove_redundant_transpose(graph)
     remove_redundant_transpose2(graph)
-    remove_useless_op(graph, ['ArmReshape', 'ArmTranspose', 'ArmTile'])
+    remove_useless_op(graph, ['ArmReduce', 'ArmReshape', 'ArmTranspose', 'ArmTile'])
 
     fuse_const(graph)
     remove_const(graph)

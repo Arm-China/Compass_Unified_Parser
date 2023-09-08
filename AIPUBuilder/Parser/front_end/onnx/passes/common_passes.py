@@ -147,10 +147,6 @@ def remove_useless_op(graph, op_type_list):
                                 and in_shapes[0] == out_shapes[0]:
                             graph.remove_edges_from(in_edges[1:])
                             removing_nodes.append(node_name)
-            elif op_type == 'ArmTile':
-                reps = node_obj.reps
-                if all(rep == 1 for rep in reps):
-                    removing_nodes.append(node_name)
             elif op_type in ('AveragePool', 'MaxPool'):
                 in_shapes = node_obj.get_input_shapes()
                 out_shapes = node_obj.get_output_shapes()
@@ -164,27 +160,9 @@ def remove_useless_op(graph, op_type_list):
             elif op_type == 'Pad':
                 if np.all(np.array(node_obj.pads, np.int64) == 0):
                     removing_nodes.append(node_name)
-            elif op_type in ('Transpose', 'ArmTranspose'):
-                trans_in_edges = graph.sorted_in_edges(node_name, data=True)
-                if len(trans_in_edges) != 1:
-                    ERROR(
-                        '[Parser]: Meets invalid Transpose(%s) to remove in remove_useless_op!' % node_name)
-                    continue
-                trans_in_tensor = trans_in_edges[0][2]['tensor'].value
-                perm = node_obj.perm
-                src_name = trans_in_edges[0][0]
-                src_node_obj = NodeWrap(graph, src_name)['object']
-                if src_node_obj is None:
-                    continue
-                if src_node_obj.type == 'Constant' \
-                        and src_node_obj.value is not None \
-                        and len(graph.sorted_out_edges(src_name)) == 1:
-                    src_node_obj.value = np.transpose(
-                        src_node_obj.value, axes=perm)
-                    removing_nodes.append(node_name)
-                elif trans_in_tensor is not None and list(range(len(trans_in_tensor.shape))) == perm:
-                    removing_nodes.append(node_name)
-                elif perm and list(perm) == list(range(max(perm) + 1)):
+            elif op_type == 'ArmTile':
+                reps = node_obj.reps
+                if all(rep == 1 for rep in reps):
                     removing_nodes.append(node_name)
             elif op_type in OnnxReduceOp.get_concrete_subclass_names():
                 in_edges = graph.sorted_in_edges(node_name)
@@ -196,6 +174,18 @@ def remove_useless_op(graph, op_type_list):
                     if node_name in graph._attr['output_names']:
                         index = graph._attr['output_names'].index(node_name)
                         graph._attr['output_names'][index] = in_edges[0][0]
+            elif op_type == 'ArmReduce':
+                if len(in_tensors) > 0 \
+                        and in_tensors[0] is not None \
+                        and np.product(np.array(in_tensors[0].shape)[np.array(node_obj.axes, np.int32)]) == 1:
+                    in_edges = graph.sorted_in_edges(node_name)
+                    removing_nodes.append(node_name)
+                    if node_name in graph._attr['output_names']:
+                        index = graph._attr['output_names'].index(node_name)
+                        if in_edges[0][0] not in graph._attr['output_ names']:
+                            graph._attr['output_names'][index] = in_edges[0][0]
+                        else:
+                            graph._attr['output_names'].pop(index)
             elif op_type in ('Reshape', 'ArmReshape'):
                 reshape_in_edges = graph.sorted_in_edges(node_name, data=True)
                 src_name = reshape_in_edges[0][0]
@@ -234,10 +224,8 @@ def remove_useless_op(graph, op_type_list):
                 if len(roll_shift) == 1:
                     roll_shift = roll_shift[0]
                     from ....ops.common_ops import RollOp
-                    roll_shift, start1, end1, steps1, axes1, start2, end2, steps2, axes2 =\
-                        RollOp.cal_roll_parm(
-                            axis_value, roll_shift, roll_shape)
-
+                    roll_shift, start1, end1, steps1, axes1, start2, end2, steps2, axes2 \
+                        = RollOp.cal_roll_parm(axis_value, roll_shift, roll_shape)
                     if roll_shift == 0 \
                             or np.any(np.abs(start1) >= np.abs(end1)) \
                             or np.any(np.abs(start2) >= np.abs(end2)):
@@ -249,7 +237,6 @@ def remove_useless_op(graph, op_type_list):
                         WARN(
                             '[Parser]: Meets unsupported Roll(%s) to remove in remove_useless_op!' % node_name)
                         continue
-
             elif op_type == 'Slice':
                 out_tensors = node_obj.get_output_tensors()
                 if len(in_tensors) >= 1 \
@@ -264,6 +251,28 @@ def remove_useless_op(graph, op_type_list):
                 if len(in_tensors) >= 1 and len(node_obj.split) == 1 and \
                         in_tensors[0] is not None and \
                         in_tensors[0].shape[node_obj.axis] == node_obj.split[0]:
+                    removing_nodes.append(node_name)
+            elif op_type in ('Transpose', 'ArmTranspose'):
+                trans_in_edges = graph.sorted_in_edges(node_name, data=True)
+                if len(trans_in_edges) != 1:
+                    ERROR(
+                        '[Parser]: Meets invalid Transpose(%s) to remove in remove_useless_op!' % node_name)
+                    continue
+                trans_in_tensor = trans_in_edges[0][2]['tensor'].value
+                perm = node_obj.perm
+                src_name = trans_in_edges[0][0]
+                src_node_obj = NodeWrap(graph, src_name)['object']
+                if src_node_obj is None:
+                    continue
+                if src_node_obj.type == 'Constant' \
+                        and src_node_obj.value is not None \
+                        and len(graph.sorted_out_edges(src_name)) == 1:
+                    src_node_obj.value = np.transpose(
+                        src_node_obj.value, axes=perm)
+                    removing_nodes.append(node_name)
+                elif trans_in_tensor is not None and list(range(len(trans_in_tensor.shape))) == perm:
+                    removing_nodes.append(node_name)
+                elif perm and list(perm) == list(range(max(perm) + 1)):
                     removing_nodes.append(node_name)
             elif op_type == 'Upsample':
                 if node_obj.scales and np.all(np.array(node_obj.scales, np.float32) == 1):
