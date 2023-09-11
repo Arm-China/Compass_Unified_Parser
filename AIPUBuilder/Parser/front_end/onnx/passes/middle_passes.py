@@ -2371,6 +2371,10 @@ def convert_dequantizelinear(graph):
 
 
 def convert_quantizelinear(graph):
+    '''Convert QuantizeLinear to other ops(Div, Round, Add, Clip) if the node is not quantized or
+    scale/zp is not Constant, otherwise just set dtype/scale_zp for out edges(the node is quantized
+    and scale/zp is Constant).
+    '''
     matches = single_node_matcher(graph, 'QuantizeLinear')
     for m in matches:
         quant = m['target']
@@ -2404,13 +2408,14 @@ def convert_quantizelinear(graph):
             continue
         zp_dtype = zp_in_attr['tensor'].value.dtype
         zp_value = zp_in_attr['tensor'].value
-        if graph._attr.get('quantize', False):
-            if scale_in_attr['tensor'].is_const and zp_in_attr['tensor'].is_const:
-                for _, dst, out_attr in quant_out_edges:
-                    if out_attr['tensor'] is None:
-                        out_attr['tensor'] = Tensor()
-                    out_attr['tensor'].dtype = str(zp_dtype)
-                    out_attr['tensor'].scale_zp = (scale_in_attr['tensor'].value, zp_value)
+        if graph._attr.get('quantize', False) \
+                and scale_in_attr['tensor'].is_const \
+                and zp_in_attr['tensor'].is_const:
+            for _, dst, out_attr in quant_out_edges:
+                if out_attr['tensor'] is None:
+                    out_attr['tensor'] = Tensor()
+                out_attr['tensor'].dtype = str(zp_dtype)
+                out_attr['tensor'].scale_zp = (scale_in_attr['tensor'].value, zp_value)
         else:
             inp, _, inp_in_attr = quant_in_edges[0]
             graph.remove_edges_from(quant_in_edges)
@@ -2442,13 +2447,12 @@ def convert_quantizelinear(graph):
             graph.add_edge(round_div, add, **common_attr)
             NodeWrap(graph, add).replace_obj(
                 'Add', {'name': add, 'opset_version': 13})
-            add_operand = zp
+            cast = insert_cast(graph, zp, add, 'float32', add_in_attr)
             if len(input_shapes[1]) == 1 and quant_axis != len(input_shapes[0]) - 1:
                 dim = [1 if idx != quant_axis else input_shapes[0][quant_axis]
                        for idx in range(len(input_shapes[0]))]
                 insert_reshape(graph, scale, div, div_in_attr, dim)
-                add_operand = insert_reshape(graph, zp, add, add_in_attr, dim)
-            insert_cast(graph, add_operand, add, 'float32', add_in_attr)
+                insert_reshape(graph, zp, cast, add_in_attr, dim)
 
             # Insert clip and cast after quant
             clip = get_valid_node_name(graph, quant + '_clip')
