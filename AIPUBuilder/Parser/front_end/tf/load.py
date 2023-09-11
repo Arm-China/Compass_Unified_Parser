@@ -245,9 +245,12 @@ def parse_pb(graph, model_path, params, anchor_tensors):
                 WARN('[Parser]: Meets error when getting input tensor (%s): %s!' % (
                     tensor_name, str(e)))
                 np_type = np.float32
-            np_tensor = np.random.randint(0, 1, size=v, dtype=np_type) \
-                if re.search(r'int', str(np_type)) \
-                else np.random.ranf(v).astype(np_type)
+            if tensor_name in params.get('input_npy', {}):
+                np_tensor = params['input_npy'][tensor_name]
+            else:
+                np_tensor = np.random.randint(0, 1, size=v, dtype=np_type) \
+                    if re.search(r'int', str(np_type)) \
+                    else np.random.ranf(v).astype(np_type)
             feed_dict.update({tensor_name: np_tensor})
 
         for n in nodes:
@@ -262,7 +265,7 @@ def parse_pb(graph, model_path, params, anchor_tensors):
                 if n['name'] in graph._attr['input_names'] \
                         or (not graph._attr['input_names'] and n['name'] in input_shapes) \
                         or n_type.startswith('TensorArray') \
-                        or n_type in ('Range', 'Shape', 'StatelessIf'):
+                        or n_type in ('ConcatV2', 'Range', 'Reshape', 'ReverseV2', 'Shape', 'StatelessIf'):
                     tensors.update(
                         {out[0]: default_graph.get_tensor_by_name(out[0])})
 

@@ -1680,7 +1680,9 @@ def decompose_pack(graph):
                 in_edges = graph.sorted_in_edges(
                     pack_or_concat, keys=True, data=True)
                 input_shapes = pack_or_concat_obj.get_input_shapes()
-                if len(in_edges) == len(input_shapes) and all([in_shape != [] for in_shape in input_shapes]):
+                if len(in_edges) == len(input_shapes) \
+                        and all([in_shape is not None for in_shape in input_shapes]) \
+                        and all(meta_shape is not None for in_shape in input_shapes for meta_shape in in_shape):
                     reshape_dim = list(input_shapes[0])
                     pos = pack_or_concat_obj.axis if pack_or_concat_obj.axis >= 0 else (
                         len(reshape_dim) + 1 + pack_or_concat_obj.axis)
