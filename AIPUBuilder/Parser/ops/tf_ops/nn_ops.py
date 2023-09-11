@@ -560,6 +560,7 @@ class TfFusedBatchNormOp(LayoutConcernedOp, OpHasVariableOutPorts, TfOp):
         out_list = tf.raw_ops.FusedBatchNorm(x=inputs[0], scale=inputs[1], offset=inputs[2],
                                              mean=inputs[3], variance=inputs[4],
                                              epsilon=self.epsilon,
+                                             exponential_avg_factor=self.exponential_avg_factor,
                                              data_format=self.data_format,
                                              is_training=self.is_training)
         out_tensor_list = [o.numpy() for o in out_list]

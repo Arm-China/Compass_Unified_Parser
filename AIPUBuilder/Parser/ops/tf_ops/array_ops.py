@@ -380,6 +380,30 @@ class TfIdentityNOp(OpHasVariableOutPorts, TfOp):
         self.set_out_tensor(out_tensor_list)
 
 
+class TfListDiffOp(OpHasVariableOutPorts, TfOp):
+    @classmethod
+    def attributes(cls):
+        return {1: {'out_idx': {'type': AttrType.STRING, 'default': 'int32'}}
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfListDiffOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfListDiffOp, attr_dict)
+        assert self.check_required(), 'TfListDiffOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(TfListDiffOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensors = tf.raw_ops.ListDiff(
+            x=inputs[0],
+            y=inputs[1],
+            out_idx=self.out_idx
+        )
+        out_tensors = list(map(out_tensors.__getitem__, self.get_out_ports()))
+        out_tensors = [out.numpy() for out in out_tensors]
+        self.set_out_tensor(out_tensors)
+
+
 class TfMirrorPadOp(OpHasOneOutPort, TfOp):
     @classmethod
     def attributes(cls):
