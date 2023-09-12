@@ -811,6 +811,13 @@ def convert_transpose(g, self, dim0, dim1):
     return opset9.transpose(g, self, dim0, dim1)
 
 
+@helper.parse_args('v')
+def convert_trunc(g, x):
+    input_dtype_str = x.type().scalarType()
+    cast1 = g.op('Cast', x, to_i=torch._C._onnx.TensorProtoDataType.INT32)
+    return g.op('Cast', cast1, to_i=helper.cast_pytorch_to_onnx[input_dtype_str])
+
+
 @helper.parse_args('v', 'v')
 @quantized_args(True, False)
 def convert_view(g, self, shape):
@@ -1060,6 +1067,8 @@ def convert_torch_to_onnx(model_path, params):
         'aten::tile', convert_tile, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::transpose', convert_transpose, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'aten::trunc', convert_trunc, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::view', convert_view, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
