@@ -658,6 +658,22 @@ def convert_reduce_mean(g, input, dim=None, keepdim=None, allow_multi_dim_suppor
         return g.op('ReduceMean', input, axes_i=dim_list, keepdims_i=keepdim)
 
 
+@helper.parse_args('v', 'v', 'f', 'i', 'i', 'i', 'i')
+def convert_roi_align(g, x, rois, spatial_scale, pooled_height, pooled_width, sampling_ratio, aligned):
+    from torch.onnx.symbolic_opset11 import select
+    # prepare batch_indices
+    indices = select(g, rois, 1, g.op('Constant', value_t=torch.tensor([0], dtype=torch.int64)))
+    batch_indices = g.op('Cast', helper._squeeze_helper(g, indices, [1]), to_i=torch.onnx.TensorProtoDataType.INT64)
+    # prepare rois, sampling_ratio and coordinate_transformation_mode
+    rois = select(g, rois, 1, g.op('Constant', value_t=torch.tensor([1, 2, 3, 4], dtype=torch.int64)))
+    sampling_ratio = 0 if sampling_ratio < 0 else sampling_ratio
+    coordinate_transformation_mode = 'half_pixel' if aligned else 'output_half_pixel'
+    return g.op('RoiAlign', x, rois, batch_indices,
+                coordinate_transformation_mode_s=coordinate_transformation_mode,
+                output_height_i=pooled_height, output_width_i=pooled_width,
+                sampling_ratio_i=sampling_ratio, spatial_scale_f=spatial_scale)
+
+
 @quantized_args(True)
 @helper.parse_args('v', 'i')
 def convert_round(g, input, decimals=0):
@@ -879,9 +895,10 @@ def convert_torch_to_onnx(model_path, params):
     # error will be raised after torch.jit.load.
     try:
         import torchvision
-    except:
-        DEBUG('[Parser]: Fail to import torchvision!')
-        pass
+        torchvision_version = torchvision.__version__.split('+', 1)[0]
+    except Exception as e:
+        DEBUG('[Parser]: Fail to import torchvision because %s!' % str(e))
+        torchvision_version = None
 
     # Load TorchScript/non-TorchScript model
     is_torch_script_model = False
@@ -1081,6 +1098,14 @@ def convert_torch_to_onnx(model_path, params):
         'aten::channel_shuffle', convert_channel_shuffle, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::cumprod', convert_cumprod, onnx_opset_version)
+
+    # Convert torchvision op
+    if torchvision_version is not None:
+        if torchvision_version < '0.15.0':
+            # The issue of align=True of RoiAlign has been fixed since torchvision 0.15.0.
+            # Refer to https://github.com/pytorch/vision/pull/6685
+            torch.onnx.register_custom_op_symbolic(
+                'torchvision::roi_align', convert_roi_align, onnx_opset_version)
 
     # Get input_tensors and input_names
     input_names = []
