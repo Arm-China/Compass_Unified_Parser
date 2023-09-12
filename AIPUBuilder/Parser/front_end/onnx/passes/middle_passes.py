@@ -7274,6 +7274,12 @@ def rearrange_matmul_reshape_bias(graph):
                 if bias_out_attr['tensor'].value is not None:
                     bias_out_attr['tensor'].value += bias_obj_in_consts[0][2]
                 graph.add_edge(bias, reshape, **bias_out_attr)
+                if bias in graph._attr['output_names']:
+                    index = graph._attr['output_names'].index(bias)
+                    if reshape not in graph._attr['output_names']:
+                        graph._attr['output_names'][index] = reshape
+                    else:
+                        graph._attr['output_names'].pop(index)
 
 
 def rearrange_linear_concat_relu(graph):
