@@ -742,6 +742,33 @@ def convert_t(g, self):
     return g.op('Transpose', self, perm_i=[1, 0])
 
 
+@helper.parse_args('v', 'v', 'i')
+@quantized_args(True)
+def convert_tensor_split(g, x, indices_or_sections, dim=0):
+    input_shape = helper._get_tensor_sizes(x)
+    shape_at_dim = input_shape[dim]
+    indices_rank = helper._get_tensor_rank(indices_or_sections)
+    assert indices_rank is not None, 'Meets unsupported non-constant indices_or_sections in convert_tensor_split!'
+    if indices_rank != 0:
+        indices = helper._parse_arg(indices_or_sections, 'is')
+        ends = indices + [shape_at_dim]
+        starts = [0] + indices
+        splits = [(end - start) for end, start in zip(ends, starts) if end != start]
+    else:
+        section = helper._parse_arg(indices_or_sections, 'i')
+        quotient = shape_at_dim // section
+        remainder = shape_at_dim % section
+        if remainder == 0:
+            splits = [quotient] * section
+        else:
+            front_split = shape_at_dim // section + 1
+            rest_split = shape_at_dim // section
+            splits = [front_split] * remainder + [rest_split] * (section - remainder)
+    split_sizes = g.op('Constant', value_t=torch.tensor(splits, dtype=torch.int64))
+    split_outs = g.op('Split', x, split_sizes, axis_i=dim, outputs=len(splits))
+    return g.op('prim::ListConstruct', *split_outs)
+
+
 def convert_threshold(g, x, threshold, value):
     greater = g.op('Greater', x, threshold)
     where = g.op('Where', greater, x, value)
@@ -1008,6 +1035,8 @@ def convert_torch_to_onnx(model_path, params):
         'aten::softshrink', convert_softshrink, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::split', convert_split, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'aten::tensor_split', convert_tensor_split, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::threshold', convert_threshold, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
