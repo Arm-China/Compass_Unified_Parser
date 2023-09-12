@@ -3307,6 +3307,7 @@ def detection_post_process(graph, params):
                 ERROR('[Parser]: The length of output shape of output node (%s) should be 3 but got %d for detection_post_process!' % (
                     out2, len(out2_out_shapes[0])))
                 return
+
             if out1_out_shapes[0][1] == 1 and out2_out_shapes[0][1] == 1:
                 if out1_out_shapes[0][2] % 4 == 0 and out2_out_shapes[0][2] % (out1_out_shapes[0][2] // 4) == 0:
                     pred_box_num = out1_out_shapes[0][2] // 4
@@ -3325,15 +3326,56 @@ def detection_post_process(graph, params):
                 _, out_name1, out_attr1 = out1_out_edges[0]
                 reshape1 = insert_reshape(
                     graph, out1, out_name1, out_attr1, out1_new_dim, type='ArmReshape')
+                out1 = reshape1
 
                 out2_out_edges = graph.sorted_out_edges(out2, data=True)
                 _, out_name2, out_attr2 = out2_out_edges[0]
                 reshape2 = insert_reshape(
                     graph, out2, out_name2, out_attr2, out2_new_dim, type='ArmReshape')
+                out2 = reshape2
 
                 graph._attr['output_names'] = [reshape1, reshape2]
 
             vaild_box_num = None
+
+            if out1_out_shapes[0][1] != out2_out_shapes[0][1]:
+                out1_tensors = NodeWrap(graph, out1)['object'].get_output_tensors()
+                out2_tensors = NodeWrap(graph, out2)['object'].get_output_tensors()
+                trans1 = get_valid_node_name(graph, out1 + '_post_transpose')
+                trans2 = get_valid_node_name(graph, out2 + '_post_transpose')
+                perm = [0, 2, 1]
+
+                out1_attr = None
+                for _, out, out_attr in graph.sorted_out_edges(out1, data=True):
+                    graph.remove_edge(out1, out)
+                    if out1_attr is None:
+                        out1_attr = copy.deepcopy(out_attr)
+                        out1_attr['dst_in_port'] = 0
+                    new_out_attr = copy.deepcopy(out_attr)
+                    if out1_tensors[0] is not None:
+                        new_out_attr['tensor'].value = np.transpose(out1_tensors[0], perm)
+                    graph.add_edge(trans1, out, **new_out_attr)
+                graph.add_edge(out1, trans1, **out1_attr)
+                NodeWrap(graph, trans1).replace_obj('ArmTranspose', {'name': trans1, 'perm': perm})
+
+                out2_attr = None
+                for _, out, out_attr in graph.sorted_out_edges(out2, data=True):
+                    graph.remove_edge(out2, out)
+                    if out2_attr is None:
+                        out2_attr = copy.deepcopy(out_attr)
+                        out2_attr['dst_in_port'] = 0
+                    new_out_attr = copy.deepcopy(out_attr)
+                    if out2_tensors[0] is not None:
+                        new_out_attr['tensor'].value = np.transpose(out2_tensors[0], perm)
+                    graph.add_edge(trans2, out, **new_out_attr)
+                graph.add_edge(out2, trans2, **out2_attr)
+                NodeWrap(graph, trans2).replace_obj('ArmTranspose', {'name': trans2, 'perm': perm})
+
+                out1, out2 = trans1, trans2
+                graph._attr['output_names'] = [trans1, trans2]
+                out1_out_shapes = NodeWrap(graph, trans1)['object'].get_output_shapes()
+                out2_out_shapes = NodeWrap(graph, trans2)['object'].get_output_shapes()
+
             if out2_out_shapes and out2_out_shapes[0][-1] == 4:
                 class_predict, box_predict = out1, out2
                 class_num = out1_out_shapes[0][-1]
