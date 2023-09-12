@@ -742,6 +742,12 @@ def convert_t(g, self):
     return g.op('Transpose', self, perm_i=[1, 0])
 
 
+def convert_threshold(g, x, threshold, value):
+    greater = g.op('Greater', x, threshold)
+    where = g.op('Where', greater, x, value)
+    return where
+
+
 @helper.parse_args('v', 'is')
 @quantized_args(True, False)
 def convert_tile(g, input, dims):
@@ -1002,6 +1008,8 @@ def convert_torch_to_onnx(model_path, params):
         'aten::softshrink', convert_softshrink, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::split', convert_split, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'aten::threshold', convert_threshold, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::tile', convert_tile, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
