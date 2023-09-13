@@ -137,8 +137,8 @@ def infer(graph, partial=False, chosen_list=None):
                     else:
                         node_obj.infer_shape()
                 except Exception as e:
-                    log_func('[Parser]: Infer of Node(%s) meets issues: %s!' %
-                             (node_name, str(e)))
+                    log_func('[Parser]: Infer of %s Node(%s) meets issues: %s!' %
+                             (node_obj.type, node_name, str(e)))
 
                 msg = ', '.join([node_obj.type,
                                  node_obj.name,

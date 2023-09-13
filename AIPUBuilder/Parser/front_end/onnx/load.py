@@ -9,7 +9,7 @@ from collections import defaultdict, OrderedDict
 from ...graph.graph import Graph, SubGraph
 from .buffer import get_model_content, parse_proto, get_tensor_content, get_value_content, get_node_content, get_graph_content
 from ...graph.node_wrap import NodeWrap
-from ...graph.graph_algo import get_valid_node_name, clear_redundant_nodes
+from ...graph.graph_algo import get_valid_node_name, clear_redundant_nodes, has_path
 from ...common.defs import Framework, Tensor, get_opset_version
 from ...common.utils import is_file, get_version, multi_string_to_list
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
@@ -485,7 +485,6 @@ def convert_onnx_to_graph(model_path, params):
                         WARN('[Parser]: Cannot get anchor tensors (%s) in convert_onnx_to_graph!' % str(anchor_tensors))
 
                 if graph._attr['output_names']:
-                    graph._attr['output_names'] += list(graph._attr['subgraph_output_names'])
                     removing_names = []
                     for i, out_name in enumerate(graph._attr['output_names']):
                         if graph.has_node(out_name) or out_name in tensor_name_map.keys():
@@ -523,6 +522,29 @@ def convert_onnx_to_graph(model_path, params):
                                 '[Parser]: Graph does not contain such a node/tensor name:%s' % out_name)
                     for rm in removing_names:
                         graph._attr['output_names'].remove(rm)
+
+                    removing_sg_out = []
+                    for sub_out in graph._attr['subgraph_output_names']:
+                        if graph.has_node(sub_out):
+                            try:
+                                if all(not has_path(graph, sub_out, go) for go in graph._attr['output_names']):
+                                    removing_sg_out.append(sub_out)
+                            except:
+                                pass
+                        else:
+                            removing_sg_out.append(sub_out)
+                    for rn in removing_sg_out:
+                        graph._attr['subgraph_output_names'].pop(rn)
+
+                    for subgraph_out in graph._attr['subgraph_output_names']:
+                        out_op_name = get_valid_node_name(graph, subgraph_out + '_out')
+                        out_edge_attr = {
+                            'src_out_port': graph._attr['subgraph_output_names'][subgraph_out],
+                            'dst_in_port': 0,
+                            'tensor': Tensor(name=subgraph_out)}
+                        graph.add_edge(subgraph_out, out_op_name, **out_edge_attr)
+
+                    graph._attr['output_names'] += list(graph._attr['subgraph_output_names'])
 
                     # convert node name to tensor name
                     if any([t not in tensor_name_map for t in graph._attr['output_tensor_names']]) \
