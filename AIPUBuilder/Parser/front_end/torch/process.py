@@ -791,6 +791,12 @@ def convert_threshold(g, x, threshold, value):
     return where
 
 
+def convert_quantized_sigmoid(g, x, op_scale, op_zero_point):
+    x, _, _, _ = helper.dequantize_helper(g, x)
+    output = opset9.sigmoid(g, x)
+    return quantize_helper(g, output, op_scale, op_zero_point)
+
+
 @helper.parse_args('v', 'is')
 @quantized_args(True, False)
 def convert_tile(g, input, dims):
@@ -1080,10 +1086,6 @@ def convert_torch_to_onnx(model_path, params):
     torch.onnx.register_custom_op_symbolic(
         'quantized::add_relu', convert_quantized_add_relu, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
-        'quantized::cat', convert_quantized_cat, onnx_opset_version)
-    torch.onnx.register_custom_op_symbolic(
-        'quantized::relu6', convert_quantized_relu6, onnx_opset_version)
-    torch.onnx.register_custom_op_symbolic(
         'quantized::batch_norm2d', convert_quant_batch_norm, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'quantized::batch_norm3d', convert_quant_batch_norm3d, onnx_opset_version)
@@ -1091,6 +1093,12 @@ def convert_torch_to_onnx(model_path, params):
         'quantized::batch_norm2d_relu', convert_quant_batch_norm_relu, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'quantized::batch_norm3d_relu', convert_quant_batch_norm_relu_3d, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'quantized::cat', convert_quantized_cat, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'quantized::relu6', convert_quantized_relu6, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'quantized::sigmoid', convert_quantized_sigmoid, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::quantize_per_tensor', convert_quantize_per_tensor, onnx_opset_version)
 
