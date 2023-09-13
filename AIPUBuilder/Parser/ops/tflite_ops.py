@@ -748,12 +748,12 @@ class LiteDEPTHWISE_CONV_2DOp(BaseActivationOp, BaseConvOp, TfliteOp):
 class LiteDEQUANTIZEOp(OpHasOneOutPort, TfliteOp):
     @classmethod
     def attributes(cls):
-        return {1: {'scale': {'type': AttrType.TENSOR, 'default': np.array([1.], np.float32)},
-                    'zero_point': {'type': AttrType.TENSOR, 'default': np.array([0], np.int32)}},
-                2: {'scale': {'type': AttrType.TENSOR, 'default': np.array([1.], np.float32)},
-                    'zero_point': {'type': AttrType.TENSOR, 'default': np.array([0], np.int32)}},
-                3: {'scale': {'type': AttrType.TENSOR, 'default': np.array([1.], np.float32)},
-                    'zero_point': {'type': AttrType.TENSOR, 'default': np.array([0], np.int32)}}
+        return {1: {'scale': {'type': AttrType.TENSOR, 'default': np.array(1., np.float32)},
+                    'zero_point': {'type': AttrType.TENSOR, 'default': np.array(0, np.int32)}},
+                2: {'scale': {'type': AttrType.TENSOR, 'default': np.array(1., np.float32)},
+                    'zero_point': {'type': AttrType.TENSOR, 'default': np.array(0, np.int32)}},
+                3: {'scale': {'type': AttrType.TENSOR, 'default': np.array(1., np.float32)},
+                    'zero_point': {'type': AttrType.TENSOR, 'default': np.array(0, np.int32)}}
                 }
 
     def __init__(self, graph, attr_dict=None):
