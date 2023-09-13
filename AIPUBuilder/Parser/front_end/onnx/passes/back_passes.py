@@ -5149,6 +5149,7 @@ def back_passes(graph, params):
     simple_rename(graph, 'Sqrt', 'ArmSqrt')
     simple_rename(graph, 'Tan', 'ArmTan')
     simple_rename(graph, 'Transpose', 'ArmTranspose')
+    simple_rename(graph, 'Trunc', 'ArmTrunc')
     simple_rename(graph, 'ZeroFraction', 'ArmZeroFraction')
 
     fuse_relu(graph)

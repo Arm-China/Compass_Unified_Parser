@@ -1989,6 +1989,24 @@ class ArmFloorOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
         self.set_out_tensor(out_tensor)
 
 
+class ArmTruncOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
+    @classmethod
+    def cast_in_ports(cls):
+        return {0: 'float32'}
+
+    def __init__(self, graph, attr_dict=None):
+        super(ArmTruncOp, self).__init__(graph, attr_dict)
+        self.update_attributes(ArmTruncOp, attr_dict)
+        assert self.check_required(), 'ArmTruncOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(ArmTruncOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        torch_input = torch.from_numpy(inputs[0])
+        out_tensor = torch.trunc(torch_input).numpy()
+        self.set_out_tensor(out_tensor)
+
+
 class ArmFractionalPoolOp(OpHasMethod, OpHasMultipleOutPorts, ArmOp):
     @classmethod
     def attributes(cls):
