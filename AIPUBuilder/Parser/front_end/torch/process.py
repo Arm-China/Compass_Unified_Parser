@@ -822,6 +822,12 @@ def convert_trunc(g, x):
     return g.op('custom::Trunc', x)
 
 
+def convert_quantized_leaky_relu(g, x, negative_slope, inplace, op_scale, op_zero_point):
+    x, _, _, _ = helper.dequantize_helper(g, x)
+    output = opset9.leaky_relu(g, x, negative_slope, inplace)
+    return quantize_helper(g, output, op_scale, op_zero_point)
+
+
 @helper.parse_args('v', 'v')
 @quantized_args(True, False)
 def convert_view(g, self, shape):
@@ -1093,6 +1099,8 @@ def convert_torch_to_onnx(model_path, params):
         'quantized::batch_norm3d_relu', convert_quant_batch_norm_relu_3d, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'quantized::cat', convert_quantized_cat, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'quantized::leaky_relu', convert_quantized_leaky_relu, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'quantized::relu6', convert_quantized_relu6, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
