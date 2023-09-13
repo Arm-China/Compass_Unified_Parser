@@ -76,7 +76,7 @@ class ArmAcoshOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
 class ArmActivationOp(LayoutUnawareOp, OpHasMethod, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
-        return {0: ['float32', 'int8', 'uint8']}
+        return {0: ['float32', 'int8', 'uint8', 'int32']}
 
     @classmethod
     def attributes(cls):
