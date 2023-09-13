@@ -819,9 +819,7 @@ def convert_transpose(g, self, dim0, dim1):
 
 @helper.parse_args('v')
 def convert_trunc(g, x):
-    input_dtype_str = x.type().scalarType()
-    cast1 = g.op('Cast', x, to_i=torch._C._onnx.TensorProtoDataType.INT32)
-    return g.op('Cast', cast1, to_i=helper.cast_pytorch_to_onnx[input_dtype_str])
+    return g.op('custom::Trunc', x)
 
 
 @helper.parse_args('v', 'v')

@@ -825,24 +825,6 @@ class ReduceVarianceOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
         self.set_out_tensor(out_tensor)
 
 
-class SwishOp(OpHasOneOutPort, CommonOp):
-    @classmethod
-    def attributes(cls):
-        return {'alpha': {'type': AttrType.FLOAT, 'default': 1}
-                }
-
-    def __init__(self, graph, attr_dict=None):
-        super(SwishOp, self).__init__(graph, attr_dict)
-        self.update_attributes(SwishOp, attr_dict)
-        assert self.check_required(), 'SwishOp is missing a required parameter.'
-
-    def infer_shape(self):
-        super(SwishOp, self).infer_shape()
-        inputs = self.get_input_tensors()
-        out_tensor = (inputs[0]) * tf.sigmoid(self.alpha * inputs[0]).numpy()
-        self.set_out_tensor(out_tensor)
-
-
 class RollOp(OpHasAxis, OpHasOneOutPort, CommonOp):
 
     @staticmethod
@@ -935,6 +917,38 @@ class SufficientStatisticsOp(OpHasAxis, OpHasMultipleOutPorts, CommonOp):
             inputs[0], self.axes, shift=inputs[1], keepdims=True)
         out_tensor_list = [ot.numpy() for ot in out_tensor_list[1:3]]
         self.set_out_tensor(out_tensor_list)
+
+
+class SwishOp(OpHasOneOutPort, CommonOp):
+    @classmethod
+    def attributes(cls):
+        return {'alpha': {'type': AttrType.FLOAT, 'default': 1}
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(SwishOp, self).__init__(graph, attr_dict)
+        self.update_attributes(SwishOp, attr_dict)
+        assert self.check_required(), 'SwishOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(SwishOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = (inputs[0]) * tf.sigmoid(self.alpha * inputs[0]).numpy()
+        self.set_out_tensor(out_tensor)
+
+
+class TruncOp(LayoutUnawareOp, OpHasOneOutPort, CommonOp):
+    def __init__(self, graph, attr_dict=None):
+        super(TruncOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TruncOp, attr_dict)
+        assert self.check_required(), 'TruncOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(TruncOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        torch_input = torch.from_numpy(inputs[0])
+        out_tensor = torch.trunc(torch_input).numpy()
+        self.set_out_tensor(out_tensor)
 
 
 class UndefinedOp(OpHasVariableOutPorts, CommonOp):
