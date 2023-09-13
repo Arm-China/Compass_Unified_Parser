@@ -1427,6 +1427,7 @@ class ArmDecodeBoxOp(OpHasWeights, OpHasMultipleOutPorts, ArmOp):
                 or any((shape is None for shape in inp1_shape)) \
                 or any((shape is None for shape in inp2_shape)) \
                 or len(inp1_shape) != 3 or len(inp2_shape) != 3 \
+                or inp1_shape[:2] != inp2_shape[:2] \
                 or inp2_shape[-1] != 4:
             ERROR('[Parser]: Invalid inputs shape of ArmDecodeBoxOp!')
 
