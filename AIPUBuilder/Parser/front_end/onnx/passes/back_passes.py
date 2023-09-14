@@ -5099,6 +5099,7 @@ def back_passes(graph, params):
     simple_rename(graph, 'Acosh', 'ArmAcosh')
     simple_rename(graph, 'Asin', 'ArmAsin')
     simple_rename(graph, 'Asinh', 'ArmAsinh')
+    simple_rename(graph, 'Atan', 'ArmAtan')
     simple_rename(graph, 'BatchGather', 'ArmGather')
     simple_rename(graph, 'BitShift', 'ArmBitShift')
     simple_rename(graph, 'BNLL', 'ArmBNLL')
