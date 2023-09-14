@@ -627,6 +627,28 @@ def convert_max_unpool2d(g, input, indices, output_size):
     return g.op('MaxUnpool', input, indices, output_shape, kernel_shape_i=[1, 1]).setType(input.type())
 
 
+@helper.parse_args('v', 's')
+def convert_meshgrid(g, tensor_list, indexing='ij'):
+    unpacked_inputs = helper._unpack_list(tensor_list)
+    if len(unpacked_inputs) == 1:
+        return unpacked_inputs[0]
+    assert indexing in ('ij', 'xy'), 'Meets unsupported indexing %s in convert_meshgrid!' % indexing
+    if indexing == 'xy':
+        tensor0, tensor1 = unpacked_inputs[:2]
+        unpacked_inputs[:2] = [tensor1, tensor0]
+    tensors_shape = [helper._get_tensor_sizes(t)[0] for t in unpacked_inputs]
+    outs = []
+    for idx, t in enumerate(unpacked_inputs):
+        shape = [1] * len(unpacked_inputs)
+        shape[idx] = tensors_shape[idx]
+        reshape = helper._reshape_helper(g, t, shape)
+        extend = g.op('Expand', reshape, g.op('Constant', value_t=torch.tensor(tensors_shape, dtype=torch.int64)))
+        outs.append(extend)
+    if indexing == 'xy':
+        outs[:2] = outs[1], outs[0]
+    return g.op('prim::ListConstruct', *outs)
+
+
 @helper.parse_args('v', 'i', 'v', 'v')
 def convert_quantized_cat(
     g,
@@ -1063,6 +1085,8 @@ def convert_torch_to_onnx(model_path, params):
         'aten::max_unpool2d', convert_max_unpool2d, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::mean', convert_reduce_mean, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'aten::meshgrid', convert_meshgrid, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::round', convert_round, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(

@@ -6,6 +6,7 @@ import numpy as np
 from ....ops.op import Op, OpHasWeights, OpHasBiases, KerasOp, BaseDeconvOp
 from ....graph.node_wrap import NodeWrap
 from ....graph.pattern_match import matched_patterns, single_node_matcher, two_nodes_matcher
+from ....graph.graph_algo import get_valid_node_name
 from ....logger import INFO, DEBUG, WARN, ERROR, FATAL
 from .common_passes import clear_redundant_nodes, FLOAT_EQUAL, insert_constant
 
@@ -112,6 +113,13 @@ def convert_special_prelu(graph):
 
 
 def convert_special_sequence_construct(graph):
+    '''Add Out node after inputs of sequence_construct and update graph outputs if
+    the sequence_construct node is graph output.
+    sequence_construct will be removed by clear_redundant_nodes if there is no path
+    between it and other graph output, or be processed and removed by other passes
+    otherwise.
+    '''
+    matched = False
     matches = single_node_matcher(graph, 'SequenceConstruct')
     for m in matches:
         seq_construct = m['target']
@@ -120,16 +128,22 @@ def convert_special_sequence_construct(graph):
             ERROR(
                 '[Parser]: Meets invalid SequenceConstruct Op (%s) in convert_special_sequence_construct!' % seq_construct)
             continue
-        in_edges = graph.sorted_in_edges(seq_construct)
-        if len(in_edges) != 1:
-            WARN('[Parser]: Only supports SequenceConstruct Op (%s) with 1 input now, but got %d in convert_special_sequence_construct!' % (
-                seq_construct, len(in_edges)))
+        if seq_construct not in graph._attr['output_names']:
             continue
-
-        WARN('[Parser]: SequenceConstruct Op (%s) is unsupported and will be treated as Identity!' % seq_construct)
-        identity_attr = seq_construct_obj.copied_attr()
-        identity_attr.update({'opset_version': 1})
-        NodeWrap(graph, seq_construct).replace_obj('Identity', identity_attr)
+        matched = True
+        WARN('[Parser]: SequenceConstruct Op (%s) will be converted to deconstructed tensors in graph outputs!' % seq_construct)
+        index = graph._attr['output_names'].index(seq_construct)
+        graph._attr['output_names'].pop(index)
+        in_edges = graph.sorted_in_edges(seq_construct, data=True)
+        for idx, (name, _, in_attr) in enumerate(in_edges):
+            out_name = get_valid_node_name(graph, name + '_out')
+            out_in_attr = copy.deepcopy(in_attr)
+            out_in_attr.update({'dst_in_port': 0})
+            graph.add_edge(name, out_name, **out_in_attr)
+            NodeWrap(graph, out_name).replace_obj('Out', {'name': out_name})
+            graph._attr['output_names'].insert(index+idx, name)
+    if matched:
+        clear_redundant_nodes(graph)
 
 
 def convert_deconv(graph):
