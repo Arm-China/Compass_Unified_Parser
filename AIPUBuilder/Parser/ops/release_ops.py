@@ -1423,12 +1423,18 @@ class ArmDecodeBoxOp(OpHasWeights, OpHasMultipleOutPorts, ArmOp):
             inp_shapes) == 2, 'The length of input is invalid in ArmDecodeBoxOp.'
         inp1_shape = inp_shapes[0]
         inp2_shape = inp_shapes[1]
+        weights_shape = self.weights.shape
         if not inp1_shape or not inp2_shape \
+                or not weights_shape \
                 or any((shape is None for shape in inp1_shape)) \
                 or any((shape is None for shape in inp2_shape)) \
+                or any((shape is None for shape in weights_shape)) \
                 or len(inp1_shape) != 3 or len(inp2_shape) != 3 \
+                or len(weights_shape) != 2 \
                 or inp1_shape[:2] != inp2_shape[:2] \
-                or inp2_shape[-1] != 4:
+                or inp1_shape[1] != weights_shape[0] \
+                or inp2_shape[-1] != 4 \
+                or weights_shape[-1] != 4:
             ERROR('[Parser]: Invalid inputs shape of ArmDecodeBoxOp!')
 
         self.max_box_num = max(inputs[1].shape[1], 5000)
