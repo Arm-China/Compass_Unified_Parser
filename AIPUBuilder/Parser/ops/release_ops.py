@@ -364,6 +364,18 @@ class ArmAsinhOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
         self.set_out_tensor(out_tensor)
 
 
+class ArmAtanOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
+    @classmethod
+    def cast_in_ports(cls):
+        return {0: 'float32'}
+
+    def infer_shape(self):
+        super(ArmAtanOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = np.arctan(*inputs)
+        self.set_out_tensor(out_tensor)
+
+
 class ArmBasicLSTMOp(BaseRnnOp, OpHasBiases, OpHasWeights, ArmOp):
     @classmethod
     def cast_in_ports(cls):
