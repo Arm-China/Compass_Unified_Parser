@@ -184,7 +184,7 @@ def torch_forward(model_path, ordered_feed_dict, output_names=None, save_output=
 
     def _flat_outputs(data):
         outputs = []
-        if isinstance(data, tuple):
+        if isinstance(data, (list, tuple)):
             for nested_data in data:
                 outputs.extend(_flat_outputs(nested_data))
         else:
