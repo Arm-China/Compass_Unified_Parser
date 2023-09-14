@@ -9,15 +9,6 @@ import torch
 from collections import OrderedDict
 from .common.utils import is_file, is_dir, multi_string_to_list, list_string_to_list
 from .logger import *
-from .front_end.onnx.passes.middle_passes import middle_passes, convert_onnx_version
-from .front_end.onnx.passes.back_passes import back_passes, trim_weights
-from .front_end.onnx.passes.transform import transform_to_nhwc
-from .front_end.onnx.passes.common_passes import remove_useless_op
-from .graph.graph_algo import infer, has_path
-from .graph.pattern_match import matched_patterns, single_node_matcher
-from .writer import serialize
-from .preprocess import gamut_preprocess, preprocess
-from .misc import special_character_conversion
 
 
 def univ_parser(params):
@@ -104,7 +95,13 @@ def univ_parser(params):
         params['input_data_format'] = 'NCHW' if model_type in ('onnx', 'caffe', 'torch') else 'NHWC'
         params['output_tensor_names'] = params['output_names'][:]
 
-        if (is_file(model_path) or is_dir(model_path)) and is_dir(output_dir):
+        if not is_file(model_path) and not is_dir(model_path):
+            ERROR('[Parser]: Meets invalid model file/directory(%s)!' % model_path)
+            ret = False
+        elif not is_dir(output_dir):
+            ERROR('[Parser]: Meets invalid output directory(%s)!' % output_dir)
+            ret = False
+        else:
             graph = None
 
             import tensorflow as tf
@@ -146,6 +143,16 @@ def univ_parser(params):
                 ret = False
 
             if graph:
+                from .front_end.onnx.passes.middle_passes import middle_passes, convert_onnx_version
+                from .front_end.onnx.passes.back_passes import back_passes, trim_weights
+                from .front_end.onnx.passes.transform import transform_to_nhwc
+                from .front_end.onnx.passes.common_passes import remove_useless_op
+                from .graph.graph_algo import infer, has_path
+                from .graph.pattern_match import single_node_matcher
+                from .writer import serialize
+                from .preprocess import gamut_preprocess, preprocess
+                from .misc import special_character_conversion
+
                 '''Check if it is a connected graph.'''
                 input_names = []
                 input_names_list = single_node_matcher(graph, 'Input')
@@ -228,9 +235,6 @@ def univ_parser(params):
             else:
                 WARN('[Parser]: Got invalid or empty graph from model!')
                 ret = True
-        else:
-            ERROR('[Parser]: Meets invalid model file or invalid output directory!')
-            ret = False
     else:
         ERROR('[Parser]: Meets invalid parameters for universal parser!')
         ret = False
