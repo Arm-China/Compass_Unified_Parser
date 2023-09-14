@@ -596,6 +596,11 @@ def merge_q_unary(graph, op_list):
                             q_clip_min, m['float_op'], in_port=1)
             insert_constant(graph, m['float_op'] + '_q_clip_max',
                             q_clip_max, m['float_op'], in_port=2)
+        elif obj_dict['float_op'].type in ('Sigmoid', 'LeakyRelu', 'HardSwish', 'HardSigmoid', 'Relu') \
+                and y_zp.dtype == 'int32':
+            y_zp = y_zp.astype(np.int16)
+            WARN(
+                '[Parser]: Op (%s) output zeropoint dtype is int32, now convert it to int16!' % m['float_op'])
 
         src, _, in_attr = dequant_in_edges[0]
         new_in_attr = copy.deepcopy(in_attr)

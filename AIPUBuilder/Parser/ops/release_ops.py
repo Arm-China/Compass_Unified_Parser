@@ -76,7 +76,7 @@ class ArmAcoshOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
 class ArmActivationOp(LayoutUnawareOp, OpHasMethod, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
-        return {0: ['float32', 'int8', 'uint8', 'int32']}
+        return {0: ['float32', 'int8', 'uint8', 'int16', 'uint16']}
 
     @classmethod
     def attributes(cls):
@@ -153,7 +153,7 @@ class ArmActivationOp(LayoutUnawareOp, OpHasMethod, OpHasOneOutPort, ArmOp):
                 inp = inputs[0].astype(np.float32)
             else:
                 inp = inputs[0]
-            out_tensor = func(inp).numpy().astype(np.float32)
+            out_tensor = func(inp).numpy().astype(inputs[0].dtype)
         elif self.method == 'SILU':
             out_tensor = self.silu()
         elif self.method == 'SWISH':
