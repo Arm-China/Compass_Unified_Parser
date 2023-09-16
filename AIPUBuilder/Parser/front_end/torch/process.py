@@ -421,35 +421,46 @@ def convert_qat_bn(g, input, weight, bias, running_mean, running_var, eps, s, zp
 
 
 @helper.parse_args('v', 'v', 'v', 'v', 'v', 'f', 'v', 'v')
-def convert_quant_batch_norm_relu_3d(g, input, weight, bias, running_mean, running_var, eps, s, zp,):
+def convert_quant_batch_norm_relu_3d(g, x, weight, bias, running_mean, running_var, eps, s, zp,):
     from torch.onnx.symbolic_opset9 import relu
-    out = convert_qat_bn(g, input, weight, bias,
+    out = convert_qat_bn(g, x, weight, bias,
                          running_mean, running_var, eps, s, zp)
     out = relu(g, out)
     return quantize_helper(g, out, s, zp)
 
 
 @helper.parse_args('v', 'v', 'v', 'v', 'v', 'f', 'v', 'v')
-def convert_quant_batch_norm_relu(g, input, weight, bias, running_mean, running_var, eps, s, zp,):
+def convert_quant_batch_norm_relu(g, x, weight, bias, running_mean, running_var, eps, s, zp,):
     from torch.onnx.symbolic_opset9 import relu
-    out = convert_qat_bn(g, input, weight, bias,
+    out = convert_qat_bn(g, x, weight, bias,
                          running_mean, running_var, eps, s, zp)
     out = relu(g, out)
     return quantize_helper(g, out, s, zp)
 
 
 @helper.parse_args('v', 'v', 'v', 'v', 'v', 'f', 'v', 'v')
-def convert_quant_batch_norm(g, input, weight, bias, running_mean, running_var, eps, s, zp,):
-    out = convert_qat_bn(g, input, weight, bias,
+def convert_quant_batch_norm(g, x, weight, bias, running_mean, running_var, eps, s, zp,):
+    out = convert_qat_bn(g, x, weight, bias,
                          running_mean, running_var, eps, s, zp)
     return quantize_helper(g, out, s, zp)
 
 
 @helper.parse_args('v', 'v', 'v', 'v', 'v', 'f', 'v', 'v')
-def convert_quant_batch_norm3d(g, input, weight, bias, running_mean, running_var, eps, s, zp,):
-    out = convert_qat_bn(g, input, weight, bias,
+def convert_quant_batch_norm3d(g, x, weight, bias, running_mean, running_var, eps, s, zp,):
+    out = convert_qat_bn(g, x, weight, bias,
                          running_mean, running_var, eps, s, zp)
     return quantize_helper(g, out, s, zp)
+
+
+@helper.parse_args('v')
+def hardswish(g, self):
+    return g.op('HardSwish', self)
+
+
+def convert_quantized_hardswish(g, x, op_scale, op_zero_point):
+    x, _, _, _ = helper.dequantize_helper(g, x)
+    output = hardswish(g, x)
+    return quantize_helper(g, output, op_scale, op_zero_point)
 
 
 @quantized_args(True, False, False, False, False, False, False)
@@ -1132,6 +1143,8 @@ def convert_torch_to_onnx(model_path, params):
     torch.onnx.register_custom_op_symbolic(
         'quantized::elu', convert_quantized_elu, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
+        'quantized::hardswish', convert_quantized_hardswish, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
         'quantized::leaky_relu', convert_quantized_leaky_relu, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'quantized::relu6', convert_quantized_relu6, onnx_opset_version)
@@ -1195,7 +1208,8 @@ def convert_torch_to_onnx(model_path, params):
             tensor = tensor.cuda()
         tensor_list.append(tensor)
 
-    jit_model = model if is_torch_script_model else torch.jit.freeze(torch.jit.script(model))
+    jit_model = model if is_torch_script_model else torch.jit.freeze(
+        torch.jit.script(model))
     input_tensors = ()
     input_index = 0
     for inp in jit_model.graph.inputs():
