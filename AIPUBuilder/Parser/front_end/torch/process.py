@@ -883,6 +883,61 @@ def convert_quantize_per_tensor(g, input, scale, zero_point, dtype):
     return quantize_helper(g, input, scale, zero_point)
 
 
+def convert_index_add(g, self, dim, index, other, alpha=None):
+    import sys
+    dim = helper._maybe_get_const(dim, 'i')
+    if dim is None:
+        ERROR('ONNX export does NOT support exporting index_add_() function with unknown dim value.')
+
+    self_dim_rank = helper._get_tensor_rank(self)
+    other_dim_rank = helper._get_tensor_rank(other)
+
+    if self_dim_rank is None or other_dim_rank is None:
+        ERROR(
+            'ONNX export does NOT support exporting index_add_() function while, the rank of self tensor or tensor to be added is unknown.')
+
+    if dim < 0:
+        dim = dim + self_dim_rank
+
+    if other_dim_rank != self_dim_rank:
+        delta = self_dim_rank - other_dim_rank
+        for i in range(delta):
+            other = helper._unsqueeze_helper(
+                g, other, [symbolic_helper._get_tensor_rank(other)]
+            )
+
+    other_dim_size = helper._get_tensor_dim_size(other, dim)
+    self_dim_size = helper._get_tensor_dim_size(self, dim)
+
+    if (other_dim_size is not None) and (self_dim_size is not None):
+        if other_dim_size > self_dim_size:
+            ERROR('ONNX export does not support exporting index_add_() function with duplicated values in index parameter yet.')
+
+    new_shape_axes = list(range(self_dim_rank))
+    new_shape_starts = [0 for i in range(self_dim_rank)]
+    new_shape_ends = [sys.maxsize if (
+        i != dim) else 1 for i in range(self_dim_rank)]
+
+    new_shape = helper._slice_helper(
+        g, self, axes=new_shape_axes, starts=new_shape_starts, ends=new_shape_ends
+    )
+
+    for i in range(dim):
+        index = helper._unsqueeze_helper(g, index, [0])
+
+    for i in range(self_dim_rank - dim - 1):
+        index = helper._unsqueeze_helper(
+            g, index, [helper._get_tensor_rank(index)]
+        )
+
+    scatter_add_indices = opset9.expand_as(g, index, other)
+
+    if alpha and helper._scalar(helper._maybe_get_scalar(alpha)) != 1:
+        other = g.op('Neg', other)
+
+    return opset9.scatter_add(g, self, dim, scatter_add_indices, other)
+
+
 @quantized_args(True, False)
 @helper.parse_args('v', 'b')
 def convert_quantized_relu6(g, x, inplace):
@@ -1066,6 +1121,8 @@ def convert_torch_to_onnx(model_path, params):
         'aten::avg_pool2d', convert_avg_pool2d, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::avg_pool3d', convert_avg_pool3d, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'aten::index_add', convert_index_add, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::bitwise_left_shift', convert_bitshift_left, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
