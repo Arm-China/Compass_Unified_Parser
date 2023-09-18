@@ -2262,7 +2262,10 @@ def rename_conv(graph):
         conv = m['conv']
         conv_node = NodeWrap(graph, conv)
         conv_obj = conv_node['object']
-        if conv_obj is None or len(conv_obj.get_input_shapes()) < 1:
+        if conv_obj is None \
+                or len(conv_obj.get_input_shapes()) < 1 \
+                or conv_obj.weights is None \
+                or conv_obj.biases is None:
             ERROR(
                 '[Parser]: Meets invalid Conv/ConvTranspose Op(%s) in rename_conv!' % conv)
             continue
