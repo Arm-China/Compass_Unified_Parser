@@ -72,7 +72,10 @@ def convert_1d_conv(graph):
         for m in matches:
             conv = m['target']
             conv_obj = NodeWrap(graph, conv)['object']
-            if conv_obj is not None and len(conv_obj.weights.shape) == 3:
+            if conv_obj is None:
+                ERROR('[Parser]: Meets invalid Conv node(%s) in convert_1d_conv!' % conv)
+                continue
+            if conv_obj.weights is not None and len(conv_obj.weights.shape) == 3:
                 in_edges = graph.sorted_in_edges(conv, data=True)
                 out_edges = graph.sorted_out_edges(conv, data=True)
                 if len(in_edges) >= 1 and len(out_edges) >= 1:
@@ -1848,7 +1851,7 @@ def fuse_linear_bn(graph):
         transpose_obj = NodeWrap(graph, transpose)['object']
         if linear_obj is not None and bn_obj is not None and (transpose is None or transpose_obj is not None):
             if linear_obj.weights is None or linear_obj.biases is None:
-                WARN('[Parser]: Meets invalid Linear Op (%s) in fuse_linear_bn!' % linear)
+                WARN('[Parser]: Meets invalid %s Op (%s) in fuse_linear_bn!' % (linear_obj.type, linear))
                 continue
             if bn_obj.training_mode:
                 continue
