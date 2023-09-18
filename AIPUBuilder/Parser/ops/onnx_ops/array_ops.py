@@ -1010,7 +1010,7 @@ class ScatterElementsOp(OpHasOneOutPort, OpHasAxis, OnnxOp):
         indices = GatherElementsOp.make_indices_non_negative(
             indices, inputs[0].shape[self.axis])
         index_torch = torch.from_numpy(np.array(indices).astype(np.int64))
-        update_torch = torch.from_numpy(updates)
+        update_torch = torch.from_numpy(np.array(updates).astype(data.dtype))
         if self.reduction == 'none':
             out_tensor = torch.Tensor.scatter_(
                 data_torch, src=update_torch, dim=self.axis, index=index_torch).numpy()
