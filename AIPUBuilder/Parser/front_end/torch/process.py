@@ -947,6 +947,55 @@ def convert_quantized_relu6(g, x, inplace):
     return g.op('Clip', x, const_min, const_max)
 
 
+def _index_fill_reshape_helper(g, self, dim, index):
+    from torch.onnx.symbolic_opset9 import expand
+
+    if self.type().dim() is None:
+        return _unimplemented('index_fill input rank not accessible')
+    self_dim = self.type().dim()
+    dim_value = helper._parse_arg(dim, 'i')
+    if dim_value < 0:
+        self_dim_rank = helper._get_tensor_rank(self)
+        dim_value = dim_value + self_dim_rank
+    unsqueezed_index = helper._unsqueeze_helper(
+        g, index, [i for i in range(self_dim) if i != dim_value]
+    )
+    expanded_index_shape = convert_scatter(
+        g, g.op('Shape', self), 0, helper._unsqueeze_helper(
+            g, dim, [0]), g.op('Shape', index)
+    )
+    expanded_index = expand(g, unsqueezed_index, expanded_index_shape, None)
+    return expanded_index_shape, expanded_index
+
+
+def convert_index_fill(g, self, dim, index, value):
+    dim_value = helper._parse_arg(dim, 'i')
+    self_dim_rank = helper._get_tensor_rank(self)
+
+    if self_dim_rank is None:
+        ERROR(
+            'ONNX export does NOT support exporting index_add_() function while, the rank of self tensor or tensor to be added is unknown.')
+
+    if helper.is_caffe2_aten_fallback():
+        return g.at(
+            'index_fill',
+            self,
+            index,
+            value,
+            overload_name='int_Scalar',
+            dim_i=dim_value,
+        )
+
+    expanded_index_shape, expanded_index = _index_fill_reshape_helper(
+        g, self, dim, index
+    )
+    value = helper._maybe_get_scalar(value)
+    value = helper._if_scalar_type_as(g, value, self)
+    expanded_value = opset9.expand(g, value, expanded_index_shape, None)
+
+    return convert_scatter(g, self, dim, expanded_index, expanded_value)
+
+
 def convert_atan2(g, self, other):
     slope = g.op('Div', self, other)
     atan = g.op('Atan', slope)
@@ -1123,6 +1172,8 @@ def convert_torch_to_onnx(model_path, params):
         'aten::avg_pool3d', convert_avg_pool3d, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::index_add', convert_index_add, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'aten::index_fill', convert_index_fill, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::bitwise_left_shift', convert_bitshift_left, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
