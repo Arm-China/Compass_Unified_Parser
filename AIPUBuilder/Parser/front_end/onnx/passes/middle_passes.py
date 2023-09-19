@@ -5725,6 +5725,7 @@ def merge_ln4(graph):
             if len(mean_1_in_edges) != 1 \
                     or len(sub_in_edges) != 2 \
                     or mean_1_in_edges[0][0] != sub_in_edges[0][0] \
+                    or mean_1_in_edges[0][2]['tensor'].value is None \
                     or mean_1_in_edges[0][2]['src_out_port'] != sub_in_edges[0][2]['src_out_port']:
                 continue
 
