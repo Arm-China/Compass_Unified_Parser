@@ -578,6 +578,7 @@ def convert_tf_to_graph(model_path, params):
                                 FATAL('[Parser]: Output_name(%s) has path from invalid Input (%s)! '
                                       'Please check config file.' % (out_name, placeholder))
 
+                clear_redundant_nodes(graph)
                 for n in graph.nodes:
                     node_type = nodes_dict[n]['type']
                     if node_type not in PARSER_OP_DICT:
