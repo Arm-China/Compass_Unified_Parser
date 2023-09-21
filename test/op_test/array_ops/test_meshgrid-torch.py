@@ -8,8 +8,8 @@ class meshgrid_model(torch.nn.Module):
         super(meshgrid_model, self).__init__()
         self.indexing = indexing
 
-    def forward(self, x1, x2, x3, x4):
-        y = torch.meshgrid(x1, x2, x3, x4, indexing=self.indexing)
+    def forward(self, x1, x2):
+        y = torch.meshgrid(x1, x2, indexing=self.indexing)
         # return torch.concat(y, dim=-1)
         return y  # the output node will be SequenceConstruct
 
@@ -25,7 +25,8 @@ def create_meshgrid_model(model_path, indexing):
 
 TEST_NAME = 'meshgrid'
 feed_dict = {}
-for idx, input_shape in enumerate([[4], [5], [3], [6], ]):  # [[4]], [[4], [5]], [[4], [5], [3]]
+# opt only supports 2 inputs for now
+for idx, input_shape in enumerate([[4], [], ]):  # [[4]], [[4], [5]], [[4], [5], [3]]
     input_data = np.random.ranf(input_shape).astype(np.float32)
     feed_dict.update({'x' + str(idx): input_data})
 
