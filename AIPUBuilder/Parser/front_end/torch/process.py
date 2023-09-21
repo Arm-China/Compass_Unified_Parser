@@ -644,19 +644,11 @@ def convert_meshgrid(g, tensor_list, indexing='ij'):
     if len(unpacked_inputs) == 1:
         return unpacked_inputs[0]
     assert indexing in ('ij', 'xy'), 'Meets unsupported indexing %s in convert_meshgrid!' % indexing
-    if indexing == 'xy':
-        tensor0, tensor1 = unpacked_inputs[:2]
-        unpacked_inputs[:2] = [tensor1, tensor0]
-    tensors_shape = [helper._get_tensor_sizes(t)[0] for t in unpacked_inputs]
-    outs = []
+    inputs = []
     for idx, t in enumerate(unpacked_inputs):
-        shape = [1] * len(unpacked_inputs)
-        shape[idx] = tensors_shape[idx]
-        reshape = helper._reshape_helper(g, t, shape)
-        extend = g.op('Expand', reshape, g.op('Constant', value_t=torch.tensor(tensors_shape, dtype=torch.int64)))
-        outs.append(extend)
-    if indexing == 'xy':
-        outs[:2] = outs[1], outs[0]
+        input_1d = helper._reshape_helper(g, t, [-1]) if helper._get_tensor_rank(t) != 1 else t
+        inputs.append(input_1d)
+    outs = g.op('custom::Meshgrid', *inputs, indexing_s=indexing, outputs=len(inputs))
     return g.op('prim::ListConstruct', *outs)
 
 
