@@ -366,9 +366,8 @@ def convert_onnx_to_graph(model_path, params):
                             op_attr.update({'name': name})
                             nodes[ni].update({'name': name})
                     op_name = op_attr['name']
-                    assert not graph.has_node(
-                        op_name), 'Node %s does not exist in convert_onnx_to_graph.' % (op_name)
-                    graph.add_node(op_name)
+                    if not graph.has_node(op_name):
+                        graph.add_node(op_name)
                     NodeWrap(graph, op_name).replace_obj(node_type, op_attr)
 
                     for in_port, in_tensor_info in enumerate(node['input']):
@@ -422,8 +421,6 @@ def convert_onnx_to_graph(model_path, params):
                                 in_tensor_name, in_tensor_out_port)]
                             pre_op = nodes[pre_op_id]
                             pre_op_name = pre_op['name'] if pre_op['name'] else pre_op['output'][0]['name']
-                            assert graph.has_node(
-                                pre_op_name), 'Node %s does not exist in convert_onnx_to_graph.' % (pre_op_name)
                             if in_tensor_out_port == 0:
                                 in_tensor_out_port = [
                                     out_info['name'] for out_info in pre_op['output']].index(in_tensor_name)

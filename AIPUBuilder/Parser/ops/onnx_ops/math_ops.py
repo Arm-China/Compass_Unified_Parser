@@ -2375,14 +2375,16 @@ class SoftmaxOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
             inner_dim = [-1, 1] \
                 if self.axis == 0 \
                 else [int(np.prod(input_shape[:self.axis])), int(np.prod(input_shape[self.axis:]))]
-            inp = np.reshape(inputs[0], inner_dim)
+            # torch softmax not implemented for 'Half'
+            inp = np.reshape(inputs[0], inner_dim).astype(np.float32)
             out_tensor = torch.nn.functional.softmax(
                 torch.from_numpy(inp), dim=0 if self.axis == 0 else -1).numpy()
             out_tensor = np.reshape(out_tensor, input_shape)
         else:
+            inp = np.array(inputs[0], dtype=np.float32)
             out_tensor = torch.nn.functional.softmax(
-                torch.from_numpy(inputs[0]), dim=self.axis).numpy()
-        self.set_out_tensor(out_tensor)
+                torch.from_numpy(inp), dim=self.axis).numpy()
+        self.set_out_tensor(out_tensor.astype(inputs[0].dtype))
 
     def convert_version(self):
         max_ver = type(self).max_ver()

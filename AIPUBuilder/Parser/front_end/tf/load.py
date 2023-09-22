@@ -194,8 +194,8 @@ def parse_pb(model_path, params, anchor_tensors):
     if not is_file(model_path):
         FATAL('[Parser]: Invalid pb file %s in parse_pb!' %
               model_path)
+    graph_def = tfv1.GraphDef()
     try:
-        graph_def = tfv1.GraphDef()
         with tfv1.gfile.GFile(model_path, 'rb') as f:
             graph_def.ParseFromString(f.read())
 
