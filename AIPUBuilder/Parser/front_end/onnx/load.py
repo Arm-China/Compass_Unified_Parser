@@ -292,6 +292,7 @@ def convert_onnx_to_graph(model_path, params):
 
                         if single_input['name'] in params['input_npy']:
                             input_tensor = params['input_npy'][single_input['name']]
+                            is_const = True
                         else:
                             input_type = np.dtype(
                                 single_input['type']['tensor_type']['elem_type'])
@@ -305,10 +306,11 @@ def convert_onnx_to_graph(model_path, params):
                             else:
                                 input_tensor = np.random.ranf(
                                     size=input_shape).astype(input_type)
+                            is_const = False
 
                         graph._attr['input_tensors'].update({
                             single_input['name']: Tensor(
-                                name=single_input['name'], value=input_tensor)
+                                name=single_input['name'], value=input_tensor, is_const=is_const)
                         })
 
                 out_tensor_operator_map = {}
