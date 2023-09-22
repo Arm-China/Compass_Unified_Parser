@@ -210,7 +210,7 @@ def parse_pb(model_path, params, anchor_tensors):
     return parse_graph_def(graph_def, params, anchor_tensors)
 
 
-def parse_graph_def(graph_def, params, anchor_tensors=[]):
+def parse_graph_def(graph_def, params, anchor_tensors=list()):
     try:
         default_graph, nodes = get_tfgraph_and_nodes(graph_def)
 
@@ -260,7 +260,7 @@ def parse_graph_def(graph_def, params, anchor_tensors=[]):
             if tensor_name in params.get('input_npy', {}):
                 np_tensor = params['input_npy'][tensor_name]
             else:
-                np_tensor = np.random.randint(0, 1, size=v, dtype=np_type) \
+                np_tensor = np.zeros(v, dtype=np_type) \
                     if re.search(r'int', str(np_type)) \
                     else np.random.ranf(v).astype(np_type)
             feed_dict.update({tensor_name: np_tensor})
@@ -452,12 +452,11 @@ def convert_tf_to_graph(model_path, params):
                                                 is_valid_shape = False
                                         if all([s is not None for s in tensor_shape[:]]) and is_valid_shape:
                                             tensor_type = t.dtype.name
-                                            tensor_value = np.random.randint(0, 1, size=tensor_shape,
-                                                                             dtype=np.dtype(tensor_type)) \
+                                            tensor_value = np.zeros(tensor_shape, dtype=np.dtype(tensor_type)) \
                                                 if re.search(r'int', str(tensor_type)) \
                                                 else np.random.ranf(tensor_shape).astype(np.dtype(tensor_type))
                             edge_tensor = Tensor(
-                                name=tensor_name, shape=tensor_shape, value=tensor_value)
+                                name=tensor_name, shape=tensor_shape, value=tensor_value, is_const=(tensor_name in params['input_npy']))
                             graph.add_edge(src_name,
                                            n['name'],
                                            **{'src_out_port': src_out_port, 'dst_in_port': in_port,
@@ -565,7 +564,7 @@ def convert_tf_to_graph(model_path, params):
                                     tensor_value = np_tensors[tensor_name]
                                 else:
                                     dtype = nodes_dict[placeholder]['attr']['dtype']
-                                    tensor_value = np.random.randint(0, 1, size=t_shape, dtype=np.dtype(dtype)) \
+                                    tensor_value = np.zeros(t_shape, dtype=np.dtype(dtype)) \
                                         if re.search(r'int', str(dtype)) \
                                         else np.random.ranf(t_shape).astype(np.dtype(dtype))
                                 tensor = Tensor(
@@ -623,7 +622,7 @@ def convert_tf_to_graph(model_path, params):
                             except:
                                 t_shape = tuple()
                         edge_tensor = Tensor(
-                            name=t_name, shape=t_shape, value=t_value)
+                            name=t_name, shape=t_shape, value=t_value, is_const=(t_name in params['input_npy']))
                         edge_attr = {'src_out_port': out_port,
                                      'dst_in_port': 0, 'tensor': edge_tensor}
                         graph.add_edge(out_name, out_op_name, **edge_attr)
