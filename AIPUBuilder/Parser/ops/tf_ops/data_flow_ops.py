@@ -10,10 +10,11 @@ from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 class TfTensorArrayV3Op(OpHasVariableOutPorts, TfOp):
     @classmethod
     def attributes(cls):
-        return {1: {'element_shape': {'type': AttrType.INTS, 'required': True},
-                    'dynamic_size': {'type': AttrType.INT, 'default': 0, 'options': [0, 1]},
-                    'clear_after_read': {'type': AttrType.INT, 'default': 1, 'options': [0, 1]},
-                    'identical_element_shapes': {'type': AttrType.INT, 'default': 0, 'options': [0, 1]},
+        return {1: {'element_shape': {'type': AttrType.INTS, 'default': None},
+                    'dynamic_size': {'type': AttrType.BOOL, 'default': False},
+                    'clear_after_read': {'type': AttrType.BOOL, 'default': True},
+                    'identical_element_shapes': {'type': AttrType.BOOL, 'default': False},
+                    'tensor_array_name': {'type': AttrType.STRING, 'default': ''}
                     }
                 }
 
@@ -25,6 +26,17 @@ class TfTensorArrayV3Op(OpHasVariableOutPorts, TfOp):
     def infer_shape(self):
         super(TfTensorArrayV3Op, self).infer_shape()
         inputs = self.get_input_tensors()
+        out_tensors = tf.raw_ops.TensorArrayV3(size=inputs[0],
+                                               dtype=self.dtype,
+                                               element_shape=self.element_shape,
+                                               dynamic_size=self.dynamic_size,
+                                               clear_after_read=self.clear_after_read,
+                                               identical_element_shapes=self.identical_element_shapes,
+                                               tensor_array_name=self.tensor_array_name,
+                                               )
+        out_tensors = [o if i == 0 else o.numpy() for i, o in enumerate(out_tensors)]
+        out_tensors = list(map(out_tensors.__getitem__, self.get_out_ports()))
+        self.set_out_tensor(out_tensors)
 
 
 class TfTensorArrayGatherV3Op(OpHasOneOutPort, TfOp):
