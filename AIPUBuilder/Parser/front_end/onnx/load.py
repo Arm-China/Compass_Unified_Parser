@@ -28,6 +28,18 @@ onnx_source_map = {
 def build_subgraph(params, root_graph_info, opset_ver):
 
     nodes = params.get('nodes', [])
+
+    for ni, node in enumerate(nodes):
+        if not node['name']:
+            if node['output'][0]['name']:
+                node.update({'name': node['output'][0]['name']})
+                nodes[ni].update(
+                    {'name': node['output'][0]['name']})
+            else:
+                name = get_valid_node_name(graph, op_attr['type'])
+                node.update({'name': name})
+                nodes[ni].update({'name': name})
+
     inputs = params.get('inputs', [])
     outputs = params.get('outputs', [])
     consts = params.get('consts', [])
@@ -456,19 +468,59 @@ def convert_onnx_to_graph(model_path, params):
                                 graph.add_edge(
                                     branch_out, op_name, **edge_attr)
                                 if_in_port += 1
-                                graph._attr['subgraph_output_names'].update(branch._attr['output_ports'])
+                                graph._attr['subgraph_output_names'].update(
+                                    branch._attr['output_ports'])
                     elif node['type'] == 'Loop':
                         loop_obj = NodeWrap(graph, op_name)['object']
                         if loop_obj is not None:
+                            loop_in_shape = loop_obj.get_input_shapes()
+                            loop_in_tensors = loop_obj.get_input_tensors()
                             loop_in_port = len(loop_obj.get_in_ports())
-                            for body_out in loop_obj.body._attr['output_names']:
-                                loop_obj.body._attr['root_in_ports'].append(loop_in_port)
-                                edge_attr = {'src_out_port': 0, 'dst_in_port': loop_in_port}
-                                graph.add_edge(body_out, op_name, **edge_attr)
-                                loop_in_port += 1
-                            graph._attr['subgraph_output_names'].update(loop_obj.body._attr['output_ports'])
+
+                            if len(loop_in_shape) == 3 \
+                                    and len(loop_in_tensors) == 3 \
+                                    and len(loop_obj.body._attr['input_tensors']) == 3 \
+                                    and len(loop_obj.body._attr['output_names']) == 3:
+                                if not loop_in_tensors[1]:
+                                    continue
+                                for index, (body_inp, in_port) in enumerate(loop_obj.body._attr['input_tensors']):
+                                    body_in_obj = NodeWrap(
+                                        graph, body_inp)['object']
+                                    body_inp_port = body_in_obj.get_in_ports()
+                                    loop_in_edges = graph.sorted_in_edges(
+                                        op_name, data=True)
+                                    if len(body_inp_port) != 0 or len(loop_in_edges) != 3:
+                                        continue
+                                    src, _, in_attr = loop_in_edges[index]
+                                    new_in_attr = copy.deepcopy(in_attr)
+                                    new_in_attr['dst_in_port'] = 0
+                                    graph.add_edge(
+                                        src, body_inp, **new_in_attr)
+
+                                # TODO: need to support complex condition loop.
+                                for body_out in loop_obj.body._attr['output_names'][1:-1]:
+                                    loop_obj.body._attr['root_in_ports'].append(
+                                        loop_in_port)
+                                    edge_attr = {'src_out_port': 0,
+                                                 'dst_in_port': loop_in_port}
+                                    graph.add_edge(
+                                        body_out, op_name, **edge_attr)
+                                    loop_in_port += 1
+                            else:
+                                for body_out in loop_obj.body._attr['output_names']:
+                                    loop_obj.body._attr['root_in_ports'].append(
+                                        loop_in_port)
+                                    edge_attr = {'src_out_port': 0,
+                                                 'dst_in_port': loop_in_port}
+                                    graph.add_edge(
+                                        body_out, op_name, **edge_attr)
+                                    loop_in_port += 1
+
+                            graph._attr['subgraph_output_names'].update(
+                                loop_obj.body._attr['output_ports'])
                         else:
-                            ERROR('[Parser]: Meets invalid Loop Op(%s) in convert_onnx_to_graph!' % op_name)
+                            ERROR(
+                                '[Parser]: Meets invalid Loop Op(%s) in convert_onnx_to_graph!' % op_name)
 
                     if not graph_is_quantized and not force_not_quantize \
                             and (node['type'] in ('QuantizeLinear', 'DequantizeLinear', 'QGemm')
