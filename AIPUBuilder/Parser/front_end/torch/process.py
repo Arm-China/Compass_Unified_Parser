@@ -875,49 +875,127 @@ def convert_quantize_per_tensor(g, input, scale, zero_point, dtype):
     return quantize_helper(g, input, scale, zero_point)
 
 
-def convert_index_add(g, self, dim, index, other, alpha=None):
+def convert_index_put(g, x, indices_list_value, values, accumulate=False):
+    if helper._is_packed_list(indices_list_value):
+        indices_list = helper._unpack_list(indices_list_value)
+    else:
+        indices_list = [indices_list_value]
+    if helper.is_caffe2_aten_fallback():
+        args = [x] + indices_list + [values, accumulate]
+        return g.at('index_put', *args)
+
+    accumulate = helper._parse_arg(accumulate, 'b')
+
+    if len(indices_list) == 0:
+        return values
+
+    if len(indices_list) > 1:
+        for idx_ in range(len(indices_list)):
+            if helper._is_bool(indices_list[idx_]):
+                indices_list[idx_] = g.op('NonZero', indices_list[idx_])
+        index = indices_list[0]
+
+        for ind in indices_list[1:]:
+            index = opset9.add(g, index, ind)
+        broadcast_index_shape = g.op('Shape', index)
+        indices_list = [
+            helper._unsqueeze_helper(
+                g, opset9.expand(g, ind, broadcast_index_shape, None), [-1]
+            )
+            for ind in indices_list
+        ]
+        index = g.op('Concat', *indices_list, axis_i=-1)
+    else:
+        # TODO: Replace index_put node with masked_scatter or masked_fill
+        # when inputs to the index_put node contains a single boolean input.
+
+        index = indices_list[0]
+        bool_inp = index
+        broadcast_index_shape = g.op('Shape', index)
+        index = helper._unsqueeze_helper(g, index, [-1])
+
+    import sys
+    sub_data_shape = helper._slice_helper(
+        g, g.op('Shape', x), axes=[0], starts=[len(indices_list)], ends=[sys.maxsize]
+    )
+    values_shape = g.op('Concat', broadcast_index_shape,
+                        sub_data_shape, axis_i=0)
+
+    # Check if values is a singular value and expand accordingly
+    value_rank = helper._get_tensor_rank(values)
+    inp_rank = helper._get_tensor_rank(x)
+    if value_rank is not None and value_rank < inp_rank:
+        values = opset9.expand(g, values, values_shape, None)
+
+    values = helper._reshape_helper(g, values, values_shape)
+
+    input_dtype_str = x.type().scalarType()
+    value_dtype_str = values.type().scalarType()
+
+    if input_dtype_str != value_dtype_str:
+        values = g.op('Cast', values,
+                      to_i=helper.cast_pytorch_to_onnx[input_dtype_str])
+    elif accumulate:
+        WARN('x does not have a valid scalar type.')
+
+    if accumulate:
+        zeros = g.op(
+            'ConstantOfShape',
+            g.op('Shape', x),
+            value_t=torch.tensor([0], dtype=torch.int32),
+        )
+        result = g.op('ScatterND', zeros, index, values)
+        from torch.onnx import symbolic_opset11 as opset11
+        result = opset11.add(g, x, result)
+    else:
+        result = g.op('ScatterND', x, index, values)
+
+    return result
+
+
+def convert_index_add(g, x, dim, index, other, alpha=None):
     import sys
     dim = helper._maybe_get_const(dim, 'i')
     if dim is None:
         ERROR('ONNX export does NOT support exporting index_add_() function with unknown dim value.')
 
-    self_dim_rank = helper._get_tensor_rank(self)
+    x_dim_rank = helper._get_tensor_rank(x)
     other_dim_rank = helper._get_tensor_rank(other)
 
-    if self_dim_rank is None or other_dim_rank is None:
+    if x_dim_rank is None or other_dim_rank is None:
         ERROR(
-            'ONNX export does NOT support exporting index_add_() function while, the rank of self tensor or tensor to be added is unknown.')
+            'ONNX export does NOT support exporting index_add_() function while, the rank of x tensor or tensor to be added is unknown.')
 
     if dim < 0:
-        dim = dim + self_dim_rank
+        dim = dim + x_dim_rank
 
-    if other_dim_rank != self_dim_rank:
-        delta = self_dim_rank - other_dim_rank
+    if other_dim_rank != x_dim_rank:
+        delta = x_dim_rank - other_dim_rank
         for i in range(delta):
             other = helper._unsqueeze_helper(
                 g, other, [symbolic_helper._get_tensor_rank(other)]
             )
 
     other_dim_size = helper._get_tensor_dim_size(other, dim)
-    self_dim_size = helper._get_tensor_dim_size(self, dim)
+    x_dim_size = helper._get_tensor_dim_size(x, dim)
 
-    if (other_dim_size is not None) and (self_dim_size is not None):
-        if other_dim_size > self_dim_size:
+    if (other_dim_size is not None) and (x_dim_size is not None):
+        if other_dim_size > x_dim_size:
             ERROR('ONNX export does not support exporting index_add_() function with duplicated values in index parameter yet.')
 
-    new_shape_axes = list(range(self_dim_rank))
-    new_shape_starts = [0 for i in range(self_dim_rank)]
+    new_shape_axes = list(range(x_dim_rank))
+    new_shape_starts = [0 for i in range(x_dim_rank)]
     new_shape_ends = [sys.maxsize if (
-        i != dim) else 1 for i in range(self_dim_rank)]
+        i != dim) else 1 for i in range(x_dim_rank)]
 
     new_shape = helper._slice_helper(
-        g, self, axes=new_shape_axes, starts=new_shape_starts, ends=new_shape_ends
+        g, x, axes=new_shape_axes, starts=new_shape_starts, ends=new_shape_ends
     )
 
     for i in range(dim):
         index = helper._unsqueeze_helper(g, index, [0])
 
-    for i in range(self_dim_rank - dim - 1):
+    for i in range(x_dim_rank - dim - 1):
         index = helper._unsqueeze_helper(
             g, index, [helper._get_tensor_rank(index)]
         )
@@ -927,7 +1005,134 @@ def convert_index_add(g, self, dim, index, other, alpha=None):
     if alpha and helper._scalar(helper._maybe_get_scalar(alpha)) != 1:
         other = g.op('Neg', other)
 
-    return opset9.scatter_add(g, self, dim, scatter_add_indices, other)
+    return opset9.scatter_add(g, x, dim, scatter_add_indices, other)
+
+
+@helper.parse_args('v', 'i', 'v', 'v', 's')
+def scatter_helper(g, self, dim, index, src, reduction):
+    if helper.is_caffe2_aten_fallback():
+        return g.at('scatter', self, dim, index, src, overload_name='src')
+    src_type = src.type().scalarType()
+    src = helper._maybe_get_scalar(src)
+    if helper._is_value(src):
+        return g.op('ScatterElements', self, index, src, axis_i=dim, reduction_s=reduction)
+    else:
+        # TODO: support more reduction type if necessary.
+
+        # Check if scalar "src" has same type as self (PyTorch allows different
+        # type for scalar src (but not when src is tensor)). If not, insert Cast node.
+        input_dtype_str = self.type().scalarType()
+        if input_dtype_str != src_type:
+            src = g.op(
+                'Cast',
+                src,
+                to_i=helper.cast_pytorch_to_onnx[input_dtype_str]
+            )
+        return g.op(
+            'ScatterElements', self, index, opset9.expand_as(g, src, index), axis_i=dim
+        )
+
+
+@helper.parse_args('v', 'i', 'v', 'v', 's', 'b')
+def convert_index_reduce(g, x, dim, index, other, reduction, include_self):
+    def has_duplicates(seq):
+        return len(seq) != len(set(seq))
+
+    import sys
+    dim = helper._maybe_get_const(dim, 'i')
+    if dim is None:
+        ERROR('ONNX export does NOT support exporting index_add_() function with unknown dim value.')
+
+    index_value = helper._maybe_get_const(index, 'is')
+    index_duplicates = has_duplicates(index_value)
+    x_dim_rank = helper._get_tensor_rank(x)
+    other_dim_rank = helper._get_tensor_rank(other)
+
+    if x_dim_rank is None or other_dim_rank is None:
+        ERROR(
+            'ONNX export does NOT support exporting index_add_() function while, the rank of x tensor or tensor to be added is unknown.')
+
+    if dim < 0:
+        dim = dim + x_dim_rank
+
+    if other_dim_rank != x_dim_rank:
+        delta = x_dim_rank - other_dim_rank
+        for i in range(delta):
+            other = helper._unsqueeze_helper(
+                g, other, [symbolic_helper._get_tensor_rank(other)]
+            )
+
+    x_shape = helper._get_tensor_sizes(x)
+    other_shape = helper._get_tensor_sizes(other)
+    sub_shape = list(map(lambda x: x[0]-x[1], zip(x_shape, other_shape)))
+
+    other_dim_size = helper._get_tensor_dim_size(other, dim)
+    x_dim_size = helper._get_tensor_dim_size(x, dim)
+
+    if (other_dim_size is not None) and (x_dim_size is not None):
+        if other_dim_size > x_dim_size:
+            ERROR('ONNX export does not support exporting index_add_() function with duplicated values in index parameter yet.')
+
+    for i in range(dim):
+        index = helper._unsqueeze_helper(g, index, [0])
+
+    for i in range(x_dim_rank - dim - 1):
+        index = helper._unsqueeze_helper(
+            g, index, [helper._get_tensor_rank(index)]
+        )
+
+    scatter_indices = opset9.expand_as(g, index, other)
+
+    # TODO: Partially supported.
+    # Because of the limitations of ONNX scatter element.
+
+    if (include_self is True or index_duplicates) and reduction == 'mean':
+        # onnx ScatterElements (opset 18) only support reduction = [none (default), add, mul, max, min].
+        ERROR('unsupported now in convert_index_reduce.')
+
+    # index_duplicates == True
+    if index_duplicates:
+        # TODO:Because the current maximum Op_version of torch_to_onnx is 16,
+        # and only the ScatterElement of Op_set 18 supports min/max,
+        # in order to ensure the accuracy of the onnx definition in the parser,
+        # max/min is not supported now.
+        # Wait until torch_to_onnx can support op_version 18 before supporting it.
+        #
+        # if include_self is False and reduction == 'amin':
+        #     reduction = 'min'
+        #     add_value = torch.full(other_shape, np.iinfo(
+        #         np.int16).max, dtype=torch.int32)
+        #     zero_value = torch.full(x_shape, 0, dtype=torch.int32)
+        #     add_v = g.op('Constant', value_t=add_value)
+        #     zeros = g.op('Constant', value_t=zero_value)
+        #     result = scatter_helper(
+        #         g, zeros, dim, scatter_indices, add_v, 'add')
+        #     from torch.onnx import symbolic_opset11 as opset11
+        #     x = opset11.add(g, x, result)
+        # elif reduction == 'amax':
+        #     reduction = 'max'
+        # elif reduction == 'amin':
+        #     reduction = 'min'
+        if reduction == 'prod':
+            reduction = 'mul'
+        return scatter_helper(g, x, dim, scatter_indices, other, reduction)
+
+    # index_duplicates == False
+    if include_self is False:
+        reduction = 'none'
+        return scatter_helper(g, x, dim, scatter_indices, other, reduction)
+    else:
+        # TODO:Same as above
+        # if reduction == 'amin':
+        #     reduction = 'min'
+        # elif reduction == 'amax':
+        #     reduction = 'max'
+        if reduction == 'prod':
+            reduction = 'mul'
+        else:
+            ERROR('invalid reduction type in convert_index_reduce.')
+
+    return scatter_helper(g, x, dim, scatter_indices, other, reduction)
 
 
 @quantized_args(True, False)
@@ -1166,6 +1371,10 @@ def convert_torch_to_onnx(model_path, params):
         'aten::index_add', convert_index_add, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::index_fill', convert_index_fill, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'aten::index_put', convert_index_put, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'aten::index_reduce', convert_index_reduce, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::bitwise_left_shift', convert_bitshift_left, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
