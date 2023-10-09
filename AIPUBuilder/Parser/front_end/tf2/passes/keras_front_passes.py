@@ -1,5 +1,5 @@
-# Copyright © 2022 Arm Technology (China) Co. Ltd. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
+# Copyright © 2022-2023 Arm Technology (China) Co. Ltd.
 
 
 import numpy as np
@@ -686,7 +686,7 @@ def convert_rescaling(graph):
 
 def convert_resizing(graph):
     matches = single_node_matcher(graph, ['TfKerasResizing', 'TfKerasUpSampling1D',
-                                  'TfKerasUpSampling2D', 'TfKerasUpSampling3D'])
+                                          'TfKerasUpSampling2D', 'TfKerasUpSampling3D'])
     for m in matches:
         resize = m['target']
         resize_obj = NodeWrap(graph, resize)['object']

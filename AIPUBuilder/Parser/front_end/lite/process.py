@@ -1,5 +1,5 @@
-# Copyright © 2022 Arm Technology (China) Co. Ltd. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
+# Copyright © 2022-2023 Arm Technology (China) Co. Ltd.
 
 
 from .load import convert_tflite_to_graph
@@ -30,7 +30,7 @@ def process_tflite(model_path, params):
 
         if graph._attr.get('quantize', False):
             merge_dqd(graph, ['LiteMIRROR_PAD', 'LiteRSQRT',
-                      'LiteSQUARED_DIFFERENCE'])
+                              'LiteSQUARED_DIFFERENCE'])
             merge_special_cast_quantize(graph)
             convert_special_quantize(graph)
             convert_special_dequantize(graph)

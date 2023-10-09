@@ -1,5 +1,5 @@
-# Copyright © 2022 Arm Technology (China) Co. Ltd. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
+# Copyright © 2022-2023 Arm Technology (China) Co. Ltd.
 
 
 import math
@@ -435,9 +435,9 @@ class CumSumOp(OpHasOneOutPort, OpHasAxis, OnnxOp):
     @classmethod
     def attributes(cls):
         return {11: {'exclusive': {'type': AttrType.INT, 'default': 0, 'options': [0, 1]},
-                'reverse': {'type': AttrType.INT, 'default': 0, 'options': [0, 1]}},
+                     'reverse': {'type': AttrType.INT, 'default': 0, 'options': [0, 1]}},
                 14: {'exclusive': {'type': AttrType.INT, 'default': 0, 'options': [0, 1]},
-                'reverse': {'type': AttrType.INT, 'default': 0, 'options': [0, 1]}},
+                     'reverse': {'type': AttrType.INT, 'default': 0, 'options': [0, 1]}},
                 }
 
     def __init__(self, graph, attr_dict=None):
@@ -1602,7 +1602,7 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
             inp1_lists.append(inp1_list)
             inp2_lists.append(inp2_list)
         ret_dict.update({'original': original_lists, 'd1': d1_lists,
-                        'd2': d2_lists, 'in1': inp1_lists, 'in2': inp2_lists})
+                         'd2': d2_lists, 'in1': inp1_lists, 'in2': inp2_lists})
         return ret_dict
 
     @staticmethod
@@ -1633,7 +1633,7 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
                                                 for idx in range(spatial_len)])
                 in_x = x_data[data_idx]
                 ret = ret + np.prod([init_dict[d_names[idx]][idx][ele_idx[idx + 2]]
-                                    for idx in range(spatial_len)]) * in_x
+                                     for idx in range(spatial_len)]) * in_x
             y_data[ele_idx] = ret
         if pre_perm is not None:
             y_data = np.transpose(y_data, Op.cal_inverse_perm(pre_perm))
@@ -1837,7 +1837,7 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
 
         x_reshaped = np.reshape(x_data, [batch_size, -1, input_height, input_width])
         image_temp_buffer = np.zeros([batch_size, num_channels * input_depth,
-                                     output_height, output_width], dtype=x_data.dtype)
+                                      output_height, output_width], dtype=x_data.dtype)
         use_extrapolation = (coordinate_transform_mode == 'tf_crop_and_resize')
         ResizeOp.upsample_base_antialias(p, batch_size, num_channels * input_depth, input_height, input_width, output_height, output_width,
                                          False, extrapolation_value, x_reshaped, image_temp_buffer)

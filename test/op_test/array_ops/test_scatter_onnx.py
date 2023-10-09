@@ -1,5 +1,5 @@
-# Copyright © 2022 Arm Technology (China) Co. Ltd. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
+# Copyright © 2022-2023 Arm Technology (China) Co. Ltd.
 
 import numpy as np
 import onnx
@@ -29,7 +29,7 @@ def create_scatter_model(onnx_path, input_size1, input_size2, output_size, axis,
     Y = helper.make_tensor_value_info('Y', TensorProto.FLOAT, output_size)
     #Y4 = np.array([[-7,-9,-10,-4,-8,4,-5],[1,9,-1,9,5,-8,-2],[-9,-8,2,2,1,4,-2],[-1,-1,4,7,6,6,4],[-4,7,4,6,-4,0,-3]])
     Y4 = np.array([[-2, -4, -1, -4, -3, 4, -2], [1, 3, -1, 3, 2, -2, -2],
-                  [-4, -4, 2, 2, 1, 4, -2], [-1, -1, 4, 2, 3, 3, 1], [-4, 2, 4, 2, -4, 0, -3]])
+                   [-4, -4, 2, 2, 1, 4, -2], [-1, -1, 4, 2, 3, 3, 1], [-4, 2, 4, 2, -4, 0, -3]])
     Y4_tensor_name = 'Y4'
 
     indices_tensor = create_initializer_tensor(
