@@ -1,5 +1,5 @@
-# Copyright © 2022 Arm Technology (China) Co. Ltd. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
+# Copyright © 2022-2023 Arm Technology (China) Co. Ltd.
 
 
 from collections import OrderedDict, defaultdict
@@ -73,7 +73,7 @@ class Graph(nx.MultiDiGraph):
             for edge_k, edge_attr in edges.items():
                 out_edges.append((n, s, edge_k, edge_attr))
         out_edges = sorted(out_edges, key=lambda x: (x[3]['src_out_port']
-                           if x[3]['src_out_port'] is not None else 0, x[2]))
+                                                     if x[3]['src_out_port'] is not None else 0, x[2]))
         if keys and data:
             ret = [(u, v, k, d) for u, v, k, d in out_edges]
         elif keys:

@@ -1,5 +1,5 @@
-# Copyright © 2022 Arm Technology (China) Co. Ltd. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
+# Copyright © 2022-2023 Arm Technology (China) Co. Ltd.
 
 
 import tensorflow as tf
@@ -841,13 +841,13 @@ class RollOp(OpHasAxis, OpHasOneOutPort, CommonOp):
         start1 = np.zeros((axis_value + 1)).astype(np.int32).tolist()
         start1[-1] = slice_num
         end1 = np.array([roll_shape[i]
-                        for i in range(0, axis_value + 1)]).tolist()
+                         for i in range(0, axis_value + 1)]).tolist()
         steps1 = np.ones((axis_value + 1)).astype(np.int32).tolist()
         axes1 = np.arange(axis_value + 1).astype(np.int32).tolist()
 
         start2 = np.zeros((axis_value + 1)).astype(np.int32).tolist()
         end2 = np.array([roll_shape[i]
-                        for i in range(0, axis_value + 1)]).tolist()
+                         for i in range(0, axis_value + 1)]).tolist()
         end2[-1] = slice_num
         steps2 = np.ones((axis_value + 1)).astype(np.int32).tolist()
         axes2 = np.arange(axis_value + 1).astype(np.int32).tolist()

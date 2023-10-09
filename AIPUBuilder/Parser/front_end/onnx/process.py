@@ -1,5 +1,5 @@
-# Copyright © 2022 Arm Technology (China) Co. Ltd. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
+# Copyright © 2022-2023 Arm Technology (China) Co. Ltd.
 
 
 from .load import convert_onnx_to_graph
@@ -26,7 +26,7 @@ def process_onnx(model_path, params):
         merge_qmatmul(graph)
         merge_q_multiple(graph, ['Add', 'Concat', 'Gemm', 'Mul'])
         merge_q_unary(graph, ['MaxPool', 'ReduceMean', 'Relu', 'Reshape', 'Slice',
-                      'Transpose', 'HardSwish', 'GlobalAveragePool', 'HardSigmoid', 'Clip',
+                              'Transpose', 'HardSwish', 'GlobalAveragePool', 'HardSigmoid', 'Clip',
                               'LeakyRelu', 'Sigmoid'])
 
         fuse_weights_const(graph)

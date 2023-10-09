@@ -1,5 +1,5 @@
-# Copyright © 2022 Arm Technology (China) Co. Ltd. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
+# Copyright © 2022-2023 Arm Technology (China) Co. Ltd.
 
 
 import numpy as np
@@ -314,7 +314,7 @@ def merge_quantized_ln(graph):
         graph.add_edge(reshape1_src, add3, **inp_out_attr)
         ln_attr = objs_dict[add3].copied_attr()
         ln_attr.update({'epsilon': eps_q, 'eps_scale': eps_s, 'eps_zp': eps_z, 'weights': weights,
-                       'biases': biases, 'opset_version': 6, 'non_channel_axes': axes, 'data_format': 'NCHW'})
+                        'biases': biases, 'opset_version': 6, 'non_channel_axes': axes, 'data_format': 'NCHW'})
         NodeWrap(graph, add3).replace_obj(
             'InstanceNormalization', ln_attr)
     if matched:
@@ -664,7 +664,7 @@ def convert_unpack(graph, op_type='LiteUNPACK'):
                 NodeWrap(graph, reshape).replace_obj(
                     'Reshape', {'name': reshape, 'opset_version': 5})
                 insert_constant(graph, reshape + '_shape', np.array(reshape_dim,
-                                np.int64), reshape, in_port=1, data_format='NHWC')
+                                                                    np.int64), reshape, in_port=1, data_format='NHWC')
                 last_names.append(reshape)
 
             if unpack in graph._attr['output_names'] and last_names:
@@ -2693,7 +2693,7 @@ def merge_min_quant_max_to_clip(graph):
         clip_max = (np.iinfo(dtype).max - int(max_out_zp)) * float(max_out_scale)
         clip_attr = obj_dict['max'].copied_attr()
         clip_attr.update({'opset_version': 6,
-                         'quantize': False,
+                          'quantize': False,
                           'min': clip_min,
                           'max': clip_max}
                          )
