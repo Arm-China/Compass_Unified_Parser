@@ -1434,7 +1434,7 @@ def convert_multi_scatternd_to_concat(graph):
         concat_nodes_num = largest_indice + 1
         scatter = last_scatter
         scatter_nodes = [None] * concat_nodes_num
-        src_nodes_info = []
+        src_nodes_info = [None] * concat_nodes_num
         for exp_indice in range(largest_indice, -1, -1):
             inp, indice, axis = scatters_dict[scatter]
             if (indice != 0 and inp not in scatters_dict) \
@@ -1445,7 +1445,7 @@ def convert_multi_scatternd_to_concat(graph):
             if len(scatter_in_edges) < 3:
                 break
             update, _, in_attr = scatter_in_edges[2]
-            src_nodes_info.append((update, in_attr))
+            src_nodes_info[indice] = (update, in_attr)
             scatter = inp
         if None in scatter_nodes:
             continue

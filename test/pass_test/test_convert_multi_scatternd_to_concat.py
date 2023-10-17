@@ -26,7 +26,9 @@ def create_scatter_model(onnx_path, input_size, update_size, output_size, versio
 
     X1 = helper.make_tensor_value_info('X1', TensorProto.FLOAT, input_size)
     X2 = helper.make_tensor_value_info('X2', TensorProto.FLOAT, update_size)
+    X3 = helper.make_tensor_value_info('X3', TensorProto.FLOAT, update_size)
     Y0 = helper.make_tensor_value_info('Y0', TensorProto.FLOAT, output_size)
+    Y1 = helper.make_tensor_value_info('Y1', TensorProto.FLOAT, output_size)
     Y = helper.make_tensor_value_info('Y', TensorProto.FLOAT, output_size)
     indices = np.expand_dims(np.array(list(np.ndindex(*input_size[:-1]))), list(range(len(input_size)-2)))
     indices1, indices2 = np.split(indices, 2, -2)
@@ -47,13 +49,18 @@ def create_scatter_model(onnx_path, input_size, update_size, output_size, versio
     )
     scatternd2 = helper.make_node(
         OP_NAME,
-        inputs=['Y0', 'indice2', 'X2'],
+        inputs=['Y0', 'indice2', 'X3'],
+        outputs=['Y1'],
+    )
+    add = helper.make_node(
+        'Add',
+        inputs=['X1', 'Y1'],
         outputs=['Y'],
     )
     graph_def = helper.make_graph(
-        [scatternd1, scatternd2],  # nodes
+        [scatternd1, scatternd2, add],  # nodes
         OP_NAME + '-model',  # name
-        [X1, X2],  # inputs
+        [X1, X2, X3],  # inputs
         [Y],  # outputs
         initializer=[indices1_tensor, indices2_tensor],
     )
@@ -82,6 +89,7 @@ for input_shape, update_shape, output_shape in zip(input_shapes, update_shapes, 
 
     feed_dict['X1'] = np.random.ranf(input_shape).astype(np.float32)
     feed_dict['X2'] = np.random.ranf(update_shape).astype(np.float32)
+    feed_dict['X3'] = np.random.ranf(update_shape).astype(np.float32) * 100
     # Run tests with parser and compare result with runtime
     exit_status = run_parser(
         model_path, feed_dict, expected_keywords=['layer_type=Concat'],
