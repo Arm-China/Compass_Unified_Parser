@@ -11,6 +11,58 @@ from .common.utils import is_file, is_dir, multi_string_to_list, list_string_to_
 from .logger import *
 
 
+def check_similarity(graph, params, txt_path, bin_path):
+    if not params.get('similarity_input_npy', ''):
+        return True
+    if graph._attr.get('quantize', False):
+        WARN('[Parser]: The feature of showing similarity is only supported for float ir now!')
+        return True
+
+    if not txt_path or not bin_path or not is_file(txt_path) or not is_file(bin_path):
+        ERROR('[Parser]: Meets invalid txt_path (%s) or bin_path (%s) in check_similarity!' % (txt_path, bin_path))
+        return False
+
+    ret = True
+    feed_dict = params['similarity_input_npy']
+    model_path = params.get('input_model', '')
+
+    rt_output_dict, opt_output_dict = {}, {}
+    try:
+        from .utils.forward import rt_forward
+        # Get model output using runtime of original framework(tf, onnx, caffe and etc)
+        output_names = params.get('output_names', None)
+        rt_output_dict = rt_forward(model_path, feed_dict, output_names=output_names if output_names else None,
+                                    proto_path=params.get('caffe_prototxt', ''))
+    except Exception as e:
+        ERROR('[Parser]: Meets Exception (%s) in framework runtime forward!' % str(e))
+        ret = False
+
+    try:
+        from .utils.forward import opt_forward
+        # Get model output using opt forward
+        opt_output_dict = opt_forward(txt_path, bin_path, feed_dict)
+    except Exception as e:
+        ERROR('[Parser]: Meets Exception (%s) in opt forward!' % str(e))
+        ret = False
+
+    if not rt_output_dict or not opt_output_dict:
+        ERROR('[Parser]: Fail to check similarity due to missing runtime/opt forward outputs!')
+        ret = False
+    else:
+        from .utils.compare import compare_data_dict
+        # Compare outputs
+        INFO('[Parser]: Comparing outputs(first runtime, second opt)')
+        ret = compare_data_dict(rt_output_dict, opt_output_dict)
+
+        # Report result
+        if ret:
+            INFO('[Parser]: Similarity checking is passed!')
+        else:
+            INFO('[Parser]: Similarity checking is failed!')
+            ret = False
+    return ret
+
+
 def univ_parser(params):
     ret = True
 
@@ -39,26 +91,30 @@ def univ_parser(params):
         params['input_shapes'] = list_string_to_list(
             params['input_shapes']) if 'input_shapes' in params else []
 
-        input_npy = {}
-        if params.get('input_npy', ''):
-            npy_pattern = re.compile(r'^[\s*.*\s*,]*\s*.*s*$')
-            npy_matched = re.search(npy_pattern, params['input_npy'])
-            if npy_matched is not None:
-                npy_paths = npy_matched[0].split(',')
-                for p in npy_paths:
-                    try:
-                        p = p.rstrip(' ').lstrip(' ')
-                        data = np.load(p, allow_pickle=True)
-                        if isinstance(data, np.ndarray):
-                            if data.size == 1 \
-                                    and isinstance(data.item(), dict):
-                                input_npy.update(data.item())
-                        elif isinstance(data, np.lib.npyio.NpzFile):
-                            for key in list(data.keys()):
-                                input_npy.update({key: data[key]})
-                    except:
-                        WARN('[Parser]: Load input npy(%s) failed!' % os.path.basename(p))
-        params['input_npy'] = input_npy
+        def _parse_npy(key_name):
+            input_npy = {}
+            if params.get(key_name, ''):
+                npy_pattern = re.compile(r'^[\s*.*\s*,]*\s*.*s*$')
+                npy_matched = re.search(npy_pattern, params[key_name])
+                if npy_matched is not None:
+                    npy_paths = npy_matched[0].split(',')
+                    for p in npy_paths:
+                        try:
+                            p = p.rstrip(' ').lstrip(' ')
+                            data = np.load(p, allow_pickle=True)
+                            if isinstance(data, np.ndarray):
+                                if data.size == 1 \
+                                        and isinstance(data.item(), dict):
+                                    input_npy.update(data.item())
+                            elif isinstance(data, np.lib.npyio.NpzFile):
+                                for key in list(data.keys()):
+                                    input_npy.update({key: data[key]})
+                        except:
+                            WARN('[Parser]: Load input npy(%s) failed!' % os.path.basename(p))
+            return input_npy
+
+        params['input_npy'] = _parse_npy('input_npy')
+        params['similarity_input_npy'] = _parse_npy('similarity_input_npy')
 
         if model_type == 'torch':
             # For torch, input_names and output_names are useless because it's not allowed to change
@@ -229,12 +285,19 @@ def univ_parser(params):
                 except Exception as e:
                     ERROR('[Parser]: Meets exception in last infer (%s)!' % str(e))
 
+                txt_path, bin_path = '', ''
                 try:
                     trim_weights(graph)
-                    serialize(graph, params)
+                    ret, txt_path, bin_path = serialize(graph, params)
                 except Exception as e:
                     ERROR('[Parser]: Meets exception in serialize (%s)!' % str(e))
 
+                if ret:
+                    try:
+                        ret = check_similarity(graph, params, txt_path, bin_path)
+                    except Exception as e:
+                        ERROR('[Parser]: Meets exception in check_similarity (%s)!' % str(e))
+                        ret = False
             else:
                 WARN('[Parser]: Got invalid or empty graph from model!')
                 ret = True
