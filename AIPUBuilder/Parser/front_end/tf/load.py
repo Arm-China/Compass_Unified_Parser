@@ -392,7 +392,7 @@ def convert_tf_to_graph(model_path, params):
                     WARN('[Parser]: Cannot get anchor tensors (%s) in convert_tf_to_graph!' % str(anchor_tensors))
 
             nodes_outputs = {n['name']: n['output'] for n in nodes}
-            nodes_inputs = set()
+            nodes_inputs = OrderedDict()
             for n in nodes:
                 if is_keras_model:
                     # Update tensor to node name for keras model because node name + ':0'
@@ -413,52 +413,57 @@ def convert_tf_to_graph(model_path, params):
                                 graph._attr['output_names'].pop(index)
                 if n['name'] in graph._attr['input_names']:
                     if n.get('input', []):
-                        nodes_inputs.update([src_name for src_name, _, _ in n['input']])
+                        nodes_inputs.update({(src_name, src_port): None for src_name, src_port, _ in n['input']})
                     continue
                 try:
                     for in_port, (src_name, src_out_port, is_control) in enumerate(n.get('input', [])):
-                        nodes_inputs.add(src_name)
                         if not is_control:
-                            tensor_name, tensor_shape, tensor_value = '', tuple(), None
-                            if src_name in nodes_outputs \
-                                    and len(nodes_outputs[src_name]) > src_out_port \
-                                    and len(nodes_outputs[src_name][src_out_port]) == 2:
-                                tensor_name, tensor_shape = nodes_outputs[src_name][src_out_port]
-                                tensor_shape = [] if tensor_shape is None else tensor_shape
-                                if tensor_name in np_tensors:
-                                    tensor_value = np_tensors[tensor_name]
-                                    if type(tensor_value).__name__ == 'bytes':
-                                        tensor_value = np.array(
-                                            tensor_value, '<U0')
-                                    tensor_shape = tensor_value.shape if tensor_value is not None else list(
-                                        tensor_shape)
-                                elif tensor_name in tensors:
-                                    t = tensors[tensor_name]
-                                    tensor_shape = tensor_value.shape if tensor_value is not None else list(
-                                        tensor_shape)
-                                    if tensor_value is None:
-                                        is_valid_shape = True
-                                        if is_keras_model:
-                                            if src_name in params['input_shapes']:
-                                                tensor_shape = params['input_shapes'][src_name]
-                                            elif tensor_name in params['input_shapes']:
-                                                tensor_shape = params['input_shapes'][tensor_name]
-                                                params['input_shapes'][src_name] = \
-                                                    params['input_shapes'].pop(tensor_name)
-                                            elif t.op.type not in ('KerasInputLayer', 'Placeholder'):
-                                                is_valid_shape = False
-                                        else:
-                                            if trim_tensor_name(tensor_name) in params['input_shapes']:
-                                                tensor_shape = params['input_shapes'][trim_tensor_name(tensor_name)]
-                                            elif t.op.type != 'Placeholder':
-                                                is_valid_shape = False
-                                        if all([s is not None for s in tensor_shape[:]]) and is_valid_shape:
-                                            tensor_type = t.dtype.name
-                                            tensor_value = np.zeros(tensor_shape, dtype=np.dtype(tensor_type)) \
-                                                if re.search(r'int', str(tensor_type)) \
-                                                else np.random.ranf(tensor_shape).astype(np.dtype(tensor_type))
-                            edge_tensor = Tensor(
-                                name=tensor_name, shape=tensor_shape, value=tensor_value, is_const=(tensor_name in params['input_npy']))
+                            if nodes_inputs.get((src_name, src_out_port), None) is not None:
+                                edge_tensor = nodes_inputs[(src_name, src_out_port)]
+                            else:
+                                nodes_inputs[(src_name, src_out_port)] = None
+
+                                tensor_name, tensor_shape, tensor_value = '', tuple(), None
+                                if src_name in nodes_outputs \
+                                        and len(nodes_outputs[src_name]) > src_out_port \
+                                        and len(nodes_outputs[src_name][src_out_port]) == 2:
+                                    tensor_name, tensor_shape = nodes_outputs[src_name][src_out_port]
+                                    tensor_shape = [] if tensor_shape is None else tensor_shape
+                                    if tensor_name in np_tensors:
+                                        tensor_value = np_tensors[tensor_name]
+                                        if type(tensor_value).__name__ == 'bytes':
+                                            tensor_value = np.array(
+                                                tensor_value, '<U0')
+                                        tensor_shape = tensor_value.shape if tensor_value is not None else list(
+                                            tensor_shape)
+                                    elif tensor_name in tensors:
+                                        t = tensors[tensor_name]
+                                        tensor_shape = tensor_value.shape if tensor_value is not None else list(
+                                            tensor_shape)
+                                        if tensor_value is None:
+                                            is_valid_shape = True
+                                            if is_keras_model:
+                                                if src_name in params['input_shapes']:
+                                                    tensor_shape = params['input_shapes'][src_name]
+                                                elif tensor_name in params['input_shapes']:
+                                                    tensor_shape = params['input_shapes'][tensor_name]
+                                                    params['input_shapes'][src_name] = \
+                                                        params['input_shapes'].pop(tensor_name)
+                                                elif t.op.type not in ('KerasInputLayer', 'Placeholder'):
+                                                    is_valid_shape = False
+                                            else:
+                                                if trim_tensor_name(tensor_name) in params['input_shapes']:
+                                                    tensor_shape = params['input_shapes'][trim_tensor_name(tensor_name)]
+                                                elif t.op.type != 'Placeholder':
+                                                    is_valid_shape = False
+                                            if all([s is not None for s in tensor_shape[:]]) and is_valid_shape:
+                                                tensor_type = t.dtype.name
+                                                tensor_value = np.zeros(tensor_shape, dtype=np.dtype(tensor_type)) \
+                                                    if re.search(r'int', str(tensor_type)) \
+                                                    else np.random.ranf(tensor_shape).astype(np.dtype(tensor_type))
+                                edge_tensor = Tensor(
+                                    name=tensor_name, shape=tensor_shape, value=tensor_value, is_const=(tensor_name in params['input_npy']))
+                                nodes_inputs[(src_name, src_out_port)] = edge_tensor
                             graph.add_edge(src_name,
                                            n['name'],
                                            **{'src_out_port': src_out_port, 'dst_in_port': in_port,
@@ -477,8 +482,9 @@ def convert_tf_to_graph(model_path, params):
 
             if not graph._attr['output_names']:
                 # Try to find out output nodes
+                nodes_inputs_src = set({src for (src, _) in nodes_inputs.keys()})
                 output_names = [n['name']
-                                for n in nodes if (n['name'] not in nodes_inputs and n.get('output', []))]
+                                for n in nodes if (n['name'] not in nodes_inputs_src and n.get('output', []))]
                 graph._attr['output_names'] = output_names
             else:
                 for out_name in graph._attr['output_names']:
