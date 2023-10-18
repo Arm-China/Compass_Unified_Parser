@@ -49,10 +49,13 @@ def univ_parser(params):
                     try:
                         p = p.rstrip(' ').lstrip(' ')
                         data = np.load(p, allow_pickle=True)
-                        if isinstance(data, np.ndarray) \
-                                and data.size == 1 \
-                                and isinstance(data.item(), dict):
-                            input_npy.update(data.item())
+                        if isinstance(data, np.ndarray):
+                            if data.size == 1 \
+                                    and isinstance(data.item(), dict):
+                                input_npy.update(data.item())
+                        elif isinstance(data, np.lib.npyio.NpzFile):
+                            for key in list(data.keys()):
+                                input_npy.update({key: data[key]})
                     except:
                         WARN('[Parser]: Load input npy(%s) failed!' % os.path.basename(p))
         params['input_npy'] = input_npy
