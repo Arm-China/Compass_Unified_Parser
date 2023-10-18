@@ -259,6 +259,8 @@ def parse_graph_def(graph_def, params, anchor_tensors=list()):
                 np_type = np.float32
             if tensor_name in params.get('input_npy', {}):
                 np_tensor = params['input_npy'][tensor_name]
+            elif k in params.get('input_npy', {}):
+                np_tensor = params['input_npy'][k]
             else:
                 np_tensor = np.zeros(v, dtype=np_type) \
                     if re.search(r'int', str(np_type)) \
