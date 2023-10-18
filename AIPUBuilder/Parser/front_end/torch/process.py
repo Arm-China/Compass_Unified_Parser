@@ -891,7 +891,7 @@ def convert_index_put(g, x, indices_list_value, values, accumulate=False):
 
     if len(indices_list) > 1:
         for idx_ in range(len(indices_list)):
-            if helper._is_bool(indices_list[idx_]):
+            if indices_list[idx_].type().scalarType() == 'Bool':
                 indices_list[idx_] = g.op('NonZero', indices_list[idx_])
         index = indices_list[0]
 
@@ -906,43 +906,46 @@ def convert_index_put(g, x, indices_list_value, values, accumulate=False):
         ]
         index = g.op('Concat', *indices_list, axis_i=-1)
     else:
-        # TODO: Replace index_put node with masked_scatter or masked_fill
-        # when inputs to the index_put node contains a single boolean input.
-
         index = indices_list[0]
         bool_inp = index
+        if bool_inp.type() is not None and bool_inp.type().scalarType() == 'Bool':
+            rank = helper._get_tensor_rank(values)
+            if rank is not None and rank == 0:
+                return opset9.masked_fill(g, x, bool_inp, values)
+            return masked_scatter(g, x, bool_inp, values)
         broadcast_index_shape = g.op('Shape', index)
         index = helper._unsqueeze_helper(g, index, [-1])
-
     import sys
     sub_data_shape = helper._slice_helper(
         g, g.op('Shape', x), axes=[0], starts=[len(indices_list)], ends=[sys.maxsize]
     )
     values_shape = g.op('Concat', broadcast_index_shape,
                         sub_data_shape, axis_i=0)
-
     # Check if values is a singular value and expand accordingly
-    value_rank = helper._get_tensor_rank(values)
+    rank = helper._get_tensor_rank(values)
     inp_rank = helper._get_tensor_rank(x)
-    if value_rank is not None and value_rank < inp_rank:
-        values = opset9.expand(g, values, values_shape, None)
-
+    inp_shape = helper._get_tensor_sizes(x)
+    value_shape = helper._get_tensor_sizes(values)
+    if rank is not None \
+            and rank < inp_rank \
+            and all((shape is not None for shape in inp_shape))\
+            and all((shape is not None for shape in value_shape)):
+        try:
+            values = opset9.expand(g, values, values_shape, None)
+        except:
+            pass
     values = helper._reshape_helper(g, values, values_shape)
 
-    input_dtype_str = x.type().scalarType()
-    value_dtype_str = values.type().scalarType()
-
-    if input_dtype_str != value_dtype_str:
-        values = g.op('Cast', values,
-                      to_i=helper.cast_pytorch_to_onnx[input_dtype_str])
-    elif accumulate:
-        WARN('x does not have a valid scalar type.')
+    dtype = x.type().scalarType()
+    if dtype is not None and dtype != values.type().scalarType():
+        values = g.op('Cast', values, to_i=helper.cast_pytorch_to_onnx[dtype])
 
     if accumulate:
         zeros = g.op(
             'ConstantOfShape',
             g.op('Shape', x),
-            value_t=torch.tensor([0], dtype=torch.int32),
+            value_t=torch.tensor(
+                [0], dtype=helper.pytorch_name_to_type[dtype]),
         )
         result = g.op('ScatterND', zeros, index, values)
         from torch.onnx import symbolic_opset11 as opset11
@@ -973,7 +976,7 @@ def convert_index_add(g, x, dim, index, other, alpha=None):
         delta = x_dim_rank - other_dim_rank
         for i in range(delta):
             other = helper._unsqueeze_helper(
-                g, other, [symbolic_helper._get_tensor_rank(other)]
+                g, other, [helper._get_tensor_rank(other)]
             )
 
     other_dim_size = helper._get_tensor_dim_size(other, dim)
@@ -1059,7 +1062,7 @@ def convert_index_reduce(g, x, dim, index, other, reduction, include_self):
         delta = x_dim_rank - other_dim_rank
         for i in range(delta):
             other = helper._unsqueeze_helper(
-                g, other, [symbolic_helper._get_tensor_rank(other)]
+                g, other, [helper._get_tensor_rank(other)]
             )
 
     x_shape = helper._get_tensor_sizes(x)
