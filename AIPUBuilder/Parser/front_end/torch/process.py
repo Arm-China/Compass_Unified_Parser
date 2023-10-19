@@ -1046,8 +1046,13 @@ def convert_index_reduce(g, x, dim, index, other, reduction, include_self):
     if dim is None:
         ERROR('ONNX export does NOT support exporting index_add_() function with unknown dim value.')
 
-    index_value = helper._maybe_get_const(index, 'is')
-    index_duplicates = has_duplicates(index_value)
+    # TODO: need to find way to obtain tensor value.
+    try:
+        index_value = helper._maybe_get_const(index, 'is')
+        index_duplicates = has_duplicates(index_value)
+    except:
+        index_duplicates = False
+
     x_dim_rank = helper._get_tensor_rank(x)
     other_dim_rank = helper._get_tensor_rank(other)
 
