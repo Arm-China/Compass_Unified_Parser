@@ -9,10 +9,11 @@ class add_model(torch.nn.Module):
         self.add_alpha = add_alpha
 
     def forward(self, x):
-        index = torch.tensor([0, 2, 1, 3, 4, 5, 6])
-        t = torch.arange(start=0, end=336, step=1,
-                         dtype=torch.float).resize(7, 6, 8)
-        return x.index_add_(-3, index, t, alpha=self.add_alpha)
+        # support index_duplicates
+        index = torch.tensor([0, 0, 2, 3, 4])
+        t = torch.arange(start=0, end=300, step=1,
+                         dtype=torch.float).resize(10, 6, 5)
+        return x.index_add_(-1, index, t, alpha=self.add_alpha)
 
 
 def create_index_add_model(model_path, alpha):
