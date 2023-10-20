@@ -990,6 +990,16 @@ def convert_index_put(g, x, indices_list_value, values, accumulate=False):
 
 
 def convert_index_add(g, x, dim, index, other, alpha=None):
+    def _has_duplicates(seq):
+        return len(seq) != len(set(seq))
+
+    index_duplicates = True
+    try:
+        index_value = helper._maybe_get_const(index, 'is')
+        index_duplicates = _has_duplicates(index_value)
+    except:
+        pass
+
     import sys
     dim = helper._maybe_get_const(dim, 'i')
     if dim is None:
@@ -1041,7 +1051,10 @@ def convert_index_add(g, x, dim, index, other, alpha=None):
     if alpha and helper._scalar(helper._maybe_get_scalar(alpha)) != 1:
         other = g.op('Neg', other)
 
-    return opset9.scatter_add(g, x, dim, scatter_add_indices, other)
+    if index_duplicates is False:
+        return opset9.scatter_add(g, x, dim, scatter_add_indices, other)
+    else:
+        return scatter_helper(g, x, dim, scatter_add_indices, other, 'add')
 
 
 @helper.parse_args('v', 'i', 'v', 'v', 's')
@@ -1071,7 +1084,7 @@ def scatter_helper(g, self, dim, index, src, reduction):
 
 @helper.parse_args('v', 'i', 'v', 'v', 's', 'b')
 def convert_index_reduce(g, x, dim, index, other, reduction, include_self):
-    def has_duplicates(seq):
+    def _has_duplicates(seq):
         return len(seq) != len(set(seq))
 
     import sys
@@ -1082,7 +1095,7 @@ def convert_index_reduce(g, x, dim, index, other, reduction, include_self):
     # TODO: need to find way to obtain tensor value.
     try:
         index_value = helper._maybe_get_const(index, 'is')
-        index_duplicates = has_duplicates(index_value)
+        index_duplicates = _has_duplicates(index_value)
     except:
         index_duplicates = False
 
