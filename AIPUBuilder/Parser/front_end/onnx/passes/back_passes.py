@@ -4733,9 +4733,7 @@ def sink_transpose_through_special_reshape(graph):
                 continue
 
             diff_axis = 0
-            min_shape_len = min(len(reshape_in_shape),
-                                len(reshape_out_shape))
-            for in_dim, out_dim in zip(reshape_in_shape[0:min_shape_len], reshape_out_shape[0:min_shape_len]):
+            for in_dim, out_dim in zip(reshape_in_shape, reshape_out_shape):
                 if in_dim != out_dim:
                     break
                 diff_axis += 1
@@ -4747,11 +4745,14 @@ def sink_transpose_through_special_reshape(graph):
                 new_dim = trans_in_shape[:]
                 new_dim.insert(change_pos, 1)
             else:
-                change_pos = trans_obj.perm[diff_axis]
                 new_dim = trans_in_shape[:]
-                new_dim.pop(change_pos)
+                for idx in range(diff_axis, len(trans_in_shape)):
+                    change_pos = trans_obj.perm[idx]
+                    if new_dim[change_pos] == 1:
+                        new_dim.pop(change_pos)
+                        break
 
-            if int(np.prod(new_dim)) != int(np.prod(reshape_in_shape)):
+            if int(np.prod(new_dim)) != int(np.prod(reshape_in_shape)) or len(new_dim) == len(trans_in_shape):
                 WARN(
                     '[Parser]: Meets invalid Reshape(%s) dim in sink_transpose_through_special_reshape!' % reshape)
                 continue
