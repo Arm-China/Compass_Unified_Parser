@@ -419,8 +419,13 @@ class Op(abc.ABC):
     def get_input_shapes(self):
         '''Returns the shape of all inputs to this op.'''
         try:
-            return [list(d['tensor'].value.shape) if d['tensor'].value is not None else d['tensor'].shape
-                    for _, _, _, d in self._graph.sorted_in_edges(self.name, keys=True, data=True)]
+            ret = []
+            for _, _, _, d in self._graph.sorted_in_edges(self.name, keys=True, data=True):
+                try:
+                    ret.append(list(d['tensor'].get_shape()))
+                except:
+                    ret.append(None)
+            return ret
         except Exception as e:
             ERROR('[Parser]: Node(%s) get_input_shapes meets error: %s' %
                   (self.name, str(e)))
@@ -429,8 +434,13 @@ class Op(abc.ABC):
     def get_output_shapes(self):
         '''Returns the shape of all outputs to this op.'''
         try:
-            return [list(d['tensor'].value.shape) if d['tensor'].value is not None else None
-                    for _, _, _, d in self._graph.sorted_out_edges(self.name, keys=True, data=True)]
+            ret = []
+            for _, _, _, d in self._graph.sorted_out_edges(self.name, keys=True, data=True):
+                try:
+                    ret.append(list(d['tensor'].get_shape()))
+                except:
+                    ret.append(None)
+            return ret
         except Exception as e:
             ERROR('[Parser]: Node(%s) get_output_shapes meets error:%s' %
                   (self.name, str(e)))
@@ -479,11 +489,17 @@ class Op(abc.ABC):
                     if d['tensor'].dtype is not None:
                         dtype = d['tensor'].dtype
                         info_dict.update({'dtype': str(d['tensor'].dtype)})
-                shape = ''
-                if d['tensor'].value is not None:
-                    if not dtype:
-                        dtype = str(d['tensor'].value.dtype)
-                    shape = re.sub(r' ', '', str(list(d['tensor'].value.shape)))
+                if not dtype:
+                    dtype = d['tensor'].get_dtype()
+                if dtype is None:
+                    dtype = ''
+
+                shape = d['tensor'].get_shape()
+                if shape is None:
+                    shape = ''
+                else:
+                    shape = str(list(shape))
+                shape = re.sub(r' ', '', shape)
                 ret.append((u + pre_name_suffix, shape, dtype, info_dict))
         if ret:
             ret = list(zip(*ret))
@@ -499,11 +515,11 @@ class Op(abc.ABC):
             info_value = []
             if u in self._graph._attr.get('duplicate_name', {}):
                 u = self._graph._attr['duplicate_name'][u]
-            if (d['tensor'].value is not None and d['tensor'].value.size > 0) \
-                    or (d['tensor'].shape is not None and len(d['tensor'].shape) > 0):
-                tensor_shape = list(d['tensor'].value.shape)
+
+            if d['tensor'].get_shape() is not None:
+                tensor_shape = list(d['tensor'].get_shape())
                 info_value = [re.sub(r' ', '', str(tensor_shape)),
-                              str(d['tensor'].value.dtype),
+                              d['tensor'].get_dtype(),
                               OrderedDict()]
             else:
                 tensor_shape = []
@@ -553,8 +569,22 @@ class OpHasOneOutPort(Op):
                     if tensor_data is not None:
                         d['tensor'].shape = d['tensor'].value.shape
                         d['tensor'].is_const = is_const
+                        if not self.quantize:
+                            d['tensor'].dtype = str(d['tensor'].value.dtype)
                 else:
                     d['tensor'] = Tensor(value=tensor_data)
+
+            if 'tensor_counter' in self._graph._attr and not is_const:
+                for src, _, in_d in self._graph.sorted_in_edges(self.name, data=True):
+                    cur_tensor_hash = hash(in_d['tensor'])
+                    if self._graph._attr['tensor_counter'][cur_tensor_hash] > 0:
+                        self._graph._attr['tensor_counter'][cur_tensor_hash] -= 1
+                    if self._graph._attr['tensor_counter'][cur_tensor_hash] == 0:
+                        if not isinstance(self._graph.nodes[src]['object'], (InputLikeOp, ConstLikeOp)) \
+                                and in_d['tensor'] is not None \
+                                and not in_d['tensor'].is_const:
+                            in_d['tensor'].value = None
+
         except KeyError as e:
             ERROR('[Parser]: Node(%s) meets key error in set_out_tensor (%s)!' %
                   (self.name, str(e)))
@@ -602,6 +632,8 @@ class OpHasMultipleOutPorts(Op):
                             if t is not None:
                                 d['tensor'].shape = d['tensor'].value.shape
                                 d['tensor'].is_const = is_const
+                                if not self.quantize:
+                                    d['tensor'].dtype = str(d['tensor'].value.dtype)
                         else:
                             d['tensor'] = Tensor(value=t, is_const=is_const)
         except KeyError as e:
@@ -650,6 +682,8 @@ class OpHasVariableOutPorts(Op):
                             d['src_out_port'])]
                         d['tensor'].shape = d['tensor'].value.shape
                         d['tensor'].is_const = is_const
+                        if not self.quantize:
+                            d['tensor'].dtype = str(d['tensor'].value.dtype)
                     else:
                         d['tensor'] = Tensor(
                             value=tensor_data_list[out_ports.index(d['src_out_port'])])
@@ -659,6 +693,8 @@ class OpHasVariableOutPorts(Op):
                         d['tensor'].value = tensor_data_list[0]
                         d['tensor'].shape = d['tensor'].value.shape
                         d['tensor'].is_const = is_const
+                        if not self.quantize:
+                            d['tensor'].dtype = str(d['tensor'].value.dtype)
                     else:
                         d['tensor'] = Tensor(value=tensor_data_list[0])
         except KeyError as e:

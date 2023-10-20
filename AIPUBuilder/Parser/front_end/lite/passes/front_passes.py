@@ -337,10 +337,13 @@ def convert_square_diff(graph, op_type='TfSquaredDifference'):
             matched = True
             graph.remove_edges_from(squd_in_edges[2:])
             s_pow = get_valid_node_name(graph, squd + '_pow')
-            graph.add_edge(squd, s_pow)
+            square_diff_out_dtype, square_diff_out_shape = None, None
             for _, dst, out_attr in squd_out_edges:
                 graph.remove_edge(squd, dst)
                 graph.add_edge(s_pow, dst, **out_attr)
+                square_diff_out_dtype = out_attr['tensor'].dtype
+                square_diff_out_shape = out_attr['tensor'].shape
+            graph.add_edge(squd, s_pow, **{'tensor': Tensor(dtype=square_diff_out_dtype, shape=square_diff_out_shape)})
             insert_constant(graph, s_pow + '_power', np.array(2, np.int32),
                             s_pow, in_port=1, data_format='NHWC')
 
@@ -633,6 +636,11 @@ def convert_unpack(graph, op_type='LiteUNPACK'):
         unpack_obj = NodeWrap(graph, unpack)['object']
         if unpack_obj is not None \
                 and len(unpack_obj.get_output_shapes()) >= 1:
+            if graph._attr.get('quantize', False) \
+                    and unpack_obj.quantize:
+                quantize = True
+            else:
+                quantize = False
             out_edges = graph.sorted_out_edges(unpack, data=True)
             split_attr = unpack_obj.copied_attr()
             split_attr.update(
@@ -662,7 +670,7 @@ def convert_unpack(graph, op_type='LiteUNPACK'):
                     split_out_attr.update({'tensor': split_out_tensor})
                 graph.add_edge(unpack, reshape, **split_out_attr)
                 NodeWrap(graph, reshape).replace_obj(
-                    'Reshape', {'name': reshape, 'opset_version': 5})
+                    'Reshape', {'name': reshape, 'opset_version': 5, 'quantize': quantize})
                 insert_constant(graph, reshape + '_shape', np.array(reshape_dim,
                                                                     np.int64), reshape, in_port=1, data_format='NHWC')
                 last_names.append(reshape)
@@ -877,6 +885,13 @@ def convert_strided_slice(graph, op_type='TfStridedSlice'):
                 ERROR(
                     '[Parser]: Invalid StridedSlice (%s) input shape in convert_strided_slice!' % strided_slice)
                 continue
+
+            if graph._attr.get('quantize', False) \
+                    and slice_obj.quantize:
+                quantize = True
+            else:
+                quantize = False
+
             axes_shape = slice_obj.get_input_shapes()[0]
             begin_inp, _, _, begin_in_attr = in_edges[1]
             end_inp, _, _, end_in_attr = in_edges[2]
@@ -910,7 +925,7 @@ def convert_strided_slice(graph, op_type='TfStridedSlice'):
                 if reshape_dim1 != None:
                     src, _, k, p_in_attr = in_edges[0]
                     insert_reshape(
-                        graph, src, strided_slice, p_in_attr, reshape_dim1, key=k)
+                        graph, src, strided_slice, p_in_attr, reshape_dim1, key=k, quantize=quantize)
 
                 if reshape_dim2 != None:
                     post_reshape = get_valid_node_name(
@@ -930,7 +945,7 @@ def convert_strided_slice(graph, op_type='TfStridedSlice'):
                                    **slice_out_attr)
 
                     NodeWrap(graph, post_reshape).replace_obj(
-                        'Reshape', {'name': post_reshape, 'opset_version': 1, 'shape': reshape_dim2})
+                        'Reshape', {'name': post_reshape, 'opset_version': 1, 'shape': reshape_dim2, 'quantize': quantize})
                     last_name = post_reshape
 
                     if splits_dim != None:
@@ -958,7 +973,7 @@ def convert_strided_slice(graph, op_type='TfStridedSlice'):
                         graph.add_edge(post_split, out, **split_out_1_attr)
                         NodeWrap(graph, out).replace_obj('Out', {'name': out})
                         NodeWrap(graph, post_split).replace_obj(
-                            'Split', {'name': post_split, 'opset_version': 11, 'axis': split_axis, 'split': splits_dim})
+                            'Split', {'name': post_split, 'opset_version': 11, 'axis': split_axis, 'split': splits_dim, 'quantize': quantize})
 
                 if len(out_shape) > len(input_shape):
                     axes_shape = out_shape
@@ -993,7 +1008,7 @@ def convert_strided_slice(graph, op_type='TfStridedSlice'):
             graph.add_edge(strides_inp, strided_slice, **new_strides_in_attr)
 
             slice_attr = slice_obj.copied_attr()
-            slice_attr.update({'opset_version': 10})
+            slice_attr.update({'opset_version': 10, 'quantize': quantize})
             NodeWrap(graph, strided_slice).replace_obj('Slice', slice_attr)
 
             if strided_slice in graph._attr['output_names'] and last_name != strided_slice:
@@ -1795,6 +1810,7 @@ def merge_quantized_lstm_cell(graph):
             continue
         initial_c = None
         mul_in_edges = graph.sorted_in_edges(m['mul_sp2'], data=True)
+        initial_c_in_attr = {}
         for src, _, mul_in_attr in mul_in_edges:
             if src != m['sigmoid_sp1']:
                 initial_c = src
@@ -1881,7 +1897,7 @@ def merge_quantized_lstm_cell(graph):
         graph.remove_edge(src, fc_after_unpack)
         graph.add_edge(src, lstm, **in_attr)
         src_new_dim = [1, batch_size, input_size]
-        insert_reshape(graph, src, lstm, in_attr, src_new_dim)
+        insert_reshape(graph, src, lstm, in_attr, src_new_dim, quantize=True)
 
         # Connect W, R, B and sequence_lens with lstm
         insert_constant(graph, lstm + '_W', W_value, lstm,
@@ -1898,13 +1914,13 @@ def merge_quantized_lstm_cell(graph):
         initial_h_in_attr.update({'dst_in_port': 5})
         graph.add_edge(initial_h, lstm, **initial_h_in_attr)
         insert_reshape(graph, initial_h, lstm,
-                       initial_h_in_attr, initial_hc_shape)
+                       initial_h_in_attr, initial_hc_shape, quantize=True)
 
         # Connect initial_c with lstm
         initial_c_in_attr.update({'dst_in_port': 6})
         graph.add_edge(initial_c, lstm, **initial_c_in_attr)
         insert_reshape(graph, initial_c, lstm,
-                       initial_c_in_attr, initial_hc_shape)
+                       initial_c_in_attr, initial_hc_shape, quantize=True)
 
         # Connect the dst nodes of the hidden and the cell with lstm
         hout = m['mul_hout']
@@ -1927,7 +1943,7 @@ def merge_quantized_lstm_cell(graph):
             old_dim = [1, batch_size, hidden_size]
             new_dim = [batch_size, hidden_size]
             post_reshape = insert_reshape_after(
-                graph, lstm, new_dim, old_dim, out_port=(idx + 1))
+                graph, lstm, new_dim, old_dim, out_port=(idx + 1), quantize=True)
             if node in graph._attr['output_names']:
                 index = graph._attr['output_names'].index(node)
                 graph._attr['output_names'][index] = post_reshape
@@ -1935,7 +1951,7 @@ def merge_quantized_lstm_cell(graph):
         # Convert to onnx lstm
         lstm_attr = {'name': lstm,
                      'opset_version': 14,
-                     'quantize': 1,
+                     'quantize': True,
                      'layout': False,
                      'hidden_size': hidden_size,
                      'direction': 'forward',
@@ -2796,6 +2812,9 @@ def split_op_has_activation(graph, is_tf_op=False):
             activation_attr.update({'alpha': alpha})
 
         activation_attr.update(onnx_op_dict)
+        if graph._attr['quantize'] and node_obj.quantize:
+            activation_attr.update({'quantize': True})
+
         activation_node.replace_obj(onnx_op_type, activation_attr)
         node_out_edges = graph.sorted_out_edges(node_name, data=True)
         for _, out, out_attr in node_out_edges:
@@ -2818,6 +2837,11 @@ def split_fc(graph):
                 and len(fc_in_edges) >= 1 \
                 and len(fc_obj.get_input_shapes()) >= 1 \
                 and len(fc_obj.get_input_shapes()[0]) >= 2:
+            if graph._attr.get('quantize', False) \
+                    and fc_obj.quantize:
+                quantize = True
+            else:
+                quantize = False
             last_name = fc
             input_shapes = fc_obj.get_input_shapes()
             src, _, k, in_attr = fc_in_edges[0]
@@ -2825,7 +2849,7 @@ def split_fc(graph):
             if fc_obj.weights is not None:
                 if len(input_shapes[0]) > 2:
                     dim = [-1, fc_obj.weights.shape[-1]]
-                    insert_reshape(graph, src, fc, in_attr, dim, key=k)
+                    insert_reshape(graph, src, fc, in_attr, dim, key=k, quantize=quantize)
                 biases = np.reshape(fc_obj.biases, [-1]) \
                     if fc_obj.biases is not None \
                     else np.zeros((fc_obj.weights.shape[0],),
@@ -2838,18 +2862,18 @@ def split_fc(graph):
                 if fc_obj.keepdims and len(input_shapes[0]) > 2:
                     out_shape = list(
                         input_shapes[0][:-1]) + [fc_obj.weights.shape[0]]
-                    last_name = insert_reshape_after(graph, fc, out_shape)
+                    last_name = insert_reshape_after(graph, fc, out_shape, quantize=quantize)
             elif len(input_shapes) >= 2 and len(input_shapes[1]) == 2:
                 if len(input_shapes[0]) > 2:
                     dim = [-1, input_shapes[1][-1]]
-                    insert_reshape(graph, src, fc, in_attr, dim, key=k)
+                    insert_reshape(graph, src, fc, in_attr, dim, key=k, quantize=quantize)
                     fc_in_edges = graph.sorted_in_edges(
                         fc, keys=True, data=True)
                 second_input, _, k, in_attr2 = fc_in_edges[1]
                 fc_attr.update({'opset_version': 9})
                 NodeWrap(graph, fc).replace_obj('MatMul', fc_attr)
                 insert_transpose(graph, second_input, fc,
-                                 in_attr2, [1, 0], key=k)
+                                 in_attr2, [1, 0], key=k, quantize=quantize)
                 if fc_obj.biases is None \
                         and len(fc_in_edges) == 3 \
                         and fc_obj.get_input_tensors()[2] is not None:
@@ -2868,7 +2892,7 @@ def split_fc(graph):
                     last_name = add
                 if fc_obj.keepdims and len(input_shapes[0]) > 2:
                     out_shape = list(input_shapes[0][:-1]) + [input_shapes[1][0]]
-                    last_name = insert_reshape_after(graph, last_name, out_shape)
+                    last_name = insert_reshape_after(graph, last_name, out_shape, quantize=quantize)
                 graph.remove_edges_from(fc_in_edges[2:])
             else:
                 last_name = None
@@ -3076,7 +3100,7 @@ def split_quatized_mean(graph):
         mean_attr.update({'opset_version': 11, 'axes': axes})
         NodeWrap(graph, mean).replace_obj('ReduceMean', mean_attr)
         NodeWrap(graph, post_add).replace_obj(
-            'Add', {'opset_version': 7, 'name': post_add})
+            'Add', {'opset_version': 7, 'name': post_add, 'quantize': True})
 
 
 def split_rsqrt(graph, op_type='LiteRSQRT'):

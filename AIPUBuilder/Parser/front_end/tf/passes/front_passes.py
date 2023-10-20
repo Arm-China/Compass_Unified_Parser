@@ -40,9 +40,9 @@ def convert_conv_backpropinput(graph):
                 WARN('[Parser]: TfConv2DBackpropInput/TfConv3DBackpropInputV2 Node(%s) does not contain weights!' %
                      conv_back)
                 continue
-            in_tensors = conv_back_obj.get_input_tensors()
-            if len(in_tensors) < 2 \
-                    or in_tensors[1] is None:
+
+            input_full_shape = in_edges[1][2]['tensor'].get_shape()
+            if input_full_shape is None or len(input_full_shape) < 3:
                 continue
 
             matched = True
@@ -57,11 +57,11 @@ def convert_conv_backpropinput(graph):
             new_weights = np.transpose(
                 conv_back_obj.weights, axes=type(conv_back_obj).perm_tf_to_onnx())
             if conv_back_obj.data_format[:2] == 'NC':
-                input_spatial_shape = in_tensors[1].shape[2:]
+                input_spatial_shape = input_full_shape[2:]
                 output_spatial_shape = const_obj.value.tolist()[2:]
                 data_format = 'NCHW'
             else:
-                input_spatial_shape = in_tensors[1].shape[1:-1]
+                input_spatial_shape = input_full_shape[1:-1]
                 output_spatial_shape = const_obj.value.tolist()[1:-1]
                 data_format = 'NHWC'
             # When padding is explictly provided, do not set output_shape so that pads won't
@@ -69,7 +69,7 @@ def convert_conv_backpropinput(graph):
             if conv_back_obj.auto_pad != 'NOTSET':
                 conv_attr.update({'output_shape': output_spatial_shape})
             else:
-                full_len = len(input_spatial_shape) + 2
+                full_len = len(input_full_shape)
                 pad_slice = slice(1, full_len - 1) if data_format == 'NHWC' else slice(2, full_len)
                 pads = np.transpose(np.reshape(np.array(conv_back_obj.explicit_paddings),
                                                (full_len, 2))[pad_slice, :]).flatten().tolist()
@@ -276,16 +276,17 @@ def convert_matmul(graph):
         if matmul_obj.type == 'Tfmatmul':
             output_type = matmul_obj.output_type
             if len(in_edges) < 2 or len(input_shapes) < 2 \
-                    or in_edges[0][3]['tensor'] is None \
-                    or in_edges[0][3]['tensor'].value is None:
+                    or in_edges[0][3]['tensor'] is None:
                 ERROR('[Parser]: Meets invalid inputs of Tfmatmul Op (%s) in convert_matmul!' % matmul)
                 continue
         elif len(in_edges) != 2 or len(input_shapes) != 2 \
-                or in_edges[0][3]['tensor'] is None \
-                or in_edges[0][3]['tensor'].value is None:
+                or in_edges[0][3]['tensor'] is None:
             ERROR('[Parser]: Meets invalid inputs of MatMul Op (%s) in convert_matmul!' % matmul)
             continue
-        input_type = str(in_edges[0][3]['tensor'].value.dtype)
+        input_type = in_edges[0][3]['tensor'].get_dtype()
+        if input_type is None or not isinstance(input_type, str):
+            ERROR('[Parser]: Meets invalid inputs dtype of MatMul Op (%s) in convert_matmul!' % matmul)
+            continue
         if 'complex' in input_type:
             WARN('[Parser]: Meets unsupported complex input type of MatMul Op (%s) in convert_matmul!' % matmul)
             continue
@@ -556,20 +557,24 @@ def convert_resize_bilinear_nearest(graph):
         resize_bili_near_obj = NodeWrap(graph, resize_bili_near)['object']
         in_edges = graph.sorted_in_edges(resize_bili_near, data=True)
         if resize_bili_near_obj is not None and len(in_edges) == 2:
-            input_tensors = resize_bili_near_obj.get_input_tensors()
-            if len(input_tensors) != 2 or input_tensors[0] is None or input_tensors[1] is None or \
-                    len(input_tensors[0].shape) != 4 or len(input_tensors[1].shape) != 1 or \
-                    input_tensors[1].size != 2:
-                ERROR(
-                    '[Parser]: Meets invalid inputs for Op (%s) in convert_resize_bilinear_nearest!' % resize_bili_near)
+            in_tensors = [e[2]['tensor'] for e in in_edges]
+            if in_tensors[0].get_shape() is None \
+                    or len(in_tensors[0].get_shape()) != 4 \
+                    or not in_tensors[1].is_const \
+                    or in_tensors[1].value is None \
+                    or len(in_tensors[1].value.shape) != 1 \
+                    or in_tensors[1].value.size != 2:
+                ERROR('[Parser]: Meets invalid inputs for Op (%s) in convert_resize_bilinear_nearest!' % resize_bili_near)
                 continue
+
+            main_input_shape = in_tensors[0].get_shape()
+            size_input = in_tensors[1].value
 
             graph.remove_edges_from(in_edges[1:])
             # insert constant roi
             insert_constant(graph, resize_bili_near + '_roi',
                             np.array([], np.float32), resize_bili_near, in_port=1)
-            size_value = [input_tensors[0].shape[0], input_tensors[1][0],
-                          input_tensors[1][1], input_tensors[0].shape[-1]]
+            size_value = [main_input_shape[0], size_input[0], size_input[1], main_input_shape[-1]]
             # insert constant empty scale
             insert_constant(graph, resize_bili_near + '_scale',
                             np.array([], np.float32), resize_bili_near, in_port=2)
@@ -4477,15 +4482,18 @@ def convert_to_onnx(graph):
                         graph.remove_edges_from(in_edges[1:])
                 elif pure_type == 'ExpandDims':
                     if len(in_edges) >= 2 \
-                            and len(node_obj.get_input_tensors()) >= 2 \
-                            and node_obj.get_input_tensors()[0] is not None:
+                            and len(node_obj.get_input_shapes()) >= 2 \
+                            and node_obj.get_input_shapes()[0] is not None \
+                            and None not in node_obj.get_input_shapes()[0]:
+                        expand_shape = list(node_obj.get_input_shapes()[0])
                         axis = node_obj.axis
-                        out_tensor = np.expand_dims(
-                            node_obj.get_input_tensors()[0], axis)
+                        if axis < 0:
+                            axis += len(in_shape) + 1
+                        expand_shape.insert(axis, 1)
                         graph.remove_edges_from(in_edges[1:])
                         insert_constant(graph,
                                         node_name + '_shape',
-                                        np.array(out_tensor.shape, np.int32),
+                                        np.array(expand_shape, np.int32),
                                         node_name,
                                         in_port=1,
                                         data_format='NHWC')

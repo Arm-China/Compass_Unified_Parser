@@ -106,6 +106,15 @@ def infer(graph, partial=False, chosen_list=None):
     ret = {}
     if len(graph) > 0:
         nodes_list = determined_sort(graph, graph._attr['output_names'])
+
+        if 'tensor_counter' in graph._attr:
+            graph._attr['tensor_counter'].clear()
+            for n in nodes_list:
+                for _, _, d in graph.sorted_out_edges(n, data=True):
+                    edge_tensor = d['tensor']
+                    if not edge_tensor.is_const:
+                        graph._attr['tensor_counter'][hash(edge_tensor)] += 1
+
         log_func = DEBUG if partial else WARN
         for node_name in nodes_list:
             if chosen_list and node_name not in chosen_list:
