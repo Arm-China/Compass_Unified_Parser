@@ -20,6 +20,39 @@ from ...common.utils import get_version
 from ...common.defs import FLOAT_EQUAL
 
 
+def convert_adaptive_pool(g, x, output_size, dim, method):
+    assert dim in (1, 2, 3), 'Meets invalid dim (%s) in convert_adaptive_pool!' % str(dim)
+    assert method in ('AVG', 'MAX'), 'Meets invalid method (%s) in convert_adaptive_pool!' % str(method)
+    input_shape = helper._get_tensor_sizes(x)
+    need_reshape = (len(input_shape) == 3)
+    if need_reshape:
+        x = helper._reshape_helper(g, x, [1] + input_shape)  # from CHW to NCHW
+    if helper._is_packed_list(output_size):  # None in output_size
+        # None in output_size is handled by torch/nn/functional.py(function _list_with_default)
+        # and then output_size becomes a packed list with const ints inside.
+        output_size = [helper._parse_arg(size_val, 'i') for size_val in helper._unpack_list(output_size)]
+    else:
+        size = helper._maybe_get_const(output_size, 'is')
+        if helper._is_value(size):  # output_size is scalar
+            output_size = dim * [helper._parse_arg(output_size, 'i')]
+        else:  # output_size is a tuple of ints
+            output_size = size
+    output = g.op('custom::AdaptivePool', x, output_size_i=output_size, method_s=method)
+    if need_reshape:
+        output_shape = input_shape[0:1] + output_size
+        output = helper._reshape_helper(g, output, output_shape)  # from NCHW to CHW
+    # aten::adaptive_max_poolNd always return 2 outputs but only the first one is used when return_indices=False.
+    return output if method == 'AVG' else (output, None)
+
+
+def convert_adaptive_avg_pool2d(g, x, output_size):
+    return convert_adaptive_pool(g, x, output_size, 2, 'AVG')
+
+
+def convert_adaptive_max_pool2d(g, x, output_size):
+    return convert_adaptive_pool(g, x, output_size, 2, 'MAX')
+
+
 def convert_add_sub(g, input, other, alpha, op_type):
     if alpha and not FLOAT_EQUAL(helper._maybe_get_const(alpha, 'f'), 1):
         other = g.op('Mul', other, alpha)
@@ -1479,6 +1512,10 @@ def convert_torch_to_onnx(model_path, params):
                 'prim::DictConstruct', convert_dict_construct, onnx_opset_version)
 
     # Convert torch op to custom onnx op
+    torch.onnx.register_custom_op_symbolic(
+        'aten::adaptive_avg_pool2d', convert_adaptive_avg_pool2d, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'aten::adaptive_max_pool2d', convert_adaptive_max_pool2d, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::channel_shuffle', convert_channel_shuffle, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
