@@ -21,6 +21,8 @@ def FLOAT_EQUAL(x, y): return np.all(
 
 
 def TYPE_MIN(x):
+    if isinstance(x, str):
+        x = np.dtype(x)
     if np.issubdtype(x, np.integer):
         return np.iinfo(x).min
     else:
@@ -28,6 +30,8 @@ def TYPE_MIN(x):
 
 
 def TYPE_MAX(x):
+    if isinstance(x, str):
+        x = np.dtype(x)
     if np.issubdtype(x, np.integer):
         return np.iinfo(x).max
     else:
@@ -143,6 +147,24 @@ class Tensor(object):
             if getattr(self, 'value').dtype.name not in st:
                 st.append(getattr(self, 'value').dtype.name)
                 setattr(self, 'supported_types', st)
+
+    def get_dtype(self):
+        value = getattr(self, 'value')
+        if value is not None:
+            return str(value.dtype)
+        else:
+            dtype = getattr(self, 'dtype')
+            if dtype is not None:
+                return str(dtype)
+            else:
+                return None
+
+    def get_shape(self):
+        value = getattr(self, 'value')
+        if value is not None:
+            return value.shape
+        else:
+            return getattr(self, 'shape')
 
 
 @unique

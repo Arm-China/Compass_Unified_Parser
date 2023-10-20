@@ -568,6 +568,11 @@ def convert_uni_lstm(graph):
                         '[Parser]: Cannot support LSTM Op (%s) with none-zero peepholes in convert_uni_lstm!' % lstm)
                     continue
                 matched = True
+                if graph._attr.get('quantize', False) \
+                        and lstm_obj.quantize:
+                    quantize = True
+                else:
+                    quantize = False
                 time_steps = lstm_obj.time_steps
                 input_size = lstm_obj.input_size
                 hidden_size = lstm_obj.hidden_size
@@ -589,19 +594,19 @@ def convert_uni_lstm(graph):
                     _, _, k1, init_h_in_attr = in_edges[1]
                     _, _, k2, init_c_in_attr = in_edges[2]
                     insert_transpose(graph, inp, lstm,
-                                     inp_in_attr, [1, 0, 2], key=k0)
+                                     inp_in_attr, [1, 0, 2], key=k0, quantize=quantize)
                     insert_transpose(graph, init_h, lstm,
-                                     init_h_in_attr, [1, 0, 2], key=k1)
+                                     init_h_in_attr, [1, 0, 2], key=k1, quantize=quantize)
                     insert_transpose(graph, init_c, lstm,
-                                     init_c_in_attr, [1, 0, 2], key=k2)
+                                     init_c_in_attr, [1, 0, 2], key=k2, quantize=quantize)
                     in_edges = graph.sorted_in_edges(
                         lstm, keys=True, data=True)
                 init_h, _, k1, init_h_in_attr = in_edges[1]
                 init_c, _, k2, init_c_in_attr = in_edges[2]
                 insert_reshape(graph, init_h, lstm, init_h_in_attr, [
-                               batch_size, hidden_size], key=k1)
+                               batch_size, hidden_size], key=k1, quantize=quantize)
                 insert_reshape(graph, init_c, lstm, init_c_in_attr, [
-                               batch_size, hidden_size], key=k2)
+                               batch_size, hidden_size], key=k2, quantize=quantize)
 
                 lstm_attr = lstm_obj.copied_attr()
                 lstm_attr.update({'time_steps': time_steps,
@@ -631,11 +636,11 @@ def convert_uni_lstm(graph):
                     reshape_dim = [batch_size, time_steps, 1, hidden_size] if p == 0 else [
                         batch_size, 1, hidden_size]
                     reshape = insert_reshape_after(
-                        graph, lstm, reshape_dim, old_dim=old_dim, out_port=p)
+                        graph, lstm, reshape_dim, old_dim=old_dim, out_port=p, quantize=quantize)
                     last_name = reshape
                     if not lstm_obj.layout:
                         post_trans_perm = [1, 2, 0, 3] if p == 0 else [1, 0, 2]
-                        last_name = insert_transpose_after(graph, reshape, post_trans_perm)
+                        last_name = insert_transpose_after(graph, reshape, post_trans_perm, quantize=quantize)
                     last_names.append(last_name)
 
                 if lstm in graph._attr['output_names'] and last_names:
@@ -749,15 +754,19 @@ def rename_div(graph):
             ERROR('[Parser]: Meets invalid Div node(%s) in rename_div!' % div)
             continue
         div_in_edges = graph.sorted_in_edges(div, data=True)
-        if len(div_in_edges) < 2 or div_in_edges[0][2]['tensor'] is None \
-                or div_in_edges[0][2]['tensor'].value is None \
+        if len(div_in_edges) < 2 \
+                or div_in_edges[0][2]['tensor'] is None \
+                or div_in_edges[0][2]['tensor'].get_dtype() is None \
                 or div_in_edges[1][2]['tensor'] is None \
-                or div_in_edges[1][2]['tensor'].value is None:
+                or div_in_edges[1][2]['tensor'].get_dtype() is None:
+            ERROR('[Parser]: Meets invalid inputs of Div node(%s) in rename_div!' % div)
+            continue
+        src1_type = div_in_edges[0][2]['tensor'].get_dtype()
+        src2_type = div_in_edges[1][2]['tensor'].get_dtype()
+        if src1_type is None or src2_type is None:
             ERROR('[Parser]: Meets invalid inputs of Div node(%s) in rename_div!' % div)
             continue
         div_attr = div_obj.copied_attr()
-        src1_type = str(div_in_edges[0][2]['tensor'].value.dtype)
-        src2_type = str(div_in_edges[1][2]['tensor'].value.dtype)
         if 'int' in src1_type and 'int' in src2_type:
             # DivMod op has 2 outputs, which are quotient(x//y) and remainder(x%y).
             # Need to add Out node after the second output.
@@ -1285,7 +1294,7 @@ def merge_squared_diff(graph):
                 for src, _, in_attr in sub_in_edges:
                     graph.add_edge(src, m['pow'], **in_attr)
                 NodeWrap(graph, m['pow']).replace_obj(
-                    'ArmSquaredDifference', {'name': m['pow']})
+                    'ArmSquaredDifference', {'name': m['pow'], 'quantize': node_objs['pow'].quantize})
         else:
             ERROR('[Parser]: Meets invalid node in merge_squared_diff!')
     if matched:
@@ -2507,7 +2516,7 @@ def rename_logical(graph):
                 and ((logical_obj.type == 'Not' and len(in_edges) == 1) or len(in_edges) == 2):
             meta_ret = True
             in_types = [NodeWrap(graph, e[0])['object'].type for e in in_edges]
-            in_tensors = [e[2]['tensor'].value for e in in_edges]
+            in_tensors = [e[2]['tensor'] for e in in_edges]
             if (logical_obj.type == 'Not' and in_types.count('Constant') == 1) \
                     or in_types.count('Constant') == 2:
                 meta_ret = False
@@ -2516,9 +2525,9 @@ def rename_logical(graph):
             elif logical_obj.type == 'Not':
                 pass
             elif len(in_tensors) == 2:
-                if in_tensors[0] is not None and in_tensors[1] is not None:
-                    pass
-                else:
+                if in_tensors[0].get_dtype() is None \
+                        or in_tensors[1].get_dtype() is None \
+                        or in_tensors[0].get_dtype() != in_tensors[1].get_dtype():
                     meta_ret = False
                     ERROR(
                         '[Parser]: Invalid inputs of Node(%s) for broadcasting in rename_logical!' % logical)
@@ -2638,18 +2647,22 @@ def rename_mul_add_max_min(graph):
                 meta_ret = True
                 in_types = [NodeWrap(graph, e[0])[
                     'object'].type for e in in_edges]
-                in_tensors = [e[2]['tensor'].value for e in in_edges]
+                in_shapes = [e[2]['tensor'].get_shape() for e in in_edges]
                 if in_types.count('Constant') == 2:
                     meta_ret = False
                     WARN(
                         '[Parser]: Mul/Add/Sub/Max/Min (%s) with two Constant inputs should have been fused before rename_mul_add_max_min!' % eltwise)
                 elif in_types.count('Constant') <= 1 \
-                        and in_tensors[0] is not None \
-                        and in_tensors[1] is not None \
-                        and list(in_tensors[0].shape) == list(in_tensors[1].shape):
+                        and in_shapes[0] is not None \
+                        and None not in in_shapes[0] \
+                        and in_shapes[1] is not None \
+                        and None not in in_shapes[1] \
+                        and list(in_shapes[0]) == list(in_shapes[1]):
                     pass
-                elif in_tensors[0] is not None \
-                        and in_tensors[1] is not None:
+                elif in_shapes[0] is not None \
+                        and None not in in_shapes[0] \
+                        and in_shapes[1] is not None \
+                        and None not in in_shapes[1]:
                     pass
                 else:
                     meta_ret = False
@@ -4297,17 +4310,16 @@ def insert_cast_if_must(graph):
                                     cast_key = in_port if in_port in cast_in_ports else None
                                     cast_type_all = cast_in_ports[cast_key]
                                     if in_attr.get('tensor', None) is not None:
-                                        if in_attr['tensor'].value is not None \
-                                                and all([str(in_attr['tensor'].value.dtype) != cast_type for cast_type in cast_type_all]):
+                                        dtype = in_attr['tensor'].get_dtype()
+                                        if dtype is not None and all(dtype != cast_type for cast_type in cast_type_all):
                                             happened = True
-                                            cast_type = get_converted_dtype(
-                                                str(in_attr['tensor'].value.dtype), return_type_string=True)
+                                            cast_type = get_converted_dtype(dtype, return_type_string=True)
                                             if cast_type not in cast_type_all:
                                                 cast_type = cast_type_all[0]
                                             insert_cast(graph, src, n, cast_type,
                                                         in_attr=in_attr, key=k, type='ArmCast')
                                             break
-                                        elif in_attr['tensor'].value is None and len(cast_type_all) == 1:
+                                        elif dtype is None and len(cast_type_all) == 1:
                                             happened = True
                                             cast_type = cast_type_all[0]
                                             insert_cast(graph, src, n, cast_type,

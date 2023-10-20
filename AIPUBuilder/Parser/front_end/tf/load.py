@@ -2,7 +2,7 @@
 # Copyright © 2022-2023 Arm Technology (China) Co. Ltd.
 
 
-from collections import OrderedDict, Iterable
+from collections import OrderedDict, Iterable, defaultdict
 import os
 import itertools
 import multiprocessing as mp
@@ -372,6 +372,7 @@ def convert_tf_to_graph(model_path, params):
             params.get('input_names', []))
         graph._attr['output_names'] = copy.deepcopy(
             params.get('output_names', []))
+        graph._attr['tensor_counter'] = defaultdict(int)
 
         meta_ret = True
 
@@ -469,6 +470,7 @@ def convert_tf_to_graph(model_path, params):
                                            **{'src_out_port': src_out_port, 'dst_in_port': in_port,
                                               'tensor': edge_tensor}
                                            )
+                            graph._attr['tensor_counter'][hash(edge_tensor)] += 1
                             if src_name in params['input_shapes']:
                                 graph._attr['input_tensors'].update(
                                     {src_name: edge_tensor})

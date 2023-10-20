@@ -103,10 +103,10 @@ def remove_useless_op(graph, op_type_list):
             elif op_type == 'ArmCast':
                 in_edges = graph.sorted_in_edges(node_name, data=True)
                 out_edges = graph.sorted_out_edges(node_name, data=True)
-                if len(in_tensors) > 0 \
-                        and in_tensors[0] is not None \
-                        and not node_obj.quantize \
-                        and str(in_tensors[0].dtype) == node_obj.to_dtype:
+                if not node_obj.quantize \
+                        and len(in_edges) > 0 \
+                        and in_edges[0][2]['tensor'].get_dtype() is not None \
+                        and str(in_edges[0][2]['tensor'].get_dtype()) == node_obj.to_dtype:
                     removing_nodes.append(node_name)
                 elif len(in_edges) > 0 \
                         and len(out_edges) > 0 \
@@ -763,14 +763,14 @@ def insert_repeat(graph, src, dst, in_attr, reps, axis=None, key=None, type='Rep
     return ret
 
 
-def insert_reshape(graph, src, dst, in_attr, dim, key=None, type='Reshape', data_format='NHWC'):
+def insert_reshape(graph, src, dst, in_attr, dim, key=None, type='Reshape', data_format='NHWC', quantize=False):
     ret = None
     if graph.has_node(src) and graph.has_node(dst) and dim:
         if has_path(graph, src, dst):
             graph.remove_edge(src, dst, key=key)
         reshape = get_valid_node_name(graph, src + '_post_reshape')
         graph.add_node(reshape)
-        reshape_attr = {'name': reshape, 'opset_version': 5}
+        reshape_attr = {'name': reshape, 'opset_version': 5, 'quantize': quantize}
         if type == 'Reshape':
             reshape_dim = np.array(dim, np.int32)
             const = get_valid_node_name(graph, reshape + '_shape')
@@ -805,7 +805,7 @@ def insert_reshape(graph, src, dst, in_attr, dim, key=None, type='Reshape', data
     return ret
 
 
-def insert_reshape_after(graph, src, new_dim, old_dim=None, out_port=0, type='Reshape'):
+def insert_reshape_after(graph, src, new_dim, old_dim=None, out_port=0, type='Reshape', quantize=False):
     ret = None
     if old_dim is None:
         old_dim = list()
@@ -816,7 +816,7 @@ def insert_reshape_after(graph, src, new_dim, old_dim=None, out_port=0, type='Re
             reshape_name = src + '_post_reshape_' + str(out_port)
         reshape = get_valid_node_name(graph, reshape_name)
         graph.add_node(reshape)
-        reshape_attr = {'name': reshape, 'opset_version': 5}
+        reshape_attr = {'name': reshape, 'opset_version': 5, 'quantize': quantize}
         if type == 'Reshape':
             reshape_dim = np.array(new_dim, np.int64)
             const = get_valid_node_name(graph, reshape + '_shape')
@@ -841,17 +841,25 @@ def insert_reshape_after(graph, src, new_dim, old_dim=None, out_port=0, type='Re
                 new_out_attr['src_out_port'] = 0
                 graph.add_edge(reshape, dst, **new_out_attr)
                 if new_out_attr.get('tensor', None) is not None:
-                    if new_out_attr['tensor'].value is not None:
-                        if old_dim:
+                    new_out_tensor_shape = new_out_attr['tensor'].get_shape()
+                    new_out_tensor_value = new_out_attr['tensor'].value
+                    if old_dim:
+                        if new_out_tensor_value is not None:
                             new_src_out_tensor = np.reshape(
                                 new_out_attr['tensor'].value, newshape=old_dim)
                             src_out_attr.update(
                                 {'tensor': Tensor(value=new_src_out_tensor)})
-                        elif new_dim and new_dim != list(new_out_attr['tensor'].value.shape):
+                        else:
+                            src_out_attr.update({'tensor': Tensor(shape=tuple(old_dim))})
+                    elif new_dim and new_out_tensor_shape is not None and new_dim != list(new_out_tensor_shape):
+                        if new_out_tensor_value is not None:
                             new_src_out_tensor = np.reshape(
                                 new_out_attr['tensor'].value, newshape=new_dim)
                             src_out_attr.update(
                                 {'tensor': Tensor(value=new_src_out_tensor)})
+                        else:
+                            src_out_attr.update({'tensor': Tensor(shape=tuple(new_dim))})
+
                     if new_out_attr['tensor'].dtype is not None \
                             or len(new_out_attr['tensor'].scale_zp) > 0:
                         if src_out_attr.get('tensor', None) is None:
@@ -963,14 +971,13 @@ def insert_slice_after(graph, src, begin, size, out_port=0, type='Slice', data_f
     return ret
 
 
-def insert_tile(graph, src, dst, in_attr, reps, key=None, type='Tile', data_format='NHWC'):
+def insert_tile(graph, src, dst, in_attr, reps, key=None, type='Tile', data_format='NHWC', quantize=False):
     ret = None
     if graph.has_node(src) \
             and graph.has_node(dst) \
             and reps is not None \
             and ((isinstance(reps, (list, tuple)) and len(reps) > 0) or (isinstance(reps, np.ndarray) and reps.size > 0)) \
             and type in ('Tile', 'ArmTile'):
-
         if isinstance(reps, (list, tuple)):
             reps = np.array(reps, np.int32)
         if has_path(graph, src, dst):
@@ -989,7 +996,8 @@ def insert_tile(graph, src, dst, in_attr, reps, key=None, type='Tile', data_form
                 tensor.dtype = dst_in_attr['tensor'].dtype
                 tensor.scale_zp = dst_in_attr['tensor'].scale_zp
         else:
-            tensor = Tensor(min_max=in_attr['tensor'].min_max)
+            tensor = Tensor(min_max=in_attr['tensor'].min_max,
+                            shape=in_attr['tensor'].shape, dtype=in_attr['tensor'].dtype)
         dst_in_attr.update({'src_out_port': 0, 'tensor': tensor})
         graph.add_edge(tile, dst, **dst_in_attr)
 
@@ -1005,10 +1013,10 @@ def insert_tile(graph, src, dst, in_attr, reps, key=None, type='Tile', data_form
                                                             'opset_version': 9
                                                             }
                                                )
-            tile_attr = {'name': tile, 'opset_version': 6}
+            tile_attr = {'name': tile, 'opset_version': 6, 'quantize': quantize}
             NodeWrap(graph, tile).replace_obj('Tile', tile_attr)
         else:
-            tile_attr = {'name': tile, 'reps': reps.tolist()}
+            tile_attr = {'name': tile, 'reps': reps.tolist(), 'quantize': quantize}
             NodeWrap(graph, tile).replace_obj('ArmTile', tile_attr)
 
         ret = tile
@@ -1017,7 +1025,7 @@ def insert_tile(graph, src, dst, in_attr, reps, key=None, type='Tile', data_form
     return ret
 
 
-def insert_transpose(graph, src, dst, in_attr, perm, key=None, type='Transpose'):
+def insert_transpose(graph, src, dst, in_attr, perm, key=None, type='Transpose', quantize=False):
     ret = None
     if graph.has_node(src) \
             and graph.has_node(dst) \
@@ -1030,7 +1038,7 @@ def insert_transpose(graph, src, dst, in_attr, perm, key=None, type='Transpose')
             graph.remove_edge(src, dst, key=key)
         transpose = get_valid_node_name(graph, src + '_post_transpose')
         graph.add_node(transpose)
-        transpose_attr = {'name': transpose, 'perm': perm}
+        transpose_attr = {'name': transpose, 'perm': perm, 'quantize': quantize}
         if type == 'Transpose':
             transpose_attr.update({'opset_version': 1})
         NodeWrap(graph, transpose).replace_obj(type, transpose_attr)
@@ -1055,7 +1063,7 @@ def insert_transpose(graph, src, dst, in_attr, perm, key=None, type='Transpose')
     return ret
 
 
-def insert_transpose_after(graph, src, perm, port=0, type='Transpose'):
+def insert_transpose_after(graph, src, perm, port=0, type='Transpose', quantize=False):
     ret = None
     if graph.has_node(src) \
             and perm is not None \
@@ -1088,7 +1096,7 @@ def insert_transpose_after(graph, src, perm, port=0, type='Transpose'):
                 out_tensor.shape = out_tensor.value.shape
                 out_edge_attr.update({'tensor': out_tensor})
             graph.add_edge(src, transpose, **out_edge_attr)
-            node_attr = {'name': transpose, 'perm': perm}
+            node_attr = {'name': transpose, 'perm': perm, 'quantize': quantize}
             if type == 'Transpose':
                 node_attr.update({'opset_version': 1})
             NodeWrap(graph, transpose).replace_obj(type, node_attr)
