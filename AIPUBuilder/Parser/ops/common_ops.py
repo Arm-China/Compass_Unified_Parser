@@ -30,6 +30,35 @@ class AccidentalHitsOp(OpHasMultipleOutPorts, CommonOp):
         self.set_out_tensor([output_indices, output_ids, output_effective_len])
 
 
+class AdaptivePoolOp(LayoutConcernedOp, OpHasMethod, OpHasOneOutPort, CommonOp):
+    @classmethod
+    def attributes(cls):
+        return {'output_size': {'type': AttrType.INTS, 'required': True},
+                'method': {'options': ['AVG', 'MAX'], 'required': True}}
+
+    def __init__(self, graph, attr_dict=None):
+        super(AdaptivePoolOp, self).__init__(graph, attr_dict)
+        self.update_attributes(AdaptivePoolOp, attr_dict)
+        assert self.check_required(), 'AdaptivePoolOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(AdaptivePoolOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        assert len(inputs) == 1 and len(inputs[0].shape) == 4, 'The input is invalid in AdaptivePoolOp.'
+        if self.data_format.startswith('NC'):
+            perm = None
+            input_tensor = inputs[0]
+        else:
+            perm = [0, 3, 1, 2]
+            input_tensor = np.transpose(inputs[0], perm)
+        m = torch.nn.AdaptiveAvgPool2d(tuple(self.output_size)) if self.method == 'AVG' \
+            else torch.nn.AdaptiveMaxPool2d(tuple(self.output_size))
+        out_tensor = m(torch.from_numpy(input_tensor)).numpy()
+        if perm is not None:
+            out_tensor = np.transpose(out_tensor, Op.cal_inverse_perm(perm))
+        self.set_out_tensor(out_tensor)
+
+
 class BatchGatherOp(OpHasAxis, OpHasOneOutPort, CommonOp):
     @classmethod
     def attributes(cls):

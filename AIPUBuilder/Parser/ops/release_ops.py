@@ -296,6 +296,42 @@ class ArmActivationOp(LayoutUnawareOp, OpHasMethod, OpHasOneOutPort, ArmOp):
         return ret
 
 
+class ArmAdaptivePoolOp(OpHasMethod, OpHasOneOutPort, ArmOp):
+    @classmethod
+    def cast_in_ports(cls):
+        return {0: 'float32'}
+
+    @classmethod
+    def attributes(cls):
+        return {'output_size': {'type': AttrType.INTS, 'required': True},
+                'method': {'options': ['AVG', 'MAX'], 'required': True}}
+
+    def __init__(self, graph, attr_dict=None):
+        super(ArmAdaptivePoolOp, self).__init__(graph, attr_dict)
+        self.update_attributes(ArmAdaptivePoolOp, attr_dict)
+        assert self.check_required(), 'ArmAdaptivePoolOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(ArmAdaptivePoolOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        assert len(inputs) == 1 and len(inputs[0].shape) == 4, 'The input is invalid in ArmAdaptivePoolOp.'
+        # input_tensor = torch.from_numpy(np.transpose(inputs[0], [0, 3, 1, 2]))
+        # m = torch.nn.AdaptiveAvgPool2d(self.output_size) if self.method == 'AVG' \
+        #     else torch.nn.AdaptiveMaxPool2d(self.output_size)
+        # out_tensor = m(input_tensor).numpy()
+        # out_tensor = np.transpose(out_tensor, [0, 2, 3, 1])
+        batch, _, _, channels = inputs[0].shape
+        output_shape = [batch] + self.output_size + [channels]
+        out_tensor = np.random.ranf(output_shape).astype(inputs[0].dtype)
+        self.set_out_tensor(out_tensor)
+
+    def write_attrs(self, txt_file):
+        ret = super(ArmAdaptivePoolOp, self).write_attrs(txt_file)
+        if ret:
+            txt_file.write('output_size=[%s]\n' % list_list_to_string(self.output_size))
+        return ret
+
+
 class ArmArgMinMaxOp(OpHasMethod, OpHasAxis, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):

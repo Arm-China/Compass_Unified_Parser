@@ -5100,6 +5100,7 @@ def back_passes(graph, params):
     simple_rename(graph, 'AccidentalHits', 'ArmAccidentalHits')
     simple_rename(graph, 'Acos', 'ArmAcos')
     simple_rename(graph, 'Acosh', 'ArmAcosh')
+    simple_rename(graph, 'AdaptivePool', 'ArmAdaptivePool')
     simple_rename(graph, 'Asin', 'ArmAsin')
     simple_rename(graph, 'Asinh', 'ArmAsinh')
     simple_rename(graph, 'Atan', 'ArmAtan')
