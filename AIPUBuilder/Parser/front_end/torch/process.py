@@ -37,7 +37,17 @@ def convert_adaptive_pool(g, x, output_size, dim, method):
             output_size = dim * [helper._parse_arg(output_size, 'i')]
         else:  # output_size is a tuple of ints
             output_size = size
-    output = g.op('custom::AdaptivePool', x, output_size_i=output_size, method_s=method)
+    if all(s == 1 for s in output_size):
+        output = g.op('GlobalAveragePool', x) if method == 'AVG' else g.op('GlobalMaxPool', x)
+    elif all((dim % s == 0) for dim, s in zip(input_shape[-2:], output_size)):
+        kernel_shape = [int(dim / s) for dim, s in zip(input_shape[-2:], output_size)]
+        if method == 'AVG':
+            output = g.op('AveragePool', x, kernel_shape_i=kernel_shape, strides_i=kernel_shape)
+        else:
+            output = g.op('MaxPool', x, outputs=1, kernel_shape_i=kernel_shape, strides_i=kernel_shape)
+    else:
+        output_type = x.type().with_sizes(([1] if need_reshape else []) + input_shape[:-2] + output_size)
+        output = g.op('custom::AdaptivePool', x, output_size_i=output_size, method_s=method).setType(output_type)
     if need_reshape:
         output_shape = input_shape[0:1] + output_size
         output = helper._reshape_helper(g, output, output_shape)  # from NCHW to CHW
@@ -285,6 +295,7 @@ def convert_quantized_add_relu(g, x, y, op_scale, op_zero_point):
 @helper.quantized_args(True, False, False)
 def convert_flatten(g, input, start_dim, end_dim):
     input_rank = helper._get_tensor_rank(input)
+    assert input_rank is not None, 'Meets unknown rank in convert_flatten!'
     if input_rank == 0:
         return helper._reshape_helper(g, input, [1])
     if input_rank == 1:
