@@ -69,6 +69,20 @@ CAFFE_BENCHMARK = {
     ]
 }
 
+TORCH_BENCHMARK = {
+    '1_12': [
+        'alexnet',
+        'deeplab_v3',
+        'efficientnet_b5',
+        'fcn',
+        'resnet_v1_50',
+        'shufflenet_v2',
+        'swin_transformer_tiny_224',
+        'vgg_16',
+        'ViT_B_16',
+    ]
+}
+
 AIB_MODELS = {
     '1_15': [
         'mobilebert_quant',
@@ -114,6 +128,10 @@ for k, models in ONNX_BENCHMARK.items():
 for k, models in CAFFE_BENCHMARK.items():
     for m in models:
         SANITY_MODELS.append(f"caffe-{k}-{m}")
+
+for k, models in TORCH_BENCHMARK.items():
+    for m in models:
+        SANITY_MODELS.append(f"torch-{k}-{m}")
 
 for k, models in AIB_MODELS.items():
     for m in models:
