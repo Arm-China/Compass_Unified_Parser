@@ -1915,7 +1915,7 @@ def fuse_mul_add_or_sub(graph):
                                        ('inp', 'mul'),
                                        ('const_1', 'mul'),
                                        ('mul', 'add_sub'),
-                                       ('const_2', 'add_sub')
+                                       ('const_2', 'add_sub', {'dst_in_port': 1})
                                    ]) for op in add_sub]
     bn_matches = extend_lists(bn_matches)
     for m in bn_matches:
@@ -1942,7 +1942,7 @@ def fuse_mul_add_or_sub(graph):
                     or mul_in_attr[0]['tensor'].value is None \
                     or 'float' not in str(mul_in_attr[0]['tensor'].value.dtype):
                 continue
-
+            main_in_port = mul_in_attr[0]['dst_in_port']
             input_out_shape = input_shapes[0]
             if input_out_shape is None or input_out_shape == []:
                 continue
@@ -1990,6 +1990,9 @@ def fuse_mul_add_or_sub(graph):
             var_value = np.ones((num_output,), np.float32)
 
             graph.remove_edge(const_1, mul)
+            if main_in_port == 1:
+                mul_in_edges[1][2]['dst_in_port'] = 0
+
             add_sub_out_edges = graph.sorted_out_edges(add_sub, data=True)
             for _, out, out_attr in add_sub_out_edges:
                 graph.remove_edge(add_sub, out)
