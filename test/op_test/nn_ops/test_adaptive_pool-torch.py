@@ -13,7 +13,7 @@ class adaptivepool_model(nn.Module):
             self.adaptive_pool = nn.AdaptiveMaxPool2d(output_size=output_size)
 
     def forward(self, x):
-        return self.adaptive_pool(x)
+        return torch.flatten(self.adaptive_pool(x), 1, -1)
 
 
 def create_avgpool_model(model_path, x, output_size, method):
@@ -33,12 +33,21 @@ TEST_NAME = 'adaptive_pool'
 for input_shape in ([2, 51, 52], [2, 6, 51, 52]):
     x_data = np.random.ranf(input_shape).astype(np.float32)
     feed_dict = {'x': x_data}
-    for idx, output_size in enumerate([[None, 21], [7, None], 9]):
+    for idx, output_size in enumerate([[None, 21], [7, None], 9, [51, 52], [1, 2]]):
         for method in ('AVG', 'MAX'):
             model_path = '-'.join([TEST_NAME, str(len(input_shape)), str(idx), method]) + '.pt'
             # prepare model and input datas
             create_avgpool_model(model_path, x_data, output_size, method)
             # FIXME: Enable verify after opt supports this op
-            exit_status = run_parser(model_path, feed_dict, verify=False,
-                                     expected_keywords=['layer_type=AdaptivePool', 'method='+method])
+            if output_size in ([51, 52], [1, 2]):  # convert to other pool type
+                expected_keywords = []
+                unexpected_keywords = ['layer_type=AdaptivePool']
+                verify = True
+            else:
+                expected_keywords = ['layer_type=AdaptivePool']
+                unexpected_keywords = []
+                verify = False
+            exit_status = run_parser(model_path, feed_dict, verify=verify,
+                                     expected_keywords=expected_keywords+['method='+method],
+                                     unexpected_keywords=unexpected_keywords)
             assert exit_status
