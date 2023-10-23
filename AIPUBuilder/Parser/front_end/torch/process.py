@@ -150,8 +150,8 @@ def convert_bitwise_xor(g, input, other):
 
 @helper.parse_args('v', 'i')
 @quantized_args(True, False)
-def convert_channel_shuffle(g, input, groups):
-    return g.op('custom::ChannelShuffle', input, group_i=groups)
+def convert_channel_shuffle(g, x, groups):
+    return g.op('custom::ChannelShuffle', x, group_i=groups).setType(x.type())
 
 
 @helper.parse_args('v', 'i', 'i')
@@ -241,10 +241,10 @@ def convert_conv(g, input, weight, bias, stride, padding, dilation, groups):
 
 
 @helper.parse_args('v', 'i', 'i')
-def convert_cumprod(g, input, dim, dtype):
+def convert_cumprod(g, x, dim, dtype):
     if dtype is not None:
-        input = g.op('Cast', input, to_i=helper.scalar_type_to_onnx[dtype])
-    return g.op('custom::CumProd', input, axis_i=dim)
+        x = g.op('Cast', x, to_i=helper.scalar_type_to_onnx[dtype])
+    return g.op('custom::CumProd', x, axis_i=dim).setType(x.type())
 
 
 @helper.parse_args('v', 'v', 'v', 'v', 'v', 'i', 'i', 'i', 'i', 'i', 'i', 'i', 'i', 'b')
@@ -689,10 +689,15 @@ def convert_meshgrid(g, tensor_list, indexing='ij'):
         return unpacked_inputs[0]
     assert indexing in ('ij', 'xy'), 'Meets unsupported indexing %s in convert_meshgrid!' % indexing
     inputs = []
+    output_shape = []
     for idx, t in enumerate(unpacked_inputs):
         input_1d = helper._reshape_helper(g, t, [-1]) if helper._get_tensor_rank(t) != 1 else t
         inputs.append(input_1d)
+        output_shape.append(int(np.prod(helper._get_tensor_sizes(t))))
     outs = g.op('custom::Meshgrid', *inputs, indexing_s=indexing, outputs=len(inputs))
+    output_type = unpacked_inputs[0].type().with_sizes(output_shape)
+    for idx in range(len(inputs)):
+        outs[idx].setType(output_type)
     return g.op('prim::ListConstruct', *outs)
 
 
@@ -888,7 +893,7 @@ def convert_transpose(g, self, dim0, dim1):
 
 @helper.parse_args('v')
 def convert_trunc(g, x):
-    return g.op('custom::Trunc', x)
+    return g.op('custom::Trunc', x).setType(x.type())
 
 
 def convert_quantized_leaky_relu(g, x, negative_slope, inplace, op_scale, op_zero_point):

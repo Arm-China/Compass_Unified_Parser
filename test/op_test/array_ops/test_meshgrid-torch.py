@@ -10,8 +10,8 @@ class meshgrid_model(torch.nn.Module):
 
     def forward(self, x1, x2):
         y = torch.meshgrid(x1, x2, indexing=self.indexing)
-        # return torch.concat(y, dim=-1)
-        return y  # the output node will be SequenceConstruct
+        return torch.concat(y, dim=-1)
+        # return y  # the output node will be SequenceConstruct
 
 
 def create_meshgrid_model(model_path, indexing):

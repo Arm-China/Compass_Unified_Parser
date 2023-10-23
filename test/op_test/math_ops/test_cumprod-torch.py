@@ -10,7 +10,8 @@ class cumprod_model(torch.nn.Module):
         self.dtype = dtype
 
     def forward(self, x):
-        y = torch.cumprod(x, self.dim, dtype=self.dtype)
+        y0 = torch.cumprod(x, self.dim, dtype=self.dtype)
+        y = torch.flatten(y0, 1, -1)
         return y
 
 
