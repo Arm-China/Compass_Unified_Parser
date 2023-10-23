@@ -10,7 +10,7 @@ class channel_shuffle_model(torch.nn.Module):
 
     def forward(self, x):
         y = self.channel_shuffle(x)
-        return y
+        return torch.flatten(y, 1, -1)
 
 
 def create_channel_shuffle_model(model_path, groups):
