@@ -2,6 +2,9 @@
 source /arm/tools/setup/init/bash
 module load swdev python/python/3.8.5
 module load swdev git/git/2.17.1
+module load swdev python/conda/5.2.0
+source /arm/tools/python/conda/5.2.0/rhe7-x86_64/etc/profile.d/conda.sh
+conda activate tf_2_6
 
 export LD_LIBRARY_PATH="/arm/tools/gnu/gcc/7.3.0/rhe7-x86_64/lib64:$LD_LIBRARY_PATH"
 export PYTHONPATH="`realpath ../`:${PYTHONPATH}"
