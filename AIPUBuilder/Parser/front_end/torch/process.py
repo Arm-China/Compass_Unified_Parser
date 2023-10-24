@@ -1121,11 +1121,12 @@ def convert_index_reduce(g, x, dim, index, other, reduction, include_self):
         ERROR('ONNX export does NOT support exporting index_add_() function with unknown dim value.')
 
     # TODO: need to find way to obtain tensor value.
+    index_duplicates = True
     try:
         index_value = helper._maybe_get_const(index, 'is')
         index_duplicates = _has_duplicates(index_value)
     except:
-        index_duplicates = False
+        pass
 
     x_dim_rank = helper._get_tensor_rank(x)
     other_dim_rank = helper._get_tensor_rank(other)
@@ -1162,8 +1163,10 @@ def convert_index_reduce(g, x, dim, index, other, reduction, include_self):
         index = helper._unsqueeze_helper(
             g, index, [helper._get_tensor_rank(index)]
         )
-
-    scatter_indices = opset9.expand_as(g, index, other)
+    try:
+        scatter_indices = opset9.expand_as(g, index, other)
+    except:
+        scatter_indices = index
 
     # TODO: Partially supported.
     # Because of the limitations of ONNX scatter element.
@@ -1180,6 +1183,7 @@ def convert_index_reduce(g, x, dim, index, other, reduction, include_self):
         # max/min is not supported now.
         # Wait until torch_to_onnx can support op_version 18 before supporting it.
         #
+        # from torch.onnx import symbolic_opset11 as opset11
         # if include_self is False and reduction == 'amin':
         #     reduction = 'min'
         #     add_value = torch.full(other_shape, np.iinfo(
@@ -1189,13 +1193,21 @@ def convert_index_reduce(g, x, dim, index, other, reduction, include_self):
         #     zeros = g.op('Constant', value_t=zero_value)
         #     result = scatter_helper(
         #         g, zeros, dim, scatter_indices, add_v, 'add')
-        #     from torch.onnx import symbolic_opset11 as opset11
+
         #     x = opset11.add(g, x, result)
+        if include_self is False and reduction == 'prod':
+            dtype = other.type().scalarType()
+            scatter_value = torch.full(
+                other_shape, 1, dtype=helper.pytorch_name_to_type[dtype])
+            scatter_v = g.op('Constant', value_t=scatter_value)
+            x = scatter_helper(
+                g, x, dim, scatter_indices, scatter_v, 'none')
+            reduction = 'mul'
         # elif reduction == 'amax':
         #     reduction = 'max'
         # elif reduction == 'amin':
         #     reduction = 'min'
-        if reduction == 'prod':
+        elif reduction == 'prod':
             reduction = 'mul'
         return scatter_helper(g, x, dim, scatter_indices, other, reduction)
 
