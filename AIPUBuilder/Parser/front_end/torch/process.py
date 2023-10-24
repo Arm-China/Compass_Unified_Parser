@@ -21,8 +21,10 @@ from ...common.defs import FLOAT_EQUAL
 
 
 def convert_adaptive_pool(g, x, output_size, dim, method):
-    assert dim in (1, 2, 3), 'Meets invalid dim (%s) in convert_adaptive_pool!' % str(dim)
-    assert method in ('AVG', 'MAX'), 'Meets invalid method (%s) in convert_adaptive_pool!' % str(method)
+    assert dim in (
+        1, 2, 3), 'Meets invalid dim (%s) in convert_adaptive_pool!' % str(dim)
+    assert method in (
+        'AVG', 'MAX'), 'Meets invalid method (%s) in convert_adaptive_pool!' % str(method)
     input_shape = helper._get_tensor_sizes(x)
     need_reshape = (len(input_shape) == 3)
     if need_reshape:
@@ -30,7 +32,8 @@ def convert_adaptive_pool(g, x, output_size, dim, method):
     if helper._is_packed_list(output_size):  # None in output_size
         # None in output_size is handled by torch/nn/functional.py(function _list_with_default)
         # and then output_size becomes a packed list with const ints inside.
-        output_size = [helper._parse_arg(size_val, 'i') for size_val in helper._unpack_list(output_size)]
+        output_size = [helper._parse_arg(size_val, 'i')
+                       for size_val in helper._unpack_list(output_size)]
     else:
         size = helper._maybe_get_const(output_size, 'is')
         if helper._is_value(size):  # output_size is scalar
@@ -38,27 +41,36 @@ def convert_adaptive_pool(g, x, output_size, dim, method):
         else:  # output_size is a tuple of ints
             output_size = size
     if all(s == 1 for s in output_size):
-        output = g.op('GlobalAveragePool', x) if method == 'AVG' else g.op('GlobalMaxPool', x)
+        output = g.op('GlobalAveragePool', x) if method == 'AVG' else g.op(
+            'GlobalMaxPool', x)
     elif all((dim % s == 0) for dim, s in zip(input_shape[-2:], output_size)):
-        kernel_shape = [int(dim / s) for dim, s in zip(input_shape[-2:], output_size)]
+        kernel_shape = [int(dim / s)
+                        for dim, s in zip(input_shape[-2:], output_size)]
         if method == 'AVG':
-            output = g.op('AveragePool', x, kernel_shape_i=kernel_shape, strides_i=kernel_shape)
+            output = g.op('AveragePool', x,
+                          kernel_shape_i=kernel_shape, strides_i=kernel_shape)
         else:
-            output = g.op('MaxPool', x, outputs=1, kernel_shape_i=kernel_shape, strides_i=kernel_shape)
+            output = g.op('MaxPool', x, outputs=1,
+                          kernel_shape_i=kernel_shape, strides_i=kernel_shape)
     else:
-        output_type = x.type().with_sizes(([1] if need_reshape else []) + input_shape[:-2] + output_size)
-        output = g.op('custom::AdaptivePool', x, output_size_i=output_size, method_s=method).setType(output_type)
+        output_type = x.type().with_sizes(
+            ([1] if need_reshape else []) + input_shape[:-2] + output_size)
+        output = g.op('custom::AdaptivePool', x, output_size_i=output_size,
+                      method_s=method).setType(output_type)
     if need_reshape:
         output_shape = input_shape[0:1] + output_size
-        output = helper._reshape_helper(g, output, output_shape)  # from NCHW to CHW
+        output = helper._reshape_helper(
+            g, output, output_shape)  # from NCHW to CHW
     # aten::adaptive_max_poolNd always return 2 outputs but only the first one is used when return_indices=False.
     return output if method == 'AVG' else (output, None)
 
 
+@quantized_args(True, False, False)
 def convert_adaptive_avg_pool2d(g, x, output_size):
     return convert_adaptive_pool(g, x, output_size, 2, 'AVG')
 
 
+@quantized_args(True, False, False)
 def convert_adaptive_max_pool2d(g, x, output_size):
     return convert_adaptive_pool(g, x, output_size, 2, 'MAX')
 
