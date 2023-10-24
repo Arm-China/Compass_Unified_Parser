@@ -187,7 +187,7 @@ def merge_qconv(graph):
                                    ('x_dequant', {'op': 'DequantizeLinear'}),
                                    ('w_dequant', {'op': 'DequantizeLinear'}),
                                    ('b_dequant', {'op': 'DequantizeLinear'}),
-                                   ('conv', {'op': 'Conv'}),
+                                   ('conv', {'op': ['Conv', 'ConvTranspose']}),
                                    ('y_quant', {'op': 'QuantizeLinear'}),
                                ],
                                edges=[
@@ -301,26 +301,33 @@ def merge_qconv(graph):
             index = graph._attr['output_names'].index(m['y_quant'])
             graph._attr['output_names'][index] = last_node
 
-        insert_constant(graph, m['conv'] + '_x_scale',
-                        x_scale, m['conv'], in_port=1, data_format='NHWC')
-        insert_constant(graph, m['conv'] + '_x_zero_point',
-                        x_zp, m['conv'], in_port=2, data_format='NHWC')
-        insert_constant(graph, m['conv'] + '_w', weights,
-                        m['conv'], in_port=3, data_format='NHWC')
-        insert_constant(graph, m['conv'] + '_w_scale',
-                        w_scale, m['conv'], in_port=4, data_format='NHWC')
-        insert_constant(graph, m['conv'] + '_w_zero_point',
-                        w_zp, m['conv'], in_port=5, data_format='NHWC')
-        insert_constant(graph, m['conv'] + '_y_scale',
-                        y_scale, m['conv'], in_port=6, data_format='NHWC')
-        insert_constant(graph, m['conv'] + '_y_zero_point',
-                        y_zp, m['conv'], in_port=7, data_format='NHWC')
-        insert_constant(graph, m['conv'] + '_B', biases,
-                        m['conv'], in_port=8, data_format='NHWC')
-
         conv_attr = obj_dict['conv'].copied_attr()
-        conv_attr.update({'opset_version': 10})
-        NodeWrap(graph, m['conv']).replace_obj('QLinearConv', conv_attr)
+        if obj_dict['conv'].type == 'Conv':
+            op_type = 'QLinearConv'
+            conv_attr.update({'opset_version': 10})
+            insert_constant(graph, m['conv'] + '_x_scale',
+                            x_scale, m['conv'], in_port=1, data_format='NHWC')
+            insert_constant(graph, m['conv'] + '_x_zero_point',
+                            x_zp, m['conv'], in_port=2, data_format='NHWC')
+            insert_constant(graph, m['conv'] + '_w', weights,
+                            m['conv'], in_port=3, data_format='NHWC')
+            insert_constant(graph, m['conv'] + '_w_scale',
+                            w_scale, m['conv'], in_port=4, data_format='NHWC')
+            insert_constant(graph, m['conv'] + '_w_zero_point',
+                            w_zp, m['conv'], in_port=5, data_format='NHWC')
+            insert_constant(graph, m['conv'] + '_y_scale',
+                            y_scale, m['conv'], in_port=6, data_format='NHWC')
+            insert_constant(graph, m['conv'] + '_y_zero_point',
+                            y_zp, m['conv'], in_port=7, data_format='NHWC')
+            insert_constant(graph, m['conv'] + '_B', biases,
+                            m['conv'], in_port=8, data_format='NHWC')
+        else:
+            op_type = 'ConvTranspose'
+            conv_attr.update({'opset_version': 11,
+                              'weights': weights, 'weights_scale_zp': [w_scale, w_zp],
+                              'biases': biases, 'biases_scale_zp': [b_scale, b_zp]})
+
+        NodeWrap(graph, m['conv']).replace_obj(op_type, conv_attr)
 
     if matched:
         clear_redundant_nodes(graph)
