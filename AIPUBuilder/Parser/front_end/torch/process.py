@@ -1354,6 +1354,10 @@ def convert_torch_to_onnx(model_path, params):
             if torch_version.startswith('1.11'):
                 default_onnx_main_opset = helper._onnx_main_opset
                 default_onnx_stable_opsets = helper._onnx_stable_opsets
+            elif torch_version >= '1.13.0':
+                import torch.onnx._constants as Constant
+                default_onnx_main_opset = Constant.ONNX_DEFAULT_OPSET
+                default_onnx_stable_opsets = list(range(Constant.ONNX_MIN_OPSET, Constant.ONNX_MAX_OPSET+1))
             elif torch_version >= '1.12.0':
                 import torch.onnx._constants as Constant
                 default_onnx_main_opset = Constant.onnx_main_opset
