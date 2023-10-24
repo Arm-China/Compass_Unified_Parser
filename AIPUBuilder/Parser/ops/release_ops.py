@@ -3476,32 +3476,44 @@ class ArmPooling3DOp(OpHasMethod, OpHasPaddingStrides, OpHasOneOutPort, ArmOp):
     def infer_shape(self):
         super(ArmPooling3DOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        input_tensor = torch.from_numpy(inputs[0]).permute(0, 4, 1, 2, 3)
-        input_tensor = torch.nn.functional.pad(
-            input_tensor, self.torch_pads, mode='constant', value=0)
-        if self.method == 'AVG':
-            out_tensor = torch.nn.functional.avg_pool3d(input_tensor,
-                                                        kernel_size=tuple(
-                                                            self.kernel_shape),
-                                                        stride=tuple(
-                                                            self.strides),
-                                                        ceil_mode=bool(
-                                                            self.ceil_mode),
-                                                        count_include_pad=bool(
-                                                            self.count_include_pad)
-                                                        ).numpy()
-        else:
-            out_tensor = torch.nn.functional.max_pool3d(input_tensor,
-                                                        kernel_size=tuple(
-                                                            self.kernel_shape),
-                                                        stride=tuple(
-                                                            self.strides),
-                                                        dilation=tuple(
-                                                            self.dilations),
-                                                        ceil_mode=bool(
-                                                            self.ceil_mode)
-                                                        ).numpy()
-        out_tensor = np.transpose(out_tensor, [0, 2, 3, 4, 1])
+        # input_tensor = torch.from_numpy(inputs[0]).permute(0, 4, 1, 2, 3)
+        # input_tensor = torch.nn.functional.pad(
+        #     input_tensor, self.torch_pads, mode='constant', value=0)
+        # if self.method == 'AVG':
+        #     # NOTE: torch.nn.functional.avg_pool3d doesn't support dilations
+        #     out_tensor = torch.nn.functional.avg_pool3d(input_tensor,
+        #                                                 kernel_size=tuple(
+        #                                                     self.kernel_shape),
+        #                                                 stride=tuple(
+        #                                                     self.strides),
+        #                                                 ceil_mode=bool(
+        #                                                     self.ceil_mode),
+        #                                                 count_include_pad=bool(
+        #                                                     self.count_include_pad)
+        #                                                 ).numpy()
+        # else:
+        #     out_tensor = torch.nn.functional.max_pool3d(input_tensor,
+        #                                                 kernel_size=tuple(
+        #                                                     self.kernel_shape),
+        #                                                 stride=tuple(
+        #                                                     self.strides),
+        #                                                 dilation=tuple(
+        #                                                     self.dilations),
+        #                                                 ceil_mode=bool(
+        #                                                     self.ceil_mode)
+        #                                                 ).numpy()
+        # out_tensor = np.transpose(out_tensor, [0, 2, 3, 4, 1])
+        input_shape = inputs[0].shape
+        batch, spatial_shape, channel = input_shape[0], input_shape[1:-1], input_shape[-1]
+        out_shape = BaseOnnxPoolOp.cal_out_shape(spatial_shape,
+                                                 self.pads,
+                                                 self.strides,
+                                                 self.kernel_shape,
+                                                 self.auto_pad,
+                                                 dilations=self.dilations,
+                                                 ceil_mode=self.ceil_mode)
+        out_tensor = np.random.ranf(
+            [batch] + out_shape + [channel]).astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
     def write_attrs(self, txt_file):

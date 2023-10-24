@@ -4,16 +4,19 @@ from utils.run import run_parser
 from onnx import TensorProto, helper
 
 
-def create_LpPool_model(onnx_path, input_size, output_size, ceil_mode, dilations, kernel_shape, p, pads, version=18):
+def create_LpPool_model(onnx_path, input_size, output_size, ceil_mode, dilations, kernel_shape, p, pads=[], auto_pad='', version=18):
     ''' Create onnx model for LpPool op.
     '''
     X = helper.make_tensor_value_info('X', TensorProto.FLOAT, input_size)
     Y = helper.make_tensor_value_info('Y', TensorProto.FLOAT, output_size)
 
+    other_args = {}
     if version == 18:
-        other_args = {'ceil_mode': ceil_mode, 'dilations': dilations}
-    else:
-        other_args = {}
+        other_args.update({'ceil_mode': ceil_mode, 'dilations': dilations})
+    if pads:
+        other_args.update({'pads': pads})
+    if auto_pad:
+        other_args.update({'auto_pad': auto_pad})
 
     LpPool = helper.make_node(
         OP_NAME,
@@ -21,7 +24,6 @@ def create_LpPool_model(onnx_path, input_size, output_size, ceil_mode, dilations
         outputs=['Y'],
         kernel_shape=kernel_shape,
         p=p,
-        pads=pads,
         **other_args,
     )
     graph_def = helper.make_graph(
@@ -47,14 +49,32 @@ feed_dict['X'] = np.random.ranf(input_shape).astype(np.float32) * 100
 input_data_path = 'input.npy'
 np.save(input_data_path, feed_dict)
 
+# # test auto_pad
+# for ceil_mode in (1, 0, ):
+#     for dilations in ([1, 2], [4, 3], ):
+#         for p in (2, 1, ):
+#             for auto_pad in ('SAME_UPPER', 'SAME_LOWER', 'VALID', 'NOTSET'):
+#                 model_name = '-'.join([OP_NAME, str(ceil_mode),
+#                                     str(dilations[0]), auto_pad])
+#                 model_path = model_name + '.onnx'
+#                 # FIXME: onnx runtime has issue when auto_pad is set, so ignore them for now.
+#                 # Add tests of auto_pad after the issue is fixed in onnx runtime.
+#                 create_LpPool_model(
+#                     model_path, input_shape, output_shape,
+#                     ceil_mode, dilations, kernel_shape=[4, 5], p=p, auto_pad=auto_pad, version=18)
+
+#                 # Run tests with parser and compare result with runtime
+#                 exit_status = run_parser(
+#                     model_path, feed_dict, save_output=True, verify=True)
+#                 assert exit_status
+
+# test padding
 for ceil_mode in (1, 0, ):
     for dilations in ([1, 2], [4, 3], ):
         for p in (2, 1, ):
             model_name = '-'.join([OP_NAME, str(ceil_mode),
                                    str(dilations[0]), str(p)])
             model_path = model_name + '.onnx'
-            # FIXME: onnx runtime has issue when auto_pad is set, so ignore them for now.
-            # Add tests of auto_pad after the issue is fixed in onnx runtime.
             create_LpPool_model(
                 model_path, input_shape, output_shape,
                 ceil_mode, dilations, kernel_shape=[4, 5], p=p, pads=[1, 2, 0, 3], version=18)

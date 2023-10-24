@@ -25,6 +25,10 @@ class AveragePoolOp(BaseOnnxPoolOp, OpHasOneOutPort):
                      'count_include_pad': {'type': AttrType.INT, 'default': 0},
                      'kernel_shape': {'required': True},
                      },
+                19: {'ceil_mode': {'type': AttrType.INT, 'default': 0},
+                     'count_include_pad': {'type': AttrType.INT, 'default': 0},
+                     'kernel_shape': {'required': True},
+                     },
                 }
 
     def __init__(self, graph, attr_dict=None):
