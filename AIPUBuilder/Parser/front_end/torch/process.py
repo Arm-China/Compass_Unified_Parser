@@ -172,8 +172,12 @@ def convert_chunk(g, input, chunks, dim):
     from torch.onnx.symbolic_opset13 import split
     input_shape = helper._get_tensor_sizes(input)
     if input_shape is None or None in input_shape:
-        from torch.onnx.symbolic_opset11 import Prim
-        return Prim.ConstantChunk(g, input, chunks, dim)
+        try:
+            from torch.onnx.symbolic_opset11 import Prim
+            return Prim.ConstantChunk(g, input, chunks, dim)
+        except ImportError:  # torch 2.1
+            from torch.onnx.symbolic_opset11 import prim_constant_chunk
+            return prim_constant_chunk(g, input, chunks, dim)
     dim_size = input_shape[dim]
     chunk_size = (dim_size + chunks - 1) // chunks
     split_sizes = [chunk_size] * (dim_size // chunk_size)
@@ -188,8 +192,12 @@ def convert_chunk(g, input, chunks, dim):
 
 @quantized_args(True, False, False)
 def convert_constant_chunk(g, input, chunks, dim):
-    from torch.onnx.symbolic_opset11 import Prim
-    return Prim.ConstantChunk(g, input, chunks, dim)
+    try:
+        from torch.onnx.symbolic_opset11 import Prim
+        return Prim.ConstantChunk(g, input, chunks, dim)
+    except ImportError:  # torch 2.1
+        from torch.onnx.symbolic_opset11 import prim_constant_chunk
+        return prim_constant_chunk(g, input, chunks, dim)
 
 
 @helper.parse_args('v', 'is', 'is', 'is', 'is', 'is')
@@ -525,16 +533,37 @@ def convert_max_pool(g, input, kernel_size, strides, paddings, dilations, ceil_m
         1, 2, 3], 'Meets invalid dim in convert_max_pool!'
     if not ceil_mode:
         if return_indices:
-            from torch.onnx.symbolic_opset10 import max_pool1d_with_indices, max_pool2d_with_indices, max_pool3d_with_indices
-            max_pool_func = max_pool1d_with_indices if dim == 1 else (
-                max_pool2d_with_indices if dim == 2 else max_pool3d_with_indices)
+            try:
+                from torch.onnx.symbolic_opset10 import max_pool1d_with_indices, max_pool2d_with_indices, max_pool3d_with_indices
+                max_pool_func = max_pool1d_with_indices if dim == 1 else (
+                    max_pool2d_with_indices if dim == 2 else max_pool3d_with_indices)
+            except ImportError:  # torch 2.1
+                from torch.onnx.symbolic_opset10 import _max_pool
+                if dim == 1:
+                    max_pool_func = _max_pool('max_pool1d_with_indices',
+                                              torch.nn.modules.utils._single, 1, return_indices=True)
+                elif dim == 2:
+                    max_pool_func = _max_pool('max_pool2d_with_indices',
+                                              torch.nn.modules.utils._pair, 2, return_indices=True)
+                else:  # dim == 3
+                    max_pool_func = _max_pool('max_pool3d_with_indices',
+                                              torch.nn.modules.utils._triple, 3, return_indices=True)
             max_pool, indices = max_pool_func(
                 g, input, kernel_size, strides, paddings, dilations, ceil_mode)
             return (max_pool, indices)
         else:
-            from torch.onnx.symbolic_opset10 import max_pool1d, max_pool2d, max_pool3d
-            max_pool_func = max_pool1d if dim == 1 else (
-                max_pool2d if dim == 2 else max_pool3d)
+            try:
+                from torch.onnx.symbolic_opset10 import max_pool1d, max_pool2d, max_pool3d
+                max_pool_func = max_pool1d if dim == 1 else (
+                    max_pool2d if dim == 2 else max_pool3d)
+            except ImportError:  # torch 2.1
+                from torch.onnx.symbolic_opset10 import _max_pool
+                if dim == 1:
+                    max_pool_func = _max_pool('max_pool1d', torch.nn.modules.utils._single, 1, return_indices=False)
+                elif dim == 2:
+                    max_pool_func = _max_pool('max_pool2d', torch.nn.modules.utils._pair, 2, return_indices=False)
+                else:  # dim == 3
+                    max_pool_func = _max_pool('max_pool3d', torch.nn.modules.utils._triple, 3, return_indices=False)
             max_pool = max_pool_func(
                 g, input, kernel_size, strides, paddings, dilations, ceil_mode)
             return max_pool
@@ -1281,7 +1310,10 @@ def convert_index_fill(g, self, dim, index, value):
         g, self, dim, index
     )
     value = helper._maybe_get_scalar(value)
-    value = helper._if_scalar_type_as(g, value, self)
+    try:
+        value = helper._if_scalar_type_as(g, value, self)
+    except TypeError:  # torch 2.1
+        value = helper._if_scalar_type_as(value, self)
     expanded_value = opset9.expand(g, value, expanded_index_shape, None)
 
     return convert_scatter(g, self, dim, expanded_index, expanded_value)
