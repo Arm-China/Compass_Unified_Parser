@@ -928,19 +928,19 @@ class ScatterNDOp(OpHasOneOutPort, OnnxOp):
         inputs = self.get_input_tensors()
         data, indices, updates = inputs
         out_tensor = np.copy(data)
-        update_indices = indices.shape[:-1]
-        for idx in np.ndindex(update_indices):
-            index = tuple(indices[idx])
-            if self.reduction == 'mul':
+        if self.reduction == 'mul':
+            update_indices = indices.shape[:-1]
+            for idx in np.ndindex(update_indices):
+                index = tuple(indices[idx])
                 out_tensor[index] *= updates[idx]
-            elif self.reduction == 'add':
-                out_tensor[index] += updates[idx]
-            elif self.reduction == 'max':
-                out_tensor[index] = np.maximum(out_tensor[index], updates[idx])
-            elif self.reduction == 'min':
-                out_tensor[index] = np.minimum(out_tensor[index], updates[idx])
-            else:
-                out_tensor[index] = updates[idx]
+        elif self.reduction == 'add':
+            out_tensor = tf.tensor_scatter_nd_add(data, indices, updates).numpy()
+        elif self.reduction == 'max':
+            out_tensor = tf.tensor_scatter_nd_max(data, indices, updates).numpy()
+        elif self.reduction == 'min':
+            out_tensor = tf.tensor_scatter_nd_min(data, indices, updates).numpy()
+        else:  # reduction == 'none'
+            out_tensor = tf.tensor_scatter_nd_update(data, indices, updates).numpy()
         self.set_out_tensor(out_tensor)
 
 
