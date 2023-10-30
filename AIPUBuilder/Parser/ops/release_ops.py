@@ -87,7 +87,7 @@ class ArmActivationOp(LayoutUnawareOp, OpHasMethod, OpHasOneOutPort, ArmOp):
                 'beta': {'type': AttrType.FLOAT, 'default': None},
                 'negative_slope': {'type': AttrType.TENSOR, 'default': None},
                 'negative_slope_offset': {'type': AttrType.INT, 'default': None},
-                'negative_slope_min_max': {'type': AttrType.FLOATS, 'default': []},
+                'negative_slope_range': {'type': AttrType.TENSOR, 'default': None},
                 'negative_slope_scale': {'type': AttrType.TENSOR, 'default': None},
                 'negative_slope_zp': {'type': AttrType.TENSOR, 'default': None},
                 'gamma': {'type': AttrType.FLOAT, 'default': None},
@@ -246,13 +246,13 @@ class ArmActivationOp(LayoutUnawareOp, OpHasMethod, OpHasOneOutPort, ArmOp):
                     self.negative_slope.size * self.negative_slope.dtype.itemsize))
                 txt_file.write('negative_slope_shape=[%s]\n' % num_list_to_string(
                     list(self.negative_slope.shape)))
-                if len(self.negative_slope_min_max) == 2:
-                    if np.array(self.negative_slope_min_max).size == 2:  # per tensor
-                        txt_file.write('negative_slope_range=[%s]\n' % num_list_to_string(
-                            [float(m) for m in self.negative_slope_min_max]))
-                    else:  # per channel
-                        txt_file.write('negative_slope_range=[%s]\n' % num_list_to_string(
-                            [[min_val, max_val] for min_val, max_val in zip(self.negative_slope_min_max[0], self.negative_slope_min_max[1])]))
+                if self.negative_slope_range is not None and len(self.negative_slope_range) == 2:
+                    txt_file.write('negative_slope_range_type=%s\n' % str(self.negative_slope_range.dtype))
+                    txt_file.write('negative_slope_range_offset=%d\n' % self.negative_slope_range_offset)
+                    txt_file.write('negative_slope_range_size=%d\n' % (
+                        self.negative_slope_range.size * self.negative_slope_range.dtype.itemsize))
+                    txt_file.write('negative_slope_range_shape=[%s]\n' % num_list_to_string(
+                        list(self.negative_slope_range.shape)))
                 if self.quantize \
                         and self.negative_slope_scale is not None \
                         and self.negative_slope_zp is not None:
@@ -280,16 +280,11 @@ class ArmActivationOp(LayoutUnawareOp, OpHasMethod, OpHasOneOutPort, ArmOp):
             if self.negative_slope is not None \
                     and np.ndim(self.negative_slope) > 0 \
                     and self.negative_slope_offset >= 0:
-                start = bin_file.tell()
-                assert start == self.negative_slope_offset, 'negative_slope offset not match! layer name: %s, %d' % (
-                    self.name, self.negative_slope_offset)
-                self.negative_slope.tofile(bin_file)
-                end = bin_file.tell()
-                if not (self.negative_slope.dtype.itemsize * int(np.prod(self.negative_slope.shape)) == end - start):
-                    ERROR(
-                        '[Parser]: Node(%s) write negative_slope to bin error!' % self.name)
-            else:
-                pass
+                Op.numpy_to_bin(bin_file, self.negative_slope, self.negative_slope_offset, self.name)
+            if self.negative_slope_range is not None \
+                    and np.ndim(self.negative_slope_range) > 0 \
+                    and self.negative_slope_range_offset >= 0:
+                Op.numpy_to_bin(bin_file, self.negative_slope_range, self.negative_slope_range_offset, self.name)
         else:
             FATAL(
                 '[Parser]: Invalid file to write negative_slope for Node(%s)!' % self.name)

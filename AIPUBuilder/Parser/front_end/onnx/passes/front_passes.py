@@ -48,7 +48,7 @@ def fuse_weights_const(graph):
                         node_obj.weights = data
                         if edge_attr.get('tensor', None) is not None:
                             if len(edge_attr['tensor'].min_max) == 2:
-                                node_obj.weights_min_max = list(
+                                node_obj.weights_range = list(
                                     edge_attr['tensor'].min_max)
                             if len(edge_attr['tensor'].scale_zp) == 2:
                                 node_obj.weights_scale_zp = list(
@@ -59,7 +59,7 @@ def fuse_weights_const(graph):
                         node_obj.biases = data
                         if edge_attr.get('tensor', None) is not None:
                             if len(edge_attr['tensor'].min_max) == 2:
-                                node_obj.biases_min_max = list(
+                                node_obj.biases_range = list(
                                     edge_attr['tensor'].min_max)
                             if len(edge_attr['tensor'].scale_zp) == 2:
                                 node_obj.biases_scale_zp = list(
@@ -77,7 +77,7 @@ def fuse_weights_const(graph):
                     node_obj.weights = data
                     if edge_attr.get('tensor', None) is not None:
                         if len(edge_attr['tensor'].min_max) == 2:
-                            node_obj.weights_min_max = list(
+                            node_obj.weights_range = list(
                                 edge_attr['tensor'].min_max)
                         if len(edge_attr['tensor'].scale_zp) == 2:
                             node_obj.weights_scale_zp = list(

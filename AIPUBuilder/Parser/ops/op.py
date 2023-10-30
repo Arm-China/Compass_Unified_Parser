@@ -150,7 +150,13 @@ class Op(abc.ABC):
                                 'options': ['NWC', 'NCW', 'NHWC', 'NCHW', 'NDHWC', 'NCDHW', 'NCHW_VECT_C'],
                                 'required': True},
                 'cur_version': {'type': AttrType.INT, 'default': 0, 'required': False},
-                'quantize': {'type': AttrType.BOOL, 'default': False, 'options': [0, 1, False, True]}
+                'quantize': {'type': AttrType.BOOL, 'default': False, 'options': [0, 1, False, True]},
+                'top_scales': {'type': AttrType.TENSORS, 'default': []},
+                'top_scales_offset': {'type': AttrType.INTS, 'default': []},
+                'top_zps': {'type': AttrType.TENSORS, 'default': []},
+                'top_zps_offset': {'type': AttrType.INTS, 'default': []},
+                'top_ranges': {'type': AttrType.TENSORS, 'default': []},
+                'top_ranges_offset': {'type': AttrType.INTS, 'default': []},
                 }
 
     @classmethod
@@ -356,28 +362,89 @@ class Op(abc.ABC):
                 top_type_str = string_list_to_string(top_info[2] if len(top_info) >= 3 else [])
             txt_file.write('layer_top_type=[%s]\n' % top_type_str)
 
-            if len(top_info) >= 4:
-                if all('min_max' in info for info in top_info[3]):
-                    min_max_list = [info['min_max'] for info in top_info[3]]
-                    range_str = string_list_to_string(min_max_list)
-                    if range_str:
-                        txt_file.write('layer_top_range=[%s]\n' % range_str)
+            if len(top_info) >= 4 \
+                    and len(self.top_ranges) == len(top_info[3]) \
+                    and len(self.top_ranges_offset) == len(top_info[3]):
+                ranges_offset = string_list_to_string(
+                    [str(offset) if offset is not None else 'NONE' for offset in self.top_ranges_offset])
+                ranges_shape = [str(list(r.shape)) if r is not None else 'NONE' for r in self.top_ranges]
+                ranges_shape = string_list_to_string([re.sub(r' ', '', shape) for shape in ranges_shape])
+                ranges_type = string_list_to_string(
+                    [str(r.dtype) if r is not None else 'NONE' for r in self.top_ranges])
+                ranges_size = string_list_to_string(
+                    [str(r.size * r.dtype.itemsize) if r is not None else '0' for r in self.top_ranges])
+
+                txt_file.write('layer_top_range_offset=[%s]\n' % ranges_offset)
+                txt_file.write('layer_top_range_shape=[%s]\n' % ranges_shape)
+                txt_file.write('layer_top_range_type=[%s]\n' % ranges_type)
+                txt_file.write('layer_top_range_size=[%s]\n' % ranges_size)
 
             if self._graph._attr.get('quantize', False) \
                     and len(top_info) >= 4 \
-                    and all('scale_zp' in info for info in top_info[3]):
-                scale_list = [info['scale_zp'][0].tolist() for info in top_info[3]]
-                scale_str = ','.join([num_list_to_string(s) for s in scale_list])
-                zp_list = [info['scale_zp'][1].tolist() for info in top_info[3]]
-                zp_str = ','.join([num_list_to_string(z) for z in zp_list])
-                if scale_str:
-                    txt_file.write('layer_top_scale=[%s]\n' % scale_str)
-                if zp_str:
-                    txt_file.write('layer_top_zp=[%s]\n' % zp_str)
+                    and len(self.top_scales) == len(top_info[3]) \
+                    and len(self.top_scales_offset) == len(top_info[3]) \
+                    and len(self.top_zps) == len(top_info[3]) \
+                    and len(self.top_zps_offset) == len(top_info[3]):
 
+                scales_offset = string_list_to_string(
+                    [str(offset) if offset is not None else 'NONE' for offset in self.top_scales_offset])
+                scales_shape = [str(list(s.shape)) if s is not None else 'NONE' for s in self.top_scales]
+                scales_shape = string_list_to_string([re.sub(r' ', '', shape) for shape in scales_shape])
+                scales_type = string_list_to_string(
+                    [str(s.dtype) if s is not None else 'NONE' for s in self.top_scales])
+                scales_size = string_list_to_string(
+                    [str(s.size * s.dtype.itemsize) if s is not None else '0' for s in self.top_scales])
+
+                zps_offset = string_list_to_string(
+                    [str(offset) if offset is not None else 'NONE' for offset in self.top_zps_offset])
+                zps_shape = [str(list(z.shape)) if z is not None else 'NONE' for z in self.top_zps]
+                zps_shape = string_list_to_string([re.sub(r' ', '', shape) for shape in zps_shape])
+                zps_type = string_list_to_string([str(z.dtype) if z is not None else 'NONE' for z in self.top_zps])
+                zps_size = string_list_to_string(
+                    [str(z.size * z.dtype.itemsize) if z is not None else '0' for z in self.top_zps])
+
+                txt_file.write('layer_top_scale_offset=[%s]\n' % scales_offset)
+                txt_file.write('layer_top_scale_shape=[%s]\n' % scales_shape)
+                txt_file.write('layer_top_scale_type=[%s]\n' % scales_type)
+                txt_file.write('layer_top_scale_size=[%s]\n' % scales_size)
+
+                txt_file.write('layer_top_zp_offset=[%s]\n' % zps_offset)
+                txt_file.write('layer_top_zp_shape=[%s]\n' % zps_shape)
+                txt_file.write('layer_top_zp_type=[%s]\n' % zps_type)
+                txt_file.write('layer_top_zp_size=[%s]\n' % zps_size)
         else:
             FATAL(
                 '[Parser]: Invalid file to write properties for Node(%s) in write_attrs!' % (self.name))
+        return ret
+
+    def write_top_range(self, bin_file):
+        ret = True
+        if not bin_file.closed and bin_file.mode == 'wb':
+            if len(self.top_ranges) > 0 \
+                    and len(self.top_ranges) == len(self.top_ranges_offset):
+                for r, r_offset in zip(self.top_ranges, self.top_ranges_offset):
+                    if r_offset >= 0:
+                        Op.numpy_to_bin(bin_file, r, r_offset, self.name)
+        else:
+            FATAL('[Parser]: Invalid file to write range for Node(%s) in write_top_range!' % self.name)
+        return ret
+
+    def write_top_scale_zp(self, bin_file):
+        ret = True
+        if not bin_file.closed and bin_file.mode == 'wb':
+            if self._graph._attr.get('quantize', False) \
+                    and len(self.top_scales) > 0 \
+                    and len(self.top_scales) == len(self.top_scales_offset) \
+                    and len(self.top_scales) == len(self.top_zps) \
+                    and len(self.top_scales) == len(self.top_zps_offset):
+                for scale, scale_offset in zip(self.top_scales, self.top_scales_offset):
+                    if scale_offset != -1:
+                        Op.numpy_to_bin(bin_file, scale, scale_offset, self.name)
+                for zp, zp_offset in zip(self.top_zps, self.top_zps_offset):
+                    if zp_offset != -1:
+                        Op.numpy_to_bin(bin_file, zp, zp_offset, self.name)
+        else:
+            FATAL('[Parser]: Invalid file to write scale/zp for Node(%s) in write_top_scale_zp!' % self.name)
         return ret
 
     def get_input_tensors(self):
@@ -479,8 +546,8 @@ class Op(abc.ABC):
                 pre_name_suffix = '_' + str(d['src_out_port'])
                 info_dict = OrderedDict()
                 if len(d['tensor'].min_max) == 2:
-                    min_max_str = '[%f,%f]' % (float(d['tensor'].min_max[0]), float(d['tensor'].min_max[1]))
-                    info_dict.update({'min_max': min_max_str})
+                    min_max = np.array(d['tensor'].min_max, dtype=np.float32)
+                    info_dict.update({'min_max': min_max})
                 dtype = ''
                 if quantize:
                     if len(d['tensor'].scale_zp) == 2:
@@ -527,12 +594,8 @@ class Op(abc.ABC):
                       self.name)
                 info_value = [re.sub(r' ', '', str(tensor_shape)), '', OrderedDict()]
             if len(d['tensor'].min_max) == 2:
-                if np.array(d['tensor'].min_max).size == 2:  # per tensor
-                    min_max_str = '[%f,%f]' % (float(d['tensor'].min_max[0]), float(d['tensor'].min_max[1]))
-                else:  # per channel
-                    min_max_str = num_list_to_string(
-                        [[min_val, max_val] for min_val, max_val in zip(d['tensor'].min_max[0], d['tensor'].min_max[1])])
-                info_value[2].update({'min_max': min_max_str})
+                min_max = np.array(d['tensor'].min_max, dtype=np.float32)
+                info_value[2].update({'min_max': min_max})
             if quantize and d['tensor'].dtype is not None:
                 info_value[2].update({'dtype': str(d['tensor'].dtype)})
             if quantize and len(d['tensor'].scale_zp) == 2:
@@ -1150,7 +1213,8 @@ class OpHasWeights(Op):
         '''return attributes of OpHasWeights class.'''
         return {'weights': {'type': AttrType.TENSOR, 'default': None},
                 'weights_offset': {'type': AttrType.INT, 'default': -1},
-                'weights_min_max': {'type': AttrType.FLOATS, 'default': []},
+                'weights_range': {'type': AttrType.TENSOR, 'default': None},
+                'weights_range_offset': {'type': AttrType.INT, 'default': -1},
                 'weights_scale_zp': {'type': AttrType.TENSORS, 'default': [np.array([1.0]).astype(np.float32), np.array([0]).astype(np.int32)]},
                 'weights_scale_offset': {'type': AttrType.INT, 'default': -1},
                 'weights_zp_offset': {'type': AttrType.INT, 'default': -1}
@@ -1215,13 +1279,13 @@ class OpHasWeights(Op):
                            (self.weights.size * self.weights.dtype.itemsize))
             txt_file.write('weights_shape=[%s]\n' % num_list_to_string(
                 list(self.weights.shape)))
-            if len(self.weights_min_max) == 2:
-                if np.array(self.weights_min_max).size == 2:  # per tensor
-                    txt_file.write('weights_range=[%s]\n' % num_list_to_string(
-                        [float(m) for m in self.weights_min_max]))
-                else:  # per channel
-                    txt_file.write('weights_range=[%s]\n' % num_list_to_string(
-                        [[min_val, max_val] for min_val, max_val in zip(self.weights_min_max[0], self.weights_min_max[1])]))
+            if self.weights_range is not None:
+                txt_file.write('weights_range_type=%s\n' % str(self.weights_range.dtype))
+                txt_file.write('weights_range_offset=%d\n' % self.weights_range_offset)
+                txt_file.write('weights_range_size=%d\n' % (
+                    self.weights_range.size * self.weights_range.dtype.itemsize))
+                txt_file.write('weights_range_shape=[%s]\n' % num_list_to_string(
+                    list(self.weights_range.shape)))
             if self._graph._attr.get('quantize', False) \
                     and np.issubdtype(self.weights.dtype, np.integer) \
                     and len(self.weights_scale_zp) == 2:
@@ -1245,6 +1309,8 @@ class OpHasWeights(Op):
         if not bin_file.closed and bin_file.mode == 'wb':
             if self.weights is not None and self.weights_offset >= 0:
                 Op.numpy_to_bin(bin_file, self.weights, self.weights_offset, self.name)
+                if self.weights_range is not None and self.weights_range_offset >= 0:
+                    Op.numpy_to_bin(bin_file, self.weights_range, self.weights_range_offset, self.name)
                 if self._graph._attr.get('quantize', False) \
                         and np.issubdtype(self.weights.dtype, np.integer) \
                         and len(self.weights_scale_zp) == 2:
@@ -1271,7 +1337,8 @@ class OpHasBiases(Op):
         '''return attributes of OpHasBiases class.'''
         return {'biases': {'type': AttrType.TENSOR, 'default': None},
                 'biases_offset': {'type': AttrType.INT, 'default': -1},
-                'biases_min_max': {'type': AttrType.FLOATS, 'default': []},
+                'biases_range': {'type': AttrType.TENSOR, 'default': None},
+                'biases_range_offset': {'type': AttrType.INT, 'default': -1},
                 'biases_scale_zp': {'type': AttrType.TENSORS, 'default': [np.array([1.0]).astype(np.float32), np.array([0]).astype(np.int32)]},
                 'biases_scale_offset': {'type': AttrType.INT, 'default': -1},
                 'biases_zp_offset': {'type': AttrType.INT, 'default': -1}
@@ -1291,13 +1358,13 @@ class OpHasBiases(Op):
                            (self.biases.size * self.biases.dtype.itemsize))
             txt_file.write('biases_shape=[%s]\n' %
                            num_list_to_string(list(self.biases.shape)))
-            if len(self.biases_min_max) == 2:
-                if np.array(self.biases_min_max).size == 2:  # per tensor
-                    txt_file.write('biases_range=[%s]\n' % num_list_to_string(
-                        [float(m) for m in self.biases_min_max]))
-                else:  # per channel
-                    txt_file.write('biases_range=[%s]\n' % num_list_to_string(
-                        [[min_val, max_val] for min_val, max_val in zip(self.biases_min_max[0], self.biases_min_max[1])]))
+            if self.biases_range is not None:
+                txt_file.write('biases_range_type=%s\n' % str(self.biases_range.dtype))
+                txt_file.write('biases_range_offset=%d\n' % self.biases_range_offset)
+                txt_file.write('biases_range_size=%d\n' % (
+                    self.biases_range.size * self.biases_range.dtype.itemsize))
+                txt_file.write('biases_range_shape=[%s]\n' % num_list_to_string(
+                    list(self.biases_range.shape)))
             if self._graph._attr.get('quantize', False) \
                     and np.issubdtype(self.biases.dtype, np.integer) \
                     and len(self.biases_scale_zp) == 2:
@@ -1321,6 +1388,8 @@ class OpHasBiases(Op):
         if not bin_file.closed and bin_file.mode == 'wb':
             if self.biases is not None and self.biases_offset >= 0:
                 Op.numpy_to_bin(bin_file, self.biases, self.biases_offset, self.name)
+                if self.biases_range is not None and self.biases_range_offset >= 0:
+                    Op.numpy_to_bin(bin_file, self.biases_range, self.biases_range_offset, self.name)
                 if self._graph._attr.get('quantize', False) \
                         and np.issubdtype(self.biases.dtype, np.integer) \
                         and len(self.biases_scale_zp) == 2:
@@ -1569,6 +1638,8 @@ class BaseActivationOp(OpHasOneOutPort):
                                 },
                 'negative_slope': {'type': AttrType.TENSOR},
                 'negative_slope_offset': {'type': AttrType.INT, 'default': -1},
+                'negative_slope_range': {'type': AttrType.TENSOR, 'default': None},
+                'negative_slope_range_offset': {'type': AttrType.INT, 'default': -1},
                 'clip_min': {'type': AttrType.FLOAT, 'default': None},
                 'clip_max': {'type': AttrType.FLOAT, 'default': None}
                 }
@@ -1605,6 +1676,13 @@ class BaseActivationOp(OpHasOneOutPort):
                             self.negative_slope.size * self.negative_slope.dtype.itemsize))
                         txt_file.write('negative_slope_shape=[%s]\n' % num_list_to_string(
                             list(self.negative_slope.shape)))
+                        if self.negative_slope_range is not None:
+                            txt_file.write('negative_slope_range_type=%s\n' % str(self.negative_slope_range.dtype))
+                            txt_file.write('negative_slope_range_offset=%d\n' % self.negative_slope_range_offset)
+                            txt_file.write('negative_slope_range_size=%d\n' % (
+                                self.negative_slope_range.size * self.negative_slope_range.dtype.itemsize))
+                            txt_file.write('negative_slope_range_shape=[%s]\n' % num_list_to_string(
+                                list(self.negative_slope_range.shape)))
                     if self.activations == 'SELU':
                         txt_file.write('alpha=%s\n' % str(self.alpha))
                         txt_file.write('gamma=%s\n' % str(self.gamma))
@@ -1622,16 +1700,11 @@ class BaseActivationOp(OpHasOneOutPort):
             if self.negative_slope is not None \
                     and np.ndim(self.negative_slope) > 0 \
                     and self.negative_slope_offset >= 0:
-                start = bin_file.tell()
-                assert start == self.negative_slope_offset, 'negative_slope offset not match! layer name: %s, %d' % (
-                    self.name, self.negative_slope_offset)
-                self.negative_slope.tofile(bin_file)
-                end = bin_file.tell()
-                if not (self.negative_slope.dtype.itemsize * int(np.prod(self.negative_slope.shape)) == end - start):
-                    ERROR(
-                        '[Parser]: Node(%s) write negative_slope to bin error in write_negative_slope!' % self.name)
-            else:
-                pass
+                Op.numpy_to_bin(bin_file, self.negative_slope, self.negative_slope_offset, self.name)
+            if self.negative_slope_range is not None \
+                    and np.ndim(self.negative_slope_range) > 0 \
+                    and self.negative_slope_range_offset >= 0:
+                Op.numpy_to_bin(bin_file, self.negative_slope_range, self.negative_slope_range_offset, self.name)
         else:
             FATAL(
                 '[Parser]: Invalid file to write negative_slope for Node(%s) in write_negative_slope!' % self.name)

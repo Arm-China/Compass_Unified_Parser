@@ -203,7 +203,7 @@ def univ_parser(params):
 
             if graph:
                 from .front_end.onnx.passes.middle_passes import middle_passes, convert_onnx_version
-                from .front_end.onnx.passes.back_passes import back_passes, trim_weights
+                from .front_end.onnx.passes.back_passes import back_passes, trim_weights, assign_top_range_scale_zp
                 from .front_end.onnx.passes.transform import transform_to_nhwc
                 from .front_end.onnx.passes.common_passes import remove_useless_op
                 from .graph.graph_algo import infer, has_path
@@ -287,6 +287,7 @@ def univ_parser(params):
 
                 txt_path, bin_path = '', ''
                 try:
+                    assign_top_range_scale_zp(graph)
                     trim_weights(graph)
                     ret, txt_path, bin_path = serialize(graph, params)
                 except Exception as e:
