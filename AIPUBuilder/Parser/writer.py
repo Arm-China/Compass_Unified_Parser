@@ -43,20 +43,7 @@ def serialize(graph, params):
         bin_path = os.path.join(output_dir, model_name + '.bin')
 
         arm_op_types = ArmOp.get_concrete_subclass_names()
-        sorted_list = determined_sort(graph, graph._attr['output_names'])
-        main_input = None
-        for i, n in enumerate(sorted_list):
-            node_obj = NodeWrap(graph, n)['object']
-            if node_obj is None:
-                ERROR(
-                    '[Parser]: Node (%s) has invalid op that cannot be written to IR in serialize!' % n)
-                continue
-            if node_obj.type == 'ArmInput' and len(node_obj.get_output_shapes()[0]) > 2 and i != 0:
-                main_input = n
-                break
-        if main_input:
-            sorted_list.remove(main_input)
-            sorted_list.insert(0, main_input)
+        sorted_list = determined_sort(graph, graph._attr['output_names'], sort_input=True)
 
         net_attr = OrderedDict()
         net_attr['model_name'] = model_name
@@ -128,6 +115,9 @@ def serialize(graph, params):
                         writing_node = n
                         op_obj = NodeWrap(graph, n)['object']
                         if op_obj is not None:
+                            op_obj.write_top_range(bin_file)
+                            op_obj.write_top_scale_zp(bin_file)
+
                             if isinstance(op_obj, OpHasWeights):
                                 if not op_obj.write_weights(bin_file):
                                     ret = False

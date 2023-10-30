@@ -45,7 +45,7 @@ def get_valid_node_name(graph, base_name):
     return ret
 
 
-def determined_sort(g, outputs):
+def determined_sort(g, outputs, sort_input=False):
     '''Get all the sorted nodes according to the outputs node of the graph.'''
     op_order = []
     if outputs:
@@ -66,6 +66,19 @@ def determined_sort(g, outputs):
                     break
             if not has_child and node_name not in op_order:
                 op_order.append(node_name)
+    if sort_input:
+        main_input = None
+        for i, n in enumerate(op_order):
+            node_obj = NodeWrap(g, n)['object']
+            if node_obj is None:
+                ERROR('[Parser]: Meets invalid Node (%s) in determined_sort!' % n)
+                continue
+            if node_obj.type == 'ArmInput' and len(node_obj.get_output_shapes()[0]) > 2 and i != 0:
+                main_input = n
+                break
+        if main_input:
+            op_order.remove(main_input)
+            op_order.insert(0, main_input)
     return op_order
 
 

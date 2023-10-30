@@ -2003,6 +2003,8 @@ def rename_activations(graph):
                 act_attr.update({'negative_slope_scale': np.array(scale_zp[0]),
                                  'negative_slope_zp': np.array(scale_zp[1])
                                  })
+            if len(in_edges[1][2]['tensor'].min_max) == 2:
+                act_attr.update({'negative_slope_range': list(in_edges[1][2]['tensor'].min_max)})
         elif act_obj.type == 'Clip':
             if FLOAT_EQUAL(act_obj.min, 0) and FLOAT_EQUAL(act_obj.max, 6):
                 method = 'RELU6'
@@ -4167,18 +4169,46 @@ def trim_weights(graph):
              (data_dtype, to_supported_dtype.__name__, attr_name, node_name))
         return np_data.astype(to_supported_dtype)
 
+    nodes_list = determined_sort(graph, graph._attr['output_names'], sort_input=True)
+
     offset = 0
-    nodes_list = determined_sort(graph, graph._attr['output_names'])
     for node_name in nodes_list:
         node = NodeWrap(graph, node_name)
         node_obj = node['object']
         if node_obj is not None:
+            out_ports = node_obj.get_out_ports()
+            if len(out_ports) > 0 \
+                    and len(out_ports) == len(node_obj.top_ranges) \
+                    and len(out_ports) == len(node_obj.top_ranges_offset):
+                for pi in range(len(out_ports)):
+                    if node_obj.top_ranges[pi] is not None:
+                        node_obj.top_ranges_offset[pi] = offset
+                        offset += node_obj.top_ranges[pi].size * node_obj.top_ranges[pi].dtype.itemsize
+            if graph._attr.get('quantize', False):
+                if len(out_ports) > 0 \
+                        and len(out_ports) == len(node_obj.top_scales) \
+                        and len(out_ports) == len(node_obj.top_scales_offset) \
+                        and len(out_ports) == len(node_obj.top_zps) \
+                        and len(out_ports) == len(node_obj.top_zps_offset):
+                    for i, scales_or_zps in enumerate([node_obj.top_scales, node_obj.top_zps]):
+                        for pi, _ in enumerate(out_ports):
+                            if scales_or_zps[pi] is not None:
+                                if i == 0:
+                                    node_obj.top_scales_offset[pi] = offset
+                                else:
+                                    node_obj.top_zps_offset[pi] = offset
+                                offset += scales_or_zps[pi].size * scales_or_zps[pi].dtype.itemsize
+
             if isinstance(node_obj, OpHasWeights):
                 if node_obj.weights is not None:
                     node_obj.weights = _data_in_supported_dtype(
                         node_obj.weights, 'weights', node_name)
                     node_obj.weights_offset = offset
                     offset += node_obj.weights.size * node_obj.weights.dtype.itemsize
+                    if node_obj.weights_range is not None and len(node_obj.weights_range) == 2:
+                        node_obj.weights_range = np.array(node_obj.weights_range).astype(np.float32)
+                        node_obj.weights_range_offset = offset
+                        offset += node_obj.weights_range.size * node_obj.weights_range.dtype.itemsize
                     if node_obj._graph._attr.get('quantize', False) \
                             and np.issubdtype(node_obj.weights.dtype, np.integer) \
                             and len(node_obj.weights_scale_zp) == 2:
@@ -4199,6 +4229,10 @@ def trim_weights(graph):
                         node_obj.biases, 'biases', node_name)
                     node_obj.biases_offset = offset
                     offset += node_obj.biases.size * node_obj.biases.dtype.itemsize
+                    if node_obj.biases_range is not None and len(node_obj.biases_range) == 2:
+                        node_obj.biases_range = np.array(node_obj.biases_range).astype(np.float32)
+                        node_obj.biases_range_offset = offset
+                        offset += node_obj.biases_range.size * node_obj.biases_range.dtype.itemsize
                     if node_obj._graph._attr.get('quantize', False) \
                             and np.issubdtype(node_obj.biases.dtype, np.integer) \
                             and len(node_obj.biases_scale_zp) == 2:
@@ -4222,6 +4256,10 @@ def trim_weights(graph):
                     node_obj.negative_slope, 'negative_slope', node_name)
                 node_obj.negative_slope_offset = offset
                 offset += node_obj.negative_slope.size * node_obj.negative_slope.dtype.itemsize
+                if node_obj.negative_slope_range is not None and len(node_obj.negative_slope_range) == 2:
+                    node_obj.negative_slope_range = np.array(node_obj.negative_slope_range).astype(np.float32)
+                    node_obj.negative_slope_range_offset = offset
+                    offset += node_obj.negative_slope_range.size * node_obj.negative_slope_range.dtype.itemsize
             if isinstance(node_obj, BaseQuantizeDequantizeOp):
                 node_obj.scale = _data_in_supported_dtype(node_obj.scale, 'scale', node_name)
                 node_obj.scale_offset = offset
@@ -5038,6 +5076,46 @@ def merge_same_op_at_out_port(graph, op_types=list()):
                             graph._attr['output_names'][index] = keep_out_node
                         else:
                             graph._attr['output_names'].pop(index)
+
+
+def assign_top_range_scale_zp(graph):
+    def _type_map(dtype):
+        if str(dtype) not in ['int8', 'uint8', 'int16', 'int32']:
+            WARN('[Parser]: Meets unsupported zp type(%s)!' % str(dtype))
+        return dtype
+
+    for n in graph.nodes:
+        n_obj = NodeWrap(graph, n)['object']
+        if n_obj is not None:
+            top_info = n_obj.get_outputs_info()
+            if len(top_info) < 4:
+                continue
+            if any('min_max' in info for info in top_info[3]):
+                out_ports = n_obj.get_out_ports()
+                if len(out_ports) != len(top_info[3]):
+                    ERROR('[Parser]: Length of top info of Node (%s) should be equal to length of out ports!' % n)
+                    continue
+                n_obj.top_ranges = [t_info['min_max'] if 'min_max' in t_info else None for t_info in top_info[3]]
+                n_obj.top_ranges = [np.array(s).astype(np.float32) if s is not None else None for s in n_obj.top_ranges]
+                n_obj.top_ranges_offset = [-1] * len(n_obj.top_ranges)
+            if graph._attr.get('quantize', False):
+                if not any('scale_zp' in info for info in top_info[3]):
+                    continue
+                out_ports = n_obj.get_out_ports()
+                if len(out_ports) != len(top_info[3]):
+                    ERROR('[Parser]: Length of top info of Node (%s) should be equal to length of out ports!' % n)
+                    continue
+                n_obj.top_scales = [t_info['scale_zp'][0] if 'scale_zp' in t_info else None for t_info in top_info[3]]
+                n_obj.top_scales = [np.array(s).astype(np.float32) if s is not None else None for s in n_obj.top_scales]
+                n_obj.top_scales_offset = [-1] * len(n_obj.top_scales)
+                n_obj.top_zps = [t_info['scale_zp'][1] if 'scale_zp' in t_info else None for t_info in top_info[3]]
+                n_obj.top_zps = [np.array(z).astype(_type_map(z.dtype))
+                                 if z is not None else None for z in n_obj.top_zps]
+                n_obj.top_zps_offset = [-1] * len(n_obj.top_zps)
+                assert all((z is not None and s.shape == z.shape)
+                           for (s, z) in zip(n_obj.top_scales, n_obj.top_zps) if s is not None)
+        else:
+            ERROR('[Parser]: Meets invalid Node(%s) in assign_top_range_scale_zp!' % n)
 
 
 def back_passes(graph, params):
