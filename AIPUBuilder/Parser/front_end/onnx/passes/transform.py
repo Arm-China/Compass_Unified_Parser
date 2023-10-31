@@ -105,7 +105,7 @@ def insert_transpose_for_layoutconcern(graph):
                 post_trans_perm = Op.cal_inverse_perm(pre_trans_perm)
                 in_edges = graph.sorted_in_edges(node, data=True)
                 src, _, in_attr = in_edges[0]
-                insert_transpose(graph, src, node, in_attr, pre_trans_perm)
+                insert_transpose(graph, src, node, in_attr, pre_trans_perm, quantize=node_obj.quantize)
 
                 post_trans_list = []
                 if node_obj.type != 'GenerateProposals':
@@ -114,7 +114,7 @@ def insert_transpose_for_layoutconcern(graph):
                         if (node_obj.type == 'BatchNormalization' or node_obj.type == 'TfFusedBatchNormV3') and p > 0:
                             continue
                         post_trans = insert_transpose_after(
-                            graph, node, post_trans_perm, port=p)
+                            graph, node, post_trans_perm, port=p, quantize=node_obj.quantize)
                         if post_trans is None:
                             ERROR(
                                 '[Parser]: Meets Error for Node (%s) in insert_transpose_for_layoutconcern!' % node)
