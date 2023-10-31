@@ -4162,20 +4162,8 @@ class ArmScatterNDOp(OpHasOneOutPort, ArmOp):
         super(ArmScatterNDOp, self).infer_shape()
         inputs = self.get_input_tensors()
         data, indices, updates = inputs
-        out_tensor = np.copy(data)
-        if self.reduction == 'mul':
-            update_indices = indices.shape[:-1]
-            for idx in np.ndindex(update_indices):
-                index = tuple(indices[idx])
-                out_tensor[index] *= updates[idx]
-        elif self.reduction == 'add':
-            out_tensor = tf.tensor_scatter_nd_add(data, indices, updates).numpy()
-        elif self.reduction == 'max':
-            out_tensor = tf.tensor_scatter_nd_max(data, indices, updates).numpy()
-        elif self.reduction == 'min':
-            out_tensor = tf.tensor_scatter_nd_min(data, indices, updates).numpy()
-        else:  # reduction == 'none'
-            out_tensor = tf.tensor_scatter_nd_update(data, indices, updates).numpy()
+        from .onnx_ops.array_ops import ScatterNDOp
+        out_tensor = ScatterNDOp.scatternd(data, indices, updates, reduction=self.reduction)
         self.set_out_tensor(out_tensor)
 
     def write_attrs(self, txt_file):
