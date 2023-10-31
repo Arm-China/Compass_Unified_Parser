@@ -4155,6 +4155,8 @@ def remove_const(graph):
 
 def trim_weights(graph):
     def _data_in_supported_dtype(np_data, attr_name, node_name):
+        if not isinstance(np_data, np.ndarray):
+            np_data = np.array(np_data)
         data_dtype = str(np_data.dtype)
         if data_dtype in ArmCastOp.attributes()['to_dtype']['options']:
             return np_data
@@ -4182,6 +4184,8 @@ def trim_weights(graph):
                     and len(out_ports) == len(node_obj.top_ranges_offset):
                 for pi in range(len(out_ports)):
                     if node_obj.top_ranges[pi] is not None:
+                        node_obj.top_ranges[pi] = _data_in_supported_dtype(
+                            node_obj.top_ranges[pi], 'top_range', node_name)
                         node_obj.top_ranges_offset[pi] = offset
                         offset += node_obj.top_ranges[pi].size * node_obj.top_ranges[pi].dtype.itemsize
             if graph._attr.get('quantize', False):
@@ -4193,9 +4197,13 @@ def trim_weights(graph):
                     for i, scales_or_zps in enumerate([node_obj.top_scales, node_obj.top_zps]):
                         for pi, _ in enumerate(out_ports):
                             if scales_or_zps[pi] is not None:
+                                scales_or_zps[pi] = _data_in_supported_dtype(
+                                    scales_or_zps[pi], 'top_scale_or_zp', node_name)
                                 if i == 0:
+                                    node_obj.top_scales[pi] = scales_or_zps[pi]
                                     node_obj.top_scales_offset[pi] = offset
                                 else:
+                                    node_obj.top_zps[pi] = scales_or_zps[pi]
                                     node_obj.top_zps_offset[pi] = offset
                                 offset += scales_or_zps[pi].size * scales_or_zps[pi].dtype.itemsize
 
@@ -4206,20 +4214,32 @@ def trim_weights(graph):
                     node_obj.weights_offset = offset
                     offset += node_obj.weights.size * node_obj.weights.dtype.itemsize
                     if node_obj.weights_range is not None and len(node_obj.weights_range) == 2:
-                        node_obj.weights_range = np.array(node_obj.weights_range).astype(np.float32)
-                        node_obj.weights_range_offset = offset
-                        offset += node_obj.weights_range.size * node_obj.weights_range.dtype.itemsize
-                    if node_obj._graph._attr.get('quantize', False) \
+                        weights_range_value = _data_in_supported_dtype(
+                            node_obj.weights_range, 'weights_range', node_name)
+                        if weights_range_value.size == 2:
+                            node_obj.weights_range = None
+                            node_obj.weights_range_list = [weights_range_value.item(0), weights_range_value.item(1)]
+                        else:
+                            node_obj.weights_range = weights_range_value
+                            node_obj.weights_range_offset = offset
+                            offset += node_obj.weights_range.size * node_obj.weights_range.dtype.itemsize
+                    if graph._attr.get('quantize', False) \
                             and np.issubdtype(node_obj.weights.dtype, np.integer) \
                             and len(node_obj.weights_scale_zp) == 2:
-                        node_obj.weights_scale_zp[0] = _data_in_supported_dtype(
+                        weights_scales_value = _data_in_supported_dtype(
                             node_obj.weights_scale_zp[0], 'weights_scale', node_name)
-                        node_obj.weights_scale_offset = offset
-                        offset += node_obj.weights_scale_zp[0].size * node_obj.weights_scale_zp[0].dtype.itemsize
-                        node_obj.weights_scale_zp[1] = _data_in_supported_dtype(
+                        weights_zps_value = _data_in_supported_dtype(
                             node_obj.weights_scale_zp[1], 'weights_zp', node_name)
-                        node_obj.weights_zp_offset = offset
-                        offset += node_obj.weights_scale_zp[1].size * node_obj.weights_scale_zp[1].dtype.itemsize
+                        if weights_scales_value.size == 1 and weights_zps_value.size == 1:
+                            node_obj.weights_scale_zp = []
+                            node_obj.weights_scale_zp_list = [weights_scales_value.item(), weights_zps_value.item()]
+                        else:
+                            node_obj.weights_scale_zp[0] = weights_scales_value
+                            node_obj.weights_scale_offset = offset
+                            offset += node_obj.weights_scale_zp[0].size * node_obj.weights_scale_zp[0].dtype.itemsize
+                            node_obj.weights_scale_zp[1] = weights_zps_value
+                            node_obj.weights_zp_offset = offset
+                            offset += node_obj.weights_scale_zp[1].size * node_obj.weights_scale_zp[1].dtype.itemsize
                 else:
                     ERROR('[Parser]: Meets invalid weights for Node %s in trim_weights!' %
                           node_name)
@@ -4230,20 +4250,32 @@ def trim_weights(graph):
                     node_obj.biases_offset = offset
                     offset += node_obj.biases.size * node_obj.biases.dtype.itemsize
                     if node_obj.biases_range is not None and len(node_obj.biases_range) == 2:
-                        node_obj.biases_range = np.array(node_obj.biases_range).astype(np.float32)
-                        node_obj.biases_range_offset = offset
-                        offset += node_obj.biases_range.size * node_obj.biases_range.dtype.itemsize
-                    if node_obj._graph._attr.get('quantize', False) \
+                        biases_range_value = _data_in_supported_dtype(
+                            node_obj.biases_range, 'biases_range', node_name)
+                        if biases_range_value.size == 2:
+                            node_obj.biases_range = None
+                            node_obj.biases_range_list = [biases_range_value.item(0), biases_range_value.item(1)]
+                        else:
+                            node_obj.biases_range = biases_range_value
+                            node_obj.biases_range_offset = offset
+                            offset += node_obj.biases_range.size * node_obj.biases_range.dtype.itemsize
+                    if graph._attr.get('quantize', False) \
                             and np.issubdtype(node_obj.biases.dtype, np.integer) \
                             and len(node_obj.biases_scale_zp) == 2:
-                        node_obj.biases_scale_zp[0] = _data_in_supported_dtype(
+                        biases_scales_value = _data_in_supported_dtype(
                             node_obj.biases_scale_zp[0], 'biases_scale', node_name)
-                        node_obj.biases_scale_offset = offset
-                        offset += node_obj.biases_scale_zp[0].size * node_obj.biases_scale_zp[0].dtype.itemsize
-                        node_obj.biases_scale_zp[1] = _data_in_supported_dtype(
+                        biases_zps_value = _data_in_supported_dtype(
                             node_obj.biases_scale_zp[1], 'biases_zp', node_name)
-                        node_obj.biases_zp_offset = offset
-                        offset += node_obj.biases_scale_zp[1].size * node_obj.biases_scale_zp[1].dtype.itemsize
+                        if biases_scales_value.size == 1 and biases_zps_value.size == 1:
+                            node_obj.biases_scale_zp = []
+                            node_obj.biases_scale_zp_list = [biases_scales_value.item(), biases_zps_value.item()]
+                        else:
+                            node_obj.biases_scale_zp[0] = biases_scales_value
+                            node_obj.biases_scale_offset = offset
+                            offset += node_obj.biases_scale_zp[0].size * node_obj.biases_scale_zp[0].dtype.itemsize
+                            node_obj.biases_scale_zp[1] = biases_zps_value
+                            node_obj.biases_zp_offset = offset
+                            offset += node_obj.biases_scale_zp[1].size * node_obj.biases_scale_zp[1].dtype.itemsize
                 else:
                     ERROR('[Parser]: Meets invalid biases for Node %s in trim_weights!' %
                           node_name)
@@ -4257,9 +4289,35 @@ def trim_weights(graph):
                 node_obj.negative_slope_offset = offset
                 offset += node_obj.negative_slope.size * node_obj.negative_slope.dtype.itemsize
                 if node_obj.negative_slope_range is not None and len(node_obj.negative_slope_range) == 2:
-                    node_obj.negative_slope_range = np.array(node_obj.negative_slope_range).astype(np.float32)
-                    node_obj.negative_slope_range_offset = offset
-                    offset += node_obj.negative_slope_range.size * node_obj.negative_slope_range.dtype.itemsize
+                    negative_slope_range_value = _data_in_supported_dtype(
+                        node_obj.negative_slope_range, 'negative_slope_range', node_name)
+                    if negative_slope_range_value.size == 2:
+                        node_obj.negative_slope_range = None
+                        node_obj.negative_slope_range_list = [
+                            negative_slope_range_value.item(0), negative_slope_range_value.item(1)]
+                    else:
+                        node_obj.negative_slope_range = negative_slope_range_value
+                        node_obj.negative_slope_range_offset = offset
+                        offset += node_obj.negative_slope_range.size * node_obj.negative_slope_range.dtype.itemsize
+                if node_obj.quantize \
+                        and node_obj.negative_slope_scale is not None \
+                        and node_obj.negative_slope_zp is not None:
+                    negative_slope_scales_value = _data_in_supported_dtype(
+                        node_obj.negative_slope_scale, 'negative_slope_scale', node_name)
+                    negative_slope_zps_value = _data_in_supported_dtype(
+                        node_obj.negative_slope_zp, 'negative_slope_zp', node_name)
+                    if negative_slope_scales_value.size == 1 and negative_slope_zps_value.size == 1:
+                        node_obj.negative_slope_scale = None
+                        node_obj.negative_slope_zp = None
+                        node_obj.negative_slope_scale_zp_list = [
+                            negative_slope_scales_value.item(), negative_slope_zps_value.item()]
+                    else:
+                        node_obj.negative_slope_scale = negative_slope_scales_value
+                        node_obj.negative_slope_scale_offset = offset
+                        offset += node_obj.negative_slope_scale.size * node_obj.negative_slope_scale.dtype.itemsize
+                        node_obj.negative_slope_zp = negative_slope_zps_value
+                        node_obj.negative_slope_zp_offset = offset
+                        offset += node_obj.negative_slope_zp.size * node_obj.negative_slope_zp.dtype.itemsize
             if isinstance(node_obj, BaseQuantizeDequantizeOp):
                 node_obj.scale = _data_in_supported_dtype(node_obj.scale, 'scale', node_name)
                 node_obj.scale_offset = offset
@@ -4270,13 +4328,21 @@ def trim_weights(graph):
             if isinstance(node_obj, BaseRnnOp) \
                     and node_obj.activations_scale is not None \
                     and node_obj.activations_zp is not None:
-                node_obj.activations_scale = _data_in_supported_dtype(
+                activations_scales_value = _data_in_supported_dtype(
                     node_obj.activations_scale, 'activations_scale', node_name)
-                node_obj.activations_scale_offset = offset
-                offset += node_obj.activations_scale.size * node_obj.activations_scale.dtype.itemsize
-                node_obj.activations_zp = _data_in_supported_dtype(node_obj.activations_zp, 'activations_zp', node_name)
-                node_obj.activations_zp_offset = offset
-                offset += node_obj.activations_zp.size * node_obj.activations_zp.dtype.itemsize
+                activations_zps_value = _data_in_supported_dtype(
+                    node_obj.activations_zp, 'activations_zp', node_name)
+                if activations_scales_value.size == 1 and activations_zps_value.size == 1:
+                    node_obj.activations_scale = None
+                    node_obj.activations_zp = None
+                    node_obj.activations_scale_zp_list = [activations_scales_value.item(), activations_zps_value.item()]
+                else:
+                    node_obj.activations_scale = activations_scales_value
+                    node_obj.activations_scale_offset = offset
+                    offset += node_obj.activations_scale.size * node_obj.activations_scale.dtype.itemsize
+                    node_obj.activations_zp = activations_zps_value
+                    node_obj.activations_zp_offset = offset
+                    offset += node_obj.activations_zp.size * node_obj.activations_zp.dtype.itemsize
             if isinstance(node_obj, PluginOp) \
                     and node_obj.constants:
                 # Keep the original dtype for constants in Plugin
@@ -5095,9 +5161,15 @@ def assign_top_range_scale_zp(graph):
                 if len(out_ports) != len(top_info[3]):
                     ERROR('[Parser]: Length of top info of Node (%s) should be equal to length of out ports!' % n)
                     continue
-                n_obj.top_ranges = [t_info['min_max'] if 'min_max' in t_info else None for t_info in top_info[3]]
-                n_obj.top_ranges = [np.array(s).astype(np.float32) if s is not None else None for s in n_obj.top_ranges]
-                n_obj.top_ranges_offset = [-1] * len(n_obj.top_ranges)
+                top_ranges_value = [t_info['min_max'] if 'min_max' in t_info else None for t_info in top_info[3]]
+                if all(val is None for val in top_ranges_value):
+                    pass
+                elif all((val is None or (np.array(val).size == 2 and len(val) == 2)) for val in top_ranges_value):
+                    n_obj.top_ranges_list = [None if val is None else [
+                        float(np.array(val).item(0)), float(np.array(val).item(1))] for val in top_ranges_value]
+                else:
+                    n_obj.top_ranges = [None if s is None else np.array(s, dtype=np.float32) for s in top_ranges_value]
+                    n_obj.top_ranges_offset = [-1] * len(n_obj.top_ranges)
             if graph._attr.get('quantize', False):
                 if not any('scale_zp' in info for info in top_info[3]):
                     continue
@@ -5105,15 +5177,28 @@ def assign_top_range_scale_zp(graph):
                 if len(out_ports) != len(top_info[3]):
                     ERROR('[Parser]: Length of top info of Node (%s) should be equal to length of out ports!' % n)
                     continue
-                n_obj.top_scales = [t_info['scale_zp'][0] if 'scale_zp' in t_info else None for t_info in top_info[3]]
-                n_obj.top_scales = [np.array(s).astype(np.float32) if s is not None else None for s in n_obj.top_scales]
-                n_obj.top_scales_offset = [-1] * len(n_obj.top_scales)
-                n_obj.top_zps = [t_info['scale_zp'][1] if 'scale_zp' in t_info else None for t_info in top_info[3]]
-                n_obj.top_zps = [np.array(z).astype(_type_map(z.dtype))
-                                 if z is not None else None for z in n_obj.top_zps]
-                n_obj.top_zps_offset = [-1] * len(n_obj.top_zps)
-                assert all((z is not None and s.shape == z.shape)
-                           for (s, z) in zip(n_obj.top_scales, n_obj.top_zps) if s is not None)
+                top_scales_value = [t_info['scale_zp'][0] if 'scale_zp' in t_info else None for t_info in top_info[3]]
+                if all(val is None for val in top_scales_value):
+                    pass
+                elif all((val is None or np.array(val).size == 1) for val in top_scales_value):
+                    n_obj.top_scales_list = [None if val is None else float(
+                        np.array(val).item()) for val in top_scales_value]
+                else:
+                    n_obj.top_scales = [np.array(s).astype(
+                        np.float32) if s is not None else None for s in top_scales_value]
+                    n_obj.top_scales_offset = [-1] * len(n_obj.top_scales)
+                top_zps_value = [t_info['scale_zp'][1] if 'scale_zp' in t_info else None for t_info in top_info[3]]
+                if all(val is None for val in top_zps_value):
+                    pass
+                elif all((val is None or np.array(val).size == 1) for val in top_zps_value):
+                    n_obj.top_zps_list = [None if val is None else np.array(val).item() for val in top_zps_value]
+                else:
+                    n_obj.top_zps = [np.array(z).astype(_type_map(z.dtype))
+                                     if z is not None else None for z in top_zps_value]
+                    n_obj.top_zps_offset = [-1] * len(n_obj.top_zps)
+                assert len(n_obj.top_scales_list) == len(n_obj.top_zps_list) \
+                    and len(n_obj.top_scales) == len(n_obj.top_zps), \
+                    'top_scales and top_zps should have the same size!'
         else:
             ERROR('[Parser]: Meets invalid Node(%s) in assign_top_range_scale_zp!' % n)
 

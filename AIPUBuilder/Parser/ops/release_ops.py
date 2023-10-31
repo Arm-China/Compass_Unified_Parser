@@ -86,10 +86,15 @@ class ArmActivationOp(LayoutUnawareOp, OpHasMethod, OpHasOneOutPort, ArmOp):
                 'alpha': {'type': AttrType.FLOAT, 'default': None},
                 'beta': {'type': AttrType.FLOAT, 'default': None},
                 'negative_slope': {'type': AttrType.TENSOR, 'default': None},
-                'negative_slope_offset': {'type': AttrType.INT, 'default': None},
+                'negative_slope_offset': {'type': AttrType.INT, 'default': -1},
                 'negative_slope_range': {'type': AttrType.TENSOR, 'default': None},
+                'negative_slope_range_offset': {'type': AttrType.INT, 'default': -1},
+                'negative_slope_range_list': {'type': AttrType.TENSORS, 'default': []},
                 'negative_slope_scale': {'type': AttrType.TENSOR, 'default': None},
+                'negative_slope_scale_offset': {'type': AttrType.INT, 'default': -1},
                 'negative_slope_zp': {'type': AttrType.TENSOR, 'default': None},
+                'negative_slope_zp_offset': {'type': AttrType.INT, 'default': -1},
+                'negative_slope_scale_zp_list': {'type': AttrType.TENSORS, 'default': []},
                 'gamma': {'type': AttrType.FLOAT, 'default': None},
                 'bias': {'type': AttrType.FLOAT, 'default': None},
                 'lambd': {'type': AttrType.FLOAT, 'default': None},
@@ -246,22 +251,37 @@ class ArmActivationOp(LayoutUnawareOp, OpHasMethod, OpHasOneOutPort, ArmOp):
                     self.negative_slope.size * self.negative_slope.dtype.itemsize))
                 txt_file.write('negative_slope_shape=[%s]\n' % num_list_to_string(
                     list(self.negative_slope.shape)))
-                if self.negative_slope_range is not None and len(self.negative_slope_range) == 2:
+                if len(self.negative_slope_range_list) == 2:
+                    txt_file.write('negative_slope_range=[%s]\n' %
+                                   num_list_to_string(self.negative_slope_range_list))
+                elif self.negative_slope_range is not None and len(self.negative_slope_range) == 2:
                     txt_file.write('negative_slope_range_type=%s\n' % str(self.negative_slope_range.dtype))
                     txt_file.write('negative_slope_range_offset=%d\n' % self.negative_slope_range_offset)
                     txt_file.write('negative_slope_range_size=%d\n' % (
                         self.negative_slope_range.size * self.negative_slope_range.dtype.itemsize))
                     txt_file.write('negative_slope_range_shape=[%s]\n' % num_list_to_string(
                         list(self.negative_slope_range.shape)))
-                if self.quantize \
-                        and self.negative_slope_scale is not None \
-                        and self.negative_slope_zp is not None:
-                    negative_slope_scale = self.negative_slope_scale.tolist()
-                    negative_slope_zp = self.negative_slope_zp.tolist()
-                    txt_file.write('negative_slope_scale=[%s]\n' %
-                                   num_list_to_string(negative_slope_scale))
-                    txt_file.write('negative_slope_zp=[%s]\n' %
-                                   num_list_to_string(negative_slope_zp))
+                if self.quantize:
+                    if len(self.negative_slope_scale_zp_list) == 2:
+                        txt_file.write('negative_slope_scale=%s\n' %
+                                       str(self.negative_slope_scale_zp_list[0]))
+                        txt_file.write('negative_slope_zp=%s\n' %
+                                       str(self.negative_slope_scale_zp_list[1]))
+                    elif self.negative_slope_scale is not None \
+                            and self.negative_slope_zp is not None:
+                        txt_file.write('negative_slope_scale_type=%s\n' % str(self.negative_slope_scale.dtype))
+                        txt_file.write('negative_slope_scale_offset=%d\n' % self.negative_slope_scale_offset)
+                        txt_file.write('negative_slope_scale_size=%d\n' % (
+                            self.negative_slope_scale.size * self.negative_slope_scale.dtype.itemsize))
+                        txt_file.write('negative_slope_scale_shape=[%s]\n' % num_list_to_string(
+                            list(self.negative_slope_scale.shape)))
+
+                        txt_file.write('negative_slope_zp_type=%s\n' % str(self.negative_slope_zp.dtype))
+                        txt_file.write('negative_slope_zp_offset=%d\n' % self.negative_slope_zp_offset)
+                        txt_file.write('negative_slope_zp_size=%d\n' % (
+                            self.negative_slope_zp.size * self.negative_slope_zp.dtype.itemsize))
+                        txt_file.write('negative_slope_zp_shape=[%s]\n' % num_list_to_string(
+                            list(self.negative_slope_zp.shape)))
             elif self.method == 'SELU':
                 txt_file.write('alpha=%1.6f\n' % float(self.alpha))
                 txt_file.write('gamma=%1.6f\n' % float(self.gamma))
