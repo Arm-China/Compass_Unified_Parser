@@ -797,6 +797,8 @@ def insert_reshape(graph, src, dst, in_attr, dim, key=None, type='Reshape', data
                 out_tensor.value = np.reshape(
                     in_attr['tensor'].value, newshape=dim)
                 out_tensor.shape = out_tensor.value.shape
+            else:
+                out_tensor.shape = tuple(dim)
         reshape_out_attr.update({'src_out_port': 0, 'tensor': out_tensor})
         graph.add_edge(reshape, dst, **reshape_out_attr)
         ret = reshape
