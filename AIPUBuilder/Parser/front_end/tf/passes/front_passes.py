@@ -1166,9 +1166,20 @@ def split_b2s(graph, op_type='TfBatchToSpaceND'):
             in_shape = input_shapes[0]
             block_shape, crops = [c[2] for c in in_consts[:2]]
             is_4d = len(in_shape) == 4
+            is_5d = len(in_shape) == 5
+            # TODO: need to support more cases in the future: such as Tflite, Tf2, 4d...
+            if b2s_obj.type == 'TfBatchToSpaceND' and is_5d:
+                crops = [list(shape) for shape in crops]
+                b2s_attr = b2s_obj.copied_attr()
+                b2s_attr.update({'block_size': list(block_shape),
+                                 'crops': crops,
+                                 })
+                NodeWrap(graph, b2s).replace_obj('ArmBatchToSpaceND', b2s_attr)
+                continue
             need_slice = np.any(crops != 0)
             spatial_in_shape = in_shape[1:-1]
-            spatial_out_shape_before_slice = (np.array(spatial_in_shape) * block_shape).tolist()
+            spatial_out_shape_before_slice = (
+                np.array(spatial_in_shape) * block_shape).tolist()
             slice = get_valid_node_name(graph, b2s + '_slice')
             last = ''
 
