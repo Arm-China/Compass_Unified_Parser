@@ -875,6 +875,45 @@ class ReverseSequenceOp(OpHasOneOutPort, OnnxOp):
 
 
 class ScatterNDOp(OpHasOneOutPort, OnnxOp):
+    @staticmethod
+    def meta_update(idx, shared_mem, shape, indices, updates, reduction='none'):
+        out_data = np.ndarray(shape, dtype=updates.dtype, buffer=shared_mem.buf)
+        index = tuple(indices[idx])
+        if reduction == 'mul':
+            out_data[index] *= updates[idx]
+        elif reduction == 'add':
+            out_data[index] += updates[idx]
+        elif reduction == 'max':
+            out_data[index] = np.maximum(out_data[index], updates[idx])
+        elif reduction == 'min':
+            out_data[index] = np.minimum(out_data[index], updates[idx])
+        else:
+            out_data[index] = updates[idx]
+
+    @staticmethod
+    def scatternd(data, indices, updates, reduction='none'):
+        import multiprocessing as mp
+        from multiprocessing import shared_memory
+        from functools import partial
+        shm = shared_memory.SharedMemory(create=True, size=data.nbytes)
+        shared_tensor = np.ndarray(data.shape, dtype=data.dtype, buffer=shm.buf)
+        shared_tensor[:] = data[:]
+        update_indices = indices.shape[:-1]
+        idx_list = list(np.ndindex(update_indices))
+        func = partial(ScatterNDOp.meta_update,
+                       shared_mem=shm,
+                       shape=data.shape,
+                       indices=indices,
+                       updates=updates,
+                       reduction=reduction)
+        with mp.Pool(mp.cpu_count() - 2) as pool:
+            pool.map(func, idx_list)
+        ret = shared_tensor.copy()
+        del shared_tensor
+        shm.close()
+        shm.unlink()
+        return ret
+
     @classmethod
     def attributes(cls):
         return {11: {},
@@ -927,20 +966,7 @@ class ScatterNDOp(OpHasOneOutPort, OnnxOp):
         super(ScatterNDOp, self).infer_shape()
         inputs = self.get_input_tensors()
         data, indices, updates = inputs
-        out_tensor = np.copy(data)
-        if self.reduction == 'mul':
-            update_indices = indices.shape[:-1]
-            for idx in np.ndindex(update_indices):
-                index = tuple(indices[idx])
-                out_tensor[index] *= updates[idx]
-        elif self.reduction == 'add':
-            out_tensor = tf.tensor_scatter_nd_add(data, indices, updates).numpy()
-        elif self.reduction == 'max':
-            out_tensor = tf.tensor_scatter_nd_max(data, indices, updates).numpy()
-        elif self.reduction == 'min':
-            out_tensor = tf.tensor_scatter_nd_min(data, indices, updates).numpy()
-        else:  # reduction == 'none'
-            out_tensor = tf.tensor_scatter_nd_update(data, indices, updates).numpy()
+        out_tensor = ScatterNDOp.scatternd(data, indices, updates, reduction=self.reduction)
         self.set_out_tensor(out_tensor)
 
 
