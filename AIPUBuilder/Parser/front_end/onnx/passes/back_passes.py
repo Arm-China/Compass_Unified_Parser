@@ -210,16 +210,17 @@ def convert_uni_gru(graph):
                             graph, reshape + '_post_transpose')
                         reshape_out_edges = graph.sorted_out_edges(
                             reshape, data=True)
-                        reshape_out_tensor = None
                         for _, dst, out_attr in reshape_out_edges:
-                            if out_attr.get('tensor', None) is not None:
-                                reshape_out_tensor = out_attr['tensor'].value
-                                reshape_out_tensor = np.transpose(reshape_out_tensor, [
-                                                                  post_trans_perm.index(i) for i in range(len(post_trans_perm))])
                             graph.remove_edge(reshape, dst)
                             graph.add_edge(post_trans, dst, **out_attr)
+                        reshape_out_tensor = Tensor()
+                        if len(reshape_out_edges) > 0 and reshape_out_edges[0][2].get('tensor', None) is not None:
+                            reshape_out_shape = out_attr['tensor'].get_shape()
+                            if reshape_out_shape is not None:
+                                reshape_out_tensor.shape = [reshape_out_shape[i]
+                                                            for i in Op.cal_inverse_perm(post_trans_perm)]
                         graph.add_edge(reshape, post_trans, **{
-                                       'src_out_port': 0, 'dst_in_port': 0, 'tensor': Tensor(value=reshape_out_tensor)})
+                                       'src_out_port': 0, 'dst_in_port': 0, 'tensor': reshape_out_tensor})
                         post_trans_attr = gru_obj.copied_attr()
                         post_trans_attr.update(
                             {'name': post_trans, 'perm': post_trans_perm, 'opset_version': 1})
