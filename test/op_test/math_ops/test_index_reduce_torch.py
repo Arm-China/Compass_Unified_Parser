@@ -28,7 +28,7 @@ TEST_NAME = 'index_reduce'
 x_data = np.random.ranf([10, 6, 8]).astype(np.float32)
 # x_data = np.random.randint(1, 5, [10, 6, 8]).astype(np.float32)
 
-index_data = (np.array([0, 0, 1, 2]), np.array([1, 2, 0, 3]))
+index_data = (np.array([0, 0, 1, 2]), np.array([0, 2, 1, 3]))
 t = torch.arange(start=0, end=192, step=1,
                  dtype=torch.float).resize(4, 6, 8).numpy()
 
@@ -36,7 +36,7 @@ t = torch.arange(start=0, end=192, step=1,
 for index in index_data:
     feed_dict = {'x': x_data, 'index': index, 't': t}
     for include_self in (False, True):
-        for reduce in ('prod', 'mean',):  # 'amax''amin'
+        for reduce in ('amin', 'amin', 'prod', 'mean',):  # 'amax''amin'
             if reduce == 'mean':
                 continue
             model_path = '-'.join([TEST_NAME, str(reduce),

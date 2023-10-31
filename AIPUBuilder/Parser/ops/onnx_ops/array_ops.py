@@ -1000,8 +1000,10 @@ class ScatterElementsOp(OpHasOneOutPort, OpHasAxis, OnnxOp):
     def attributes(cls):
         return {11: {'axis': {'type': AttrType.INT, 'default': 0}},
                 13: {'axis': {'type': AttrType.INT, 'default': 0}},
+                # TODO: in order to support torch index_reduce, expand 'reduction' ['none', 'mul', 'add'] to ['none', 'mul', 'add', 'max', 'min'].
+                # will remove after torch suppport converting onnx model to onnx opset 18.
                 16: {'axis': {'type': AttrType.INT, 'default': 0},
-                     'reduction': {'type': AttrType.STRING, 'options': ['none', 'mul', 'add'], 'default': 'none'}},
+                     'reduction': {'type': AttrType.STRING, 'options': ['none', 'mul', 'add', 'max', 'min'], 'default': 'none'}},
                 18: {'axis': {'type': AttrType.INT, 'default': 0},
                      'reduction': {'type': AttrType.STRING, 'options': ['none', 'mul', 'add', 'max', 'min'], 'default': 'none'}},
                 }
