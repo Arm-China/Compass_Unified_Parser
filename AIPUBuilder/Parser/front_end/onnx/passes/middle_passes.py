@@ -8638,9 +8638,12 @@ def split_sum_or_max_or_min(graph, op_type_list=['Sum', 'Max', 'Min']):
     for single_match in matches:
         node = single_match['target']
         node_obj = NodeWrap(graph, node)['object']
-        if node_obj is not None and len(node_obj.get_input_shapes()) >= 2:
+        if node_obj is not None:
+            node_input_shapes = node_obj.get_input_shapes()
+            if len(node_input_shapes) < 2:
+                continue
             new_op_type, new_op_version = op_type_name_and_ver_dict[node_obj.type]
-            split_num = len(node_obj.get_input_shapes()) - 2
+            split_num = len(node_input_shapes) - 2
             if split_num > 0:
                 in_edges = graph.sorted_in_edges(node, keys=True, data=True)
                 out_edges = graph.sorted_out_edges(node, data=True)
@@ -8650,14 +8653,17 @@ def split_sum_or_max_or_min(graph, op_type_list=['Sum', 'Max', 'Min']):
                 for i in range(split_num):
                     cur_src, _, _, cur_in_attr = in_edges[2 + i]
                     new_node = get_valid_node_name(graph, node + '_expand_' + str(i + 1))
+                    new_node_in_tensor = Tensor()
                     last_node_obj = NodeWrap(graph, nodes_list[-1])['object']
                     if last_node_obj is not None and all([inp is not None for inp in last_node_obj.get_input_tensors()]):
                         node_result = reduce(
                             lambda x, y: x + y, last_node_obj.get_input_tensors())
+                        new_node_in_tensor.value = node_result
                     else:
-                        node_result = None
+                        new_node_in_tensor.shape = tuple(node_input_shapes[0]) if node_input_shapes[0] is not None \
+                            else tuple(node_input_shapes[1])
                     graph.add_edge(
-                        nodes_list[-1], new_node, **{'src_out_port': 0, 'dst_in_port': 0, 'tensor': Tensor(value=node_result)})
+                        nodes_list[-1], new_node, **{'src_out_port': 0, 'dst_in_port': 0, 'tensor': new_node_in_tensor})
                     new_in_attr = copy.deepcopy(cur_in_attr)
                     new_in_attr.update({'dst_in_port': 1})
                     graph.add_edge(cur_src, new_node, **new_in_attr)
