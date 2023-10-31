@@ -1147,7 +1147,7 @@ def convert_index_reduce(g, x, dim, index, other, reduction, include_self):
     import sys
     dim = helper._maybe_get_const(dim, 'i')
     if dim is None:
-        ERROR('ONNX export does NOT support exporting index_add_() function with unknown dim value.')
+        ERROR('ONNX export does NOT support exporting index_reduce_() function with unknown dim value.')
 
     # TODO: need to find way to obtain tensor value.
     index_duplicates = True
@@ -1181,10 +1181,6 @@ def convert_index_reduce(g, x, dim, index, other, reduction, include_self):
     other_dim_size = helper._get_tensor_dim_size(other, dim)
     x_dim_size = helper._get_tensor_dim_size(x, dim)
 
-    if (other_dim_size is not None) and (x_dim_size is not None):
-        if other_dim_size > x_dim_size:
-            ERROR('ONNX export does not support exporting index_add_() function with duplicated values in index parameter yet.')
-
     for i in range(dim):
         index = helper._unsqueeze_helper(g, index, [0])
 
@@ -1212,45 +1208,50 @@ def convert_index_reduce(g, x, dim, index, other, reduction, include_self):
         # max/min is not supported now.
         # Wait until torch_to_onnx can support op_version 18 before supporting it.
         #
-        # from torch.onnx import symbolic_opset11 as opset11
-        # if include_self is False and reduction == 'amin':
-        #     reduction = 'min'
-        #     add_value = torch.full(other_shape, np.iinfo(
-        #         np.int16).max, dtype=torch.int32)
-        #     zero_value = torch.full(x_shape, 0, dtype=torch.int32)
-        #     add_v = g.op('Constant', value_t=add_value)
-        #     zeros = g.op('Constant', value_t=zero_value)
-        #     result = scatter_helper(
-        #         g, zeros, dim, scatter_indices, add_v, 'add')
+        from torch.onnx import symbolic_opset11 as opset11
+        dtype = other.type().scalarType()
+        if include_self is False and reduction == 'amin':
+            reduction = 'min'
+            add_value = torch.full(other_shape, np.iinfo(
+                np.int16).max, dtype=helper.pytorch_name_to_type[dtype])
+            zero_value = torch.full(
+                x_shape, 0, dtype=helper.pytorch_name_to_type[dtype])
+            add_v = g.op('Constant', value_t=add_value)
+            zeros = g.op('Constant', value_t=zero_value)
+            result = scatter_helper(
+                g, zeros, dim, scatter_indices, add_v, 'add')
 
-        #     x = opset11.add(g, x, result)
-        if include_self is False and reduction == 'prod':
-            dtype = other.type().scalarType()
+            x = opset11.add(g, x, result)
+        elif include_self is False and reduction == 'prod':
+
             scatter_value = torch.full(
                 other_shape, 1, dtype=helper.pytorch_name_to_type[dtype])
             scatter_v = g.op('Constant', value_t=scatter_value)
             x = scatter_helper(
                 g, x, dim, scatter_indices, scatter_v, 'none')
             reduction = 'mul'
-        # elif reduction == 'amax':
-        #     reduction = 'max'
-        # elif reduction == 'amin':
-        #     reduction = 'min'
+        elif reduction == 'amax':
+            reduction = 'max'
+        elif reduction == 'amin':
+            reduction = 'min'
         elif reduction == 'prod':
             reduction = 'mul'
         return scatter_helper(g, x, dim, scatter_indices, other, reduction)
 
     # index_duplicates == False
     if include_self is False:
-        reduction = 'none'
+        if reduction == 'amin':
+            reduction = 'min'
+        else:
+            reduction = 'none'
         return scatter_helper(g, x, dim, scatter_indices, other, reduction)
     else:
         # TODO:Same as above
-        # if reduction == 'amin':
-        #     reduction = 'min'
-        # elif reduction == 'amax':
-        #     reduction = 'max'
-        if reduction == 'prod':
+        if reduction == 'amin':
+            reduction = 'min'
+        elif reduction == 'amax':
+            reduction = 'max'
+        elif reduction == 'prod':
             reduction = 'mul'
         else:
             ERROR('invalid reduction type in convert_index_reduce.')
