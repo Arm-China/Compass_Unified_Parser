@@ -579,6 +579,33 @@ class ArmBatchToSpaceOp(OpHasOneOutPort, ArmOp):
         return ret
 
 
+class ArmBatchToSpaceNDOp(OpHasOneOutPort, ArmOp):
+    @classmethod
+    def attributes(cls):
+        return {'block_size': {'type': AttrType.INTS, 'required': True},
+                'crops': {'type': AttrType.INTS, 'default': [0, 0, 0, 0], 'required': True}
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(ArmBatchToSpaceNDOp, self).__init__(graph, attr_dict)
+        self.update_attributes(ArmBatchToSpaceNDOp, attr_dict)
+        assert self.check_required(), 'ArmBatchToSpaceNDOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(ArmBatchToSpaceNDOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = tf.compat.v1.batch_to_space_nd(
+            inputs[0], self.block_size, self.crops).numpy()
+        self.set_out_tensor(out_tensor)
+
+    def write_attrs(self, txt_file):
+        ret = super(ArmBatchToSpaceNDOp, self).write_attrs(txt_file)
+        if ret:
+            txt_file.write('block_size=%s\n' % str(self.block_size))
+            txt_file.write('crops=%s\n' % str(self.crops))
+        return ret
+
+
 class ArmBitShiftOp(OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
