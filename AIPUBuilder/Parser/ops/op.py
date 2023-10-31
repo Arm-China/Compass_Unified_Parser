@@ -153,10 +153,13 @@ class Op(abc.ABC):
                 'quantize': {'type': AttrType.BOOL, 'default': False, 'options': [0, 1, False, True]},
                 'top_scales': {'type': AttrType.TENSORS, 'default': []},
                 'top_scales_offset': {'type': AttrType.INTS, 'default': []},
+                'top_scales_list': {'type': AttrType.TENSORS, 'default': []},
                 'top_zps': {'type': AttrType.TENSORS, 'default': []},
                 'top_zps_offset': {'type': AttrType.INTS, 'default': []},
+                'top_zps_list': {'type': AttrType.TENSORS, 'default': []},
                 'top_ranges': {'type': AttrType.TENSORS, 'default': []},
                 'top_ranges_offset': {'type': AttrType.INTS, 'default': []},
+                'top_ranges_list': {'type': AttrType.TENSORS, 'default': []},
                 }
 
     @classmethod
@@ -363,8 +366,13 @@ class Op(abc.ABC):
             txt_file.write('layer_top_type=[%s]\n' % top_type_str)
 
             if len(top_info) >= 4 \
+                    and len(self.top_ranges_list) == len(top_info[3]):  # ranges write to txt
+                ranges_value = string_list_to_string(
+                    [str(r).replace(' ', '') if r is not None else 'NONE' for r in self.top_ranges_list])
+                txt_file.write('layer_top_range=[%s]\n' % ranges_value)
+            elif len(top_info) >= 4 \
                     and len(self.top_ranges) == len(top_info[3]) \
-                    and len(self.top_ranges_offset) == len(top_info[3]):
+                    and len(self.top_ranges_offset) == len(top_info[3]):  # ranges write to bin
                 ranges_offset = string_list_to_string(
                     [str(offset) if offset is not None else 'NONE' for offset in self.top_ranges_offset])
                 ranges_shape = [str(list(r.shape)) if r is not None else 'NONE' for r in self.top_ranges]
@@ -379,39 +387,45 @@ class Op(abc.ABC):
                 txt_file.write('layer_top_range_type=[%s]\n' % ranges_type)
                 txt_file.write('layer_top_range_size=[%s]\n' % ranges_size)
 
-            if self._graph._attr.get('quantize', False) \
-                    and len(top_info) >= 4 \
-                    and len(self.top_scales) == len(top_info[3]) \
-                    and len(self.top_scales_offset) == len(top_info[3]) \
-                    and len(self.top_zps) == len(top_info[3]) \
-                    and len(self.top_zps_offset) == len(top_info[3]):
+            if self._graph._attr.get('quantize', False) and len(top_info) >= 4:
+                if len(self.top_scales_list) == len(top_info[3]) \
+                        and len(self.top_zps_list) == len(top_info[3]):
+                    scales_str = ','.join([num_list_to_string(s) for s in self.top_scales_list])
+                    zps_str = ','.join([num_list_to_string(s) for s in self.top_zps_list])
 
-                scales_offset = string_list_to_string(
-                    [str(offset) if offset is not None else 'NONE' for offset in self.top_scales_offset])
-                scales_shape = [str(list(s.shape)) if s is not None else 'NONE' for s in self.top_scales]
-                scales_shape = string_list_to_string([re.sub(r' ', '', shape) for shape in scales_shape])
-                scales_type = string_list_to_string(
-                    [str(s.dtype) if s is not None else 'NONE' for s in self.top_scales])
-                scales_size = string_list_to_string(
-                    [str(s.size * s.dtype.itemsize) if s is not None else '0' for s in self.top_scales])
+                    txt_file.write('layer_top_scale=[%s]\n' % scales_str)
+                    txt_file.write('layer_top_zp=[%s]\n' % zps_str)
+                elif len(self.top_scales) == len(top_info[3]) \
+                        and len(self.top_scales_offset) == len(top_info[3]) \
+                        and len(self.top_zps) == len(top_info[3]) \
+                        and len(self.top_zps_offset) == len(top_info[3]):
 
-                zps_offset = string_list_to_string(
-                    [str(offset) if offset is not None else 'NONE' for offset in self.top_zps_offset])
-                zps_shape = [str(list(z.shape)) if z is not None else 'NONE' for z in self.top_zps]
-                zps_shape = string_list_to_string([re.sub(r' ', '', shape) for shape in zps_shape])
-                zps_type = string_list_to_string([str(z.dtype) if z is not None else 'NONE' for z in self.top_zps])
-                zps_size = string_list_to_string(
-                    [str(z.size * z.dtype.itemsize) if z is not None else '0' for z in self.top_zps])
+                    scales_offset = string_list_to_string(
+                        [str(offset) if offset is not None else 'NONE' for offset in self.top_scales_offset])
+                    scales_shape = [str(list(s.shape)) if s is not None else 'NONE' for s in self.top_scales]
+                    scales_shape = string_list_to_string([re.sub(r' ', '', shape) for shape in scales_shape])
+                    scales_type = string_list_to_string(
+                        [str(s.dtype) if s is not None else 'NONE' for s in self.top_scales])
+                    scales_size = string_list_to_string(
+                        [str(s.size * s.dtype.itemsize) if s is not None else '0' for s in self.top_scales])
 
-                txt_file.write('layer_top_scale_offset=[%s]\n' % scales_offset)
-                txt_file.write('layer_top_scale_shape=[%s]\n' % scales_shape)
-                txt_file.write('layer_top_scale_type=[%s]\n' % scales_type)
-                txt_file.write('layer_top_scale_size=[%s]\n' % scales_size)
+                    zps_offset = string_list_to_string(
+                        [str(offset) if offset is not None else 'NONE' for offset in self.top_zps_offset])
+                    zps_shape = [str(list(z.shape)) if z is not None else 'NONE' for z in self.top_zps]
+                    zps_shape = string_list_to_string([re.sub(r' ', '', shape) for shape in zps_shape])
+                    zps_type = string_list_to_string([str(z.dtype) if z is not None else 'NONE' for z in self.top_zps])
+                    zps_size = string_list_to_string(
+                        [str(z.size * z.dtype.itemsize) if z is not None else '0' for z in self.top_zps])
 
-                txt_file.write('layer_top_zp_offset=[%s]\n' % zps_offset)
-                txt_file.write('layer_top_zp_shape=[%s]\n' % zps_shape)
-                txt_file.write('layer_top_zp_type=[%s]\n' % zps_type)
-                txt_file.write('layer_top_zp_size=[%s]\n' % zps_size)
+                    txt_file.write('layer_top_scale_offset=[%s]\n' % scales_offset)
+                    txt_file.write('layer_top_scale_shape=[%s]\n' % scales_shape)
+                    txt_file.write('layer_top_scale_type=[%s]\n' % scales_type)
+                    txt_file.write('layer_top_scale_size=[%s]\n' % scales_size)
+
+                    txt_file.write('layer_top_zp_offset=[%s]\n' % zps_offset)
+                    txt_file.write('layer_top_zp_shape=[%s]\n' % zps_shape)
+                    txt_file.write('layer_top_zp_type=[%s]\n' % zps_type)
+                    txt_file.write('layer_top_zp_size=[%s]\n' % zps_size)
         else:
             FATAL(
                 '[Parser]: Invalid file to write properties for Node(%s) in write_attrs!' % (self.name))
@@ -1215,9 +1229,11 @@ class OpHasWeights(Op):
                 'weights_offset': {'type': AttrType.INT, 'default': -1},
                 'weights_range': {'type': AttrType.TENSOR, 'default': None},
                 'weights_range_offset': {'type': AttrType.INT, 'default': -1},
+                'weights_range_list': {'type': AttrType.TENSORS, 'default': []},
                 'weights_scale_zp': {'type': AttrType.TENSORS, 'default': [np.array([1.0]).astype(np.float32), np.array([0]).astype(np.int32)]},
                 'weights_scale_offset': {'type': AttrType.INT, 'default': -1},
-                'weights_zp_offset': {'type': AttrType.INT, 'default': -1}
+                'weights_zp_offset': {'type': AttrType.INT, 'default': -1},
+                'weights_scale_zp_list': {'type': AttrType.TENSORS, 'default': []},
                 }
 
     @classmethod
@@ -1279,7 +1295,9 @@ class OpHasWeights(Op):
                            (self.weights.size * self.weights.dtype.itemsize))
             txt_file.write('weights_shape=[%s]\n' % num_list_to_string(
                 list(self.weights.shape)))
-            if self.weights_range is not None:
+            if len(self.weights_range_list) == 2:
+                txt_file.write('weights_range=[%s]\n' % num_list_to_string(self.weights_range_list))
+            elif self.weights_range is not None:
                 txt_file.write('weights_range_type=%s\n' % str(self.weights_range.dtype))
                 txt_file.write('weights_range_offset=%d\n' % self.weights_range_offset)
                 txt_file.write('weights_range_size=%d\n' % (
@@ -1287,20 +1305,23 @@ class OpHasWeights(Op):
                 txt_file.write('weights_range_shape=[%s]\n' % num_list_to_string(
                     list(self.weights_range.shape)))
             if self._graph._attr.get('quantize', False) \
-                    and np.issubdtype(self.weights.dtype, np.integer) \
-                    and len(self.weights_scale_zp) == 2:
-                txt_file.write('weights_scale_type=%s\n' % str(self.weights_scale_zp[0].dtype))
-                txt_file.write('weights_scale_offset=%d\n' % self.weights_scale_offset)
-                txt_file.write('weights_scale_size=%d\n' %
-                               (self.weights_scale_zp[0].size * self.weights_scale_zp[0].dtype.itemsize))
-                txt_file.write('weights_scale_shape=[%s]\n' % num_list_to_string(
-                    list(self.weights_scale_zp[0].shape)))
-                txt_file.write('weights_zp_type=%s\n' % str(self.weights_scale_zp[1].dtype))
-                txt_file.write('weights_zp_offset=%d\n' % self.weights_zp_offset)
-                txt_file.write('weights_zp_size=%d\n' %
-                               (self.weights_scale_zp[1].size * self.weights_scale_zp[1].dtype.itemsize))
-                txt_file.write('weights_zp_shape=[%s]\n' % num_list_to_string(
-                    list(self.weights_scale_zp[1].shape)))
+                    and np.issubdtype(self.weights.dtype, np.integer):
+                if len(self.weights_scale_zp_list) == 2:
+                    txt_file.write('weights_scale=%s\n' % str(self.weights_scale_zp_list[0]))
+                    txt_file.write('weights_zp=%s\n' % str(self.weights_scale_zp_list[1]))
+                elif len(self.weights_scale_zp) == 2:
+                    txt_file.write('weights_scale_type=%s\n' % str(self.weights_scale_zp[0].dtype))
+                    txt_file.write('weights_scale_offset=%d\n' % self.weights_scale_offset)
+                    txt_file.write('weights_scale_size=%d\n' %
+                                   (self.weights_scale_zp[0].size * self.weights_scale_zp[0].dtype.itemsize))
+                    txt_file.write('weights_scale_shape=[%s]\n' % num_list_to_string(
+                        list(self.weights_scale_zp[0].shape)))
+                    txt_file.write('weights_zp_type=%s\n' % str(self.weights_scale_zp[1].dtype))
+                    txt_file.write('weights_zp_offset=%d\n' % self.weights_zp_offset)
+                    txt_file.write('weights_zp_size=%d\n' %
+                                   (self.weights_scale_zp[1].size * self.weights_scale_zp[1].dtype.itemsize))
+                    txt_file.write('weights_zp_shape=[%s]\n' % num_list_to_string(
+                        list(self.weights_scale_zp[1].shape)))
         return ret
 
     def write_weights(self, bin_file):
@@ -1339,9 +1360,11 @@ class OpHasBiases(Op):
                 'biases_offset': {'type': AttrType.INT, 'default': -1},
                 'biases_range': {'type': AttrType.TENSOR, 'default': None},
                 'biases_range_offset': {'type': AttrType.INT, 'default': -1},
+                'biases_range_list': {'type': AttrType.TENSORS, 'default': []},
                 'biases_scale_zp': {'type': AttrType.TENSORS, 'default': [np.array([1.0]).astype(np.float32), np.array([0]).astype(np.int32)]},
                 'biases_scale_offset': {'type': AttrType.INT, 'default': -1},
-                'biases_zp_offset': {'type': AttrType.INT, 'default': -1}
+                'biases_zp_offset': {'type': AttrType.INT, 'default': -1},
+                'biases_scale_zp_list': {'type': AttrType.TENSORS, 'default': []},
                 }
 
     def __init__(self, graph, attr_dict=None):
@@ -1358,7 +1381,9 @@ class OpHasBiases(Op):
                            (self.biases.size * self.biases.dtype.itemsize))
             txt_file.write('biases_shape=[%s]\n' %
                            num_list_to_string(list(self.biases.shape)))
-            if self.biases_range is not None:
+            if len(self.biases_range_list) == 2:
+                txt_file.write('biases_range=[%s]\n' % num_list_to_string(self.biases_range_list))
+            elif self.biases_range is not None:
                 txt_file.write('biases_range_type=%s\n' % str(self.biases_range.dtype))
                 txt_file.write('biases_range_offset=%d\n' % self.biases_range_offset)
                 txt_file.write('biases_range_size=%d\n' % (
@@ -1366,20 +1391,23 @@ class OpHasBiases(Op):
                 txt_file.write('biases_range_shape=[%s]\n' % num_list_to_string(
                     list(self.biases_range.shape)))
             if self._graph._attr.get('quantize', False) \
-                    and np.issubdtype(self.biases.dtype, np.integer) \
-                    and len(self.biases_scale_zp) == 2:
-                txt_file.write('biases_scale_type=%s\n' % str(self.biases_scale_zp[0].dtype))
-                txt_file.write('biases_scale_offset=%d\n' % self.biases_scale_offset)
-                txt_file.write('biases_scale_size=%d\n' %
-                               (self.biases_scale_zp[0].size * self.biases_scale_zp[0].dtype.itemsize))
-                txt_file.write('biases_scale_shape=[%s]\n' % num_list_to_string(
-                    list(self.biases_scale_zp[0].shape)))
-                txt_file.write('biases_zp_type=%s\n' % str(self.biases_scale_zp[1].dtype))
-                txt_file.write('biases_zp_offset=%d\n' % self.biases_zp_offset)
-                txt_file.write('biases_zp_size=%d\n' %
-                               (self.biases_scale_zp[1].size * self.biases_scale_zp[1].dtype.itemsize))
-                txt_file.write('biases_zp_shape=[%s]\n' % num_list_to_string(
-                    list(self.biases_scale_zp[1].shape)))
+                    and np.issubdtype(self.biases.dtype, np.integer):
+                if len(self.biases_scale_zp_list) == 2:
+                    txt_file.write('biases_scale=%s\n' % str(self.biases_scale_zp_list[0]))
+                    txt_file.write('biases_zp=%s\n' % str(self.biases_scale_zp_list[1]))
+                elif len(self.biases_scale_zp) == 2:
+                    txt_file.write('biases_scale_type=%s\n' % str(self.biases_scale_zp[0].dtype))
+                    txt_file.write('biases_scale_offset=%d\n' % self.biases_scale_offset)
+                    txt_file.write('biases_scale_size=%d\n' %
+                                   (self.biases_scale_zp[0].size * self.biases_scale_zp[0].dtype.itemsize))
+                    txt_file.write('biases_scale_shape=[%s]\n' % num_list_to_string(
+                        list(self.biases_scale_zp[0].shape)))
+                    txt_file.write('biases_zp_type=%s\n' % str(self.biases_scale_zp[1].dtype))
+                    txt_file.write('biases_zp_offset=%d\n' % self.biases_zp_offset)
+                    txt_file.write('biases_zp_size=%d\n' %
+                                   (self.biases_scale_zp[1].size * self.biases_scale_zp[1].dtype.itemsize))
+                    txt_file.write('biases_zp_shape=[%s]\n' % num_list_to_string(
+                        list(self.biases_scale_zp[1].shape)))
         return ret
 
     def write_biases(self, bin_file):
@@ -1640,6 +1668,7 @@ class BaseActivationOp(OpHasOneOutPort):
                 'negative_slope_offset': {'type': AttrType.INT, 'default': -1},
                 'negative_slope_range': {'type': AttrType.TENSOR, 'default': None},
                 'negative_slope_range_offset': {'type': AttrType.INT, 'default': -1},
+                'negative_slope_range_list': {'type': AttrType.TENSORS, 'default': []},
                 'clip_min': {'type': AttrType.FLOAT, 'default': None},
                 'clip_max': {'type': AttrType.FLOAT, 'default': None}
                 }
@@ -1676,7 +1705,10 @@ class BaseActivationOp(OpHasOneOutPort):
                             self.negative_slope.size * self.negative_slope.dtype.itemsize))
                         txt_file.write('negative_slope_shape=[%s]\n' % num_list_to_string(
                             list(self.negative_slope.shape)))
-                        if self.negative_slope_range is not None:
+                        if len(self.negative_slope_range_list) == 2:
+                            txt_file.write('negative_slope_range=[%s]\n' %
+                                           num_list_to_string(self.negative_slope_range_list))
+                        elif self.negative_slope_range is not None:
                             txt_file.write('negative_slope_range_type=%s\n' % str(self.negative_slope_range.dtype))
                             txt_file.write('negative_slope_range_offset=%d\n' % self.negative_slope_range_offset)
                             txt_file.write('negative_slope_range_size=%d\n' % (
@@ -1896,6 +1928,7 @@ class BaseRnnOp(OpHasMethod, OpHasVariableOutPorts):
             'activations_scale_offset': {'type': AttrType.INT, 'default': -1},
             'activations_zp': {'type': AttrType.TENSOR, 'required': False, 'default': None},
             'activations_zp_offset': {'type': AttrType.INT, 'default': -1},
+            'activations_scale_zp_list': {'type': AttrType.TENSORS, 'default': []},
         }
 
     def __init__(self, graph, attr_dict=None):
@@ -1927,7 +1960,10 @@ class BaseRnnOp(OpHasMethod, OpHasVariableOutPorts):
                                    num_list_to_string(forget_bias_scale))
                     txt_file.write('forget_bias_zp=[%s]\n' %
                                    num_list_to_string(forget_bias_zp))
-                if self.activations_scale is not None \
+                if len(self.activations_scale_zp_list) == 2:
+                    txt_file.write('activations_scale=%s\n' % str(self.activations_scale_zp_list[0]))
+                    txt_file.write('activations_zp=%s\n' % str(self.activations_scale_zp_list[1]))
+                elif self.activations_scale is not None \
                         and self.activations_zp is not None:
                     activations_scale = self.activations_scale
                     activations_zp = self.activations_zp
