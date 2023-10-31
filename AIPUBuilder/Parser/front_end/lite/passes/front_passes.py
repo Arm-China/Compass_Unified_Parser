@@ -2534,7 +2534,7 @@ def convert_dequantize(graph):
 
 
 def remove_useless_dequantize(graph):
-    if graph._attr['quantize']:
+    if graph._attr.get('quantize', False):
         return
     matched = False
     matches = two_nodes_matcher(graph, 'Constant', 'LiteDEQUANTIZE')
@@ -2812,7 +2812,7 @@ def split_op_has_activation(graph, is_tf_op=False):
             activation_attr.update({'alpha': alpha})
 
         activation_attr.update(onnx_op_dict)
-        if graph._attr['quantize'] and node_obj.quantize:
+        if graph._attr.get('quantize', False) and node_obj.quantize:
             activation_attr.update({'quantize': True})
 
         activation_node.replace_obj(onnx_op_type, activation_attr)
