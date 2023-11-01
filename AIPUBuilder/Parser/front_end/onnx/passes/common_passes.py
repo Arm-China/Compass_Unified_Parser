@@ -1057,6 +1057,8 @@ def insert_transpose(graph, src, dst, in_attr, perm, key=None, type='Transpose',
                 out_tensor.value = np.transpose(
                     in_attr['tensor'].value, axes=perm)
                 out_tensor.shape = out_tensor.value.shape
+            elif out_tensor.shape is not None and len(out_tensor.shape) == len(perm):
+                out_tensor.shape = tuple(out_tensor.shape[idx] for idx in perm)
         transpose_out_attr.update({'src_out_port': 0, 'tensor': out_tensor})
         graph.add_edge(transpose, dst, **transpose_out_attr)
         ret = transpose
@@ -1092,10 +1094,13 @@ def insert_transpose_after(graph, src, perm, port=0, type='Transpose', quantize=
 
         if found_port:
             out_edge_attr = {'src_out_port': port, 'dst_in_port': 0}
-            if out_tensor is not None and out_tensor.value is not None:
+            if out_tensor is not None:
                 inverse_perm = Op.cal_inverse_perm(perm)
-                out_tensor.value = np.transpose(out_tensor.value, inverse_perm)
-                out_tensor.shape = out_tensor.value.shape
+                if out_tensor.value is not None:
+                    out_tensor.value = np.transpose(out_tensor.value, inverse_perm)
+                    out_tensor.shape = out_tensor.value.shape
+                elif out_tensor.shape is not None and len(out_tensor.shape) == len(inverse_perm):
+                    out_tensor.shape = tuple(out_tensor.shape[idx] for idx in inverse_perm)
                 out_edge_attr.update({'tensor': out_tensor})
             graph.add_edge(src, transpose, **out_edge_attr)
             node_attr = {'name': transpose, 'perm': perm, 'quantize': quantize}

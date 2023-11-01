@@ -636,7 +636,7 @@ class PluginOp(OpHasVariableOutPorts, CommonOp):
         self._type = 'Plugin' + attr_dict.get('type', 'Plugin')
         self.constants = {}
         self.constants_offset_dict = {}
-        self.shape_infered = False
+        self.out_tensors = []  # record output tensors
         fw = graph._attr['framework'].name
         try:
             plugin_type = PARSER_OP_DICT[re.sub(
@@ -677,7 +677,8 @@ class PluginOp(OpHasVariableOutPorts, CommonOp):
 
     def infer_shape(self):
         # Do infer_shape only once for plugin
-        if self.shape_infered:
+        if len(self.out_tensors) > 0:
+            self.set_out_tensor(self.out_tensors)
             return
         super(PluginOp, self).infer_shape()
         inputs = self.get_input_tensors()
@@ -705,7 +706,7 @@ class PluginOp(OpHasVariableOutPorts, CommonOp):
         else:
             ERROR('[Parser]: Invalid Plugin op (%s) for infer_shape!' % self.name)
         self.set_out_tensor(out_tensors)
-        self.shape_infered = True
+        self.out_tensors = out_tensors
         # self.constants could be used in self._plugin.infer_shape, so check constants here
         self.constants = getattr(self._plugin, 'constants', {})
         if not all((isinstance(key, str) and isinstance(val, np.ndarray))
