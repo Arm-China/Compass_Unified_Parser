@@ -496,6 +496,7 @@ def merge_qconv(graph):
             conv_out_attr['tensor'].scale_zp = (y_scale, y_zp)
             graph.add_edge(m['conv'], relu, **conv_out_attr)
             last_node = relu
+            obj_dict['relu'].quantize = True
         for _, dst, out_attr in graph.sorted_out_edges(m['y_quant'], data=True):
             graph.remove_edge(m['y_quant'], dst)
             out_attr['tensor'].dtype = str(y_zp.dtype)
@@ -507,6 +508,7 @@ def merge_qconv(graph):
             graph._attr['output_names'][index] = last_node
 
         conv_attr = obj_dict['conv'].copied_attr()
+        conv_attr.update({'quantize': True})
         if obj_dict['conv'].type == 'Conv':
             op_type = 'QLinearConv'
             conv_attr.update({'opset_version': 10})

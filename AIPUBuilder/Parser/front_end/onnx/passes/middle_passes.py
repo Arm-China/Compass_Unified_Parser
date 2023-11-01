@@ -891,8 +891,7 @@ def convert_gemm_to_fc(graph):
         gemm_in_edges = graph.sorted_in_edges(gemm, data=True)
         if len(gemm_in_edges) in (2, 3) \
                 and gemm_in_edges[0][2]['tensor'] is not None \
-                and gemm_in_edges[0][2]['tensor'].value is not None \
-                and len(gemm_in_edges[0][2]['tensor'].value.shape) == 2:
+                and len(gemm_in_edges[0][2]['tensor'].shape) == 2:
             input2 = gemm_in_edges[1][0]
             input3 = gemm_in_edges[2][0] if len(gemm_in_edges) == 3 else ''
             if NodeWrap(graph, input2)['object'].type == 'Constant' \

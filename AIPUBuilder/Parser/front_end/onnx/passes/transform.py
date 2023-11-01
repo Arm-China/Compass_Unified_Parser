@@ -196,12 +196,12 @@ def insert_transpose_for_layoutconcern(graph):
                             if in_attr['dst_in_port'] == 0:
                                 continue
                             insert_transpose(
-                                graph, src, node, in_attr, pre_trans_perm)
+                                graph, src, node, in_attr, pre_trans_perm, quantize=node_obj.quantize)
                 elif node_obj.type == 'MaxUnpool':
                     if len(in_edges) == 3 and len(input_shape) >= 3:
                         indices, _, in_attr_1 = in_edges[1]
                         insert_transpose(
-                            graph, indices, node, in_attr_1, pre_trans_perm)
+                            graph, indices, node, in_attr_1, pre_trans_perm, quantize=node_obj.quantize)
                         out_shape, _, in_attr_2 = in_edges[2]
                         insert_gather(graph,
                                       out_shape,
@@ -243,7 +243,7 @@ def insert_transpose_for_layoutconcern(graph):
                     if len(in_edges) >= 2:
                         src2, _, in_attr2 = in_edges[1]
                         insert_transpose(
-                            graph, src2, node, in_attr2, [0, 2, 3, 1])
+                            graph, src2, node, in_attr2, [0, 2, 3, 1], quantize=node_obj.quantize)
                     else:
                         ERROR('[Parser]: Meets invalid %s Op (%s) in insert_transpose_for_layoutconcern!' % (
                             node_obj.type, node))
@@ -279,7 +279,7 @@ def nhwc_for_other(graph):
                     in_shapes = node_obj.get_input_shapes()
                     if len(in_edges) >= 2 and len(in_shapes[0]) == 3:
                         src, _, in_attr = in_edges[0]
-                        insert_transpose(graph, src, node, in_attr, [1, 0, 2])
+                        insert_transpose(graph, src, node, in_attr, [1, 0, 2], quantize=node_obj.quantize)
                 node_obj.data_format = 'NHWC'
         else:
             ERROR('[Parser]: Meets invalid Op (%s) in nhwc_for_other!' % node)
