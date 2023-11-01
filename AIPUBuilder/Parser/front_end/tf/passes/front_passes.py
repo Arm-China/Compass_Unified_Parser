@@ -1239,21 +1239,32 @@ def split_b2s(graph, op_type='TfBatchToSpaceND'):
                 graph.add_edge(src, reshape1, **in_attr)
                 reshape1_out_attr = copy.deepcopy(in_attr)
                 reshape1_out_attr.update({'src_out_port': 0})
-                if in_attr['tensor'] is not None and in_attr['tensor'].value is not None:
-                    reshape1_out_attr['tensor'].value = np.reshape(in_attr['tensor'].value, dim1)
+                if in_attr['tensor'] is not None:
+                    if in_attr['tensor'].value is not None:
+                        reshape1_out_attr['tensor'].value = np.reshape(in_attr['tensor'].value, dim1)
+                    else:
+                        reshape1_out_attr['tensor'].shape = tuple(dim1)
                 graph.add_edge(reshape1, b2s, **reshape1_out_attr)
                 for _, dst, out_attr in out_edges:
                     graph.remove_edge(b2s, dst)
                     graph.add_edge(last, dst, **out_attr)
                 b2s_out_attr = copy.deepcopy(out_edges[0][2])
                 b2s_out_attr.update({'dst_in_port': 0})
-                if reshape1_out_attr['tensor'] is not None and reshape1_out_attr['tensor'].value is not None:
-                    b2s_out_attr['tensor'].value = np.transpose(reshape1_out_attr['tensor'].value, perm)
+                if reshape1_out_attr['tensor'] is not None:
+                    if reshape1_out_attr['tensor'].value is not None:
+                        b2s_out_attr['tensor'].value = np.transpose(reshape1_out_attr['tensor'].value, perm)
+                    else:
+                        b2s_out_attr['tensor'].value = None
+                        b2s_out_attr['tensor'].shape = tuple(
+                            (np.array(reshape1_out_attr['tensor'].shape, np.int32)[np.array(perm)]).tolist())
                 graph.add_edge(b2s, reshape2, **b2s_out_attr)
                 if need_slice:
                     reshape2_out_attr = copy.deepcopy(b2s_out_attr)
-                    if b2s_out_attr['tensor'] is not None and b2s_out_attr['tensor'].value is not None:
-                        reshape2_out_attr['tensor'].value = np.reshape(b2s_out_attr['tensor'].value, dim2)
+                    if b2s_out_attr['tensor'] is not None:
+                        if b2s_out_attr['tensor'].value is not None:
+                            reshape2_out_attr['tensor'].value = np.reshape(b2s_out_attr['tensor'].value, dim2)
+                        else:
+                            reshape2_out_attr['tensor'].shape = tuple(dim2)
                     graph.add_edge(reshape2, slice, **reshape2_out_attr)
 
                 NodeWrap(graph, reshape1).replace_obj('Reshape',
