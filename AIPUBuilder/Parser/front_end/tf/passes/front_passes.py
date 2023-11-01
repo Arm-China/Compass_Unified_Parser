@@ -469,7 +469,7 @@ def convert_nms(graph, params):
                 for _, dst, out_attr in out_edges:
                     if out_attr['src_out_port'] == idx:
                         new_outs.append(insert_reshape_after(
-                            graph, nms, out_attr['tensor'].value.shape, out_port=idx))
+                            graph, nms, out_attr['tensor'].shape, out_port=idx))
                         break
 
             # out_edges have been updated after inserting reshape so need to get a new one.
@@ -4434,18 +4434,21 @@ def convert_to_onnx(graph):
                 elif pure_type == 'Cast':
                     new_node_attr.update({'to': new_node_attr['DstT'], 'saturate': False})
                 elif pure_type == 'ComputeAccidentalHits':
+                    output_shapes = node_obj.get_output_shapes()
+                    if len(output_shapes) < 3 and output_shapes[0] is None:
+                        ERROR('[Parser]: Invalid TfComputeAccidentalHits Node(%s) in convert_to_onnx!' % node_name)
+                        continue
                     out_edges = graph.sorted_out_edges(
                         node_name, data=True, keys=True)
                     const_name = get_valid_node_name(
                         graph, node_name + '_weights')
+                    const_value = np.full(output_shapes[0], -1 * np.finfo(np.float32).max, dtype=np.float32)
                     matched = False
-                    const_value = None
                     for _, dst, k, out_attr in out_edges:
                         if out_attr['src_out_port'] != 2:
                             continue
                         matched = True
                         graph.remove_edge(node_name, dst, key=k)
-                        const_value = out_attr['tensor'].value
                         new_out_attr = copy.deepcopy(out_attr)
                         new_out_attr.update(
                             {'src_out_port': 0, 'tensor': Tensor(value=const_value, is_const=True)})
