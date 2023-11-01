@@ -1178,7 +1178,7 @@ class SliceOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
                     else:
                         inputs = self.get_input_tensors()
                         ret = np.array(inputs[3]).tolist() if len(
-                            inputs) > 3 else list(range(len(inputs[0].shape)))
+                            inputs) > 3 else list(range(len(self.get_input_shapes()[0])))
                 elif item in ('starts', 'ends'):
                     if cur_ver == 1:
                         ret = self.__dict__['_attr'][item].value
@@ -1190,11 +1190,12 @@ class SliceOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
                             ret = np.array(inputs[2]).tolist()
                 elif item == 'steps':
                     inputs = self.get_input_tensors()
+                    input_shapes = self.get_input_shapes()
                     if cur_ver == 1:
-                        ret = [1] * len(inputs[0].shape)
+                        ret = [1] * len(input_shapes[0])
                     else:
                         ret = np.array(inputs[4]).tolist() if len(
-                            inputs) > 4 else [1] * len(inputs[0].shape)
+                            inputs) > 4 else [1] * len(input_shapes[0])
             except:
                 ret = None
         return ret
