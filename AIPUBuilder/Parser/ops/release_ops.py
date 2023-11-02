@@ -3382,7 +3382,7 @@ class ArmPadOp(OpHasOneOutPort, ArmOp):
     def attributes(cls):
         return {'pads': {'type': AttrType.INTS, 'required': True},
                 'constant_value': {'type': AttrType.FLOAT, 'required': False, 'default': 0},
-                'mode': {'type': AttrType.STRING, 'default': 'constant', 'options': ['constant', 'reflect', 'symmetric']}
+                'mode': {'type': AttrType.STRING, 'default': 'constant', 'options': ['constant', 'reflect', 'symmetric', 'edge', 'wrap']}
                 }
 
     @staticmethod

@@ -2739,13 +2739,13 @@ def rename_pad(graph):
         pad_obj = NodeWrap(graph, pad)['object']
         in_edges = graph.sorted_in_edges(pad, data=True)
         if pad_obj is not None and len(in_edges) >= 1:
+            input_shapes = pad_obj.get_input_shapes()
+            if len(input_shapes) < 1 or input_shapes[0] is None or None in input_shapes[0]:
+                ERROR('[Parser]: Meets invalid input shape of Pad Node(%s) in rename_pad!' % pad)
+                continue
             pads_value = pad_obj.pads
             negative_pads = [val if val < 0 else 0 for val in pads_value]
             if any(val != 0 for val in negative_pads):
-                input_shapes = pad_obj.get_input_shapes()
-                if len(input_shapes) < 1 or input_shapes[0] is None or None in input_shapes[0]:
-                    ERROR('[Parser]: Meets invalid input shape of Pad Node(%s) in rename_pad!' % pad)
-                    continue
                 input_length = len(input_shapes[0])
                 if len(pads_value) != input_length * 2:
                     ERROR('[Parser]: Meets invalid pads of Pad Node(%s) in rename_pad!' % pad)
@@ -2757,11 +2757,14 @@ def rename_pad(graph):
                          np.array(negative_pads[input_length:])).tolist()
                 insert_slice(graph, src, pad, in_attr, begins, sizes, type='ArmSlice')
                 pads_value = [val if val >= 0 else 0 for val in pads_value]
+            if pad_obj.mode == 'wrap':
+                max_pads_value = np.repeat(input_shapes[0], 2).tolist()
+                if any(pad > max_pad for pad, max_pad in zip(pads_value, max_pads_value)):
+                    WARN('[Parser]: Meets unsupported pads of Pad Node(%s) in rename_pad; '
+                         'pads can not be larger than input shape!' % pad)
             pad_attr = pad_obj.copied_attr()
             pad_attr.update({'pads': pads_value})
             pad_attr.update({'constant_value': float(pad_obj.value)})
-            if pad_attr['mode'] == 'edge':
-                pad_attr['mode'] = 'symmetric'
             NodeWrap(graph, pad).replace_obj('ArmPad', pad_attr)
             if len(in_edges) > 1:
                 need_clear = True
