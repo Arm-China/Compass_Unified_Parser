@@ -340,9 +340,12 @@ def remove_redundant_reshape(graph, type='Reshape'):
         reshape_1_in_shapes = reshape_1_obj.get_input_shapes()
         reshape_1_out_shapes = reshape_1_obj.get_output_shapes()
         reshape_2_out_shapes = reshape_2_obj.get_output_shapes()
+        # TODO: When removing nodes, should consider whether it is output.
+        # need to optimize other passes in the future.
         if len(reshape_1_in_shapes) >= 1 \
                 and len(reshape_1_out_shapes) == 1 \
-                and len(reshape_2_out_shapes) >= 1:
+                and len(reshape_2_out_shapes) >= 1 \
+                and reshape_1 not in graph._attr['output_names']:
             remove_node_safely(graph, reshape_1)
 
 
