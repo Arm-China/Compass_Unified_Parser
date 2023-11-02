@@ -631,6 +631,7 @@ class PadOp(OpHasOneOutPort, OnnxOp):
                 11: {'mode': {'type': AttrType.STRING, 'default': 'constant', 'options': ['constant', 'reflect', 'edge', 'symmetric']}},
                 13: {'mode': {'type': AttrType.STRING, 'default': 'constant', 'options': ['constant', 'reflect', 'edge', 'symmetric']}},
                 18: {'mode': {'type': AttrType.STRING, 'default': 'constant', 'options': ['constant', 'reflect', 'edge', 'symmetric']}},
+                19: {'mode': {'type': AttrType.STRING, 'default': 'constant', 'options': ['constant', 'reflect', 'edge', 'symmetric', 'wrap']}},
                 }
 
     def __init__(self, graph, attr_dict=None):
@@ -693,7 +694,7 @@ class PadOp(OpHasOneOutPort, OnnxOp):
                          for begin, end in zip(negative_pads[:input_length], negative_pads[input_length:])]
             sliced_input = inputs[0][tuple(slice_obj)]
             pads = [pad if pad >= 0 else 0 for pad in pads]
-        if self.mode in ('reflect', 'symmetric'):
+        if self.mode in ('reflect', 'edge', 'symmetric', 'wrap'):
             pads = np.reshape(np.array(pads, np.int32), (2, -1))
             pads = np.transpose(pads)
             out_tensor = np.pad(sliced_input, pads, mode=self.mode)
