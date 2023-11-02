@@ -1836,6 +1836,7 @@ def fuse_mul_add_or_sub(graph):
             mul_in_attr = [in_attr for (src, _, in_attr) in mul_in_edges if src != const_1]
             if len(mul_in_attr) < 1 \
                     or mul_in_attr[0]['tensor'] is None \
+                    or mul_in_attr[0]['tensor'].get_dtype() is None \
                     or 'float' not in mul_in_attr[0]['tensor'].get_dtype():
                 continue
             main_in_port = mul_in_attr[0]['dst_in_port']
@@ -8310,21 +8311,23 @@ def split_deformable_conv(graph):
         NodeWrap(graph, offset_reshape).replace_obj('Reshape', {'name': offset_reshape, 'opset_version': 13})
         # reshape -> add base
         offset_add_base = get_valid_node_name(graph, deform_conv + '_offset_add')
-        graph.add_edge(offset_reshape, offset_add_base)
+        offset_add_base_in_attr = {'tensor': Tensor(shape=tuple(offset_reshape_dim))}
+        graph.add_edge(offset_reshape, offset_add_base, **offset_add_base_in_attr)
         insert_constant(graph, offset_add_base + '_val', offset_base_data, offset_add_base, in_port=1)
         NodeWrap(graph, offset_add_base).replace_obj('Add', {'name': offset_add_base, 'opset_version': 13})
         # add base -> mul&add -1
         offset_mul = get_valid_node_name(graph, deform_conv + '_offset_mul')
-        graph.add_edge(offset_add_base, offset_mul, **{'src_out_port': 0})
+        graph.add_edge(offset_add_base, offset_mul, **{'src_out_port': 0,
+                       'tensor': Tensor(shape=tuple(offset_reshape_dim))})
         insert_constant(graph, offset_mul + '_hw', const_hw, offset_mul, in_port=1)
         NodeWrap(graph, offset_mul).replace_obj('Mul', {'name': offset_mul, 'opset_version': 11})
         offset_add_neg1 = get_valid_node_name(graph, deform_conv + '_offset_add_neg1')
-        graph.add_edge(offset_mul, offset_add_neg1)
+        graph.add_edge(offset_mul, offset_add_neg1, **{'tensor': Tensor(shape=tuple(offset_reshape_dim))})
         insert_constant(graph, offset_add_neg1 + '_val', const_neg1, offset_add_neg1, in_port=1)
         NodeWrap(graph, offset_add_neg1).replace_obj('Add', {'name': offset_add_neg1, 'opset_version': 13})
         # mul&add -1 -> split
         offset_split = get_valid_node_name(graph, deform_conv + '_offset_split')
-        graph.add_edge(offset_add_neg1, offset_split)
+        graph.add_edge(offset_add_neg1, offset_split, **{'tensor': Tensor(shape=tuple(offset_reshape_dim))})
         NodeWrap(graph, offset_split).replace_obj(
             'Split', {'name': offset_split, 'opset_version': 11, 'split': [1, 1], 'axis': 1})
         # split -> concat(yx to xy)
@@ -8372,7 +8375,8 @@ def split_deformable_conv(graph):
             # mask src -> reshape -> mul(*data)
             data_mask_mul = get_valid_node_name(graph, deform_conv + '_data_mask_mul')
             graph.add_edge(data_grid_sample, data_mask_mul)
-            graph.add_edge(mask_reshape, data_mask_mul, **{'dst_in_port': 1})
+            graph.add_edge(mask_reshape, data_mask_mul, **{'dst_in_port': 1,
+                           'tensor': Tensor(shape=tuple(mask_reshape_dim))})
             NodeWrap(graph, data_mask_mul).replace_obj('Mul', {'name': data_mask_mul, 'opset_version': 13})
             data_masked = data_mask_mul
 
@@ -8383,7 +8387,7 @@ def split_deformable_conv(graph):
         NodeWrap(graph, data_post_reshape).replace_obj('Reshape', {'name': data_post_reshape, 'opset_version': 13})
         # reshape -> transpose(data_post_trans_perm)
         data_post_trans = get_valid_node_name(graph, deform_conv + '_post_trans')
-        graph.add_edge(data_post_reshape, data_post_trans)
+        graph.add_edge(data_post_reshape, data_post_trans, **{'tensor': Tensor(shape=data_post_reshape_dim)})
         NodeWrap(graph, data_post_trans).replace_obj('Transpose', {
             'name': data_post_trans, 'opset_version': 13, 'perm': data_post_trans_perm})
         # transpose -> reshape(data_post_reshape2_dim)
@@ -8394,7 +8398,7 @@ def split_deformable_conv(graph):
 
         # data -> conv
         new_weights = np.reshape(weights, [out_c, -1, 1, 1])
-        graph.add_edge(data_post_reshape2, deform_conv)
+        graph.add_edge(data_post_reshape2, deform_conv, **{'tensor': Tensor(shape=data_post_reshape2_dim)})
         conv_attr = deform_conv_obj.copied_attr()
         conv_attr.update({'opset_version': 11, 'kernel_shape': [1, 1], 'weights': new_weights,
                           'strides': [1, 1], 'pads': [0, 0, 0, 0], 'dilations': [1, 1], 'group': group})
