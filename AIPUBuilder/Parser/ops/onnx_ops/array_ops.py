@@ -1067,9 +1067,9 @@ class ShapeOp(OpHasOneOutPort, ConstLikeOp, OnnxOp):
 
     def infer_shape(self):
         super(ShapeOp, self).infer_shape()
-        inputs = self.get_input_tensors()
-        if inputs and inputs[0] is not None:
-            shape = inputs[0].shape
+        input_shapes = self.get_input_shapes()
+        if input_shapes and input_shapes[0] is not None:
+            shape = input_shapes[0]
             if self.cur_version >= 15:
                 rank = len(shape)
                 true_end = rank
