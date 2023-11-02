@@ -310,8 +310,8 @@ def decompose_loop(graph, params):
                 index = graph._attr['output_names'].index(loop)
                 graph._attr['output_names'].pop(index)
                 if condition:
-                    graph._attr['output_names'].append(stack)
                     graph._attr['output_names'].append(last_loop_res)
+                    graph._attr['output_names'].append(stack)
                 else:
                     graph._attr['output_names'].append(in_edges[-1][0])
         clear_redundant_nodes(graph)
