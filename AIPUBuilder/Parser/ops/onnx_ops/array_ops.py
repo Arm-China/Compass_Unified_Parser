@@ -1553,6 +1553,43 @@ class TransposeOp(OpHasOneOutPort, OnnxOp):
         self.set_out_tensor(out_tensor)
 
 
+class TriluOp(OpHasOneOutPort, OnnxOp):
+    @classmethod
+    def attributes(cls):
+        return {14: {'upper': {'type': AttrType.BOOL, 'default': True, 'required': False}},
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(TriluOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TriluOp, attr_dict)
+        assert self.check_required(), 'TriluOp is missing a required parameter.'
+
+    def __getattr__(self, item):
+        ret = None
+        try:
+            if item == 'k':
+                try:
+                    inputs = self.get_input_tensors()
+                    ret = int(inputs[1])
+                except:
+                    ret = 0
+                self.__dict__['_attr'][item] = Attribute(item, {'type': AttrType.INT, 'value': ret})
+        except:
+            ret = None
+        if ret is None:
+            ret = super(TriluOp, self).__getattr__(item)
+        return ret
+
+    def infer_shape(self):
+        super(TriluOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        if self.upper:
+            out_tensor = torch.triu(torch.from_numpy(inputs[0]), diagonal=self.k).numpy()
+        else:
+            out_tensor = torch.tril(torch.from_numpy(inputs[0]), diagonal=self.k).numpy()
+        self.set_out_tensor(out_tensor)
+
+
 class UniqueOp(OpHasVariableOutPorts, OpHasAxis, OnnxOp):
     @classmethod
     def attributes(cls):
