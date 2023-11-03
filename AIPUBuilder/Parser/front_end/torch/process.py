@@ -731,14 +731,25 @@ def convert_meshgrid(g, tensor_list, indexing='ij'):
     assert indexing in ('ij', 'xy'), 'Meets unsupported indexing %s in convert_meshgrid!' % indexing
     inputs = []
     output_shape = []
+    size_nodes = []
     for idx, t in enumerate(unpacked_inputs):
         input_1d = helper._reshape_helper(g, t, [-1]) if helper._get_tensor_rank(t) != 1 else t
         inputs.append(input_1d)
-        output_shape.append(int(np.prod(helper._get_tensor_sizes(t))))
+        size_nodes.append(helper._reshape_helper(g, g.op('Size', t), [1]))
+        t_size = helper._get_tensor_sizes(t)
+        shape = None if (t_size is None or None in t_size) else int(np.prod(t_size))
+        output_shape.append(shape)
     outs = g.op('custom::Meshgrid', *inputs, indexing_s=indexing, outputs=len(inputs))
-    output_type = unpacked_inputs[0].type().with_sizes(output_shape)
-    for idx in range(len(inputs)):
-        outs[idx].setType(output_type)
+    if any(shape is None for shape in output_shape):
+        concat_node = g.op('Concat', *size_nodes, axis_i=0)
+        new_outs = []
+        for idx in range(len(inputs)):
+            new_outs.append(helper._reshape_helper(g, outs[idx], concat_node))
+        outs = new_outs
+    else:
+        output_type = unpacked_inputs[0].type().with_sizes(output_shape)
+        for idx in range(len(inputs)):
+            outs[idx].setType(output_type)
     return g.op('prim::ListConstruct', *outs)
 
 
