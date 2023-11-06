@@ -9,7 +9,7 @@ from ....graph.node_wrap import NodeWrap
 from ....graph.pattern_match import matched_patterns, single_node_matcher, two_nodes_matcher
 from ....graph.graph_algo import get_valid_node_name, determined_sort
 from ....logger import INFO, DEBUG, WARN, ERROR, FATAL
-from .common_passes import clear_redundant_nodes, FLOAT_EQUAL, insert_constant
+from .common_passes import clear_redundant_nodes, FLOAT_EQUAL, insert_constant, insert_reshape, insert_reshape_after
 
 
 def fuse_weights_const(graph):
@@ -874,5 +874,222 @@ def merge_sequence_construct_and_at(graph):
         if seq_at in graph._attr['output_names']:
             index = graph._attr['output_names'].index(seq_at)
             graph._attr['output_names'][index] = src
+    if matched:
+        clear_redundant_nodes(graph)
+
+
+def merge_remove_small_boxes(graph):
+    # This pass is to remove the pattern of remove_small_boxes.
+    # FIXME: Replace it with the corresponding op after it's supported.
+    matched = False
+    matches = matched_patterns(graph,
+                               nodes=[
+                                   ('inp', {}),
+                                   ('gather0', {'op': 'Gather'}),
+                                   ('indice0', {'op': 'Constant'}),
+                                   ('gather1', {'op': 'Gather'}),
+                                   ('indice1', {'op': 'Constant'}),
+                                   ('gather2', {'op': 'Gather'}),
+                                   ('indice2', {'op': 'Constant'}),
+                                   ('gather3', {'op': 'Gather'}),
+                                   ('indice3', {'op': 'Constant'}),
+                                   ('sub_2_0', {'op': 'Sub'}),
+                                   ('sub_3_1', {'op': 'Sub'}),
+                                   ('ge_2_0', {'op': 'GreaterOrEqual'}),
+                                   ('ge_2_0_than', {'op': 'Constant'}),
+                                   ('ge_3_1', {'op': 'GreaterOrEqual'}),
+                                   ('ge_3_1_than', {'op': 'Constant'}),
+                                   ('and', {'op': 'And'}),
+                                   ('nonzero', {'op': 'NonZero'}),
+                                   ('trans', {'op': 'Transpose'}),
+                                   ('split', {'op': 'Split'}),
+                                   ('squeeze', {'op': 'Squeeze'}),
+                                   ('gather', {'op': 'Gather'}),
+                               ],
+                               edges=[
+                                   ('inp', 'gather0', {'dst_in_port': 0}),
+                                   ('indice0', 'gather0', {'dst_in_port': 1}),
+                                   ('inp', 'gather1', {'dst_in_port': 0}),
+                                   ('indice1', 'gather1', {'dst_in_port': 1}),
+                                   ('inp', 'gather2', {'dst_in_port': 0}),
+                                   ('indice2', 'gather2', {'dst_in_port': 1}),
+                                   ('inp', 'gather3', {'dst_in_port': 0}),
+                                   ('indice3', 'gather3', {'dst_in_port': 1}),
+                                   ('gather2', 'sub_2_0', {'dst_in_port': 0}),
+                                   ('gather0', 'sub_2_0', {'dst_in_port': 1}),
+                                   ('sub_2_0', 'ge_2_0', {'dst_in_port': 0}),
+                                   ('ge_2_0_than', 'ge_2_0', {'dst_in_port': 1}),
+                                   ('gather3', 'sub_3_1', {'dst_in_port': 0}),
+                                   ('gather1', 'sub_3_1', {'dst_in_port': 1}),
+                                   ('sub_3_1', 'ge_3_1', {'dst_in_port': 0}),
+                                   ('ge_3_1_than', 'ge_3_1', {'dst_in_port': 1}),
+                                   ('ge_2_0', 'and'),
+                                   ('ge_3_1', 'and'),
+                                   ('and', 'nonzero'),
+                                   ('nonzero', 'trans'),
+                                   ('trans', 'split'),
+                                   ('split', 'squeeze'),
+                                   ('inp', 'gather', {'dst_in_port': 0}),
+                                   ('squeeze', 'gather', {'dst_in_port': 1}),
+                               ])
+    for m in matches:
+        names = ['gather0', 'gather1', 'gather2', 'gather3']
+        gather_in_edges_dict = {name: graph.sorted_in_edges(m[name], data=True) for name in names}
+        gather_in_edges = graph.sorted_in_edges(m['gather'], data=True)
+        if len(gather_in_edges) < 2:
+            continue
+        inp_out_port = gather_in_edges[0][2]['src_out_port']
+        if any((len(edges) < 2 or edges[0][2]['src_out_port'] != inp_out_port) for edges in gather_in_edges_dict.values()):
+            continue
+        indice_names = ['indice0', 'indice1', 'indice2', 'indice3']
+        const_names = indice_names + ['ge_2_0_than', 'ge_3_1_than']
+        obj_dicts = {name: NodeWrap(graph, m[name])['object'] for name in const_names}
+        if any(obj is None for obj in obj_dicts.values()):
+            ERROR('[Parser]: Meets invalid nodes in merge_remove_small_boxes!')
+            continue
+        if any((obj_dicts[name].value.size != 1 or obj_dicts[name].value.item() != idx) for idx, name in enumerate(indice_names)):
+            continue
+        ge_2_0_value = obj_dicts['ge_2_0_than'].value
+        ge_3_1_value = obj_dicts['ge_3_1_than'].value
+        if ge_2_0_value.size != 1 or ge_3_1_value.size != 1 or ge_2_0_value.item() != ge_3_1_value.item():
+            continue
+        matched = True
+        squeeze_out_edges = graph.sorted_out_edges(m['squeeze'], data=True)
+        for src, dst, out_attr in squeeze_out_edges:
+            dst_obj = NodeWrap(graph, dst)['object']
+            if dst_obj is not None and dst_obj.type == 'Gather' and out_attr['dst_in_port'] == 1:
+                graph.remove_edge(src, dst)
+                new_attr = dst_obj.copied_attr()
+                new_attr.update({'opset_version': 1})
+                NodeWrap(graph, dst).replace_obj('Identity', new_attr)
+    if matched:
+        clear_redundant_nodes(graph)
+
+
+def merge_rcnn(graph, params):
+    if params.get('detection_postprocess', '').upper() not in ('FASTERRCNN', 'MASKRCNN'):
+        return
+    matched = False
+    begin_matches = matched_patterns(graph,
+                                     nodes=[
+                                         ('score', {}),
+                                         ('ge', {'op': 'GreaterOrEqual'}),
+                                         ('ge_than', {'op': 'Constant'}),
+                                         ('nonzero', {'op': 'NonZero'}),
+                                         ('trans', {'op': 'Transpose'}),
+                                         ('split', {'op': 'Split'}),
+                                         ('squeeze', {'op': 'Squeeze'}),
+                                         ('gather_score', {'op': 'Gather'})],
+                                     edges=[
+                                         ('score', 'ge', {'dst_in_port': 0}),
+                                         ('ge_than', 'ge', {'dst_in_port': 1}),
+                                         ('ge', 'nonzero'),
+                                         ('nonzero', 'trans'),
+                                         ('trans', 'split'),
+                                         ('split', 'squeeze', {'src_out_port': 0}),
+                                         ('score', 'gather_score', {'dst_in_port': 0}),
+                                         ('squeeze', 'gather_score', {'dst_in_port': 1})])
+    if not begin_matches:
+        return
+    matches = matched_patterns(graph,
+                               nodes=[
+                                   ('other', {}),
+                                   ('squeeze', {'op': 'Squeeze', 'unique': False}),
+                                   ('gather_other', {'op': 'Gather'}),
+                                   ('other_shape', {'op': 'Shape'}),
+                                   ('prod', {'op': 'ReduceProd'}),
+                                   ('equal', {'op': 'Equal'}),
+                                   ('equal_to', {'op': 'Constant'}),
+                                   ('cast', {'op': 'Cast'}),
+                                   ('if', {'op': 'If'}),
+                                   ('slice', {'op': 'Slice'}),
+                                   ('gather_out', {'op': 'Gather'})],
+                               edges=[
+                                   ('other', 'gather_other', {'dst_in_port': 0}),
+                                   ('squeeze', 'gather_other', {'dst_in_port': 1}),
+                                   ('gather_other', 'other_shape'),
+                                   ('other_shape', 'prod'),
+                                   ('prod', 'equal'),
+                                   ('equal_to', 'equal'),
+                                   ('equal', 'cast'),
+                                   ('cast', 'if', {'dst_in_port': 0}),
+                                   ('if', 'slice', {'dst_in_port': 0}),
+                                   ('gather_other', 'gather_out', {'dst_in_port': 0}),
+                                   ('slice', 'gather_out', {'dst_in_port': 1})])
+    if not matches:
+        return
+    squeeze_in_begin_matches = {m['squeeze']: idx for idx, m in enumerate(begin_matches)}
+    for m in matches:
+        if m['squeeze'] not in squeeze_in_begin_matches.keys():
+            continue
+        begin_match = begin_matches[squeeze_in_begin_matches[m['squeeze']]]
+        score_threshold = begin_match['ge_than']
+        score_threshold_obj = NodeWrap(graph, score_threshold)['object']
+        equal_to_obj = NodeWrap(graph, m['equal_to'])['object']
+        slice_obj = NodeWrap(graph, m['slice'])['object']
+        if score_threshold_obj is None or equal_to_obj is None or slice_obj is None:
+            ERROR('[Parser]: Meets invalid nodes in merge_rcnn!')
+            continue
+        score_threshold_value = score_threshold_obj.value
+        if score_threshold_value.size != 1:
+            continue
+        equal_to_value = equal_to_obj.value
+        if equal_to_value.size != 1 or equal_to_value.item() != 0:
+            continue
+        if slice_obj.starts != [0] or slice_obj.ends is None or len(slice_obj.ends) != 1 \
+                or slice_obj.axes != [0] or slice_obj.steps != [1]:
+            continue
+        score_threshold_value = float(score_threshold_value.item())
+        post_nms_top_n = slice_obj.ends[0]
+
+        gather_out_out_edges = graph.sorted_out_edges(m['gather_out'], data=True)
+        ge_in_edges = graph.sorted_in_edges(begin_match['ge'], data=True)
+        gather_other_in_edges = graph.sorted_in_edges(m['gather_other'], data=True)
+        if len(ge_in_edges) < 2 or len(gather_other_in_edges) < 2:
+            continue
+
+        matched = True
+        graph.remove_edges_from(gather_out_out_edges)
+        nms = get_valid_node_name(graph, m['gather_out'] + '_nms')
+        for _, dst, out_attr in gather_out_out_edges:
+            out_attr['src_out_port'] = 0
+            graph.add_edge(nms, dst, **out_attr)
+        post_reshape = insert_reshape_after(graph, nms, [-1, 4], out_port=0)
+
+        scores, _, scores_in_attr = ge_in_edges[0]
+        boxes, _, boxes_in_attr = gather_other_in_edges[0]
+        # nms input 0: boxes
+        graph.add_edge(boxes, nms, **boxes_in_attr)
+        # FIXME: Use hard code here: batch = 1, class num = 1
+        reshape = insert_reshape(graph, boxes, nms, boxes_in_attr, [1, -1, 4])
+        # nms input 1: boxes num of every class per batch
+        shape_node = get_valid_node_name(graph, reshape + '_shape')
+        gather_node = get_valid_node_name(graph, reshape + '_gather')
+        graph.add_edge(reshape, shape_node)
+        graph.add_edge(shape_node, gather_node)
+        insert_constant(graph, gather_node + '_indice', np.array([1]), gather_node, in_port=1)
+        # # shape is [batch, num_classes]
+        # boxes_num_per_batch = np.array([[1000]], dtype=np.int32)
+        # insert_constant(graph, nms + '_boxes_num_per_batch', boxes_num_per_batch, nms, in_port=1)
+        boxes_num_in_attr = {'dst_in_port': 1}
+        graph.add_edge(gather_node, nms, **boxes_num_in_attr)
+        insert_reshape(graph, gather_node, nms, boxes_num_in_attr, [1, 1])
+        NodeWrap(graph, shape_node).replace_obj('Shape', {'name': shape_node, 'opset_version': 1})
+        NodeWrap(graph, gather_node).replace_obj('Gather', {'name': gather_node, 'opset_version': 1})
+        # nms input 2: valid classes of every batch
+        class_num = np.array([[1]], dtype=np.int32)
+        insert_constant(graph, nms + '_cls_num', class_num, nms, in_port=2)
+        # nms input 3: scores
+        scores_in_attr['dst_in_port'] = 3
+        graph.add_edge(scores, nms, **scores_in_attr)
+        insert_reshape(graph, scores, nms, scores_in_attr, [1, -1])
+
+        nms_attr = {'name': nms, 'score_threshold': score_threshold_value, 'iou_threshold': 0.7,
+                    'max_box_num': post_nms_top_n, 'image_height': 600, 'image_width': 600,
+                    'center_point_box': 0}
+        NodeWrap(graph, nms).replace_obj('ArmNMS', nms_attr)
+        if m['gather_out'] in graph._attr['output_names']:
+            index = graph._attr['output_names'].index(m['gather_out'])
+            graph._attr['output_names'][index] = post_reshape
     if matched:
         clear_redundant_nodes(graph)
