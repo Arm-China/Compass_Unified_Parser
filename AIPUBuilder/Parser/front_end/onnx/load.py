@@ -302,7 +302,7 @@ def convert_onnx_to_graph(model_path, params):
                             if name in params['input_shapes'] and len(input_shape) == len(params['input_shapes'][name]):
                                 input_shape[:] = params['input_shapes'][name][:]
                         if 0 in input_shape and single_input['name'] not in params.get('input_shapes', {}):
-                            WARN('[Parser]: Shape 0 found in Input node(%s), please check in config file!' %
+                            WARN('[Parser]: Shape 0 found in Input node(%s), please check config file!' %
                                  single_input['name'])
 
                         if single_input['name'] in params['input_npy']:

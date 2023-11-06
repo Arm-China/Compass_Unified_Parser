@@ -4513,7 +4513,7 @@ def convert_to_onnx(graph):
                         expand_shape = list(node_obj.get_input_shapes()[0])
                         axis = node_obj.axis
                         if axis < 0:
-                            axis += len(in_shape) + 1
+                            axis += len(expand_shape) + 1
                         expand_shape.insert(axis, 1)
                         graph.remove_edges_from(in_edges[1:])
                         insert_constant(graph,
