@@ -68,11 +68,11 @@ def convert_batchnorm(graph):
                 or None in input_shapes[0]:
             continue
 
-        m_v_index = int(batchnorm_obj.scale)+int(batchnorm_obj.center)
+        m_v_index = int(batchnorm_obj.scale) + int(batchnorm_obj.center)
         mean_value = batchnorm_obj.weights_list[m_v_index] if m_v_index < len(
             batchnorm_obj.weights_list) else np.zeros_like(batchnorm_obj.weights, np.float32)
-        var_value = batchnorm_obj.weights_list[m_v_index+1] if m_v_index < (len(
-            batchnorm_obj.weights_list)-1) else np.ones_like(batchnorm_obj.biases, np.float32)
+        var_value = batchnorm_obj.weights_list[m_v_index + 1] if m_v_index < (len(
+            batchnorm_obj.weights_list) - 1) else np.ones_like(batchnorm_obj.biases, np.float32)
 
         graph.remove_edges_from(in_edges[1:])
         insert_constant(graph, batchnorm + '_scale',
@@ -144,7 +144,7 @@ def convert_bidirectional(graph):
             graph.add_edge(backward_node, backward_rev)
             seq_len = np.array([time_steps] * batch_size, np.int32)
             insert_constant(graph, backward_rev + '_seq_len', seq_len, backward_rev, in_port=1)
-            rev_seq_attr = {'name': backward_rev, 'time_axis': time_dim, 'batch_axis': 1-time_dim,
+            rev_seq_attr = {'name': backward_rev, 'time_axis': time_dim, 'batch_axis': 1 - time_dim,
                             'opset_version': 10}
             NodeWrap(graph, backward_rev).replace_obj('ReverseSequence', rev_seq_attr)
         # output_info_list save new output node and new src_out_port
@@ -373,7 +373,7 @@ def convert_gru_lstm(graph):
             seq_len = np.array([seq_length] * batch_size, np.int32)
             insert_constant(graph, rev + '_seq_len', seq_len, rev, in_port=1)
             time_axis = 0 if rnn_obj.time_major else 1
-            rev_seq_attr = {'name': rev, 'time_axis': time_axis, 'batch_axis': 1-time_axis,
+            rev_seq_attr = {'name': rev, 'time_axis': time_axis, 'batch_axis': 1 - time_axis,
                             'opset_version': 10}
             NodeWrap(graph, rev).replace_obj('ReverseSequence', rev_seq_attr)
 
@@ -480,11 +480,11 @@ def decompose_lambda(graph):
                         and len(nodes_outputs[src_name][src_out_port]) == 2:
                     tensor_name, tensor_shape = nodes_outputs[src_name][src_out_port]
                     tensor_shape = [] if tensor_shape is None else tensor_shape
-                edge_tensor = Tensor(name=node_prefix+tensor_name, shape=tensor_shape)
+                edge_tensor = Tensor(name=node_prefix + tensor_name, shape=tensor_shape)
                 if node_type == 'Const' and attr_dict.get('value', None) is not None:
                     edge_tensor.value = np.array(attr_dict['value'])
                     edge_tensor.is_const = True
-                graph.add_edge(node_prefix+src_name, node_name,
+                graph.add_edge(node_prefix + src_name, node_name,
                                **{'src_out_port': src_out_port, 'dst_in_port': in_port,
                                   'tensor': edge_tensor})
             if node_type == 'Placeholder':
@@ -814,10 +814,14 @@ def convert_seperable_conv(graph):
     for m in matches:
         sep_conv = m['target']
         sep_conv_obj = NodeWrap(graph, sep_conv)['object']
+        in_edges = graph.sorted_in_edges(sep_conv, data=True)
         out_edges = graph.sorted_out_edges(sep_conv, data=True)
-        if sep_conv_obj is None or len(out_edges) < 1 or len(sep_conv_obj.weights_list) < 2:
+        if sep_conv_obj is None or len(in_edges) < 1 or len(out_edges) < 1 or len(sep_conv_obj.weights_list) < 2:
             ERROR('[Parser]: Meets invalid Op (%s) in convert_seperable_conv!' % sep_conv)
             continue
+        if in_edges[0][2]['tensor'].is_const:
+            continue
+
         graph.remove_edges_from(out_edges)
         data_format = 'NCHW' if sep_conv_obj.data_format.startswith('NC') else 'NHWC'
         pointwise_weights = sep_conv_obj.weights_list[1]
@@ -825,14 +829,13 @@ def convert_seperable_conv(graph):
         pointwise_conv = get_valid_node_name(graph, sep_conv + '_pointwise_conv')
         depthwise_conv_out_attr = copy.deepcopy(out_edges[0][2])
         depthwise_conv_out_attr.update({'dst_in_port': 0})
-        if depthwise_conv_out_attr['tensor'] is not None and depthwise_conv_out_attr['tensor'].value is not None:
-            dtype = depthwise_conv_out_attr['tensor'].value.dtype
-            shape = list(depthwise_conv_out_attr['tensor'].value.shape)
+        if depthwise_conv_out_attr['tensor'] is not None:
+            depthwise_conv_out_attr['tensor'].value = None
+            shape = list(depthwise_conv_out_attr['tensor'].shape)
             if data_format == 'NHWC':
-                depthwise_conv_out_shape = shape[:-1] + [pointwise_weights.shape[-2]]
+                depthwise_conv_out_attr['tensor'].shape = tuple(shape[:-1] + [pointwise_weights.shape[-2]])
             else:
-                depthwise_conv_out_shape = [shape[0], pointwise_weights.shape[-2]] + shape[2:]
-            depthwise_conv_out_attr['tensor'].value = np.random.ranf(depthwise_conv_out_shape).astype(dtype)
+                depthwise_conv_out_attr['tensor'].shape = tuple([shape[0], pointwise_weights.shape[-2]] + shape[2:])
         graph.add_edge(sep_conv, pointwise_conv, **depthwise_conv_out_attr)
         for _, dst, out_attr in out_edges:
             graph.add_edge(pointwise_conv, dst, **out_attr)
@@ -853,7 +856,7 @@ def convert_seperable_conv(graph):
 
         depthwise_weights = sep_conv_obj.weights_list[0]
         new_depthwise_weights = np.reshape(depthwise_weights, list(
-            depthwise_weights.shape[:-2]) + [-1, depthwise_weights.shape[-2]//sep_conv_obj.group])
+            depthwise_weights.shape[:-2]) + [-1, depthwise_weights.shape[-2] // sep_conv_obj.group])
         new_depthwise_weights = np.transpose(new_depthwise_weights, sep_conv_obj.perm_tf_to_onnx())
         depthwise_conv_attr = sep_conv_obj.copied_attr()
         depthwise_conv_attr.update({'weights': new_depthwise_weights, 'biases': None, 'opset_version': 1})
@@ -1046,7 +1049,7 @@ def convert_to_onnx(graph):
                 # Tf fliter:[f_h,f_w,in_channel,channel_multiper]
                 # onnx fliter:[out_channel,in_channel/group,f_h,f_w]
                 new_weights = np.reshape(node_obj.weights, list(
-                    node_obj.weights.shape[:2]) + [-1, node_obj.weights.shape[2]//node_obj.group])
+                    node_obj.weights.shape[:2]) + [-1, node_obj.weights.shape[2] // node_obj.group])
             else:
                 new_weights = node_obj.weights
 
@@ -1068,11 +1071,11 @@ def convert_to_onnx(graph):
             end_crops = cropping[:, 1].tolist()
             if node_data_format == 'NCHW':
                 slice_starts = [0, 0] + begin_crops
-                end_crops = [input_shape[2+idx] if end == 0 else -end for idx, end in enumerate(end_crops)]
+                end_crops = [input_shape[2 + idx] if end == 0 else -end for idx, end in enumerate(end_crops)]
                 slice_ends = input_shape[:2] + end_crops
             else:
                 slice_starts = [0] + begin_crops + [0]
-                end_crops = [input_shape[1+idx] if end == 0 else -end for idx, end in enumerate(end_crops)]
+                end_crops = [input_shape[1 + idx] if end == 0 else -end for idx, end in enumerate(end_crops)]
                 slice_ends = input_shape[:1] + end_crops + input_shape[-1:]
             new_node_attr.update({'starts': slice_starts, 'ends': slice_ends})
         elif pure_type == 'Flatten':
