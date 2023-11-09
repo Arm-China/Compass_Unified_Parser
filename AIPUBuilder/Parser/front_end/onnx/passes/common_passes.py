@@ -1054,7 +1054,7 @@ def insert_transpose(graph, src, dst, in_attr, perm, key=None, type='Transpose',
 
         transpose_out_attr = copy.deepcopy(in_attr)
         out_tensor = Tensor()
-        if in_attr['tensor'] is not None:
+        if in_attr.get('tensor', None) is not None:
             out_tensor = copy.deepcopy(in_attr['tensor'])
             if in_attr['tensor'].value is not None:
                 out_tensor.value = np.transpose(
