@@ -1740,7 +1740,10 @@ class ArmDetectionOutputOp(OpHasMultipleOutPorts, ArmOp):
     def infer_shape(self):
         super(ArmDetectionOutputOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        batch_size = inputs[0].shape[0]
+        batch_size, box_num = inputs[0].shape[:2]
+        valid_max_box_num = int(box_num * self.class_num)
+        if self.max_box_num > valid_max_box_num:
+            self.max_box_num = valid_max_box_num
         out_tensor1 = np.random.ranf(
             size=(batch_size, self.max_box_num)).astype(np.float32)
         out_tensor2 = np.random.ranf(
