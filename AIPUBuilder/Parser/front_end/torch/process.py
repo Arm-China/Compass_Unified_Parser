@@ -399,9 +399,18 @@ def convert_avg_pool(g, input, kernel_size, strides, paddings, ceil_mode, count_
     assert isinstance(dim, int) and dim in [
         1, 2, 3], 'Meets invalid dim in convert_avg_pool!'
     if not ceil_mode:
-        from torch.onnx.symbolic_opset11 import avg_pool1d, avg_pool2d, avg_pool3d
-        avg_pool_func = avg_pool1d if dim == 1 else (
-            avg_pool2d if dim == 2 else avg_pool3d)
+        try:
+            from torch.onnx.symbolic_opset11 import avg_pool1d, avg_pool2d, avg_pool3d
+            avg_pool_func = avg_pool1d if dim == 1 else (
+                avg_pool2d if dim == 2 else avg_pool3d)
+        except ImportError:  # torch 2.1
+            from torch.onnx.symbolic_opset10 import _avg_pool
+            if dim == 1:
+                avg_pool_func = _avg_pool('avg_pool1d', 1)
+            elif dim == 2:
+                avg_pool_func = _avg_pool('avg_pool2d', 2)
+            else:  # dim == 3
+                avg_pool_func = _avg_pool('avg_pool3d', 3)
         return avg_pool_func(g, input, kernel_size, strides, paddings, ceil_mode, count_include_pad, divisor_override)
 
     input_shape = helper._get_tensor_sizes(input)
