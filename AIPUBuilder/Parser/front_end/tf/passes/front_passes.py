@@ -867,9 +867,11 @@ def remove_isfinite_select(graph):
             continue
         is_finite_in_edges = graph.sorted_in_edges(
             m['is_finite'], data=True)
+        is_finite_out_edges = graph.sorted_out_edges(m['is_finite'])
         select_in_edges = graph.sorted_in_edges(
             m['select'], data=True)
         if len(is_finite_in_edges) != 1 \
+                or len(is_finite_out_edges) < 1 \
                 or len(select_in_edges) != 3:
             continue
         is_finite_src, _, is_finite_in_attr = is_finite_in_edges[0]
@@ -879,8 +881,8 @@ def remove_isfinite_select(graph):
                 or select_true_in_attr['dst_in_port'] != 1:
             continue
         is_finite_out_tensor = obj_dict['is_finite'].get_output_tensors()[0]
-        if is_finite_out_tensor is None \
-                or not np.all(is_finite_out_tensor):
+        if is_finite_out_tensor is not None \
+                and not np.all(is_finite_out_tensor):
             continue
         matched = True
         src = is_finite_src
