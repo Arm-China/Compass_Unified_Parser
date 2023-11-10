@@ -3904,14 +3904,14 @@ def merge_sufficient_statistics2(graph):
         sum1_in_edges = graph.sorted_in_edges(m['sum1'], data=True)
 
         sum2_out_edges = graph.sorted_out_edges(m['sum2'], data=True)
-        input_tensors = objs_dict['sum1'].get_input_tensors()
+        input_shapes = objs_dict['sum1'].get_input_shapes()
 
         if len(sum2_out_edges) != 1 \
                 or len(sub_in_edges) != 2 \
                 or len(square_diff_in_edges) != 2 \
                 or len(sum1_in_edges) != 2 \
-                or len(input_tensors) != 2 \
-                or np.any([None in input_tensor for input_tensor in input_tensors]):
+                or len(input_shapes) != 2 \
+                or np.any([(in_s is None or None in in_s) for in_s in input_shapes]):
             ERROR('[Parser]: Meets invalid Op in merge_sufficient_statistics!')
             continue
 
