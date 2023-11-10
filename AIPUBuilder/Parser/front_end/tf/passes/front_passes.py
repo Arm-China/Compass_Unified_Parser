@@ -617,7 +617,7 @@ def convert_onehot(graph, op_type='Tfone_hot'):
         in_edges = graph.sorted_in_edges(onehot, data=True)
         if onehot_obj is None or len(in_edges) < 4:
             ERROR(
-                '[Parser]: Meets invalid Node(%s) in convert_onehot!' % argmaxpool)
+                '[Parser]: Meets invalid Tf OneHot (%s) in convert_onehot!' % onehot)
             continue
         if not in_edges[2][2]['tensor'].is_const \
                 or not in_edges[3][2]['tensor'].is_const:
@@ -631,11 +631,10 @@ def convert_onehot(graph, op_type='Tfone_hot'):
             continue
 
         # about onehot with scalar
-        indices = onehot_obj.get_input_tensors()[0]
         indices_shape = onehot_obj.get_input_shapes()[0]
         out_shapes_0 = onehot_obj.get_output_shapes()[0]
-        if np.ndim(indices) == 0 and (any(d is None for d in indices_shape)
-                                      or any(d is None for d in out_shapes_0)):
+        if len(indices_shape) == 0 and (any(d is None for d in indices_shape)
+                                        or any(d is None for d in out_shapes_0)):
             ERROR(
                 '[Parser]: Meets invalid Node for Onehot Op(%s)' % onehot)
             continue
@@ -645,7 +644,7 @@ def convert_onehot(graph, op_type='Tfone_hot'):
         insert_constant(graph, onehot + '_values',
                         values, onehot, in_port=2)
 
-        if np.ndim(indices) == 0:
+        if len(indices_shape) == 0:
             in_edges = graph.sorted_in_edges(
                 onehot, keys=True, data=True)
             src, _, k, in_attr = in_edges[0]
