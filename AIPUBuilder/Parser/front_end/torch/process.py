@@ -286,7 +286,8 @@ def convert_deform_conv(g, input, weight, offset, mask, bias,
 @helper.parse_args('s', 'v', 's', 'v')
 def convert_dict_construct(g, key_0, value_0, key_1=None, value_1=None):
     keys = ', '.join([key_0] + ([] if key_1 is None else [key_1]))
-    WARN('[Parser]: prim::DictConstruct is unsupported and is changed to return a tensor or a list of tensors(key(s): %s) instead!' % keys)
+    WARN(
+        '[Parser]: prim::DictConstruct is unsupported and is changed to return a tensor or a list of tensors(key(s): %s) instead!' % keys)
     if value_1 is not None:
         g.registerOutput(value_0)  # value_0 is the first output of graph
         # value_1 is the second output of graph if this node is output
@@ -299,6 +300,13 @@ def convert_dict_construct(g, key_0, value_0, key_1=None, value_1=None):
 def convert_div(g, input, other, *args):
     from torch.onnx.symbolic_opset10 import div
     return div(g, input, other, *args)
+
+
+@helper.parse_args('v', 'v')
+def convert_dsplit(g, input, split_size_or_sizes):
+    input_rank = helper._get_tensor_rank(input)
+    assert input_rank > 2, 'input dim should > 2 in dsplit.'
+    return convert_tensor_split(g, input, split_size_or_sizes, 2)
 
 
 def convert_quantized_add_relu(g, x, y, op_scale, op_zero_point):
@@ -352,6 +360,16 @@ def convert_hardshrink(g, input, lambd):
     # torch converts hard/soft shrink to some logical ops, which is not needed;
     # convert to onnx Shrink directly.
     return g.op('Shrink', input, lambd_f=lambd)
+
+
+@helper.parse_args('v', 'v')
+def convert_hsplit(g, input, split_size_or_sizes):
+    input_rank = helper._get_tensor_rank(input)
+    assert input_rank > 0, 'input dim should > 0 in hsplit.'
+    if input_rank == 1:
+        return convert_tensor_split(g, input, split_size_or_sizes, 0)
+    else:
+        return convert_tensor_split(g, input, split_size_or_sizes, 1)
 
 
 @helper.parse_args('v', 'f')
@@ -440,7 +458,8 @@ def convert_avg_pool(g, input, kernel_size, strides, paddings, ceil_mode, count_
                     pads_i=(adjusted_padding * 2), ceil_mode_i=ceil_mode)
 
     slice_ends = []
-    for idx, (input_size, kernel, stride, pad) in enumerate(zip(spatial_input_shape, kernel_size, strides, adjusted_padding)):
+    for idx, (input_size, kernel, stride, pad) in enumerate(
+            zip(spatial_input_shape, kernel_size, strides, adjusted_padding)):
         onnx_output_shape = get_onnx_pool_output_shape(
             input_size, kernel, pad, pad, stride)
         assert len(
@@ -494,7 +513,7 @@ def convert_qat_bn(g, input, weight, bias, running_mean, running_var, eps, s, zp
 
 
 @helper.parse_args('v', 'v', 'v', 'v', 'v', 'f', 'v', 'v')
-def convert_quant_batch_norm_relu_3d(g, x, weight, bias, running_mean, running_var, eps, s, zp,):
+def convert_quant_batch_norm_relu_3d(g, x, weight, bias, running_mean, running_var, eps, s, zp, ):
     from torch.onnx.symbolic_opset9 import relu
     out = convert_qat_bn(g, x, weight, bias,
                          running_mean, running_var, eps, s, zp)
@@ -503,7 +522,7 @@ def convert_quant_batch_norm_relu_3d(g, x, weight, bias, running_mean, running_v
 
 
 @helper.parse_args('v', 'v', 'v', 'v', 'v', 'f', 'v', 'v')
-def convert_quant_batch_norm_relu(g, x, weight, bias, running_mean, running_var, eps, s, zp,):
+def convert_quant_batch_norm_relu(g, x, weight, bias, running_mean, running_var, eps, s, zp, ):
     from torch.onnx.symbolic_opset9 import relu
     out = convert_qat_bn(g, x, weight, bias,
                          running_mean, running_var, eps, s, zp)
@@ -512,14 +531,14 @@ def convert_quant_batch_norm_relu(g, x, weight, bias, running_mean, running_var,
 
 
 @helper.parse_args('v', 'v', 'v', 'v', 'v', 'f', 'v', 'v')
-def convert_quant_batch_norm(g, x, weight, bias, running_mean, running_var, eps, s, zp,):
+def convert_quant_batch_norm(g, x, weight, bias, running_mean, running_var, eps, s, zp, ):
     out = convert_qat_bn(g, x, weight, bias,
                          running_mean, running_var, eps, s, zp)
     return quantize_helper(g, out, s, zp)
 
 
 @helper.parse_args('v', 'v', 'v', 'v', 'v', 'f', 'v', 'v')
-def convert_quant_batch_norm3d(g, x, weight, bias, running_mean, running_var, eps, s, zp,):
+def convert_quant_batch_norm3d(g, x, weight, bias, running_mean, running_var, eps, s, zp, ):
     out = convert_qat_bn(g, x, weight, bias,
                          running_mean, running_var, eps, s, zp)
     return quantize_helper(g, out, s, zp)
@@ -543,7 +562,8 @@ def convert_max_pool(g, input, kernel_size, strides, paddings, dilations, ceil_m
     if not ceil_mode:
         if return_indices:
             try:
-                from torch.onnx.symbolic_opset10 import max_pool1d_with_indices, max_pool2d_with_indices, max_pool3d_with_indices
+                from torch.onnx.symbolic_opset10 import max_pool1d_with_indices, max_pool2d_with_indices, \
+                    max_pool3d_with_indices
                 max_pool_func = max_pool1d_with_indices if dim == 1 else (
                     max_pool2d_with_indices if dim == 2 else max_pool3d_with_indices)
             except ImportError:  # torch 2.1
@@ -621,12 +641,12 @@ def convert_max_pool(g, input, kernel_size, strides, paddings, dilations, ceil_m
 
 @helper.parse_args('v', 'f', 'is', 'i', 'v')
 def convert_linalg_vector_norm(
-    g,
-    self,
-    ord,
-    dim,
-    keepdim,
-    dtype,
+        g,
+        self,
+        ord,
+        dim,
+        keepdim,
+        dtype,
 ):
     if dim is None and not keepdim:
         self = helper._reshape_helper(g, self, [-1])
@@ -660,12 +680,12 @@ def convert_linalg_vector_norm(
 
 @helper.parse_args('v', 'v', 'is', 'i', 'v')
 def convert_linalg_norm(
-    g,
-    self,
-    ord,
-    dim,
-    keepdim,
-    dtype,
+        g,
+        self,
+        ord,
+        dim,
+        keepdim,
+        dtype,
 ):
     ord_value = None
     if dim is None:
@@ -764,11 +784,11 @@ def convert_meshgrid(g, tensor_list, indexing='ij'):
 
 @helper.parse_args('v', 'i', 'v', 'v')
 def convert_quantized_cat(
-    g,
-    q_inputs,
-    dim,
-    op_scale,
-    op_zero_point,
+        g,
+        q_inputs,
+        dim,
+        op_scale,
+        op_zero_point,
 ):
     unpacked_inputs = helper._unpack_list(q_inputs)
     dequantized = [
@@ -868,7 +888,7 @@ def convert_scatter_by_slice(g, input, src, dim=0, start=None, end=None, step=1)
 @quantized_args(True, True)
 def convert_select_scatter(g, input, src, dim, index):
     indices = g.op('Unsqueeze', src, g.op('Constant', value_t=torch.tensor([dim], dtype=torch.int64)))
-    return convert_scatter_by_slice(g, input, indices, dim, start=index, end=index+1)
+    return convert_scatter_by_slice(g, input, indices, dim, start=index, end=index + 1)
 
 
 @helper.parse_args('v', 'v', 'i', 'i', 'i', 'i')
@@ -1038,7 +1058,7 @@ def convert_index_put(g, x, indices_list_value, values, accumulate=False):
     value_shape = helper._get_tensor_sizes(values)
     if rank is not None \
             and rank < inp_rank \
-            and all((shape is not None for shape in inp_shape))\
+            and all((shape is not None for shape in inp_shape)) \
             and all((shape is not None for shape in value_shape)):
         try:
             values = opset9.expand(g, values, values_shape, None)
@@ -1104,7 +1124,8 @@ def convert_index_add(g, x, dim, index, other, alpha=None):
 
     if (other_dim_size is not None) and (x_dim_size is not None):
         if other_dim_size > x_dim_size:
-            ERROR('ONNX export does not support exporting index_add_() function with duplicated values in index parameter yet.')
+            ERROR(
+                'ONNX export does not support exporting index_add_() function with duplicated values in index parameter yet.')
 
     new_shape_axes = list(range(x_dim_rank))
     new_shape_starts = [0 for i in range(x_dim_rank)]
@@ -1196,7 +1217,7 @@ def convert_index_reduce(g, x, dim, index, other, reduction, include_self):
 
     x_shape = helper._get_tensor_sizes(x)
     other_shape = helper._get_tensor_sizes(other)
-    sub_shape = list(map(lambda x: x[0]-x[1], zip(x_shape, other_shape)))
+    sub_shape = list(map(lambda x: x[0] - x[1], zip(x_shape, other_shape)))
 
     other_dim_size = helper._get_tensor_dim_size(other, dim)
     x_dim_size = helper._get_tensor_dim_size(x, dim)
@@ -1434,7 +1455,7 @@ def convert_torch_to_onnx(model_path, params):
             elif torch_version >= '1.13.0':
                 import torch.onnx._constants as Constant
                 default_onnx_main_opset = Constant.ONNX_DEFAULT_OPSET
-                default_onnx_stable_opsets = list(range(Constant.ONNX_MIN_OPSET, Constant.ONNX_MAX_OPSET+1))
+                default_onnx_stable_opsets = list(range(Constant.ONNX_MIN_OPSET, Constant.ONNX_MAX_OPSET + 1))
             elif torch_version >= '1.12.0':
                 import torch.onnx._constants as Constant
                 default_onnx_main_opset = Constant.onnx_main_opset
@@ -1571,6 +1592,10 @@ def convert_torch_to_onnx(model_path, params):
     torch.onnx.register_custom_op_symbolic(
         'aten::split', convert_split, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
+        'aten::dsplit', convert_dsplit, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'aten::hsplit', convert_hsplit, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
         'aten::tensor_split', convert_tensor_split, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::threshold', convert_threshold, onnx_opset_version)
@@ -1692,7 +1717,7 @@ def convert_torch_to_onnx(model_path, params):
         else:
             outputs_num = len(_flatten_type(out.type()))
         output_names.extend([out_name + str(idx)
-                            for idx in range(outputs_num)])
+                             for idx in range(outputs_num)])
     for idx, output_name in enumerate(output_names):
         if output_name[0].isdigit():
             output_names[idx] = 'output_' + output_name
@@ -1738,7 +1763,8 @@ def convert_torch_to_onnx(model_path, params):
                   (model_path, str(e)))
 
         if exit_code != 0:
-            FATAL('[Parser]: Fail to convert model (%s) to onnx! Suggest to set env var PYTORCH_JIT_LOG_LEVEL=onnx for debug!' % model_path)
+            FATAL(
+                '[Parser]: Fail to convert model (%s) to onnx! Suggest to set env var PYTORCH_JIT_LOG_LEVEL=onnx for debug!' % model_path)
 
     INFO('[Parser]: Torch model has been converted to onnx model (%s) with opset version (%d)!' %
          (onnx_model_path, 'default' if onnx_opset_version is None else onnx_opset_version))
