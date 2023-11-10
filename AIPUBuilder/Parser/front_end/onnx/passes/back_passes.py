@@ -4441,7 +4441,7 @@ def insert_cast_if_must(graph):
 
 def sink_single_transpose(graph):
     unaware_types = set(ArmOp.get_concrete_subclass_names()).intersection(
-        LayoutUnawareOp.get_concrete_subclass_names())
+        LayoutUnawareOp.get_concrete_subclass_names() + ['ArmQuantize', 'ArmDeQuantize'])
     unaware_types = sorted(list(unaware_types))
     matches = matched_patterns(graph,
                                nodes=[('transpose', {'op': 'ArmTranspose'}),
@@ -4464,6 +4464,9 @@ def sink_single_transpose(graph):
                     continue
                 unaware_out_edges = graph.sorted_out_edges(unaware, data=True)
                 if len(unaware_out_edges) < 1:
+                    continue
+                if unaware_obj.type in ['ArmQuantize', 'ArmDeQuantize'] \
+                        and unaware_obj.axis is not None:
                     continue
                 trans_in_edges = graph.sorted_in_edges(transpose, data=True)
                 src, _, trans_in_attr = trans_in_edges[0]
@@ -4503,7 +4506,7 @@ def sink_single_transpose(graph):
 
 def sink_double_transpose(graph):
     unaware_types = set(ArmOp.get_concrete_subclass_names()).intersection(
-        LayoutUnawareOp.get_concrete_subclass_names())
+        LayoutUnawareOp.get_concrete_subclass_names() + ['ArmQuantize', 'ArmDeQuantize'])
     unaware_types = sorted(list(unaware_types))
     matches = matched_patterns(graph,
                                nodes=[
@@ -4535,6 +4538,9 @@ def sink_double_transpose(graph):
                 if len(trans1_in_edges) < 1 or len(trans2_in_edges) < 1:
                     ERROR('[Parser]: Meets invalid Node(%s) or Node(%s) in sink_double_transposes!' % (
                         trans1, trans2))
+                    continue
+                if unaware_obj.type in ['ArmQuantize', 'ArmDeQuantize'] \
+                        and unaware_obj.axis is not None:
                     continue
                 src1, _, in_attr1 = trans1_in_edges[0]
                 src2, _, in_attr2 = trans2_in_edges[0]
