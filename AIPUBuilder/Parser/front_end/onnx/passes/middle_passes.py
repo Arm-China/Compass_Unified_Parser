@@ -9083,22 +9083,20 @@ def broadcast_prelu(graph):
         if broadcastop_obj is not None and len(in_edges) == 2:
             meta_ret = True
             in_types = [NodeWrap(graph, e[0])['object'].type for e in in_edges]
-            in_tensors = [e[2]['tensor'].value for e in in_edges]
+            in_shapes = [e[2]['tensor'].get_shape() for e in in_edges]
             if in_types.count('Constant') == 2:
                 meta_ret = False
                 ERROR(
                     '[Parser]: broadcast op (%s) with Constant inputs should be fused in broadcast_prelu!' % broadcastop)
-            elif len(in_tensors) == 2:
-                if in_tensors[0] is not None and in_tensors[1] is not None:
-                    if in_tensors[0].shape and list(in_tensors[0].shape) == list(in_tensors[1].shape):
+            elif len(in_shapes) == 2:
+                if in_shapes[0] is not None and in_shapes[1] is not None:
+                    if in_shapes[0] and list(in_shapes[0]) == list(in_shapes[1]):
                         pass
                     else:
-                        dim_1, dim_2 = len(in_tensors[0].shape), len(
-                            in_tensors[1].shape)
+                        dim_1, dim_2 = len(in_shapes[0]), len(in_shapes[1])
                         if dim_1 == dim_2:
-                            input_shapes = broadcastop_obj.get_input_shapes()
-                            if input_shapes[1][0] == 1:
-                                reshape_shape = input_shapes[1][1:]
+                            if in_shapes[1][0] == 1:
+                                reshape_shape = in_shapes[1][1:]
                                 insert_reshape(
                                     graph, in_edges[1][0], broadcastop, in_edges[1][2], reshape_shape)
                             else:
