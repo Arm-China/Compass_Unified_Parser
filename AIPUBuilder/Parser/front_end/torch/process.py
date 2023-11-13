@@ -682,6 +682,16 @@ def convert_max_pool(g, input, kernel_size, strides, paddings, dilations, ceil_m
     return (slice_out, indices) if return_indices else slice_out
 
 
+@helper.parse_args('v', 'is', 'v', 'v', 'f', 'v')
+def convert_layer_norm(g, x, normalized_shape, weight, bias, eps, cudnn_enable):
+    axis = -len(normalized_shape)
+    if helper._is_none(weight):
+        weight = g.op('Constant', value_t=torch.ones(normalized_shape, dtype=torch.float32))
+    if helper._is_none(bias):
+        bias = g.op('Constant', value_t=torch.zeros(normalized_shape, dtype=torch.float32))
+    return g.op('LayerNormalization', x, weight, bias, epsilon_f=eps, axis_i=axis)
+
+
 @helper.parse_args('v', 'f', 'is', 'i', 'v')
 def convert_linalg_vector_norm(
         g,
@@ -1633,6 +1643,8 @@ def convert_torch_to_onnx(model_path, params):
         'aten::gru_cell', convert_gru_cell, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::hardshrink', convert_hardshrink, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'aten::layer_norm', convert_layer_norm, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::linalg_norm', convert_linalg_norm, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
