@@ -20,6 +20,30 @@ from ...common.utils import get_version
 from ...common.defs import FLOAT_EQUAL
 
 
+# global variance
+ONNX_OPSET_VERSION = 9
+CUSTOM_OPSET_18 = 'opset_18::'
+CUSTOM_OPSET_19 = 'opset_19::'
+
+
+@helper.parse_args('v')
+@quantized_args(True)
+def convert_acosh(g, x):
+    return g.op('Acosh', x)
+
+
+@helper.parse_args('v')
+@quantized_args(True)
+def convert_asinh(g, x):
+    return g.op('Asinh', x)
+
+
+@helper.parse_args('v')
+@quantized_args(True)
+def convert_atanh(g, x):
+    return g.op('Atanh', x)
+
+
 def convert_adaptive_pool(g, x, output_size, dim, method):
     assert dim in (
         1, 2, 3), 'Meets invalid dim (%s) in convert_adaptive_pool!' % str(dim)
@@ -142,22 +166,22 @@ def convert_bitshift_right(g, input, other):
 
 @helper.parse_args('v', 'v')
 def convert_bitwise_and(g, input, other):
-    return g.op('opset_18::BitwiseAnd', input, other)
+    return g.op(CUSTOM_OPSET_18 + 'BitwiseAnd', input, other)
 
 
 @helper.parse_args('v')
 def convert_bitwise_not(g, input):
-    return g.op('opset_18::BitwiseNot', input)
+    return g.op(CUSTOM_OPSET_18 + 'BitwiseNot', input)
 
 
 @helper.parse_args('v', 'v')
 def convert_bitwise_or(g, input, other):
-    return g.op('opset_18::BitwiseOr', input, other)
+    return g.op(CUSTOM_OPSET_18 + 'BitwiseOr', input, other)
 
 
 @helper.parse_args('v', 'v')
 def convert_bitwise_xor(g, input, other):
-    return g.op('opset_18::BitwiseXor', input, other)
+    return g.op(CUSTOM_OPSET_18 + 'BitwiseXor', input, other)
 
 
 @helper.parse_args('v', 'i')
@@ -212,7 +236,7 @@ def convert_col2im(g, input, output_size, kernel_size, dilation, padding, stride
     output_size = g.op('Constant', value_t=torch.tensor(output_size, dtype=torch.int64))
     kernel_size = g.op('Constant', value_t=torch.tensor(kernel_size, dtype=torch.int64))
     pads = np.tile(padding, 2)
-    out = g.op('opset_18::Col2Im', input, output_size, kernel_size,
+    out = g.op(CUSTOM_OPSET_18 + 'Col2Im', input, output_size, kernel_size,
                dilations_i=dilation, pads_i=pads, strides_i=stride)
     if need_reshape:
         # reshape back to unbatched
@@ -260,6 +284,12 @@ def convert_conv(g, input, weight, bias, stride, padding, dilation, groups):
     return conv
 
 
+@helper.parse_args('v')
+@quantized_args(True)
+def convert_cosh(g, x):
+    return g.op('Cosh', x)
+
+
 @helper.parse_args('v', 'i', 'i')
 def convert_cumprod(g, x, dim, dtype):
     if dtype is not None:
@@ -277,7 +307,7 @@ def convert_deform_conv(g, input, weight, offset, mask, bias,
     kernel_shape = weight_shape[2:]
     if not use_mask:
         mask = g.op('Constant', value_t=torch.tensor([], dtype=torch.float32))
-    return g.op('opset_19::DeformConv', input, weight, offset, bias, mask,
+    return g.op(CUSTOM_OPSET_19 + 'DeformConv', input, weight, offset, bias, mask,
                 dilations_i=[dilation_h, dilation_w], kernel_shape_i=kernel_shape,
                 pads_i=pads, strides_i=[stride_h, stride_w],
                 group_i=n_weight_grps, offset_group_i=n_offset_grps)
@@ -799,10 +829,10 @@ def convert_quantized_cat(
 
 
 @quantized_args(True)
-def convert_reduce_mean(g, input, dim=None, keepdim=None, allow_multi_dim_support=True):
+def convert_reduce_mean(g, x, dim=None, keepdim=None, allow_multi_dim_support=True):
     if dim is None:
         # all-reduce path
-        return helper._handle_reduce_dim_none(g, self, 'ReduceMean')
+        return helper._handle_reduce_dim_none(g, x, 'ReduceMean')
     else:
         # dim-reduce path
         desc = 'is' if allow_multi_dim_support else 'i'
@@ -810,7 +840,7 @@ def convert_reduce_mean(g, input, dim=None, keepdim=None, allow_multi_dim_suppor
             dim, desc, 'dim'
         ), helper._get_const(keepdim, 'i', 'keepdim')
         dim_list = dim if allow_multi_dim_support else [dim]
-        return g.op('ReduceMean', input, axes_i=dim_list, keepdims_i=keepdim)
+        return g.op('ReduceMean', x, axes_i=dim_list, keepdims_i=keepdim)
 
 
 @helper.parse_args('v', 'v', 'f', 'i', 'i', 'i', 'i')
@@ -852,6 +882,12 @@ def convert_scatter(g, self, dim, index, src, reduce=None):
     if helper._is_value(src):
         return g.op('ScatterElements', self, index, src, axis_i=dim, reduction_s=reduction)
     return g.op('ScatterElements', self, index, opset9.expand_as(g, src, index), axis_i=dim, reduction_s=reduction)
+
+
+@helper.parse_args('v')
+@quantized_args(True)
+def convert_sinh(g, x):
+    return g.op('Sinh', x)
 
 
 def convert_size(g, input, dim=None):
@@ -1389,6 +1425,11 @@ def convert_torch_to_onnx(model_path, params):
                         input_names,
                         output_names,
                         opset_version=None):
+        custom_opsets = {'opset_11': 11}
+        if onnx_opset_version < 18:
+            custom_opsets.update({'opset_18': 18, 'opset_19': 19})
+        elif onnx_opset_version == 18:
+            custom_opsets.update({'opset_19': 19})
         # Note: Use operator_export_type=torch.onnx.OperatorExportTypes.ONNX_ATEN_FALLBACK
         # or torch.onnx.OperatorExportTypes.ONNX_ATEN for debug if export fails.
         # The failure could be caused by unexpected input shapes.
@@ -1399,7 +1440,7 @@ def convert_torch_to_onnx(model_path, params):
                           output_names=output_names,
                           opset_version=onnx_opset_version,
                           training=torch._C._onnx.TrainingMode.PRESERVE,
-                          custom_opsets={'opset_11': 11, 'opset_18': 18, 'opset_19': 19})
+                          custom_opsets=custom_opsets)
         return
 
     def _flatten_type(torch_type):
@@ -1469,8 +1510,12 @@ def convert_torch_to_onnx(model_path, params):
             onnx_opset_version = default_onnx_main_opset
     if onnx_opset_version is None:
         onnx_opset_version = 9
-    if onnx_opset_version < 16:
-        WARN('[Parser]: Default onnx opset version (%d) is lower than 16, which may cause some ops failed to convert!' %
+    global ONNX_OPSET_VERSION, CUSTOM_OPSET_18, CUSTOM_OPSET_19
+    ONNX_OPSET_VERSION = onnx_opset_version
+    CUSTOM_OPSET_18 = '' if onnx_opset_version >= 18 else CUSTOM_OPSET_18
+    CUSTOM_OPSET_19 = '' if onnx_opset_version >= 19 else CUSTOM_OPSET_19
+    if onnx_opset_version < 19:
+        WARN('[Parser]: Default onnx opset version (%d) is lower than 19, which may cause some ops failed to convert!' %
              onnx_opset_version)
     else:
         DEBUG('[Parser]: Will convert to onnx opset version (%d)!' %
@@ -1516,29 +1561,39 @@ def convert_torch_to_onnx(model_path, params):
     if onnx_opset_version >= 16:
         torch.onnx.register_custom_op_symbolic(
             'aten::scatter', convert_scatter, onnx_opset_version)
+    # if onnx_opset_version < 18:  # not yet supported in torch 2.1
+    # The lowest version of onnx BitwiseAnd/Not/Or/Xor is 18
+    # (onnx_opset_version is 16 for torch 1.12.0).
+    torch.onnx.register_custom_op_symbolic(
+        'aten::bitwise_and', convert_bitwise_and, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'aten::bitwise_not', convert_bitwise_not, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'aten::bitwise_or', convert_bitwise_or, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'aten::bitwise_xor', convert_bitwise_xor, onnx_opset_version)
     if onnx_opset_version < 18:
-        # The lowest version of onnx BitwiseAnd/Not/Or/Xor is 18
-        # (onnx_opset_version is 16 for torch 1.12.0).
-        torch.onnx.register_custom_op_symbolic(
-            'aten::bitwise_and', convert_bitwise_and, onnx_opset_version)
-        torch.onnx.register_custom_op_symbolic(
-            'aten::bitwise_not', convert_bitwise_not, onnx_opset_version)
-        torch.onnx.register_custom_op_symbolic(
-            'aten::bitwise_or', convert_bitwise_or, onnx_opset_version)
-        torch.onnx.register_custom_op_symbolic(
-            'aten::bitwise_xor', convert_bitwise_xor, onnx_opset_version)
         # The lowest version of onnx Col2Im is 18.
         torch.onnx.register_custom_op_symbolic(
             'aten::col2im', convert_col2im, onnx_opset_version)
-    if onnx_opset_version < 19:
-        torch.onnx.register_custom_op_symbolic(
-            'torchvision::deform_conv2d', convert_deform_conv, onnx_opset_version)
+    # if onnx_opset_version < 19:  # not yet supported in torch 2.1
+    torch.onnx.register_custom_op_symbolic(
+        'torchvision::deform_conv2d', convert_deform_conv, onnx_opset_version)
+
+    torch.onnx.register_custom_op_symbolic(
+        'aten::acosh', convert_acosh, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'aten::asinh', convert_asinh, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'aten::atanh', convert_atanh, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::avg_pool1d', convert_avg_pool1d, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::avg_pool2d', convert_avg_pool2d, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::avg_pool3d', convert_avg_pool3d, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'aten::cosh', convert_cosh, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::index_add', convert_index_add, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
@@ -1583,6 +1638,8 @@ def convert_torch_to_onnx(model_path, params):
         'aten::round', convert_round, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::select_scatter', convert_select_scatter, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'aten::sinh', convert_sinh, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::size', convert_size, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
