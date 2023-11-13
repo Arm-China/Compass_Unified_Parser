@@ -911,10 +911,11 @@ def convert_special_fakequantminmaxvars(graph):
         if fake_quant_obj is not None \
                 and len(fake_quant_in_edges) == 3 \
                 and len(fake_quant_obj.get_input_tensors()) == 3 \
-                and all([inp is not None for inp in fake_quant_obj.get_input_tensors()]) \
+                and fake_quant_in_edges[1][2]['tensor'].value is not None \
+                and fake_quant_in_edges[2][2]['tensor'].value is not None \
                 and fake_quant_in_edges[1][2]['tensor'].is_const \
                 and fake_quant_in_edges[2][2]['tensor'].is_const:
-            inputs, min_val, max_val = fake_quant_obj.get_input_tensors()
+            _, min_val, max_val = fake_quant_obj.get_input_tensors()
             if np.ndim(min_val) in (0, 1) and np.ndim(max_val) in (0, 1):
                 matched = True
                 graph.remove_edges_from(fake_quant_in_edges[1:])
