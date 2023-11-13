@@ -99,6 +99,19 @@ def convert_adaptive_max_pool2d(g, x, output_size):
     return convert_adaptive_pool(g, x, output_size, 2, 'MAX')
 
 
+def convert_addbmm(g, x, batch1, batch2, beta, alpha):
+    scalar_type = x.type().scalarType()
+    batch_mul = g.op('MatMul', batch1, batch2)
+    if ONNX_OPSET_VERSION >= 13:
+        axes_input = g.op('Constant', value_t=torch.tensor([0], dtype=torch.int64))
+        reduce_batch_mul = g.op('ReduceSum', batch_mul, axes_input, keepdims_i=0)
+    else:
+        reduce_batch_mul = g.op('ReduceSum', axes_i=[0], keepdims_i=0)
+    mul_a = g.op('Mul', reduce_batch_mul, g.op('Cast', alpha, to_i=helper.cast_pytorch_to_onnx[scalar_type]))
+    mul_b = g.op('Mul', x, g.op('Cast', beta, to_i=helper.cast_pytorch_to_onnx[scalar_type]))
+    return g.op('Add', mul_a, mul_b)
+
+
 def convert_add_sub(g, input, other, alpha, op_type):
     if alpha and not FLOAT_EQUAL(helper._maybe_get_const(alpha, 'f'), 1):
         other = g.op('Mul', other, alpha)
@@ -1202,7 +1215,7 @@ def scatter_helper(g, self, dim, index, src, reduction):
     else:
         # TODO: support more reduction type if necessary.
 
-        # Check if scalar "src" has same type as self (PyTorch allows different
+        # Check if scalar 'src' has same type as self (PyTorch allows different
         # type for scalar src (but not when src is tensor)). If not, insert Cast node.
         input_dtype_str = self.type().scalarType()
         if input_dtype_str != src_type:
@@ -1514,8 +1527,8 @@ def convert_torch_to_onnx(model_path, params):
     ONNX_OPSET_VERSION = onnx_opset_version
     CUSTOM_OPSET_18 = '' if onnx_opset_version >= 18 else CUSTOM_OPSET_18
     CUSTOM_OPSET_19 = '' if onnx_opset_version >= 19 else CUSTOM_OPSET_19
-    if onnx_opset_version < 19:
-        WARN('[Parser]: Default onnx opset version (%d) is lower than 19, which may cause some ops failed to convert!' %
+    if onnx_opset_version < 17:
+        WARN('[Parser]: Default onnx opset version (%d) is lower than 17, which may cause some ops failed to convert!' %
              onnx_opset_version)
     else:
         DEBUG('[Parser]: Will convert to onnx opset version (%d)!' %
@@ -1582,6 +1595,8 @@ def convert_torch_to_onnx(model_path, params):
 
     torch.onnx.register_custom_op_symbolic(
         'aten::acosh', convert_acosh, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'aten::addbmm', convert_addbmm, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::asinh', convert_asinh, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
