@@ -1333,22 +1333,7 @@ class ArmCumulateOp(OpHasOneOutPort, OpHasMethod, OpHasAxis, ArmOp):
         return ret
 
 
-class ArmDecodeBoxOp(OpHasWeights, OpHasMultipleOutPorts, ArmOp):
-    @staticmethod
-    def convert_to_center_coordinate(anchors):
-        # Convert from [y1, x1, y2, x2] to [y_center, x_center, height, width]
-        if len(anchors.shape) != 2 or anchors.shape[1] != 4:
-            ERROR('[Parser]: Meet invalid anchor shape in convert_to_center_coordinate!')
-            return anchors
-        y_min, x_min, y_max, x_max = anchors[:,
-                                             0], anchors[:, 1], anchors[:, 2], anchors[:, 3]
-        height = y_max - y_min
-        y_center = y_min + 0.5 * height
-        width = x_max - x_min
-        x_center = x_min + 0.5 * width
-        center_points = np.stack([y_center, x_center, height, width], axis=1)
-        return center_points
-
+class ArmDecodeBoxOp(OpHasAnchors, OpHasMultipleOutPorts, ArmOp):
     @staticmethod
     def tile_anchors(grid_height,
                      grid_width,
@@ -1513,18 +1498,18 @@ class ArmDecodeBoxOp(OpHasWeights, OpHasMultipleOutPorts, ArmOp):
             inp_shapes) == 2, 'The length of input is invalid in ArmDecodeBoxOp.'
         inp1_shape = inp_shapes[0]
         inp2_shape = inp_shapes[1]
-        weights_shape = self.weights.shape
+        anchors_shape = self.anchors.shape
         if not inp1_shape or not inp2_shape \
-                or not weights_shape \
+                or not anchors_shape \
                 or any((shape is None for shape in inp1_shape)) \
                 or any((shape is None for shape in inp2_shape)) \
-                or any((shape is None for shape in weights_shape)) \
+                or any((shape is None for shape in anchors_shape)) \
                 or len(inp1_shape) != 3 or len(inp2_shape) != 3 \
-                or len(weights_shape) != 2 \
+                or len(anchors_shape) != 2 \
                 or inp1_shape[:2] != inp2_shape[:2] \
-                or inp1_shape[1] != weights_shape[0] \
+                or inp1_shape[1] != anchors_shape[0] \
                 or inp2_shape[-1] != 4 \
-                or weights_shape[-1] != 4:
+                or anchors_shape[-1] != 4:
             ERROR('[Parser]: Invalid inputs shape of ArmDecodeBoxOp!')
 
         self.max_box_num = max(inputs[1].shape[1], 5000)
@@ -1555,7 +1540,8 @@ class ArmDecodeBoxOp(OpHasWeights, OpHasMultipleOutPorts, ArmOp):
             if self.variance:
                 txt_file.write('variance=[%s]\n' %
                                list_list_to_string(self.variance))
-            if self.weights is None and self.firstbox_scale:
+            if (self.xcenter is None or self.ycenter is None or self.ha is None or self.wa is None) \
+                    and self.firstbox_scale:
                 txt_file.write(
                     'firstbox_scale=[%s]\n' % list_list_to_string(self.firstbox_scale))
         return ret
@@ -3645,14 +3631,14 @@ class ArmPreprocessOp(OpHasVariableOutPorts, ArmOp):
         self.set_out_tensor(out_tensors)
 
 
-class ArmProposalOp(OpHasMultipleOutPorts, ArmOp):
+class ArmProposalOp(OpHasAnchors, OpHasMultipleOutPorts, ArmOp):
     @classmethod
     def num_in_ports(cls):
-        return 3
+        return 2
 
     @classmethod
     def cast_in_ports(cls):
-        return {0: 'float32', 1: 'float32', 2: 'float32'}
+        return {0: 'float32', 1: 'float32'}
 
     @classmethod
     def attributes(cls):
