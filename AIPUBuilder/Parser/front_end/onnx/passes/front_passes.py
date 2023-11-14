@@ -1031,6 +1031,7 @@ def merge_rcnn(graph, params):
     scale = round(min(self_min_size_f / min_size, self_max_size_f / max_size), 6)
     image_height = int(scale * original_image_height)
     image_width = int(scale * original_image_width)
+    bbox_xform_clip = np.log(1000.0 / 16)
 
     # rpn parameters
     rpn_num_class = 1
@@ -1070,21 +1071,31 @@ def merge_rcnn(graph, params):
     rpn_detect_out_attr = {'name': rpn_detect_out, 'score_threshold': rpn_score_threshold,
                            'class_num': rpn_num_class, 'max_box_num': rpn_max_box_num,
                            'image_height': image_height, 'image_width': image_width,
-                           'variance': [1.0, 1.0, 1.0, 1.0], 'anchor_mode': 'caffe_detection'}
+                           'variance': [1.0, 1.0, 1.0, 1.0], 'anchor_mode': 'caffe_detection',
+                           'bbox_xform_clip': bbox_xform_clip}
     NodeWrap(graph, rpn_detect_out).replace_obj('ArmDetectionOutput', rpn_detect_out_attr)
-    # Add Out node for output label_perclass(not used) of DecodeBox/DetectionOutput
-    label_perclass_out = get_valid_node_name(graph, 'rpn_label_perclass_out')
-    graph.add_edge(rpn_detect_out, label_perclass_out, **{'src_out_port': 3})
+
+    # rpn FilterBoxes
+    rpn_filter_boxes = get_valid_node_name(graph, 'rpn_filter_boxes')
+    # FilterBoxes input/output: scores, boxes, box_num_perClass, label_perclass, total_class_num
+    for port in range(5):
+        graph.add_edge(rpn_detect_out, rpn_filter_boxes, **{'src_out_port': port, 'dst_in_port': port})
+    rpn_filter_boxes_attr = {'name': rpn_filter_boxes, 'min_size': [0.001, 0.001],
+                             'maxnum': rpn_max_box_num}
+    NodeWrap(graph, rpn_filter_boxes).replace_obj('ArmFilterBoxes', rpn_filter_boxes_attr)
+    # Add Out node for output label_perclass(not used) of FilterBoxes
+    label_perclass_out = get_valid_node_name(graph, 'rpn_filter_boxes_out')
+    graph.add_edge(rpn_filter_boxes, label_perclass_out, **{'src_out_port': 3})
     NodeWrap(graph, label_perclass_out).replace_obj('Out', {'name': label_perclass_out})
 
     # rpn NMS
     rpn_nms = get_valid_node_name(graph, 'rpn_nms')
     # nms input: boxes(ymin, xmin, ymax, xmax), box_num_perclass, total_class_num, scores
-    # DetectionOutput to NMS
-    graph.add_edge(rpn_detect_out, rpn_nms, **{'src_out_port': 1, 'dst_in_port': 0})
-    graph.add_edge(rpn_detect_out, rpn_nms, **{'src_out_port': 2, 'dst_in_port': 1})
-    graph.add_edge(rpn_detect_out, rpn_nms, **{'src_out_port': 4, 'dst_in_port': 2})
-    graph.add_edge(rpn_detect_out, rpn_nms, **{'src_out_port': 0, 'dst_in_port': 3})
+    # FilterBoxes to NMS
+    graph.add_edge(rpn_filter_boxes, rpn_nms, **{'src_out_port': 1, 'dst_in_port': 0})
+    graph.add_edge(rpn_filter_boxes, rpn_nms, **{'src_out_port': 2, 'dst_in_port': 1})
+    graph.add_edge(rpn_filter_boxes, rpn_nms, **{'src_out_port': 4, 'dst_in_port': 2})
+    graph.add_edge(rpn_filter_boxes, rpn_nms, **{'src_out_port': 0, 'dst_in_port': 3})
     # nms output: boxes(ymin, xmin, ymax, xmax), box_num_perclass, scores, keep
     nms_attr = {'name': rpn_nms, 'center_point_box': 0,
                 'image_height': image_height, 'image_width': image_width, 'max_box_num': rpn_nms_max_box_num,
@@ -1148,21 +1159,31 @@ def merge_rcnn(graph, params):
     roi_detect_out_attr = {'name': roi_detect_out, 'score_threshold': roi_score_threshold,
                            'class_num': 91, 'max_box_num': roi_max_box_num,
                            'image_height': image_height, 'image_width': image_width,
-                           'variance': [10.0, 10.0, 5.0, 5.0], 'anchor_mode': 'caffe_detection'}
+                           'variance': [10.0, 10.0, 5.0, 5.0], 'anchor_mode': 'caffe_detection',
+                           'bbox_xform_clip': bbox_xform_clip}
     NodeWrap(graph, roi_detect_out).replace_obj('ArmDetectionOutput', roi_detect_out_attr)
-    # Add Out node for output label_perclass(not used) of DecodeBox
+
+    # roi FilterBoxes
+    roi_filter_boxes = get_valid_node_name(graph, 'roi_filter_boxes')
+    # FilterBoxes input/output: scores, boxes, box_num_perClass, label_perclass, total_class_num
+    for port in range(5):
+        graph.add_edge(roi_detect_out, roi_filter_boxes, **{'src_out_port': port, 'dst_in_port': port})
+    roi_filter_boxes_attr = {'name': roi_filter_boxes, 'min_size': [0.01, 0.01],
+                             'maxnum': roi_max_box_num}
+    NodeWrap(graph, roi_filter_boxes).replace_obj('ArmFilterBoxes', roi_filter_boxes_attr)
+    # Add Out node for output label_perclass(not used) of FilterBoxes
     roi_label_perclass_out = get_valid_node_name(graph, 'roi_label_perclass_out')
-    graph.add_edge(roi_detect_out, roi_label_perclass_out, **{'src_out_port': 3})
+    graph.add_edge(roi_filter_boxes, roi_label_perclass_out, **{'src_out_port': 3})
     NodeWrap(graph, roi_label_perclass_out).replace_obj('Out', {'name': roi_label_perclass_out})
 
     # roi_heads NMS
     roi_nms = get_valid_node_name(graph, 'roi_nms')
     # nms input: boxes(ymin, xmin, ymax, xmax), box_num_perclass, total_class_num, scores
-    # DetectionOutput to NMS
-    graph.add_edge(roi_detect_out, roi_nms, **{'src_out_port': 1, 'dst_in_port': 0})
-    graph.add_edge(roi_detect_out, roi_nms, **{'src_out_port': 2, 'dst_in_port': 1})
-    graph.add_edge(roi_detect_out, roi_nms, **{'src_out_port': 4, 'dst_in_port': 2})
-    graph.add_edge(roi_detect_out, roi_nms, **{'src_out_port': 0, 'dst_in_port': 3})
+    # FilterBoxes to NMS
+    graph.add_edge(roi_filter_boxes, roi_nms, **{'src_out_port': 1, 'dst_in_port': 0})
+    graph.add_edge(roi_filter_boxes, roi_nms, **{'src_out_port': 2, 'dst_in_port': 1})
+    graph.add_edge(roi_filter_boxes, roi_nms, **{'src_out_port': 4, 'dst_in_port': 2})
+    graph.add_edge(roi_filter_boxes, roi_nms, **{'src_out_port': 0, 'dst_in_port': 3})
     # nms output: boxes(ymin, xmin, ymax, xmax), box_num_perclass, scores, keep
     roi_nms_attr = {'name': roi_nms, 'center_point_box': 0,
                     'image_height': image_height, 'image_width': image_width, 'max_box_num': roi_nms_max_box_num,
@@ -1195,7 +1216,7 @@ def merge_rcnn(graph, params):
     insert_reshape(graph, roi_concat, ret_boxes_split, split_in_attr, [-1, 4])
 
     graph._attr['output_names'].clear()
-    graph._attr['output_names'] = [roi_detect_out, roi_nms, resized_boxes]
+    graph._attr['output_names'] = [roi_filter_boxes, roi_nms, resized_boxes]
 
     if is_maskrcnn:
         mask_pool_matches = matched_patterns(graph,
