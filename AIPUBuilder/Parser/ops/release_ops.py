@@ -1716,6 +1716,7 @@ class ArmDetectionOutputOp(OpHasMultipleOutPorts, ArmOp):
                 'max_box_num': {'type': AttrType.INT, 'default': 5000},
                 'anchor_mode': {'type': AttrType.STRING, 'default': None},
                 'variance': {'type': AttrType.FLOATS, 'default': []},
+                'bbox_xform_clip': {'type': AttrType.FLOAT, 'default': None},
                 }
 
     def __init__(self, graph, attr_dict=None):
@@ -1754,6 +1755,8 @@ class ArmDetectionOutputOp(OpHasMultipleOutPorts, ArmOp):
             if self.variance:
                 txt_file.write('variance=[%s]\n' %
                                list_list_to_string(self.variance))
+            if self.bbox_xform_clip is not None:
+                txt_file.write('bbox_xform_clip=%f\n' % self.bbox_xform_clip)
         return ret
 
 
@@ -2029,31 +2032,51 @@ class ArmFilterOp(OpHasAxis, OpHasMultipleOutPorts, ArmOp):
         return ret
 
 
-class ArmFilterBoxOp(OpHasMultipleOutPorts, ArmOp):
+class ArmFilterBoxesOp(OpHasMultipleOutPorts, ArmOp):
+    @classmethod
+    def cast_in_ports(cls):
+        return {0: 'float32', 1: 'float32', 2: 'int32', 3: 'int32', 4: 'int32'}
+
+    @classmethod
+    def num_in_ports(cls):
+        return 5
+
     @classmethod
     def attributes(cls):
-        return {'min_size': {'type': AttrType.INT, 'default': 16}}
+        return {'min_size': {'type': AttrType.FLOATS, 'required': True, 'default': []},
+                'maxnum': {'type': AttrType.INT, 'default': 5000}}
 
     def __init__(self, graph, attr_dict=None):
-        super(ArmFilterBoxOp, self).__init__(graph, attr_dict)
-        self.update_attributes(ArmFilterBoxOp, attr_dict)
-        assert self.check_required(), 'ArmFilterBoxOp is missing a required parameter.'
+        super(ArmFilterBoxesOp, self).__init__(graph, attr_dict)
+        self.update_attributes(ArmFilterBoxesOp, attr_dict)
+        assert self.check_required(), 'ArmFilterBoxesOp is missing a required parameter.'
 
     def infer_shape(self):
-        super(ArmFilterBoxOp, self).infer_shape()
+        super(ArmFilterBoxesOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        # [batch, height * width * num_anchors], [batch, 1]
-        batch = inputs[0].shape[0]
-        out_tensor1 = np.random.randint(0, 1, size=(
-            batch, inputs[0].shape[1]), dtype=np.int32).astype(np.float32)
-        out_tensor2 = np.random.randint(
-            0, inputs[0].shape[1] // 2, size=(batch, 1), dtype=np.int32)
-        self.set_out_tensor([out_tensor1, out_tensor2])
+        # inputs are the outputs of DetectionOutput: scores, boxes, box_num_perClass, label_perclass, total_class_num
+        batch_size, box_num = inputs[0].shape[:2]
+        class_num = inputs[2].shape[1]
+        if self.maxnum > box_num:
+            self.maxnum = box_num
+        out_tensor1 = np.random.ranf(
+            size=(batch_size, self.maxnum)).astype(np.float32)
+        out_tensor2 = np.random.ranf(
+            size=(batch_size, self.maxnum, 4)).astype(np.float32)
+        out_tensor3 = np.random.ranf(
+            size=(batch_size, class_num)).astype(np.int32)
+        out_tensor4 = np.random.ranf(
+            size=(batch_size, class_num)).astype(np.int32)
+        out_tensor5 = np.random.ranf(size=(batch_size, 1)).astype(np.int32)
+        out_tensor_list = [out_tensor1, out_tensor2,
+                           out_tensor3, out_tensor4, out_tensor5]
+        self.set_out_tensor(out_tensor_list)
 
     def write_attrs(self, txt_file):
-        ret = super(ArmFilterBoxOp, self).write_attrs(txt_file)
+        ret = super(ArmFilterBoxesOp, self).write_attrs(txt_file)
         if ret:
-            txt_file.write('min_size=%d\n' % self.min_size)
+            txt_file.write('min_size=[%s]\n' % num_list_to_string(self.min_size))
+            txt_file.write('maxnum=%d\n' % self.maxnum)
         return ret
 
 
