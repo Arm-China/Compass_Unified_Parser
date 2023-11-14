@@ -1595,6 +1595,10 @@ def convert_torch_to_onnx(model_path, params):
         'aten::bitwise_or', convert_bitwise_or, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::bitwise_xor', convert_bitwise_xor, onnx_opset_version)
+    if onnx_opset_version >= 17:
+        # The lowest version of onnx LayerNormalization is 17.
+        torch.onnx.register_custom_op_symbolic(
+            'aten::layer_norm', convert_layer_norm, onnx_opset_version)
     if onnx_opset_version < 18:
         # The lowest version of onnx Col2Im is 18.
         torch.onnx.register_custom_op_symbolic(
@@ -1643,8 +1647,6 @@ def convert_torch_to_onnx(model_path, params):
         'aten::gru_cell', convert_gru_cell, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::hardshrink', convert_hardshrink, onnx_opset_version)
-    torch.onnx.register_custom_op_symbolic(
-        'aten::layer_norm', convert_layer_norm, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::linalg_norm', convert_linalg_norm, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
