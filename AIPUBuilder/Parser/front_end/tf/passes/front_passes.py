@@ -3021,7 +3021,6 @@ def merge_fasterrcnn(graph):
                    **proposal_prediction_out_attr)
     graph.add_edge(softmax1, proposal)
     graph.add_edge(proposal_box, proposal, **new_proposal_box_out_attr)
-    graph.add_edge(anchor, proposal, **{'dst_in_port': 2})
 
     graph.add_edge(proposal, nms, **{'src_out_port': 0, 'dst_in_port': 3})
     graph.add_edge(proposal, nms, **{'src_out_port': 1, 'dst_in_port': 0})
@@ -3069,8 +3068,14 @@ def merge_fasterrcnn(graph):
     graph._attr['output_names'].remove(secondstage_reshape)
     graph._attr['output_names'].extend([detection_output, nms2])
 
+    anchor_value = _tile_anchor((img_height, img_width),
+                                (16, 16),
+                                (256, 256),
+                                [0.25, 0.5, 1.0, 2.0],
+                                [0.5, 1.0, 2.0])
     NodeWrap(graph, proposal).replace_obj('ArmProposal',
                                           {'name': proposal,
+                                           'anchors': anchor_value,
                                            'width': img_width,
                                            'height': img_height,
                                            'score_threshold': 0.45,
@@ -3082,16 +3087,6 @@ def merge_fasterrcnn(graph):
                                            'axis': 2
                                            })
 
-    anchor_value = _tile_anchor((img_height, img_width),
-                                (16, 16),
-                                (256, 256),
-                                [0.25, 0.5, 1.0, 2.0],
-                                [0.5, 1.0, 2.0])
-    NodeWrap(graph, anchor).replace_obj('Constant',
-                                        {'name': anchor,
-                                         'opset_version': 1,
-                                         'value': anchor_value
-                                         })
     NodeWrap(graph, nms).replace_obj('ArmNMS',
                                      {'name': nms,
                                       'image_width': img_width,

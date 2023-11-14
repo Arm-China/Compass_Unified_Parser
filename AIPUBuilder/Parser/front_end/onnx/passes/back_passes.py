@@ -13,7 +13,7 @@ from ....graph.node_wrap import NodeWrap
 from ....graph.graph_algo import determined_sort, get_valid_node_name, clear_redundant_nodes, has_path, infer
 from ....graph.pattern_match import matched_patterns, single_node_matcher, two_nodes_matcher
 from ....ops.op import Op, LayoutUnawareOp, BaseLinearOp, BaseActivationOp, BaseReluOp, OpHasWeights, OpHasBiases, \
-    ArmOp, OpHasAxis, BaseQuantizeDequantizeOp, BaseRnnOp
+    ArmOp, OpHasAxis, BaseQuantizeDequantizeOp, BaseRnnOp, OpHasAnchors
 from ....ops.onnx_ops.array_ops import ReshapeOp
 from ....ops.release_ops import ArmCastOp, ArmConvolutionOp, ArmConvolution3DOp, ArmConvIntegerOp, ArmDecodeBoxOp, \
     ArmDepthwiseConvOp, ArmConvTransposeOp, ArmConvTranspose3DOp, ArmActivationOp
@@ -3407,7 +3407,7 @@ def detection_post_process(graph, params):
                 class_num = out2_out_shapes[0][-1]
                 vaild_box_num = out1_out_shapes[0][1]
 
-            weights = None
+            anchors = None
             if graph._attr['framework'].name == 'CAFFE' or \
                     params.get('detection_postprocess', '').upper() == 'SSD_RESNET':
                 box_out_edges = graph.sorted_out_edges(box_predict, data=True)
@@ -3550,17 +3550,17 @@ def detection_post_process(graph, params):
             image_height = int(params.get('image_width', 300))
 
             if graph._attr['framework'].name == 'CAFFE':
-                weights = graph._attr.get('anchors', None)
+                anchors = graph._attr.get('anchors', None)
             elif graph._attr['framework'].name in ['ONNX', 'TFLITE', 'TENSORFLOW']:
                 if graph._attr.get('anchors') is not None:
-                    weights = graph._attr['anchors']
+                    anchors = graph._attr['anchors']
                 elif params.get('detection_postprocess', '').upper() == 'SSD_RESNET':
-                    weights = ArmDecodeBoxOp.generate_anchors_for_resnet(
+                    anchors = ArmDecodeBoxOp.generate_anchors_for_resnet(
                         [image_width, image_height], feature_map)
                 else:
-                    weights = ArmDecodeBoxOp.generate_anchors(feature_map)
+                    anchors = ArmDecodeBoxOp.generate_anchors(feature_map)
 
-            if weights is not None:
+            if anchors is not None:
                 anchor_tensor_format = params.get(
                     'anchor_tensor_format', 'center').upper()
                 supported_anchor_format = ['CENTER', 'CORNER']
@@ -3568,8 +3568,8 @@ def detection_post_process(graph, params):
                     ERROR('[Parser]: Meet invalid value of anchor_tensor_format! Supported values are %s!' %
                           str(supported_anchor_format)[1:-1])
                 elif anchor_tensor_format == 'CORNER':
-                    weights = ArmDecodeBoxOp.convert_to_center_coordinate(
-                        weights)
+                    anchors = OpHasAnchors.convert_to_center_coordinate(
+                        anchors)
 
             max_box_num = max(
                 int(params.get('max_box_num', 5000)), vaild_box_num)
@@ -3587,8 +3587,8 @@ def detection_post_process(graph, params):
             if params.get('firstbox_scale', ''):
                 decodebox_attr.update(
                     {'firstbox_scale': float_string_to_list(params['firstbox_scale'])})
-            if weights is not None:
-                decodebox_attr.update({'weights': weights})
+            if anchors is not None:
+                decodebox_attr.update({'anchors': anchors})
             NodeWrap(graph, decode_box).replace_obj(
                 'ArmDecodeBox', decodebox_attr)
             decodebox_out = get_valid_node_name(graph, decode_box + '_out')
@@ -4282,6 +4282,30 @@ def trim_weights(graph):
                 else:
                     ERROR('[Parser]: Meets invalid biases for Node %s in trim_weights!' %
                           node_name)
+            if isinstance(node_obj, OpHasAnchors):
+                if node_obj.anchors is not None:
+                    anchors = _data_in_supported_dtype(node_obj.anchors, 'anchors', node_name)
+                    y_center, x_center, height, width = OpHasAnchors.convert_to_center_coordinate(
+                        anchors, return_list=True)
+                    node_obj.anchors = None
+                    # x center
+                    node_obj.xcenter = x_center
+                    node_obj.xcenter_offset = offset
+                    offset += x_center.size * x_center.dtype.itemsize
+                    # y center
+                    node_obj.ycenter = y_center
+                    node_obj.ycenter_offset = offset
+                    offset += y_center.size * y_center.dtype.itemsize
+                    # height
+                    node_obj.ha = height
+                    node_obj.ha_offset = offset
+                    offset += height.size * height.dtype.itemsize
+                    # width
+                    node_obj.wa = width
+                    node_obj.wa_offset = offset
+                    offset += width.size * width.dtype.itemsize
+                else:
+                    ERROR('[Parser]: Meets invalid anchors for Node %s in trim_weights!' % node_name)
             if isinstance(node_obj, (BaseActivationOp, ArmActivationOp)) \
                     and hasattr(node_obj, 'negative_slope') \
                     and hasattr(node_obj, 'negative_slope_offset') \

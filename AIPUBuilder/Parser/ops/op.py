@@ -1431,6 +1431,98 @@ class OpHasBiases(Op):
         return ret
 
 
+class OpHasAnchors(Op):
+    '''
+    Class OpHasAnchors inherited from OP.
+    Some OPs with anchors parameter must inherit this class, such as Proposals, DecodeBox, etc.
+    '''
+    @classmethod
+    def attributes(cls):
+        '''return attributes of OpHasWeights class.'''
+        return {'anchors': {'type': AttrType.TENSOR, 'default': None},
+                'xcenter': {'type': AttrType.TENSOR, 'default': None},
+                'xcenter_offset': {'type': AttrType.INT, 'default': -1},
+                'ycenter': {'type': AttrType.TENSOR, 'default': None},
+                'ycenter_offset': {'type': AttrType.INT, 'default': -1},
+                'ha': {'type': AttrType.TENSOR, 'default': None},
+                'ha_offset': {'type': AttrType.INT, 'default': -1},
+                'wa': {'type': AttrType.TENSOR, 'default': None},
+                'wa_offset': {'type': AttrType.INT, 'default': -1},
+                }
+
+    @staticmethod
+    def convert_to_center_coordinate(anchors, return_list=False):
+        # Convert from [y1, x1, y2, x2] to [y_center, x_center, height, width]
+        if len(anchors.shape) != 2 or anchors.shape[1] != 4:
+            ERROR('[Parser]: Meet invalid anchor shape in convert_to_center_coordinate!')
+            return anchors
+        y_min, x_min, y_max, x_max = anchors[:,
+                                             0], anchors[:, 1], anchors[:, 2], anchors[:, 3]
+        height = y_max - y_min
+        y_center = y_min + 0.5 * height
+        width = x_max - x_min
+        x_center = x_min + 0.5 * width
+        if not return_list:
+            center_points = np.stack([y_center, x_center, height, width], axis=1)
+            return center_points
+        return y_center, x_center, height, width
+
+    def __init__(self, graph, attr_dict=None):
+        super(OpHasAnchors, self).__init__(graph, attr_dict)
+        self.update_attributes(OpHasAnchors, attr_dict)
+
+    def write_attrs(self, txt_file):
+        '''Write the required attr in IR.'''
+        ret = super(OpHasAnchors, self).write_attrs(txt_file)
+        if ret and self.xcenter is not None and self.ycenter is not None \
+                and self.ha is not None and self.wa is not None:
+            txt_file.write('xcenter_type=%s\n' % str(self.xcenter.dtype))
+            txt_file.write('xcenter_offset=%d\n' % self.xcenter_offset)
+            txt_file.write('xcenter_size=%d\n' %
+                           (self.xcenter.size * self.xcenter.dtype.itemsize))
+            txt_file.write('xcenter_shape=[%s]\n' % num_list_to_string(
+                list(self.xcenter.shape)))
+
+            txt_file.write('ycenter_type=%s\n' % str(self.ycenter.dtype))
+            txt_file.write('ycenter_offset=%d\n' % self.ycenter_offset)
+            txt_file.write('ycenter_size=%d\n' %
+                           (self.ycenter.size * self.ycenter.dtype.itemsize))
+            txt_file.write('ycenter_shape=[%s]\n' % num_list_to_string(
+                list(self.ycenter.shape)))
+
+            txt_file.write('ha_type=%s\n' % str(self.ha.dtype))
+            txt_file.write('ha_offset=%d\n' % self.ha_offset)
+            txt_file.write('ha_size=%d\n' %
+                           (self.ha.size * self.ha.dtype.itemsize))
+            txt_file.write('ha_shape=[%s]\n' % num_list_to_string(
+                list(self.ha.shape)))
+
+            txt_file.write('wa_type=%s\n' % str(self.wa.dtype))
+            txt_file.write('wa_offset=%d\n' % self.wa_offset)
+            txt_file.write('wa_size=%d\n' %
+                           (self.wa.size * self.wa.dtype.itemsize))
+            txt_file.write('wa_shape=[%s]\n' % num_list_to_string(
+                list(self.wa.shape)))
+        return ret
+
+    def write_anchors(self, bin_file):
+        '''Write the anchors attr in IR bin file.'''
+        ret = True
+        if not bin_file.closed and bin_file.mode == 'wb':
+            if self.xcenter is not None and self.xcenter_offset >= 0:
+                Op.numpy_to_bin(bin_file, self.xcenter, self.xcenter_offset, self.name)
+            if self.ycenter is not None and self.ycenter_offset >= 0:
+                Op.numpy_to_bin(bin_file, self.ycenter, self.ycenter_offset, self.name)
+            if self.ha is not None and self.ha_offset >= 0:
+                Op.numpy_to_bin(bin_file, self.ha, self.ha_offset, self.name)
+            if self.wa is not None and self.wa_offset >= 0:
+                Op.numpy_to_bin(bin_file, self.wa, self.wa_offset, self.name)
+        else:
+            FATAL('[Parser]: Invalid file to write anchors for Node(%s) in write_anchors!' %
+                  (self.name))
+        return ret
+
+
 class BaseLinearOp(OpHasBiases, OpHasWeights, OpHasOneOutPort):
     '''
     Class BaseLinearOp inherited from OpHasBiases, OpHasWeights, OpHasOneOutPort class.
