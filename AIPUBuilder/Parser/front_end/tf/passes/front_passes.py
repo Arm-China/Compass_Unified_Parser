@@ -6,7 +6,7 @@ import math
 import numpy as np
 import re
 import copy
-from ....ops.op import TfOp, Op, OpHasAxis, OpHasWeights, OpHasPaddingStrides, TfHasPaddingStrides
+from ....ops.op import TfOp, Op, OpHasAxis, OpHasWeights, OpHasPaddingStrides, TfHasPaddingStrides, OpHasAnchors
 from ....graph.node_wrap import NodeWrap
 from ....graph.graph_algo import get_valid_node_name, clear_redundant_nodes, cal_path_length, has_path
 from ....graph.pattern_match import matched_patterns, single_node_matcher, two_nodes_matcher
@@ -3068,11 +3068,11 @@ def merge_fasterrcnn(graph):
     graph._attr['output_names'].remove(secondstage_reshape)
     graph._attr['output_names'].extend([detection_output, nms2])
 
-    anchor_value = _tile_anchor((img_height, img_width),
-                                (16, 16),
-                                (256, 256),
-                                [0.25, 0.5, 1.0, 2.0],
-                                [0.5, 1.0, 2.0])
+    anchor_value = OpHasAnchors.convert_to_center_coordinate(_tile_anchor((img_height, img_width),
+                                                                          (16, 16),
+                                                                          (256, 256),
+                                                                          [0.25, 0.5, 1.0, 2.0],
+                                                                          [0.5, 1.0, 2.0]))
     NodeWrap(graph, proposal).replace_obj('ArmProposal',
                                           {'name': proposal,
                                            'anchors': anchor_value,
