@@ -158,20 +158,6 @@ def convert_attr_to_onnx(attr_dict, is_keras_op=False):
     return new_attr
 
 
-def get_tfgraph_and_nodes(graph_def):
-    tfv1.graph_util.remove_training_nodes(graph_def)
-    tfv1.import_graph_def(graph_def, name='')
-    default_graph = tfv1.get_default_graph()
-
-    nodes = list(parse_proto(
-        default_graph.get_operations(), get_op_content))
-    for func in graph_def.library.function:
-        func_name = func.signature.name
-        if any((node['type'] == func_name) for node in nodes):
-            nodes = get_function_node_content(func, nodes)
-    return default_graph, nodes
-
-
 def get_possible_outputs(graph_def):
     output_names = []
 
@@ -212,7 +198,16 @@ def parse_pb(model_path, params, anchor_tensors):
 
 def parse_graph_def(graph_def, params, anchor_tensors=list()):
     try:
-        default_graph, nodes = get_tfgraph_and_nodes(graph_def)
+
+        tfv1.graph_util.remove_training_nodes(graph_def)
+        tfv1.import_graph_def(graph_def, name='')
+        default_graph = tfv1.get_default_graph()
+
+        nodes = list(parse_proto(default_graph.get_operations(), get_op_content))
+        for func in graph_def.library.function:
+            func_name = func.signature.name
+            if any((node['type'] == func_name) for node in nodes):
+                nodes = get_function_node_content(func, nodes)
 
         for anchor_tensor in anchor_tensors:
             anchor_node = [n for n in nodes if n['name'] == trim_tensor_name(anchor_tensor)]
