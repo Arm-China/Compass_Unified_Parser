@@ -4285,8 +4285,11 @@ def trim_weights(graph):
             if isinstance(node_obj, OpHasAnchors):
                 if node_obj.anchors is not None:
                     anchors = _data_in_supported_dtype(node_obj.anchors, 'anchors', node_name)
-                    y_center, x_center, height, width = OpHasAnchors.convert_to_center_coordinate(
-                        anchors, return_list=True)
+                    # The anchors should be in the format of center coordinate.
+                    if len(anchors.shape) != 2 or anchors.shape[1] != 4:
+                        ERROR('[Parser]: Meet invalid anchor shape in trim_weights!')
+                        continue
+                    y_center, x_center, height, width = anchors[:, 0], anchors[:, 1], anchors[:, 2], anchors[:, 3]
                     node_obj.anchors = None
                     # x center
                     node_obj.xcenter = x_center
