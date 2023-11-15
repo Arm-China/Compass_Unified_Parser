@@ -335,11 +335,11 @@ def convert_bi_gru(graph):
                     graph.add_edge(inp, fw_gru, **inp_in_attr)
                     graph.add_edge(inp, reverse1, **inp_in_attr)
                     graph.add_edge(reverse1, bw_gru)
-                    graph.add_edge(bw_gru, reverse2)
+                    graph.add_edge(bw_gru, bw_reshape)
                     graph.add_edge(fw_gru, fw_reshape)
-                    graph.add_edge(reverse2, bw_reshape)
+                    graph.add_edge(bw_reshape, reverse2)
                     graph.add_edge(fw_reshape, concat)
-                    graph.add_edge(bw_reshape, concat, **
+                    graph.add_edge(reverse2, concat, **
                                    {'src_out_port': 0, 'dst_in_port': 1})
 
                     state_split_attr = {
@@ -489,13 +489,20 @@ def convert_bi_gru(graph):
                                     slice_in_tensor = np.tile(
                                         slice_in_tensor, [1, time_steps, 1, 1])
                                     break
+                            concat_hidden = get_valid_node_name(graph, gru + '_out_state_concat')
                             slice = get_valid_node_name(
                                 graph, gru + '_out_state_slice')
                             reshape = get_valid_node_name(
                                 graph, gru + '_out_state_reshape')
+                            graph.add_edge(fw_reshape, concat_hidden)
+                            graph.add_edge(bw_reshape, concat_hidden, **{'dst_in_port': 1})
                             graph.add_edge(
-                                concat, slice, **{'tensor': Tensor(value=slice_in_tensor)})
+                                concat_hidden, slice, **{'tensor': Tensor(value=slice_in_tensor)})
                             graph.add_edge(slice, reshape)
+
+                            concat_hidden_attr = {'name': concat_hidden, 'opset_version': 4, 'axis': 2}
+                            NodeWrap(graph, concat_hidden).replace_obj('Concat', concat_hidden_attr)
+
                             slice_attr = {'name': slice,
                                           'opset_version': 1,
                                           'axes': [0, 1, 2, 3],

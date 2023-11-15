@@ -984,10 +984,12 @@ class GRUOp(BaseRnnOp, OpHasBiases, OpHasWeights, OnnxOp):
         weights_list = GRUOp.extract_weights(
             W, B, R, self.hidden_size, num_directions, self.linear_before_reset)
         Y = []
+        Y_h = []
         for b in range(batch_size):
             cur_input = inputs[0][:, b,
                                   :] if not self.layout else inputs[0][b, :, :]
             batch_out = []
+            hidden_batch_out = []
             for n in range(num_directions):
                 direction_out = []
                 init_state = initial_h[n, b,
@@ -995,6 +997,7 @@ class GRUOp(BaseRnnOp, OpHasBiases, OpHasWeights, OnnxOp):
                 if n == 1:
                     cur_input = tf.reverse(
                         cur_input, axis=np.array([0], np.int64))
+                gru_cell = None
                 for s in range(self.time_steps):
                     x = cur_input[s, :]
                     '''
@@ -1008,23 +1011,28 @@ class GRUOp(BaseRnnOp, OpHasBiases, OpHasWeights, OnnxOp):
                         size=(self.hidden_size,)).astype(np.float32)
                     direction_out.append(gru_cell)
                 direction_out = tf.stack(direction_out, axis=0)
+                hidden_batch_out.append(gru_cell)
                 if n == 1:
                     direction_out = tf.reverse(
                         direction_out, axis=np.array([0], np.int64))
                 batch_out.append(direction_out)
             batch_out = tf.stack(batch_out, axis=0)
             Y.append(batch_out)
+            hidden_batch_out = tf.stack(hidden_batch_out, axis=0)
+            Y_h.append(hidden_batch_out)
 
-        '''[batch_size, num_directions, seq_length, hidden_size]'''
+        ''' [batch_size, num_directions, seq_length, hidden_size]'''
         Y = tf.stack(Y, axis=0)
+        ''' [batch_size, num_directions, hidden_size]'''
+        Y_h = tf.stack(Y_h, axis=0)
         if self.layout:
             ''' [batch_size, seq_length, num_directions, hidden_size]'''
             Y = tf.transpose(Y, perm=[0, 2, 1, 3]).numpy()
-            Y_h = Y[:, -1, :, :]
         else:
             ''' [seq_length, num_directions, batch_size, hidden_size]'''
             Y = tf.transpose(Y, perm=[2, 1, 0, 3]).numpy()
-            Y_h = Y[-1, :, :, :]
+            ''' [num_directions, batch_size, hidden_size]'''
+            Y_h = tf.transpose(Y_h, perm=[1, 0, 2]).numpy()
 
         if not self.linear_before_reset:
             self.weights = np.stack([np.concatenate(
