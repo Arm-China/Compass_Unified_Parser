@@ -1886,6 +1886,7 @@ def convert_torch_to_onnx(model_path, params):
     # Update params
     updated_params = copy.deepcopy(params)
     updated_params.update({'input_model': onnx_model_path,
+                           'original_input_model': model_path,
                            'input_names': input_names,
                            'input_shapes': params['input_shapes'],
                            'output_names': [],

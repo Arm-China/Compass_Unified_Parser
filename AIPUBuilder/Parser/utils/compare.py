@@ -31,7 +31,9 @@ def compare_data(data1, data2):
         sim = cos(torch.from_numpy(data2.reshape([1, -1])),
                   torch.from_numpy(data1.reshape([1, -1]))).numpy().item()
         mean_value = np.mean(abs(data1 - data2))
-        INFO('Similarity is %.6f, mean is %.6f' % (sim, mean_value))
+        non_zero_num = np.count_nonzero(data2)
+        l1_error = np.sum(abs(data1 - data2)) / non_zero_num if non_zero_num != 0 else np.nan
+        INFO('Similarity is %.6f, mean is %.6f, l1 error is %f' % (sim, mean_value, l1_error))
         ret = True
         # Check similarity: pass if sim > 0.9, or data and sim are both 0
         if sim > 0.9 or (np.allclose(sim, 0) and np.allclose(data1, 0)):
