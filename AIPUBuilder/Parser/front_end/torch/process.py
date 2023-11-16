@@ -123,6 +123,18 @@ def convert_add(g, input, other, alpha=None):
     return convert_add_sub(g, input, other, alpha, 'Add')
 
 
+@helper.parse_args('v', 'v', 'v', 'f')
+def convert_addcdiv(g, input, tensor1, tensor2, value=1.0):
+    value_tens = g.op('Constant', value_t=torch.tensor(value))
+    return opset9.add(g, input, opset9.mul(g, opset9.div(g, tensor1, tensor2), value_tens))
+
+
+@helper.parse_args('v', 'v', 'v', 'f')
+def convert_addcmul(g, input, tensor1, tensor2, value=1.0):
+    value_tens = g.op('Constant', value_t=torch.tensor(value))
+    return opset9.add(g, input, opset9.mul(g, opset9.mul(g, tensor1, tensor2), value_tens))
+
+
 @helper.parse_args('v', 'v', 'v')
 def convert_rsub(g, input, other, alpha=None):
     return convert_add_sub(g, other, input, alpha, 'Sub')
@@ -1635,6 +1647,10 @@ def convert_torch_to_onnx(model_path, params):
         'aten::acosh', convert_acosh, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::addbmm', convert_addbmm, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'aten::addcdiv', convert_addcdiv, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'aten::addcmul', convert_addcmul, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::asinh', convert_asinh, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
