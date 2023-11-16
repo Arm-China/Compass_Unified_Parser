@@ -1178,6 +1178,7 @@ def split_b2s(graph, op_type='TfBatchToSpaceND'):
                                  })
                 NodeWrap(graph, b2s).replace_obj('ArmBatchToSpaceND', b2s_attr)
                 continue
+            quantize = b2s_obj.quantize
             need_slice = np.any(crops != 0)
             spatial_in_shape = in_shape[1:-1]
             spatial_out_shape_before_slice = (
@@ -1196,25 +1197,28 @@ def split_b2s(graph, op_type='TfBatchToSpaceND'):
                 graph.add_edge(src, trans1, **in_attr)
                 trans1_out_attr = copy.deepcopy(in_attr)
                 trans1_out_attr.update({'src_out_port': 0})
-                if in_attr['tensor'] is not None and in_attr['tensor'].value is not None:
-                    trans1_out_attr['tensor'].value = np.transpose(in_attr['tensor'].value, [3, 1, 2, 0])
+                if in_attr['tensor'] is not None and in_attr['tensor'].shape is not None:
+                    trans1_out_attr['tensor'].shape = tuple([in_attr['tensor'].shape[idx] for idx in [3, 1, 2, 0]])
                 graph.add_edge(trans1, b2s, **trans1_out_attr)
                 for _, dst, out_attr in out_edges:
                     graph.remove_edge(b2s, dst)
                     graph.add_edge(last, dst, **out_attr)
                 b2s_or_slice_out_attr = copy.deepcopy(out_edges[0][2])
                 b2s_or_slice_out_attr.update({'dst_in_port': 0})
-                if b2s_or_slice_out_attr['tensor'] is not None and b2s_or_slice_out_attr['tensor'].value is not None:
+                if b2s_or_slice_out_attr['tensor'] is not None:
                     b2s_or_slice_out_attr['tensor'].value = None
+                    b2s_or_slice_out_attr['tensor'].shape = None
                 graph.add_edge(b2s, trans2, **b2s_or_slice_out_attr)
                 if need_slice:
                     graph.add_edge(trans2, slice, **b2s_or_slice_out_attr)
 
-                trans1_attr = {'name': trans1, 'opset_version': transpose_version, 'perm': [3, 1, 2, 0]}
+                trans1_attr = {'name': trans1, 'opset_version': transpose_version,
+                               'perm': [3, 1, 2, 0], 'quantize': quantize}
                 NodeWrap(graph, trans1).replace_obj('Transpose', trans1_attr)
-                d2s_attr = {'name': b2s, 'opset_version': d2s_version, 'blocksize': block_size}
+                d2s_attr = {'name': b2s, 'opset_version': d2s_version, 'blocksize': block_size, 'quantize': quantize}
                 NodeWrap(graph, b2s).replace_obj('DepthToSpace', d2s_attr)
-                trans2_attr = {'name': trans2, 'opset_version': transpose_version, 'perm': [3, 1, 2, 0]}
+                trans2_attr = {'name': trans2, 'opset_version': transpose_version,
+                               'perm': [3, 1, 2, 0], 'quantize': quantize}
                 NodeWrap(graph, trans2).replace_obj('Transpose', trans2_attr)
 
             else:
@@ -1271,7 +1275,8 @@ def split_b2s(graph, op_type='TfBatchToSpaceND'):
 
                 NodeWrap(graph, reshape1).replace_obj('Reshape',
                                                       {'name': reshape1,
-                                                       'opset_version': reshape_version}
+                                                       'opset_version': reshape_version,
+                                                       'quantize': quantize}
                                                       )
                 insert_constant(graph,
                                 reshape1 + '_shape',
@@ -1286,7 +1291,8 @@ def split_b2s(graph, op_type='TfBatchToSpaceND'):
 
                 NodeWrap(graph, reshape2).replace_obj('Reshape',
                                                       {'name': reshape2,
-                                                       'opset_version': reshape_version}
+                                                       'opset_version': reshape_version,
+                                                       'quantize': quantize}
                                                       )
                 insert_constant(graph,
                                 reshape2 + '_shape',
@@ -1305,6 +1311,7 @@ def split_b2s(graph, op_type='TfBatchToSpaceND'):
                               'axes': list(range(1, len(in_shape) - 1)),
                               'starts': starts.tolist(),
                               'ends': ends.tolist(),
+                              'quantize': quantize
                               }
                 NodeWrap(graph, slice).replace_obj('Slice', slice_attr)
 
