@@ -14,18 +14,38 @@ from .logger import *
 def check_similarity(graph, params, txt_path, bin_path):
     if not params.get('similarity_input_npy', ''):
         return True
-    if graph._attr.get('quantize', False):
-        WARN('[Parser]: The feature of showing similarity is only supported for float ir now!')
-        return True
 
     if not txt_path or not bin_path or not is_file(txt_path) or not is_file(bin_path):
         ERROR('[Parser]: Meets invalid txt_path (%s) or bin_path (%s) in check_similarity!' % (txt_path, bin_path))
         return False
 
-    ret = True
-    feed_dict = params['similarity_input_npy']
-    model_path = params.get('input_model', '')
+    model_path = params.get('original_input_model', params.get('input_model', ''))
+    if not model_path:
+        ERROR('[Parser]: Meets empty input_model in check_similarity!')
+        return False
 
+    feed_dict = params['similarity_input_npy']
+    forward_type = 'float'
+
+    if graph._attr.get('quantize', False):
+        from .utils.quantize import generate_symm_quant_cfg, generate_symm_quant_ir
+        model_name = params.get('model_name', 'quant')
+        symm_quant_cfg_file = generate_symm_quant_cfg(model_name, txt_path, bin_path)
+        if not symm_quant_cfg_file:
+            ERROR('[Parser]: Fail to generate symm quant cfg file!')
+            return False
+        if not generate_symm_quant_ir(symm_quant_cfg_file):
+            ERROR('[Parser]: Fail to generate symm quant IR!')
+            return False
+        new_base_path = os.path.join(os.path.dirname(txt_path), model_name + '_opt')
+        txt_path = new_base_path + '.txt'
+        bin_path = new_base_path + '.bin'
+        if not is_file(txt_path) or not is_file(bin_path):
+            ERROR('[Parser]: Meets invalid symm quant txt(%s) or bin(%s) file!' % (txt_path, bin_path))
+            return False
+        forward_type = 'quantized'
+
+    ret = True
     rt_output_dict, opt_output_dict = {}, {}
     try:
         from .utils.forward import rt_forward
@@ -37,10 +57,18 @@ def check_similarity(graph, params, txt_path, bin_path):
         ERROR('[Parser]: Meets Exception (%s) in framework runtime forward!' % str(e))
         ret = False
 
+    transfer_to_float = True
+    if forward_type == 'quantized':
+        for value in rt_output_dict.values():
+            if 'int' in value.dtype.name:
+                transfer_to_float = False
+                break
+
     try:
         from .utils.forward import opt_forward
         # Get model output using opt forward
-        opt_output_dict = opt_forward(txt_path, bin_path, feed_dict)
+        opt_output_dict = opt_forward(txt_path, bin_path, feed_dict, forward_type=forward_type,
+                                      transfer_to_float=transfer_to_float)
     except Exception as e:
         ERROR('[Parser]: Meets Exception (%s) in opt forward!' % str(e))
         ret = False

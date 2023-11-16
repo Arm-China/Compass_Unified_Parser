@@ -218,7 +218,16 @@ def torch_forward(model_path, ordered_feed_dict, output_names=None, save_output=
 
     output_dict = OrderedDict()
     for out_name, out_tensor in zip(output_names, out_tensors):
-        output_dict[out_name] = out_tensor.detach().numpy()
+        if torch.cuda.is_available():
+            out_tensor = out_tensor.cpu()
+        elif str(out_tensor.dtype).startswith('torch.q'):
+            # origin_out_tensor = torch.int_repr(out_tensor).numpy()
+            out_tensor = torch.dequantize(out_tensor)
+        try:
+            out_tensor = out_tensor.detach().numpy()
+        except:
+            out_tensor = np.array(out_tensor)
+        output_dict[out_name] = out_tensor
 
     if save_output:
         save_data_to_file('torch_outputs.npy', output_dict)
@@ -248,8 +257,12 @@ def rt_forward(model_path, feed_dict, output_names=None, save_output=True, proto
     return {}
 
 
-def opt_forward(txt_path, bin_path, feed_dict, output_names=None, save_output=True, forward_type='float'):
+def opt_forward(txt_path, bin_path, feed_dict, output_names=None, save_output=True,
+                forward_type='float', transfer_to_float=None):
     from .run_ir_forward import run_ir_forward
+
+    is_quantized_model = (forward_type != 'float')
+    input_is_quantized = False
 
     with open(txt_path, 'r') as f:
         txt_content = f.read()
@@ -261,20 +274,26 @@ def opt_forward(txt_path, bin_path, feed_dict, output_names=None, save_output=Tr
     # The order of inputs matters for opt forward. Update feed_dict to match input order in IR.
     ordered_feed_dict = {}
     for name in input_names:
+        key_name = None
         if name in feed_dict.keys():
-            ordered_feed_dict.update({name: feed_dict[name]})
+            key_name = name
         elif (name + ':0') in feed_dict.keys():
-            tensor_name = name + ':0'
-            ordered_feed_dict.update({tensor_name: feed_dict[tensor_name]})
+            key_name = name + ':0'  # tensor_name
+        elif (name + '_0') in feed_dict.keys():
+            key_name = name + '_0'
         else:
             name_without_postfix = name.rsplit('_', 1)[0]
             if name_without_postfix in feed_dict.keys():
-                ordered_feed_dict.update({name_without_postfix: feed_dict[name_without_postfix]})
+                key_name = name_without_postfix
             elif (name_without_postfix + ':0') in feed_dict.keys():
-                tensor_name = name_without_postfix + ':0'
-                ordered_feed_dict.update({tensor_name: feed_dict[tensor_name]})
+                key_name = name_without_postfix + ':0'
             else:
                 ERROR('Cannot find input name (%s) from feed_dict!' % name)
+                continue
+        input_data = feed_dict[key_name]
+        ordered_feed_dict.update({key_name: input_data})
+        if not input_is_quantized and is_quantized_model and 'int' in input_data.dtype.name:
+            input_is_quantized = True
 
     # Get default output names from txt_path if it's not set
     if output_names is None:
@@ -284,7 +303,7 @@ def opt_forward(txt_path, bin_path, feed_dict, output_names=None, save_output=Tr
         else:
             ERROR('Cannot find output names from IR!')
 
-    outputs = run_ir_forward(txt_path, bin_path, ordered_feed_dict, forward_type)
+    outputs = run_ir_forward(txt_path, bin_path, ordered_feed_dict, forward_type, transfer_to_float, input_is_quantized)
 
     if len(output_names) != len(outputs):
         WARN('Outputs name len != outputs data len. Will save parts of outputs.')
