@@ -376,6 +376,30 @@ def convert_flatten(g, input, start_dim, end_dim):
     return helper._flatten_helper(g, input, start_dim, end_dim, input_rank)
 
 
+@helper.parse_args('v')
+def convert_fliplr(g, input):
+    return helper._slice_helper(
+        g,
+        input,
+        axes=[1],
+        starts=[-1],
+        ends=[-torch.onnx._constants.INT64_MAX],
+        steps=[-1],
+    )
+
+
+@helper.parse_args('v')
+def convert_flipud(g, input):
+    return helper._slice_helper(
+        g,
+        input,
+        axes=[0],
+        starts=[-1],
+        ends=[-torch.onnx._constants.INT64_MAX],
+        steps=[-1],
+    )
+
+
 @helper.parse_args('v', 'v', 'v', 'v', 'v', 'v')
 def convert_gru_cell(g, input, hidden, w_ih, w_hh, b_ih, b_hh):
     from torch.onnx.symbolic_opset9 import _generic_rnn
@@ -1643,6 +1667,10 @@ def convert_torch_to_onnx(model_path, params):
         'aten::equal', convert_equal, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::flatten', convert_flatten, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'aten::fliplr', convert_fliplr, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'aten::flipud', convert_flipud, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::gru_cell', convert_gru_cell, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
