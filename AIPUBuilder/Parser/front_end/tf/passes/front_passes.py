@@ -3625,7 +3625,9 @@ def merge_keras_maskrcnn(graph, params):
     NodeWrap(graph, pyramid_roi_proposal).replace_obj('ArmPyramidROIAlign',
                                                       {'name': pyramid_roi_proposal,
                                                        'resize_width': 7,
-                                                       'resize_height': 7
+                                                       'resize_height': 7,
+                                                       'image_width': 1024,
+                                                       'image_height': 1024
                                                        })
     place_reshape(graph, deltas_reshape, [N, class_num, 4])
     NodeWrap(graph, deltas_gathernd).replace_obj('GatherND',
@@ -3746,7 +3748,9 @@ def merge_keras_maskrcnn(graph, params):
     NodeWrap(graph, pyramid_roi_mask).replace_obj('ArmPyramidROIAlign',
                                                   {'name': pyramid_roi_mask,
                                                    'resize_width': 14,
-                                                   'resize_height': 14
+                                                   'resize_height': 14,
+                                                   'image_width': 1024,
+                                                   'image_height': 1024
                                                    })
     NodeWrap(graph, repeat).replace_obj('Repeat',
                                         {'name': repeat,

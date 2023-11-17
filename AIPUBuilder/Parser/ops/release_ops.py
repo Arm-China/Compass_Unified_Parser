@@ -2044,7 +2044,8 @@ class ArmFilterBoxesOp(OpHasMultipleOutPorts, ArmOp):
     @classmethod
     def attributes(cls):
         return {'min_size': {'type': AttrType.FLOATS, 'required': True, 'default': []},
-                'maxnum': {'type': AttrType.INT, 'default': 5000}}
+                'maxnum': {'type': AttrType.INT, 'default': 5000},
+                'score_threshold': {'type': AttrType.FLOAT, 'default': -float('inf')}, }
 
     def __init__(self, graph, attr_dict=None):
         super(ArmFilterBoxesOp, self).__init__(graph, attr_dict)
@@ -2054,20 +2055,23 @@ class ArmFilterBoxesOp(OpHasMultipleOutPorts, ArmOp):
     def infer_shape(self):
         super(ArmFilterBoxesOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        # inputs are the outputs of DetectionOutput: scores, boxes, box_num_perClass, label_perclass, total_class_num
-        batch_size, box_num = inputs[0].shape[:2]
+        # input/output: boxes, scores, box_num_perClass, label_perclass, total_class_num
+        boxes_shape = inputs[0].shape
+        assert len(boxes_shape) == 3 and boxes_shape[-1] == 4, \
+            'Meets invalid shape(%s) of first input(boxes)!' % str(boxes_shape)
+        batch_size, box_num = boxes_shape[:2]
         class_num = inputs[2].shape[1]
         if self.maxnum > box_num:
             self.maxnum = box_num
         out_tensor1 = np.random.ranf(
-            size=(batch_size, self.maxnum)).astype(np.float32)
+            size=(batch_size, self.maxnum, 4)).astype(np.float32)  # boxes
         out_tensor2 = np.random.ranf(
-            size=(batch_size, self.maxnum, 4)).astype(np.float32)
+            size=(batch_size, self.maxnum)).astype(np.float32)  # scores
         out_tensor3 = np.random.ranf(
-            size=(batch_size, class_num)).astype(np.int32)
+            size=(batch_size, class_num)).astype(np.int32)  # box_num_perClass
         out_tensor4 = np.random.ranf(
-            size=(batch_size, class_num)).astype(np.int32)
-        out_tensor5 = np.random.ranf(size=(batch_size, 1)).astype(np.int32)
+            size=(batch_size, class_num)).astype(np.int32)  # label_perclass
+        out_tensor5 = np.random.ranf(size=(batch_size, 1)).astype(np.int32)  # total_class_num
         out_tensor_list = [out_tensor1, out_tensor2,
                            out_tensor3, out_tensor4, out_tensor5]
         self.set_out_tensor(out_tensor_list)
@@ -2075,6 +2079,7 @@ class ArmFilterBoxesOp(OpHasMultipleOutPorts, ArmOp):
     def write_attrs(self, txt_file):
         ret = super(ArmFilterBoxesOp, self).write_attrs(txt_file)
         if ret:
+            txt_file.write('score_threshold=%f\n' % self.score_threshold)
             txt_file.write('min_size=[%s]\n' % num_list_to_string(self.min_size))
             txt_file.write('maxnum=%d\n' % self.maxnum)
         return ret
@@ -3708,6 +3713,12 @@ class ArmPyramidROIAlignOp(OpHasOneOutPort, ArmOp):
     def attributes(cls):
         return {'resize_width': {'type': AttrType.INT, 'required': True},
                 'resize_height': {'type': AttrType.INT, 'required': True},
+                'image_width': {'type': AttrType.INT, 'required': True},
+                'image_height': {'type': AttrType.INT, 'required': True},
+                'sample_ratio': {'type': AttrType.INTS, 'default': [0, 0]},
+                'coordinate_transformation_mode': {'type': AttrType.STRING, 'default': 'output_half_pixel',
+                                                   'options': ['half_pixel', 'output_half_pixel']},
+                'spatial_scale': {'type': AttrType.FLOATS, 'default': [1.0, 1.0, 1.0, 1.0]},
                 }
 
     def __init__(self, graph, attr_dict=None):
@@ -3715,11 +3726,23 @@ class ArmPyramidROIAlignOp(OpHasOneOutPort, ArmOp):
         self.update_attributes(ArmPyramidROIAlignOp, attr_dict)
         assert self.check_required(), 'ArmPyramidROIAlignOp is missing a required parameter.'
 
+    @staticmethod
+    def setup_scales(feature_heights, image_height):
+        scales = []
+        for height in feature_heights:
+            approx_scale = float(height) / float(image_height)
+            scale = 2 ** np.log2(approx_scale).round()
+            scales.append(scale)
+        return scales
+
     def infer_shape(self):
         super(ArmPyramidROIAlignOp, self).infer_shape()
         inputs = self.get_input_tensors()
         assert len(
             inputs) == 5, 'Inputs number of ArmPyramidROIAlignOp should be equal to 5!'
+        if not self.spatial_scale:
+            feature_heights = [inp.shape[1] for inp in inputs[1:]]
+            self.spatial_scale = self.setup_scales(feature_heights, self.image_height)
         roi_num = inputs[0].shape[1]
         channels = inputs[1].shape[-1]
         out_tensor = np.random.ranf((roi_num,
@@ -3733,6 +3756,14 @@ class ArmPyramidROIAlignOp(OpHasOneOutPort, ArmOp):
         if ret:
             txt_file.write('resize_width=%d\n' % self.resize_width)
             txt_file.write('resize_height=%d\n' % self.resize_height)
+            txt_file.write('image_width=%d\n' % self.image_width)
+            txt_file.write('image_height=%d\n' % self.image_height)
+            txt_file.write('spatial_scale_value=[%s]\n' %
+                           list_list_to_string(self.spatial_scale))
+            txt_file.write('sample=[%s]\n' %
+                           list_list_to_string(self.sample_ratio))
+            txt_file.write('coordinate_transformation_mode=%s\n' %
+                           self.coordinate_transformation_mode.upper())
         return ret
 
 

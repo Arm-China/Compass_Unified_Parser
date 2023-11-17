@@ -881,6 +881,22 @@ def merge_sequence_construct_and_at(graph):
 
 
 def merge_rcnn(graph, params):
+    def _convert_to_x_first(graph, node_name):
+        '''Add split and concat to convert output from (ymin, xmin, ymax, xmax) to (xmin, ymin, xmax, ymax).
+        Return the name of the concat node.'''
+        split_node = get_valid_node_name(graph, node_name + '_split')
+        graph.add_edge(node_name, split_node, **{'src_out_port': 0})
+        split_node_attr = {'name': split_node, 'opset_version': 11, 'axis': -1, 'split': [1, 1, 1, 1]}
+        NodeWrap(graph, split_node).replace_obj('Split', split_node_attr)
+        concat_node = get_valid_node_name(graph, node_name + '_concat')
+        graph.add_edge(split_node, concat_node, **{'src_out_port': 1, 'dst_in_port': 0})
+        graph.add_edge(split_node, concat_node, **{'src_out_port': 0, 'dst_in_port': 1})
+        graph.add_edge(split_node, concat_node, **{'src_out_port': 3, 'dst_in_port': 2})
+        graph.add_edge(split_node, concat_node, **{'src_out_port': 2, 'dst_in_port': 3})
+        concat_node_attr = {'name': concat_node, 'opset_version': 11, 'axis': -1}
+        NodeWrap(graph, concat_node).replace_obj('Concat', concat_node_attr)
+        return concat_node
+
     if params.get('detection_postprocess', '').upper() not in ('FASTERRCNN', 'MASKRCNN'):
         return
     is_maskrcnn = (params['detection_postprocess'].upper() == 'MASKRCNN')
@@ -1028,7 +1044,7 @@ def merge_rcnn(graph, params):
     self_max_size_f = 1333
     min_size = float(min(original_image_height, original_image_width))
     max_size = float(max(original_image_height, original_image_width))
-    scale = round(min(self_min_size_f / min_size, self_max_size_f / max_size), 6)
+    scale = min(self_min_size_f / min_size, self_max_size_f / max_size)
     image_height = int(scale * original_image_height)
     image_width = int(scale * original_image_width)
     bbox_xform_clip = np.log(1000.0 / 16)
@@ -1077,8 +1093,10 @@ def merge_rcnn(graph, params):
 
     # rpn FilterBoxes
     rpn_filter_boxes = get_valid_node_name(graph, 'rpn_filter_boxes')
-    # FilterBoxes input/output: scores, boxes, box_num_perClass, label_perclass, total_class_num
-    for port in range(5):
+    # FilterBoxes input/output: boxes(ymin, xmin, ymax, xmax), scores, box_num_perClass, label_perclass, total_class_num
+    graph.add_edge(rpn_detect_out, rpn_filter_boxes, **{'src_out_port': 1, 'dst_in_port': 0})
+    graph.add_edge(rpn_detect_out, rpn_filter_boxes, **{'src_out_port': 0, 'dst_in_port': 1})
+    for port in range(2, 5):
         graph.add_edge(rpn_detect_out, rpn_filter_boxes, **{'src_out_port': port, 'dst_in_port': port})
     rpn_filter_boxes_attr = {'name': rpn_filter_boxes, 'min_size': [0.001, 0.001],
                              'maxnum': rpn_max_box_num}
@@ -1092,10 +1110,10 @@ def merge_rcnn(graph, params):
     rpn_nms = get_valid_node_name(graph, 'rpn_nms')
     # nms input: boxes(ymin, xmin, ymax, xmax), box_num_perclass, total_class_num, scores
     # FilterBoxes to NMS
-    graph.add_edge(rpn_filter_boxes, rpn_nms, **{'src_out_port': 1, 'dst_in_port': 0})
+    graph.add_edge(rpn_filter_boxes, rpn_nms, **{'src_out_port': 0, 'dst_in_port': 0})
     graph.add_edge(rpn_filter_boxes, rpn_nms, **{'src_out_port': 2, 'dst_in_port': 1})
     graph.add_edge(rpn_filter_boxes, rpn_nms, **{'src_out_port': 4, 'dst_in_port': 2})
-    graph.add_edge(rpn_filter_boxes, rpn_nms, **{'src_out_port': 0, 'dst_in_port': 3})
+    graph.add_edge(rpn_filter_boxes, rpn_nms, **{'src_out_port': 1, 'dst_in_port': 3})
     # nms output: boxes(ymin, xmin, ymax, xmax), box_num_perclass, scores, keep
     nms_attr = {'name': rpn_nms, 'center_point_box': 0,
                 'image_height': image_height, 'image_width': image_width, 'max_box_num': rpn_nms_max_box_num,
@@ -1107,45 +1125,36 @@ def merge_rcnn(graph, params):
         graph.add_edge(rpn_nms, out_name, **{'src_out_port': idx})
         NodeWrap(graph, out_name).replace_obj('Out', {'name': out_name})
 
-    # add split and concat to convert output from (ymin, xmin, ymax, xmax) to (xmin, ymin, xmax, ymax)
-    rpn_split = get_valid_node_name(graph, rpn_nms + '_split')
-    graph.add_edge(rpn_nms, rpn_split, **{'src_out_port': 0})
-    rpn_split_attr = {'name': rpn_split, 'opset_version': 11, 'axis': -1, 'split': [1, 1, 1, 1]}
-    NodeWrap(graph, rpn_split).replace_obj('Split', rpn_split_attr)
-    rpn_concat = get_valid_node_name(graph, rpn_nms + '_concat')
-    graph.add_edge(rpn_split, rpn_concat, **{'src_out_port': 1, 'dst_in_port': 0})
-    graph.add_edge(rpn_split, rpn_concat, **{'src_out_port': 0, 'dst_in_port': 1})
-    graph.add_edge(rpn_split, rpn_concat, **{'src_out_port': 3, 'dst_in_port': 2})
-    graph.add_edge(rpn_split, rpn_concat, **{'src_out_port': 2, 'dst_in_port': 3})
-    rpn_concat_attr = {'name': rpn_concat, 'opset_version': 11, 'axis': -1}
-    NodeWrap(graph, rpn_concat).replace_obj('Concat', rpn_concat_attr)
+    # Convert output from (ymin, xmin, ymax, xmax) to (xmin, ymin, xmax, ymax)
+    rpn_concat = _convert_to_x_first(graph, rpn_nms)
 
     # multi_scale_roi_align
     roi_heads_roi_align = get_valid_node_name(graph, 'rpn_roi_align')
-    # FIXME: Use PyramidROIAlign(need opt to support), height and width would be converse
-    # because opt expects the input in format (ymin, xmin, ymax, xmax).
-    # PyramidROIAlign input: boxes(xmin, ymin, xmax, ymax), feature list
-    graph.add_edge(rpn_concat, roi_heads_roi_align, **{'src_out_port': 0, 'dst_in_port': 0})
+    # PyramidROIAlign input: boxes(ymin, xmin, ymax, xmax), feature list
+    graph.add_edge(rpn_nms, roi_heads_roi_align, **{'src_out_port': 0, 'dst_in_port': 0})
     for idx, feat in enumerate(features):
         feat_out_attr = {'dst_in_port': idx + 1}
         graph.add_edge(feat, roi_heads_roi_align, **feat_out_attr)
         # transpose from NCHW to NHWC
         insert_transpose(graph, feat, roi_heads_roi_align, feat_out_attr, perm=[0, 2, 3, 1])
-    # PyramidROIAlign output: box_features(xmin, ymin, xmax, ymax)
-    roi_heads_roi_align_attr = {'name': roi_heads_roi_align, 'resize_width': 7, 'resize_height': 7}
+    # PyramidROIAlign output: RoI pooled output
+    # Set spatial_scale in infer_shape stage because need to know the shapes of features
+    roi_heads_roi_align_attr = {'name': roi_heads_roi_align, 'resize_width': 7, 'resize_height': 7,
+                                'image_width': image_width, 'image_height': image_height,
+                                'sample_ratio': [2, 2], 'spatial_scale': []}
     NodeWrap(graph, roi_heads_roi_align).replace_obj('ArmPyramidROIAlign', roi_heads_roi_align_attr)
-    # connect PyramidROIAlign with box_head and box_predictor
+    # Connect PyramidROIAlign with box_head and box_predictor
     roi_heads_pool_out_edges = graph.sorted_out_edges(roi_heads_pool_out, data=True)
     graph.remove_edges_from(roi_heads_pool_out_edges)
     for _, dst, out_attr in roi_heads_pool_out_edges:
         out_attr.update({'src_out_port': 0})
         graph.add_edge(roi_heads_roi_align, dst, **out_attr)
-    # transpose back from NHWC to NCHW
+    # Transpose back from NHWC to NCHW
     insert_transpose_after(graph, roi_heads_roi_align, [0, 3, 1, 2])
 
-    # roi_heads DecodeBox/DetectionOutput
+    # roi_heads DetectionOutput
     roi_detect_out = get_valid_node_name(graph, 'roi_detect_out')
-    # DecodeBox/DetectionOutput input: score, boxes(xmin, ymin, xmax, ymax), anchors(xmin, ymin, xmax, ymax)
+    # DetectionOutput input: score, boxes(xmin, ymin, xmax, ymax), anchors(xmin, ymin, xmax, ymax)
     roi_scores_out_attr = {'dst_in_port': 0}
     graph.add_edge(roi_scores, roi_detect_out, **roi_scores_out_attr)
     roi_boxes_out_attr = {'dst_in_port': 1}
@@ -1155,7 +1164,7 @@ def merge_rcnn(graph, params):
     insert_reshape(graph, roi_scores, roi_detect_out, roi_scores_out_attr, [1, -1, roi_num_class])
     insert_reshape(graph, roi_boxes, roi_detect_out, roi_boxes_out_attr, [1, -1, roi_num_class, 4])
     insert_reshape(graph, rpn_concat, roi_detect_out, proposals_out_attr, [1, -1, 4])
-    # DecodeBox output: boxes(xmin, ymin, xmax, ymax), box_num_perclass, total_class_num, roi_scores, label_perclass
+    # DetectionOutput output: scores, boxes(ymin, xmin, ymax, xmax), box_num_perClass, label_perclass, total_class_num
     roi_detect_out_attr = {'name': roi_detect_out, 'score_threshold': roi_score_threshold,
                            'class_num': 91, 'max_box_num': roi_max_box_num,
                            'image_height': image_height, 'image_width': image_width,
@@ -1165,8 +1174,10 @@ def merge_rcnn(graph, params):
 
     # roi FilterBoxes
     roi_filter_boxes = get_valid_node_name(graph, 'roi_filter_boxes')
-    # FilterBoxes input/output: scores, boxes, box_num_perClass, label_perclass, total_class_num
-    for port in range(5):
+    # FilterBoxes input/output: boxes(ymin, xmin, ymax, xmax), scores, box_num_perClass, label_perclass, total_class_num
+    graph.add_edge(roi_detect_out, roi_filter_boxes, **{'src_out_port': 1, 'dst_in_port': 0})
+    graph.add_edge(roi_detect_out, roi_filter_boxes, **{'src_out_port': 0, 'dst_in_port': 1})
+    for port in range(2, 5):
         graph.add_edge(roi_detect_out, roi_filter_boxes, **{'src_out_port': port, 'dst_in_port': port})
     roi_filter_boxes_attr = {'name': roi_filter_boxes, 'min_size': [0.01, 0.01],
                              'maxnum': roi_max_box_num}
@@ -1180,10 +1191,10 @@ def merge_rcnn(graph, params):
     roi_nms = get_valid_node_name(graph, 'roi_nms')
     # nms input: boxes(ymin, xmin, ymax, xmax), box_num_perclass, total_class_num, scores
     # FilterBoxes to NMS
-    graph.add_edge(roi_filter_boxes, roi_nms, **{'src_out_port': 1, 'dst_in_port': 0})
+    graph.add_edge(roi_filter_boxes, roi_nms, **{'src_out_port': 0, 'dst_in_port': 0})
     graph.add_edge(roi_filter_boxes, roi_nms, **{'src_out_port': 2, 'dst_in_port': 1})
     graph.add_edge(roi_filter_boxes, roi_nms, **{'src_out_port': 4, 'dst_in_port': 2})
-    graph.add_edge(roi_filter_boxes, roi_nms, **{'src_out_port': 0, 'dst_in_port': 3})
+    graph.add_edge(roi_filter_boxes, roi_nms, **{'src_out_port': 1, 'dst_in_port': 3})
     # nms output: boxes(ymin, xmin, ymax, xmax), box_num_perclass, scores, keep
     roi_nms_attr = {'name': roi_nms, 'center_point_box': 0,
                     'image_height': image_height, 'image_width': image_width, 'max_box_num': roi_nms_max_box_num,
@@ -1195,18 +1206,8 @@ def merge_rcnn(graph, params):
         graph.add_edge(roi_nms, out_name, **{'src_out_port': idx})
         NodeWrap(graph, out_name).replace_obj('Out', {'name': out_name})
 
-    # add split and concat to convert output from (ymin, xmin, ymax, xmax) to (xmin, ymin, xmax, ymax)
-    roi_split = get_valid_node_name(graph, roi_nms + '_split')
-    graph.add_edge(roi_nms, roi_split, **{'src_out_port': 0})
-    roi_split_attr = {'name': roi_split, 'opset_version': 11, 'axis': -1, 'split': [1, 1, 1, 1]}
-    NodeWrap(graph, roi_split).replace_obj('Split', roi_split_attr)
-    roi_concat = get_valid_node_name(graph, roi_nms + '_concat')
-    graph.add_edge(roi_split, roi_concat, **{'src_out_port': 1, 'dst_in_port': 0})
-    graph.add_edge(roi_split, roi_concat, **{'src_out_port': 0, 'dst_in_port': 1})
-    graph.add_edge(roi_split, roi_concat, **{'src_out_port': 3, 'dst_in_port': 2})
-    graph.add_edge(roi_split, roi_concat, **{'src_out_port': 2, 'dst_in_port': 3})
-    roi_concat_attr = {'name': roi_concat, 'opset_version': 11, 'axis': -1}
-    NodeWrap(graph, roi_concat).replace_obj('Concat', roi_concat_attr)
+    # Convert output from (ymin, xmin, ymax, xmax) to (xmin, ymin, xmax, ymax)
+    roi_concat = _convert_to_x_first(graph, roi_nms)
 
     # Resize boxes back to original size
     split_in_edges = graph.sorted_in_edges(ret_boxes_split)
@@ -1248,24 +1249,25 @@ def merge_rcnn(graph, params):
             mask_sigmoid = mask_out_matches[0]['sigmoid']
             # multi_scale_roi_align
             mask_roi_align = get_valid_node_name(graph, 'mask_roi_align')
-            # FIXME: Use PyramidROIAlign(need opt to support)
-            # PyramidROIAlign input: boxes(xmin, ymin, xmax, ymax), feature list
-            graph.add_edge(roi_concat, mask_roi_align, **{'src_out_port': 0, 'dst_in_port': 0})
+            # PyramidROIAlign input: boxes(ymin, xmin, ymax, xmax), feature list
+            graph.add_edge(roi_nms, mask_roi_align, **{'src_out_port': 0, 'dst_in_port': 0})
             for idx, feat in enumerate(features):
                 feat_out_attr = {'dst_in_port': idx + 1}
                 graph.add_edge(feat, mask_roi_align, **feat_out_attr)
                 # transpose from NCHW to NHWC
                 insert_transpose(graph, feat, mask_roi_align, feat_out_attr, perm=[0, 2, 3, 1])
-            # PyramidROIAlign output: box_features(xmin, ymin, xmax, ymax)
-            mask_roi_align_attr = {'name': mask_roi_align, 'resize_width': 7, 'resize_height': 7}
+            # PyramidROIAlign output: RoI pooled output
+            mask_roi_align_attr = {'name': mask_roi_align, 'resize_width': 14, 'resize_height': 14,
+                                   'image_width': image_width, 'image_height': image_height,
+                                   'sample_ratio': [2, 2], 'spatial_scale': []}
             NodeWrap(graph, mask_roi_align).replace_obj('ArmPyramidROIAlign', mask_roi_align_attr)
-            # connect PyramidROIAlign with box_head and box_predictor
+            # Connect PyramidROIAlign with box_head and box_predictor
             mask_pool_out_edges = graph.sorted_out_edges(mask_pool_out, data=True)
             graph.remove_edges_from(mask_pool_out_edges)
             for _, dst, out_attr in mask_pool_out_edges:
                 out_attr.update({'src_out_port': 0})
                 graph.add_edge(mask_roi_align, dst, **out_attr)
-            # transpose back from NHWC to NCHW
+            # Transpose back from NHWC to NCHW
             insert_transpose_after(graph, mask_roi_align, [0, 3, 1, 2])
 
             mask_out_edges = graph.sorted_out_edges(mask_sigmoid)
