@@ -1290,119 +1290,68 @@ def convert_index_reduce(g, x, dim, index, other, reduction, include_self):
     def _has_duplicates(seq):
         return len(seq) != len(set(seq))
 
-    import sys
-    dim = helper._maybe_get_const(dim, 'i')
-    if dim is None:
-        ERROR('ONNX export does NOT support exporting index_reduce_() function with unknown dim value.')
+    def _get_dtype_min_max_value(torch_dtype, min_or_max):
+        ret = None
+        assert isinstance(torch_dtype, torch.dtype), 'Expect torch_dtype is torch dtype, but got %s' % str(torch_dtype)
+        assert isinstance(min_or_max, str) and min_or_max in ('min', 'max'), 'Expect min_or_max is string min or max'
+        if 'int' in str(torch_dtype):
+            ret = torch.iinfo(torch_dtype).min if min_or_max == 'min' else torch.iinfo(torch_dtype).max
+        elif 'float' in str(torch_dtype):
+            ret = torch.finfo(torch_dtype).min if min_or_max == 'min' else torch.finfo(torch_dtype).max
+        else:
+            ERROR('Meets unsupported torch_dtype(%s) in _get_dtype_min_max_value!' % str(torch_dtype))
+        return ret
 
-    # TODO: need to find way to obtain tensor value.
-    index_duplicates = True
-    try:
-        index_value = helper._maybe_get_const(index, 'is')
-        index_duplicates = _has_duplicates(index_value)
-    except:
-        pass
+    reduction_map = {'amin': 'min', 'amax': 'max', 'prod': 'mul', 'mean': 'add'}
+    assert reduction in reduction_map, 'Meets invalid reduction(%s) in convert_index_reduce!' % reduction
+    onnx_reduction = reduction_map[reduction]
 
     x_dim_rank = helper._get_tensor_rank(x)
-    other_dim_rank = helper._get_tensor_rank(other)
+    dim = (dim + x_dim_rank) if dim < 0 else dim
+    dim_node = g.op('Constant', value_t=torch.tensor(dim, dtype=torch.int64))
+    _, scatter_indices = helper._index_fill_reshape_helper(g, x, dim_node, index)
 
-    if x_dim_rank is None or other_dim_rank is None:
-        ERROR(
-            'ONNX export does NOT support exporting index_add_() function while, the rank of x tensor or tensor to be added is unknown.')
-
-    if dim < 0:
-        dim = dim + x_dim_rank
-
-    if other_dim_rank != x_dim_rank:
-        delta = x_dim_rank - other_dim_rank
-        for i in range(delta):
-            other = helper._unsqueeze_helper(
-                g, other, [helper._get_tensor_rank(other)]
-            )
-
-    x_shape = helper._get_tensor_sizes(x)
     other_shape = helper._get_tensor_sizes(other)
-    sub_shape = list(map(lambda x: x[0] - x[1], zip(x_shape, other_shape)))
+    other_dtype = helper.pytorch_name_to_type[other.type().scalarType()]
 
-    other_dim_size = helper._get_tensor_dim_size(other, dim)
-    x_dim_size = helper._get_tensor_dim_size(x, dim)
+    if include_self:
+        ret = g.op('ScatterElements', x, scatter_indices, other, axis_i=dim, reduction_s=onnx_reduction)
+        if reduction == 'mean':
+            # get the counts of duplicate indices
+            x_shape = helper._get_tensor_sizes(x)
+            one_x = g.op('Constant', value_t=torch.full(x_shape, 1, dtype=other_dtype))
+            one_value = g.op('Constant', value_t=torch.full(other_shape, 1, dtype=other_dtype))
+            index_counts = g.op('ScatterElements', one_x, scatter_indices, one_value, axis_i=dim, reduction_s='add')
+            ret = g.op('Div', ret, index_counts)
+        return ret
 
-    for i in range(dim):
-        index = helper._unsqueeze_helper(g, index, [0])
+    if reduction == 'mean':
+        # set target in x to 0
+        zero_value = g.op('Constant', value_t=torch.full(other_shape, 0, dtype=other_dtype))
+        x = g.op('ScatterElements', x, scatter_indices, zero_value, axis_i=dim, reduction_s='none')
+        # get the counts of duplicate indices(the minumum count is 1)
+        x_shape = helper._get_tensor_sizes(x)
+        zero_x = g.op('Constant', value_t=torch.full(x_shape, 0, dtype=other_dtype))
+        one_value = g.op('Constant', value_t=torch.full(other_shape, 1, dtype=other_dtype))
+        index_counts = g.op('ScatterElements', zero_x, scatter_indices, one_value, axis_i=dim, reduction_s='add')
+        one_x = g.op('Constant', value_t=torch.full(x_shape, 1, dtype=other_dtype))
+        index_counts = g.op('Max', one_x, index_counts)
+        # get the sum of targets
+        x = g.op('ScatterElements', x, scatter_indices, other, axis_i=dim, reduction_s=onnx_reduction)
+        return g.op('Div', x, index_counts)
 
-    for i in range(x_dim_rank - dim - 1):
-        index = helper._unsqueeze_helper(
-            g, index, [helper._get_tensor_rank(index)]
-        )
-    try:
-        scatter_indices = opset9.expand_as(g, index, other)
-    except:
-        scatter_indices = index
-
-    # TODO: Partially supported.
-    # Because of the limitations of ONNX scatter element.
-
-    if (include_self is True or index_duplicates) and reduction == 'mean':
-        # onnx ScatterElements (opset 18) only support reduction = [none (default), add, mul, max, min].
-        ERROR('unsupported now in convert_index_reduce.')
-
-    # index_duplicates == True
-    if index_duplicates:
-        # TODO:Because the current maximum Op_version of torch_to_onnx is 16,
-        # and only the ScatterElement of Op_set 18 supports min/max,
-        # in order to ensure the accuracy of the onnx definition in the parser,
-        # max/min is not supported now.
-        # Wait until torch_to_onnx can support op_version 18 before supporting it.
-        #
-        from torch.onnx import symbolic_opset11 as opset11
-        dtype = other.type().scalarType()
-        if include_self is False and reduction == 'amin':
-            reduction = 'min'
-            add_value = torch.full(other_shape, np.iinfo(
-                np.int16).max, dtype=helper.pytorch_name_to_type[dtype])
-            zero_value = torch.full(
-                x_shape, 0, dtype=helper.pytorch_name_to_type[dtype])
-            add_v = g.op('Constant', value_t=add_value)
-            zeros = g.op('Constant', value_t=zero_value)
-            result = scatter_helper(
-                g, zeros, dim, scatter_indices, add_v, 'add')
-
-            x = opset11.add(g, x, result)
-        elif include_self is False and reduction == 'prod':
-
-            scatter_value = torch.full(
-                other_shape, 1, dtype=helper.pytorch_name_to_type[dtype])
-            scatter_v = g.op('Constant', value_t=scatter_value)
-            x = scatter_helper(
-                g, x, dim, scatter_indices, scatter_v, 'none')
-            reduction = 'mul'
-        elif reduction == 'amax':
-            reduction = 'max'
-        elif reduction == 'amin':
-            reduction = 'min'
-        elif reduction == 'prod':
-            reduction = 'mul'
-        return scatter_helper(g, x, dim, scatter_indices, other, reduction)
-
-    # index_duplicates == False
-    if include_self is False:
-        if reduction == 'amin':
-            reduction = 'min'
-        else:
-            reduction = 'none'
-        return scatter_helper(g, x, dim, scatter_indices, other, reduction)
-    else:
-        # TODO:Same as above
-        if reduction == 'amin':
-            reduction = 'min'
-        elif reduction == 'amax':
-            reduction = 'max'
-        elif reduction == 'prod':
-            reduction = 'mul'
-        else:
-            ERROR('invalid reduction type in convert_index_reduce.')
-
-    return scatter_helper(g, x, dim, scatter_indices, other, reduction)
+    if reduction == 'amin':
+        max_value = _get_dtype_min_max_value(other_dtype, 'max')
+        src_max = g.op('Constant', value_t=torch.full(other_shape, max_value, dtype=other_dtype))
+        x = g.op('ScatterElements', x, scatter_indices, src_max, axis_i=dim, reduction_s='none')
+    elif reduction == 'amax':
+        min_value = _get_dtype_min_max_value(other_dtype, 'min')
+        src_min = g.op('Constant', value_t=torch.full(other_shape, min_value, dtype=other_dtype))
+        x = g.op('ScatterElements', x, scatter_indices, src_min, axis_i=dim, reduction_s='none')
+    elif reduction == 'prod':
+        one_value = g.op('Constant', value_t=torch.full(other_shape, 1, dtype=other_dtype))
+        x = g.op('ScatterElements', x, scatter_indices, one_value, axis_i=dim, reduction_s='none')
+    return g.op('ScatterElements', x, scatter_indices, other, axis_i=dim, reduction_s=onnx_reduction)
 
 
 @quantized_args(True, False)
