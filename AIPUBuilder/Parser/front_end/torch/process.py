@@ -1250,6 +1250,16 @@ def convert_index_add(g, x, dim, index, other, alpha=None):
         return scatter_helper(g, x, dim, scatter_add_indices, other, 'add')
 
 
+@helper.parse_args('v', 'i', 'v', 'v')
+def convert_index_copy(g, self, dim, index, source):
+    from torch.onnx import symbolic_opset11 as opset11
+    input_rank = helper._get_tensor_rank(self)
+    if dim < 0:
+        dim = dim + input_rank
+    dim_node = g.op('Constant', value_t=torch.tensor(dim, dtype=torch.int64))
+    return opset11.index_copy(g, self, dim_node, index, source)
+
+
 @helper.parse_args('v', 'i', 'v', 'v', 's')
 def scatter_helper(g, self, dim, index, src, reduction):
     if helper.is_caffe2_aten_fallback():
@@ -1665,6 +1675,8 @@ def convert_torch_to_onnx(model_path, params):
         'aten::cosh', convert_cosh, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::index_add', convert_index_add, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'aten::index_copy', convert_index_copy, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::index_fill', convert_index_fill, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
