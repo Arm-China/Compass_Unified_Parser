@@ -9,6 +9,39 @@ import numpy as np
 from utils.run import generate_ir
 
 
+def create_caffe_model(model_path, prototxt_path):
+    ''' Create caffe model.
+    '''
+    import caffe
+    prototxt_content = '''
+name: 'test'
+input: 'X'
+input_shape { dim: 20  dim: 10}
+
+layer {
+    name: 'ip1'
+    type: 'InnerProduct'
+    bottom: 'X'
+    top: 'ip1'
+    inner_product_param {
+        num_output: 64
+        weight_filler {
+        type: 'gaussian'
+        std: 0.1
+        }
+        bias_filler {
+        type: 'constant'
+        }
+    }
+}'''
+    with open(prototxt_path, 'w') as txt_file:
+        txt_file.write(prototxt_content)
+    caffe.set_mode_cpu()
+    net = caffe.Net(prototxt_path, caffe.TEST)
+    net.save(model_path)
+    return model_path
+
+
 def create_tf_model(model_path, input_shape, is_tf_model):
     ''' Create tf/tflite model.
     '''
@@ -101,22 +134,26 @@ if not os.path.exists(output_dir):
 
 model_name = TEST_NAME
 cfg_path = model_name + '.cfg'
-for model_type, format_type in zip(['tf', 'tflite', 'tf', 'onnx', 'torch'], ['pb', 'tflite', 'h5', 'onnx', 'pt']):
+for model_type, format_type in zip(['caffe', 'tf', 'tflite', 'tf', 'onnx', 'torch'], ['caffemodel', 'pb', 'tflite', 'h5', 'onnx', 'pt']):
     model_path = model_name + '.' + format_type
+    prototxt_path = (model_name + '.prototxt') if model_type == 'caffe' else ''
     # Generate cfg
     cfg_content = '''[Common]
     model_type = {0}
     model_name = similarity
     input_model = {1}
+    caffe_prototxt = {2}
     input = X
-    input_shape = {2}
+    input_shape = {3}
     output_dir = ./output_dir
     similarity_input_npy = input.npy
-    '''.format(model_type, model_path, str(input_shape))
+    '''.format(model_type, model_path, prototxt_path, str(input_shape))
     with open(cfg_path, 'w') as txt_file:
         txt_file.write(cfg_content)
     # Create model
-    if format_type in ('pb', 'tflite'):
+    if format_type == 'caffemodel':
+        create_caffe_model(model_path, prototxt_path)
+    elif format_type in ('pb', 'tflite'):
         create_tf_model(model_path, input_shape, (format_type == 'pb'))
     elif format_type == 'h5':
         create_tf2_model(model_path, input_shape)

@@ -17,7 +17,7 @@ def generate_symm_quant_cfg(model_name, txt_path, bin_path):
         f.write('bin = ' + bin_path + '\n')
         f.write('model_name = ' + model_name + '\n')
         f.write('dataset = NumpyDataset\n')
-        f.write('output_dir = ./output_dir\n')
+        f.write('output_dir = ' + os.path.dirname(txt_path) + '\n')
         f.write('dump = False\n')
         f.write('weight_bits = 8\n')
         f.write('bias_bits = 32\n')
@@ -31,7 +31,7 @@ def generate_symm_quant_ir(cfg_path):
     '''Call qtlib to generate symm quant IR; return quant txt file and quant bin file'''
     entry_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
                               'Optimizer', 'tools', 'optimizer_main.py')
-    DEBUG('Trigger script to generate symm quant IR: %s' % entry_path)
+    INFO('Trigger script to generate symm quant IR: %s' % entry_path)
     run_process = subprocess.Popen(['python3', entry_path, '-c', cfg_path],
                                    stdout=subprocess.PIPE,
                                    stderr=subprocess.STDOUT)
