@@ -39,10 +39,15 @@ def check_similarity(graph, params, txt_path, bin_path):
             return False
         new_base_path = os.path.join(os.path.dirname(txt_path), model_name + '_opt')
         txt_path = new_base_path + '.txt'
-        bin_path = new_base_path + '.bin'
-        if not is_file(txt_path) or not is_file(bin_path):
-            ERROR('[Parser]: Meets invalid symm quant txt(%s) or bin(%s) file!' % (txt_path, bin_path))
+        if not is_file(txt_path):
+            ERROR('[Parser]: Meets invalid symm quant txt(%s) file!' % txt_path)
             return False
+        INFO('[Parser]: symm quant txt file: %s' % txt_path)
+        bin_path = new_base_path + '.bin'
+        if not is_file(bin_path):
+            ERROR('[Parser]: Meets invalid symm quant bin(%s) file!' % bin_path)
+            return False
+        INFO('[Parser]: symm quant bin file: %s' % bin_path)
         forward_type = 'quantized'
 
     ret = True
@@ -137,8 +142,8 @@ def univ_parser(params):
                             elif isinstance(data, np.lib.npyio.NpzFile):
                                 for key in list(data.keys()):
                                     input_npy.update({key: data[key]})
-                        except:
-                            WARN('[Parser]: Load input npy(%s) failed!' % os.path.basename(p))
+                        except Exception as e:
+                            WARN('[Parser]: Load input npy(%s) failed because %s' % (os.path.basename(p), str(e)))
             return input_npy
 
         params['input_npy'] = _parse_npy('input_npy')

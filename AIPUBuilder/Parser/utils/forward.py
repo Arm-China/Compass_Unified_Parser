@@ -11,7 +11,7 @@ from .common import (get_model_type, match_node_name,
                      save_data_to_file)
 
 
-def caffe_forward(proto_path, model_path, feed_dict, output_names=None, save_output=True):
+def caffe_forward_impl(output_dict, proto_path, model_path, feed_dict, output_names):
     import caffe
 
     net = caffe.Net(proto_path, model_path, caffe.TEST)
@@ -22,14 +22,38 @@ def caffe_forward(proto_path, model_path, feed_dict, output_names=None, save_out
     if output_names is None:
         output_names = net.outputs
 
-    output_dict = dict()
     for out_name in output_names:
         out_data = net.blobs[out_name].data[...]
         output_dict[out_name] = out_data
+    return
+
+
+def caffe_forward(proto_path, model_path, feed_dict, output_names=None, save_output=True):
+    import multiprocessing as mp
+    from multiprocessing import Process, Manager
+
+    output_dict = {}
+
+    original_start_method = mp.get_start_method()
+    with Manager() as manager:
+        # Force start method to spawn so that the environment is clean(avoid duplicate define issue of caffe.proto)
+        mp.set_start_method('spawn', force=True)
+        mgr_dict = manager.dict()
+        process = Process(target=caffe_forward_impl, args=(mgr_dict, proto_path, model_path, feed_dict, output_names))
+        process.start()
+        process.join()
+        # exit_code = process.exitcode
+        # Copy the result returned from caffe_forward_impl to output_dict
+        output_dict = {key: value for key, value in mgr_dict.items()}
+        try:
+            process.close()
+        except Exception as e:
+            DEBUG('[Parser]: Fail to close process because %s' % str(e))
+        # Reset to previous start method
+        mp.set_start_method(original_start_method, force=True)
 
     if save_output:
         save_data_to_file('caffe_outputs.npy', output_dict)
-
     return output_dict
 
 
