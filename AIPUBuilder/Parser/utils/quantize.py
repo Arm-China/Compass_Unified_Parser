@@ -23,7 +23,7 @@ def generate_symm_quant_cfg(model_name, txt_path, bin_path):
         f.write('bias_bits = 32\n')
         f.write('activation_bits = 8\n')
         f.write('quant_ir_name = ' + model_name + '_opt\n')
-        f.write('compat_quantized_model = true\n')
+        f.write('scaling_bits = {softmax:[20,-1]}\n')
     return cfg_file
 
 
