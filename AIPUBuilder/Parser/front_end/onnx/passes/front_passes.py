@@ -391,9 +391,9 @@ def merge_qconv(graph):
     matched = False
     matches = matched_patterns(graph,
                                nodes=[
-                                   ('x_dequant', {'op': 'DequantizeLinear'}),
-                                   ('w_dequant', {'op': 'DequantizeLinear'}),
-                                   ('b_dequant', {'op': 'DequantizeLinear'}),
+                                   ('x_dequant', {'op': 'DequantizeLinear', 'unique': False}),
+                                   ('w_dequant', {'op': 'DequantizeLinear', 'unique': False}),
+                                   ('b_dequant', {'op': 'DequantizeLinear', 'unique': False}),
                                    ('conv', {'op': ['Conv', 'ConvTranspose']}),
                                    ('y_quant', {'op': 'QuantizeLinear'}),
                                ],
@@ -406,11 +406,11 @@ def merge_qconv(graph):
     matches_with_relu = matched_patterns(graph,
                                          nodes=[
                                              ('x_dequant', {
-                                              'op': 'DequantizeLinear'}),
+                                              'op': 'DequantizeLinear', 'unique': False}),
                                              ('w_dequant', {
-                                              'op': 'DequantizeLinear'}),
+                                              'op': 'DequantizeLinear', 'unique': False}),
                                              ('b_dequant', {
-                                              'op': 'DequantizeLinear'}),
+                                              'op': 'DequantizeLinear', 'unique': False}),
                                              ('conv', {'op': 'Conv'}),
                                              ('relu', {'op': 'Relu'}),
                                              ('y_quant', {
@@ -548,8 +548,8 @@ def merge_qmatmul(graph):
     matched = False
     matches = matched_patterns(graph,
                                nodes=[
-                                   ('a_dequant', {'op': 'DequantizeLinear'}),
-                                   ('b_dequant', {'op': 'DequantizeLinear'}),
+                                   ('a_dequant', {'op': 'DequantizeLinear', 'unique': False}),
+                                   ('b_dequant', {'op': 'DequantizeLinear', 'unique': False}),
                                    ('matmul', {'op': 'MatMul'}),
                                    ('y_quant', {'op': 'QuantizeLinear'}),
                                ],
