@@ -8072,7 +8072,6 @@ def split_special_ln(graph):
             ERROR('[Parser]: Meets invalid LayerNormalization Node(%s) in split_special_ln!' % ln)
             continue
         if ln_obj.get_out_ports() != [0]:
-            WARN('[Parser]: Outputs Mean and InvStdDev in LayerNormalization Node(%s) are not supported!' % ln)
             continue
         scale, _, scale_in_attr = ln_in_edges[1]
         bias, _, bias_in_attr = ln_in_edges[2]

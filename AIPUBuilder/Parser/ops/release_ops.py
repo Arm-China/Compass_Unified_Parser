@@ -4554,7 +4554,7 @@ class ArmSqrtOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
 class ArmSquareOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
-        return {0: 'float32'}
+        return {0: ['float32', 'int8', 'uint8']}
 
     def infer_shape(self):
         super(ArmSquareOp, self).infer_shape()
