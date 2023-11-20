@@ -1297,13 +1297,19 @@ class LRNOp(OpHasMethod, LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
             '''
         else:
             input_tensor = inputs[0]
+        input_dtype = input_tensor.dtype
+        if input_dtype != np.float32:
+            input_tensor = np.array(input_tensor, dtype=np.float32)
         input_tensor = torch.from_numpy(input_tensor)
+        # torch.nn.LocalResponseNorm doesn't support int input
         lrn = torch.nn.LocalResponseNorm(
             self.size, self.alpha, self.beta, self.bias)
         out_tensor = lrn(input_tensor).numpy()
         if self.data_format == 'NHWC':
             out_tensor = np.transpose(
                 out_tensor, [0] + list(range(2, input_dim)) + [1])
+        if input_dtype != np.float32:
+            out_tensor = np.array(out_tensor, dtype=input_dtype)
         self.set_out_tensor(out_tensor)
 
 
