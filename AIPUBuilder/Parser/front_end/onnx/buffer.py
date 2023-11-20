@@ -72,7 +72,8 @@ def get_tensor_shape_content(tensor_shape_proto):
         dim_value = d.dim_value
         if dim_value == 0:
             try:
-                if 'batch' in getattr(d, 'dim_param', ''):
+                if 'batch' in getattr(d, 'dim_param', '') \
+                        or 'N' in getattr(d, 'dim_param', ''):
                     dim_value = 1
                 else:
                     dim_value = int(getattr(d, 'dim_param', ''))
