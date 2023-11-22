@@ -2709,7 +2709,7 @@ class ArmInTopKOp(OpHasOneOutPort, ArmOp):
         return ret
 
 
-class ArmLayerNormOp(OpHasAxis, OpHasBiases, OpHasWeights, OpHasOneOutPort, ArmOp):
+class ArmLayerNormOp(OpHasAxis, OpHasBiases, OpHasWeights, OpHasVariableOutPorts, ArmOp):
     @classmethod
     def cast_in_ports(cls):
         return {0: 'float32'}
@@ -2736,7 +2736,12 @@ class ArmLayerNormOp(OpHasAxis, OpHasBiases, OpHasWeights, OpHasOneOutPort, ArmO
         weights = OpHasAxis.expand_to(self.weights, axes, len(inputs[0].shape))
         biases = OpHasAxis.expand_to(self.biases, axes, len(inputs[0].shape))
         out_tensor = (normalized * weights + biases).astype(np.float32)
-        self.set_out_tensor(out_tensor)
+        out_tensors = [out_tensor]
+        out_ports = self.get_out_ports()
+        if 1 in out_ports or 2 in out_ports:
+            out_tensors.append(np.array(mean, np.float32))
+            out_tensors.append(np.array(ngamma, np.float32))
+        self.set_out_tensor(out_tensors)
 
     def write_attrs(self, txt_file):
         ret = super(ArmLayerNormOp, self).write_attrs(txt_file)
