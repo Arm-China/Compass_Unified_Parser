@@ -891,6 +891,7 @@ def convert_gemm_to_fc(graph):
         gemm_in_edges = graph.sorted_in_edges(gemm, data=True)
         if len(gemm_in_edges) in (2, 3) \
                 and gemm_in_edges[0][2]['tensor'] is not None \
+                and gemm_in_edges[0][2]['tensor'].shape is not None \
                 and len(gemm_in_edges[0][2]['tensor'].shape) == 2:
             input2 = gemm_in_edges[1][0]
             input3 = gemm_in_edges[2][0] if len(gemm_in_edges) == 3 else ''
@@ -2393,6 +2394,12 @@ def convert_qadd(graph):
         if qadd_obj is None or len(in_edges) < 7:
             ERROR('[Parser]: Meets invalid QLinearAddMs node(%s) in convert_qadd!' % qadd)
             continue
+        qadd_src_a, qadd_src_b = in_edges[0][0], in_edges[1][0]
+        qadd_src_a_obj = NodeWrap(graph, qadd_src_a)['object']
+        qadd_src_b_obj = NodeWrap(graph, qadd_src_b)['object']
+        if qadd_src_a_obj is None or qadd_src_b_obj is None:
+            ERROR('[Parser]: Meets invalid input nodes(%s, %s) of QLinearAddMs in convert_qadd!' % (qadd_src_a, qadd_src_b))
+            continue
         if any(e[2]['tensor'] is None or not e[2]['tensor'].is_const for e in (in_edges[1:3] + in_edges[4:])):
             WARN('[Parser]: Only supports QLinearAddMs(%s) with constant scale/zp in convert_qadd!' % qadd)
             continue
@@ -2413,8 +2420,10 @@ def convert_qadd(graph):
         input_b_in_attr.update({'dst_in_port': 1})
         graph.add_edge(input_b, qadd, **input_b_in_attr)
         if graph._attr.get('quantize', False):
+            qadd_src_a_obj.quantize = True
             input_a_in_attr['tensor'].dtype = a_dtype
             input_a_in_attr['tensor'].scale_zp = (a_scale, a_zp)
+            qadd_src_b_obj.quantize = True
             input_b_in_attr['tensor'].dtype = b_dtype
             input_b_in_attr['tensor'].scale_zp = (b_scale, b_zp)
 
@@ -2450,6 +2459,11 @@ def convert_qconv(graph):
         if qconv_obj is None or qconv_obj.num_output is None or len(in_edges) != 9:
             ERROR('[Parser]: Meets invalid QLinearConv node(%s) in convert_qconv!' % qconv)
             continue
+        qconv_src = in_edges[0][0]
+        qconv_src_obj = NodeWrap(graph, qconv_src)['object']
+        if qconv_src_obj is None:
+            ERROR('[Parser]: Meets invalid input node(%s) of QLinearConv in convert_qconv!' % qconv_src)
+            continue
         if any(e[2]['tensor'].value is None for e in in_edges[1:]):
             ERROR('[Parser]: Meets invalid QLinearConv node(%s) to in convert_qconv!' % qconv)
             continue
@@ -2472,6 +2486,7 @@ def convert_qconv(graph):
         if graph._attr.get('quantize', False):
             b_scale = x_scale * w_scale
             b_zp = np.zeros(b_scale.shape, np.int32)
+            qconv_src_obj.quantize = True
             in_edges[0][2]['tensor'].dtype = str(x_dtype)
             in_edges[0][2]['tensor'].scale_zp = (x_scale, x_zp)
 
@@ -2523,6 +2538,13 @@ def convert_qgemm(graph):
         in_edges = graph.sorted_in_edges(qgemm, data=True)
         if qgemm_obj is None or len(in_edges) < 6:
             ERROR('[Parser]: Meets invalid QLinearGemmMs node(%s) in convert_qgemm!' % qgemm)
+            continue
+        qgemm_src_a, qgemm_src_b = in_edges[0][0], in_edges[1][0]
+        qgemm_src_a_obj = NodeWrap(graph, qgemm_src_a)['object']
+        qgemm_src_b_obj = NodeWrap(graph, qgemm_src_b)['object']
+        if qgemm_src_a_obj is None or qgemm_src_b_obj is None:
+            ERROR('[Parser]: Meets invalid input nodes(%s, %s) of QLinearAddMs in convert_qgemm!' %
+                  (qgemm_src_a, qgemm_src_b))
             continue
         if any((e[2]['tensor'] is None or not e[2]['tensor'].is_const) for e in (in_edges[1:3] + in_edges[4:6] + in_edges[7:])):
             WARN('[Parser]: Only supports QLinearGemmMs(%s) with constant scale/zp in convert_qgemm!' % qgemm)
@@ -2580,8 +2602,10 @@ def convert_qgemm(graph):
 
                 qgemm_attr.update({'quantize': False})
             else:
+                qgemm_src_a_obj.quantize = True
                 a_src_in_attr['tensor'].dtype = a_dtype
                 a_src_in_attr['tensor'].scale_zp = (a_scale, a_zp)
+                qgemm_src_b_obj.quantize = True
                 b_src_in_attr['tensor'].dtype = b_dtype
                 b_src_in_attr['tensor'].scale_zp = (b_scale, b_zp)
                 b_src_in_attr['dst_in_port'] = 1
@@ -2630,6 +2654,11 @@ def convert_qglobal_avgpool(graph):
         if qpool_obj is None or len(in_edges) != 5:
             ERROR('[Parser]: Meets invalid QLinearGlobalAveragePoolMs node(%s) in convert_qglobal_avgpool!' % qpool)
             continue
+        qpool_src = in_edges[0][0]
+        qpool_src_obj = NodeWrap(graph, qpool_src)['object']
+        if qpool_src_obj is None:
+            ERROR('[Parser]: Meets invalid input node(%s) of QLinearConv in convert_qpool!' % qpool_src)
+            continue
         if any((e[2]['tensor'] is None or not e[2]['tensor'].is_const) for e in in_edges[1:]):
             WARN('[Parser]: Only supports QLinearGlobalAveragePoolMs(%s) with constant scale/zp in convert_qglobal_avgpool!' % qpool)
             continue
@@ -2647,6 +2676,7 @@ def convert_qglobal_avgpool(graph):
                            'opset_version': 1})
         src, _, src_in_attr = in_edges[0]
         if graph._attr.get('quantize', False):
+            qpool_src_obj.quantize = True
             src_in_attr['tensor'].dtype = str(x_dtype)
             src_in_attr['tensor'].scale_zp = (x_scale, x_zp)
 
@@ -2679,6 +2709,13 @@ def convert_qmatmul(graph):
         if qmatmul_obj is None or len(in_edges) != 8:
             ERROR('[Parser]: Meets invalid QLinearMatMul node(%s) in convert_qmatmul!' % qmatmul)
             continue
+        qmatmul_src_a, qmatmul_src_b = in_edges[0][0], in_edges[1][0]
+        qmatmul_src_a_obj = NodeWrap(graph, qmatmul_src_a)['object']
+        qmatmul_src_b_obj = NodeWrap(graph, qmatmul_src_b)['object']
+        if qmatmul_src_a_obj is None or qmatmul_src_b_obj is None:
+            ERROR('[Parser]: Meets invalid input nodes(%s, %s) of QLinearAddMs in convert_qmatmul!' %
+                  (qmatmul_src_a, qmatmul_src_b))
+            continue
         if any((e[2]['tensor'] is None or e[2]['tensor'].value is None) for e in (in_edges[1:3] + in_edges[4:])):
             ERROR('[Parser]: Meets invalid QLinearMatMul node(%s) to in convert_qmatmul!' % qmatmul)
             continue
@@ -2702,8 +2739,10 @@ def convert_qmatmul(graph):
         input_b_in_attr.update({'dst_in_port': 1})
         graph.add_edge(input_b, qmatmul, **input_b_in_attr)
         if graph._attr.get('quantize', False):
+            qmatmul_src_a_obj.quantize = True
             input_a_in_attr['tensor'].dtype = str(a_dtype)
             input_a_in_attr['tensor'].scale_zp = (a_scale, a_zp)
+            qmatmul_src_b_obj.quantize = True
             input_b_in_attr['tensor'].dtype = str(b_dtype)
             input_b_in_attr['tensor'].scale_zp = (b_scale, b_zp)
 
