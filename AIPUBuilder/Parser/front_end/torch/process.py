@@ -915,11 +915,12 @@ def convert_quantized_cat(
     return helper.quantize_helper(g, concatenated, op_scale, op_zero_point)
 
 
-@quantized_args(True)
-def convert_reduce_mean(g, x, dim=None, keepdim=None, allow_multi_dim_support=True):
+def convert_reduce_op(g, x, onnx_op, dim=None, keepdim=None, dtype=None, allow_multi_dim_support=True):
     if dim is None:
         # all-reduce path
-        return helper._handle_reduce_dim_none(g, x, 'ReduceMean')
+        x_rank = helper._get_tensor_rank(x)
+        dim_list = list(range(x_rank))
+        return g.op(onnx_op, x, axes_i=dim_list, keepdims_i=0)
     else:
         # dim-reduce path
         desc = 'is' if allow_multi_dim_support else 'i'
@@ -927,7 +928,22 @@ def convert_reduce_mean(g, x, dim=None, keepdim=None, allow_multi_dim_support=Tr
             dim, desc, 'dim'
         ), helper._get_const(keepdim, 'i', 'keepdim')
         dim_list = dim if allow_multi_dim_support else [dim]
-        return g.op('ReduceMean', x, axes_i=dim_list, keepdims_i=keepdim)
+        if dtype is not None:
+            if dtype.node().kind() == 'onnx::Constant':
+                dtype = helper._get_const(dtype, 'i', 'dtype')
+                x = g.op('Cast', x, to_i=helper.scalar_type_to_onnx[dtype])
+            else:
+                WARN('[Parser]: Meets non-constant dtype in convert_reduce_op; dtype will be ignored!')
+        return g.op(onnx_op, x, axes_i=dim_list, keepdims_i=keepdim)
+
+
+@quantized_args(True)
+def convert_reduce_mean(g, x, dim_or_dtype=None, keepdim=None, dtype=None):
+    # By checking whether keepdim is set, decide which one is used(reduce_nodim or reduce_dim).
+    onnx_op = 'ReduceMean'
+    if keepdim is None:
+        return convert_reduce_op(g, x, onnx_op)
+    return convert_reduce_op(g, x, onnx_op, dim_or_dtype, keepdim, dtype, True)
 
 
 @helper.parse_args('v', 'v', 'f', 'i', 'i', 'i', 'i')
