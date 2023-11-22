@@ -382,6 +382,11 @@ def convert_dsplit(g, input, split_size_or_sizes):
     return convert_tensor_split(g, input, split_size_or_sizes, 2)
 
 
+@helper.parse_args('v')
+def convert_erfc(g, input):
+    return opset9.sub(g, g.op('Constant', value_t=torch.tensor(1.)), opset9.erf(g, input))
+
+
 def convert_quantized_add_relu(g, x, y, op_scale, op_zero_point):
     x, _, _, _ = helper.dequantize_helper(g, x)
     y, _, _, _ = helper.dequantize_helper(g, y)
@@ -481,6 +486,11 @@ def convert_to_bool(g, input):
         input = g.op(
             'Cast', input, to_i=torch._C._onnx.TensorProtoDataType.BOOL)
     return input
+
+
+@helper.parse_args('v', 'v')
+def convert_logaddexp(g, input, other):
+    return opset9.log(g, opset9.add(g, opset9.exp(g, input), opset9.exp(g, other)))
 
 
 def convert_logical(g, input, other=None, op_type=''):
@@ -1665,6 +1675,8 @@ def convert_torch_to_onnx(model_path, params):
     torch.onnx.register_custom_op_symbolic(
         'aten::equal', convert_equal, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
+        'aten::erfc', convert_erfc, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
         'aten::flatten', convert_flatten, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::fliplr', convert_fliplr, onnx_opset_version)
@@ -1676,6 +1688,8 @@ def convert_torch_to_onnx(model_path, params):
         'aten::hardshrink', convert_hardshrink, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::linalg_norm', convert_linalg_norm, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'aten::logaddexp', convert_logaddexp, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::max_pool1d', convert_max_pool1d, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
