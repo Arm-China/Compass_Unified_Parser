@@ -135,6 +135,24 @@ def convert_addcmul(g, input, tensor1, tensor2, value=1.0):
     return opset9.add(g, input, opset9.mul(g, opset9.mul(g, tensor1, tensor2), value_tens))
 
 
+@helper.parse_args('v', 'v', 'v', 'f', 'f')
+def convert_addmv(g, input, tensor1, tensor2, beta=1.0, alpha=1.0):
+    value_beta = g.op('Constant', value_t=torch.tensor(beta))
+    value_alpha = g.op('Constant', value_t=torch.tensor(alpha))
+    return opset9.add(g, opset9.mul(g, input, value_beta), opset9.mul(g, opset9.matmul(g, tensor1, tensor2), value_alpha))
+
+
+@helper.parse_args('v', 'v', 'v', 'f', 'f')
+def convert_addr(g, input, tensor1, tensor2, beta=1.0, alpha=1.0):
+    value_beta = g.op('Constant', value_t=torch.tensor(beta))
+    value_alpha = g.op('Constant', value_t=torch.tensor(alpha))
+    t1_shape = helper._get_tensor_sizes(tensor1)
+    t2_shape = helper._get_tensor_sizes(tensor2)
+    m1 = helper._reshape_helper(g, tensor1, list(t1_shape) + [1, ])
+    m2 = helper._reshape_helper(g, tensor2, [1, ] + list(t2_shape))
+    return opset9.add(g, opset9.mul(g, input, value_beta), opset9.mul(g, opset9.matmul(g, m1, m2), value_alpha))
+
+
 @helper.parse_args('v', 'v', 'v')
 def convert_rsub(g, input, other, alpha=None):
     return convert_add_sub(g, other, input, alpha, 'Sub')
@@ -1610,6 +1628,10 @@ def convert_torch_to_onnx(model_path, params):
         'aten::addcdiv', convert_addcdiv, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::addcmul', convert_addcmul, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'aten::addmv', convert_addmv, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'aten::addr', convert_addr, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::asinh', convert_asinh, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
