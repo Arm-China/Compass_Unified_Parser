@@ -1123,9 +1123,9 @@ def convert_quantized_leaky_relu(g, x, negative_slope, inplace, op_scale, op_zer
 
 
 def convert_quantized_elu(g, x, op_scale, op_zero_point, alpha, scale, input_scale):
-    x, _, _, _ = helper.dequantize_helper(g, x)
+    x, _, x_zero_point, _ = helper.dequantize_helper(g, x)
     output = opset9.elu(g, x, alpha, scale, input_scale)
-    return quantize_helper(g, output, op_scale, op_zero_point)
+    return quantize_helper(g, output, op_scale, op_zero_point, zero_point_scalar_type=x_zero_point.type().scalarType())
 
 
 @helper.parse_args('v', 'v')
@@ -1486,12 +1486,13 @@ def convert_torch_to_onnx(model_path, params):
                         onnx_model_path,
                         input_names,
                         output_names,
-                        opset_version=None):
+                        onnx_opset_version=None):
         custom_opsets = {'opset_11': 11}
-        if onnx_opset_version < 18:
-            custom_opsets.update({'opset_18': 18, 'opset_19': 19})
-        elif onnx_opset_version == 18:
-            custom_opsets.update({'opset_19': 19})
+        if onnx_opset_version is not None:
+            if onnx_opset_version < 18:
+                custom_opsets.update({'opset_18': 18, 'opset_19': 19})
+            elif onnx_opset_version == 18:
+                custom_opsets.update({'opset_19': 19})
         # Note: Use operator_export_type=torch.onnx.OperatorExportTypes.ONNX_ATEN_FALLBACK
         # or torch.onnx.OperatorExportTypes.ONNX_ATEN for debug if export fails.
         # The failure could be caused by unexpected input shapes.
