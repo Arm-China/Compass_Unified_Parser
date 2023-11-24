@@ -3328,16 +3328,18 @@ def detection_post_process(graph, params):
                 ERROR('[Parser]: Invalid params of output nodes (%s or %s) for detection_post_process!' % (
                     out1, out2))
                 return
-            if len(out1_out_shapes[0]) != 3:
-                ERROR('[Parser]: The length of output shape of output node (%s) should be 3 but got %d for detection_post_process!' % (
+            if len(out1_out_shapes[0]) not in (3, 4):
+                ERROR('[Parser]: The length of output shape of output node (%s) should be 3 or 4 but got %d for detection_post_process!' % (
                     out1, len(out1_out_shapes[0])))
                 return
-            if len(out2_out_shapes[0]) != 3:
-                ERROR('[Parser]: The length of output shape of output node (%s) should be 3 but got %d for detection_post_process!' % (
+            if len(out2_out_shapes[0]) not in (3, 4):
+                ERROR('[Parser]: The length of output shape of output node (%s) should be 3 or 4 but got %d for detection_post_process!' % (
                     out2, len(out2_out_shapes[0])))
                 return
 
-            if out1_out_shapes[0][1] == 1 and out2_out_shapes[0][1] == 1:
+            out1_new_dim, out2_new_dim = None, None
+            if len(out1_out_shapes[0]) == 3 and len(out2_out_shapes[0]) == 3 \
+                    and out1_out_shapes[0][1] == 1 and out2_out_shapes[0][1] == 1:
                 if out1_out_shapes[0][2] % 4 == 0 and out2_out_shapes[0][2] % (out1_out_shapes[0][2] // 4) == 0:
                     pred_box_num = out1_out_shapes[0][2] // 4
                     total_classes_num = out2_out_shapes[0][2] // pred_box_num
@@ -3350,20 +3352,34 @@ def detection_post_process(graph, params):
                     out1_new_dim = [out1_out_shapes[0][0],
                                     pred_box_num, total_classes_num]
                     out2_new_dim = [out2_out_shapes[0][0], pred_box_num, 4]
+            elif (len(out1_out_shapes[0]) == 4 or len(out2_out_shapes[0]) == 4):
+                if out1_out_shapes[0][0] != out2_out_shapes[0][0] \
+                        or int(np.prod(out1_out_shapes[0][1:-1])) != int(np.prod(out2_out_shapes[0][1:-1])):
+                    ERROR('[Parser]: Meets unexpected output shape of output nodes (%s, %s) for detection_post_process!' % (
+                        out1, out2))
+                    return
+                if len(out1_out_shapes[0]) == 4:
+                    out1_new_dim = [out1_out_shapes[0][0], int(
+                        np.prod(out1_out_shapes[0][1:-1])), out1_out_shapes[0][-1]]
+                else:  # len(out2_out_shapes[0]) == 4
+                    out2_new_dim = [out2_out_shapes[0][0], int(
+                        np.prod(out2_out_shapes[0][1:-1])), out2_out_shapes[0][-1]]
 
+            if out1_new_dim is not None:
                 out1_out_edges = graph.sorted_out_edges(out1, data=True)
                 _, out_name1, out_attr1 = out1_out_edges[0]
                 reshape1 = insert_reshape(
                     graph, out1, out_name1, out_attr1, out1_new_dim, type='ArmReshape')
                 out1 = reshape1
+                graph._attr['output_names'][0] = reshape1
 
+            if out2_new_dim is not None:
                 out2_out_edges = graph.sorted_out_edges(out2, data=True)
                 _, out_name2, out_attr2 = out2_out_edges[0]
                 reshape2 = insert_reshape(
                     graph, out2, out_name2, out_attr2, out2_new_dim, type='ArmReshape')
                 out2 = reshape2
-
-                graph._attr['output_names'] = [reshape1, reshape2]
+                graph._attr['output_names'][1] = reshape2
 
             vaild_box_num = None
 
