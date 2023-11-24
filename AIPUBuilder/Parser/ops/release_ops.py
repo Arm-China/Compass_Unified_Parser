@@ -153,7 +153,7 @@ class ArmActivationOp(LayoutUnawareOp, OpHasMethod, OpHasOneOutPort, ArmOp):
             out_tensor = self.selu()
         elif self.method == 'SHRINK':
             out_tensor = self.shrink()
-        elif self.method in ('SIGMOID', 'TANH'):
+        elif self.method in ('ELU', 'SIGMOID', 'TANH'):
             if np.issubdtype(inputs[0].dtype, np.integer):
                 inp = inputs[0].astype(np.float32)
             else:
