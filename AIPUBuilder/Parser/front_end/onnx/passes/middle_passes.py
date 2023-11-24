@@ -3294,44 +3294,33 @@ def merge_gelu_3(graph):
         key_names = ['div', 'divc', 'erf', 'add', 'addc2',
                      'mul_1', 'mulc', 'mul_2']
         node_objs = {k: NodeWrap(graph, m[k])['object'] for k in key_names}
-        if all([obj is not None for obj in node_objs.values()]):
+        if all(obj is not None for obj in node_objs.values()):
 
             mul_1_in_edges = graph.sorted_in_edges(m['mul_1'], data=True)
+            mul_1_in_edges = [(src, _, in_attr) for src, _, in_attr in mul_1_in_edges if src != m['mulc']]
             div_in_edges = graph.sorted_in_edges(m['div'], data=True)
 
-            if len(mul_1_in_edges) != 2 \
+            if len(mul_1_in_edges) != 1 \
                     or len(div_in_edges) != 2:
                 continue
-            mul_1_src, _, in_attr1 = mul_1_in_edges[1]
+            mul_1_src, _, in_attr1 = mul_1_in_edges[0]
             div_src, _, in_attr2 = div_in_edges[0]
 
             if mul_1_src != div_src \
                     or in_attr1['src_out_port'] != in_attr2['src_out_port']:
                 continue
 
-            mul_2_in_edges = graph.sorted_in_edges(m['mul_2'], data=True)
-            div_out_edges = graph.sorted_out_edges(m['div'])
-            mul_1_out_edges = graph.sorted_out_edges(m['mul_1'])
-            add_out_edges = graph.sorted_out_edges(m['add'])
-            erf_out_edges = graph.sorted_out_edges(m['erf'])
-
-            if len(div_out_edges) != 1 \
-                    or len(mul_1_out_edges) != 1 \
-                    or len(add_out_edges) != 1 \
-                    or len(erf_out_edges) != 1\
-                    or len(node_objs['div'].sorted_in_consts()) != 1\
-                    or len(node_objs['add'].sorted_in_consts()) != 1\
-                    or len(node_objs['mul_1'].sorted_in_consts()) != 1\
-                    or FLOAT_EQUAL(node_objs['div'].sorted_in_consts()[0][2], 1.4142135381698608) is False \
-                    or FLOAT_EQUAL(node_objs['add'].sorted_in_consts()[0][2], 1.0) is False \
-                    or FLOAT_EQUAL(node_objs['mul_1'].sorted_in_consts()[0][2], 0.5) is False:
+            if not FLOAT_EQUAL(node_objs['divc'].value, 1.4142135381698608) \
+                    or not FLOAT_EQUAL(node_objs['addc2'].value, 1.0) \
+                    or not FLOAT_EQUAL(node_objs['mulc'].value, 0.5):
                 continue
 
             matched = True
-            graph.remove_edge(div_src, m['mul_1'])
-            graph.remove_edge(div_src, m['div'])
+            mul_2_in_edges = graph.sorted_in_edges(m['mul_2'])
             graph.remove_edges_from(mul_2_in_edges)
-            graph.add_edge(div_src, m['mul_2'], **in_attr1)
+            gelu_in_attr = copy.deepcopy(in_attr1)
+            gelu_in_attr.update({'dst_in_port': 0})
+            graph.add_edge(div_src, m['mul_2'], **gelu_in_attr)
             gelu_attr = node_objs['mul_2'].copied_attr()
             gelu_attr.update({'approximate': 'tanh'})
             NodeWrap(graph, m['mul_2']).replace_obj('Gelu', gelu_attr)
