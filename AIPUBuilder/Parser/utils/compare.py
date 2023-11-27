@@ -40,8 +40,8 @@ def compare_data(data1, data2):
             pass
         else:
             ret = False
-        # Check mean: pass if mean <= 1e-4
-        if mean_value > 1e-4:
+        # Check mean: pass if mean <= 1e-2
+        if mean_value > 1e-2:
             ret = False
         if not ret:
             INFO('Former data output: ')

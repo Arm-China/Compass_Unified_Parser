@@ -107,21 +107,57 @@ def keras_forward(model_path, feed_dict, output_names=None, save_output=True):
 
 
 def onnx_forward(model_path, feed_dict, output_names=None, save_output=True):
+    import copy
     import onnxruntime as rt
+    import onnx
 
-    sess = rt.InferenceSession(model_path)
     # input_name = sess.get_inputs()[0].name
     if output_names is None:
         output_names = [o.name for o in sess.get_outputs()]
-    elif not isinstance(output_names, list):
-        ERROR('Argument output_names should be a list!')
+        sess = rt.InferenceSession(model_path)
+    else:
+        assert isinstance(output_names, list), 'Argument output_names should be a list!'
+        model = onnx.load(model_path)
+        # clear outputs first
+        for output in model.graph.output:
+            model.graph.output.pop()
+        # convert node name to tensor name
+        original_output_names = copy.deepcopy(output_names)
+        for node in model.graph.node:
+            if node.name in original_output_names:
+                index = output_names.index(node.name)
+                output_names.pop(index)
+                for idx, output in enumerate(node.output):
+                    output_names.insert(index+idx, output)
+        for output in output_names:
+            model.graph.output.extend([onnx.ValueInfoProto(name=output)])
+            print("Model add output %s" % output)
+        sess = rt.InferenceSession(model.SerializeToString())
 
-    output_data = sess.run(output_names, feed_dict)
+    model_inputs = sess.get_inputs()
+    input_names_from_feed_dict = list(feed_dict.keys())
+    updated_feed_dict = {}
+    for model_input, default_name in zip(model_inputs, input_names_from_feed_dict):
+        input_name = model_input.name
+        if input_name in feed_dict:
+            key_name = input_name
+        else:
+            WARN('Cannot find input name (%s) from feed_dict! Will try to use input (%s) from feed_dict!' %
+                 (input_name, default_name))
+            key_name = default_name
+        updated_feed_dict.update({input_name: feed_dict[key_name]})
+
+    try:
+        o_names = [o.name for o in sess.get_outputs()]
+        output_data = sess.run(o_names, updated_feed_dict)
+    except Exception as e:
+        ERROR("Fail to run because %s" % str(e))
+
     output_dict = dict()
-    for out_name, out_data in zip(output_names, output_data):
-        # print(out_name, out_data.shape)
-        # if out_data.shape:
-        #     print(out_data.flatten()[:50])
+    for out_name, out_data in zip(o_names, output_data):
+        if isinstance(out_data, list):
+            assert len(out_data) == 1, 'out_data is a list of more than 1 element!'
+            out_data = out_data[0]
         output_dict[out_name] = out_data
 
     if save_output:
@@ -190,13 +226,23 @@ def tflite_forward(model_path, feed_dict, output_names=None, save_output=True):
     output_details = interpreter.get_output_details()
 
     for inp in input_details:
+        if inp['name'] not in feed_dict:
+            ERROR('[Parser]: Cannot find input %s from feed_dict!' % inp['name'])
+            continue
         interpreter.set_tensor(inp['index'], feed_dict[inp['name']])
     interpreter.invoke()
     output_dict = dict()
-    for out in output_details:
-        out_name = out['name']
-        output_data = interpreter.get_tensor(out['index'])
-        output_dict[out_name] = output_data
+    if output_names:
+        for detail in interpreter.get_tensor_details():
+            tensor_name = detail['name']
+            if tensor_name and tensor_name in output_names:
+                output_data = interpreter.get_tensor(detail['index'])
+                output_dict[tensor_name] = output_data
+    else:
+        for out in output_details:
+            out_name = out['name']
+            output_data = interpreter.get_tensor(out['index'])
+            output_dict[out_name] = output_data
 
     if save_output:
         save_data_to_file('tflite_outputs.npy', output_dict)
@@ -213,6 +259,8 @@ def torch_forward(model_path, ordered_feed_dict, output_names=None, save_output=
         if isinstance(data, (list, tuple)):
             for nested_data in data:
                 outputs.extend(_flat_outputs(nested_data))
+        elif isinstance(data, dict):
+            outputs.extend(list(data.values()))
         else:
             outputs.append(data)
         return outputs
@@ -295,9 +343,12 @@ def opt_forward(txt_path, bin_path, feed_dict, output_names=None, save_output=Tr
     input_names = []
     if in_match and in_match.group(0) and in_match.group(1):
         input_names = in_match.group(1).rsplit(',')
+    input_names_from_feed_dict = list(feed_dict.keys())
+    assert len(input_names) == len(input_names_from_feed_dict), \
+        'Expects %d inputs but got %d in opt_forward!' % (len(input_names), len(input_names_from_feed_dict))
     # The order of inputs matters for opt forward. Update feed_dict to match input order in IR.
     ordered_feed_dict = {}
-    for name in input_names:
+    for name, default_name in zip(input_names, input_names_from_feed_dict):
         key_name = None
         if name in feed_dict.keys():
             key_name = name
@@ -312,10 +363,11 @@ def opt_forward(txt_path, bin_path, feed_dict, output_names=None, save_output=Tr
             elif (name_without_postfix + ':0') in feed_dict.keys():
                 key_name = name_without_postfix + ':0'
             else:
-                ERROR('Cannot find input name (%s) from feed_dict!' % name)
-                continue
+                WARN('Cannot find input name (%s) from feed_dict! Will try to use input (%s) from feed_dict!' %
+                     (name, default_name))
+                key_name = default_name
         input_data = feed_dict[key_name]
-        ordered_feed_dict.update({key_name: input_data})
+        ordered_feed_dict.update({name: input_data})
         if not input_is_quantized and is_quantized_model and 'int' in input_data.dtype.name:
             input_is_quantized = True
 
