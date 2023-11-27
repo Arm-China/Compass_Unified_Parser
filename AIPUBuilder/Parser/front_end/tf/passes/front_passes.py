@@ -1145,6 +1145,7 @@ def split_b2s(graph, op_type='TfBatchToSpaceND'):
     if op_type not in ('TfBatchToSpaceND', 'Tfbatch_to_space_nd', 'LiteBATCH_TO_SPACE_ND'):
         ERROR('[Parser]: Meets invalid Op type (%s) in split_b2s!' % op_type)
         return
+    matched = False
     transpose_version, d2s_version, slice_version, reshape_version = 1, 1, 1, 5
     matches = single_node_matcher(graph, op_type)
     for m in matches:
@@ -1165,12 +1166,13 @@ def split_b2s(graph, op_type='TfBatchToSpaceND'):
                 and all(s is not None for s in input_shapes[0]) \
                 and len(in_consts) >= 2 \
                 and [c[1] for c in in_consts[:2]] == [1, 2]:
+            matched = True
             in_shape = input_shapes[0]
             block_shape, crops = [c[2] for c in in_consts[:2]]
             is_4d = len(in_shape) == 4
             is_5d = len(in_shape) == 5
-            # TODO: need to support more cases in the future: such as Tflite, Tf2, 4d...
-            if b2s_obj.type == 'TfBatchToSpaceND' and is_5d:
+            if is_5d:
+                graph.remove_edges_from(in_edges[1:])
                 crops = [list(shape) for shape in crops]
                 b2s_attr = b2s_obj.copied_attr()
                 b2s_attr.update({'block_size': list(block_shape),
@@ -1318,6 +1320,8 @@ def split_b2s(graph, op_type='TfBatchToSpaceND'):
             if b2s in graph._attr['output_names']:
                 index = graph._attr['output_names'].index(b2s)
                 graph._attr['output_names'][index] = last
+    if matched:
+        clear_redundant_nodes(graph)
 
 
 def split_special_floormod(graph, op_type='TfFloorMod'):

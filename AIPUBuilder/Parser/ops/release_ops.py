@@ -621,8 +621,8 @@ class ArmBatchToSpaceNDOp(OpHasOneOutPort, ArmOp):
     def write_attrs(self, txt_file):
         ret = super(ArmBatchToSpaceNDOp, self).write_attrs(txt_file)
         if ret:
-            txt_file.write('block_size=%s\n' % str(self.block_size))
-            txt_file.write('crops=%s\n' % str(self.crops))
+            txt_file.write('block_size=[%s]\n' % list_list_to_string(self.block_size))
+            txt_file.write('crops=[%s]\n' % list_list_to_string(self.crops))
         return ret
 
 
