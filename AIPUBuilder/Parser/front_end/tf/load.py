@@ -173,29 +173,6 @@ def get_possible_outputs(graph_def):
     return output_names
 
 
-def parse_pb(model_path, params, anchor_tensors):
-
-    tfv1.reset_default_graph()
-
-    if not is_file(model_path):
-        FATAL('[Parser]: Invalid pb file %s in parse_pb!' %
-              model_path)
-    graph_def = tfv1.GraphDef()
-    try:
-        with tfv1.gfile.GFile(model_path, 'rb') as f:
-            graph_def.ParseFromString(f.read())
-
-        if not params['output_names']:
-            params['output_names'] = get_possible_outputs(graph_def)
-
-        with tfv1.Session() as sess:
-            graph_def = tfv1.graph_util.convert_variables_to_constants(
-                sess, graph_def, params['output_names'] + [trim_tensor_name(name) for name in anchor_tensors])
-    except Exception as e:
-        FATAL('[Parser]: Meet error in parse_pb: %s' % str(e))
-    return parse_graph_def(graph_def, params, anchor_tensors)
-
-
 def parse_graph_def(graph_def, params, anchor_tensors=list()):
     try:
 
@@ -238,29 +215,29 @@ def parse_graph_def(graph_def, params, anchor_tensors=list()):
                          % (str(tensor_shape), n['name'], str(input_shapes[n['name']])))
 
         tensors, feed_dict = OrderedDict(), OrderedDict()
-        for k, v in input_shapes.items():
-            if k not in nodes_dict.keys():
-                WARN(
-                    '[Parser]: Ignore input (%s) as it does not exist in graph!' % k)
-                params['input_shapes'].pop(k)
-                continue
-            tensor_name = k + ':0'
-            try:
-                t = default_graph.get_tensor_by_name(tensor_name)
-                np_type = t.dtype.as_numpy_dtype
-            except Exception as e:
-                WARN('[Parser]: Meets error when getting input tensor (%s): %s!' % (
-                    tensor_name, str(e)))
-                np_type = np.float32
-            if tensor_name in params.get('input_npy', {}):
-                np_tensor = params['input_npy'][tensor_name]
-            elif k in params.get('input_npy', {}):
-                np_tensor = params['input_npy'][k]
-            else:
-                np_tensor = np.zeros(v, dtype=np_type) \
-                    if re.search(r'int', str(np_type)) \
-                    else np.random.ranf(v).astype(np_type)
-            feed_dict.update({tensor_name: np_tensor})
+        # for k, v in input_shapes.items():
+        #     if k not in nodes_dict.keys():
+        #         WARN(
+        #             '[Parser]: Ignore input (%s) as it does not exist in graph!' % k)
+        #         params['input_shapes'].pop(k)
+        #         continue
+        #     tensor_name = k + ':0'
+        #     try:
+        #         t = default_graph.get_tensor_by_name(tensor_name)
+        #         np_type = t.dtype.as_numpy_dtype
+        #     except Exception as e:
+        #         WARN('[Parser]: Meets error when getting input tensor (%s): %s!' % (
+        #             tensor_name, str(e)))
+        #         np_type = np.float32
+        #     if tensor_name in params.get('input_npy', {}):
+        #         np_tensor = params['input_npy'][tensor_name]
+        #     elif k in params.get('input_npy', {}):
+        #         np_tensor = params['input_npy'][k]
+        #     else:
+        #         np_tensor = np.zeros(v, dtype=np_type) \
+        #             if re.search(r'int', str(np_type)) \
+        #             else np.random.ranf(v).astype(np_type)
+        #     feed_dict.update({tensor_name: np_tensor})
 
         for n in nodes:
             n_type = n.get('type', '')
@@ -283,42 +260,66 @@ def parse_graph_def(graph_def, params, anchor_tensors=list()):
                 tensors.update(
                     {anchor_tensor: default_graph.get_tensor_by_name(anchor_tensor)})
 
-        with tfv1.Session() as sess:
-            try:
-                np_tensors = sess.run(tensors, feed_dict=feed_dict)
-                sess.close()
-            except:
-                def _run_tensor(meta_tensors, sess, feed_dict, ret):
-                    for mt in meta_tensors:
-                        try:
-                            np_res = sess.run(mt[1], feed_dict=feed_dict)
-                        except:
-                            np_res = None
-                        ret.append((mt[0], np_res))
-                    # sess.close() # do not close for TF Fasterrcnn
-                tensors_list = [(k, v) for k, v in tensors.items()]
-                tensors_num = len(tensors_list)
-                threads_num = max(1, mp.cpu_count() - 1)
-                tensor_num_per_thread = tensors_num // threads_num \
-                    if tensors_num % threads_num == 0 \
-                    else int(np.ceil(tensors_num / threads_num))
-                np_tensors_list = []
-
-                coord = tf.train.Coordinator()
-                threads = []
-                for thread_idx in range(threads_num):
-                    cur_range = slice(thread_idx * tensor_num_per_thread,
-                                      min((thread_idx + 1) * tensor_num_per_thread, tensors_num))
-                    args = (tensors_list[cur_range],
-                            sess, feed_dict, np_tensors_list)
-                    t = threading.Thread(target=_run_tensor, args=args)
-                    t.start()
-                    threads.append(t)
-                coord.join(threads)
-                np_tensors = {nt[0]: nt[1] for nt in np_tensors_list}
+        np_tensors = {}
+        # with tfv1.Session() as sess:
+        #     try:
+        #         np_tensors = sess.run(tensors, feed_dict=feed_dict)
+        #         sess.close()
+        #     except:
+        #         def _run_tensor(meta_tensors, sess, feed_dict, ret):
+        #             for mt in meta_tensors:
+        #                 try:
+        #                     np_res = sess.run(mt[1], feed_dict=feed_dict)
+        #                 except:
+        #                     np_res = None
+        #                 ret.append((mt[0], np_res))
+        #             # sess.close() # do not close for TF Fasterrcnn
+        #         tensors_list = [(k, v) for k, v in tensors.items()]
+        #         tensors_num = len(tensors_list)
+        #         threads_num = max(1, mp.cpu_count() - 1)
+        #         tensor_num_per_thread = tensors_num // threads_num \
+        #             if tensors_num % threads_num == 0 \
+        #             else int(np.ceil(tensors_num / threads_num))
+        #         np_tensors_list = []
+        #
+        #         coord = tf.train.Coordinator()
+        #         threads = []
+        #         for thread_idx in range(threads_num):
+        #             cur_range = slice(thread_idx * tensor_num_per_thread,
+        #                               min((thread_idx + 1) * tensor_num_per_thread, tensors_num))
+        #             args = (tensors_list[cur_range],
+        #                     sess, feed_dict, np_tensors_list)
+        #             t = threading.Thread(target=_run_tensor, args=args)
+        #             t.start()
+        #             threads.append(t)
+        #         coord.join(threads)
+        #         np_tensors = {nt[0]: nt[1] for nt in np_tensors_list}
         return nodes, nodes_dict, tensors, np_tensors, input_shapes
     except Exception as e:
         FATAL('[Parser]: Meet error in parse_pb: %s' % str(e))
+
+
+def parse_pb(model_path, params, anchor_tensors):
+
+    tfv1.reset_default_graph()
+
+    if not is_file(model_path):
+        FATAL('[Parser]: Invalid pb file %s in parse_pb!' %
+              model_path)
+    graph_def = tfv1.GraphDef()
+    try:
+        with tfv1.gfile.GFile(model_path, 'rb') as f:
+            graph_def.ParseFromString(f.read())
+
+        if not params['output_names']:
+            params['output_names'] = get_possible_outputs(graph_def)
+
+        with tfv1.Session() as sess:
+            graph_def = tfv1.graph_util.convert_variables_to_constants(
+                sess, graph_def, params['output_names'] + [trim_tensor_name(name) for name in anchor_tensors])
+    except Exception as e:
+        FATAL('[Parser]: Meet error in parse_pb: %s' % str(e))
+    return parse_graph_def(graph_def, params, anchor_tensors)
 
 
 def convert_tf_to_graph(model_path, params):
