@@ -25,6 +25,7 @@ def check_similarity(graph, params, txt_path, bin_path):
         return False
 
     feed_dict = params['similarity_input_npy']
+    DEBUG('[Parser]: Input names from feed_dict: %s' % str(list(feed_dict.keys())))
     forward_type = 'float'
 
     if graph._attr.get('quantize', False):
