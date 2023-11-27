@@ -3094,6 +3094,73 @@ def merge_channel_shuffle_with_pack(graph):
         clear_redundant_nodes(graph)
 
 
+def merge_divmod(graph):
+    '''Merge x->Div(B=i0)->Mul(B=i0)->Sub(A=x) and x->Div(B=i0) to DivMod op.
+    '''
+    matched = False
+    matches = matched_patterns(graph,
+                               nodes=[
+                                   ('div', {'op': 'Div'}),
+                                   ('divc', {'op': 'Constant'}),
+                                   ('mul', {'op': 'Mul'}),
+                                   ('mulc', {'op': 'Constant'}),
+                                   ('sub', {'op': 'Sub'}),
+                                   ('div1', {'op': 'Div'}),
+                                   ('div1c', {'op': 'Constant'}),
+                               ],
+                               edges=[
+                                   ('divc', 'div', {
+                                    'src_out_port': 0, 'dst_in_port': 1}),
+                                   ('div', 'mul'),
+                                   ('mulc', 'mul'),
+                                   ('mul', 'sub', {
+                                    'src_out_port': 0, 'dst_in_port': 1}),
+                                   ('div1c', 'div1', {
+                                    'src_out_port': 0, 'dst_in_port': 1}),
+                               ]
+                               )
+    for m in matches:
+        key_names = ['div', 'divc', 'mul', 'mulc', 'sub', 'div1', 'div1c']
+        node_objs = {k: NodeWrap(graph, m[k])['object'] for k in key_names}
+        if any(obj is None for obj in node_objs.values()):
+            ERROR('[Parser]: Meets invalid nodes in merge_divmod!')
+            continue
+        dividend = node_objs['divc'].value
+        if not np.issubdtype(dividend.dtype, np.integer) \
+                or node_objs['mulc'].value != dividend \
+                or node_objs['div1c'].value != dividend:
+            continue
+        sub_in_edges = graph.sorted_in_edges(m['sub'], data=True)
+        div_in_edges = graph.sorted_in_edges(m['div'], data=True)
+        div1_in_edges = graph.sorted_in_edges(m['div'], data=True)
+        if len(sub_in_edges) < 2 or len(div_in_edges) < 2 or len(div1_in_edges) < 2:
+            ERROR('[Parser]: Meets invalid in edges of nodes in merge_divmod!')
+            continue
+        inp = sub_in_edges[0][0]
+        if div_in_edges[0][0] != inp or div1_in_edges[0][0] != inp:
+            continue
+        inp_out_port = sub_in_edges[0][2]['src_out_port']
+        if div_in_edges[0][2]['src_out_port'] != inp_out_port \
+                or div1_in_edges[0][2]['src_out_port'] != inp_out_port:
+            continue
+        matched = True
+        sub_out_edges = graph.sorted_out_edges(m['sub'], data=True)
+        div1_out_edges = graph.sorted_out_edges(m['div1'], data=True)
+        graph.remove_edges_from(sub_in_edges[1:] + div1_out_edges)
+        divc_out_attr = div_in_edges[1][2]
+        graph.add_edge(m['divc'], m['sub'], **divc_out_attr)
+        for _, _, out_attr in sub_out_edges:
+            out_attr['src_out_port'] = 1
+        for _, dst, out_attr in div1_out_edges:
+            graph.add_edge(m['sub'], dst, **out_attr)
+
+        divmod_attr = node_objs['sub'].copied_attr()
+        divmod_attr.update({'mode': 'trunc'})
+        NodeWrap(graph, m['sub']).replace_obj('DivMod', divmod_attr)
+    if matched:
+        clear_redundant_nodes(graph)
+
+
 def merge_gelu_1(graph):
     matched = False
     matches = matched_patterns(graph,
@@ -9208,6 +9275,7 @@ def middle_passes(graph, params):
     remove_useless_op(graph, ['Cast', 'Concat', 'Identity', 'Pad', 'Slice',
                               'Transpose', 'Reshape', 'AveragePool', 'MaxPool', 'Resize'])
     remove_sub_add_pair(graph)
+    merge_divmod(graph)
     merge_leaky_relu(graph)
     merge_prelu(graph)
     reshape_prelu_slope(graph)
