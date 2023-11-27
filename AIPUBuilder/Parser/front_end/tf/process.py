@@ -29,10 +29,13 @@ def process_tf(model_path, params):
             convert_square, convert_square_diff, split_not_equal, convert_reverse_sequence, convert_unpack, convert_sparse_to_dense
 
         apply_subgraph_plugin(graph)
+
+        infer(graph, partial=True)
+
         remove_useless_op(
             graph, ['TfAssert', 'TfEnter', 'TfIdentity', 'TfStopGradient'])
+
         remove_identity_n(graph)
-        infer(graph, partial=True)
         fuse_const(graph)
         fuse_weights_const(graph)
 
