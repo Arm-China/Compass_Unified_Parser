@@ -262,6 +262,15 @@ class DilationOp(OpHasPaddingStrides, OpHasWeights, OpHasOneOutPort, LayoutConce
 
 
 class DivModOp(OpNeedBroadcast, LayoutUnawareOp, OpHasMultipleOutPorts, CommonOp):
+    @classmethod
+    def attributes(cls):
+        return {'mode': {'type': AttrType.STRING, 'default': 'floor', 'options': ['trunc', 'floor']}}
+
+    def __init__(self, graph, attr_dict=None):
+        super(DivModOp, self).__init__(graph, attr_dict)
+        self.update_attributes(DivModOp, attr_dict)
+        assert self.check_required(), 'DivModOp is missing a required parameter.'
+
     def infer_shape(self):
         super(DivModOp, self).infer_shape()
         inputs = self.get_input_tensors()
@@ -277,7 +286,8 @@ class DivModOp(OpNeedBroadcast, LayoutUnawareOp, OpHasMultipleOutPorts, CommonOp
                 second_input = np.ones_like(inputs[1])
                 out0, out1 = np.divmod(inputs[0], second_input)
         else:
-            out0, out1 = np.divmod(*inputs)
+            out0 = torch.div(torch.tensor(inputs[0]), torch.tensor(inputs[1]), rounding_mode=self.mode).numpy()
+            out1 = (inputs[0] - out0 * inputs[1])
         self.set_out_tensor([out0, out1])
 
 
