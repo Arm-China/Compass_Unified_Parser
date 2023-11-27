@@ -1190,14 +1190,14 @@ def merge_b2s_nd(graph):
                 and len(node_objs['reshape1'].get_input_shapes()[0]) == 4 \
                 and len(node_objs['transpose'].get_input_shapes()[0]) == 6 \
                 and len(node_objs['reshape2'].get_output_shapes()[0]) == 4 \
-                and node_objs['transpose'].perm == [0, 3, 1, 4, 2, 5]:
-            block_y, block_x = node_objs['transpose'].get_input_shapes()[
-                0][1:3]
-            if block_y * node_objs['reshape1'].get_input_shapes()[0][1] == node_objs['reshape2'].get_output_shapes()[0][1] \
-                    and block_x * node_objs['reshape1'].get_input_shapes()[0][2] == node_objs['reshape2'].get_output_shapes()[0][2]:
+                and node_objs['transpose'].perm == [2, 3, 0, 4, 1, 5]:
+            block_y, block_x = node_objs['transpose'].get_input_shapes()[0][:2]
+            input_shape1, input_shape2 = node_objs['reshape1'].get_input_shapes()[0][1:3]
+            reshape2_out_shape = node_objs['reshape2'].get_output_shapes()[0]
+            output_shape1, output_shape2 = reshape2_out_shape[1:3]
+            if block_y * input_shape1 == output_shape1 \
+                    and block_x * input_shape2 == output_shape2:
                 matched = True
-                reshape2_out_shape = node_objs['reshape2'].get_output_shapes()[
-                    0]
                 tr_in_edges = graph.sorted_in_edges(m['transpose'])
                 tr_out_edges = graph.sorted_out_edges(m['transpose'])
                 graph.remove_edges_from(tr_in_edges + tr_out_edges)

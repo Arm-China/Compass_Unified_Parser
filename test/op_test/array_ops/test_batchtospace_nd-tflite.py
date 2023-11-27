@@ -41,5 +41,6 @@ for crop_is_zero in (False, True, ):
 
     # Run tests with parser and compare result with runtime
     exit_status = run_parser(
-        model_path, feed_dict, model_type='tflite', verify=True)
+        model_path, feed_dict, model_type='tflite', verify=True,
+        expected_keywords=['layer_type=BatchToSpace'])
     assert exit_status
