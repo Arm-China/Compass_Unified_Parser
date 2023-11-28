@@ -58,7 +58,7 @@ def compare_data(data1, data2):
 
 def compare_data_dict(data_dict1, data_dict2):
     ''' Compare two data dicts and return True if they are almost same(the differences
-    of data are not bigger than 1e-4). The keys of dicts are ignored.
+    of data are not bigger than 1e-2). The keys of dicts are ignored.
     '''
     data1_cnt = len(data_dict1)
     data2_cnt = len(data_dict2)
