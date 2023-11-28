@@ -3157,6 +3157,12 @@ def merge_divmod(graph):
         divmod_attr = node_objs['sub'].copied_attr()
         divmod_attr.update({'mode': 'trunc'})
         NodeWrap(graph, m['sub']).replace_obj('DivMod', divmod_attr)
+        if m['div1'] in graph._attr['output_names']:
+            index = graph._attr['output_names'].index(m['div1'])
+            if m['sub'] in graph._attr['output_names']:
+                graph._attr['output_names'].pop(index)
+            else:
+                graph._attr['output_names'][index] = m['sub']
     if matched:
         clear_redundant_nodes(graph)
 

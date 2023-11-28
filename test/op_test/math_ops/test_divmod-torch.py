@@ -11,7 +11,7 @@ class divmod_model(torch.nn.Module):
         other = torch.tensor(4, dtype=torch.int64)
         y0 = torch.div(x, other, rounding_mode='trunc')
         remainder = x - y0 * other
-        return torch.cat([y0, remainder])
+        return y0, remainder
 
 
 def create_divmod_model(model_path):
