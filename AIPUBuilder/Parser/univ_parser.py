@@ -36,7 +36,7 @@ def check_similarity(graph, params, txt_path, bin_path):
             ERROR('[Parser]: Fail to generate symm quant cfg file!')
             return False
         if not generate_symm_quant_ir(symm_quant_cfg_file):
-            WARN('[Parser]: Fail to generate symm quant IR!')
+            ERROR('[Parser]: Fail to generate symm quant IR!')
             return False
         new_base_path = os.path.join(os.path.dirname(txt_path), model_name + '_opt')
         txt_path = new_base_path + '.txt'
@@ -76,11 +76,11 @@ def check_similarity(graph, params, txt_path, bin_path):
         opt_output_dict = opt_forward(txt_path, bin_path, feed_dict, forward_type=forward_type,
                                       transfer_to_float=transfer_to_float)
     except Exception as e:
-        WARN('[Parser]: Meets Exception (%s) in opt forward!' % str(e))
+        ERROR('[Parser]: Meets Exception (%s) in opt forward!' % str(e))
         ret = False
 
     if not rt_output_dict or not opt_output_dict:
-        WARN('[Parser]: Fail to check similarity due to missing runtime/opt forward outputs!')
+        ERROR('[Parser]: Fail to check similarity due to missing runtime/opt forward outputs!')
         ret = False
     else:
         from .utils.compare import compare_data_dict
