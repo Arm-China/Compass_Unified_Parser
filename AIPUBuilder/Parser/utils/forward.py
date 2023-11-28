@@ -113,8 +113,8 @@ def onnx_forward(model_path, feed_dict, output_names=None, save_output=True):
 
     # input_name = sess.get_inputs()[0].name
     if output_names is None:
-        output_names = [o.name for o in sess.get_outputs()]
         sess = rt.InferenceSession(model_path)
+        output_names = [o.name for o in sess.get_outputs()]
     else:
         assert isinstance(output_names, list), 'Argument output_names should be a list!'
         model = onnx.load(model_path)

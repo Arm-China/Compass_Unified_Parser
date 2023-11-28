@@ -138,7 +138,7 @@ for input_name in ('X', 'X0'):
     feed_dict.clear()
     feed_dict[input_name] = (np.random.ranf(input_shape) * 10).astype(np.float32)
     np.save('input', feed_dict)
-    for output_name in ('Y', 'Y0'):
+    for output_name in ('Y', 'Y0', ''):
         for model_type, format_type in zip(['caffe', 'tf', 'tflite', 'onnx', ], ['caffemodel', 'pb', 'tflite', 'onnx', ]):
             if input_name == 'X0' \
                     and model_type in ('caffe', 'tflite', 'onnx'):
@@ -171,5 +171,4 @@ similarity_input_npy = input.npy'''.format(model_type, model_path, prototxt_path
                 continue
             # Run tests with parser and compare result with runtime
             exit_status = generate_ir(cfg_path, verbose=True)
-            # Need to run in compiled AIPUBuilder package env or put compiled folders/files under AIPUBuilder folder
-            # assert exit_status
+            assert exit_status
