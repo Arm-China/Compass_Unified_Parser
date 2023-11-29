@@ -215,29 +215,29 @@ def parse_graph_def(graph_def, params, anchor_tensors=list()):
                          % (str(tensor_shape), n['name'], str(input_shapes[n['name']])))
 
         tensors, feed_dict = OrderedDict(), OrderedDict()
-        # for k, v in input_shapes.items():
-        #     if k not in nodes_dict.keys():
-        #         WARN(
-        #             '[Parser]: Ignore input (%s) as it does not exist in graph!' % k)
-        #         params['input_shapes'].pop(k)
-        #         continue
-        #     tensor_name = k + ':0'
-        #     try:
-        #         t = default_graph.get_tensor_by_name(tensor_name)
-        #         np_type = t.dtype.as_numpy_dtype
-        #     except Exception as e:
-        #         WARN('[Parser]: Meets error when getting input tensor (%s): %s!' % (
-        #             tensor_name, str(e)))
-        #         np_type = np.float32
-        #     if tensor_name in params.get('input_npy', {}):
-        #         np_tensor = params['input_npy'][tensor_name]
-        #     elif k in params.get('input_npy', {}):
-        #         np_tensor = params['input_npy'][k]
-        #     else:
-        #         np_tensor = np.zeros(v, dtype=np_type) \
-        #             if re.search(r'int', str(np_type)) \
-        #             else np.random.ranf(v).astype(np_type)
-        #     feed_dict.update({tensor_name: np_tensor})
+        for k, v in input_shapes.items():
+            if k not in nodes_dict.keys():
+                WARN(
+                    '[Parser]: Ignore input (%s) as it does not exist in graph!' % k)
+                params['input_shapes'].pop(k)
+                continue
+            tensor_name = k + ':0'
+            try:
+                t = default_graph.get_tensor_by_name(tensor_name)
+                np_type = t.dtype.as_numpy_dtype
+            except Exception as e:
+                WARN('[Parser]: Meets error when getting input tensor (%s): %s!' % (
+                    tensor_name, str(e)))
+                np_type = np.float32
+            if tensor_name in params.get('input_npy', {}):
+                np_tensor = params['input_npy'][tensor_name]
+            elif k in params.get('input_npy', {}):
+                np_tensor = params['input_npy'][k]
+            else:
+                np_tensor = np.zeros(v, dtype=np_type) \
+                    if re.search(r'int', str(np_type)) \
+                    else np.random.ranf(v).astype(np_type)
+            feed_dict.update({tensor_name: np_tensor})
 
         for n in nodes:
             n_type = n.get('type', '')
@@ -251,7 +251,7 @@ def parse_graph_def(graph_def, params, anchor_tensors=list()):
                 if n['name'] in params['input_names'] \
                         or (not params['input_names'] and n['name'] in input_shapes) \
                         or n_type.startswith('TensorArray') \
-                        or n_type in ('ConcatV2', 'Range', 'Reshape', 'ReverseV2', 'Shape', 'StatelessIf'):
+                        or n_type in ('Range', 'Shape', 'StatelessIf'):
                     tensors.update(
                         {out[0]: default_graph.get_tensor_by_name(out[0])})
 
@@ -261,6 +261,15 @@ def parse_graph_def(graph_def, params, anchor_tensors=list()):
                     {anchor_tensor: default_graph.get_tensor_by_name(anchor_tensor)})
 
         np_tensors = {}
+        for k, v in tensors.items():
+            try:
+                with tfv1.Session() as sess:
+                    np_res = sess.run(v, feed_dict=feed_dict)
+                    np_tensors.update({k: np_res})
+                    sess.close()
+            except:
+                pass
+
         # with tfv1.Session() as sess:
         #     try:
         #         np_tensors = sess.run(tensors, feed_dict=feed_dict)

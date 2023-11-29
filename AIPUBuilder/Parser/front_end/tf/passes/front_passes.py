@@ -2989,7 +2989,7 @@ def merge_fasterrcnn(graph):
     in_shape = input_shapes[0]
     batch, img_height, img_width = in_shape[:3]
     class_num = 90
-    proposal_count = crop_and_resize_in_shapes[2][0] // batch  # 100
+    proposal_count = 100  # crop_and_resize_in_shapes[2][0] // batch
 
     _, _, proposal_box_out_attr = proposal_box_out_edges[0]
     _, _, proposal_prediction_out_attr = proposal_prediction_out_edges[0]
