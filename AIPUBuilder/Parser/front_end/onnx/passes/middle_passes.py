@@ -958,23 +958,27 @@ def convert_einsum(graph):
         if einsum_obj is not None and einsum_obj.equation is not None:
             in_edges = graph.sorted_in_edges(einsum, data=True)
             if len(in_edges) == 2:
-                equation = einsum_obj.equation
-                equ_list = equation.split('-> ')
-                add_list = equ_list[0].split(', ')
-                if len(add_list[1].strip()) >= 5 and len(add_list[0].strip()) >= 5:
-                    if add_list[0][0] == add_list[1][0] \
-                            and add_list[0][4] == add_list[1][4] \
-                            and add_list[0][2] != add_list[1][2]:
-                        ein_src, _, ein_in_attr = in_edges[1]
-                        insert_transpose(graph, ein_src, einsum,
-                                         ein_in_attr, [0, 2, 1])
+                equation = einsum_obj.equation.replace(' ', '')
+                equ_list = equation.split('->')
+                add_list = equ_list[0].split(',')
+                if len(equ_list) != 2 or len(add_list) != 2:
+                    ERROR('[Parser]: Meets invalid equation in convert_einsum!')
+                    continue
+                out_term = equ_list[1]
+                if len(add_list[1]) >= 2 and len(add_list[0]) >= 2:
+                    if add_list[0][-1] == add_list[1][-1] \
+                            and add_list[0][-2] != add_list[1][-2] \
+                            and out_term[-2:] == add_list[0][-2] + add_list[1][-2]:  # ...ij,...kj -> ...ik
+                        ein_src1, _, ein_in_attr = in_edges[1]
+                        erc_src1_dim = len(add_list[1])
+                        perm = list(range(erc_src1_dim - 2)) + [(erc_src1_dim - 1), (erc_src1_dim - 2)]
+                        insert_transpose(graph, ein_src1, einsum, ein_in_attr, perm)
                         matmul_attr = einsum_obj.copied_attr()
                         matmul_attr.update({'opset_version': 13})
                         NodeWrap(graph, einsum).replace_obj(
                             'MatMul', matmul_attr)
-                    elif add_list[0][0] == add_list[1][0] \
-                            and add_list[0][4] != add_list[1][4] \
-                            and add_list[0][2] != add_list[1][2]:
+                    elif add_list[0][-1] == add_list[1][-2] \
+                            and out_term[-2:] == add_list[0][-2] + add_list[1][-1]:  # ...ij,...jq -> ...iq
                         matmul_attr = einsum_obj.copied_attr()
                         matmul_attr.update({'opset_version': 13})
                         NodeWrap(graph, einsum).replace_obj(
@@ -983,7 +987,7 @@ def convert_einsum(graph):
                         WARN(
                             '[Parser]: This equation is currently not supported in convert_einsum!')
                 else:
-                    ERROR('[Parser]: The length of the string is illegal.')
+                    WARN('[Parser]: This equation is currently not supported in convert_einsum!')
         else:
             ERROR('[Parser]: Meets invalid node in convert_einsum!')
 
