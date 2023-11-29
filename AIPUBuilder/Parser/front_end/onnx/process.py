@@ -27,9 +27,10 @@ def process_onnx(model_path, params):
         merge_qconv(graph)
         merge_qmatmul(graph)
         merge_q_multiple(graph, ['Add', 'Concat', 'Gemm', 'Mul'])
-        merge_q_unary(graph, ['AveragePool', 'Elu', 'MaxPool', 'ReduceMean', 'Relu', 'Reshape', 'Slice',
-                              'Transpose', 'HardSwish', 'GlobalAveragePool', 'HardSigmoid', 'Clip',
-                              'LeakyRelu', 'LRN', 'Sigmoid'])
+        merge_q_unary(graph, ['AveragePool', 'Clip', 'Elu', 'Flatten', 'GlobalAveragePool',
+                              'HardSwish', 'HardSigmoid', 'LeakyRelu', 'LRN', 'MaxPool',
+                              'ReduceMean', 'Relu', 'Reshape', 'Slice', 'Sigmoid', 'Transpose',
+                              ])
 
         fuse_weights_const(graph)
         convert_special_prelu(graph)
