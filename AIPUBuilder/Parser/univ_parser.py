@@ -92,7 +92,7 @@ def check_similarity(graph, params, txt_path, bin_path):
         if ret:
             INFO('[Parser]: Similarity checking is passed!')
         else:
-            INFO('[Parser]: Similarity checking is failed!')
+            WARN('[Parser]: Similarity checking is failed!')
             ret = False
     return ret
 

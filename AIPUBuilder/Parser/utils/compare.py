@@ -5,7 +5,7 @@
 import numpy as np
 
 from .common import get_feed_dict
-from ..logger import DEBUG, ERROR, INFO
+from ..logger import DEBUG, ERROR, INFO, WARN
 
 
 def compare_data(data1, data2):
@@ -51,7 +51,7 @@ def compare_data(data1, data2):
             return False
         return True
     else:
-        INFO('Different shape! The output shape of first data is %s, output shape of second data is %s\n' %
+        WARN('Different shape! The output shape of first data is %s, output shape of second data is %s.' %
              (str(data1.shape), str(data2.shape)))
         return False
 
