@@ -8,6 +8,7 @@ import numpy as np
 import sys
 import itertools
 from collections import defaultdict
+from datetime import datetime
 from .node_wrap import NodeWrap
 from networkx.algorithms import has_path, all_simple_paths, shortest_path_length
 from .graph import Graph, SubGraph
@@ -130,6 +131,7 @@ def infer(graph, partial=False, chosen_list=None):
 
         log_func = DEBUG if partial else WARN
         for node_name in nodes_list:
+
             if chosen_list and node_name not in chosen_list:
                 continue
             node_obj = NodeWrap(graph, node_name)['object']
@@ -139,6 +141,7 @@ def infer(graph, partial=False, chosen_list=None):
 
                 if partial and not node_obj.is_all_inputs_const() and not isinstance(node_obj, InputLikeOp):
                     continue
+
                 try:
                     if isinstance(node_obj, InputLikeOp):
                         if node_obj.type == 'ArmInput':
@@ -162,15 +165,18 @@ def infer(graph, partial=False, chosen_list=None):
                     log_func('[Parser]: Infer of %s Node(%s) meets issues: %s!' %
                              (node_obj.type, node_name, str(e)))
 
-                msg = ', '.join([node_obj.type,
-                                 node_obj.name,
-                                 node_obj.data_format,
-                                 str(node_obj.get_output_shapes()),
-                                 str([str(v.dtype)
-                                      if v is not None else None
-                                      for v in node_obj.get_output_tensors()]),
-                                 str(node_obj.is_all_inputs_const())
-                                 ])
+                msg = ', '.join([
+                    str(datetime.now().time()),
+                    # str((psutil.Process(os.getpid()).memory_info().rss - mem1) / (1024*1024)),
+                    node_obj.type,
+                    node_obj.name,
+                    node_obj.data_format,
+                    str(node_obj.get_output_shapes()),
+                    str([str(v.dtype)
+                         if v is not None else None
+                         for v in node_obj.get_output_tensors()]),
+                    str(node_obj.is_all_inputs_const())
+                ])
                 DEBUG(msg)
             else:
                 ERROR('[Parser]: Meets invalid Node (%s) in infer!' % node_name)
