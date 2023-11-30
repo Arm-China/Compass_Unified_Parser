@@ -940,10 +940,11 @@ def convert_fusebatchnorm(graph):
         fusebn = m['target']
         fusebn_obj = NodeWrap(graph, fusebn)['object']
         fusebn_in_edges = graph.sorted_in_edges(fusebn, data=True)
+        fusebn_in_tensors = fusebn_obj.get_input_tensors()
         if fusebn_obj is not None \
                 and len(fusebn_in_edges) == 5 \
-                and len(fusebn_obj.get_input_tensors()) == 5 \
-                and all(inp is not None for inp in fusebn_obj.get_input_tensors()):
+                and len(fusebn_in_tensors) == 5 \
+                and all(inp is not None for inp in fusebn_in_tensors[1:]):
             if not all(fusebn_in_edges[idx][2]['tensor'].is_const for idx in range(1, 5)):
                 WARN(
                     '[Parser]: Meets unsupported non-constant inputs(1-4) of Node(%s) in convert_fusebatchnorm!' % fusebn)
@@ -984,7 +985,7 @@ def convert_fusebatchnorm(graph):
                 fusebn_attr.update({'training_mode': 1})
             elif fusebn_in_edges[3][2]['tensor'].value.size == 0 \
                     and fusebn_in_edges[4][2]['tensor'].value.size == 0:
-                num_output = fusebn_obj.get_input_tensors()[1].shape
+                num_output = fusebn_in_tensors[1].shape
                 new_mean = np.zeros(num_output, np.float32)
                 new_var = np.ones(num_output, np.float32)
                 graph.remove_edges_from(fusebn_in_edges[3:])

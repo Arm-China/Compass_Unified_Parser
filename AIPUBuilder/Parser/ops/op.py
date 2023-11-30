@@ -319,6 +319,18 @@ class Op(abc.ABC):
                     return False
         return True
 
+    def clear_unused_tensor(self, is_input_const=False):
+        if 'tensor_counter' in self._graph._attr and not is_input_const:
+            for src, _, in_d in self._graph.sorted_in_edges(self.name, data=True):
+                cur_tensor_hash = hash(in_d['tensor'])
+                if self._graph._attr['tensor_counter'][cur_tensor_hash] > 0:
+                    self._graph._attr['tensor_counter'][cur_tensor_hash] -= 1
+                if self._graph._attr['tensor_counter'][cur_tensor_hash] == 0:
+                    if not isinstance(self._graph.nodes[src]['object'], (InputLikeOp, ConstLikeOp)) \
+                            and in_d['tensor'] is not None \
+                            and not in_d['tensor'].is_const:
+                        in_d['tensor'].value = None
+
     @abc.abstractmethod
     def infer_shape(self):
         '''An abstract method for shape inference.'''
@@ -651,16 +663,7 @@ class OpHasOneOutPort(Op):
                 else:
                     d['tensor'] = Tensor(value=tensor_data)
 
-            if 'tensor_counter' in self._graph._attr and not is_const:
-                for src, _, in_d in self._graph.sorted_in_edges(self.name, data=True):
-                    cur_tensor_hash = hash(in_d['tensor'])
-                    if self._graph._attr['tensor_counter'][cur_tensor_hash] > 0:
-                        self._graph._attr['tensor_counter'][cur_tensor_hash] -= 1
-                    if self._graph._attr['tensor_counter'][cur_tensor_hash] == 0:
-                        if not isinstance(self._graph.nodes[src]['object'], (InputLikeOp, ConstLikeOp)) \
-                                and in_d['tensor'] is not None \
-                                and not in_d['tensor'].is_const:
-                            in_d['tensor'].value = None
+            self.clear_unused_tensor(is_const)
 
         except KeyError as e:
             ERROR('[Parser]: Node(%s) meets key error in set_out_tensor (%s)!' %
@@ -713,6 +716,9 @@ class OpHasMultipleOutPorts(Op):
                                     d['tensor'].dtype = str(d['tensor'].value.dtype)
                         else:
                             d['tensor'] = Tensor(value=t, is_const=is_const)
+
+            self.clear_unused_tensor(is_const)
+
         except KeyError as e:
             ERROR('[Parser]: Node(%s) meets key error in set_out_tensor (%s)!' %
                   (self.name, str(e)))
@@ -774,6 +780,9 @@ class OpHasVariableOutPorts(Op):
                             d['tensor'].dtype = str(d['tensor'].value.dtype)
                     else:
                         d['tensor'] = Tensor(value=tensor_data_list[0])
+
+            self.clear_unused_tensor(is_const)
+
         except KeyError as e:
             ERROR('[Parser]: Node(%s) meets key error in set_out_tensor (%s)! ' %
                   (self.name, str(e)))
