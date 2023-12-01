@@ -26,7 +26,9 @@ TEST_NAME = 'einsum'
 model_path = TEST_NAME + '.pt'
 shape_dict = {'i': 10, 'j': 12, 'k': 14, 'l': 15, 'm': 9, 'n': 8}
 
-for equation in ('mij,jk->mik', 'ij,mkj->mik', 'mij,mjk->mik', 'mij,mkj->mik',
+for equation in ('nijkl,imkln->ikjnm', 'ijknl,niljm->nikjm',
+                 'ijkl,imkl->ikjm', 'ijkl,iljm->ikjm',
+                 'mij,jk->mik', 'ij,mkj->mik', 'mij,mjk->mik', 'mij,mkj->mik',
                  'l i j, l j k -> l i k',
                  'l m n i k, l m n j k -> l m n i j',
                  'l m n i j, l m n j k -> l m n i k',
@@ -37,7 +39,7 @@ for equation in ('mij,jk->mik', 'ij,mkj->mik', 'mij,mjk->mik', 'mij,mkj->mik',
     x1_data = np.random.ranf(input1_shape)
     x2_data = np.random.ranf(input2_shape) * 100
     feed_dict = {'x1': x1_data, 'x2': x2_data}
-    # np.save('input', feed_dict)
+    np.save('input', feed_dict)
 
     create_einsum_model(model_path, equation)
     exit_status = run_parser(model_path, feed_dict)

@@ -951,6 +951,11 @@ def convert_global_pool(graph):
 
 
 def convert_einsum(graph):
+    def _warn_unsupported(node_name, equation):
+        WARN('[Parser]: This equation(%s) of Einsum(%s) is currently not supported in convert_einsum!' %
+             (equation, node_name))
+        return
+
     matches = single_node_matcher(graph, 'Einsum')
     for m in matches:
         einsum = m['target']
@@ -965,14 +970,16 @@ def convert_einsum(graph):
                     ERROR('[Parser]: Meets invalid equation in convert_einsum!')
                     continue
                 out_term = equ_list[1]
-                if len(add_list[1]) >= 2 and len(add_list[0]) >= 2:
+                if len(add_list[1]) >= 2 and len(add_list[0]) >= 2 \
+                        and len(add_list[0]) == len(set(add_list[0])) \
+                        and len(add_list[1]) == len(set(add_list[1])):
                     if add_list[0][-1] == add_list[1][-1] \
                             and add_list[0][-2] != add_list[1][-2] \
                             and out_term[-2:] == add_list[0][-2] + add_list[1][-2]:  # ...ij,...kj -> ...ik
                         ein_src1, _, ein_in_attr = in_edges[1]
                         erc_src1_dim = len(add_list[1])
                         perm = list(range(erc_src1_dim - 2)) + [(erc_src1_dim - 1), (erc_src1_dim - 2)]
-                        insert_transpose(graph, ein_src1, einsum, ein_in_attr, perm)
+                        insert_transpose(graph, ein_src1, einsum, ein_in_attr, perm, quantize=einsum_obj.quantize)
                         matmul_attr = einsum_obj.copied_attr()
                         matmul_attr.update({'opset_version': 13})
                         NodeWrap(graph, einsum).replace_obj(
@@ -983,11 +990,55 @@ def convert_einsum(graph):
                         matmul_attr.update({'opset_version': 13})
                         NodeWrap(graph, einsum).replace_obj(
                             'MatMul', matmul_attr)
+                    elif len(add_list[0]) == len(add_list[1]) \
+                            and len(add_list[0]) == len(out_term):  # abcd, aecd -> acbe(sum out d), or aebd(sum out c.)...
+                        src0_sum_out_dim = list(set(add_list[0]).difference(out_term))
+                        src1_sum_out_dim = list(set(add_list[1]).difference(out_term))
+                        # make sure only 1 summing out dim
+                        if len(src0_sum_out_dim) != 1 or len(src1_sum_out_dim) != 1 \
+                                or src0_sum_out_dim[0] != src1_sum_out_dim[0]:
+                            _warn_unsupported(einsum, equation)
+                            continue
+                        sum_out_dim = src0_sum_out_dim[0]
+                        src0_dim_not_in_src1 = list(set(add_list[0]).difference(add_list[1]))
+                        src1_dim_not_in_src0 = list(set(add_list[1]).difference(add_list[0]))
+                        if len(src0_dim_not_in_src1) != 1 or len(src1_dim_not_in_src0) != 1:
+                            _warn_unsupported(einsum, equation)
+                            continue
+                        src0_dim_not_in_src1 = src0_dim_not_in_src1[0]
+                        src1_dim_not_in_src0 = src1_dim_not_in_src0[0]
+                        ein_src0, _, ein0_in_attr = in_edges[0]
+                        ein_src1, _, ein1_in_attr = in_edges[1]
+                        # if out_perm is acbe, then src0(abcd) should convert to acbd
+                        src0_target_shape = add_list[0].replace(sum_out_dim, '').replace(
+                            src0_dim_not_in_src1, '') + src0_dim_not_in_src1 + sum_out_dim
+                        if src0_target_shape != add_list[0]:
+                            src0_perm = [add_list[0].index(shape) for shape in src0_target_shape]
+                            insert_transpose(graph, ein_src0, einsum, ein0_in_attr,
+                                             src0_perm, quantize=einsum_obj.quantize)
+                        # if out_perm is acbe, then src1(aecd) should convert to acde
+                        src1_target_shape = src0_target_shape[:-2] + sum_out_dim + src1_dim_not_in_src0
+                        if src1_target_shape != add_list[1]:
+                            src1_perm = [add_list[1].index(shape) for shape in src1_target_shape]
+                            insert_transpose(graph, ein_src1, einsum, ein1_in_attr,
+                                             src1_perm, quantize=einsum_obj.quantize)
+                        # for inputs abcd and aecd, after transpose, they become acbd and acde, then matmul out shape is acbe
+                        matmul_out_shape = src0_target_shape[:-1] + src1_dim_not_in_src0
+                        if matmul_out_shape != out_term:
+                            out_perm = [matmul_out_shape.index(shape) for shape in out_term]
+                            post_trans = insert_transpose_after(graph, einsum, out_perm, quantize=einsum_obj.quantize)
+                            if einsum in graph._attr['output_names']:
+                                index = graph._attr['output_names'].index(einsum)
+                                graph._attr['output_names'][index] = post_trans
+                        matmul_attr = einsum_obj.copied_attr()
+                        matmul_attr.update({'opset_version': 13})
+                        NodeWrap(graph, einsum).replace_obj('MatMul', matmul_attr)
                     else:
-                        WARN(
-                            '[Parser]: This equation is currently not supported in convert_einsum!')
+                        _warn_unsupported(einsum, equation)
                 else:
-                    WARN('[Parser]: This equation is currently not supported in convert_einsum!')
+                    _warn_unsupported(einsum, equation)
+            else:
+                _warn_unsupported(einsum, einsum_obj.equation)
         else:
             ERROR('[Parser]: Meets invalid node in convert_einsum!')
 
