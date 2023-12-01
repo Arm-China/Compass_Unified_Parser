@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright © 2022-2023 Arm Technology (China) Co. Ltd.
 
-
+import os
 import sys
 import argparse
 import configparser
@@ -128,6 +128,10 @@ optional arguments in Common section of <net.cfg>:
                     ERROR('Unsupport model type!')
                     return -1
 
+            # Disable AIPU backtrace so that won't show errors when using multiprocessing on some hosts
+            original_aipu_disable_bt = os.environ.get('AIPU_DISABLE_BACKTRACE', None)
+            os.environ['AIPU_DISABLE_BACKTRACE'] = 'True'
+
             model_type = model_type.lower()
             common['model_type'] = model_type
 
@@ -146,6 +150,12 @@ optional arguments in Common section of <net.cfg>:
                 ERROR('Parser failed!')
             else:
                 INFO('Parser done!')
+
+            # Reset AIPU_DISABLE_BACKTRACE back to original value
+            if original_aipu_disable_bt is None:
+                os.environ.pop('AIPU_DISABLE_BACKTRACE')
+            else:
+                os.environ['AIPU_DISABLE_BACKTRACE'] = original_aipu_disable_bt
         else:
             exit_code = -1
             ERROR('Common section is required in config file.')
