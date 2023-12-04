@@ -344,7 +344,8 @@ def opt_forward(txt_path, bin_path, feed_dict, output_names=None, save_output=Tr
     if in_match and in_match.group(0) and in_match.group(1):
         input_names = in_match.group(1).rsplit(',')
     input_names_from_feed_dict = list(feed_dict.keys())
-    assert len(input_names) == len(input_names_from_feed_dict), \
+    # some inputs can be removed during parsing because they are not needed
+    assert len(input_names) <= len(input_names_from_feed_dict), \
         'Expects %d inputs but got %d in opt_forward!' % (len(input_names), len(input_names_from_feed_dict))
     # The order of inputs matters for opt forward. Update feed_dict to match input order in IR.
     ordered_feed_dict = {}
