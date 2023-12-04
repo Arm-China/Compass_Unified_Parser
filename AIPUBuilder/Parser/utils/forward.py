@@ -110,6 +110,7 @@ def onnx_forward(model_path, feed_dict, output_names=None, save_output=True):
     import copy
     import onnxruntime as rt
     import onnx
+    import numpy as np
 
     # input_name = sess.get_inputs()[0].name
     if output_names is None:
@@ -128,7 +129,7 @@ def onnx_forward(model_path, feed_dict, output_names=None, save_output=True):
                 index = output_names.index(node.name)
                 output_names.pop(index)
                 for idx, output in enumerate(node.output):
-                    output_names.insert(index+idx, output)
+                    output_names.insert(index + idx, output)
         for output in output_names:
             model.graph.output.extend([onnx.ValueInfoProto(name=output)])
             print("Model add output %s" % output)
@@ -139,13 +140,14 @@ def onnx_forward(model_path, feed_dict, output_names=None, save_output=True):
     updated_feed_dict = {}
     for model_input, default_name in zip(model_inputs, input_names_from_feed_dict):
         input_name = model_input.name
+        np_dtype = getattr(np, model_input.type[7:-1])
         if input_name in feed_dict:
             key_name = input_name
         else:
             WARN('Cannot find input name (%s) from feed_dict! Will try to use input (%s) from feed_dict!' %
                  (input_name, default_name))
             key_name = default_name
-        updated_feed_dict.update({input_name: feed_dict[key_name]})
+        updated_feed_dict.update({input_name: feed_dict[key_name].astype(np_dtype)})
 
     try:
         o_names = [o.name for o in sess.get_outputs()]
