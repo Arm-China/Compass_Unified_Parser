@@ -1051,18 +1051,18 @@ def merge_rcnn(graph, params):
 
     # rpn parameters
     rpn_num_class = 1
-    rpn_score_threshold = 0.5
-    rpn_nms_score_threshold = 0.7
-    rpn_iou_threshold = 0.7
+    rpn_score_threshold = float(params.get('rpn_score_threshold', 0.5))
+    rpn_nms_score_threshold = float(params.get('rpn_score_threshold', 0.7))
+    rpn_iou_threshold = float(params.get('rpn_iou_threshold', 0.7))
     rpn_max_box_num = np.iinfo(np.int32).max
-    rpn_nms_max_box_num = 5000
+    rpn_nms_max_box_num = int(params.get('rpn_max_box_num', 1000))
     # roi heads parameters
-    roi_num_class = 91
-    roi_score_threshold = 0.7  # 0.05
-    roi_nms_score_threshold = 0.8
-    roi_iou_threshold = 0.7  # 0.5
-    roi_max_box_num = 1000
-    roi_nms_max_box_num = 100
+    roi_num_class = int(params.get('class_num', 91))
+    roi_score_threshold = float(params.get('box_score_threshold', 0.7))
+    roi_nms_score_threshold = float(params.get('box_score_threshold', 0.8))
+    roi_iou_threshold = float(params.get('box_iou_threshold', 0.7))
+    roi_max_box_num = rpn_nms_max_box_num
+    roi_nms_max_box_num = int(params.get('box_max_box_num', 100))
 
     # rpn Sigmoid
     scores = get_valid_node_name(graph, 'rpn_sigmoid')
@@ -1166,7 +1166,7 @@ def merge_rcnn(graph, params):
     insert_reshape(graph, rpn_concat, roi_detect_out, proposals_out_attr, [1, -1, 4])
     # DetectionOutput output: scores, boxes(ymin, xmin, ymax, xmax), box_num_perClass, label_perclass, total_class_num
     roi_detect_out_attr = {'name': roi_detect_out, 'score_threshold': roi_score_threshold,
-                           'class_num': 91, 'max_box_num': roi_max_box_num,
+                           'class_num': roi_num_class, 'max_box_num': roi_max_box_num,
                            'image_height': image_height, 'image_width': image_width,
                            'variance': [10.0, 10.0, 5.0, 5.0], 'anchor_mode': 'caffe_detection',
                            'bbox_xform_clip': bbox_xform_clip}
