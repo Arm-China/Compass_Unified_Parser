@@ -877,43 +877,22 @@ class ReverseSequenceOp(OpHasOneOutPort, OnnxOp):
 
 class ScatterNDOp(OpHasOneOutPort, OnnxOp):
     @staticmethod
-    def meta_update(idx, shared_mem, shape, indices, updates, reduction='none'):
-        out_data = np.ndarray(shape, dtype=updates.dtype, buffer=shared_mem.buf)
-        index = tuple(indices[idx])
-        if reduction == 'mul':
-            out_data[index] *= updates[idx]
-        elif reduction == 'add':
-            out_data[index] += updates[idx]
-        elif reduction == 'max':
-            out_data[index] = np.maximum(out_data[index], updates[idx])
+    def scatternd(data, indices, updates, reduction='none', inplace=False):
+        out_data = data if inplace else copy.deepcopy(data)
+        indices_len = indices.shape[-1]
+        reshaped_indices = np.reshape(indices, [-1, indices_len])
+        reshaped_updates = np.reshape(updates, [-1] + list(data.shape[indices_len:]))
+        if reduction == 'add':
+            np.add.at(out_data, tuple(reshaped_indices.transpose()), reshaped_updates)
+        elif reduction == 'mul':
+            np.multiply.at(out_data, tuple(reshaped_indices.transpose()), reshaped_updates)
         elif reduction == 'min':
-            out_data[index] = np.minimum(out_data[index], updates[idx])
-        else:
-            out_data[index] = updates[idx]
-
-    @staticmethod
-    def scatternd(data, indices, updates, reduction='none'):
-        import multiprocessing as mp
-        from multiprocessing import shared_memory
-        from functools import partial
-        shm = shared_memory.SharedMemory(create=True, size=data.nbytes)
-        shared_tensor = np.ndarray(data.shape, dtype=data.dtype, buffer=shm.buf)
-        shared_tensor[:] = data[:]
-        update_indices = indices.shape[:-1]
-        idx_list = list(np.ndindex(update_indices))
-        func = partial(ScatterNDOp.meta_update,
-                       shared_mem=shm,
-                       shape=data.shape,
-                       indices=indices,
-                       updates=updates,
-                       reduction=reduction)
-        with mp.Pool(mp.cpu_count() - 2) as pool:
-            pool.map(func, idx_list)
-        ret = shared_tensor.copy()
-        del shared_tensor
-        shm.close()
-        shm.unlink()
-        return ret
+            np.minimum.at(out_data, tuple(reshaped_indices.transpose()), reshaped_updates)
+        elif reduction == 'max':
+            np.maximum.at(out_data, tuple(reshaped_indices.transpose()), reshaped_updates)
+        elif reduction == 'none':
+            out_data[tuple(reshaped_indices.transpose())] = reshaped_updates
+        return out_data
 
     @classmethod
     def attributes(cls):
@@ -967,7 +946,9 @@ class ScatterNDOp(OpHasOneOutPort, OnnxOp):
         super(ScatterNDOp, self).infer_shape()
         inputs = self.get_input_tensors()
         data, indices, updates = inputs
-        out_tensor = ScatterNDOp.scatternd(data, indices, updates, reduction=self.reduction)
+        const_inputs = self.sorted_in_consts()
+        inplace = False if any(in_port == 0 for _, in_port, _ in const_inputs) else True
+        out_tensor = ScatterNDOp.scatternd(data, indices, updates, reduction=self.reduction, inplace=inplace)
         self.set_out_tensor(out_tensor)
 
 
