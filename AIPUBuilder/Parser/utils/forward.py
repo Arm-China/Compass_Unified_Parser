@@ -140,7 +140,8 @@ def onnx_forward(model_path, feed_dict, output_names=None, save_output=True):
     updated_feed_dict = {}
     for model_input, default_name in zip(model_inputs, input_names_from_feed_dict):
         input_name = model_input.name
-        np_dtype = getattr(np, model_input.type[7:-1])
+        dtype_str = model_input.type[7:-1]
+        np_dtype = getattr(np, 'float32' if dtype_str == 'float' else dtype_str)
         if input_name in feed_dict:
             key_name = input_name
         else:
