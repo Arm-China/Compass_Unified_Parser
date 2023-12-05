@@ -1141,7 +1141,7 @@ def merge_rcnn(graph, params):
     # Set spatial_scale in infer_shape stage because need to know the shapes of features
     roi_heads_roi_align_attr = {'name': roi_heads_roi_align, 'resize_width': 7, 'resize_height': 7,
                                 'image_width': image_width, 'image_height': image_height,
-                                'sample_ratio': [2, 2], 'spatial_scale': []}
+                                'sample_ratio': [2, 2], 'spatial_scale': [], 'proposal_normalized': False}
     NodeWrap(graph, roi_heads_roi_align).replace_obj('ArmPyramidROIAlign', roi_heads_roi_align_attr)
     # Connect PyramidROIAlign with box_head and box_predictor
     roi_heads_pool_out_edges = graph.sorted_out_edges(roi_heads_pool_out, data=True)
@@ -1259,7 +1259,7 @@ def merge_rcnn(graph, params):
             # PyramidROIAlign output: RoI pooled output
             mask_roi_align_attr = {'name': mask_roi_align, 'resize_width': 14, 'resize_height': 14,
                                    'image_width': image_width, 'image_height': image_height,
-                                   'sample_ratio': [2, 2], 'spatial_scale': []}
+                                   'sample_ratio': [2, 2], 'spatial_scale': [], 'proposal_normalized': False}
             NodeWrap(graph, mask_roi_align).replace_obj('ArmPyramidROIAlign', mask_roi_align_attr)
             # Connect PyramidROIAlign with box_head and box_predictor
             mask_pool_out_edges = graph.sorted_out_edges(mask_pool_out, data=True)
