@@ -3724,6 +3724,7 @@ class ArmPyramidROIAlignOp(OpHasOneOutPort, ArmOp):
                 'coordinate_transformation_mode': {'type': AttrType.STRING, 'default': 'output_half_pixel',
                                                    'options': ['half_pixel', 'output_half_pixel']},
                 'spatial_scale': {'type': AttrType.FLOATS, 'default': [1.0, 1.0, 1.0, 1.0]},
+                'proposal_normalized': {'type': AttrType.BOOL, 'default': True},
                 }
 
     def __init__(self, graph, attr_dict=None):
@@ -3769,6 +3770,7 @@ class ArmPyramidROIAlignOp(OpHasOneOutPort, ArmOp):
                            list_list_to_string(self.sample_ratio))
             txt_file.write('coordinate_transformation_mode=%s\n' %
                            self.coordinate_transformation_mode.upper())
+            txt_file.write('proposal_normalized=%s\n' % str(self.proposal_normalized).lower())
         return ret
 
 
