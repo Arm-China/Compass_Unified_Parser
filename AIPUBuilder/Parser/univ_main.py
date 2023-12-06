@@ -21,6 +21,7 @@ required arguments in Common section of <net.cfg>:
                             tflite model
                             caffe model
                             onnx model
+                            TorchScript model
     input               The input(s) node(s)' name of the model. Use comma to separate for several inputs.
     input_shape         The input shape(s) of model. For multiple inputs, use comma the separate them.
                         Example:
@@ -30,7 +31,7 @@ required arguments in Common section of <net.cfg>:
 
 optional arguments in Common section of <net.cfg>:
     model_type          The model format of the input model. (default: tensorflow)
-                        The supported types are(case insensitive): tensorflow, tflite, onnx, caffe.
+                        The supported types are(case insensitive): tensorflow, tflite, onnx, caffe, torch.
     model_domain        The domain of the model. (default: image_classification)
                         Example:
                             image_classification
@@ -107,7 +108,7 @@ optional arguments in Common section of <net.cfg>:
             model_type = 'tensorflow'
             if 'model_type' in common:
                 model_type = common['model_type']
-                if model_type.upper() not in ('ONNX', 'TFLITE', 'CAFFE', 'TENSORFLOW', 'TF', 'TORCH'):
+                if model_type.upper() not in ('ONNX', 'TFLITE', 'CAFFE', 'TENSORFLOW', 'TF', 'TORCH', 'PYTORCH'):
                     ERROR('Unsupport model type!')
                     return -1
 

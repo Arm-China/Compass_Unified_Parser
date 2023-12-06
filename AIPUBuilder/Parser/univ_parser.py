@@ -150,7 +150,7 @@ def univ_parser(params):
         params['input_npy'] = _parse_npy('input_npy')
         params['similarity_input_npy'] = _parse_npy('similarity_input_npy')
 
-        if model_type == 'torch':
+        if model_type in ('torch', 'pytorch'):
             # For torch, input_names and output_names are useless because it's not allowed to change
             # input nodes or output nodes for TorchScript. They are just names assigned to the input
             # and output nodes of the graph in order. So, only providing input_shapes is allowed.
@@ -204,7 +204,7 @@ def univ_parser(params):
 
             try:
                 # Convert torch model to onnx before processing
-                if model_type == 'torch':
+                if model_type in ('torch', 'pytorch'):
                     from .front_end.torch.process import convert_torch_to_onnx
                     model_path, params = convert_torch_to_onnx(model_path, params)
                     model_type = 'onnx'
