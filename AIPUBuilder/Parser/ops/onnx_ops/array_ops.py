@@ -947,7 +947,7 @@ class ScatterNDOp(OpHasOneOutPort, OnnxOp):
         inputs = self.get_input_tensors()
         data, indices, updates = inputs
         const_inputs = self.sorted_in_consts()
-        inplace = False if any(in_port == 0 for _, in_port, _ in const_inputs) else True
+        inplace = True if all(in_port != 0 for _, in_port, _ in const_inputs) else False
         out_tensor = ScatterNDOp.scatternd(data, indices, updates, reduction=self.reduction, inplace=inplace)
         self.set_out_tensor(out_tensor)
 
