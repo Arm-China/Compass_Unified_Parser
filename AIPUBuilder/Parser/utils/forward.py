@@ -151,13 +151,12 @@ def onnx_forward(model_path, feed_dict, output_names=None, save_output=True):
         updated_feed_dict.update({input_name: feed_dict[key_name].astype(np_dtype)})
 
     try:
-        o_names = [o.name for o in sess.get_outputs()]
-        output_data = sess.run(o_names, updated_feed_dict)
+        output_data = sess.run(output_names, updated_feed_dict)
     except Exception as e:
         ERROR("Fail to run because %s" % str(e))
 
     output_dict = dict()
-    for out_name, out_data in zip(o_names, output_data):
+    for out_name, out_data in zip(output_names, output_data):
         if isinstance(out_data, list):
             assert len(out_data) == 1, 'out_data is a list of more than 1 element!'
             out_data = out_data[0]

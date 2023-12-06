@@ -14,7 +14,7 @@ def compare_data(data1, data2):
     '''
     import torch
 
-    DEBUG('-------------- COMPARE DATA ----------------')
+    INFO('-------------- COMPARE DATA ----------------')
     if np.isscalar(data1):
         data1 = np.array(data1)
     if np.isscalar(data2):
@@ -67,11 +67,10 @@ def compare_data_dict(data_dict1, data_dict2):
               (str(data1_cnt), str(data2_cnt)))
     # Ignore dict keys. Only compare dicts' value.
     is_passed = True
-    for d1, d2 in zip(data_dict1.values(), data_dict2.values()):
-        is_passed = compare_data(d1, d2)
-        if not is_passed:
+    for n1, d1, n2, d2 in zip(data_dict1.keys(), data_dict1.values(), data_dict2.keys(), data_dict2.values()):
+        INFO('Comparing Former %s and latter %s' % (n1, n2))
+        if not compare_data(d1, d2):
             is_passed = False
-            break
     return is_passed
 
 
