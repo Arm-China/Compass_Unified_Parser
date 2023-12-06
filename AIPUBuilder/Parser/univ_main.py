@@ -49,6 +49,8 @@ optional arguments in Common section of <net.cfg>:
                             YOLO3_TINY
                             YOLO3_FULL
                             CAFFE_FASTERRCNN
+                            FASTERRCNN (Only for torch models or onnx models converted from torch)
+                            MASKRCNN (Only for torch models or onnx models converted from torch)
     caffe_prototxt      Prototxt file path of the Caffe model. Required for caffe model. (default: None)
     input_dtype         The dtype of input(s) for torch models. Use comma to separate for several dtype string.
                         The sequence of several dtype should be aligned with inputs. (default: float32)
@@ -80,6 +82,20 @@ optional arguments in Common section of <net.cfg>:
                         1) the resize method, which can be bilinear or nearest
                         2) the input image shape. For example, the setting of a bilinear RESIZE, with an
                            input image shape [1,448,448,3], should be {bilinear,[1,448,448,3]}.
+    force_float_ir      Convert the quantized op in the quantized model to float op and the output IR will
+                        be a float IR if set to True. (default: False)
+                        For non-quantized models, this field should be ignored. For quantized model, if
+                        this field is set to False or not set, the quantized op will be kept and the output
+                        IR will be a quantized IR.
+    similarity_input_npy
+                        Show similarity and mean errors if the file path of the feeded inputs is provided.
+                        The file should be a binary file in NumPy .npy format. A dictionary in format
+                        {input tensor name 1: input tensor 1, ..., input tensor name N: input tensor N}
+                        in which input tensor names are string and input tensors are NumPy array, should
+                        be saved in the file.
+                        The cosine similarity and mean errors between outputs from optimizer forwarding
+                        with float IR or quantized IR and outputs from runtime of the model's framework
+                        will be shown if the file path is provided.
     ''')
     args.add_argument('-c', '--cfg', metavar='<net.cfg>',
                       type=str, required=True,
