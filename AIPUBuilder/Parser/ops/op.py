@@ -546,6 +546,8 @@ class Op(abc.ABC):
             obj = self._graph.nodes[u].get('object', None)
             if obj is not None and obj.type in ('Constant', 'TfConst', 'Tfconstant'):
                 ret.append((u, in_attr['dst_in_port'], obj.value))
+            elif in_attr.get('tensor', None) is not None and in_attr['tensor'].is_const:
+                ret.append((u, in_attr['dst_in_port'], in_attr['tensor'].value))
         return ret
 
     def get_in_ports(self):
