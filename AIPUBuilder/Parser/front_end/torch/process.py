@@ -602,13 +602,14 @@ def convert_avg_pool3d(g, inp, kernel_size, stride, padding, ceil_mode, count_in
     return convert_avg_pool(g, inp, kernel_size, stride, padding, ceil_mode, count_include_pad, divisor_override, 3)
 
 
-def convert_qat_bn(g, input, weight, bias, running_mean, running_var, eps, s, zp):
-    input, _, _, _ = helper.dequantize_helper(g, input)
+def convert_qat_bn(g, x, weight, bias, running_mean, running_var, eps, s, zp):
+    x, _, x_zero_point, _ = helper.dequantize_helper(g, x)
+    out_scalar_type = x_zero_point.type().scalarType()
     weight, bias, running_mean, running_var = helper._batchnorm_helper(
-        g, input, weight, bias, running_mean, running_var)
+        g, x, weight, bias, running_mean, running_var)
     out = g.op(
         'BatchNormalization',
-        input,
+        x,
         weight,
         bias,
         running_mean,
@@ -616,39 +617,39 @@ def convert_qat_bn(g, input, weight, bias, running_mean, running_var, eps, s, zp
         epsilon_f=eps,
         outputs=1,
     )
-    return out
+    return out, out_scalar_type
 
 
 @helper.parse_args('v', 'v', 'v', 'v', 'v', 'f', 'v', 'v')
 def convert_quant_batch_norm_relu_3d(g, x, weight, bias, running_mean, running_var, eps, s, zp, ):
     from torch.onnx.symbolic_opset9 import relu
-    out = convert_qat_bn(g, x, weight, bias,
-                         running_mean, running_var, eps, s, zp)
+    out, out_scalar_type = convert_qat_bn(g, x, weight, bias,
+                                          running_mean, running_var, eps, s, zp)
     out = relu(g, out)
-    return quantize_helper(g, out, s, zp)
+    return quantize_helper(g, out, s, zp, zero_point_scalar_type=out_scalar_type)
 
 
 @helper.parse_args('v', 'v', 'v', 'v', 'v', 'f', 'v', 'v')
 def convert_quant_batch_norm_relu(g, x, weight, bias, running_mean, running_var, eps, s, zp, ):
     from torch.onnx.symbolic_opset9 import relu
-    out = convert_qat_bn(g, x, weight, bias,
-                         running_mean, running_var, eps, s, zp)
+    out, out_scalar_type = convert_qat_bn(g, x, weight, bias,
+                                          running_mean, running_var, eps, s, zp)
     out = relu(g, out)
-    return quantize_helper(g, out, s, zp)
+    return quantize_helper(g, out, s, zp, zero_point_scalar_type=out_scalar_type)
 
 
 @helper.parse_args('v', 'v', 'v', 'v', 'v', 'f', 'v', 'v')
 def convert_quant_batch_norm(g, x, weight, bias, running_mean, running_var, eps, s, zp, ):
-    out = convert_qat_bn(g, x, weight, bias,
-                         running_mean, running_var, eps, s, zp)
-    return quantize_helper(g, out, s, zp)
+    out, out_scalar_type = convert_qat_bn(g, x, weight, bias,
+                                          running_mean, running_var, eps, s, zp)
+    return quantize_helper(g, out, s, zp, zero_point_scalar_type=out_scalar_type)
 
 
 @helper.parse_args('v', 'v', 'v', 'v', 'v', 'f', 'v', 'v')
 def convert_quant_batch_norm3d(g, x, weight, bias, running_mean, running_var, eps, s, zp, ):
-    out = convert_qat_bn(g, x, weight, bias,
-                         running_mean, running_var, eps, s, zp)
-    return quantize_helper(g, out, s, zp)
+    out, out_scalar_type = convert_qat_bn(g, x, weight, bias,
+                                          running_mean, running_var, eps, s, zp)
+    return quantize_helper(g, out, s, zp, zero_point_scalar_type=out_scalar_type)
 
 
 @helper.parse_args('v')
