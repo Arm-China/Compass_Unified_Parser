@@ -46,18 +46,18 @@ def quantize_helper(
 
     assert zero_point is not None
     zp_scalar_type = zero_point.type().scalarType()
-    if zp_scalar_type not in ('Byte', 'Char'):
-        if zero_point_scalar_type is not None:
-            to_i = helper.cast_pytorch_to_onnx[zero_point_scalar_type]
+    if zero_point_scalar_type is not None and zp_scalar_type != zero_point_scalar_type:
+        to_i = helper.cast_pytorch_to_onnx[zero_point_scalar_type]
+        zero_point = g.op('Cast', zero_point, to_i=to_i)
+    elif zp_scalar_type not in ('Byte', 'Char'):
+        zp_value = helper._maybe_get_const(zero_point, 'i')
+        if isinstance(zp_value, int) and zp_value >= -128 and zp_value <= 255:
+            to_i = torch._C._onnx.TensorProtoDataType.INT8 if zp_value < 0 else torch._C._onnx.TensorProtoDataType.UINT8
         else:
-            zp_value = helper._maybe_get_const(zero_point, 'i')
-            if isinstance(zp_value, int) and zp_value >= -128 and zp_value <= 255:
-                to_i = torch._C._onnx.TensorProtoDataType.INT8 if zp_value < 0 else torch._C._onnx.TensorProtoDataType.UINT8
-            else:
-                to_i = helper.cast_pytorch_to_onnx[zp_scalar_type]
-                # TODO: convert some inviald dtypes.
-                if to_i == torch._C._onnx.TensorProtoDataType.INT64:
-                    to_i = torch._C._onnx.TensorProtoDataType.INT32
+            to_i = helper.cast_pytorch_to_onnx[zp_scalar_type]
+            # TODO: convert some inviald dtypes.
+            if to_i == torch._C._onnx.TensorProtoDataType.INT64:
+                to_i = torch._C._onnx.TensorProtoDataType.INT32
         zero_point = g.op('Cast', zero_point, to_i=to_i)
 
     output = g.op(
