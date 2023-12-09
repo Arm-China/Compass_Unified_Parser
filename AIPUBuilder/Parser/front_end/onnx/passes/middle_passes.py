@@ -1217,7 +1217,10 @@ def convert_special_conv_to_mul(graph):
             WARN('[Parser]: Meets invalid Conv(%s) in convert_special_conv_to_mul!' % conv)
             continue
         inp, w = inputs[:2]
-        if inp.shape[1] != w.shape[0] or any(s != 1 for s in w.shape[1:]):
+        group = conv_obj.group
+        if inp.shape[1] != w.shape[0] \
+                or any(s != 1 for s in w.shape[2:]) \
+                or group not in (1, inp.shape[1]):
             continue
         if any(d != 1 for d in conv_obj.dilations) \
                 or any(s != 1 for s in conv_obj.strides) \
@@ -1226,14 +1229,31 @@ def convert_special_conv_to_mul(graph):
             continue
         w_name, _, w_k, w_in_attr = in_edges[1]
         dim = [w.shape[0]] + [1] * (len(w.shape) - 2)
-        insert_reshape(graph, w_name, conv, w_in_attr, dim, key=w_k, data_format='NCHW')
-        NodeWrap(graph, conv).replace_obj('Mul', {'name': conv, 'opset_version': 7})
+        if group == inp.shape[1]:
+            insert_reshape(graph, w_name, conv, w_in_attr, dim, key=w_k, data_format='NCHW')
+            NodeWrap(graph, conv).replace_obj('Mul', {'name': conv, 'opset_version': 7})
+        else:
+            # Convert to torch.sum(torch.reshape(x, [N, 1, C, H, W]) * w, dim=2, keepdim=False)
+            mul_node = get_valid_node_name(graph, conv + '_mul')
+            graph.remove_edges_from(in_edges)
+            inp_name, _, _, inp_in_attr = in_edges[0]
+            graph.add_edge(inp_name, mul_node, **inp_in_attr)
+            inp_reshape_dim = [inp.shape[0], 1] + list(inp.shape[1:])
+            insert_reshape(graph, inp_name, mul_node, inp_in_attr, inp_reshape_dim)
+            graph.add_edge(w_name, mul_node, **w_in_attr)
+            graph.add_edge(mul_node, conv)
+            NodeWrap(graph, mul_node).replace_obj('Mul', {'name': mul_node, 'opset_version': 7})
+            reduce_sum_attr = conv_obj.copied_attr()
+            reduce_sum_attr.update({'opset_version': 11, 'axes': [2], 'keepdims': False})
+            NodeWrap(graph, conv).replace_obj('ReduceSum', reduce_sum_attr)
         if len(in_edges) == 3:
+            # + torch.reshape(b, [-1, 1, 1])
             add = get_valid_node_name(graph, conv + '_add')
             b_name, _, b_k, b_in_attr = in_edges[2]
             graph.remove_edges_from(in_edges[2:])
-            reshape = insert_reshape(graph, b_name, add, b_in_attr, dim, key=b_k, data_format='NCHW')
-            graph.add_edge(reshape, add, **{'dst_in_port': 1})
+            b_in_attr.update({'dst_in_port': 1})
+            graph.add_edge(b_name, add, **b_in_attr)
+            insert_reshape(graph, b_name, add, b_in_attr, dim, key=b_k, data_format='NCHW')
             for _, dst, out_attr in graph.sorted_out_edges(conv, data=True):
                 graph.remove_edge(conv, dst)
                 graph.add_edge(add, dst, **out_attr)
