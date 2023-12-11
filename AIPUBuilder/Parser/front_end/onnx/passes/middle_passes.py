@@ -3244,6 +3244,65 @@ def merge_divmod(graph):
         clear_redundant_nodes(graph)
 
 
+def merge_divmod2(graph):
+    '''Merge Cast(int->float)+Div(B=float)+Cast(float->int) to DivMod+Cast(->int).
+    Keeping the Cast after Div is because the input 'int' could be different with
+    the output 'int'.
+    '''
+    matched = False
+    matches = matched_patterns(graph,
+                               nodes=[
+                                   ('cast_in', {'op': 'Cast'}),
+                                   ('divc', {'op': 'Constant'}),
+                                   ('div', {'op': 'Div'}),
+                                   ('cast_out', {'op': 'Cast'})],
+                               edges=[
+                                   ('cast_in', 'div', {'dst_in_port': 0}),
+                                   ('divc', 'div', {'dst_in_port': 1}),
+                                   ('div', 'cast_out')])
+    for m in matches:
+        key_names = ['div', 'divc', 'cast_in', 'cast_out']
+        node_objs = {k: NodeWrap(graph, m[k])['object'] for k in key_names}
+        if any(obj is None for obj in node_objs.values()):
+            ERROR('[Parser]: Meets invalid nodes in merge_divmod2!')
+            continue
+        cast_in_to_type = node_objs['cast_in'].to
+        cast_out_to_type = node_objs['cast_out'].to
+        if 'int' in cast_in_to_type or 'int' not in cast_out_to_type:
+            continue
+        cast_in_in_edges = graph.sorted_in_edges(m['cast_in'], data=True)
+        if len(cast_in_in_edges) < 1 or cast_in_in_edges[0][2].get('tensor', None) is None:
+            continue
+        input_type = cast_in_in_edges[0][2]['tensor'].get_dtype()
+        if input_type is None or 'int' not in input_type:
+            continue
+        dividend = node_objs['divc'].value
+        if not FLOAT_EQUAL(dividend, dividend.astype(input_type)):
+            continue
+        cast_in_src, _, src_in_attr = cast_in_in_edges[0]
+        div_out_edges = graph.sorted_out_edges(m['div'], data=True)
+        if len(div_out_edges) != 1:
+            continue
+        matched = True
+        div_in_edges = graph.sorted_in_edges(m['div'])
+        graph.remove_edges_from(div_in_edges + div_out_edges)
+        graph.add_edge(cast_in_src, m['div'], **src_in_attr)
+        insert_constant(graph, m['div'] + '_b', np.array(dividend, dtype=input_type), m['div'], in_port=1)
+        cast_out_in_attr = div_out_edges[0][2]
+        if cast_out_in_attr['tensor'].value is not None:
+            cast_out_in_attr['tensor'].value = cast_out_in_attr['tensor'].value.astype(input_type)
+        cast_out_in_attr['tensor'].dtype = input_type
+        graph.add_edge(m['div'], m['cast_out'], **cast_out_in_attr)
+        divmod_out1 = get_valid_node_name(graph, m['div'] + '_out1')
+        graph.add_edge(m['div'], divmod_out1, **{'src_out_port': 1})
+        NodeWrap(graph, divmod_out1).replace_obj('Out', {'name': divmod_out1})
+        divmod_attr = node_objs['div'].copied_attr()
+        divmod_attr.update({'opset_version': 1, 'mode': 'trunc'})
+        NodeWrap(graph, m['div']).replace_obj('DivMod', divmod_attr)
+    if matched:
+        clear_redundant_nodes(graph)
+
+
 def merge_gelu_1(graph):
     matched = False
     matches = matched_patterns(graph,
@@ -9359,6 +9418,7 @@ def middle_passes(graph, params):
                               'Transpose', 'Reshape', 'AveragePool', 'MaxPool', 'Resize'])
     remove_sub_add_pair(graph)
     merge_divmod(graph)
+    merge_divmod2(graph)
     merge_leaky_relu(graph)
     merge_prelu(graph)
     reshape_prelu_slope(graph)
