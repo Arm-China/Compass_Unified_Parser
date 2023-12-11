@@ -1479,7 +1479,7 @@ class LiteMEANOp(OpHasAxis, OpHasOneOutPort, TfliteOp):
 
     @property
     def correspond_onnx_op(self):
-        return {'type': 'ReduceMean', 'version': 11}
+        return {'type': 'ReduceMean', 'version': 18}
 
 
 class LiteMINIMUMOp(OpHasOneOutPort, TfliteOp):
@@ -1914,7 +1914,7 @@ class LiteREDUCE_MAXOp(TfliteReduceOp):
 
     @property
     def correspond_onnx_op(self):
-        return {'type': 'ReduceMax', 'version': 13}
+        return {'type': 'ReduceMax', 'version': 18}
 
 
 class LiteREDUCE_MINOp(TfliteReduceOp):
@@ -1927,7 +1927,7 @@ class LiteREDUCE_MINOp(TfliteReduceOp):
 
     @property
     def correspond_onnx_op(self):
-        return {'type': 'ReduceMin', 'version': 13}
+        return {'type': 'ReduceMin', 'version': 18}
 
 
 class LiteREDUCE_PRODOp(TfliteReduceOp):
@@ -1940,7 +1940,7 @@ class LiteREDUCE_PRODOp(TfliteReduceOp):
 
     @property
     def correspond_onnx_op(self):
-        return {'type': 'ReduceProd', 'version': 1}
+        return {'type': 'ReduceProd', 'version': 18}
 
 
 class LiteRELUOp(BaseReluOp, TfliteOp):
@@ -2708,7 +2708,7 @@ class LiteSUMOp(OpHasAxis, OpHasOneOutPort, TfliteOp):
 
     @property
     def correspond_onnx_op(self):
-        return {'type': 'ReduceSum', 'version': 11}
+        return {'type': 'ReduceSum', 'version': 13}
 
 
 class LiteSUBOp(BaseActivationOp, TfliteOp):

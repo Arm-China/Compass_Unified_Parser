@@ -3280,9 +3280,12 @@ def convert_to_onnx(graph):
                     size = 2 * node_obj.radius + 1
                     alpha = node_obj.alpha * size
                     new_node_attr.update({'size': size, 'alpha': alpha})
-                elif pure_type == 'MEAN':
-                    in_edges = graph.sorted_in_edges(node_name)
-                    graph.remove_edges_from(in_edges[1:])
+                elif pure_type in ('MEAN', 'REDUCE_ALL', 'REDUCE_ANY', 'REDUCE_MAX', 'REDUCE_MIN', 'REDUCE_PROD', 'SUM'):
+                    in_edges = graph.sorted_in_edges(node_name, data=True)
+                    if len(in_edges) == 2:
+                        axes_inp, _, axes_in_attr = in_edges[1]
+                        if axes_in_attr['tensor'].shape is not None and len(axes_in_attr['tensor'].shape) != 1:
+                            insert_reshape(graph, axes_inp, node_name, axes_in_attr, [-1])
                 elif pure_type == 'PACK':
                     new_node_attr.update({'new_axis': True})
                 elif pure_type in ('PAD', 'PADV2', 'MIRROR_PAD'):

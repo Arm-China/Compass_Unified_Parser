@@ -802,6 +802,21 @@ class ReduceAllOp(OpHasAxis, OpHasOneOutPort, CommonOp):
         self.update_attributes(ReduceAllOp, attr_dict)
         assert self.check_required(), 'ReduceAllOp is missing a required parameter.'
 
+    def __getattr__(self, item):
+        ret = None
+        try:
+            if item == 'axes':
+                inputs = self.get_input_tensors()
+                if len(inputs) > 1:
+                    ret = inputs[1].tolist() if inputs[1].size > 0 else None
+                    if ret is not None:
+                        self.__dict__['_attr'][item].value = ret
+        except:
+            ret = None
+        if ret is None:
+            ret = super(ReduceAllOp, self).__getattr__(item)
+        return ret
+
     def infer_shape(self):
         super(ReduceAllOp, self).infer_shape()
         inputs = self.get_input_tensors()
@@ -821,6 +836,21 @@ class ReduceAnyOp(OpHasAxis, OpHasOneOutPort, CommonOp):
         super(ReduceAnyOp, self).__init__(graph, attr_dict)
         self.update_attributes(ReduceAnyOp, attr_dict)
         assert self.check_required(), 'ReduceAnyOp is missing a required parameter.'
+
+    def __getattr__(self, item):
+        ret = None
+        try:
+            if item == 'axes':
+                inputs = self.get_input_tensors()
+                if len(inputs) > 1:
+                    ret = inputs[1].tolist() if inputs[1].size > 0 else None
+                    if ret is not None:
+                        self.__dict__['_attr'][item].value = ret
+        except:
+            ret = None
+        if ret is None:
+            ret = super(ReduceAnyOp, self).__getattr__(item)
+        return ret
 
     def infer_shape(self):
         super(ReduceAnyOp, self).infer_shape()

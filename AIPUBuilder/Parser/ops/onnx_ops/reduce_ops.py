@@ -190,7 +190,6 @@ class ReduceSumOp(OnnxReduceOp):
         return {1: {},
                 11: {},
                 13: {},
-                18: {},
                 }
 
     def __init__(self, graph, attr_dict=None):

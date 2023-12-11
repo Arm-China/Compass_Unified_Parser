@@ -4689,7 +4689,7 @@ def merge_softmax(graph):
         if all([obj is not None for obj in obj_dict.values()]) \
                 and len(in_edges) == 1 \
                 and len(exp_out_edges) == 2 \
-                and len(sum_in_edges) == 1 \
+                and len(sum_in_edges) >= 1 \
                 and len(sum_out_edges) == 1 \
                 and len(obj_dict['sum'].axes) == 1:
             matched = True
@@ -4913,7 +4913,7 @@ def duplicate_moments_mean(graph):
             continue
         mean1_in_edges = graph.sorted_in_edges(m['mean1'], data=True)
         sub_in_edges = graph.sorted_in_edges(m['sub'], data=True)
-        if len(mean1_in_edges) != 1 or len(sub_in_edges) != 2:
+        if len(mean1_in_edges) < 1 or len(sub_in_edges) != 2:
             continue
         mean1_copy = get_valid_node_name(graph, m['mean1'] + '_copy')
         inp, _, mean1_in_attr = mean1_in_edges[0]
@@ -4952,7 +4952,7 @@ def merge_reduce_variance(graph):
             continue
         mean1_in_edges = graph.sorted_in_edges(m['mean1'], data=True)
         sub_in_edges = graph.sorted_in_edges(m['sub'], data=True)
-        if len(mean1_in_edges) != 1 or len(sub_in_edges) != 2:
+        if len(mean1_in_edges) < 1 or len(sub_in_edges) != 2:
             continue
         inp, _, mean1_in_attr = mean1_in_edges[0]
         inp_out_port = mean1_in_attr['src_out_port']
@@ -5009,7 +5009,7 @@ def merge_reduce_unbiased_variance(graph):
 
         var_in_edges = graph.sorted_in_edges(m['var'], data=True)
         var_input_shapes = node_objs['var'].get_input_shapes()
-        if len(var_in_edges) != 1 or len(var_input_shapes) != 1:
+        if len(var_in_edges) < 1 or len(var_input_shapes) < 1:
             ERROR(
                 '[Parser]: Meets invalid node (%s) in merge_reduce_unbiased_variance!' % m['var'])
             continue
@@ -5879,7 +5879,7 @@ def merge_ln4(graph):
         if all(obj is not None for obj in node_objs.values()):
             mean_1_in_edges = graph.sorted_in_edges(m['mean_1'], data=True)
             sub_in_edges = graph.sorted_in_edges(m['sub'], data=True)
-            if len(mean_1_in_edges) != 1 \
+            if len(mean_1_in_edges) < 1 \
                     or len(sub_in_edges) != 2 \
                     or mean_1_in_edges[0][0] != sub_in_edges[0][0] \
                     or mean_1_in_edges[0][2]['tensor'].value is None \
@@ -6021,7 +6021,7 @@ def merge_ln5(graph):
         edges_dict = {}
         for name in in_names:
             edges = graph.sorted_in_edges(m[name], data=True)
-            if (name == 'mean' and len(edges) != 1) \
+            if (name == 'mean' and len(edges) < 1) \
                     or (name != 'mean' and len(edges) != 2):
                 ERROR('[Parser]: Meets invalid nodes(%s) in merge_ln5!' % name)
                 found_error = True
@@ -6545,7 +6545,7 @@ def merge_mvn3(graph):
             continue
         if obj_dict['mean_1'].axes != [0, 1, 2] or obj_dict['mean_2'].axes != [0, 1, 2]:
             continue
-        if len(obj_dict['mean_1'].get_input_shapes()) != 1 \
+        if len(obj_dict['mean_1'].get_input_shapes()) < 1 \
                 or obj_dict['mean_1'].get_input_shapes()[0] is None \
                 or len(obj_dict['mean_1'].get_input_shapes()[0]) != 4:
             ERROR(
