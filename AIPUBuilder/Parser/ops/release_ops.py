@@ -2245,7 +2245,7 @@ class ArmGatherElementsOp(OpHasAxis, OpHasOneOutPort, ArmOp):
 
     @classmethod
     def cast_in_ports(cls):
-        return {0: 'float32', 1: 'int32'}
+        return {1: 'int32'}
 
     @classmethod
     def attributes(cls):
@@ -2283,7 +2283,7 @@ class ArmGatherNDOp(OpHasOneOutPort, ArmOp):
 
     @classmethod
     def cast_in_ports(cls):
-        return {0: 'float32', 1: 'int32'}
+        return {1: 'int32'}
 
     @classmethod
     def num_in_ports(cls):
