@@ -853,7 +853,7 @@ class TfMaxOp(OpHasAxis, OpHasOneOutPort, TfOp):
 
     @property
     def correspond_onnx_op(self):
-        return {'type': 'ReduceMax', 'version': 11}
+        return {'type': 'ReduceMax', 'version': 18}
 
 
 class TfMaximumOp(OpHasOneOutPort, TfOp):
@@ -895,7 +895,7 @@ class TfMeanOp(OpHasAxis, OpHasOneOutPort, TfOp):
 
     @property
     def correspond_onnx_op(self):
-        return {'type': 'ReduceMean', 'version': 11}
+        return {'type': 'ReduceMean', 'version': 18}
 
 
 class TfMinOp(OpHasAxis, OpHasOneOutPort, TfOp):
@@ -934,7 +934,7 @@ class TfMinOp(OpHasAxis, OpHasOneOutPort, TfOp):
 
     @property
     def correspond_onnx_op(self):
-        return {'type': 'ReduceMin', 'version': 11}
+        return {'type': 'ReduceMin', 'version': 18}
 
 
 class TfMinimumOp(OpHasOneOutPort, TfOp):
@@ -1045,7 +1045,7 @@ class TfProdOp(OpHasAxis, OpHasOneOutPort, TfOp):
 
     @property
     def correspond_onnx_op(self):
-        return {'type': 'ReduceProd', 'version': 13}
+        return {'type': 'ReduceProd', 'version': 18}
 
 
 class TfRangeOp(OpHasOneOutPort, TfOp):
@@ -1324,7 +1324,7 @@ class TfSumOp(OpHasAxis, OpHasOneOutPort, TfOp):
 
     @property
     def correspond_onnx_op(self):
-        return {'type': 'ReduceSum', 'version': 11}
+        return {'type': 'ReduceSum', 'version': 13}
 
 
 class TfTanOp(LayoutUnawareOp, OpHasOneOutPort, TfOp):

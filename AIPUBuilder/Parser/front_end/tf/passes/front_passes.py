@@ -4428,8 +4428,12 @@ def convert_to_onnx(graph):
                         new_weights, axes=type(node_obj).perm_tf_to_onnx())
                     new_node_attr.update({'weights': new_weights})
 
-                if pure_type in ('All', 'Any', 'Max', 'Min', 'Prod'):
-                    graph.remove_edges_from(in_edges[1:])
+                if pure_type in ('All', 'Any', 'Max', 'Mean', 'Min', 'Prod', 'Sum'):
+                    graph.remove_edges_from(in_edges[2:])
+                    if len(in_edges) >= 2:
+                        axes_inp, _, axes_in_attr = in_edges[1]
+                        if axes_in_attr['tensor'].shape is not None and len(axes_in_attr['tensor'].shape) != 1:
+                            insert_reshape(graph, axes_inp, node_name, axes_in_attr, [-1])
                 elif pure_type in ('ArgMax', 'ArgMin'):
                     new_node_attr.update(
                         {'axis': node_obj.axis, 'keepdims': 0})
@@ -4559,16 +4563,6 @@ def convert_to_onnx(graph):
                     flatten_dim = 'NHWC' if node_obj.include_batch_in_index else 'HWC'
                     new_node_attr.update({'flatten_dim': flatten_dim})
                     graph.remove_edges_from(in_edges[1:])
-                elif pure_type == 'Mean':
-                    if len(in_edges) >= 2:
-                        if not getattr(node_obj, 'axes'):
-                            new_node_attr.update(
-                                {'axes': (in_edges[1][2]['tensor'].value).tolist()})
-                        graph.remove_edges_from(in_edges[1:])
-                    else:
-                        ERROR(
-                            '[Parser]: Invalid TF Mean Node(%s) to convert to Onnx!' % node_name)
-                        continue
                 elif pure_type == 'Pack':
                     new_node_attr.update({'new_axis': True})
                 elif pure_type in ('Pad', 'PadV2', 'MirrorPad'):
