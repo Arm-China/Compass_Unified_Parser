@@ -7348,9 +7348,36 @@ def merge_rms_norm(graph):
                                    ('div', 'mul'),
                                    ('mul_const', 'mul'),
                                ])
-    for m in matches:
+    matches2 = matched_patterns(graph,
+                                nodes=[
+                                    ('pow', {'op': 'Pow'}),
+                                    ('pow_y', {'op': 'Constant'}),
+                                    ('mean', {'op': 'ReduceMean'}),
+                                    ('add', {'op': 'Add'}),
+                                    ('add_const', {'op': 'Constant'}),
+                                    ('sqrt', {'op': 'Sqrt'}),
+                                    ('div', {'op': 'Div'}),
+                                    ('cast1', {'op': 'Cast'}),
+                                    ('cast2', {'op': 'Cast'}),
+                                    ('mul', {'op': 'Mul'}),
+                                    ('mul_const', {'op': 'Constant'}),
+                                ],
+                                edges=[
+                                    ('pow_y', 'pow', {'dst_in_port': 1}),
+                                    ('pow', 'mean'),
+                                    ('mean', 'add'),
+                                    ('add_const', 'add'),
+                                    ('add', 'sqrt'),
+                                    ('sqrt', 'div', {'dst_in_port': 1}),
+                                    ('div', 'cast1'),
+                                    ('cast1', 'cast2'),
+                                    ('cast2', 'mul'),
+                                    ('mul_const', 'mul'),
+                                ])
+    for m in matches + matches2:
+        has_cast = ('cast1' in m)
         key_names = ['pow', 'pow_y', 'mean', 'add_const',
-                     'div', 'mul', 'mul_const']
+                     'div', 'mul', 'mul_const'] + (['cast1', 'cast2'] if has_cast else [])
         node_objs = {k: NodeWrap(graph, m[k])['object'] for k in key_names}
         if any(obj is None for obj in node_objs.values()):
             ERROR('[Parser]: Meets invalid nodes in merge_rms_norm!')
@@ -7370,6 +7397,8 @@ def merge_rms_norm(graph):
         input_shapes = node_objs['pow'].get_input_shapes()
         if len(input_shapes) < 1 or input_shapes[0] is None or None in input_shapes[0]:
             ERROR('[Parser]: Meets invalid input shape of Pow(%s) node in merge_rms_norm!' % m['pow'])
+            continue
+        if has_cast and ('float' not in node_objs['cast1'].to or 'float' not in node_objs['cast2'].to):
             continue
         input_shape = input_shapes[0]
         norm_axes = OpHasAxis.make_axes_non_negative(node_objs['mean'].axes, len(input_shape))

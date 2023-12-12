@@ -82,7 +82,6 @@ def remove_useless_op(graph, op_type_list):
             node_obj = NodeWrap(graph, node_name)['object']
             if node_obj is None:
                 continue
-            in_tensors = node_obj.get_input_tensors()
             if op_type == 'Cast':
                 if node_obj.to not in ArmCastOp.attributes()['to_dtype']['options']:
                     if node_obj.to == 'bool':
@@ -93,10 +92,12 @@ def remove_useless_op(graph, op_type_list):
                         WARN('[Parser]: Change unsupported dtype (%s) in Cast op (%s) to %s!' %
                              (node_obj.to, node_name, new_dtype))
                         node_obj.to = new_dtype
-                if len(in_tensors) > 0 \
-                        and in_tensors[0] is not None \
+                in_edges = graph.sorted_in_edges(node_name, data=True)
+                if len(in_edges) > 0 \
+                        and in_edges[0][2].get('tensor', None) is not None \
                         and not node_obj.quantize \
-                        and str(in_tensors[0].dtype) == node_obj.to:
+                        and in_edges[0][2]['tensor'].get_dtype() is not None \
+                        and in_edges[0][2]['tensor'].get_dtype() == node_obj.to:
                     removing_nodes.append(node_name)
                 else:
                     continue
@@ -175,9 +176,11 @@ def remove_useless_op(graph, op_type_list):
                         index = graph._attr['output_names'].index(node_name)
                         graph._attr['output_names'][index] = in_edges[0][0]
             elif op_type == 'ArmReduce':
-                if len(in_tensors) > 0 \
-                        and in_tensors[0] is not None \
-                        and np.product(np.array(in_tensors[0].shape)[np.array(node_obj.axes, np.int32)]) == 1:
+                input_shapes = node_obj.get_input_shapes()
+                if len(input_shapes) > 0 \
+                        and input_shapes[0] is not None \
+                        and None not in input_shapes[0] \
+                        and np.product(np.array(input_shapes[0])[np.array(node_obj.axes, np.int32)]) == 1:
                     in_edges = graph.sorted_in_edges(node_name)
                     removing_nodes.append(node_name)
                     if node_name in graph._attr['output_names']:
@@ -208,6 +211,7 @@ def remove_useless_op(graph, op_type_list):
                     removing_nodes.append(node_name)
             elif op_type == 'Resize':
                 in_shapes = node_obj.get_input_shapes()
+                in_tensors = node_obj.get_input_tensors()
                 if node_obj.cur_version == 10:
                     if len(in_tensors) == 2 and node_obj.cur_version == 10 and in_tensors[1].size > 0 and np.all(in_tensors[1] == 1):
                         removing_nodes.append(node_name)
@@ -238,19 +242,21 @@ def remove_useless_op(graph, op_type_list):
                             '[Parser]: Meets unsupported Roll(%s) to remove in remove_useless_op!' % node_name)
                         continue
             elif op_type == 'Slice':
-                out_tensors = node_obj.get_output_tensors()
-                if len(in_tensors) >= 1 \
-                        and len(out_tensors) == 1 \
-                        and in_tensors[0] is not None \
-                        and out_tensors[0] is not None \
-                        and list(in_tensors[0].shape) == list(out_tensors[0].shape) \
+                input_shapes = node_obj.get_input_shapes()
+                output_shapes = node_obj.get_output_shapes()
+                if len(input_shapes) >= 1 \
+                        and len(output_shapes) == 1 \
+                        and (input_shapes[0] is not None and None not in input_shapes[0]) \
+                        and (output_shapes[0] is not None and None not in output_shapes[0]) \
+                        and input_shapes[0] == output_shapes[0] \
                         and all([d == 0 for d in node_obj.starts]) \
-                        and list(in_tensors[0].shape) == node_obj.ends:
+                        and input_shapes[0] == node_obj.ends:
                     removing_nodes.append(node_name)
             elif op_type == 'Split':
-                if len(in_tensors) >= 1 and len(node_obj.split) == 1 and \
-                        in_tensors[0] is not None and \
-                        in_tensors[0].shape[node_obj.axis] == node_obj.split[0]:
+                input_shapes = node_obj.get_input_shapes()
+                if len(input_shapes) >= 1 and len(node_obj.split) == 1 and \
+                        input_shapes[0] is not None and None not in input_shapes[0] and \
+                        input_shapes[0][node_obj.axis] == node_obj.split[0]:
                     removing_nodes.append(node_name)
             elif op_type in ('Transpose', 'ArmTranspose'):
                 trans_in_edges = graph.sorted_in_edges(node_name, data=True)
