@@ -17,7 +17,7 @@ class put_model(torch.nn.Module):
                 self.update = torch.randn([4, 8]) * 30
         else:
             self.index = (torch.tensor([[1, 0, 3, 0, 2, 3, 4, 4]]),
-                          torch.tensor([2]))
+                          torch.tensor([2]),)
             if update_rank == 1:
                 self.update = torch.randn([1]) * 20
             elif update_rank == 2:
