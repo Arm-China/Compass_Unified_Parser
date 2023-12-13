@@ -8409,7 +8409,7 @@ def split_special_ln2(graph):
         add2 = get_valid_node_name(graph, ln + '_add2')
 
         graph.remove_edges_from(ln_in_edges[1:])
-        graph.remove_edges_from([e for e in ln_out_edges if e[2]['src_out_port'] != 1])
+        graph.remove_edges_from(ln_out_edges)
         graph.add_edge(x, sub, **x_in_attr)
         graph.add_edge(ln, sub, **{'dst_in_port': 1, 'tensor': Tensor(shape=mean_shape)})
         graph.add_edge(ln, add1, **{'src_out_port': 1, 'tensor': Tensor(shape=mean_shape)})
@@ -8427,6 +8427,10 @@ def split_special_ln2(graph):
         for _, dst, out_attr in ln_out_edges:
             if out_attr['src_out_port'] == 0:
                 graph.add_edge(add2, dst, **out_attr)
+            elif out_attr['src_out_port'] == 1:
+                new_out_attr = copy.deepcopy(out_attr)
+                new_out_attr['src_out_port'] = 0
+                graph.add_edge(ln, dst, **new_out_attr)
             elif out_attr['src_out_port'] == 2:
                 new_out_attr = copy.deepcopy(out_attr)
                 new_out_attr['src_out_port'] = 0
