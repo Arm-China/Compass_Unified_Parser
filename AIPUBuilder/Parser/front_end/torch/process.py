@@ -1189,37 +1189,31 @@ def convert_index_put(g, x, indices_list_value, values, accumulate=False):
     sub_data_shape = helper._slice_helper(
         g, g.op('Shape', x), axes=[0], starts=[len(indices_list)], ends=[sys.maxsize]
     )
-    values_shape = g.op('Concat', broadcast_index_shape,
-                        sub_data_shape, axis_i=0)
+    exp_values_shape = g.op('Concat', broadcast_index_shape,
+                            sub_data_shape, axis_i=0)
     # Check if values is a singular value and expand accordingly
-    rank = helper._get_tensor_rank(values)
-    inp_rank = helper._get_tensor_rank(x)
     inp_shape = helper._get_tensor_sizes(x)
-    value_shape = helper._get_tensor_sizes(values)
-    if rank is not None \
-            and rank < inp_rank \
-            and all((shape is not None for shape in inp_shape)) \
-            and all((shape is not None for shape in value_shape)):
-        try:
-            values = opset9.expand(g, values, values_shape, None)
-        except:
+    values_shape = helper._get_tensor_sizes(values)
+    if inp_shape is not None and values_shape is not None:
+        if len(values_shape) == 1 and values_shape[0] != 1 \
+                and len(indices_list) == len(inp_shape):
             pass
-    values = helper._reshape_helper(g, values, values_shape)
+        elif len(values_shape) == len(inp_shape) \
+                and all(v_shape == i_shape for v_shape, i_shape in zip(values_shape, inp_shape)):
+            pass
+        else:
+            try:
+                values = opset9.expand(g, values, exp_values_shape, None)
+            except:
+                pass
+    values = helper._reshape_helper(g, values, exp_values_shape)
 
     dtype = x.type().scalarType()
     if dtype is not None and dtype != values.type().scalarType():
         values = g.op('Cast', values, to_i=helper.cast_pytorch_to_onnx[dtype])
 
     if accumulate:
-        zeros = g.op(
-            'ConstantOfShape',
-            g.op('Shape', x),
-            value_t=torch.tensor(
-                [0], dtype=helper.pytorch_name_to_type[dtype]),
-        )
-        result = g.op('ScatterND', zeros, index, values)
-        from torch.onnx import symbolic_opset11 as opset11
-        result = opset11.add(g, x, result)
+        result = g.op('ScatterND', x, index, values, reduction_s='add')
     else:
         result = g.op('ScatterND', x, index, values)
 
@@ -1721,8 +1715,6 @@ def convert_torch_to_onnx(model_path, params):
     torch.onnx.register_custom_op_symbolic(
         'aten::mean', convert_reduce_mean, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
-        'aten::meshgrid', convert_meshgrid, onnx_opset_version)
-    torch.onnx.register_custom_op_symbolic(
         'aten::round', convert_round, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::select_scatter', convert_select_scatter, onnx_opset_version)
@@ -1784,12 +1776,16 @@ def convert_torch_to_onnx(model_path, params):
         'aten::quantize_per_tensor', convert_quantize_per_tensor, onnx_opset_version)
 
     if is_torch_script_model:
+        model_output_names = [out.debugName() for out in model.graph.outputs()]
         # Only convert prim::DictConstruct to Identity when it's output node.
         dict_nodes = model.graph.findAllNodes('prim::DictConstruct')
-        model_output_names = [out.debugName() for out in model.graph.outputs()]
         if dict_nodes and all(node.output().debugName() in model_output_names for node in dict_nodes):
             torch.onnx.register_custom_op_symbolic(
                 'prim::DictConstruct', convert_dict_construct, onnx_opset_version)
+        meshgrid_nodes = model.graph.findAllNodes('aten::meshgrid')
+        if meshgrid_nodes and any(node.output().debugName() in model_output_names for node in meshgrid_nodes):
+            torch.onnx.register_custom_op_symbolic(
+                'aten::meshgrid', convert_meshgrid, onnx_opset_version)
 
     # Convert torch op to custom onnx op
     torch.onnx.register_custom_op_symbolic(
