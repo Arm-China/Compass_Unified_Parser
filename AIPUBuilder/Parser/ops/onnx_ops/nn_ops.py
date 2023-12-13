@@ -500,9 +500,9 @@ class DeformConvOp(BaseConvOp, OnnxOp):
                 kernel_offset[i, j] = kernel_pos[:, :] + [h_coord, w_coord]
 
         # reshape from [oh, ow, kh, kw, 2] to [oh, ow, kh*kw, 2]
-        kernel_offset = np.reshape(kernel_offset, [oh, ow, kh*kw, 2])
+        kernel_offset = np.reshape(kernel_offset, [oh, ow, kh * kw, 2])
         kernel_offset = np.transpose(kernel_offset, [2, 3, 0, 1])  # shape: [kh*kw, 2, oh, ow]
-        kernel_offset = np.tile(kernel_offset, [int(n*offset_group), 1, 1, 1]
+        kernel_offset = np.tile(kernel_offset, [int(n * offset_group), 1, 1, 1]
                                 )  # shape: [n*offset_group*kh*kw, 2, oh, ow]
 
         return kernel_offset
@@ -1163,7 +1163,7 @@ class LayerNormalizationOp(OpHasAxis, OpHasVariableOutPorts, OnnxOp):
         if item == 'axes':
             ret = self.__dict__['_attr'][item].value
             if ret is None and self.axis is not None:
-                input_length = len(self.get_input_tensors()[0].shape)
+                input_length = len(self.get_input_shapes()[0])
                 start_axis = (self.axis + input_length) if self.axis < 0 else self.axis
                 ret = [axis for axis in range(input_length) if axis >= start_axis]
                 self.__dict__['_attr'][item].value = ret
