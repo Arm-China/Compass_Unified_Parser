@@ -8370,6 +8370,86 @@ def split_special_ln(graph):
             graph._attr['output_names'][index] = add_node
 
 
+def split_special_ln2(graph):
+    matches = single_node_matcher(graph, 'LayerNormalization')
+    for m in matches:
+        ln = m['target']
+        ln_obj = NodeWrap(graph, ln)['object']
+        ln_in_edges = graph.sorted_in_edges(ln, data=True)
+        ln_out_edges = graph.sorted_out_edges(ln, data=True)
+        if ln_obj is None or ln_obj.axis is None or len(ln_in_edges) != 3 or len(ln_out_edges) < 1:
+            ERROR('[Parser]: Meets invalid LayerNormalization Node(%s) in split_special_ln!' % ln)
+            continue
+        input_shapes = ln_obj.get_input_shapes()
+        if any(s is None for s in input_shapes) or any(d is None for s in input_shapes for d in s):
+            continue
+        out_ports = ln_obj.get_out_ports()
+        if out_ports != [0, 1] and out_ports != [0, 1, 2]:
+            continue
+        x, _, x_in_attr = ln_in_edges[0]
+        scale, _, scale_in_attr = ln_in_edges[1]
+        B, _, B_in_attr = ln_in_edges[2]
+        if scale_in_attr['tensor'].is_const and B_in_attr['tensor'].is_const:
+            continue
+        x_shape = input_shapes[0]
+        if ln_obj.axis < 0:
+            ln_obj.axis += len(x_shape)
+        if ln_obj.axes is None:
+            ln_obj.axes = list(range(ln_obj.axis, len(x_shape)))
+        mask = np.array(ln_obj.axes)
+        mean_shape = np.array(x_shape)
+        mean_shape[mask] = 1
+        mean_shape = tuple(mean_shape.tolist())
+        sub = get_valid_node_name(graph, ln + '_sub')
+        add1 = get_valid_node_name(graph, ln + '_add1')
+        sqrt = get_valid_node_name(graph, ln + '_sqrt')
+        reciprocal = get_valid_node_name(graph, ln + '_reciprocal')
+        mul1 = get_valid_node_name(graph, ln + '_mul1')
+        mul2 = get_valid_node_name(graph, ln + '_mul2')
+        add2 = get_valid_node_name(graph, ln + '_add2')
+
+        graph.remove_edges_from(ln_in_edges[1:])
+        graph.remove_edges_from([e for e in ln_out_edges if e[2]['src_out_port'] != 1])
+        graph.add_edge(x, sub, **x_in_attr)
+        graph.add_edge(ln, sub, **{'dst_in_port': 1, 'tensor': Tensor(shape=mean_shape)})
+        graph.add_edge(ln, add1, **{'src_out_port': 1, 'tensor': Tensor(shape=mean_shape)})
+        insert_constant(graph, ln + '_epsilon', np.array(ln_obj.epsilon, dtype=np.float32), add1, in_port=1)
+        graph.add_edge(add1, sqrt, **{'tensor': Tensor(shape=mean_shape)})
+        graph.add_edge(sqrt, reciprocal)
+        graph.add_edge(sub, mul1)
+        graph.add_edge(reciprocal, mul1, **{'dst_in_port': 1})
+        graph.add_edge(mul1, mul2)
+        graph.add_edge(scale, mul2, **scale_in_attr)
+        graph.add_edge(mul2, add2)
+        new_B_in_attr = copy.deepcopy(B_in_attr)
+        new_B_in_attr['dst_in_port'] = 1
+        graph.add_edge(B, add2, **new_B_in_attr)
+        for _, dst, out_attr in ln_out_edges:
+            if out_attr['src_out_port'] == 0:
+                graph.add_edge(add2, dst, **out_attr)
+            elif out_attr['src_out_port'] == 2:
+                new_out_attr = copy.deepcopy(out_attr)
+                new_out_attr['src_out_port'] = 0
+                graph.add_edge(reciprocal, dst, **new_out_attr)
+
+        mm_attr = ln_obj.copied_attr()
+        mm_attr.update({'axes': ln_obj.axes, 'keepdims': 1})
+        NodeWrap(graph, ln).replace_obj('Moments', mm_attr)
+        NodeWrap(graph, sub).replace_obj('Sub', {'name': sub, 'opset_version': 7})
+        NodeWrap(graph, add1).replace_obj('Add', {'name': add1, 'opset_version': 7})
+        NodeWrap(graph, sqrt).replace_obj('Sqrt', {'name': sqrt, 'opset_version': 6})
+        NodeWrap(graph, reciprocal).replace_obj('Reciprocal', {'name': reciprocal, 'opset_version': 6})
+        NodeWrap(graph, mul1).replace_obj('Mul', {'name': mul1, 'opset_version': 7})
+        NodeWrap(graph, mul2).replace_obj('Mul', {'name': mul2, 'opset_version': 7})
+        NodeWrap(graph, add2).replace_obj('Add', {'name': add2, 'opset_version': 7})
+
+        if ln in graph._attr['output_names']:
+            index = graph._attr['output_names'].index(ln)
+            graph._attr['output_names'].insert(index, add2)
+            if 2 in out_ports:
+                graph._attr['output_names'].insert(index + 2, reciprocal)
+
+
 def split_group_conv(graph):
     matches = single_node_matcher(graph, 'Conv')
     for single_match in matches:
@@ -9427,6 +9507,7 @@ def middle_passes(graph, params):
     split_special_bn(graph)
     split_special_gn(graph)
     split_special_ln(graph)
+    split_special_ln2(graph)
     split_hardmax(graph)
     split_reduce_logsumexp(graph)
     split_reduce_logsum(graph)
