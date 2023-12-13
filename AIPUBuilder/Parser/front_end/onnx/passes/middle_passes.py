@@ -8384,7 +8384,7 @@ def split_special_ln2(graph):
         if any(s is None for s in input_shapes) or any(d is None for s in input_shapes for d in s):
             continue
         out_ports = ln_obj.get_out_ports()
-        if out_ports != [0, 1] and out_ports != [0, 1, 2]:
+        if out_ports != [0, 1] and out_ports != [0, 2] and out_ports != [0, 1, 2]:
             continue
         x, _, x_in_attr = ln_in_edges[0]
         scale, _, scale_in_attr = ln_in_edges[1]
@@ -8450,8 +8450,13 @@ def split_special_ln2(graph):
         if ln in graph._attr['output_names']:
             index = graph._attr['output_names'].index(ln)
             graph._attr['output_names'].insert(index, add2)
+            if 1 not in out_ports:
+                graph._attr['output_names'].remove(ln)
+                index += 1
+            else:
+                index += 2
             if 2 in out_ports:
-                graph._attr['output_names'].insert(index + 2, reciprocal)
+                graph._attr['output_names'].insert(index, reciprocal)
 
 
 def split_group_conv(graph):
