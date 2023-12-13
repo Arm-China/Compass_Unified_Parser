@@ -1194,14 +1194,16 @@ def convert_index_put(g, x, indices_list_value, values, accumulate=False):
     # Check if values is a singular value and expand accordingly
     inp_shape = helper._get_tensor_sizes(x)
     values_shape = helper._get_tensor_sizes(values)
-    if inp_shape is not None and values_shape is not None:
-        if len(values_shape) == 1 and values_shape[0] != 1 \
-                and len(indices_list) == len(inp_shape):
-            pass
-        elif len(values_shape) == len(inp_shape) \
-                and all(v_shape == i_shape for v_shape, i_shape in zip(values_shape, inp_shape)):
-            pass
-        else:
+    index_shape = helper._get_tensor_sizes(index)
+    if values_shape is not None and None not in values_shape:
+        need_expand = True
+        if index_shape is not None and None not in index_shape \
+                and np.prod(index_shape[:-1]) == np.prod(values_shape):
+            need_expand = False
+        elif inp_shape is not None and None not in inp_shape \
+                and values_shape == inp_shape:
+            need_expand = False
+        if need_expand:
             try:
                 values = opset9.expand(g, values, exp_values_shape, None)
             except:
