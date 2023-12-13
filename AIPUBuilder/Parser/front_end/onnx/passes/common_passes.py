@@ -195,6 +195,10 @@ def remove_useless_op(graph, op_type_list):
                 src_node_obj = NodeWrap(graph, src_name)['object']
                 if src_node_obj is None:
                     continue
+                if len(reshape_in_edges) > 1 \
+                        and (reshape_in_edges[1][2].get('tensor', None) is None
+                             or not reshape_in_edges[1][2]['tensor'].is_const):
+                    continue
                 in_shapes = node_obj.get_input_shapes()
                 out_shapes = node_obj.get_output_shapes()
                 if src_node_obj.type == 'Constant' \
