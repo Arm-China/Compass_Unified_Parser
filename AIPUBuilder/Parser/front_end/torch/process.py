@@ -1129,6 +1129,41 @@ def convert_quantized_elu(g, x, op_scale, op_zero_point, alpha, scale, input_sca
     return quantize_helper(g, output, op_scale, op_zero_point, zero_point_scalar_type=x_zero_point.type().scalarType())
 
 
+@quantized_args(True)
+def convert_unflatten(g, self, dim, sizes):
+    dim_value = helper._maybe_get_const(dim, 'i')
+    sizes_value = helper._maybe_get_const(sizes, 'is')
+    is_arg_const = True
+    if helper._is_value(dim_value):
+        is_arg_const = False
+    elif helper._is_value(sizes_value):
+        if helper._is_packed_list(sizes):
+            unpacked_sizes = helper._unpack_list(sizes)
+            sizes_value = []
+            for unpacked_size in unpacked_sizes:
+                size_value = helper._maybe_get_const(unpacked_size, 'i')
+                if not helper._is_value(size_value):
+                    sizes_value.append(size_value)
+                else:
+                    is_arg_const = False
+                    break
+        else:
+            is_arg_const = False
+    if not is_arg_const:
+        from torch.onnx.symbolic_opset13 import unflatten
+        return unflatten(g, self, dim, sizes)
+
+    input_shape = helper._get_tensor_sizes(self)
+    dim_value = (dim_value + len(input_shape)) if dim_value < 0 else dim_value
+    reshape_dim = []
+    for idx, shape in enumerate(input_shape):
+        if idx == dim_value:
+            reshape_dim.extend(sizes_value)
+        else:
+            reshape_dim.append(shape)
+    return helper._reshape_helper(g, self, g.op('Constant', value_t=torch.tensor(reshape_dim)))
+
+
 @helper.parse_args('v', 'v')
 @quantized_args(True, False)
 def convert_view(g, self, shape):
@@ -1744,6 +1779,8 @@ def convert_torch_to_onnx(model_path, params):
         'aten::transpose', convert_transpose, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::trunc', convert_trunc, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'aten::unflatten', convert_unflatten, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::view', convert_view, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
