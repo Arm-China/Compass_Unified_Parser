@@ -214,7 +214,7 @@ def insert_transpose_for_layoutconcern(graph):
                             '[Parser]: Meets invalid MaxUnpool Node (%s) in insert_transpose_for_layoutconcern!' % node)
                 elif node_obj.type == 'Resize':
                     input_tensors = node_obj.get_input_tensors()
-                    dim = len(input_tensors[0].shape)
+                    dim = len(input_shape)
                     indices = np.array(
                         [0] + list(range(2, dim)) + [1] if dim > 1 else [0], np.int32)
                     if node_obj.scales is not None and node_obj.scales.size == indices.size:

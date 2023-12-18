@@ -219,6 +219,7 @@ def convert_onnx_to_graph(model_path, params):
     graph._attr['framework'] = Framework.ONNX
     graph._attr['output_tensor_names'] = params.get('output_tensor_names', [])
     graph._attr['output_names'] = copy.deepcopy(params.get('output_names', []))
+    graph._attr['tensor_counter'] = defaultdict(int)
     force_not_quantize = True \
         if ((params.get('force_float_ir', 'false').lower() == 'true')
             or (params.get('compat_quantized_model', 'true').lower() == 'false')) \
