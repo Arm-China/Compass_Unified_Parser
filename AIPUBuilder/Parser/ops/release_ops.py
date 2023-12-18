@@ -2782,7 +2782,7 @@ class ArmLogSoftmaxOp(OpHasAxis, OpHasOneOutPort, ArmOp):
 class ArmLogicalOp(LayoutUnawareOp, OpHasMethod, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
-        return {0: ['float32', 'uint8'], 1: ['float32', 'uint8']}
+        return {}
 
     @classmethod
     def num_in_ports(cls):

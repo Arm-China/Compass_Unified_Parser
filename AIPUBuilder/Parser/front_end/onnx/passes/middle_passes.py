@@ -1072,7 +1072,7 @@ def convert_special_matmul_to_fc(graph):
     matched = False
     matches = matched_patterns(graph,
                                nodes=[
-                                   ('w', {'op': 'Constant'}),
+                                   ('w', {'op': 'Constant', 'unique': False}),
                                    ('matmul', {'op': 'MatMul'})
                                ],
                                edges=[

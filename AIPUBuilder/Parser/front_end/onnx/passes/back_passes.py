@@ -4242,6 +4242,43 @@ def remove_const(graph):
     graph.remove_nodes_from(removing_const)
 
 
+def remove_special_where(graph):
+    '''Remove special Where whose first input(condition) is const and all the value are same(True or False).
+    This pass should be done after pass multidirectional_broadcasting because Where op supports multidirectional
+    broadcasting.
+    '''
+    matched = False
+    matches = single_node_matcher(graph, 'Where')
+    for m in matches:
+        where = m['target']
+        where_in_edges = graph.sorted_in_edges(where, data=True)
+        if len(where_in_edges) != 3:
+            ERROR('[Parser]: Meets invalid inputs of Where Node(%s) in remove_special_where!' % where)
+            continue
+        cond_in_attr = where_in_edges[0][2]
+        if cond_in_attr['tensor'] is None or not cond_in_attr['tensor'].is_const \
+                or cond_in_attr['tensor'].value is None:
+            continue
+        cond_value = cond_in_attr['tensor'].value
+        all_true = (np.bool_(cond_value) == True).all()
+        all_false = (np.bool_(cond_value) == False).all()
+        if not all_true and not all_false:
+            continue
+        matched = True
+        where_out_edges = graph.sorted_out_edges(where, data=True)
+        graph.remove_edges_from(where_out_edges)
+        src, _, in_attr = where_in_edges[1] if all_true else where_in_edges[2]
+        src_out_port = in_attr['src_out_port']
+        for _, dst, out_attr in where_out_edges:
+            out_attr['src_out_port'] = src_out_port
+            graph.add_edge(src, dst, **out_attr)
+        if where in graph._attr['output_names']:
+            index = graph._attr['output_names'].index(where)
+            graph._attr['output_names'][index] = src
+    if matched:
+        clear_redundant_nodes(graph)
+
+
 def trim_weights(graph):
     def _data_in_supported_dtype(np_data, attr_name, node_name):
         if not isinstance(np_data, np.ndarray):
@@ -5338,6 +5375,7 @@ def back_passes(graph, params):
     merge_square(graph)
     merge_square2(graph)
     multidirectional_broadcasting(graph)
+    remove_special_where(graph)
     split_mean(graph)
     split_sum_or_max_or_min(graph)
 

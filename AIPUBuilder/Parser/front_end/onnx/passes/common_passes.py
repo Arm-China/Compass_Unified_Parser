@@ -1005,8 +1005,8 @@ def insert_tile(graph, src, dst, in_attr, reps, key=None, type='Tile', data_form
         graph.add_edge(src, tile, **tile_in_attr)
         dst_in_attr = copy.deepcopy(in_attr)
         if dst_in_attr['tensor'].value is not None:
-            tensor = Tensor(min_max=in_attr['tensor'].min_max, value=np.tile(
-                dst_in_attr['tensor'].value, reps.tolist()))
+            tensor = dst_in_attr['tensor']
+            tensor.value = np.tile(dst_in_attr['tensor'].value, reps.tolist())
             if dst_in_attr['tensor'].dtype is not None:
                 tensor.dtype = dst_in_attr['tensor'].dtype
                 tensor.scale_zp = dst_in_attr['tensor'].scale_zp
