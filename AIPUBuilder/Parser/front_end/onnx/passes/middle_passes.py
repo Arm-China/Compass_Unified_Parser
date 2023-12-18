@@ -1177,18 +1177,25 @@ def convert_special_cast(graph):
         if cast_obj.to != 'bool':
             continue
         cast_in_edges = graph.sorted_in_edges(cast, data=True)
+        if len(cast_in_edges) < 1:
+            ERROR('[Parser]: Meets invalid input of Cast Op (%s) in convert_special_cast!' % cast)
+            continue
         src, _, in_attr = cast_in_edges[0]
-        if len(cast_in_edges) < 1 or in_attr['tensor'] is None or in_attr['tensor'].value is None:
+        if in_attr['tensor'] is None \
+                or in_attr['tensor'].get_dtype() is None \
+                or in_attr['tensor'].get_shape() is None \
+                or any(s is None for s in in_attr['tensor'].get_shape()):
             ERROR('[Parser]: Meets invalid input of Cast Op (%s) in convert_special_cast!' % cast)
             continue
         graph.remove_edges_from(cast_in_edges)
 
         equal_node = get_valid_node_name(graph, cast + '_equal')
         graph.add_edge(src, equal_node, **in_attr)
-        input_value = in_attr['tensor'].value
-        const_zeros_value = np.zeros_like(input_value)
+        input_shape = in_attr['tensor'].get_shape()
+        input_dtype = in_attr['tensor'].get_dtype()
+        const_zeros_value = np.zeros(input_shape, dtype=np.dtype(input_dtype))
         insert_constant(graph, equal_node + '_zeros', const_zeros_value, equal_node, in_port=1)
-        equal_out_attr = {'tensor': Tensor(value=np.equal(input_value, const_zeros_value))}
+        equal_out_attr = {'tensor': Tensor(shape=input_shape, dtype=input_dtype)}
         graph.add_edge(equal_node, cast, **equal_out_attr)
 
         NodeWrap(graph, equal_node).replace_obj('Equal', {'name': equal_node, 'opset_version': 13})
@@ -5882,13 +5889,13 @@ def merge_ln4(graph):
             if len(mean_1_in_edges) < 1 \
                     or len(sub_in_edges) != 2 \
                     or mean_1_in_edges[0][0] != sub_in_edges[0][0] \
-                    or mean_1_in_edges[0][2]['tensor'].value is None \
                     or mean_1_in_edges[0][2]['src_out_port'] != sub_in_edges[0][2]['src_out_port']:
+                continue
+            input_shape = mean_1_in_edges[0][2]['tensor'].get_shape()
+            if input_shape is None or any(s is None for s in input_shape):
                 continue
 
             add_2_in_edges = graph.sorted_in_edges(m['add_2'])
-
-            input_shape = mean_1_in_edges[0][2]['tensor'].value.shape
             weight = node_objs['weight'].value
             bias = node_objs['bias'].value
 
