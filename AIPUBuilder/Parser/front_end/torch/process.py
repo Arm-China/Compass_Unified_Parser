@@ -1752,6 +1752,8 @@ def convert_torch_to_onnx(model_path, params):
     torch.onnx.register_custom_op_symbolic(
         'aten::mean', convert_reduce_mean, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
+        'aten::meshgrid', convert_meshgrid, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
         'aten::round', convert_round, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::select_scatter', convert_select_scatter, onnx_opset_version)
@@ -1821,10 +1823,12 @@ def convert_torch_to_onnx(model_path, params):
         if dict_nodes and all(node.output().debugName() in model_output_names for node in dict_nodes):
             torch.onnx.register_custom_op_symbolic(
                 'prim::DictConstruct', convert_dict_construct, onnx_opset_version)
-        meshgrid_nodes = model.graph.findAllNodes('aten::meshgrid')
-        if meshgrid_nodes and any(node.output().debugName() in model_output_names for node in meshgrid_nodes):
-            torch.onnx.register_custom_op_symbolic(
-                'aten::meshgrid', convert_meshgrid, onnx_opset_version)
+        # Only convert aten::meshgrid to custom ops when it's ouput node.
+        # FIXME: Enable it after the issue of indexing is fixed(has been fixed in version after 2.1.0)
+        # meshgrid_nodes = model.graph.findAllNodes('aten::meshgrid')
+        # if meshgrid_nodes and any(node.output().debugName() in model_output_names for node in meshgrid_nodes):
+        #     torch.onnx.register_custom_op_symbolic(
+        #         'aten::meshgrid', convert_meshgrid, onnx_opset_version)
 
     # Convert torch op to custom onnx op
     torch.onnx.register_custom_op_symbolic(
