@@ -3373,7 +3373,7 @@ def merge_gelu_1(graph):
             graph.remove_edges_from(mul_2_in_edges)
             graph.add_edge(m['inp'], m['mul_2'], **in_attr)
             gelu_attr = node_objs['mul_2'].copied_attr()
-            gelu_attr.update({'approximate': 'tanh'})
+            gelu_attr.update({'opset_version': 20, 'approximate': 'none'})
             NodeWrap(graph, m['mul_2']).replace_obj('Gelu', gelu_attr)
         else:
             ERROR('[Parser]: Meets invalid nodes in merge_gelu!')
@@ -3474,7 +3474,7 @@ def merge_gelu_2(graph):
             graph.remove_edges_from(mul_3_in_edges)
             graph.add_edge(pow_src, m['mul_3'], **in_attr1)
             gelu_attr = node_objs['mul_3'].copied_attr()
-            gelu_attr.update({'approximate': 'tanh'})
+            gelu_attr.update({'opset_version': 20, 'approximate': 'tanh'})
             NodeWrap(graph, m['mul_3']).replace_obj('Gelu', gelu_attr)
         else:
             ERROR('[Parser]: Meets invalid nodes in merge_gelu!')
@@ -3538,7 +3538,7 @@ def merge_gelu_3(graph):
             gelu_in_attr.update({'dst_in_port': 0})
             graph.add_edge(div_src, m['mul_2'], **gelu_in_attr)
             gelu_attr = node_objs['mul_2'].copied_attr()
-            gelu_attr.update({'approximate': 'tanh'})
+            gelu_attr.update({'opset_version': 20, 'approximate': 'none'})
             NodeWrap(graph, m['mul_2']).replace_obj('Gelu', gelu_attr)
         else:
             ERROR('[Parser]: Meets invalid nodes in merge_gelu!')
@@ -3622,8 +3622,91 @@ def merge_gelu_4(graph):
         gelu_in_attr.update({'dst_in_port': 0})
         graph.add_edge(gelu_inp, m['mul_out'], **gelu_in_attr)
         gelu_attr = node_objs['mul_out'].copied_attr()
-        gelu_attr.update({'approximate': 'tanh', 'opset_version': 1})
+        gelu_attr.update({'approximate': 'tanh', 'opset_version': 20})
         NodeWrap(graph, m['mul_out']).replace_obj('Gelu', gelu_attr)
+    if matched:
+        clear_redundant_nodes(graph)
+
+
+def merge_gelu_5(graph):
+    '''Merge Gelu according to this formula:
+    y = 0.5 * x * (1 + tanh(sqrt(2 / pi) * (x + 0.044715 * x^3))) if approximate is True, so
+    y = 0.5 * x * (1 + tanh(z)), in which
+    z = sqrt(2 / pi) * (x + 0.044715 * x^3)
+      = 0.797884 * (x + 0.044715 * x^3)
+      = beta * (x + kappa * x^3)
+    '''
+    matched = False
+    matches = matched_patterns(graph,
+                               nodes=[
+                                   ('square', {'op': 'Mul'}),
+                                   ('cube', {'op': 'Mul'}),
+                                   ('const_kappa', {'op': 'Constant'}),
+                                   ('mul_cube_kappa', {'op': 'Mul'}),
+                                   ('add_x', {'op': 'Add'}),
+                                   ('const_beta', {'op': 'Constant'}),
+                                   ('mul_beta', {'op': 'Mul'}),
+                                   ('tanh', {'op': 'Tanh'}),
+                                   ('const_one', {'op': 'Constant'}),
+                                   ('add_tanh', {'op': 'Add'}),
+                                   ('mul_x', {'op': 'Mul'}),
+                                   ('const_half', {'op': 'Constant'}),
+                                   ('mul_half', {'op': 'Mul'}),
+                               ],
+                               edges=[
+                                   ('square', 'cube'),
+                                   ('const_kappa', 'mul_cube_kappa'),
+                                   ('cube', 'mul_cube_kappa'),
+                                   ('mul_cube_kappa', 'add_x'),
+                                   ('const_beta', 'mul_beta'),
+                                   ('add_x', 'mul_beta'),
+                                   ('mul_beta', 'tanh'),
+                                   ('const_one', 'add_tanh'),
+                                   ('tanh', 'add_tanh'),
+                                   ('add_tanh', 'mul_x'),
+                                   ('const_half', 'mul_half'),
+                                   ('mul_x', 'mul_half'),
+                               ]
+                               )
+    for m in matches:
+        key_names = ['const_kappa', 'const_beta', 'const_one', 'const_half',
+                     'square', 'cube', 'add_x', 'mul_x', 'mul_half']
+        node_objs = {k: NodeWrap(graph, m[k])['object'] for k in key_names}
+        if any(obj is None for obj in node_objs.values()):
+            ERROR('[Parser]: Meets invalid nodes in merge_gelu_5!')
+            continue
+        if not FLOAT_EQUAL(node_objs['const_kappa'].value, 0.044715) \
+                or not FLOAT_EQUAL(node_objs['const_beta'].value, 0.797884) \
+                or not FLOAT_EQUAL(node_objs['const_half'].value, 0.5) \
+                or not FLOAT_EQUAL(node_objs['const_one'].value, 1):
+            continue
+        cube_in_edges = graph.sorted_in_edges(m['cube'], data=True)
+        inp_in_edges = [(src, in_attr) for src, _, in_attr in cube_in_edges if src != m['square']]
+        if len(inp_in_edges) != 1:
+            continue
+        gelu_inp, inp_in_attr = inp_in_edges[0]
+        exp_src_out_port = inp_in_attr['src_out_port']
+        square_in_edges = graph.sorted_in_edges(m['square'], data=True)
+        if len(square_in_edges) != 2 \
+                or any((src != gelu_inp or in_attr['src_out_port'] != exp_src_out_port) for src, _, in_attr in square_in_edges):
+            continue
+        mul_x_in_edges = graph.sorted_in_edges(m['mul_x'], data=True)
+        src_out_ports = [in_attr['src_out_port'] for src, _, in_attr in mul_x_in_edges if src == gelu_inp]
+        if len(src_out_ports) != 1 or src_out_ports[0] != exp_src_out_port:
+            continue
+        add_x_in_edges = graph.sorted_in_edges(m['add_x'], data=True)
+        src_out_ports = [in_attr['src_out_port'] for src, _, in_attr in add_x_in_edges if src == gelu_inp]
+        if len(src_out_ports) != 1 or src_out_ports[0] != exp_src_out_port:
+            continue
+        matched = True
+        mul_out_in_edges = graph.sorted_in_edges(m['mul_half'])
+        graph.remove_edges_from(mul_out_in_edges)
+        gelu_in_attr = copy.deepcopy(inp_in_attr)
+        gelu_in_attr.update({'dst_in_port': 0})
+        graph.add_edge(gelu_inp, m['mul_half'], **gelu_in_attr)
+        gelu_attr = node_objs['mul_half'].copied_attr()
+        gelu_attr.update({'approximate': 'tanh', 'opset_version': 20})
+        NodeWrap(graph, m['mul_half']).replace_obj('Gelu', gelu_attr)
     if matched:
         clear_redundant_nodes(graph)
 
@@ -9519,6 +9602,7 @@ def middle_passes(graph, params):
     merge_gelu_2(graph)
     merge_gelu_3(graph)
     merge_gelu_4(graph)
+    merge_gelu_5(graph)
 
     split_special_bn(graph)
     split_special_gn(graph)

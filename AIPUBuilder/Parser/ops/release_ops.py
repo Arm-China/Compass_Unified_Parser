@@ -171,14 +171,9 @@ class ArmActivationOp(LayoutUnawareOp, OpHasMethod, OpHasOneOutPort, ArmOp):
 
     def gelu(self):
         inputs = self.get_input_tensors()
-        if self.approximate == 'tanh':
-            out = 0.5 * (inputs[0]) * (1.0 + tf.math.tanh(inputs[0]
-                                                          * 0.7978845608 * (1.0 + 0.044715 * inputs[0] * inputs[0])))
-            out_tensor = out.numpy().astype(np.float32)
-        else:
-            out_tensor = 0.5 * \
-                (inputs[0]) * (1.0 + (inputs[0] * 0.7978845608 *
-                                      (1.0 + 0.044715 * inputs[0] * inputs[0])))
+        input_tensor = torch.tensor(inputs[0], dtype=torch.float32)
+        out_tensor = torch.nn.functional.gelu(input_tensor,
+                                              approximate=self.approximate).numpy().astype(inputs[0].dtype)
         return out_tensor
 
     def silu(self):

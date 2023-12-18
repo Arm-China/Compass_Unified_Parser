@@ -291,7 +291,7 @@ class TfgeluOp(ActivationOnlyOp, Tf2Op):
 
     @property
     def correspond_onnx_op(self):
-        return {'type': 'Gelu', 'version': 1}
+        return {'type': 'Gelu', 'version': 20}
 
 
 class Tfleaky_reluOp(ActivationOnlyOp, Tf2Op):

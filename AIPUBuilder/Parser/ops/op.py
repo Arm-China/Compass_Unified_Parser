@@ -1963,7 +1963,7 @@ class BaseActivationOp(OpHasOneOutPort):
             # activations: (onnx op type, onnx opset version)
             'ELU': ('Elu', 6),
             'EXPONENTIAL': ('Exp', 13),
-            'GELU': ('Gelu', 1),
+            'GELU': ('Gelu', 20),
             'HARD_SIGMOID': ('HardSigmoid', 6),
             'LEAKYRELU': ('LeakyRelu', 6),
             'LOG_SOFTMAX': ('LogSoftmax', 13),
