@@ -652,6 +652,27 @@ class DropoutOp(OpHasVariableOutPorts, OnnxOp):
             self.cur_version = max_ver
 
 
+class GeluOp(BaseActivationOp, OnnxOp):
+    @classmethod
+    def attributes(cls):
+        return {20: {'approximate': {'type': AttrType.STRING, 'default': 'none', 'options': ['none', 'tanh']}},
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(GeluOp, self).__init__(graph, attr_dict)
+        self.update_attributes(GeluOp, attr_dict)
+        assert self.check_required(), 'GeluOp is missing a required parameter.'
+        self.activations = 'GELU'
+
+    def infer_shape(self):
+        super(GeluOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        input_tensor = torch.tensor(inputs[0], dtype=torch.float32)
+        out_tensor = torch.nn.functional.gelu(input_tensor,
+                                              approximate=self.approximate).numpy().astype(inputs[0].dtype)
+        self.set_out_tensor(out_tensor)
+
+
 class GlobalAveragePoolOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
     @classmethod
     def attributes(cls):

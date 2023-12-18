@@ -423,32 +423,6 @@ class FullyConnectedOp(BaseLinearOp, CommonOp):
         self.set_out_tensor(out_tensor)
 
 
-class GeluOp(BaseActivationOp, CommonOp):
-    @classmethod
-    def attributes(cls):
-        return {'approximate': {'type': AttrType.STRING, 'default': 'none', 'options': ['none', 'tanh']},
-                }
-
-    def __init__(self, graph, attr_dict=None):
-        super(GeluOp, self).__init__(graph, attr_dict)
-        self.update_attributes(GeluOp, attr_dict)
-        assert self.check_required(), 'GeluOp is missing a required parameter.'
-        self.activations = 'GELU'
-
-    def infer_shape(self):
-        super(GeluOp, self).infer_shape()
-        inputs = self.get_input_tensors()
-        if self.approximate == 'tanh':
-            out = 0.5 * (inputs[0]) * (1.0 + tf.math.tanh(inputs[0]
-                                                          * 0.7978845608 * (1.0 + 0.044715 * inputs[0] * inputs[0])))
-            out_tensor = out.numpy().astype(np.float32)
-        else:
-            out_tensor = 0.5 * \
-                (inputs[0]) * (1.0 + (inputs[0] * 0.7978845608 *
-                                      (1.0 + 0.044715 * inputs[0] * inputs[0])))
-        self.set_out_tensor(out_tensor)
-
-
 class GenerateProposalsOp(LayoutConcernedOp, OpHasWeights, OpHasMultipleOutPorts, CommonOp):
     @classmethod
     def attributes(cls):
