@@ -674,26 +674,19 @@ def rename_quantize_dequantize(graph):
         quantize_obj = NodeWrap(graph, quantize)['object']
         in_edges = graph.sorted_in_edges(quantize, keys=True, data=True)
         out_edges = graph.sorted_out_edges(quantize, keys=True, data=True)
-        dtype_str = None
-        if quantize_obj is None or len(in_edges) != 3:
+
+        if quantize_obj is None or len(in_edges) != 3 or len(out_edges) < 1:
             ERROR('[Parser]: Meets invalid QuantizeLinear/DequantizeLinear Op(%s) in rename_quantize_dequantize!' % quantize)
             continue
 
-        input_tensors = quantize_obj.get_input_tensors()
-        output_tensors = quantize_obj.get_output_tensors()
-        if len(output_tensors) < 1 \
-                or len(input_tensors) != 3 \
-                or any(t is None for t in output_tensors)\
-                or any(t is None for t in input_tensors):
-            ERROR('[Parser]: Meets invalid QuantizeLinear/DequantizeLinear Op(%s) in rename_quantize_dequantize!' % quantize)
-            continue
         if quantize_obj.type == 'QuantizeLinear':
-            dtype_str = str(output_tensors[0].dtype)
+            dtype = out_edges[0][3]['tensor'].get_dtype()
         else:
-            if in_edges[0][3]['tensor'].dtype is not None:
-                dtype_str = str(in_edges[0][3]['tensor'].dtype)
-            else:
-                dtype_str = str(input_tensors[0].dtype)
+            dtype = in_edges[0][3]['tensor'].get_dtype()
+        if dtype is None:
+            ERROR('[Parser]: Meets invalid dtype of QuantizeLinear/DequantizeLinear Op(%s) in rename_quantize_dequantize!' % quantize)
+            continue
+        dtype_str = str(dtype)
 
         scale_name, _, k1, scale_in_attr = in_edges[1]
         zp_name, _, k2, zp_in_attr = in_edges[2]
@@ -3235,6 +3228,76 @@ def fuse_clip(graph):
                 remove_node_safely(graph, clip)
 
 
+def fuse_quant_op(graph, op_list):
+    '''Merge ArmDequantize(one or multiple)+float op+ArmQuantize into one quant op.
+    '''
+    if not graph._attr.get('quantize', False) or not op_list:
+        return
+    op_list = [op_list] if not isinstance(op_list, (list, tuple)) else list(op_list)
+
+    matched = False
+    matches = matched_patterns(graph,
+                               nodes=[
+                                   ('float_op', {'op': op_list}),
+                                   ('quant', {'op': 'ArmQuantize'}),
+                               ],
+                               edges=[
+                                   ('float_op', 'quant')
+                               ])
+    for m in matches:
+        float_op, quant = m['float_op'], m['quant']
+        in_edges = graph.sorted_in_edges(float_op, data=True)
+        if len(in_edges) < 1:
+            ERROR('[Parser]: Meets invalid float Op(%s) in fuse_quant_op!' % float_op)
+            continue
+        out_edges = graph.sorted_out_edges(float_op, data=True)
+        if len(out_edges) != 1:
+            continue
+
+        op_in_names = [e[0] for e in in_edges]
+        names = op_in_names + [float_op, quant]
+        obj_dict = {n: NodeWrap(graph, n)['object'] for n in names}
+        if any(v is None for v in obj_dict.values()):
+            ERROR('[Parser]: Meets invalid Op in fuse_quant_op!')
+            continue
+        if any(obj_dict[n].type != 'ArmDeQuantize' for n in op_in_names):
+            continue
+        if any(len(graph.sorted_in_edges(n)) != 1 for n in op_in_names):
+            ERROR('[Parser]: Meets invalid ArmDeQuantize Op in fuse_quant_op!')
+            continue
+
+        matched = True
+        y_scale, y_zp = obj_dict[quant].scale, obj_dict[quant].zero_point
+        quant_out_edges = graph.sorted_out_edges(quant, data=True)
+        graph.remove_edges_from(in_edges)
+        graph.remove_edge(float_op, quant)
+
+        for i, dequant in enumerate(op_in_names):
+            dequant_in_edges = graph.sorted_in_edges(dequant, data=True)
+            src, _, in_attr = dequant_in_edges[0]
+            new_in_attr = copy.deepcopy(in_attr)
+            new_in_attr['dst_in_port'] = i
+            x_scale, x_zp = obj_dict[dequant].scale, obj_dict[dequant].zero_point
+            new_in_attr['tensor'].dtype = str(x_zp.dtype)
+            new_in_attr['tensor'].scale_zp = (x_scale, x_zp)
+            graph.add_edge(src, float_op, **new_in_attr)
+
+        for _, dst, out_attr in quant_out_edges:
+            graph.remove_edge(quant, dst)
+            out_attr['tensor'].dtype = str(y_zp.dtype)
+            out_attr['tensor'].scale_zp = (y_scale, y_zp)
+            graph.add_edge(float_op, dst, **out_attr)
+
+        if quant in graph._attr['output_names']:
+            index = graph._attr['output_names'].index(quant)
+            graph._attr['output_names'][index] = float_op
+
+        obj_dict[float_op].quantize = True
+
+    if matched:
+        clear_redundant_nodes(graph)
+
+
 def fuse_relu(graph):
     supportted_op_clusters = Op.framework_to_op(
         graph._attr['framework']) + [ArmOp]
@@ -4614,7 +4677,7 @@ def sink_double_transpose(graph):
 
                 post_trans = insert_transpose_after(graph, unaware, trans1_obj.perm,
                                                     port=unaware_obj.get_out_ports()[0],
-                                                    type='ArmTranspose')
+                                                    type='ArmTranspose', quantize=unaware_obj.quantize)
 
                 if unaware in graph._attr['output_names']:
                     index = graph._attr['output_names'].index(unaware)
@@ -5413,10 +5476,11 @@ def back_passes(graph, params):
     remove_redundant_reshape(graph, 'ArmReshape')
     remove_redundant_transpose(graph)
     remove_redundant_transpose2(graph)
-    remove_useless_op(graph, ['ArmReduce', 'ArmReshape', 'ArmTranspose', 'ArmTile'])
+    remove_useless_op(graph, ['ArmReduce', 'ArmReshape', 'ArmTranspose', 'ArmTile', 'ArmCast'])
 
     fuse_const(graph)
     remove_const(graph)
+    fuse_quant_op(graph, ['ArmEltwise'])
 
     if graph._attr['framework'] in (Framework.ONNX, Framework.CAFFE):
         iter_times = min(max(len(graph) // 15, 15), 20)
