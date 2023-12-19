@@ -652,7 +652,7 @@ def merge_q_multiple(graph, op_list):
     for m in matches:
         in_edges = graph.sorted_in_edges(m['float_op'], data=True)
         if len(in_edges) < 1:
-            ERROR('[Parser]: Meets invalid Concat Op(%s) in merge_q_multiple!' % m['float_op'])
+            ERROR('[Parser]: Meets invalid float Op(%s) in merge_q_multiple!' % m['float_op'])
             continue
         out_edges = graph.sorted_out_edges(m['float_op'], data=True)
         if len(out_edges) != 1:
