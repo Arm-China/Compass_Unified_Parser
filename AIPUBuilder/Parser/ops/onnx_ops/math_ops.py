@@ -2397,7 +2397,7 @@ class SoftmaxOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
             if len(in_edges) != 1 \
                     or len(input_shapes) != 1 \
                     or input_shapes[0] is None \
-                    or any(d is not None for d in input_shapes[0]):
+                    or any(d is None for d in input_shapes[0]):
                 ERROR('[Parser}: Meets invalid Softmax (%s) in convert_version!' % self.name)
                 return
             input_shape = input_shapes[0]
