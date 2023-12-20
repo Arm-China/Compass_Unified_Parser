@@ -1220,10 +1220,11 @@ class LayerNormalizationOp(OpHasAxis, OpHasVariableOutPorts, OnnxOp):
 
     def convert_version(self):
         from ...front_end.onnx.passes.common_passes import insert_constant
-        inputs = self.get_input_tensors()
-        assert len(inputs) >= 2, 'Meets invalid inputs of LayerNormalizationOp(%s) in convert_version!' % self.name
-        if len(inputs) == 2:
-            bias = np.zeros_like(inputs[1])
+        input_shapes = self.get_input_shapes()
+        assert len(input_shapes) >= 2, 'Meets invalid inputs of LayerNormalizationOp(%s) in convert_version!' % self.name
+        if len(input_shapes) == 2:
+            np_dtype_str = self.get_inputs_info()[2][1]
+            bias = np.zeros(input_shapes[1], dtype=getattr(np, np_dtype_str))
             insert_constant(self._graph, self.name + '_bias', bias, self.name, in_port=2)
 
 

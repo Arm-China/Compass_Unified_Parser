@@ -753,11 +753,12 @@ class HardmaxOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
             if cur_ver < 13:
                 from ...front_end.onnx.passes.common_passes import insert_reshape, insert_reshape_after
                 in_edges = self._graph.sorted_in_edges(self.name, data=True)
-                inputs = self.get_input_tensors()
+                input_shapes = self.get_input_shapes()
                 if len(in_edges) == 1 \
-                        and len(inputs) == 1 \
-                        and inputs[0] is not None:
-                    input_shape = inputs[0].shape
+                        and len(input_shapes) == 1 \
+                        and input_shapes[0] is not None \
+                        and all(d is not None for d in input_shapes[0]):
+                    input_shape = input_shapes[0]
                     if self.axis < 0:
                         self.axis += len(input_shape)
                     pre_dim = [-1, 1] \
@@ -835,11 +836,12 @@ class LogSoftmaxOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
             if cur_ver < 13:
                 from ...front_end.onnx.passes.common_passes import insert_constant, insert_reshape, insert_reshape_after
                 in_edges = self._graph.sorted_in_edges(self.name, data=True)
-                inputs = self.get_input_tensors()
+                input_shapes = self.get_input_shapes()
                 if len(in_edges) == 1 \
-                        and len(inputs) == 1 \
-                        and inputs[0] is not None:
-                    input_shape = inputs[0].shape
+                        and len(input_shapes) == 1 \
+                        and input_shapes[0] is not None \
+                        and all(d is not None for d in input_shapes[0]):
+                    input_shape = input_shapes[0]
                     if self.axis < 0:
                         self.axis += len(input_shape)
                     if len(input_shape) != 2 or self.axis != 1:
@@ -2391,13 +2393,14 @@ class SoftmaxOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
         cur_ver = self.cur_version
         if cur_ver < 13:
             in_edges = self._graph.sorted_in_edges(self.name, data=True)
-            inputs = self.get_input_tensors()
+            input_shapes = self.get_input_shapes()
             if len(in_edges) != 1 \
-                    or len(inputs) != 1 \
-                    or inputs[0] is None:
+                    or len(input_shapes) != 1 \
+                    or input_shapes[0] is None \
+                    or any(d is not None for d in input_shapes[0]):
                 ERROR('[Parser}: Meets invalid Softmax (%s) in convert_version!' % self.name)
                 return
-            input_shape = inputs[0].shape
+            input_shape = input_shapes[0]
             if self.axis < 0:
                 self.axis += len(input_shape)
             if self.axis != len(input_shape) - 1:
