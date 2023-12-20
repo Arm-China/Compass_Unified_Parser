@@ -138,6 +138,16 @@ def get_tensor_content(tensor_proto):
     return ret
 
 
+def get_tensor_name(tensor_proto):
+    ret = {}
+    tensor_type = tensor_proto.data_type
+    tensor_type_name, np_type, tensor_field = onnx_tensor_type_decode[tensor_type]
+    if tensor_type_name != 'UNDEFINED':
+        name_info = parse_proto_name(tensor_proto.name)
+        ret.update(name_info)
+    return ret
+
+
 def get_value_content(value_proto):
     name_info = parse_proto_name(value_proto.name)
     ret = {'type': get_type_content(value_proto.type)}
@@ -188,8 +198,8 @@ def get_node_content(node_proto):
 
 
 def get_graph_content(graph_proto):
-    const_values = list(parse_proto(
-        graph_proto.initializer, get_tensor_content))
+    const_values = parse_proto(graph_proto.initializer, get_tensor_content)
+    const_names = list(parse_proto(graph_proto.initializer, get_tensor_name))
     inputs = list(parse_proto(graph_proto.input, get_value_content))
     outputs = list(parse_proto(graph_proto.output, get_value_content))
     nodes = list(parse_proto(graph_proto.node, get_node_content))
@@ -201,7 +211,7 @@ def get_graph_content(graph_proto):
                 outputs[output_index[node_out.get(
                     'name', '')]]['out_port'] = node_out['out_port']
 
-    return {'nodes': nodes, 'inputs': inputs, 'outputs': outputs, 'consts': const_values}
+    return {'nodes': nodes, 'inputs': inputs, 'outputs': outputs, 'consts': const_values, 'const_names': const_names}
 
 
 def get_opset_content(opset_proto):
