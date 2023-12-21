@@ -522,26 +522,11 @@ class DeformConvOp(BaseConvOp, OnnxOp):
                                     is not None) else np.zeros(self.num_output, np.float32)
         if self.kernel_shape is None:
             self.kernel_shape = list(self.weights.shape[2:])
+        batch = inputs[0].shape[0]
         if self.data_format == 'NHWC':
-            spatial_in_shape = inputs[0].shape[1:-1]
-            out_shape = BaseConvOp.cal_out_shape(spatial_in_shape,
-                                                 self.pads,
-                                                 self.strides,
-                                                 self.kernel_shape,
-                                                 self.auto_pad,
-                                                 dilations=self.dilations,
-                                                 data_format='NHWC')
-            out_shape = [inputs[0].shape[0]] + out_shape + [self.num_output]
+            out_shape = [batch] + list(inputs[2].shape[1:-1]) + [self.num_output]
         else:
-            spatial_in_shape = inputs[0].shape[2:]
-            out_shape = BaseConvOp.cal_out_shape(spatial_in_shape,
-                                                 self.pads,
-                                                 self.strides,
-                                                 self.kernel_shape,
-                                                 self.auto_pad,
-                                                 dilations=self.dilations,
-                                                 data_format='NCHW')
-            out_shape = [inputs[0].shape[0], self.num_output] + out_shape
+            out_shape = [batch, self.num_output] + list(inputs[2].shape[2:])
         out_tensor = np.random.ranf(size=out_shape).astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
