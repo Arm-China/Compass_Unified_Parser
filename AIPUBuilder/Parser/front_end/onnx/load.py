@@ -51,7 +51,7 @@ def build_subgraph(params, root_graph_info, opset_ver):
     root_nodes = root_graph_info['nodes']
     root_inputs = root_graph_info['inputs']
     root_outputs = root_graph_info['outputs']
-    root_consts = root_graph_info['consts']
+    root_const_names = root_graph_info['const_names']
 
     inputs_dict = {(info.get('name', ''), info.get('out_port', 0)): info.get('type', {}) for info in inputs}
     root_inputs_dict = {(info.get('name', ''), info.get('out_port', 0)): info.get('type', {}) for info in root_inputs}
@@ -66,7 +66,7 @@ def build_subgraph(params, root_graph_info, opset_ver):
             out_info['name'], out_info['out_port']) for out_info in op_info['output']]})
         node_name = op_info['name']
         if node_name in nodes_names \
-                and node_name not in const_names \
+                and node_name not in (const_names + root_const_names) \
                 and op_info['type'] in ('Constant', 'ConstantOfShape') \
                 and isinstance(op_info.get('value'), dict) \
                 and op_info['value'].get('tensor', None) is not None:
@@ -74,10 +74,14 @@ def build_subgraph(params, root_graph_info, opset_ver):
             newly_added_consts.append(op_info)
             const_names.append(node_name)
 
-    all_consts = itertools.chain(consts, newly_added_consts, root_consts)
+    all_consts = itertools.chain(consts, newly_added_consts)
 
     const_tensor_operator_map = {}
     all_const_idx = 0
+    for const_node_name in root_const_names:
+        const_tensor_operator_map.update({(const_node_name, 0): all_const_idx})
+        all_const_idx += 1
+
     for op_info in all_consts:
         const_node_name = op_info['name']
         const_node_out_port = op_info['out_port']
@@ -282,7 +286,6 @@ def convert_onnx_to_graph(model_path, params):
 
                 root_info = OrderedDict()
                 root_info.update({'graph': graph,
-                                  'consts': const_values,
                                   'inputs': copy.deepcopy(inputs),
                                   'outputs': copy.deepcopy(outputs),
                                   'nodes': nodes,
@@ -370,6 +373,7 @@ def convert_onnx_to_graph(model_path, params):
                                                                      'value': c['tensor'],
                                                                      'data_format': params.get('input_data_format', 'NCHW'),
                                                                      'opset_version': opset_ver})
+                root_info.update({'const_names': list(const_names.values())})
 
                 in_tensor_names = set()
                 for ni, node in enumerate(nodes):
@@ -487,6 +491,8 @@ def convert_onnx_to_graph(model_path, params):
                                 for index, (body_inp, in_port) in enumerate(loop_obj.body._attr['input_tensors']):
                                     body_in_obj = NodeWrap(
                                         graph, body_inp)['object']
+                                    if body_in_obj is None:  # could be a standalone node
+                                        continue
                                     body_inp_port = body_in_obj.get_in_ports()
                                     loop_in_edges = graph.sorted_in_edges(
                                         op_name, data=True)
