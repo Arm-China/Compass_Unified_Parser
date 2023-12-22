@@ -161,6 +161,18 @@ def remove_useless_op(graph, op_type_list):
             elif op_type == 'Pad':
                 if np.all(np.array(node_obj.pads, np.int64) == 0):
                     removing_nodes.append(node_name)
+            elif op_type == 'Pow':
+                in_shapes = node_obj.get_input_shapes()
+                out_shapes = node_obj.get_output_shapes()
+                if len(in_shapes) < 1 or len(out_shapes) < 1 or in_shapes[0] != out_shapes[0]:
+                    continue
+                in_edges = graph.sorted_in_edges(node_name, data=True)
+                if len(in_edges) < 2 or in_edges[1][2]['tensor'] is None \
+                        or not in_edges[1][2]['tensor'].is_const \
+                        or in_edges[1][2]['tensor'].value is None \
+                        or not FLOAT_EQUAL(in_edges[1][2]['tensor'].value, 1):
+                    continue
+                removing_nodes.append(node_name)
             elif op_type == 'ArmTile':
                 reps = node_obj.reps
                 if all(rep == 1 for rep in reps):
@@ -249,12 +261,12 @@ def remove_useless_op(graph, op_type_list):
                 input_shapes = node_obj.get_input_shapes()
                 output_shapes = node_obj.get_output_shapes()
                 if len(input_shapes) >= 1 \
-                        and len(output_shapes) == 1 \
+                        and len(output_shapes) >= 1 \
                         and (input_shapes[0] is not None and None not in input_shapes[0]) \
                         and (output_shapes[0] is not None and None not in output_shapes[0]) \
                         and input_shapes[0] == output_shapes[0] \
-                        and all([d == 0 for d in node_obj.starts]) \
-                        and input_shapes[0] == node_obj.ends:
+                        and all(d == 0 for d in node_obj.starts) \
+                        and all(input_shapes[0][axis] == node_obj.ends[idx] for idx, axis in enumerate(node_obj.axes)):
                     removing_nodes.append(node_name)
             elif op_type == 'Split':
                 input_shapes = node_obj.get_input_shapes()

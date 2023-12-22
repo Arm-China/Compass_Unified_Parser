@@ -160,14 +160,19 @@ def convert_1d_pooling(graph):
                     pre_reshape_dim = (
                         [in_shape[0], 1] + in_shape[1:]) if pool_obj.data_format == 'NHWC' else (in_shape[0:2] + [1, in_shape[-1]])
                     post_reshape_dim = out_shape
+                    # Get attributes firstly, then update their value because default value of attributes
+                    # can be affected by others(default value of dilations changes if kernel_shape updates).
+                    kernel_shape = pool_obj.kernel_shape
+                    strides = pool_obj.strides
+                    dilations = pool_obj.dilations
                     pool_obj.pads = np.concatenate([np.array([[0], [0]]), np.transpose(
                         np.array([pool_obj.pads]))], axis=1).flatten().tolist()
-                    if pool_obj.kernel_shape:
-                        pool_obj.kernel_shape = [1] + pool_obj.kernel_shape
-                    if pool_obj.strides:
-                        pool_obj.strides = [1] + pool_obj.strides
-                    if pool_obj.dilations:
-                        pool_obj.dilations = [1] + pool_obj.dilations
+                    if kernel_shape:
+                        pool_obj.kernel_shape = [1] + kernel_shape
+                    if strides:
+                        pool_obj.strides = [1] + strides
+                    if dilations:
+                        pool_obj.dilations = [1] + dilations
                     src, _, in_attr = in_edges[0]
                     insert_reshape(
                         graph, src, pool, in_attr, pre_reshape_dim, data_format=pool_obj.data_format)
@@ -6402,6 +6407,44 @@ def merge_ln_mul_add(graph):
         clear_redundant_nodes(graph)
 
 
+def merge_sign_abs_relu(graph):
+    '''Merge sign(x) * relu(abs(x)) to x.
+    '''
+    matched = False
+    matches = matched_patterns(graph,
+                               nodes=[
+                                   ('sign', {'op': 'Sign'}),
+                                   ('abs', {'op': 'Abs'}),
+                                   ('relu', {'op': 'Relu'}),
+                                   ('mul', {'op': 'Mul'})],
+                               edges=[
+                                   ('abs', 'relu'),
+                                   ('relu', 'mul'),
+                                   ('sign', 'mul')])
+    for m in matches:
+        abs_in_edges = graph.sorted_in_edges(m['abs'], data=True)
+        sign_in_edges = graph.sorted_in_edges(m['sign'], data=True)
+        if len(abs_in_edges) < 1 or len(sign_in_edges) < 1:
+            ERROR('[Parser]: Meets invalid nodes in merge_sign_abs_relu!')
+            continue
+        src, _, in_attr = abs_in_edges[0]
+        src_out_port = in_attr['src_out_port']
+        sign_src, _, sign_in_attr = sign_in_edges[0]
+        if src != sign_src or src_out_port != sign_in_attr['src_out_port']:
+            continue
+        matched = True
+        mul_out_edges = graph.sorted_out_edges(m['mul'], data=True)
+        graph.remove_edges_from(mul_out_edges)
+        for _, dst, out_attr in mul_out_edges:
+            out_attr.update({'src_out_port': src_out_port})
+            graph.add_edge(src, dst, **out_attr)
+        if m['mul'] in graph._attr['output_names']:
+            index = graph._attr['output_names'].index(m['mul'])
+            graph._attr['output_names'][index] = src
+    if matched:
+        clear_redundant_nodes(graph)
+
+
 def merge_mvn(graph):
     matched = False
     ln_matches = matched_patterns(graph,
@@ -9586,13 +9629,14 @@ def middle_passes(graph, params):
     remove_redundant_transpose(graph)
     merge_dilated_conv_group(graph)
     merge_dilated_conv(graph)
-    remove_useless_op(graph, ['Concat',
+    remove_useless_op(graph, ['Concat', 'Pad', 'Pow',
                               'Dropout', 'Expand', 'Reshape', 'Slice', 'Transpose', 'Roll']
                       + OnnxReduceOp.get_concrete_subclass_names())
     remove_redundant_transpose(graph)
 
     rename_reshape_like(graph)
 
+    merge_sign_abs_relu(graph)
     split_deformable_conv(graph)
     split_negative_pads(graph)
     split_conv_transpose(graph)
