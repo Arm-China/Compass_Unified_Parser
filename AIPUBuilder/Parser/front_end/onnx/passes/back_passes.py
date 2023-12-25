@@ -5056,6 +5056,8 @@ def sink_transpose_through_special_reshape(graph):
             if reshape_in_edges[0][2]['tensor'].value is not None:
                 reshape_out_tensor.value = np.reshape(
                     reshape_in_edges[0][2]['tensor'].value, reshape_obj.dim)
+            else:
+                reshape_out_tensor.shape = reshape_obj.dim
             graph.add_edge(reshape, new_transpose, **{'tensor': reshape_out_tensor})
 
             new_transpose_attr = reshape_obj.copied_attr()
