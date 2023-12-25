@@ -5098,27 +5098,9 @@ def sink_transpose_through_split(graph):
             out_ports = split_obj.get_out_ports()
             last_names = []
             for p in out_ports:
-                post_trans = get_valid_node_name(
-                    graph, split + '_port_' + str(p) + '_post_trans')
-                new_split_out_tensor = None
-                for _, dst, k, out_attr in split_out_edges:
-                    if out_attr['src_out_port'] == p:
-                        new_out_attr = copy.deepcopy(out_attr)
-                        new_out_attr['src_out_port'] = 0
-                        graph.remove_edge(split, dst, key=k)
-                        graph.add_edge(post_trans, dst, **new_out_attr)
-                        split_out_tensor = new_out_attr['tensor'].value
-                        new_split_out_tensor = np.transpose(split_out_tensor, inverse_perm) \
-                            if split_out_tensor is not None \
-                            else None
-                graph.add_edge(split, post_trans, **{'src_out_port': p,
-                                                     'dst_in_port': 0,
-                                                     'tensor': Tensor(value=new_split_out_tensor)})
-                post_trans_attr = split_obj.copied_attr()
-                post_trans_attr.update(
-                    {'name': post_trans, 'perm': trans_obj.perm})
-                NodeWrap(graph, post_trans).replace_obj(
-                    'ArmTranspose', post_trans_attr)
+                post_trans = insert_transpose_after(graph, split, trans_obj.perm,
+                                                    port=p, type='ArmTranspose',
+                                                    quantize=split_obj.quantize)
                 last_names.append(post_trans)
             if len(graph.sorted_out_edges(trans)) == 0:
                 trans_in_edges = graph.sorted_in_edges(trans)

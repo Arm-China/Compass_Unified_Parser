@@ -1714,6 +1714,8 @@ def fuse_bias(graph):
         linear, bias = m['linear'], m['add']
         transpose = m.get('transpose', None)
         linear_obj = NodeWrap(graph, linear)['object']
+        if linear_obj.quantize:
+            continue
         bias_obj = NodeWrap(graph, bias)['object']
         transpose_obj = NodeWrap(graph, transpose)['object']
         if linear_obj is not None and bias_obj is not None and (transpose is None or transpose_obj is not None):
