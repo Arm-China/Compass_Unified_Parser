@@ -2275,6 +2275,8 @@ def convert_reducemean_to_avgpool(graph):
                     if out_attr['tensor'].value is not None:
                         out_attr['tensor'].value = np.reshape(
                             out_attr['tensor'].value, keepdim_out_shape)
+                    else:
+                        out_attr['tensor'].shape = tuple(keepdim_out_shape)
             last_name = insert_transpose_after(graph, mean, perm2, quantize=quantize)
             if mean in graph._attr['output_names']:
                 index = graph._attr['output_names'].index(mean)
