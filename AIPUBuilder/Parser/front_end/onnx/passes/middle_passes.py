@@ -6864,6 +6864,7 @@ def decompose_const_loop(graph, params):
             matched = True
             main_out_tensor = subgraph_main_nodes_objs[subgraph_main_out].get_output_tensors()[
                 0]
+            main_out_shape = subgraph_main_nodes_objs[subgraph_main_out].get_output_shapes()[0]
             count = int(in_edges[0][2]['tensor'].value)
             out_edges = graph.sorted_out_edges(loop, data=True)
             stack = get_valid_node_name(graph, loop + '_stack')
@@ -6892,7 +6893,7 @@ def decompose_const_loop(graph, params):
                                    stack,
                                    **{'src_out_port': subgraph_main_outport,
                                       'dst_in_port': i,
-                                      'tensor': Tensor(value=main_out_tensor)})
+                                      'tensor': Tensor(value=main_out_tensor, shape=main_out_shape)})
 
                 else:
                     for n in subgraph_main_nodes:
@@ -6931,7 +6932,7 @@ def decompose_const_loop(graph, params):
                                            stack,
                                            **{'src_out_port': subgraph_main_outport,
                                               'dst_in_port': i,
-                                              'tensor': Tensor(value=main_out_tensor)
+                                              'tensor': Tensor(value=main_out_tensor, shape=main_out_shape)
                                               })
 
             for _, dst, out_attr in out_edges:
