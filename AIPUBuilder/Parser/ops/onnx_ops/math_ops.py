@@ -342,12 +342,20 @@ class ClipOp(LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
                     inputs = self.get_input_tensors()
                     if item == 'min':
                         ret = inputs[1] if len(inputs) >= 2 else None
-                        if ret is None:
+                        if ret is None and inputs[0] is not None:
                             ret = TYPE_MIN(inputs[0].dtype)
+                            if item in self.__dict__['_attr']:
+                                self.__dict__['_attr'][item].value = ret
+                            else:
+                                self.__dict__['_attr'][item] = Attribute(item, {'type': AttrType.TENSOR, 'value': ret})
                     else:
                         ret = inputs[2] if len(inputs) >= 3 else None
-                        if ret is None:
+                        if ret is None and inputs[0] is not None:
                             ret = TYPE_MAX(inputs[0].dtype)
+                            if item in self.__dict__['_attr']:
+                                self.__dict__['_attr'][item].value = ret
+                            else:
+                                self.__dict__['_attr'][item] = Attribute(item, {'type': AttrType.TENSOR, 'value': ret})
         except:
             ret = None
         if ret is None:
@@ -358,16 +366,7 @@ class ClipOp(LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
         super(ClipOp, self).infer_shape()
         inputs = self.get_input_tensors()
         dtype = inputs[0].dtype
-        if self.cur_version <= 6:
-            out_tensor = np.clip(inputs[0], self.min, self.max).astype(dtype)
-        else:
-            min_v = inputs[1] if len(inputs) >= 2 else None
-            max_v = inputs[2] if len(inputs) >= 3 else None
-            if min_v is None:
-                min_v = TYPE_MIN(inputs[0].dtype)
-            if min_v is None:
-                max_v = TYPE_MAX(inputs[0].dtype)
-            out_tensor = np.clip(inputs[0], min_v, max_v).astype(dtype)
+        out_tensor = np.clip(inputs[0], self.min, self.max).astype(dtype)
         self.set_out_tensor(out_tensor)
 
     def convert_version(self):
@@ -376,19 +375,7 @@ class ClipOp(LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
         if cur_ver < max_ver:
             from ...front_end.onnx.passes.common_passes import insert_constant
             in_edges = self._graph.sorted_in_edges(self.name)
-            inputs = self.get_input_tensors()
-            min_val, max_val = None, None
-            if cur_ver <= 6:
-                min_val, max_val = self.min, self.max
-            else:
-                if len(inputs) == 2:
-                    min_val = inputs[1]
-                elif len(inputs) == 3:
-                    min_val, max_val = inputs[1], inputs[2]
-            if min_val is None:
-                min_val = TYPE_MIN(inputs[0].dtype)
-            if max_val is None:
-                max_val = TYPE_MAX(inputs[0].dtype)
+            min_val, max_val = self.min, self.max
             self._graph.remove_edges_from(in_edges[1:])
             insert_constant(self._graph, self.name + '_min',
                             np.array(min_val), self.name, in_port=1)
