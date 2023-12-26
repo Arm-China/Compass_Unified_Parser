@@ -947,6 +947,15 @@ def convert_reduce_mean(g, x, dim_or_dtype=None, keepdim=None, dtype=None):
     return convert_reduce_op(g, x, onnx_op, dim_or_dtype, keepdim, dtype, True)
 
 
+@quantized_args(True)
+def convert_repeat_interleave(g, x, repeats, dim=None, output_size=None):
+    from torch.onnx.symbolic_opset13 import repeat_interleave
+    if helper._is_none(dim):
+        x = helper._reshape_helper(g, x, [-1])
+        dim = g.op('Constant', value_t=torch.tensor(0, dtype=torch.int64))
+    return repeat_interleave(g, x, repeats, dim, output_size)
+
+
 @helper.parse_args('v', 'v', 'f', 'i', 'i', 'i', 'i')
 def convert_roi_align(g, x, rois, spatial_scale, pooled_height, pooled_width, sampling_ratio, aligned):
     from torch.onnx.symbolic_opset11 import select
@@ -1753,6 +1762,8 @@ def convert_torch_to_onnx(model_path, params):
         'aten::mean', convert_reduce_mean, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::meshgrid', convert_meshgrid, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'aten::repeat_interleave', convert_repeat_interleave, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::round', convert_round, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
