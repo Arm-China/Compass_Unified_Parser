@@ -847,18 +847,24 @@ class OpHasAxis(Op):
                 }
 
     @staticmethod
-    def align_axes(tensor, axes, exp_shape):
+    def align_axes(tensor, axes, input_shape):
         '''Check whether the shape of tensor in axes is 1 or can be broadcast to exp_shape.
         Return None if cannot get tensor with shape exp_shape.'''
         # Make axes a sorted list and make sure it has the same length as exp_shape
         axes = axes if isinstance(axes, (list, np.ndarray)) else [axes]
         axes = sorted(axes)
-        assert len(axes) == len(
-            exp_shape), 'Invalid exp_shape %s in align_axes' % str(exp_shape)
+        exp_shape = [input_shape[axis] for axis in axes]
+        max_dim = len(input_shape)
         # For scalar and valid 1d tensor, broadcast to exp_shape
         in_shape = tensor.shape
         if len(in_shape) in (0, 1) and (tensor.size == 1 or in_shape[0] in (1, exp_shape[-1])):
             return np.broadcast_to(tensor, exp_shape)
+        # Reshape tensor to max_dim
+        len_diff = max_dim - len(in_shape)
+        if len_diff < 0:
+            return None
+        in_shape = [1] * len_diff + list(in_shape)
+        tensor = np.reshape(tensor, in_shape)
         # Reset axes if tensor has same length as axes and axes are contiguous
         if len(in_shape) == len(axes) \
                 and not any(diff != 1 for diff in np.diff(axes)):

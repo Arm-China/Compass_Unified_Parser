@@ -1586,19 +1586,6 @@ def merge_not_equal(graph):
         if equal_obj is not None and not_obj is not None and len(graph.sorted_out_edges(equal_name)) == 1:
             not_equal_attr = equal_obj.copied_attr()
             not_equal_attr.update({'method': 'NOT_EQUAL'})
-            in_edges = graph.sorted_in_edges(equal_name, data=True)
-            if len(equal_obj.sorted_in_consts()) == 1 and len(in_edges) == 2:
-                const, in_port, value = equal_obj.sorted_in_consts()[0]
-                const_obj = NodeWrap(graph, const)['object']
-                if const_obj is not None and const_obj.value.size == 1 and in_port in (0, 1):
-                    non_const_index = 1 - in_port
-                    input_shapes = equal_obj.get_input_shapes()
-                    dst_shape = input_shapes[non_const_index]
-                    insert_reshape(graph, const, equal_name,
-                                   in_edges[in_port][2], [1] * len(dst_shape))
-                    in_edges = graph.sorted_in_edges(equal_name, data=True)
-                    reshape, _, in_attr = in_edges[in_port]
-                    insert_tile(graph, reshape, equal_name, in_attr, dst_shape)
             NodeWrap(graph, equal_name).replace_obj(
                 'ArmLogical', not_equal_attr)
             remove_node_safely(graph, not_name)
