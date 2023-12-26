@@ -1566,6 +1566,56 @@ def merge_group_conv(graph, max_groups=16):
             clear_redundant_nodes(graph)
 
 
+def merge_transpose_matmul_gemm(graph):
+    matched = False
+    matches = matched_patterns(graph,
+                               nodes=[
+                                   ('trans', {'op': 'ArmTranspose', 'unique': False}),
+                                   ('matmul_gemm', {'op': ['ArmMatMul', 'ArmGemm']}),
+                               ],
+                               edges=[
+                                   ('trans', 'matmul_gemm'),
+                               ])
+    for m in matches:
+        matmul_gemm = m['matmul_gemm']
+        matmul_gemm_obj = NodeWrap(graph, matmul_gemm)['object']
+        if matmul_gemm_obj is not None:
+            matmul_gemm_in_edges = graph.sorted_in_edges(matmul_gemm)
+            for matmul_gemm_in_edge in matmul_gemm_in_edges[:2]:
+                in_edge_obj = NodeWrap(graph, matmul_gemm_in_edge[0])['object']
+                if in_edge_obj is not None:
+                    if in_edge_obj.type == 'ArmTranspose':
+                        trans = in_edge_obj.name
+                        trans_out_edges = graph.sorted_out_edges(trans, data=True)
+                        trans_perm = in_edge_obj.perm
+                        inp_rank = len(trans_perm)
+                        exp_perm = list(range(inp_rank - 2)) + [inp_rank - 1, inp_rank - 2]
+                        if trans_perm != exp_perm:
+                            continue
+
+                        matched = True
+                        if trans_out_edges[0][-1]['dst_in_port'] == 0:
+                            trans_a = matmul_gemm_obj.trans_a
+                            matmul_gemm_obj.trans_a = not trans_a
+                        else:
+                            trans_b = matmul_gemm_obj.trans_b
+                            matmul_gemm_obj.trans_b = not trans_b
+
+                        graph.remove_edge(trans, matmul_gemm)
+                        trans_in_edges = graph.sorted_in_edges(trans, data=True)
+                        src, _, in_attr = trans_in_edges[0]
+                        in_attr_copy = copy.deepcopy(in_attr)
+                        in_attr_copy['dst_in_port'] = trans_out_edges[0][-1]['dst_in_port']
+                        graph.add_edge(src, matmul_gemm, **in_attr_copy)
+                else:
+                    ERROR(f'[Parser]: Meets invalid Node: {matmul_gemm_in_edge[0]} in merge_transpose_matmul_gemm!')
+        else:
+            ERROR(f'[Parser]: Meets invalid Node: {matmul_gemm} in merge_transpose_matmul_gemm!')
+
+    if matched:
+        clear_redundant_nodes(graph)
+
+
 def merge_not_equal(graph):
     matches = two_nodes_matcher(graph, 'Equal', 'Not')
     for m in matches:
@@ -2310,27 +2360,27 @@ def rename_gemm(graph):
         in_edges = graph.sorted_in_edges(gemm, data=True)
         if gemm_obj is not None and len(in_edges) in (2, 3):
             output_shapes = gemm_obj.get_output_shapes()
-            input_tensors = gemm_obj.get_input_tensors()
+            input_shapes = gemm_obj.get_input_shapes()
             if len(in_edges) == 2:
+                np_dtype_str = gemm_obj.get_inputs_info()[2][1]
                 insert_constant(
-                    graph, gemm + '_C', np.zeros(output_shapes[0], input_tensors[0].dtype), gemm, in_port=2)
-            elif list(output_shapes[0]) != list(input_tensors[2].shape):
+                    graph, gemm + '_C', np.zeros(output_shapes[0], dtype=getattr(np, np_dtype_str)), gemm, in_port=2)
+            elif list(output_shapes[0]) != list(input_shapes[2]):
                 dim_1, dim_2 = len(output_shapes[0]), len(
-                    input_tensors[2].shape)
+                    input_shapes[2])
                 full_dim = len(output_shapes[0])
                 if dim_1 != dim_2:
                     in_port = 2
-                    if not input_tensors[2].shape or input_tensors[2].shape[0] != output_shapes[0][-1]:
+                    if not input_shapes[2] or input_shapes[2][0] != output_shapes[0][-1]:
                         reshape_dim = list(
-                            input_tensors[in_port].shape) + [1] * abs(dim_2 - dim_1)
+                            input_shapes[in_port]) + [1] * abs(dim_2 - dim_1)
                     else:
                         reshape_dim = [
-                            1] * abs(dim_2 - dim_1) + list(input_tensors[in_port].shape)
+                            1] * abs(dim_2 - dim_1) + list(input_shapes[in_port])
                     insert_reshape(
                         graph, in_edges[in_port][0], gemm, in_edges[in_port][2], reshape_dim)
                     in_edges = graph.sorted_in_edges(gemm, data=True)
-                if int(np.prod(output_shapes[0])) != input_tensors[2].size:
-                    input_shapes = gemm_obj.get_input_shapes()
+                if int(np.prod(output_shapes[0])) != int(np.prod(input_shapes[2])):
                     if all([d1 == d2 or d2 == 1 for (d1, d2) in zip(output_shapes[0], input_shapes[2])]):
                         reps = [1 if input_shapes[2][i] >= output_shapes[0][i]
                                 else output_shapes[0][i] for i in range(full_dim)]
@@ -5531,6 +5581,7 @@ def back_passes(graph, params):
                     '[Parser]: Meets exception (%s) in remove redundant Transpose! But will proceed!', str(e))
                 infer(graph)
 
+    merge_transpose_matmul_gemm(graph)
     insert_cast_if_must(graph)
     remove_redundant_cast(graph)
     insert_preprocess(graph)
