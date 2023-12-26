@@ -477,18 +477,7 @@ def convert_bi_gru(graph):
                         if p == 0:
                             gru_out_name = bi_gru_out
                         else:
-                            slice_in_tensor = None
-                            for _, _, _, out_attr in out_edges:
-                                if out_attr['src_out_port'] == 1:
-                                    slice_in_tensor = out_attr['tensor'].value
-                                    if not gru_obj.layout:
-                                        slice_in_tensor = np.transpose(
-                                            slice_in_tensor, [1, 0, 2])
-                                    slice_in_tensor = np.reshape(
-                                        slice_in_tensor, [batch_size, 1, 2, hidden_size])
-                                    slice_in_tensor = np.tile(
-                                        slice_in_tensor, [1, time_steps, 1, 1])
-                                    break
+                            slice_in_shape = [batch_size, time_steps, 2, hidden_size]
                             concat_hidden = get_valid_node_name(graph, gru + '_out_state_concat')
                             slice = get_valid_node_name(
                                 graph, gru + '_out_state_slice')
@@ -497,7 +486,7 @@ def convert_bi_gru(graph):
                             graph.add_edge(fw_reshape, concat_hidden)
                             graph.add_edge(bw_reshape, concat_hidden, **{'dst_in_port': 1})
                             graph.add_edge(
-                                concat_hidden, slice, **{'tensor': Tensor(value=slice_in_tensor)})
+                                concat_hidden, slice, **{'tensor': Tensor(shape=slice_in_shape)})
                             graph.add_edge(slice, reshape)
 
                             concat_hidden_attr = {'name': concat_hidden, 'opset_version': 4, 'axis': 2}
