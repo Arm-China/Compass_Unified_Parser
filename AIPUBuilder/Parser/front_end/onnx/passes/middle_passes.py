@@ -5782,11 +5782,11 @@ def merge_ln2(graph):
                 is_in = False
                 if len(non_axes) == 2 and non_axes[0] == 0:
                     in_biases = OpHasAxis.align_axes(
-                        biases, non_axes[1], [in_shape[non_axes[1]]])
+                        biases, non_axes[1], in_shape)
                     in_weights = None
                     if gamma:
                         in_weights = OpHasAxis.align_axes(
-                            weights, non_axes[1], [in_shape[non_axes[1]]])
+                            weights, non_axes[1], in_shape)
                     if in_biases is not None and (not gamma or in_weights is not None):
                         is_in = True
                         if non_axes[1] not in (1, len(in_shape) - 1):
@@ -5800,10 +5800,9 @@ def merge_ln2(graph):
                         biases = in_biases
                         weights = in_weights
                 if not is_in:
-                    exp_shape = [in_shape[axis] for axis in axes]
-                    biases = OpHasAxis.align_axes(biases, axes, exp_shape)
+                    biases = OpHasAxis.align_axes(biases, axes, in_shape)
                     weights = OpHasAxis.align_axes(
-                        weights, axes, exp_shape) if gamma else None
+                        weights, axes, in_shape) if gamma else None
                     if biases is None or (gamma and weights is None):
                         continue
                 matched = True
@@ -5907,7 +5906,7 @@ def merge_ln3(graph):
                     and objs_dict[mean].axes == objs_dict[mean_1].axes:
                 beta = OpHasAxis.align_axes(objs_dict[beta].value,
                                             objs_dict[mean].axes,
-                                            [input_shapes[0][axis] for axis in objs_dict[mean].axes])
+                                            input_shapes[0])
                 if beta is None:
                     continue
                 matched = True
@@ -5997,10 +5996,8 @@ def merge_ln4(graph):
             axes = OpHasAxis.make_axes_non_negative(
                 node_objs['mean_1'].axes, len(input_shape))
             axes = sorted(axes)
-            weight = OpHasAxis.align_axes(
-                weight, axes, [input_shape[axis] for axis in axes])
-            bias = OpHasAxis.align_axes(
-                bias, axes, [input_shape[axis] for axis in axes])
+            weight = OpHasAxis.align_axes(weight, axes, input_shape)
+            bias = OpHasAxis.align_axes(bias, axes, input_shape)
             if weight is None or bias is None:
                 continue
             if node_objs['eps'].value is None \
@@ -6164,10 +6161,8 @@ def merge_ln5(graph):
         matched = True
         gamma = obj_dict['gamma'].value
         beta = obj_dict['beta'].value
-        weights = OpHasAxis.align_axes(
-            gamma, axes1, [input_shape[axis] for axis in axes1])
-        biases = OpHasAxis.align_axes(
-            beta, axes1, [input_shape[axis] for axis in axes1])
+        weights = OpHasAxis.align_axes(gamma, axes1, input_shape)
+        biases = OpHasAxis.align_axes(beta, axes1, input_shape)
         if weights is None or biases is None:
             last_node = m['div']
             new_op_type = 'MeanVarianceNormalization'
@@ -6388,11 +6383,10 @@ def merge_ln_mul_add(graph):
             continue
         ln_axes = np.sort(OpHasAxis.make_axes_non_negative(
             obj_dict['ln'].axes, ln_in_shapes[0]))
-        exp_wb_shape = [ln_in_shapes[0][axis] for axis in ln_axes]
         new_weights = OpHasAxis.align_axes(
-            obj_dict['gamma'].value, ln_axes, exp_wb_shape)
+            obj_dict['gamma'].value, ln_axes, ln_in_shapes[0])
         new_biases = OpHasAxis.align_axes(
-            obj_dict['beta'].value, ln_axes, exp_wb_shape)
+            obj_dict['beta'].value, ln_axes, ln_in_shapes[0])
         if new_weights is None or new_biases is None:
             continue
         matched = True
@@ -7102,11 +7096,10 @@ def merge_gn2(graph):
         if channels_axis != exp_channel_axis:
             continue
         axes_after_reshape = [channels_axis, channels_axis + 1]
-        exp_shape = [expanded_shape[axis] for axis in axes_after_reshape]
         biases = OpHasAxis.align_axes(
-            objs_dict[beta].value, axes_after_reshape, exp_shape)
+            objs_dict[beta].value, axes_after_reshape, expanded_shape)
         weights = OpHasAxis.align_axes(
-            objs_dict[gamma].value, axes_after_reshape, exp_shape)
+            objs_dict[gamma].value, axes_after_reshape, expanded_shape)
         if biases is None or weights is None:
             continue
         matched = True
@@ -7539,8 +7532,7 @@ def merge_rms_norm(graph):
             continue
         input_shape = input_shapes[0]
         norm_axes = OpHasAxis.make_axes_non_negative(node_objs['mean'].axes, len(input_shape))
-        exp_weights_shape = [input_shape[axis] for axis in norm_axes]
-        weights = OpHasAxis.align_axes(node_objs['mul_const'].value, norm_axes, exp_weights_shape)
+        weights = OpHasAxis.align_axes(node_objs['mul_const'].value, norm_axes, input_shape)
         if weights is None:
             continue
         epsilon = node_objs['add_const'].value
