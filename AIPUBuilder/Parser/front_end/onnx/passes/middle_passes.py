@@ -924,7 +924,9 @@ def convert_gemm_to_fc(graph):
                     W = np.transpose(W)
                 fc_attr.update({'weights': np.transpose(W), 'biases': b})
                 NodeWrap(graph, gemm).replace_obj('FullyConnected', fc_attr)
-                graph.remove_nodes_from([input2, input3])
+                graph.remove_edge(input2, gemm)
+                if input3:
+                    graph.remove_edge(input3, gemm)
                 if bool(gemm_obj.transA):
                     src, _, in_attr = gemm_in_edges[0]
                     perm = [1, 0]
