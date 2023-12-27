@@ -70,7 +70,9 @@ def get_model_type(model_path):
     model_type = None
     if model_path.endswith('.onnx'):
         model_type = 'onnx'
-    elif model_path.endswith('.pb') or model_path.endswith('.h5') or os.path.isdir(model_path):
+    elif model_path.endswith('.pb') or model_path.endswith('.h5') \
+            or model_path.endswith('.keras') or model_path.endswith('.hdf5') \
+            or os.path.isdir(model_path):
         model_type = 'tensorflow'
     elif model_path.endswith('.caffemodel'):
         model_type = 'caffe'

@@ -88,13 +88,30 @@ def keras_forward(model_path, feed_dict, output_names=None, save_output=True):
             return output_dict
         feed_model_inputs.append(feed_dict[key])
 
-    layer_out_tensors = []
+    outputs = [None] * len(output_names)
     for layer in model.layers:
         if isinstance(layer.output, (list, tuple)):
-            layer_out_tensors.extend(layer.output)
+            if layer.name in output_names:
+                index = output_names.index(layer.name)
+                outputs[index] = list(layer.output)
+            else:
+                for out in layer.output:
+                    if out.name in output_names:
+                        index = output_names.index(out.name)
+                        outputs[index] = [out]
         else:
-            layer_out_tensors.append(layer.output)
-    outputs = [out for out in layer_out_tensors if out.name in output_names or out.name.split(':')[0] in output_names]
+            if layer.name in output_names:
+                index = output_names.index(layer.name)
+                outputs[index] = [layer.output]
+            elif layer.output.name in output_names:
+                index = output_names.index(layer.output.name)
+                outputs[index] = [layer.output]
+    outputs = [inner_out for out in outputs for inner_out in out]
+    if any(out is None for out in outputs):
+        ERROR('Meets invalid output names in keras_forward!')
+        return output_dict
+
+    # outputs = [out for out in layer_out_tensors if out.name in output_names or out.name.split(':')[0] in output_names]
     functors = K.function(model.inputs, outputs)
     layer_outputs = functors(feed_model_inputs)
     for out, out_value in zip(outputs, layer_outputs):
