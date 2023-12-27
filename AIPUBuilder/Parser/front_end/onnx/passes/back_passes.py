@@ -4605,9 +4605,14 @@ def sink_single_transpose(graph):
                     new_out_attr['src_out_port'] = 0
                     graph.add_edge(transpose, dst, **new_out_attr)
                 unaware_out_tensor = copy.deepcopy(unaware_out_edges[0][2]['tensor'])
-                if unaware_out_tensor is not None and unaware_out_tensor.value is not None:
-                    unaware_out_tensor.value = np.transpose(unaware_out_tensor.value, [
-                        transpose_obj.perm.index(i) for i in range(len(transpose_obj.perm))])
+                if unaware_out_tensor is not None:
+                    new_perm = [transpose_obj.perm.index(i) for i in range(len(transpose_obj.perm))]
+                    if unaware_out_tensor.value is not None:
+                        unaware_out_tensor.value = np.transpose(unaware_out_tensor.value, new_perm)
+                    else:
+                        unware_out_shape = unaware_out_tensor.get_shape()
+                        if unware_out_shape is not None and None not in unware_out_shape:
+                            unaware_out_tensor.shape = tuple([unware_out_shape[idx] for idx in new_perm])
                 new_in_attr = copy.deepcopy(trans_in_attr)
                 new_in_attr['dst_in_port'] = trans_out_attr['dst_in_port']
                 graph.add_edge(src, unaware, **new_in_attr)
@@ -4722,8 +4727,9 @@ def sink_reshape_through_cast(graph):
         graph.add_edge(src, cast, **in_attr)
         reshape_in_attr = copy.deepcopy(in_attr)
         reshape_in_attr.update({'src_out_port': 0})
-        if in_attr['tensor'] is not None and in_attr['tensor'].value is not None:
-            reshape_in_attr['tensor'].value = in_attr['tensor'].value.astype(np.dtype(cast_obj.to_dtype))
+        if in_attr['tensor'] is not None:
+            if in_attr['tensor'].value is not None:
+                reshape_in_attr['tensor'].value = in_attr['tensor'].value.astype(np.dtype(cast_obj.to_dtype))
             cast_out_tensor = cast_out_edges[0][2]['tensor']
             if cast_out_tensor is not None and len(cast_out_tensor.scale_zp) > 0:
                 reshape_in_attr['tensor'].scale_zp = cast_out_tensor.scale_zp
@@ -4764,6 +4770,7 @@ def sink_transpose_with_const(graph):
         if trans_obj is not None and const_obj is not None and unaware_obj is not None:
             const_out_edges = graph.sorted_out_edges(const, data=True)
             unaware_in_edges = graph.sorted_in_edges(unaware)
+            unaware_out_edges = graph.sorted_out_edges(unaware, data=True)
             if not has_path(graph, trans, const) \
                     and not has_path(graph, const, trans) \
                     and len(const_out_edges) == 1 \
@@ -4771,7 +4778,8 @@ def sink_transpose_with_const(graph):
                          or (unaware_obj.type == 'ArmPow' and len(const_obj.weights.shape) == 1)) \
                     and unaware_obj.num_in_ports() == 2 \
                     and len(unaware_in_edges) == 2 \
-                    and len(unaware_obj.get_out_ports()) == 1:
+                    and len(unaware_obj.get_out_ports()) == 1 \
+                    and len(unaware_out_edges) >= 1:
                 matched = True
                 inverse_perm = Op.cal_inverse_perm(trans_obj.perm)
                 trans_in_edges = graph.sorted_in_edges(
@@ -4785,15 +4793,20 @@ def sink_transpose_with_const(graph):
 
                 post_trans = get_valid_node_name(
                     graph, unaware + '_post_transpose')
-                unaware_out_tensor = None
-                for _, dst, out_attr in graph.sorted_out_edges(unaware, data=True):
+                unaware_out_tensor = Tensor() if unaware_out_edges[0][2]['tensor'] is None \
+                    else copy.deepcopy(unaware_out_edges[0][2]['tensor'])
+                for _, dst, out_attr in unaware_out_edges:
                     graph.remove_edge(unaware, dst)
                     graph.add_edge(post_trans, dst, **out_attr)
-                    if out_attr['tensor'].value is not None:
-                        unaware_out_tensor = np.transpose(
+                    if unaware_out_tensor.value is None and out_attr['tensor'].value is not None:
+                        unaware_out_tensor.value = np.transpose(
                             out_attr['tensor'].value, inverse_perm)
+                    elif unaware_out_tensor.shape is None:
+                        out_shape = out_attr['tensor'].get_shape()
+                        if out_shape is not None and None not in out_shape:
+                            unaware_out_tensor.shape = tuple([out_shape[idx] for idx in inverse_perm])
                 graph.add_edge(unaware, post_trans, **
-                               {'tensor': Tensor(value=unaware_out_tensor)})
+                               {'tensor': unaware_out_tensor})
 
                 trans_out_edges = graph.sorted_out_edges(trans)
                 if len(trans_out_edges) == 0:
@@ -5121,12 +5134,17 @@ def sink_transpose_through_tile(graph):
                 for _, dst, out_attr in graph.sorted_out_edges(tile, data=True):
                     graph.remove_edge(tile, dst)
                     graph.add_edge(tr, dst, **out_attr)
-                tile_out_tensor = None
-                if tr_in_attr['tensor'] is not None and tr_in_attr['tensor'].value is not None:
-                    tile_out_tensor = np.tile(
-                        tr_in_attr['tensor'].value, tile_obj.reps)
+                tile_out_tensor = copy.deepcopy(tr_in_attr['tensor']) if tr_in_attr['tensor'] is not None else Tensor()
+                if tile_out_tensor.value is not None:
+                    tile_out_tensor.value = np.tile(
+                        tile_out_tensor.value, tile_obj.reps)
+                else:
+                    tr_in_shape = tile_out_tensor.get_shape()
+                    if tr_in_shape is not None and None not in tr_in_shape:
+                        tile_out_tensor.shape = tuple([int(shape * rep) for shape, rep
+                                                       in zip(tr_in_shape, tile_obj.reps)])
                 graph.add_edge(
-                    tile, tr, **{'tenosr': Tensor(value=tile_out_tensor)})
+                    tile, tr, **{'tensor': tile_out_tensor})
 
                 if tile in graph._attr['output_names']:
                     index = graph._attr['output_names'].index(tile)
