@@ -8509,7 +8509,7 @@ def split_special_ln2(graph):
         ln_obj = NodeWrap(graph, ln)['object']
         ln_in_edges = graph.sorted_in_edges(ln, data=True)
         ln_out_edges = graph.sorted_out_edges(ln, data=True)
-        if ln_obj is None or ln_obj.axis is None or len(ln_in_edges) != 3 or len(ln_out_edges) < 1:
+        if ln_obj is None or len(ln_in_edges) != 3 or len(ln_out_edges) < 1:
             ERROR('[Parser]: Meets invalid LayerNormalization Node(%s) in split_special_ln!' % ln)
             continue
         input_shapes = ln_obj.get_input_shapes()
@@ -8522,6 +8522,8 @@ def split_special_ln2(graph):
         scale, _, scale_in_attr = ln_in_edges[1]
         B, _, B_in_attr = ln_in_edges[2]
         if scale_in_attr['tensor'].is_const and B_in_attr['tensor'].is_const:
+            continue
+        if ln_obj.axis is None:
             continue
         x_shape = input_shapes[0]
         if ln_obj.axis < 0:

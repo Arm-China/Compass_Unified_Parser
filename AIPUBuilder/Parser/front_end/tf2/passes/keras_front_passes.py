@@ -514,6 +514,47 @@ def decompose_lambda(graph):
         clear_redundant_nodes(graph)
 
 
+def convert_layernorm(graph):
+    '''Convert keras LayerNormalization to onnx LayerNormalization. Insert transpose before and after it
+    if axes is not continuous from the last dimension.
+    '''
+    matches = single_node_matcher(graph, 'TfKerasLayerNormalization')
+    for m in matches:
+        layernorm = m['target']
+        layernorm_obj = NodeWrap(graph, layernorm)['object']
+        in_edges = graph.sorted_in_edges(layernorm, data=True)
+        out_edges = graph.sorted_out_edges(layernorm, data=True)
+        if layernorm_obj is None or len(in_edges) < 1 or len(out_edges) < 1:
+            ERROR('[Parser]: Meets invalid LayerNormalization Node(%s) in convert_layernorm!' % layernorm)
+            continue
+        in_shapes = layernorm_obj.get_input_shapes()
+        if len(in_shapes) < 1 or in_shapes[0] is None:
+            ERROR('[Parser]: Meets invalid input shape of KerasLayerNormalization Node(%s) in convert_layernorm!' % layernorm)
+            continue
+        in_shape_len = len(in_shapes[0])
+        ln_axes = OpHasAxis.make_axes_non_negative(layernorm_obj.axes, in_shape_len)
+        non_ln_axes = [axis for axis in range(in_shape_len) if axis not in ln_axes]
+        pre_perm = non_ln_axes + ln_axes
+        if pre_perm != list(range(in_shape_len)):
+            updated_axes = list(range(len(non_ln_axes), in_shape_len))
+            src, _, in_attr = in_edges[0]
+            insert_transpose(graph, src, layernorm, in_attr, pre_perm, type='ArmTranspose')
+            post_perm = Op.cal_inverse_perm(pre_perm)
+            post_trans = insert_transpose_after(graph, layernorm, post_perm, type='ArmTranspose')
+            if layernorm in graph._attr['output_names']:
+                index = graph._attr['output_names'].index(layernorm)
+                graph._attr['output_names'][index] = post_trans
+        else:
+            updated_axes = ln_axes
+
+        insert_constant(graph, layernorm + '_scale', layernorm_obj.weights, layernorm, in_port=1)
+        insert_constant(graph, layernorm + '_bias', layernorm_obj.biases, layernorm, in_port=2)
+
+        layernorm_attr = layernorm_obj.copied_attr()
+        layernorm_attr.update({'opset_version': 17, 'axis': updated_axes[0], 'axes': updated_axes})
+        NodeWrap(graph, layernorm).replace_obj('LayerNormalization', layernorm_attr)
+
+
 def convert_normalization(graph):
     '''
     Convert TfKerasNormalization op to sub(x-mean) + mul(*1/sqrt(var)); if mean and var are None or
@@ -1088,9 +1129,6 @@ def convert_to_onnx(graph):
                     insert_transpose(graph, src, node_name, in_attr, perm)
                     node_data_format = 'NHWC'
             new_node_attr.update({'shape': [0, -1]})
-        elif pure_type == 'LayerNormalization':
-            insert_constant(graph, node_name + '_scale', node_obj.weights, node_name, in_port=1)
-            insert_constant(graph, node_name + '_bias', node_obj.biases, node_name, in_port=2)
         elif pure_type == 'Permute':
             perm = [0] + list(node_obj.dims)
             new_node_attr.update({'perm': perm})
@@ -1186,6 +1224,7 @@ def process_keras_op_after_infer(graph):
     remove_useless_op(graph, ['TfKerasDropout'])
 
     convert_batchnorm(graph)
+    convert_layernorm(graph)
     convert_global_pooling(graph)
     convert_softmax(graph)
     convert_seperable_conv(graph)
