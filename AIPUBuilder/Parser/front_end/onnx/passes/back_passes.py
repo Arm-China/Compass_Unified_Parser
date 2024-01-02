@@ -13,7 +13,7 @@ from ....graph.node_wrap import NodeWrap
 from ....graph.graph_algo import determined_sort, get_valid_node_name, clear_redundant_nodes, has_path, infer
 from ....graph.pattern_match import matched_patterns, single_node_matcher, two_nodes_matcher
 from ....ops.op import Op, LayoutUnawareOp, BaseLinearOp, BaseActivationOp, BaseReluOp, OpHasWeights, OpHasBiases, \
-    ArmOp, OpHasAxis, BaseQuantizeDequantizeOp, BaseRnnOp, OpHasAnchors
+    ArmOp, OpHasAxis, BaseQuantizeDequantizeOp, BaseRnnOp, OpHasAnchors, OpNeedUniBroadcast
 from ....ops.onnx_ops.array_ops import ReshapeOp
 from ....ops.release_ops import ArmCastOp, ArmConvolutionOp, ArmConvolution3DOp, ArmConvIntegerOp, ArmDecodeBoxOp, \
     ArmDepthwiseConvOp, ArmConvTransposeOp, ArmConvTranspose3DOp, ArmActivationOp
@@ -2361,35 +2361,37 @@ def rename_gemm(graph):
         if gemm_obj is not None and len(in_edges) in (2, 3):
             output_shapes = gemm_obj.get_output_shapes()
             input_shapes = gemm_obj.get_input_shapes()
-            if len(in_edges) == 2:
-                np_dtype_str = gemm_obj.get_inputs_info()[2][1]
-                insert_constant(
-                    graph, gemm + '_C', np.zeros(output_shapes[0], dtype=getattr(np, np_dtype_str)), gemm, in_port=2)
-            elif list(output_shapes[0]) != list(input_shapes[2]):
-                dim_1, dim_2 = len(output_shapes[0]), len(
-                    input_shapes[2])
-                full_dim = len(output_shapes[0])
-                if dim_1 != dim_2:
-                    in_port = 2
-                    if not input_shapes[2] or input_shapes[2][0] != output_shapes[0][-1]:
-                        reshape_dim = list(
-                            input_shapes[in_port]) + [1] * abs(dim_2 - dim_1)
-                    else:
-                        reshape_dim = [
-                            1] * abs(dim_2 - dim_1) + list(input_shapes[in_port])
-                    insert_reshape(
-                        graph, in_edges[in_port][0], gemm, in_edges[in_port][2], reshape_dim)
-                    in_edges = graph.sorted_in_edges(gemm, data=True)
-                if int(np.prod(output_shapes[0])) != int(np.prod(input_shapes[2])):
-                    if all([d1 == d2 or d2 == 1 for (d1, d2) in zip(output_shapes[0], input_shapes[2])]):
-                        reps = [1 if input_shapes[2][i] >= output_shapes[0][i]
-                                else output_shapes[0][i] for i in range(full_dim)]
-                        if any([r != 1 for r in reps]):
-                            insert_tile(
-                                graph, in_edges[2][0], gemm, in_edges[2][2], reps)
+            if input_shapes and output_shapes and len(input_shapes) == len(in_edges) and len(output_shapes) >= 1 \
+                    and output_shapes[0] is not None \
+                    and all(d is not None for d in output_shapes[0]):
+                if len(in_edges) == 2:
+                    np_dtype_str = gemm_obj.get_inputs_info()[2][1]
+                    insert_constant(
+                        graph, gemm + '_C', np.zeros(output_shapes[0], dtype=getattr(np, np_dtype_str)), gemm, in_port=2)
+                elif list(output_shapes[0]) != list(input_shapes[2]):
+                    if input_shapes[2] is not None and all(d is not None for d in input_shapes[2]):
+                        ret = OpNeedUniBroadcast.cal_reshape_and_tile([output_shapes[0], input_shapes[2]])
+                        if ret:
+                            if ret[0]['reshape']:
+                                in_port = 2
+                                insert_reshape(
+                                    graph, in_edges[in_port][0], gemm, in_edges[in_port][2], ret[0]['reshape'])
+                                in_edges = graph.sorted_in_edges(gemm, data=True)
+                            if ret[0]['tile']:
+                                insert_tile(
+                                    graph, in_edges[2][0], gemm, in_edges[2][2], ret[0]['tile'])
+                            else:
+                                ERROR(
+                                    '[Parser]: Invalid pattern of Node(%s) for Gemm broadcasting in rename_gemm!' % gemm)
+                        else:
+                            ERROR(
+                                '[Parser]: Cal reshape_tile error of Node(%s) for Gemm broadcasting in rename_gemm!' % gemm)
                     else:
                         ERROR(
-                            '[Parser]: Invalid pattern of Node(%s) for Gemm broadcasting in rename_gemm!' % gemm)
+                            '[Parser]: Get input_shape[2] error of Node(%s) for Gemm broadcasting in rename_gemm!' % gemm)
+            else:
+                ERROR(
+                    '[Parser]: Get input/output shape error of Node(%s) for Gemm broadcasting in rename_gemm!' % gemm)
             gemm_attr = gemm_obj.copied_attr()
             gemm_attr.update({'trans_a': gemm_obj.transA,
                               'trans_b': gemm_obj.transB,
