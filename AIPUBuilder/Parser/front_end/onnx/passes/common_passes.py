@@ -1142,6 +1142,7 @@ def apply_subgraph_plugin(graph):
     try:
         apply_named_subgraph_plugin(graph)
         apply_pattern_subgraph_plugin(graph)
+        apply_preprocess_plugin(graph)
     except Exception as e:
         import traceback
         ERROR('Applying Subgraph plugin Failed. %s' % (str(e)))
@@ -1311,6 +1312,65 @@ def apply_named_subgraph_plugin(graph):
             graph, '.named_subgraph.' + plugin.op_type, plugin.start_nodes, plugin.end_nodes)
         DEBUG('[Parser]: name_based subgraph plugin applied: {[%s]->[%s]} merged to %s' % (
             ','.join(plugin.start_nodes), ','.join(plugin.end_nodes), plugin.op_type))
+
+
+def insert_preprocess_plugin(graph, plugin_op_type, input_nodes, input_shapes):
+    graph_inputs = graph._attr['input_tensors']
+    if any(n not in graph_inputs.keys() for n in input_nodes):
+        return
+    nodes_cnt = len(input_nodes)
+    shapes_cnt = len(input_shapes)
+    if nodes_cnt != shapes_cnt:
+        ERROR('[Parser]: The length of input nodes should be same as input shapes in insert_preprocess_plugin, but got (%d, %d)!' % (
+            nodes_cnt, shapes_cnt))
+        return
+    DEBUG('[Parser]: preprocess subgraph plugin applied: preprocess %s is added before [%s](shape: %s)' % (
+        plugin_op_type, ','.join(input_nodes), ','.join([str(shape) for shape in input_shapes])))
+    for input_name, shape in zip(input_nodes, input_shapes):
+        # update graph input
+        original_input = graph_inputs[input_name]
+        dtype = original_input.value.dtype
+        new_input = np.zeros(shape, dtype=dtype) if 'int' in str(dtype) else np.random.ranf(shape).astype(dtype)
+        input_tensor = graph._attr['input_tensors'][input_name]
+        input_tensor.value = new_input
+        input_tensor.shape = tuple(shape)
+
+        # set in_attr for preprocess
+        input_out_edges = graph.sorted_out_edges(input_name, data=True)
+        if len(input_out_edges) < 1:
+            continue
+        input_out_attr = input_out_edges[0][2]
+        preprocess_in_attr = copy.deepcopy(input_out_attr)
+        preprocess_in_attr.update({'src_out_port': 0, 'dst_in_port': 0})
+        if preprocess_in_attr['tensor'] is not None:
+            preprocess_in_attr['tensor'].value = new_input
+        else:
+            preprocess_in_attr['tensor'] = Tensor(value=new_input, shape=tuple(shape))
+
+        # insert preprocess node after input node
+        graph.remove_edges_from(input_out_edges)
+        preprocess_node = get_valid_node_name(graph, plugin_op_type)
+        graph.add_edge(input_name, preprocess_node, **preprocess_in_attr)
+        for _, dst, out_attr in input_out_edges:
+            dst_in_attr = copy.deepcopy(out_attr)
+            if dst_in_attr['tensor'] is not None:
+                dst_in_attr['tensor'].value = None
+                dst_in_attr['tensor'].shape = None
+            graph.add_edge(preprocess_node, dst, **dst_in_attr)
+        NodeWrap(graph, preprocess_node).replace_obj('.preprocess.' + plugin_op_type, {'name': preprocess_node})
+
+
+def apply_preprocess_plugin(graph):
+    preprocess_subgraph = set()
+    for _, plugin in PARSER_OP_DICT.items():
+        if plugin.input_nodes is not None and plugin.input_shapes is not None:
+            preprocess_subgraph.add(plugin)
+    preprocess_subgraph = list(preprocess_subgraph)
+    preprocess_subgraph.sort(key=lambda x: x.priority, reverse=True)
+    for plugin in preprocess_subgraph:
+        plugin_op_type = plugin.op_type
+        insert_preprocess_plugin(
+            graph, plugin_op_type, plugin.input_nodes, plugin.input_shapes)
 
 
 def record_output_tensors(graph):
