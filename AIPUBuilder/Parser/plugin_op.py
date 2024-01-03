@@ -28,6 +28,13 @@ class ParserOp(object):
 
     pattern_nodes = None
     pattern_edges = None
+    '''
+    input_nodes and input_shapes are used when preprocess custom op is needed.
+    input_nodes is a list of input node names, and input_shapes is a list of shapes of the preprocess inputs.
+    The length of input_nodes should be same as input_shapes.
+    '''
+    input_nodes = None
+    input_shapes = None
 
     @classmethod
     def _check_(cls):
@@ -53,6 +60,16 @@ class ParserOp(object):
             warn(None, 'plugin %s defines over 1 subgraph type, we only accept one subgraph type, this plugin would be disabled.' % (
                 cls.__name__))
             return False
+        if cls.input_nodes is not None:
+            if cls.input_shapes is None:
+                warn(None, 'input_shapes could not be None for plugin %s.' % (cls.__name__))
+                return False
+            if not isinstance(cls.input_nodes, (list, tuple)) or not isinstance(cls.input_shapes, (list, tuple)):
+                warn(None, 'input_nodes and input_shapes should be a list or tuple for plugin %s.' % (cls.__name__))
+                return False
+            if len(cls.input_nodes) != len(cls.input_shapes):
+                warn(None, 'the number of input_nodes and input_shapes should be same for plugin %s.' % (cls.__name__))
+                return False
         return True
 
     def __init__(self, framework, op_infos):
