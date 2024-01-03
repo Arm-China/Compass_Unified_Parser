@@ -2357,6 +2357,11 @@ def convert_dequantizelinear(graph):
         graph.add_edge(zp, sub, **new_zp_in_attr)
         sub_out_attr = copy.deepcopy(inp_in_attr)
         sub_out_attr.update({'src_out_port': 0, 'dst_in_port': 0})
+        if sub_out_attr['tensor'] is not None:
+            if sub_out_attr['tensor'].value is not None:
+                sub_out_attr['tensor'].value = sub_out_attr['tensor'].value.astype(np.float32)
+            else:
+                sub_out_attr['tensor'].dtype = 'float32'
         graph.add_edge(sub, dequant, **sub_out_attr)
         NodeWrap(graph, sub).replace_obj(
             'Sub', {'name': sub, 'opset_version': 13})
@@ -2366,7 +2371,8 @@ def convert_dequantizelinear(graph):
         mul_attr.update({'opset_version': 13})
         NodeWrap(graph, dequant).replace_obj('Mul', mul_attr)
 
-        insert_cast(graph, sub, dequant, 'float32', sub_out_attr)
+        insert_cast(graph, inp, sub, 'float32', inp_in_attr)
+        insert_cast(graph, zp, sub, 'float32', new_zp_in_attr)
 
         if len(input_shapes[1]) == 1 and dequant_axis != len(input_shapes[0]) - 1:
             dim = [1 if idx != dequant_axis else axis_dim for idx in range(
