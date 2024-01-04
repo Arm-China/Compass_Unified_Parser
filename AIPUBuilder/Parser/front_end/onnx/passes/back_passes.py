@@ -4760,6 +4760,26 @@ def sink_double_transpose(graph):
                 trans1, trans2, unaware))
 
 
+def sink_transpose_through_argminmax(graph):
+    matches = two_nodes_matcher(graph, 'ArmTranspose', 'ArmArgMinMax')
+    for m in matches:
+        transpose, argminmax = m['begin'], m['end']
+        transpose_obj = NodeWrap(graph, transpose)['object']
+        argminmax_obj = NodeWrap(graph, argminmax)['object']
+        if transpose_obj is None or argminmax_obj is None:
+            ERROR('[Parser]: Meets invalid Transpose (%s) or ArgMinMax (%s) in sink_transpose_through_argminmax!'
+                  % (transpose, argminmax))
+            continue
+        transpose_in_edges = graph.sorted_in_edges(transpose, data=True)
+        if len(transpose_in_edges) != 1:
+            continue
+        src, _, in_attr = transpose_in_edges[0]
+        graph.remove_edge(transpose, argminmax)
+        graph.add_edge(src, argminmax, **in_attr)
+        insert_transpose_after(graph, argminmax, transpose_obj.perm, type='ArmTranspose')
+        argminmax_obj.axis = Op.cal_inverse_perm(transpose_obj.perm).index(argminmax_obj.axis)
+
+
 def sink_reshape_through_cast(graph):
     matches = two_nodes_matcher(graph, 'ArmReshape', 'ArmCast')
     for m in matches:
@@ -5555,7 +5575,8 @@ def back_passes(graph, params):
         nodes_num_list = [len(graph.nodes)]
         for i in range(iter_times):
             try:
-                for f in [sink_transpose_through_split,
+                for f in [sink_transpose_through_argminmax,
+                          sink_transpose_through_split,
                           sink_transpose_through_concat,
                           sink_transpose_through_special_reshape,
                           sink_transpose_through_tile,
