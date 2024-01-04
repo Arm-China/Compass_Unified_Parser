@@ -238,7 +238,10 @@ def tflite_forward(model_path, feed_dict, output_names=None, save_output=True):
     import tensorflow.compat.v1 as tf
 
     interpreter = tf.lite.Interpreter(model_path)
-    interpreter.reset_all_variables()
+    # try:
+    #     interpreter.reset_all_variables()
+    # except Exception as e:
+    #     WARN('Fail to reset_all_variables in tflite_forward because %s' % str(e))
     interpreter.allocate_tensors()
 
     input_details = interpreter.get_input_details()
