@@ -8,7 +8,7 @@ from functools import reduce
 import copy
 from ....common.defs import Tensor, FLOAT_EQUAL, Framework
 from ....logger import INFO, DEBUG, WARN, ERROR, FATAL
-from ....common.utils import extend_lists, list_string_to_list, float_string_to_list, get_converted_dtype
+from ....common.utils import extend_lists, list_string_to_list, float_string_to_list, get_converted_dtype, get_closest_dtype
 from ....graph.node_wrap import NodeWrap
 from ....graph.graph_algo import determined_sort, get_valid_node_name, clear_redundant_nodes, has_path, infer
 from ....graph.pattern_match import matched_patterns, single_node_matcher, two_nodes_matcher
@@ -4605,7 +4605,10 @@ def insert_cast_if_must(graph):
                                             happened = True
                                             cast_type = get_converted_dtype(dtype, return_type_string=True)
                                             if cast_type not in cast_type_all:
-                                                cast_type = cast_type_all[0]
+                                                if graph._attr.get('quantize', False) and obj.quantize:
+                                                    cast_type = get_closest_dtype(cast_type, cast_type_all)
+                                                else:
+                                                    cast_type = cast_type_all[0]
                                             insert_cast(graph, src, n, cast_type,
                                                         in_attr=in_attr, key=k, type='ArmCast')
                                             break
