@@ -533,6 +533,18 @@ class TfCoshOp(LayoutUnawareOp, OpHasOneOutPort, TfOp):
         return {'type': 'Cosh', 'version': 9}
 
 
+class TfDivOp(OpHasOneOutPort, TfOp):
+    def infer_shape(self):
+        super(TfDivOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = tf.math.divide(inputs[0], inputs[1]).numpy()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'Div', 'version': 13}
+
+
 class TfDivNoNanOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfDivNoNanOp, self).infer_shape()
