@@ -6,7 +6,7 @@ import os
 import re
 import numpy as np
 from functools import reduce
-from ..logger import ERROR
+from ..logger import ERROR, WARN
 
 
 def is_file(file_path):
@@ -166,3 +166,41 @@ def get_converted_dtype(original_dtype, return_type_string=False):
     if return_type_string:
         to_dtype = to_dtype.__name__ if to_dtype is not None else ''
     return to_dtype
+
+
+def get_closest_dtype(origin_dtype, available_dtypes):
+    def _loop_ava_dtypes(_is_int, _is_unsign, _start_exp, _end_exp, _step):
+        can_list = []
+        if _is_int:
+            for e in range(_start_exp + _step, _end_exp + 1, _step):
+                can_list.append(str(dtype) + str(int(np.power(2, e))))
+                if _is_unsign:
+                    can_list.append(
+                        'int' + str(int(np.power(2, min(e + 1, _end_exp) if _step > 0 else max(e + 1, _end_exp)))))
+        else:
+            for e in range(_start_exp + _step, _end_exp + 1, _step):
+                can_list.append(str(dtype) + str(int(np.power(2, e))))
+        return can_list
+
+    import re
+    closest_dtype = None
+    dtype = re.findall(r'[a-zA-Z]+', origin_dtype)[0]
+    bits = re.findall(r'\d+', origin_dtype)[0]
+    is_int = 'int' in dtype
+    exp = int(np.log2(int(bits)))
+    is_unsign = dtype[0] == 'u'
+    final_step = 1
+    for max_exp, step in ((5, 1), (1, -1)):  # increase bits and decrease bits
+        can_cast_list = _loop_ava_dtypes(is_int, is_unsign, exp, max_exp, step)
+        for d in can_cast_list:
+            if d in available_dtypes:
+                closest_dtype = d
+                break
+        if closest_dtype:
+            final_step = step
+            break
+
+    matched_dtype = available_dtypes[0] if closest_dtype is None else closest_dtype
+    if closest_dtype is None or final_step < 0:
+        WARN(f'[Parser]: Cast from {origin_dtype} to {matched_dtype} here may cause similarity down!')
+    return matched_dtype
