@@ -139,7 +139,8 @@ def decompose_loop(graph, params):
             if len(loop_obj.body._attr['output_names']) == 3:
                 subgraph_main_out = loop_obj.body._attr['output_names'][-2]
             else:
-                ERROR('invalid loop, need to support more forms.')
+                DEBUG('invalid loop, need to support more forms.')
+                continue
 
             subgraph_main_outport = loop_obj.body._attr['output_ports'][subgraph_main_out]
             subgraph_main_nodes = determined_sort(

@@ -251,7 +251,8 @@ def univ_parser(params):
                 input_names_list = single_node_matcher(graph, 'Input')
                 for input_name in input_names_list:
                     input_names.append(input_name['target'])
-                output_names = graph._attr.get('output_names')
+                output_names = list(set(graph._attr.get('output_names', [])).difference(
+                    list(graph._attr.get('subgraph_output_names', []))))
                 for output_name in output_names:
                     has_path_flag = False
                     for input_name in input_names:

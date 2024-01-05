@@ -495,6 +495,9 @@ class Op(abc.ABC):
         '''Determine whether all inputs are constant nodes.'''
         if isinstance(self, ConstLikeOp):
             return True
+        elif self.name in self._graph._attr['input_tensors'] \
+                and self._graph._attr['input_tensors'][self.name].is_const:
+            return True
         else:
             is_const_list = [d['tensor'].is_const for _, _, _, d in self._graph.sorted_in_edges(
                 self.name, keys=True, data=True)]

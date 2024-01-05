@@ -116,6 +116,10 @@ def build_subgraph(params, root_graph_info, opset_ver):
                              'dst_in_port': in_port,
                              'tensor': Tensor(name=in_tensor_name)
                              }
+                if in_tensor_name in root_graph._attr['input_tensors'] \
+                        and root_graph._attr['input_tensors'][in_tensor_name].is_const:
+                    edge_attr['tensor'].value = root_graph._attr['input_tensors'][in_tensor_name].value
+                    edge_attr['tensor'].is_const = True
                 root_graph.add_edge(in_tensor_name, name, **edge_attr)
             elif (in_tensor_name, in_tensor_out_port) in inputs_dict:
                 assert in_tensor_name not in out_tensor_operator_map and in_tensor_out_port == 0
@@ -448,6 +452,12 @@ def convert_onnx_to_graph(model_path, params):
                             if pre_op.get('type', '') == 'Constant' and pre_op.get('value', None) is not None:
                                 edge_attr.update({'tensor': Tensor(name=in_tensor_name,
                                                                    value=pre_op['value']['tensor'],
+                                                                   is_const=True)}
+                                                 )
+                            elif pre_op_name in graph._attr['input_tensors'] \
+                                    and graph._attr['input_tensors'][pre_op_name].is_const:
+                                edge_attr.update({'tensor': Tensor(name=in_tensor_name,
+                                                                   value=graph._attr['input_tensors'][pre_op_name].value,
                                                                    is_const=True)}
                                                  )
                             graph.add_edge(pre_op_name, op_name, **edge_attr)

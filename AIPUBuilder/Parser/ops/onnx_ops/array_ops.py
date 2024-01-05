@@ -463,7 +463,7 @@ class GatherOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
                 ERROR('[Parser]: Meets invalid indices input of Gather Op (%s) in infer_shape!' % self.name)
                 out_tensor = None
             else:
-                WARN('[Parser]: Random indices of Gather Op (%s) are replaced by zeors indices in infer_shape!' % self.name)
+                WARN('[Parser]: Random indices of Gather Op (%s) are replaced by zeros indices in infer_shape!' % self.name)
                 indices = np.zeros_like(indices, dtype=np.int32)
                 out_tensor = np.take(inputs[0], indices, axis=self.axis)
         self.set_out_tensor(out_tensor)
