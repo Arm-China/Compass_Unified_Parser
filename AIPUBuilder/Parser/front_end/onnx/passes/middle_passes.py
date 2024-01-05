@@ -5049,13 +5049,24 @@ def merge_reduce_variance(graph):
                                    ('sub', 'pow', {'dst_in_port': 0}),
                                    ('pow', 'mean2')
                                ])
-    for m in matches:
-        names = ['mean1', 'sub', 'pow', 'mean2']
+    matches2 = matched_patterns(graph,
+                                nodes=[
+                                    ('mean1', {'op': 'ReduceMean'}),
+                                    ('sub', {'op': 'Sub'}),
+                                    ('mul', {'op': 'Mul'}),
+                                    ('mean2', {'op': 'ReduceMean'}),
+                                ],
+                                edges=[
+                                    ('mean1', 'sub'),
+                                    ('sub', 'mul', {'dst_in_port': 0}),
+                                    ('sub', 'mul', {'dst_in_port': 1}),
+                                    ('mul', 'mean2')
+                                ])
+    for m in matches + matches2:
+        names = ['mean1', 'sub', 'mean2'] + (['pow'] if 'pow' in m else ['mul'])
         node_objs = {n: NodeWrap(graph, m[n])['object'] for n in names}
         if any([obj is None for obj in node_objs.values()]):
             ERROR('[Parser]: Meets invalid node in merge_reduce_variance!')
-            continue
-        if any([len(graph.sorted_out_edges(m[n])) > 1 for n in ['mean1', 'sub', 'pow']]):
             continue
         mean1_in_edges = graph.sorted_in_edges(m['mean1'], data=True)
         sub_in_edges = graph.sorted_in_edges(m['sub'], data=True)
@@ -5072,8 +5083,8 @@ def merge_reduce_variance(graph):
             continue
         if not np.array_equal(np.sort(node_objs['mean1'].axes), np.sort(node_objs['mean2'].axes)):
             continue
-        if len(node_objs['pow'].get_input_tensors()) != 2 \
-                or not FLOAT_EQUAL(node_objs['pow'].get_input_tensors()[1], 2):
+        if 'pow' in m and (len(node_objs['pow'].get_input_tensors()) != 2
+                           or not FLOAT_EQUAL(node_objs['pow'].get_input_tensors()[1], 2)):
             continue
         matched = True
         mean2_in_edges = graph.sorted_in_edges(m['mean2'])
