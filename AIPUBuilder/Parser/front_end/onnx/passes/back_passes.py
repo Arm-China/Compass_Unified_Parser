@@ -4537,6 +4537,10 @@ def trim_weights(graph):
 
 def insert_preprocess(graph):
     if PARSER_OP_DICT and 'Preprocess' in PARSER_OP_DICT:
+        if '.preprocess.Preprocess' in PARSER_OP_DICT \
+                and PARSER_OP_DICT['Preprocess'] == PARSER_OP_DICT['.preprocess.Preprocess']:
+            # handled in function apply_preprocess_plugin
+            return
         ds = determined_sort(graph, graph._attr['output_names'])
         matches = extend_lists([single_node_matcher(graph, op)
                                 for op in ('Input', 'ArmInput')])
