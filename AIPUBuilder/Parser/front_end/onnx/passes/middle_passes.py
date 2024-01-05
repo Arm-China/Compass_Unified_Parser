@@ -5701,16 +5701,16 @@ def merge_ln2(graph):
                                       ('pow_y', 'pow', {'dst_in_port': 1}),
                                       ('pow', 'mean_2'),
                                       ('mean_2', 'add_1'),
-                                      ('epsilon', 'add_1', {'dst_in_port': 1}),
+                                      ('epsilon', 'add_1'),
                                       ('add_1', 'sqrt'),
                                       ('sqrt', 'recip'),
-                                      ('recip', 'mul_1', {'dst_in_port': 1}),
+                                      ('recip', 'mul_1'),
                                       ('mean_1', 'mul_2'),
-                                      ('recip', 'mul_2', {'dst_in_port': 1}),
+                                      ('recip', 'mul_2'),
                                       ('beta', 'sub_2'),
                                       ('mul_2', 'sub_2', {'dst_in_port': 1}),
                                       ('mul_1', 'add_2'),
-                                      ('sub_2', 'add_2', {'dst_in_port': 1})
+                                      ('sub_2', 'add_2')
                                   ])
     ln_matches2 = matched_patterns(graph,
                                    nodes=[
@@ -5746,17 +5746,14 @@ def merge_ln2(graph):
                                        ('add_1', 'sqrt'),
                                        ('sqrt', 'recip'),
                                        ('recip', 'mul_gamma'),
-                                       ('gamma', 'mul_gamma',
-                                           {'dst_in_port': 1}),
-                                       ('mul_gamma', 'mul_1',
-                                           {'dst_in_port': 1}),
+                                       ('gamma', 'mul_gamma'),
+                                       ('mul_gamma', 'mul_1'),
                                        ('mean_1', 'mul_2'),
-                                       ('mul_gamma', 'mul_2',
-                                           {'dst_in_port': 1}),
+                                       ('mul_gamma', 'mul_2'),
                                        ('beta', 'sub_2'),
                                        ('mul_2', 'sub_2', {'dst_in_port': 1}),
                                        ('mul_1', 'add_2'),
-                                       ('sub_2', 'add_2', {'dst_in_port': 1})
+                                       ('sub_2', 'add_2')
                                    ])
     ln_matches = ln_matches + ln_matches2
     for m in ln_matches:
