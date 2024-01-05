@@ -620,7 +620,7 @@ class PluginOp(OpHasVariableOutPorts, CommonOp):
         self._type = 'Plugin' + attr_dict.get('type', 'Plugin')
         self.constants = {}
         self.constants_offset_dict = {}
-        self.out_tensors = []  # record output tensors
+        self.out_tensors = attr_dict.get('out_tensors', [])  # record output tensors
         fw = graph._attr['framework'].name
         try:
             plugin_type = PARSER_OP_DICT[re.sub(
@@ -632,6 +632,8 @@ class PluginOp(OpHasVariableOutPorts, CommonOp):
             self._plugin = plugin_type(fw, attr_dict)
             if nest_input is not None:
                 self._plugin._nest_inputs = nest_input
+            if self._plugin is not None:
+                self.constants = getattr(self._plugin, 'constants', {})
         except Exception as e:
             self._plugin = None
             ERROR('[Parser]: Creating plugin type (%s) meets error %s! ' %

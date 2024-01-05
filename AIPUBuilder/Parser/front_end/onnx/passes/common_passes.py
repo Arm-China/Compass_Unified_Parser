@@ -1314,7 +1314,7 @@ def apply_named_subgraph_plugin(graph):
             ','.join(plugin.start_nodes), ','.join(plugin.end_nodes), plugin.op_type))
 
 
-def insert_preprocess_plugin(graph, plugin_op_type, input_nodes, input_shapes):
+def insert_preprocess_plugin(graph, plugin_op_type, input_nodes, input_shapes, use_default_output):
     graph_inputs = graph._attr['input_tensors']
     if any(n not in graph_inputs.keys() for n in input_nodes):
         return
@@ -1329,7 +1329,8 @@ def insert_preprocess_plugin(graph, plugin_op_type, input_nodes, input_shapes):
     for input_name, shape in zip(input_nodes, input_shapes):
         # update graph input
         original_input = graph_inputs[input_name]
-        dtype = original_input.value.dtype
+        original_input_value = original_input.value
+        dtype = original_input_value.dtype
         new_input = np.zeros(shape, dtype=dtype) if 'int' in str(dtype) else np.random.ranf(shape).astype(dtype)
         input_tensor = graph._attr['input_tensors'][input_name]
         input_tensor.value = new_input
@@ -1351,13 +1352,22 @@ def insert_preprocess_plugin(graph, plugin_op_type, input_nodes, input_shapes):
         graph.remove_edges_from(input_out_edges)
         preprocess_node = get_valid_node_name(graph, plugin_op_type)
         graph.add_edge(input_name, preprocess_node, **preprocess_in_attr)
+        if use_default_output:
+            preprocess_out_value = original_input_value
+            preprocess_out_shape = tuple(original_input_value.shape)
+        else:
+            preprocess_out_value, preprocess_out_shape = None, None
         for _, dst, out_attr in input_out_edges:
             dst_in_attr = copy.deepcopy(out_attr)
             if dst_in_attr['tensor'] is not None:
-                dst_in_attr['tensor'].value = None
-                dst_in_attr['tensor'].shape = None
+                dst_in_attr['tensor'].value = preprocess_out_value
+                dst_in_attr['tensor'].shape = preprocess_out_shape
+            else:
+                dst_in_attr['tensor'] = Tensor(value=preprocess_out_value, shape=preprocess_out_shape, dtype=dtype)
             graph.add_edge(preprocess_node, dst, **dst_in_attr)
-        NodeWrap(graph, preprocess_node).replace_obj('.preprocess.' + plugin_op_type, {'name': preprocess_node})
+        NodeWrap(graph, preprocess_node).replace_obj('.preprocess.' + plugin_op_type,
+                                                     {'name': preprocess_node,
+                                                      'out_tensors': [preprocess_out_value] if use_default_output else []})
 
 
 def apply_preprocess_plugin(graph):
@@ -1369,8 +1379,9 @@ def apply_preprocess_plugin(graph):
     preprocess_subgraph.sort(key=lambda x: x.priority, reverse=True)
     for plugin in preprocess_subgraph:
         plugin_op_type = plugin.op_type
+        use_default_output = 'infer_shape' not in plugin.__dict__
         insert_preprocess_plugin(
-            graph, plugin_op_type, plugin.input_nodes, plugin.input_shapes)
+            graph, plugin_op_type, plugin.input_nodes, plugin.input_shapes, use_default_output)
 
 
 def record_output_tensors(graph):
