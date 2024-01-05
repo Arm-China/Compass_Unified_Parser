@@ -6918,7 +6918,7 @@ def decompose_const_loop(graph, params):
                         n_obj = subgraph_main_nodes_objs[n]
                         n_in_edges = graph.sorted_in_edges(n, data=True)
                         for src, _, in_attr in n_in_edges:
-                            if graph.nodes[src]['op'] == 'Constant' \
+                            if graph.nodes[src]['op'] in ['Dummy', 'Constant'] \
                                     and (in_attr['tensor'].name, in_attr['src_out_port']) in loop_obj.body._attr['input_tensors']:
                                 new_const = get_valid_node_name(
                                     graph, src + name_suffix)
@@ -6931,7 +6931,8 @@ def decompose_const_loop(graph, params):
                                 NodeWrap(graph, new_const).replace_obj('Constant', {
                                     'name': new_const, 'opset_version': 9, 'value': cur_count_value})
                             elif src not in subgraph_main_nodes and not src.endswith(name_suffix):
-                                graph.add_edge(src, new_n, **in_attr)
+                                new_in_attr = copy.deepcopy(in_attr)
+                                graph.add_edge(src, new_n, **new_in_attr)
                             elif src in subgraph_main_nodes:
                                 new_in_attr = copy.deepcopy(in_attr)
                                 graph.add_edge(src + name_suffix,

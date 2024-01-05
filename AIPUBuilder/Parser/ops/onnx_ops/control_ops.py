@@ -65,6 +65,7 @@ class LoopOp(OpHasSubGraph, OnnxOp):
             output_list = []
             for i in range(count):
                 if cond:
+                    meta_out = None
                     for n in sub_nodes:
                         try:
                             sub_node_obj = self._graph.nodes[n]['object']
@@ -90,7 +91,8 @@ class LoopOp(OpHasSubGraph, OnnxOp):
                             # reset last loop body y_out as next y_in if necessary.
                             if i > 0 \
                                     and len(self.body._attr['output_names']) == 3 \
-                                    and self.body._attr['output_names'][1] == n:
+                                    and self.body._attr['output_names'][1] == n \
+                                    and meta_out is not None:
                                 in_attr['tensor'].value = np.array(
                                     meta_out, in_attr['tensor'].dtype)
 
@@ -119,6 +121,7 @@ class LoopOp(OpHasSubGraph, OnnxOp):
                 if len(in_edges) == 3:
                     out_tensor = in_edges[-1][2]['tensor'].value
                 else:
+                    out_tensor = None
                     # TODO: need to support condition is False and v_initial is None
                     WARN('need to support more forms.')
 
