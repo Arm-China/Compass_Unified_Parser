@@ -2659,7 +2659,7 @@ def rename_moments(graph):
                     index = graph._attr['output_names'].index(moments)
                     graph._attr['output_names'].pop(index)
                     for reshape in post_reshapes:
-                        graph._attr['output_names'][index] = reshape
+                        graph._attr['output_names'].insert(index, reshape)
                         index += 1
             else:
                 ERROR(
