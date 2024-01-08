@@ -186,16 +186,12 @@ def onnx_forward(model_path, feed_dict, output_names=None, save_output=True):
 
 
 def tf_forward(model_path, feed_dict, output_names=None, save_output=True):
-    def get_default_output_names(input_tensors, output_tensors):
-        output_names = []
-        input_tensor_name = []
-        for input_tensor in input_tensors:
-            input_tensor_name.extend([t.name for t in input_tensor])
-        for tensors in output_tensors:
-            for tensor in tensors:
-                if tensor.name not in input_tensor_name:
-                    output_names.append(tensor.name)
-        return output_names
+    def _get_out_tensor_if_no_child(g, op_name):
+        op = g.get_operation_by_name(op_name)
+        consumers = [op for out in op.outputs for op in out.consumers()]
+        if len(consumers) == 0:
+            return [out.name for out in op.outputs]
+        return []
 
     import tensorflow.compat.v1 as tf
 
@@ -211,18 +207,28 @@ def tf_forward(model_path, feed_dict, output_names=None, save_output=True):
         valid_feed_dict.update({tensor_name: value})
 
     with tf.Session() as session:
+        g = tf.get_default_graph()
         if output_names is None:
-            all_output_tensors = [op.outputs for op in tf.get_default_graph().get_operations()]
-            all_input_tensors = [op.inputs for op in tf.get_default_graph().get_operations()]
-            output_names = get_default_output_names(all_input_tensors, all_output_tensors)
+            output_names = []
+            for node in g.as_graph_def().node:
+                output_names.extend(_get_out_tensor_if_no_child(g, node.name))
+            INFO('output_names is not set; use default output_names in tf_forward: %s' % str(output_names))
         else:
             output_names = [(name + ':0') if ':' not in name else name for name in output_names]
-        output_tensors = [tf.get_default_graph().get_tensor_by_name(out_name)
-                          for out_name in output_names]
+
+        valid_output_names = []
+        output_tensors = []
+        for out_name in output_names:
+            try:
+                out_tensor = g.get_tensor_by_name(out_name)
+                output_tensors.append(out_tensor)
+                valid_output_names.append(out_name)
+            except Exception as e:
+                WARN('Invalid Output %s is ignored because %s' % (out_name, str(e)))
         output_data = session.run(output_tensors, feed_dict=valid_feed_dict)
 
     output_dict = dict()
-    for out_name, out_data in zip(output_names, output_data):
+    for out_name, out_data in zip(valid_output_names, output_data):
         # print(out_name, out_data.shape)
         # if out_data.shape:
         #     print(out_data.flatten()[:50])
