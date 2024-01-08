@@ -1126,10 +1126,32 @@ def convert_trunc(g, x):
     return g.op('custom::Trunc', x).setType(x.type())
 
 
+def convert_quantized_group_norm(g, x, num_groups, weights, bias, eps, op_scale, op_zero_point):
+    x, _, x_zp, _ = helper.dequantize_helper(g, x)
+    out_scalar_type = x_zp.type().scalarType()
+    output = opset9.group_norm(g, x, num_groups, weights, bias, eps, False)
+    return quantize_helper(g, output, op_scale, op_zero_point, zero_point_scalar_type=out_scalar_type)
+
+
+def convert_quantized_instance_norm(g, x, weights, bias, eps, op_scale, op_zero_point):
+    x, _, x_zp, _ = helper.dequantize_helper(g, x)
+    out_scalar_type = x_zp.type().scalarType()
+    output = opset9.instance_norm(g, x, weights, bias, None, None, False, 0.0, eps, False)
+    return quantize_helper(g, output, op_scale, op_zero_point, zero_point_scalar_type=out_scalar_type)
+
+
+def convert_quantized_layer_norm(g, x, normalized_shape, weights, bias, eps, op_scale, op_zero_point):
+    x, _, x_zp, _ = helper.dequantize_helper(g, x)
+    out_scalar_type = x_zp.type().scalarType()
+    output = opset9.layer_norm(g, x, normalized_shape, weights, bias, eps, False)
+    return quantize_helper(g, output, op_scale, op_zero_point, zero_point_scalar_type=out_scalar_type)
+
+
 def convert_quantized_leaky_relu(g, x, negative_slope, inplace, op_scale, op_zero_point):
-    x, _, _, _ = helper.dequantize_helper(g, x)
+    x, _, x_zp, _ = helper.dequantize_helper(g, x)
+    out_scalar_type = x_zp.type().scalarType()
     output = opset9.leaky_relu(g, x, negative_slope, inplace)
-    return quantize_helper(g, output, op_scale, op_zero_point)
+    return quantize_helper(g, output, op_scale, op_zero_point, zero_point_scalar_type=out_scalar_type)
 
 
 def convert_quantized_elu(g, x, op_scale, op_zero_point, alpha, scale, input_scale):
@@ -1817,7 +1839,13 @@ def convert_torch_to_onnx(model_path, params):
     torch.onnx.register_custom_op_symbolic(
         'quantized::elu', convert_quantized_elu, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
+        'quantized::group_norm', convert_quantized_group_norm, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
         'quantized::hardswish', convert_quantized_hardswish, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'quantized::instance_norm', convert_quantized_instance_norm, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'quantized::layer_norm', convert_quantized_layer_norm, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'quantized::leaky_relu', convert_quantized_leaky_relu, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
