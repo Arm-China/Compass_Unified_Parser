@@ -2125,18 +2125,24 @@ def rename_argminmax(graph):
         arg = m['target']
         arg_obj = NodeWrap(graph, arg)['object']
         if arg_obj is not None:
+            input_shapes = arg_obj.get_input_shapes()
             output_shapes = arg_obj.get_output_shapes()
-            if len(output_shapes) >= 1 \
+            if len(input_shapes) >= 1 and len(output_shapes) >= 1 \
+                    and input_shapes[0] is not None \
                     and output_shapes[0] is not None:
                 arg_attr = arg_obj.copied_attr()
+                axis = arg_obj.axis
+                axis = (len(input_shapes[0]) + axis) if axis < 0 else axis
                 arg_attr.update({'method': 'MIN' if arg_obj.type == 'ArgMin' else 'MAX',
-                                 'axis': arg_obj.axis
+                                 'axis': axis
                                  })
                 NodeWrap(graph, arg).replace_obj('ArmArgMinMax', arg_attr)
                 if not arg_obj.keepdims:
                     reshape_dim = output_shapes[0]
+                    old_dim = reshape_dim[:]
+                    old_dim.insert(axis, 1)
                     reshape = insert_reshape_after(
-                        graph, arg, new_dim=reshape_dim)
+                        graph, arg, new_dim=reshape_dim, old_dim=old_dim, quantize=arg_obj.quantize)
                     if reshape is not None and arg in graph._attr['output_names']:
                         index = graph._attr['output_names'].index(arg)
                         graph._attr['output_names'][index] = reshape
