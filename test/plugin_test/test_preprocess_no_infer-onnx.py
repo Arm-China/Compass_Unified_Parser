@@ -9,7 +9,7 @@ from onnx import TensorProto, helper
 
 
 def create_model(onnx_path, input0_size, input1_size, output_size, version=13):
-    ''' Create onnx model for sinh op.
+    ''' Create onnx model for testing preprocess plugin.
     '''
     X0 = helper.make_tensor_value_info('ONNX_INPUT0', TensorProto.FLOAT, input0_size)
     X1 = helper.make_tensor_value_info('ONNX_INPUT1', TensorProto.FLOAT, input1_size)

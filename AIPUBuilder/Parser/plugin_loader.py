@@ -60,7 +60,11 @@ def register_plugin(type=PluginType.Parser, version=0):
                                 # for named plugin, the add a prefix for register optype
                                 PARSER_OP_DICT['.named_subgraph.' + optype] = cls
                             elif hasattr(cls, 'input_nodes') and cls.input_nodes is not None:
-                                PARSER_OP_DICT['.preprocess.' + optype] = cls
+                                preprocess_optype = '.preprocess.' + optype
+                                if preprocess_optype in PARSER_OP_DICT:
+                                    WARN(
+                                        'Plugin with op_type %s is overriden by class %s!' % (optype, cls.__name__))
+                                PARSER_OP_DICT[preprocess_optype] = cls
                     PARSER_OP_DICT[optype] = cls
                     PARSER_OP_DICT[optype.upper()] = cls
             else:
