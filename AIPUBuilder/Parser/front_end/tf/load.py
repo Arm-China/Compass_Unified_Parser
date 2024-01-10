@@ -210,9 +210,17 @@ def parse_graph_def(graph_def, params, anchor_tensors=list()):
                     elif not params['input_shapes']:
                         FATAL('[Parser]: Input shape of %s is partially known(%s). '
                               'Please provide input_shape in config file!' % (n['name'], str(tensor_shape)))
-                elif tensor_shape is not None and input_shapes[n['name']] != tensor_shape:
-                    WARN('[Parser]: Original input shape %s of input %s is replaced by %s!'
-                         % (str(tensor_shape), n['name'], str(input_shapes[n['name']])))
+                elif input_shapes[n['name']] is None:
+                    if tensor_shape is not None and None not in tensor_shape \
+                            and all(shape >= 0 for shape in tensor_shape):
+                        input_shapes.update({n['name']: tensor_shape})
+                    else:
+                        FATAL('[Parser]: Input shape of %s is partially known(%s). '
+                              'Please provide input_shape in config file!' % (n['name'], str(tensor_shape)))
+                else:
+                    if tensor_shape is not None and input_shapes[n['name']] != tensor_shape:
+                        WARN('[Parser]: Original input shape %s of input %s is replaced by %s!'
+                             % (str(tensor_shape), n['name'], str(input_shapes[n['name']])))
 
         tensors, feed_dict = OrderedDict(), OrderedDict()
         for k, v in input_shapes.items():
@@ -449,17 +457,21 @@ def convert_tf_to_graph(model_path, params):
                                         if tensor_value is None:
                                             is_valid_shape = True
                                             if is_keras_model:
-                                                if src_name in params['input_shapes']:
+                                                if src_name in params['input_shapes'] \
+                                                        and params['input_shapes'][src_name] is not None:
                                                     tensor_shape = params['input_shapes'][src_name]
                                                 elif tensor_name in params['input_shapes']:
-                                                    tensor_shape = params['input_shapes'][tensor_name]
+                                                    if params['input_shapes'][tensor_name] is not None:
+                                                        tensor_shape = params['input_shapes'][tensor_name]
                                                     params['input_shapes'][src_name] = \
                                                         params['input_shapes'].pop(tensor_name)
                                                 elif t.op.type not in ('KerasInputLayer', 'Placeholder'):
                                                     is_valid_shape = False
                                             else:
                                                 if trim_tensor_name(tensor_name) in params['input_shapes']:
-                                                    tensor_shape = params['input_shapes'][trim_tensor_name(tensor_name)]
+                                                    t_shape = params['input_shapes'][trim_tensor_name(tensor_name)]
+                                                    if t_shape is not None:
+                                                        tensor_shape = t_shape[:]
                                                 elif t.op.type != 'Placeholder':
                                                     is_valid_shape = False
                                             if all([s is not None for s in tensor_shape[:]]) and is_valid_shape:

@@ -313,7 +313,8 @@ def convert_onnx_to_graph(model_path, params):
                                     for inp in node.get('input', []):
                                         if name == inp.get('name', ''):
                                             name = node.get('name', name)
-                            if name in params['input_shapes'] and len(input_shape) == len(params['input_shapes'][name]):
+                            elif params['input_shapes'][name] is not None \
+                                    and len(input_shape) == len(params['input_shapes'][name]):
                                 input_shape[:] = params['input_shapes'][name][:]
                         if 0 in input_shape and single_input['name'] not in params.get('input_shapes', {}):
                             WARN('[Parser]: Shape 0 found in Input node(%s), please check config file!' %
@@ -708,6 +709,10 @@ def convert_onnx_to_graph(model_path, params):
                                         graph._attr['input_tensors'].update({in_name: out_edges[0][2]['tensor']})
                                     else:
                                         cur_shape = params['input_shapes'][in_name]
+                                        if cur_shape is None:
+                                            ERROR(
+                                                '[Parser]: Shape of Input(%s) is unknown! Please provide input_shape in cfg file!' % in_name)
+                                            continue
                                         graph._attr['input_tensors'].update(
                                             {in_name: Tensor(name=in_name, value=np.random.ranf(cur_shape).astype(np.float32))})
                         graph._attr['input_tensors'] = OrderedDict(
