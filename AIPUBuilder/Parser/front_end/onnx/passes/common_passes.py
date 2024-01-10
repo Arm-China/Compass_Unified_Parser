@@ -1315,15 +1315,18 @@ def apply_named_subgraph_plugin(graph):
 
 
 def insert_preprocess_plugin(graph, plugin_op_type, input_nodes, input_shapes, use_default_output):
+    '''Return a list of input names, in which preprocess plugin is applied.
+    '''
+    ret = []
     graph_inputs = graph._attr['input_tensors']
     if any(n not in graph_inputs.keys() for n in input_nodes):
-        return
+        return ret
     nodes_cnt = len(input_nodes)
     shapes_cnt = len(input_shapes)
     if nodes_cnt != shapes_cnt:
         ERROR('[Parser]: The length of input nodes should be same as input shapes in insert_preprocess_plugin, but got (%d, %d)!' % (
             nodes_cnt, shapes_cnt))
-        return
+        return ret
     DEBUG('[Parser]: preprocess subgraph plugin applied: preprocess %s is added before [%s](shape: %s)' % (
         plugin_op_type, ','.join(input_nodes), ','.join([str(shape) for shape in input_shapes])))
     for input_name, shape in zip(input_nodes, input_shapes):
@@ -1368,6 +1371,8 @@ def insert_preprocess_plugin(graph, plugin_op_type, input_nodes, input_shapes, u
         NodeWrap(graph, preprocess_node).replace_obj('.preprocess.' + plugin_op_type,
                                                      {'name': preprocess_node,
                                                       'out_tensors': [preprocess_out_value] if use_default_output else []})
+        ret.append(input_name)
+    return ret
 
 
 def apply_preprocess_plugin(graph):
@@ -1377,11 +1382,14 @@ def apply_preprocess_plugin(graph):
             preprocess_subgraph.add(plugin)
     preprocess_subgraph = list(preprocess_subgraph)
     preprocess_subgraph.sort(key=lambda x: x.priority, reverse=True)
+    applied_input_names = []
     for plugin in preprocess_subgraph:
+        if all(name in applied_input_names for name in plugin.input_nodes):
+            continue
         plugin_op_type = plugin.op_type
         use_default_output = 'infer_shape' not in plugin.__dict__
-        insert_preprocess_plugin(
-            graph, plugin_op_type, plugin.input_nodes, plugin.input_shapes, use_default_output)
+        applied_input_names.extend(insert_preprocess_plugin(
+            graph, plugin_op_type, plugin.input_nodes, plugin.input_shapes, use_default_output))
 
 
 def record_output_tensors(graph):
