@@ -407,6 +407,7 @@ def convert_tflite_to_graph(model_path, params):
                         shape = list(
                             net_in_tensor.shape) if net_in_tensor.shape else []
                         if net_in_name in params['input_shapes'] \
+                                and params['input_shapes'][net_in_name] is not None \
                                 and shape != params['input_shapes'][net_in_name]:
                             new_shape = params['input_shapes'][net_in_name]
                             WARN('Original model expects input shape of input %s to be %s. '

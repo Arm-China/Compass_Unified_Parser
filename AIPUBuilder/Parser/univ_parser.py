@@ -172,13 +172,17 @@ def univ_parser(params):
                 params['input_dtype'] = ['float32'] * input_num
                 INFO('[Parser]: Input dtype is not set; default to float32 for torch model!')
 
-        if len(params['input_names']) == len(params['input_shapes']):
+        input_shapes_cnt = len(params['input_shapes'])
+        if len(params['input_names']) == input_shapes_cnt:
             params['input_shapes'] = {
                 params['input_names'][i]: v for i, v in enumerate(params['input_shapes'])}
         else:
-            FATAL(
-                '[Parser]: Length of input_names should be equal to length of input_shapes! '
-                'Please check config file!')
+            if input_shapes_cnt == 0:
+                params['input_shapes'] = {name: None for name in params['input_names']}
+            else:
+                FATAL(
+                    '[Parser]: Length of input_names should be equal to length of input_shapes! '
+                    'Please check config file!')
 
         if 'batch_size' in params:
             WARN(
