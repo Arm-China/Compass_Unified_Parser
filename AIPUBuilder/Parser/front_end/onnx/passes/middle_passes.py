@@ -1222,19 +1222,19 @@ def convert_special_conv_to_mul(graph):
         if conv_obj.weights is not None:
             continue
         in_edges = graph.sorted_in_edges(conv, keys=True, data=True)
-        inputs = conv_obj.get_input_tensors()
+        input_shapes = conv_obj.get_input_shapes()
         if len(in_edges) < 2 \
                 or in_edges[1][3]['tensor'].is_const \
-                or len(inputs) < 2 \
-                or any(inp is None for inp in inputs) \
-                or len(inputs[1].shape) < 3:
+                or len(input_shapes) < 2 \
+                or any(shape is None for shape in input_shapes) \
+                or len(input_shapes[1]) < 3:
             WARN('[Parser]: Meets invalid Conv(%s) in convert_special_conv_to_mul!' % conv)
             continue
-        inp, w = inputs[:2]
+        inp_shape, w_shape = input_shapes[:2]
         group = conv_obj.group
-        if inp.shape[1] != w.shape[0] \
-                or any(s != 1 for s in w.shape[2:]) \
-                or group not in (1, inp.shape[1]):
+        if inp_shape[1] != w_shape[0] \
+                or any(s != 1 for s in w_shape[2:]) \
+                or group not in (1, inp_shape[1]):
             continue
         if any(d != 1 for d in conv_obj.dilations) \
                 or any(s != 1 for s in conv_obj.strides) \
@@ -1242,8 +1242,8 @@ def convert_special_conv_to_mul(graph):
                 or conv_obj.auto_pad != 'NOTSET':
             continue
         w_name, _, w_k, w_in_attr = in_edges[1]
-        dim = [w.shape[0]] + [1] * (len(w.shape) - 2)
-        if group == inp.shape[1]:
+        dim = [w_shape[0]] + [1] * (len(w_shape) - 2)
+        if group == inp_shape[1]:
             insert_reshape(graph, w_name, conv, w_in_attr, dim, key=w_k, data_format='NCHW')
             NodeWrap(graph, conv).replace_obj('Mul', {'name': conv, 'opset_version': 7})
         else:
@@ -1252,7 +1252,7 @@ def convert_special_conv_to_mul(graph):
             graph.remove_edges_from(in_edges)
             inp_name, _, _, inp_in_attr = in_edges[0]
             graph.add_edge(inp_name, mul_node, **inp_in_attr)
-            inp_reshape_dim = [inp.shape[0], 1] + list(inp.shape[1:])
+            inp_reshape_dim = [inp_shape[0], 1] + list(inp_shape[1:])
             insert_reshape(graph, inp_name, mul_node, inp_in_attr, inp_reshape_dim)
             graph.add_edge(w_name, mul_node, **w_in_attr)
             graph.add_edge(mul_node, conv)
