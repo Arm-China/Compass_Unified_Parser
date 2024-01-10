@@ -130,23 +130,36 @@ def onnx_forward(model_path, feed_dict, output_names=None, save_output=True):
     import numpy as np
 
     # input_name = sess.get_inputs()[0].name
-    if output_names is None:
-        sess = rt.InferenceSession(model_path)
-        output_names = [o.name for o in sess.get_outputs()]
+    sess = rt.InferenceSession(model_path)
+    model_output_names = [o.name for o in sess.get_outputs()]
+
+    # init output_dict: the keys have the same sequence as output_names
+    output_dict = dict()
+    if output_names is not None:
+        output_dict = {name: None for name in output_names}
+        if len(output_names) <= len(model_output_names) \
+                and all(name in model_output_names for name in output_names):
+            output_names = model_output_names
     else:
+        output_names = model_output_names
+        output_dict = {name: None for name in output_names}
+
+    if output_names != model_output_names:
         assert isinstance(output_names, list), 'Argument output_names should be a list!'
         model = onnx.load(model_path)
         # clear outputs first
         for output in model.graph.output:
             model.graph.output.pop()
         # convert node name to tensor name
-        original_output_names = copy.deepcopy(output_names)
+        original_output_names = output_names[:]
         for node in model.graph.node:
             if node.name in original_output_names:
                 index = output_names.index(node.name)
                 output_names.pop(index)
                 for idx, output in enumerate(node.output):
                     output_names.insert(index + idx, output)
+        if output_names != original_output_names:
+            output_dict = {name: None for name in output_names}
         for output in output_names:
             model.graph.output.extend([onnx.ValueInfoProto(name=output)])
             print("Model add output %s" % output)
@@ -172,12 +185,12 @@ def onnx_forward(model_path, feed_dict, output_names=None, save_output=True):
     except Exception as e:
         ERROR("Fail to run because %s" % str(e))
 
-    output_dict = dict()
     for out_name, out_data in zip(output_names, output_data):
         if isinstance(out_data, list):
             assert len(out_data) == 1, 'out_data is a list of more than 1 element!'
             out_data = out_data[0]
-        output_dict[out_name] = out_data
+        if out_name in output_dict:
+            output_dict[out_name] = out_data
 
     if save_output:
         save_data_to_file('onnx_outputs.npy', output_dict)
