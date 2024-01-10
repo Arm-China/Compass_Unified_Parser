@@ -3191,9 +3191,10 @@ def split_crd_d2s(graph):
 
 
 def split_expand(graph):
+    matched = False
     matches = matched_patterns(graph,
                                nodes=[('expand', {'op': 'Expand'}),
-                                      ('shape', {'op': 'Constant'})
+                                      ('shape', {'op': 'Constant', 'unique': False})
                                       ],
                                edges=[
                                    ('shape', 'expand', {'src_out_port': 0, 'dst_in_port': 1})]
@@ -3208,7 +3209,9 @@ def split_expand(graph):
                 and len(in_edges) == 2:
             input_shapes = expand_obj.get_input_shapes()
             if len(input_shapes) == 2 \
-                    and input_shapes[0] is not None:
+                    and input_shapes[0] is not None \
+                    and any(d is not None for d in input_shapes[0]):
+                matched = True
                 graph.remove_edges_from(in_edges[1:])
                 input_shape = input_shapes[0]
                 shape_value = shape_obj.value.astype(np.int32)
@@ -3236,6 +3239,8 @@ def split_expand(graph):
         else:
             ERROR('[Parser]: Meets invalid Expand Node (%s) or Constant Node (%s) in split_expand!' % (
                 expand, shape))
+    if matched:
+        clear_redundant_nodes(graph)
 
 
 def fuse_clip(graph):
