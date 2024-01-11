@@ -97,6 +97,7 @@ def string_list_to_string(string_list):
 def multi_string_to_list(multi_string):
     if multi_string:
         multi_string = re.sub(r' ', '', multi_string)
+        multi_string = multi_string.rstrip(',')
         return [item for item in multi_string.split(',')]
     else:
         return []
