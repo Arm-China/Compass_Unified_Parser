@@ -3210,7 +3210,7 @@ def split_expand(graph):
             input_shapes = expand_obj.get_input_shapes()
             if len(input_shapes) == 2 \
                     and input_shapes[0] is not None \
-                    and any(d is not None for d in input_shapes[0]):
+                    and all(d is not None for d in input_shapes[0]):
                 matched = True
                 graph.remove_edges_from(in_edges[1:])
                 input_shape = input_shapes[0]
