@@ -117,6 +117,11 @@ def univ_parser(params):
 
         params['input_names'] = multi_string_to_list(
             params['input_names']) if 'input_names' in params else []
+        if len(params['input_names']) > 0 and any(not name for name in params['input_names']):
+            WARN(
+                '[Parser]: Meets empty name in input(%s) and it will be ignored!' % str(params['input_names']))
+            params['input_names'] = [name for name in params['input_names'] if name]
+
         params['output_names'] = multi_string_to_list(
             params['output_names']) if 'output_names' in params else []
         out_names_dict = OrderedDict(
