@@ -4772,12 +4772,11 @@ def merge_clip(graph):
         if obj_dict['relu'].quantize:
             continue
         const_val = obj_dict['const'].value
-        if not FLOAT_EQUAL(const_val.item(0), const_val):
+        if not FLOAT_EQUAL(const_val.item(0), const_val) or const_val.item(0) < 0:
             continue
         matched = True
-        const_val = float(const_val.item(0))
-        min_val = np.array(min(const_val, 0.0))
-        max_val = np.array(max(const_val, 0.0))
+        min_val = np.array(0.0, dtype=np.float32)
+        max_val = np.array(const_val.item(0), dtype=np.float32)
 
         min_in_edges = graph.sorted_in_edges(m['min'])
         graph.remove_edges_from(min_in_edges)
