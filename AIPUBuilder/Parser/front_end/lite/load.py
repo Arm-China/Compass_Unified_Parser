@@ -485,7 +485,7 @@ def convert_tflite_to_graph(model_path, params):
                                     '[Parser]: Output name (%s) is neither a node name nor a tensor name! Please check config file!' % n)
                         if not names:
                             WARN(
-                                ['Parser: Cannot get valid output names from config file! Will use parsed node names instead!'])
+                                '[Parser]: Cannot get valid output names from config file! Will use parsed node names instead!')
                             graph._attr['output_names'] = copy.deepcopy(
                                 output_names)
                         else:
