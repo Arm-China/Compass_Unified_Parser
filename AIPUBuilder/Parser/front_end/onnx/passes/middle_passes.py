@@ -4730,6 +4730,69 @@ def merge_prelu(graph):
         clear_redundant_nodes(graph)
 
 
+def convert_special_thresholdedrelu_to_relu(graph):
+    '''Merge thresholdedrelu(alpha=0) to Relu.
+    '''
+    matches = single_node_matcher(graph, 'ThresholdedRelu')
+    for m in matches:
+        thres_relu = m['target']
+        thres_relu_obj = NodeWrap(graph, thres_relu)['object']
+        if thres_relu_obj is None:
+            ERROR('[Parser]: Meets invalid ThresholdedRelu node(%s) in convert_special_thresholdedrelu_to_relu!' % thres_relu)
+            continue
+        if thres_relu_obj.quantize:
+            continue
+        alpha = thres_relu_obj.alpha
+        if not FLOAT_EQUAL(alpha, 0.0):
+            continue
+        relu_attr = thres_relu_obj.copied_attr()
+        relu_attr.update({'opset_version': 14})
+        NodeWrap(graph, thres_relu).replace_obj('Relu', relu_attr)
+
+
+def merge_clip(graph):
+    '''Merge Relu+Min(x/y=const) to Clip.
+    '''
+    matched = False
+    matches = matched_patterns(graph,
+                               nodes=[
+                                   ('relu', {'op': 'Relu', 'unique': False}),
+                                   ('const', {'op': 'Constant', 'unique': False}),
+                                   ('min', {'op': 'Min'})],
+                               edges=[
+                                   ('relu', 'min'),
+                                   ('const', 'min')])
+    for m in matches:
+        names = ['relu', 'const', 'min']
+        obj_dict = {k: NodeWrap(graph, m[k])['object'] for k in names}
+        relu_in_edges = graph.sorted_in_edges(m['relu'], data=True)
+        if any(obj is None for obj in obj_dict) or len(relu_in_edges) < 1:
+            ERROR('[Parser]: Meets invalid nodes in merge_clip!')
+            continue
+        if obj_dict['relu'].quantize:
+            continue
+        const_val = obj_dict['const'].value
+        if not FLOAT_EQUAL(const_val.item(0), const_val):
+            continue
+        matched = True
+        const_val = float(const_val.item(0))
+        min_val = np.array(min(const_val, 0.0))
+        max_val = np.array(max(const_val, 0.0))
+
+        min_in_edges = graph.sorted_in_edges(m['min'])
+        graph.remove_edges_from(min_in_edges)
+        src, _, in_attr = relu_in_edges[0]
+        graph.add_edge(src, m['min'], **in_attr)
+        insert_constant(graph, m['min'] + '_min', min_val, m['min'], in_port=1)
+        insert_constant(graph, m['min'] + '_max', max_val, m['min'], in_port=2)
+
+        clip_attr = obj_dict['min'].copied_attr()
+        clip_attr.update({'opset_version': 13})
+        NodeWrap(graph, m['min']).replace_obj('Clip', clip_attr)
+    if matched:
+        clear_redundant_nodes(graph)
+
+
 def merge_softplus(graph):
     matched = False
     matches = matched_patterns(graph,
@@ -9682,6 +9745,7 @@ def middle_passes(graph, params):
     convert_global_pool(graph)
     # merge_l2pool(graph)
     convert_special_clip_to_relu(graph)
+    convert_special_thresholdedrelu_to_relu(graph)
     convert_sigmoid_mul_to_silu(graph)
     convert_sigmoid_mul_to_swish(graph)
     remove_useless_op(graph, ['Cast', 'Concat', 'Identity', 'Pad', 'Slice',
@@ -9689,6 +9753,7 @@ def middle_passes(graph, params):
     remove_sub_add_pair(graph)
     merge_divmod(graph)
     merge_divmod2(graph)
+    merge_clip(graph)
     merge_leaky_relu(graph)
     merge_prelu(graph)
     reshape_prelu_slope(graph)
