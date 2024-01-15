@@ -8814,16 +8814,6 @@ def split_deformable_conv(graph):
             ERROR(
                 '[Parser]: Meets invalid DeformConv (%s) in split_deformable_conv!' % deform_conv)
             continue
-        weights_tensor = in_edges[1][2]['tensor']
-        if weights_tensor is None or not weights_tensor.is_const or weights_tensor.value is None:
-            WARN('[Parser]: Meets unsupported non-constant weights of DeformConv (%s) in split_deformable_conv!' % deform_conv)
-            continue
-        if len(in_edges) > 3:
-            biases_tensor = in_edges[3][2]['tensor']
-            if biases_tensor is None or not biases_tensor.is_const:
-                WARN('[Parser]: Meets unsupported non-constant biases of DeformConv (%s) in split_deformable_conv!' % deform_conv)
-                continue
-        weights = weights_tensor.value
         if any((shape is None or None in shape or len(shape) != 4) for shape in input_shapes[:3]):
             ERROR(
                 '[Parser]: Meets unsupported input shapes of DeformConv (%s) in split_deformable_conv!' % deform_conv)
@@ -8835,15 +8825,25 @@ def split_deformable_conv(graph):
         output_shapes = deform_conv_obj.get_output_shapes()
         if len(output_shapes) < 1 or output_shapes[0] is None or None in output_shapes[0]:
             continue
+        weights_tensor = in_edges[1][2]['tensor']
+        if weights_tensor is None or (weights_tensor.is_const and weights_tensor.value is None):
+            ERROR(
+                '[Parser]: Meets invalid weights of DeformConv (%s) in split_deformable_conv!' % deform_conv)
+            continue
+        if len(in_edges) > 3 and in_edges[3][2]['tensor'] is None:
+            ERROR(
+                '[Parser]: Meets invalid biases of DeformConv (%s) in split_deformable_conv!' % deform_conv)
+            continue
         input_shape = input_shapes[0]
-        weights_shape = weights.shape
+        weights_shape = input_shapes[1]
         offset_shape = input_shapes[2]
+        out_c = weights_shape[0]
+        add_bias_shape = [1, out_c, 1, 1]
         kernel_shape = deform_conv_obj.kernel_shape
         group = deform_conv_obj.group
         offset_group = deform_conv_obj.offset_group
         k_h, k_w = kernel_shape
         k_hw = int(k_h * k_w)
-        out_c = weights_shape[0]
         strides = deform_conv_obj.strides
         dilations = deform_conv_obj.dilations
         pads = deform_conv_obj.pads
@@ -8961,10 +8961,46 @@ def split_deformable_conv(graph):
         NodeWrap(graph, data_post_reshape2).replace_obj('Reshape', {'name': data_post_reshape2, 'opset_version': 13})
 
         # data -> conv
-        new_weights = np.reshape(weights, [out_c, -1, 1, 1])
         graph.add_edge(data_post_reshape2, deform_conv, **{'tensor': Tensor(shape=data_post_reshape2_dim)})
         conv_attr = deform_conv_obj.copied_attr()
-        conv_attr.update({'opset_version': 11, 'kernel_shape': [1, 1], 'weights': new_weights,
+        if weights_tensor.is_const:
+            new_weights = np.reshape(weights_tensor.value, [out_c, -1, 1, 1])
+            default_biases = np.zeros([out_c], dtype=new_weights.dtype)
+            conv_attr.update({'weights': new_weights, 'biases': default_biases})
+            if len(in_edges) > 3:
+                biases_tensor = in_edges[3][2]['tensor']
+                biases_shape = biases_tensor.get_shape()
+                if biases_tensor.is_const:
+                    if biases_tensor.value is not None and biases_tensor.value.size > 0:
+                        conv_attr.update({'biases': biases_tensor.value})
+                elif biases_shape is not None and len(biases_shape) > 0 and 0 not in biases_shape:
+                    out_edges = graph.sorted_out_edges(deform_conv, data=True)
+                    graph.remove_edges_from(out_edges)
+                    add_bias = get_valid_node_name(graph, deform_conv + '_bias')
+                    graph.add_edge(deform_conv, add_bias, **{'tensor': Tensor(shape=tuple(output_shapes[0]))})
+                    bias, _, bias_in_attr = in_edges[3]
+                    bias_in_attr.update({'dst_in_port': 1})
+                    graph.add_edge(bias, add_bias, **bias_in_attr)
+                    NodeWrap(graph, add_bias).replace_obj('Add', {'name': add_bias, 'opset_version': 14})
+                    insert_reshape(graph, bias, add_bias, bias_in_attr, add_bias_shape)
+                    for _, dst, out_attr in out_edges:
+                        graph.add_edge(add_bias, dst, **out_attr)
+                    if deform_conv in graph._attr['output_names']:
+                        index = graph._attr['output_names'].index(deform_conv)
+                        graph._attr['output_names'][index] = add_bias
+        else:
+            conv_attr.update({'weights': None, 'biases': None})
+            weight, _, weight_in_attr = in_edges[1]
+            graph.add_edge(weight, deform_conv, **weight_in_attr)
+            insert_reshape(graph, weight, deform_conv, weight_in_attr, data_post_reshape2_dim)
+            if len(in_edges) > 3:
+                bias, _, bias_in_attr = in_edges[3]
+                biases_shape = bias_in_attr['tensor'].get_shape()
+                if biases_shape is not None and len(biases_shape) > 0 and 0 not in biases_shape:
+                    bias_in_attr.update({'dst_in_port': 2})
+                    graph.add_edge(bias, deform_conv, **bias_in_attr)
+                    insert_reshape(graph, bias, deform_conv, bias_in_attr, add_bias_shape)
+        conv_attr.update({'opset_version': 11, 'kernel_shape': [1, 1],
                           'strides': [1, 1], 'pads': [0, 0, 0, 0], 'dilations': [1, 1], 'group': group})
         NodeWrap(graph, deform_conv).replace_obj('Conv', conv_attr)
 
