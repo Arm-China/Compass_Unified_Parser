@@ -2033,7 +2033,7 @@ def fuse_mul_add_or_sub(graph):
 def fuse_pad(graph):
     pad_op_list = ['Pad']
     op_has_padding_list = list(set(OpHasPaddingStrides.get_concrete_subclass_names(
-    )).difference(['ConvTranspose']).intersection(OnnxOp.get_concrete_subclass_names()))
+    )).difference(['ConvTranspose', 'MaxPool', 'MaxUnpool']).intersection(OnnxOp.get_concrete_subclass_names()))
     pad_fusing_combinations = itertools.product(
         pad_op_list, op_has_padding_list)
     for pad_op, op_has_padding in pad_fusing_combinations:
