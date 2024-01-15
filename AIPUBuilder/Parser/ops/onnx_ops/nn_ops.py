@@ -519,7 +519,7 @@ class DeformConvOp(BaseConvOp, OnnxOp):
                 '[Parser]: Meets invalid weights shape or input shape for DeformConvOp (%s)!' % self.name)
         self.num_output = self.weights.shape[0]
         self.biases = inputs[3] if (len(inputs) > 3 and inputs[3]
-                                    is not None) else np.zeros(self.num_output, np.float32)
+                                    is not None and inputs[3].size > 0) else np.zeros(self.num_output, np.float32)
         if self.kernel_shape is None:
             self.kernel_shape = list(self.weights.shape[2:])
         batch = inputs[0].shape[0]
