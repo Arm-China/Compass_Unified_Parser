@@ -1362,26 +1362,29 @@ def convert_special_scatternd(graph):
         update_shape = input_shapes[2]
 
         if len(input_shape) != len(update_shape) \
-                or len(indices_shape) != (len(update_shape) + 1) \
-                or input_shape[:-1] != update_shape[:-1]:
+                or len(indices_shape) != (len(update_shape) + 1):
             continue
-        input_last_dim = input_shape[-1]
+        axis = [idx for idx, (inp_shape, u_shape) in enumerate(zip(input_shape, update_shape)) if inp_shape != u_shape]
+        if len(axis) > 1:
+            continue
+        axis = (len(input_shape) - 1) if len(axis) == 0 else axis[0]
+        input_dim_at_axis = input_shape[axis]
         indices_value = indices_obj.value
-        indices_len_at_axis = indices_value.shape[-2]
-        start_indice = indices_value.item(indices_value.shape[-1] - 1)
-        start_indices = np.array(
-            [0] * (indices_value.shape[-1] - 1) + [start_indice])
+        indices_len_at_axis = indices_value.shape[axis]
+        start_indice = indices_value.item(axis)
+        start_indices = np.array([0] * indices_value.shape[-1])
+        start_indices[axis] = start_indice
         exp_shape = indices_value.shape[:-1]
         indices_exp_value = list(np.ndindex(*exp_shape))
         indices_exp_value = np.reshape(
             np.array(indices_exp_value) + start_indices, indices_value.shape)
         if not np.array_equal(indices_exp_value, indices_value) \
-                or (indices_len_at_axis + start_indice) > input_last_dim:
+                or (indices_len_at_axis + start_indice) > input_dim_at_axis:
             continue
         matched = True
         graph.remove_edges_from(scatternd_in_edges)
         _, _, updates_out_attr = scatternd_in_edges[2]
-        if indices_len_at_axis == input_last_dim:
+        if indices_len_at_axis == input_dim_at_axis:
             scatternd_out_edges = graph.sorted_out_edges(scatternd, data=True)
             graph.remove_edges_from(scatternd_out_edges)
             updates_out_port = updates_out_attr['src_out_port']
@@ -1400,12 +1403,12 @@ def convert_special_scatternd(graph):
                 graph.add_edge(split_node, scatternd, **split_out_attr)
                 updates_out_attr.update({'dst_in_port': 0})
                 split = [indices_len_at_axis,
-                         input_last_dim - indices_len_at_axis]
+                         input_dim_at_axis - indices_len_at_axis]
             else:
                 split_out_0_attr = {'src_out_port': 0, 'dst_in_port': 0}
                 graph.add_edge(split_node, scatternd, **split_out_0_attr)
                 split_mid_len = indices_len_at_axis
-                split_end_len = input_last_dim - start_indice - split_mid_len
+                split_end_len = input_dim_at_axis - start_indice - split_mid_len
                 if split_end_len != 0:
                     split_out_2_attr = {'src_out_port': 2, 'dst_in_port': 2}
                     graph.add_edge(split_node, scatternd, **split_out_2_attr)
@@ -1416,9 +1419,9 @@ def convert_special_scatternd(graph):
             graph.add_edge(updates, scatternd, **updates_out_attr)
 
             NodeWrap(graph, split_node).replace_obj(
-                'Split', {'name': split_node, 'opset_version': 11, 'axis': -1, 'split': split})
+                'Split', {'name': split_node, 'opset_version': 11, 'axis': axis, 'split': split})
             concat_attr = scatternd_obj.copied_attr()
-            concat_attr.update({'opset_version': 13, 'axis': -1})
+            concat_attr.update({'opset_version': 13, 'axis': axis})
             NodeWrap(graph, scatternd).replace_obj('Concat', concat_attr)
     if matched:
         clear_redundant_nodes(graph)
