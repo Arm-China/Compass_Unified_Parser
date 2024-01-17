@@ -12,6 +12,7 @@ from ....logger import INFO, DEBUG, WARN, ERROR, FATAL
 from ....common.utils import extend_lists, get_converted_dtype
 from ....graph.node_wrap import NodeWrap
 from ....graph.pattern_match import matched_patterns, single_node_matcher, two_nodes_matcher
+# from ....graph.pattern_generator import match_patterns_from_expression
 from ....graph.graph_algo import get_valid_node_name, clear_redundant_nodes, determined_sort, all_simple_paths, has_path
 from ....ops.op import Op, BaseLinearOp, BaseConvOp, BaseDeconvOp, BaseOnnxPoolOp, OpHasOneOutPort, OpHasPaddingStrides, OpHasAxis, \
     OnnxOp, CommonOp, OpNeedBroadcast, OpNeedUniBroadcast, OnnxReduceOp
@@ -3558,6 +3559,8 @@ def merge_gather_slice(graph):
 
 def merge_gelu_1(graph):
     matched = False
+    # expression = 'Mul(Mul(x, Erf(x/1.41421356)+1), 0.5)'
+    # matches = match_patterns_from_expression(graph, expression)
     matches = matched_patterns(graph,
                                nodes=[
                                    ('inp', {}),
@@ -4808,6 +4811,8 @@ def merge_meshgrid(graph):
 
 
 def merge_prelu(graph):
+    # matches = match_patterns_from_expression(graph,
+    #           'slope = Constant(); half = Constant(); y = Relu(x) + (Abs(x) - x) * half * slope')
     matches = matched_patterns(graph,
                                nodes=[
                                    ('input', {}),
