@@ -47,8 +47,8 @@ for axis, update_shape in axis_and_update_shapes:
     update_shape_expected = (len(different_axes) == 0 or (len(different_axes) == 1 and different_axes[0] == axis))
     expected_keywords = ['Split', 'Concat'] if update_shape_expected else ['ScatterND']
     unexpected_keywords = ['ScatterND'] if update_shape_expected else ['Split', 'Concat']
-    for indices_start_from in (3, 7, 0):
-        if update_shape[axis] < indices_start_from \
+    for indices_start_from in (3, 7, 0):  # tf doesn't allow negative indices value for scatternd
+        if input_shape[axis] < indices_start_from \
                 or (update_shape[axis] + indices_start_from) > input_shape[axis]:
             continue
         model_path = '-'.join([TEST_NAME, str(axis), str(indices_start_from)]) + '.pb'

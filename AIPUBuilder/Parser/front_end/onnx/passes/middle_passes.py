@@ -1374,6 +1374,12 @@ def convert_special_scatternd(graph):
         start_indice = indices_value.item(axis)
         start_indices = np.array([0] * indices_value.shape[-1])
         start_indices[axis] = start_indice
+        if start_indice < 0:
+            # -2, -1 is continuous(split to [:-2] and [-2:]) and
+            # -2, -1, 0, 1, ...x is not(concat of split[-2:] and split[0:x])
+            if start_indice + indices_len_at_axis > 0:
+                continue
+            start_indice = input_dim_at_axis + start_indice
         exp_shape = indices_value.shape[:-1]
         indices_exp_value = list(np.ndindex(*exp_shape))
         indices_exp_value = np.reshape(
