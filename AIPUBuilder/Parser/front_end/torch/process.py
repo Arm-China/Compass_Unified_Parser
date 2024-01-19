@@ -50,7 +50,7 @@ def convert_adaptive_pool(g, x, output_size, dim, method):
     assert method in (
         'AVG', 'MAX'), 'Meets invalid method (%s) in convert_adaptive_pool!' % str(method)
     input_shape = helper._get_tensor_sizes(x)
-    need_reshape = (len(input_shape) == 3)
+    need_reshape = (len(input_shape) == (1 + dim))
     if need_reshape:
         x = helper._reshape_helper(g, x, [1] + input_shape)  # from CHW to NCHW
     if helper._is_packed_list(output_size):  # None in output_size
@@ -90,13 +90,33 @@ def convert_adaptive_pool(g, x, output_size, dim, method):
 
 
 @quantized_args(True, False, False)
+def convert_adaptive_avg_pool1d(g, x, output_size):
+    return convert_adaptive_pool(g, x, output_size, 1, 'AVG')
+
+
+@quantized_args(True, False, False)
 def convert_adaptive_avg_pool2d(g, x, output_size):
     return convert_adaptive_pool(g, x, output_size, 2, 'AVG')
 
 
 @quantized_args(True, False, False)
+def convert_adaptive_avg_pool3d(g, x, output_size):
+    return convert_adaptive_pool(g, x, output_size, 3, 'AVG')
+
+
+@quantized_args(True, False, False)
+def convert_adaptive_max_pool1d(g, x, output_size):
+    return convert_adaptive_pool(g, x, output_size, 1, 'MAX')
+
+
+@quantized_args(True, False, False)
 def convert_adaptive_max_pool2d(g, x, output_size):
     return convert_adaptive_pool(g, x, output_size, 2, 'MAX')
+
+
+@quantized_args(True, False, False)
+def convert_adaptive_max_pool3d(g, x, output_size):
+    return convert_adaptive_pool(g, x, output_size, 3, 'MAX')
 
 
 def convert_addbmm(g, x, batch1, batch2, beta, alpha):
@@ -1872,9 +1892,17 @@ def convert_torch_to_onnx(model_path, params):
 
     # Convert torch op to custom onnx op
     torch.onnx.register_custom_op_symbolic(
+        'aten::adaptive_avg_pool1d', convert_adaptive_avg_pool1d, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
         'aten::adaptive_avg_pool2d', convert_adaptive_avg_pool2d, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
+        'aten::adaptive_avg_pool3d', convert_adaptive_avg_pool3d, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'aten::adaptive_max_pool1d', convert_adaptive_max_pool1d, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
         'aten::adaptive_max_pool2d', convert_adaptive_max_pool2d, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'aten::adaptive_max_pool3d', convert_adaptive_max_pool3d, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::channel_shuffle', convert_channel_shuffle, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(

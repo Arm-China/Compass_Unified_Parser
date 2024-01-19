@@ -44,19 +44,29 @@ class AdaptivePoolOp(LayoutConcernedOp, OpHasMethod, OpHasOneOutPort, CommonOp):
     def infer_shape(self):
         super(AdaptivePoolOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        assert len(inputs) == 1 and len(inputs[0].shape) == 4, 'The input is invalid in AdaptivePoolOp.'
+        input_dim = len(inputs[0].shape)
+        assert len(inputs) == 1 and input_dim in (3, 4, 5), 'The input is invalid in AdaptivePoolOp.'
         if self.data_format.startswith('NC'):
             perm = None
             input_tensor = inputs[0]
         else:
-            perm = [0, 3, 1, 2]
+            perm = [0, (input_dim - 1)] + list(range(1, input_dim - 1))
             input_tensor = np.transpose(inputs[0], perm)
-        m = torch.nn.AdaptiveAvgPool2d(tuple(self.output_size)) if self.method == 'AVG' \
-            else torch.nn.AdaptiveMaxPool2d(tuple(self.output_size))
-        out_tensor = m(torch.from_numpy(input_tensor)).numpy()
+        if input_dim == 3:
+            m = torch.nn.AdaptiveAvgPool1d(tuple(self.output_size)) if self.method == 'AVG' \
+                else torch.nn.AdaptiveMaxPool1d(tuple(self.output_size))
+        elif input_dim == 4:
+            m = torch.nn.AdaptiveAvgPool2d(tuple(self.output_size)) if self.method == 'AVG' \
+                else torch.nn.AdaptiveMaxPool2d(tuple(self.output_size))
+        else:  # input_dim == 5
+            m = torch.nn.AdaptiveAvgPool3d(tuple(self.output_size)) if self.method == 'AVG' \
+                else torch.nn.AdaptiveMaxPool3d(tuple(self.output_size))
+        input_dtype = input_tensor.dtype
+        # torch adaptive_avg_pool/adaptive_max_pool doesn't support int input
+        out_tensor = m(torch.from_numpy(input_tensor.astype(np.float32))).numpy()
         if perm is not None:
             out_tensor = np.transpose(out_tensor, Op.cal_inverse_perm(perm))
-        self.set_out_tensor(out_tensor)
+        self.set_out_tensor(out_tensor.astype(input_dtype))
 
 
 class BatchGatherOp(OpHasAxis, OpHasOneOutPort, CommonOp):
