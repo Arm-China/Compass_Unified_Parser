@@ -6,7 +6,7 @@ import torch
 import tensorflow as tf
 import sys
 from ..op import *
-from ...front_end.onnx.buffer import onnx_tensor_np_mapping
+from ...front_end.onnx.buffer import ONNX_NP_TENSOR_MAP
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 from ...common.defs import TYPE_MIN, TYPE_MAX, INT_MIN
 
@@ -60,8 +60,7 @@ class CastOp(OpHasOneOutPort, OnnxOp):
                 if cur_ver == 1:
                     ret = self._attr[item].value
                 else:
-                    ret = np.dtype(
-                        onnx_tensor_np_mapping[self._attr[item].value][1]).name
+                    ret = np.dtype(ONNX_NP_TENSOR_MAP[self._attr[item].value][1]).name
             elif item == 'saturate':
                 if cur_ver < 19:
                     ret = False
