@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright © 2022-2023 Arm Technology (China) Co. Ltd.
 
-
+import os
 import onnx
 import numpy as np
 import copy
@@ -243,7 +243,7 @@ def convert_onnx_to_graph(model_path, params):
     if consumer_ver >= 1.04:
         model = None
         try:
-            model = onnx.load(model_path)
+            model = onnx.load(model_path, load_external_data=False)
             try:
                 onnx.checker.check_model(model)
             except Exception as e:
@@ -259,6 +259,7 @@ def convert_onnx_to_graph(model_path, params):
             meta_ret = False
 
         if meta_ret:
+            model_dir = os.path.dirname(model_path)
             model_attr = get_model_content(model)
             params['source'] = onnx_source_map.get(
                 model_attr['producer_name'].lower(), Framework.NONE)
@@ -280,7 +281,7 @@ def convert_onnx_to_graph(model_path, params):
             graph._attr['opset_version'] = max([opset_ver] + list(opset_import_map.values()))
             g = model.graph
             if len(g.node) > 0:
-                g_content = get_graph_content(g)
+                g_content = get_graph_content(g, model_dir)
                 const_values = g_content['consts']
                 const_names = g_content['const_names']
                 const_names = {c_info['name']: None for c_info in const_names}
