@@ -309,7 +309,7 @@ class ArmActivationOp(LayoutUnawareOp, OpHasMethod, OpHasOneOutPort, ArmOp):
 class ArmAdaptivePoolOp(OpHasMethod, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
-        return {0: 'float32'}
+        return {0: ['float32', 'int8', 'uint8']}
 
     @classmethod
     def attributes(cls):
@@ -324,14 +324,13 @@ class ArmAdaptivePoolOp(OpHasMethod, OpHasOneOutPort, ArmOp):
     def infer_shape(self):
         super(ArmAdaptivePoolOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        assert len(inputs) == 1 and len(inputs[0].shape) == 4, 'The input is invalid in ArmAdaptivePoolOp.'
+        assert len(inputs) == 1 and len(inputs[0].shape) > 2, 'The input is invalid in ArmAdaptivePoolOp.'
         # input_tensor = torch.from_numpy(np.transpose(inputs[0], [0, 3, 1, 2]))
         # m = torch.nn.AdaptiveAvgPool2d(self.output_size) if self.method == 'AVG' \
         #     else torch.nn.AdaptiveMaxPool2d(self.output_size)
         # out_tensor = m(input_tensor).numpy()
         # out_tensor = np.transpose(out_tensor, [0, 2, 3, 1])
-        batch, _, _, channels = inputs[0].shape
-        output_shape = [batch] + self.output_size + [channels]
+        output_shape = [inputs[0].shape[0]] + self.output_size + [inputs[0].shape[-1]]
         out_tensor = np.random.ranf(output_shape).astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
@@ -3518,7 +3517,7 @@ class ArmPoolingOp(OpHasMethod, OpHasPaddingStrides, OpHasOneOutPort, ArmOp):
 class ArmPooling3DOp(OpHasMethod, OpHasPaddingStrides, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
-        return {0: 'float32'}
+        return {0: ['float32', 'int8', 'uint8']}
 
     @classmethod
     def attributes(cls):
