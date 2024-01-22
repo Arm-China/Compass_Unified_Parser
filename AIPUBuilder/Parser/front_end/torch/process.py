@@ -287,6 +287,12 @@ def convert_constant_chunk(g, input, chunks, dim):
         return prim_constant_chunk(g, input, chunks, dim)
 
 
+@quantized_args(True, False, False)
+def convert_clamp(g, x, min_val, max_val):
+    from torch.onnx.symbolic_opset11 import clamp
+    return clamp(g, x, min_val, max_val)
+
+
 @helper.parse_args('v', 'is', 'is', 'is', 'is', 'is')
 @quantized_args(True)
 def convert_col2im(g, input, output_size, kernel_size, dilation, padding, stride):
@@ -1110,6 +1116,7 @@ def convert_tensor_split(g, x, indices_or_sections, dim=0):
     return g.op('prim::ListConstruct', *split_outs)
 
 
+@quantized_args(True, False, False)
 def convert_threshold(g, x, threshold, value):
     greater = g.op('Greater', x, threshold)
     where = g.op('Where', greater, x, value)
@@ -1754,6 +1761,8 @@ def convert_torch_to_onnx(model_path, params):
     torch.onnx.register_custom_op_symbolic(
         'aten::avg_pool3d', convert_avg_pool3d, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
+        'aten::clamp', convert_clamp, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
         'aten::cosh', convert_cosh, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::index_add', convert_index_add, onnx_opset_version)
@@ -1873,6 +1882,8 @@ def convert_torch_to_onnx(model_path, params):
         'quantized::relu6', convert_quantized_relu6, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'quantized::sigmoid', convert_quantized_sigmoid, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'quantized::threshold', convert_threshold, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::quantize_per_tensor', convert_quantize_per_tensor, onnx_opset_version)
 
