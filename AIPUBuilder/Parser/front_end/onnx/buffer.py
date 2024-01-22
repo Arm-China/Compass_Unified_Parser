@@ -3,9 +3,10 @@
 
 
 import os
-import numpy as np
 from functools import partial
-import mmap
+import numpy as np
+from onnx.onnx_pb import TensorProto
+
 from ...common.defs import TensorType
 
 
@@ -52,22 +53,20 @@ def onnx_tensor_decoder(pb, data_dir=''):
     ret = None
     data_type = pb.data_type
     assert data_type in ONNX_NP_TENSOR_MAP
+    tensor_shape = np.array([dim for dim in pb.dims], dtype=np.int64)
     data_type_name, np_type = ONNX_NP_TENSOR_MAP[data_type]
     if data_type_name != 'UNDEFINED':
-        if pb.data_location == 1 and len(pb.external_data) > 0:
+        if pb.HasField('data_location') and pb.data_location == 1 and len(pb.external_data) > 0:
             data_file_name = pb.external_data[0].value
             data_file_path = os.path.join(data_dir, data_file_name)
-            if len(pb.external_data) >= 2:
-                offset = int(pb.external_data[1].value)
-            else:
-                offset = 0
-            if len(pb.external_data) >= 3:
-                length = int(pb.external_data[2].value)
-            else:
-                length = int(np.prod(pb.dims)) * np.dtype(np_type).itemsize
             with open(data_file_path, 'rb') as f:
-                m = mmap.mmap(f.fileno(), length, access=mmap.ACCESS_READ, offset=offset)
-                ret = np.frombuffer(m, dtype=np_type)
+                if len(pb.external_data) >= 2:
+                    offset = int(pb.external_data[1].value)
+                else:
+                    offset = 0
+                ret = np.memmap(f, dtype=np_type, mode='r', offset=offset, shape=tuple(tensor_shape.tolist()))
+            pb.data_location = TensorProto.DEFAULT
+            del pb.external_data[:]
         else:
             if len(pb.raw_data) > 0:
                 assert data_type_name not in ['STRING', 'UNDEFINED']
