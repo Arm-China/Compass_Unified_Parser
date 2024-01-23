@@ -46,9 +46,10 @@ def quantize_helper(
 
     assert zero_point is not None
     zp_scalar_type = zero_point.type().scalarType()
-    if zero_point_scalar_type is not None and zp_scalar_type != zero_point_scalar_type:
-        to_i = helper.cast_pytorch_to_onnx[zero_point_scalar_type]
-        zero_point = g.op('Cast', zero_point, to_i=to_i)
+    if zero_point_scalar_type is not None:
+        if zp_scalar_type != zero_point_scalar_type:
+            to_i = helper.cast_pytorch_to_onnx[zero_point_scalar_type]
+            zero_point = g.op('Cast', zero_point, to_i=to_i)
     elif zp_scalar_type not in ('Byte', 'Char'):
         zp_value = helper._maybe_get_const(zero_point, 'i')
         if isinstance(zp_value, int) and zp_value >= -128 and zp_value <= 255:
