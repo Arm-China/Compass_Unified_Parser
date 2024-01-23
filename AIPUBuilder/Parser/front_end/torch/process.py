@@ -19,7 +19,6 @@ from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 from ...common.utils import get_version
 from ...common.defs import FLOAT_EQUAL
 
-
 # global variance
 ONNX_OPSET_VERSION = 9
 CUSTOM_OPSET_18 = 'opset_18::'
@@ -159,7 +158,8 @@ def convert_addcmul(g, input, tensor1, tensor2, value=1.0):
 def convert_addmv(g, input, tensor1, tensor2, beta=1.0, alpha=1.0):
     value_beta = g.op('Constant', value_t=torch.tensor(beta))
     value_alpha = g.op('Constant', value_t=torch.tensor(alpha))
-    return opset9.add(g, opset9.mul(g, input, value_beta), opset9.mul(g, opset9.matmul(g, tensor1, tensor2), value_alpha))
+    return opset9.add(g, opset9.mul(g, input, value_beta),
+                      opset9.mul(g, opset9.matmul(g, tensor1, tensor2), value_alpha))
 
 
 @helper.parse_args('v', 'v', 'v', 'f', 'f')
@@ -676,6 +676,21 @@ def convert_quant_batch_norm3d(g, x, weight, bias, running_mean, running_var, ep
     out, out_scalar_type = convert_qat_bn(g, x, weight, bias,
                                           running_mean, running_var, eps, s, zp)
     return quantize_helper(g, out, s, zp, zero_point_scalar_type=out_scalar_type)
+
+
+def convert_hardsigmoid(g, self):
+    if helper._is_value(self) and helper._is_tuple_construct(self):
+        x, _, x_zp, _ = helper.dequantize_helper(g, self)
+        out_scalar_type = x_zp.type().scalarType()
+        output = g.op('HardSigmoid', x, alpha_f=1 / 6)
+        # Fixed scale zp in torch code: aten/src/ATen/native/quantized/cpu/qhardsigmoid.cpp
+        out_scale = 1.0 / (2 ** 32) if out_scalar_type == 'Int' else 1.0 / (2 ** 8)
+        out_scale_t = g.op('Constant', value_t=torch.tensor(out_scale, dtype=torch.float32))
+        out_zp = -128 if out_scalar_type == 'Char' else 0
+        out_zp_t = g.op('Constant', value_t=torch.tensor(out_zp, dtype=torch.int32))
+        return quantize_helper(g, output, out_scale_t, out_zp_t, zero_point_scalar_type=out_scalar_type)
+    else:
+        return g.op('HardSigmoid', self, alpha_f=1 / 6)
 
 
 @helper.parse_args('v')
@@ -1803,6 +1818,8 @@ def convert_torch_to_onnx(model_path, params):
         'aten::gru_cell', convert_gru_cell, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::hardshrink', convert_hardshrink, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'aten::hardsigmoid', convert_hardsigmoid, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::linalg_norm', convert_linalg_norm, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
