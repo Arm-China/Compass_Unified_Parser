@@ -76,7 +76,7 @@ class ArmAcoshOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
 class ArmActivationOp(LayoutUnawareOp, OpHasMethod, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
-        return {0: ['float32', 'int8', 'uint8', 'int16', 'uint16']}
+        return {0: ['float32', 'int8', 'uint8', 'int16', 'uint16', 'int32']}
 
     @classmethod
     def attributes(cls):
@@ -138,18 +138,18 @@ class ArmActivationOp(LayoutUnawareOp, OpHasMethod, OpHasOneOutPort, ArmOp):
             inp = inputs[0].astype(np.float32) if np.issubdtype(inputs[0].dtype, np.integer) else inputs[0]
             out_tensor = func(inp, self.alpha).numpy().astype(inputs[0].dtype)
         elif self.method == 'CLIP':
-            out_tensor = func(inputs[0], self.clip_min, self.clip_max).numpy()
+            out_tensor = func(inputs[0], self.clip_min, self.clip_max).numpy().astype(inputs[0].dtype)
         elif self.method == 'GELU':
             out_tensor = self.gelu()
         elif self.method == 'HARDSIGMOID':
             out_tensor = func(
-                inputs[0], self.alpha, self.beta, self.clip_min, self.clip_max).numpy()
+                inputs[0], self.alpha, self.beta, self.clip_min, self.clip_max).numpy().astype(inputs[0].dtype)
         elif self.method == 'LEAKYRELU':
-            out_tensor = func(inputs[0], self.alpha).numpy()
+            out_tensor = func(inputs[0], self.alpha).numpy().astype(inputs[0].dtype)
         elif self.method == 'PRELU':
             if not self.quantize:
                 self.negative_slope = self.negative_slope.astype(np.float32)
-            out_tensor = func(inputs[0], self.negative_slope).numpy()
+            out_tensor = func(inputs[0], self.negative_slope).numpy().astype(inputs[0].dtype)
         elif self.method == 'SELU':
             out_tensor = self.selu()
         elif self.method == 'SHRINK':
@@ -163,11 +163,11 @@ class ArmActivationOp(LayoutUnawareOp, OpHasMethod, OpHasOneOutPort, ArmOp):
         elif self.method == 'SILU':
             out_tensor = self.silu()
         elif self.method == 'SWISH':
-            out_tensor = func(inputs[0], self.alpha).numpy().astype(np.float32)
+            out_tensor = func(inputs[0], self.alpha).numpy().astype(inputs[0].dtype)
         elif self.method == 'THRESHOLDEDRELU':
             out_tensor = self.thresholded_relu()
         else:
-            out_tensor = func(inputs[0]).numpy().astype(np.float32)
+            out_tensor = func(inputs[0]).numpy().astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
     def gelu(self):
@@ -182,7 +182,7 @@ class ArmActivationOp(LayoutUnawareOp, OpHasMethod, OpHasOneOutPort, ArmOp):
         tor_arr = torch.from_numpy(inputs[0])
         m = torch.nn.SiLU()
         out_tensor = m(tor_arr)
-        tor2numpy = out_tensor.numpy()
+        tor2numpy = out_tensor.numpy().astype(inputs[0].dtype)
         return tor2numpy
 
     def selu(self):
@@ -191,7 +191,7 @@ class ArmActivationOp(LayoutUnawareOp, OpHasMethod, OpHasOneOutPort, ArmOp):
         mask = out_tensor <= 0
         out_tensor[mask] = self.alpha * (np.exp(out_tensor[mask]) - 1)
         out_tensor = self.gamma * out_tensor
-        out_tensor = out_tensor.astype(np.float32)
+        out_tensor = out_tensor.astype(inputs[0].dtype)
         return out_tensor
 
     def thresholded_relu(self):
