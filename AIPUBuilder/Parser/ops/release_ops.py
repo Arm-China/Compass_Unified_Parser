@@ -135,7 +135,8 @@ class ArmActivationOp(LayoutUnawareOp, OpHasMethod, OpHasOneOutPort, ArmOp):
         func = ArmActivationOp.METHOD[self.method]
         inputs = self.get_input_tensors()
         if self.method == 'CELU':
-            out_tensor = func(inputs[0], self.alpha).numpy()
+            inp = inputs[0].astype(np.float32) if np.issubdtype(inputs[0].dtype, np.integer) else inputs[0]
+            out_tensor = func(inp, self.alpha).numpy().astype(inputs[0].dtype)
         elif self.method == 'CLIP':
             out_tensor = func(inputs[0], self.clip_min, self.clip_max).numpy()
         elif self.method == 'GELU':

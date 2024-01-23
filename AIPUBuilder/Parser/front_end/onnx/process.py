@@ -27,7 +27,7 @@ def process_onnx(model_path, params):
         merge_qconv(graph)
         merge_qmatmul(graph)
         merge_q_multiple(graph, ['Add', 'Concat', 'Gemm', 'Mul'])
-        merge_q_unary(graph, ['AdaptivePool', 'AveragePool', 'Clip', 'Elu', 'Flatten',
+        merge_q_unary(graph, ['AdaptivePool', 'AveragePool', 'Celu', 'Clip', 'Elu', 'Flatten',
                               'GlobalAveragePool', 'GlobalMaxPool',
                               'HardSwish', 'HardSigmoid', 'LeakyRelu', 'LRN', 'MaxPool',
                               'ReduceMean', 'Relu', 'Reshape', 'Slice', 'Sigmoid', 'Transpose',
