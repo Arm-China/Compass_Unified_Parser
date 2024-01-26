@@ -2377,7 +2377,7 @@ def convert_dequantizelinear(graph):
 
         graph.add_edge(scale, dequant, **scale_in_attr)
         mul_attr = dequant_obj.copied_attr()
-        mul_attr.update({'opset_version': 13})
+        mul_attr.update({'opset_version': 13, 'quantize': False})
         NodeWrap(graph, dequant).replace_obj('Mul', mul_attr)
 
         insert_cast(graph, inp, sub, 'float32', inp_in_attr)
@@ -2424,10 +2424,11 @@ def convert_quantizelinear(graph):
         quant_out_edges = graph.sorted_out_edges(quant, data=True)
         scale, _, scale_in_attr = quant_in_edges[1]
         zp, _, zp_in_attr = quant_in_edges[2]
-        if zp_in_attr['tensor'] is None or zp_in_attr['tensor'].value is None:
+        zp_dtype = zp_in_attr['tensor'].get_dtype()
+        if zp_dtype is None:
+            ERROR(
+                '[Parser]: Meets invalid zp dtype of QuantizeLinear Op(%s) in convert_quantizelinear!' % quant)
             continue
-        zp_dtype = zp_in_attr['tensor'].value.dtype
-        zp_value = zp_in_attr['tensor'].value
         if graph._attr.get('quantize', False) \
                 and scale_in_attr['tensor'].is_const \
                 and zp_in_attr['tensor'].is_const:
@@ -2435,9 +2436,14 @@ def convert_quantizelinear(graph):
                 if out_attr['tensor'] is None:
                     out_attr['tensor'] = Tensor()
                 out_attr['tensor'].dtype = str(zp_dtype)
-                out_attr['tensor'].scale_zp = (scale_in_attr['tensor'].value, zp_value)
+                out_attr['tensor'].scale_zp = (scale_in_attr['tensor'].value, zp_in_attr['tensor'].value)
         else:
             inp, _, inp_in_attr = quant_in_edges[0]
+            inp_dtype = inp_in_attr['tensor'].get_dtype()
+            if inp_dtype is None:
+                ERROR(
+                    '[Parser]: Meets invalid input dtype of QuantizeLinear Op(%s) in convert_quantizelinear!' % quant)
+                continue
             graph.remove_edges_from(quant_in_edges)
 
             div = get_valid_node_name(graph, quant + '_div')
@@ -2448,7 +2454,7 @@ def convert_quantizelinear(graph):
             NodeWrap(graph, div).replace_obj(
                 'Div', {'name': div, 'opset_version': 13})
             # Insert cast before quant if input dtype is not float32
-            if inp_in_attr['tensor'].value.dtype != 'float32':
+            if inp_dtype != 'float32':
                 insert_cast(graph, inp, div, 'float32', div_in_attr)
 
             # For (x / y_scale), it's rounding to nearest ties to even
@@ -2490,7 +2496,7 @@ def convert_quantizelinear(graph):
                     out_attr['tensor'].dtype = str(zp_dtype)
                     out_attr['tensor'].scale_zp = [np.array([1.0]).astype(np.float32), np.array([0]).astype(np.int32)]
             post_cast_attr = quant_obj.copied_attr()
-            post_cast_attr.update({'opset_version': 1, 'to': str(zp_dtype)})
+            post_cast_attr.update({'opset_version': 1, 'to': str(zp_dtype), 'quantize': False})
             NodeWrap(graph, quant).replace_obj('Cast', post_cast_attr)
 
 
