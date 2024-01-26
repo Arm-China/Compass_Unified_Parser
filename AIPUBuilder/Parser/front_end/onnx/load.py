@@ -141,8 +141,6 @@ def build_subgraph(params, root_graph_info, opset_ver):
                 pre_op = all_nodes[pre_op_id]
 
                 pre_op_name = pre_op['name'] if pre_op['name'] else pre_op['output'][0]['name']
-                assert root_graph.has_node(
-                    pre_op_name), 'Node does not exist in build_subgraph.'
                 if in_tensor_out_port == 0:
                     in_tensor_out_port = [
                         out_info['name'] for out_info in pre_op['output']].index(in_tensor_name)
@@ -412,7 +410,6 @@ def convert_onnx_to_graph(model_path, params):
                     if not graph.has_node(op_name):
                         graph.add_node(op_name)
                     NodeWrap(graph, op_name).replace_obj(node_type, op_attr)
-
                     for in_port, in_tensor_info in enumerate(node['input']):
                         in_tensor_name, in_tensor_out_port = in_tensor_info[
                             'name'], in_tensor_info['out_port']
