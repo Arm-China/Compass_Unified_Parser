@@ -2440,6 +2440,9 @@ class OnnxReduceOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
                 self.axes = list(range(len(inputs[0].shape)))
             out_tensor = type(self).ufunc()(
                 inputs[0], tuple(self.axes), self.keepdims)
+            if self.type in ('ReduceL1', 'ReduceL2', 'ReduceLogSum', 'ReduceLogSumExp',
+                             'ReduceMean', 'ReduceProd', 'ReduceSum', 'ReduceSumSquare'):
+                out_tensor = out_tensor.astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
 
@@ -2591,6 +2594,8 @@ class TfliteReduceOp(OpHasAxis, OpHasOneOutPort, TfliteOp):
         inputs = self.get_input_tensors()
         out_tensor = type(self).ufunc()(
             inputs[0], axis=tuple(self.axes), keepdims=self.keepdims)
+        if self.type == 'LiteREDUCE_PROD':
+            out_tensor = out_tensor.astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
 
