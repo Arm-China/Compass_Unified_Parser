@@ -429,7 +429,7 @@ class FullyConnectedOp(BaseLinearOp, CommonOp):
             inp = inputs[0]
         out_tensor = (tf.matmul(inp, np.transpose(self.weights, axes=type(self).perm_onnx_to_tf()))
                       + self.biases
-                      ).numpy()
+                      ).numpy().astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
 

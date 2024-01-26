@@ -651,7 +651,7 @@ class GemmOp(OpHasOneOutPort, OnnxOp):
         out_tensor = self.alpha * np.matmul(A, B)
         if len(C.shape) == 1 and C.shape[0] != out_tensor.shape[-1]:
             C = np.reshape(C, (-1, 1))
-        out_tensor = out_tensor + self.beta * C
+        out_tensor = (out_tensor + self.beta * C).astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
 
