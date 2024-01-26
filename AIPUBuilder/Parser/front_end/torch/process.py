@@ -353,6 +353,11 @@ def convert_conv(g, input, weight, bias, stride, padding, dilation, groups):
     return conv
 
 
+def convert_copy(g, x, src, non_blocking):
+    input_shape = g.op('Shape', x)
+    return g.op('Expand', src, input_shape)
+
+
 @helper.parse_args('v')
 @quantized_args(True)
 def convert_cosh(g, x):
@@ -421,6 +426,13 @@ def convert_quantized_add_relu(g, x, y, op_scale, op_zero_point):
     output = opset9.relu(g, output)
 
     return helper.quantize_helper(g, output, op_scale, op_zero_point)
+
+
+def convert_fake_quantize_per_tensor_affine(g, inputs, scale, zero_point, quant_min=-128, quant_max=127):
+    from torch.onnx.symbolic_opset13 import fake_quantize_per_tensor_affine
+    scale = helper._reshape_helper(g, scale, [])
+    zero_point = helper._reshape_helper(g, zero_point, [])
+    return fake_quantize_per_tensor_affine(g, inputs, scale, zero_point, quant_min, quant_max)
 
 
 @helper.parse_args('v', 'i', 'i')
@@ -1785,7 +1797,11 @@ def convert_torch_to_onnx(model_path, params):
     torch.onnx.register_custom_op_symbolic(
         'aten::clamp', convert_clamp, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
+        'aten::copy', convert_copy, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
         'aten::cosh', convert_cosh, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'aten::fake_quantize_per_tensor_affine', convert_fake_quantize_per_tensor_affine, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::index_add', convert_index_add, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
