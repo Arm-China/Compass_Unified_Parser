@@ -630,6 +630,7 @@ def convert_tf_to_graph(model_path, params):
                         'Tf' + node_type, attr_dict)
 
                 for out_name in graph._attr['output_names']:
+                    out_op_names = []
                     for out_port, out_info in enumerate(nodes_dict[out_name].get('output', [])):
                         out_op_name = get_valid_node_name(
                             graph, out_name + '_out_' + str(out_port))
@@ -655,6 +656,11 @@ def convert_tf_to_graph(model_path, params):
                         graph.add_edge(out_name, out_op_name, **edge_attr)
                         NodeWrap(graph, out_op_name).replace_obj(
                             'Out', {'name': out_op_name})
+                        out_op_names.append(out_op_name)
+                        if t_name in params.get('output_tensor_map', {}):
+                            params['output_tensor_map'].update({t_name: [out_op_name]})
+                    if out_name in params.get('output_tensor_map', {}):
+                        params['output_tensor_map'].update({out_name: out_op_names})
 
         except Exception as e:
             WARN('[Parser]: Reading pb/saved_model/h5 file (%s) meets error (%s)!' %

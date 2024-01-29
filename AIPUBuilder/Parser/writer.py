@@ -82,6 +82,24 @@ def serialize(graph, params):
 
         net_attr['output_tensors'] = string_list_to_string(output_tops_names)
 
+        output_tensor_map = params.get('output_tensor_map', {})
+        for output_name_from_cfg, out_node_names in output_tensor_map.items():
+            output_name_from_ir = []
+            for out_node_name in out_node_names:
+                if out_node_name not in graph.nodes:
+                    continue
+                input_info = NodeWrap(graph, out_node_name)['object'].get_inputs_info()
+                if len(input_info) > 0 and len(input_info[0]) > 0:
+                    output_name_from_ir.append(input_info[0][0])
+                else:
+                    ERROR('[Parser]: Meets invalid Out node (%s) in serialize!' % out_node_name)
+            if len(output_name_from_ir) > 0:
+                output_name_str = ', '.join(output_name_from_ir)
+                INFO('[Parser]: Output %s from cfg is shown as tensor %s in IR!' %
+                     (output_name_from_cfg, output_name_str))
+            else:
+                INFO('[Parser]: Output %s from cfg is removed/replaced by other tensors!' % output_name_from_cfg)
+
         writing_node = ''
         try:
             with open(txt_path, 'w') as txt_file:

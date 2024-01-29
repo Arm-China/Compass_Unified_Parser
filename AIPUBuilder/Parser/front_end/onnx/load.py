@@ -584,6 +584,10 @@ def convert_onnx_to_graph(model_path, params):
                                 'src_out_port': out_port, 'dst_in_port': 0, 'tensor': Tensor(name=out_name)}
                             graph.add_edge(
                                 out_node_name, noop_node_name, **out_edge_attr)
+                            if out_name in params.get('output_tensor_map', {}):
+                                params['output_tensor_map'][out_name] = [noop_node_name]
+                            elif out_node_name in params.get('output_tensor_map', {}):
+                                params['output_tensor_map'][out_node_name] = [noop_node_name]
                         else:
                             FATAL(
                                 '[Parser]: Graph does not contain such a node/tensor name:%s' % out_name)
