@@ -659,7 +659,7 @@ def convert_tf_to_graph(model_path, params):
                         out_op_names.append(out_op_name)
                         if t_name in params.get('output_tensor_map', {}):
                             params['output_tensor_map'].update({t_name: [out_op_name]})
-                    if out_name in params.get('output_tensor_map', {}):
+                    if out_name in params.get('output_tensor_map', {}) and len(params['output_tensor_map'][out_name]) == 0:
                         params['output_tensor_map'].update({out_name: out_op_names})
 
         except Exception as e:

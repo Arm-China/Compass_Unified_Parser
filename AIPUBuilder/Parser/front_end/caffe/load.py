@@ -319,6 +319,7 @@ def convert_caffe_to_graph(model_path, params):
             for out_name in graph._attr['output_names']:
                 out_layer = layer_map[out_name]
                 out_edges = graph.sorted_out_edges(out_name)
+                noop_node_names = []
                 for i, top in enumerate(out_layer.get('top', [])):
                     noop_node_name = get_valid_node_name(
                         graph, out_name + '_noop_' + str(i))
@@ -327,6 +328,11 @@ def convert_caffe_to_graph(model_path, params):
                     graph.add_edge(out_name, noop_node_name, **out_edge_attr)
                     NodeWrap(graph, noop_node_name).replace_obj(
                         'Out', {'name': noop_node_name})
+                    noop_node_names.append(noop_node_name)
+                    if top in params.get('output_tensor_map', {}):
+                        params['output_tensor_map'][top] = [noop_node_name]
+                if out_name in params.get('output_tensor_map', {}) and len(params['output_tensor_map'][out_name]) == 0:
+                    params['output_tensor_map'][out_name] = noop_node_names
 
             # set out tensor names
             for out_name in graph._attr['output_tensor_names'][:]:
