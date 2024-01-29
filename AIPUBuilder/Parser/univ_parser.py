@@ -121,12 +121,16 @@ def univ_parser(params):
             WARN(
                 '[Parser]: Meets empty name in input(%s) and it will be ignored!' % str(params['input_names']))
             params['input_names'] = [name for name in params['input_names'] if name]
+        # use input_tensor_map({str:str}) to record input node/tensor name(s) from cfg and input tensor name(s) from IR
+        params['input_tensor_map'] = {input_from_cfg: None for input_from_cfg in params['input_names']}
 
         params['output_names'] = multi_string_to_list(
             params['output_names']) if 'output_names' in params else []
         out_names_dict = OrderedDict(
             {k: i for (i, k) in enumerate(params['output_names'])})
         params['output_names'] = list(out_names_dict.keys())
+        # use output_tensor_map({str:list}) to record output node/tensor name(s) from cfg and output tensors from IR
+        params['output_tensor_map'] = {out_name: [] for out_name in params['output_names']}
         params['input_shapes'] = list_string_to_list(
             params['input_shapes']) if 'input_shapes' in params else []
 

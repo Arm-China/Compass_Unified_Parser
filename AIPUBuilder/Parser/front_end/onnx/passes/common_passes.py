@@ -1401,7 +1401,7 @@ def apply_preprocess_plugin(graph):
             graph, plugin_op_type, plugin.input_nodes, plugin.input_shapes, use_default_output))
 
 
-def record_output_tensors(graph):
+def record_output_tensors(graph, params={}):
     # using Out Op to record the output tensors order
     out_tensors = graph._attr['output_tensor_names']
 
@@ -1420,3 +1420,8 @@ def record_output_tensors(graph):
             except Exception:
                 pass
     graph._attr['output_nodes'] = out_nodes
+    if params.get('model_type', '') == 'torch' and None not in out_nodes:
+        original_outputs = params.get('output_tensor_map', {}).keys()
+        if len(out_nodes) == len(original_outputs):
+            for out_name_from_cfg, node_name in zip(original_outputs, out_nodes):
+                params['output_tensor_map'][out_name_from_cfg] = [node_name]

@@ -11,7 +11,7 @@ from .common import get_model_type
 
 def generate_cfg(model_path, model_type, inputs=None, inputs_shape=None,
                  output_folder_name='output_dir', proto_path=None,
-                 force_float_ir=None, input_dtype=[]):
+                 force_float_ir=None, input_dtype=[], output_names=None):
     '''Return cfg file path.
     '''
     test_name = model_path.split('/')[-1]
@@ -50,6 +50,9 @@ def generate_cfg(model_path, model_type, inputs=None, inputs_shape=None,
             f.write('input = ' + inputs + '\n')
             if inputs_shape is not None:
                 f.write('input_shape = ' + shape_str + '\n')
+        if output_names is not None:
+            output_names_str = ','.join(output_names)
+            f.write('output = ' + output_names_str + '\n')
         if model_type == 'torch' and len(input_dtype) > 0:
             f.write('input_dtype = ' + ','.join(input_dtype) + '\n')
         if model_type == 'caffe':
@@ -58,7 +61,7 @@ def generate_cfg(model_path, model_type, inputs=None, inputs_shape=None,
     return cfg_file
 
 
-def read_caffe_model(model_path, proto_path, save_cfg=False):
+def read_caffe_model(model_path, proto_path, save_cfg=False, output_names=None):
     # Make sure caffe is installed(Try: conda activate caffe)
     import caffe
 
@@ -88,14 +91,15 @@ def read_caffe_model(model_path, proto_path, save_cfg=False):
     model_content += '\nINPUT_SHAPE:' + str(input_shapes)
 
     if save_cfg:
-        cfg_path = generate_cfg(model_path, 'caffe', input_names_str, input_shapes, proto_path=proto_path)
+        cfg_path = generate_cfg(model_path, 'caffe', input_names_str, input_shapes,
+                                proto_path=proto_path, output_names=output_names)
     else:
         cfg_path = None
 
     return model_content, cfg_path
 
 
-def read_keras_model(model_path, save_cfg=False):
+def read_keras_model(model_path, save_cfg=False, output_names=None):
     import tensorflow as tf
     load_options = tf.saved_model.LoadOptions(allow_partial_checkpoint=True)
     model = tf.keras.models.load_model(model_path, compile=False, options=load_options)
@@ -114,14 +118,14 @@ def read_keras_model(model_path, save_cfg=False):
     model_content += '\nINPUT_SHAPE:' + str(inputs_shape)
 
     if save_cfg:
-        cfg_path = generate_cfg(model_path, 'tensorflow', inputs, inputs_shape)
+        cfg_path = generate_cfg(model_path, 'tensorflow', inputs, inputs_shape, output_names=output_names)
     else:
         cfg_path = None
 
     return model_content, cfg_path
 
 
-def read_onnx_model(model_path, save_cfg=False, force_float_ir=None):
+def read_onnx_model(model_path, save_cfg=False, force_float_ir=None, output_names=None):
     import onnx
 
     def get_tensor_info(graph_info):
@@ -154,14 +158,15 @@ def read_onnx_model(model_path, save_cfg=False, force_float_ir=None):
     model_content += '\nOUTPUT_SHAPE:' + str(outputs_shape)
 
     if save_cfg:
-        cfg_path = generate_cfg(model_path, 'onnx', inputs, inputs_shape, force_float_ir=force_float_ir)
+        cfg_path = generate_cfg(model_path, 'onnx', inputs, inputs_shape,
+                                force_float_ir=force_float_ir, output_names=output_names)
     else:
         cfg_path = None
 
     return model_content, cfg_path
 
 
-def read_tf_model(frozen_pb, save_cfg=False, model_type='tensorflow'):
+def read_tf_model(frozen_pb, save_cfg=False, model_type='tensorflow', output_names=None):
     import tensorflow.compat.v1 as tf
     from tensorflow.python.framework import tensor_util
 
@@ -198,14 +203,14 @@ def read_tf_model(frozen_pb, save_cfg=False, model_type='tensorflow'):
     model_content += '\nINPUT_SHAPE:' + str(inputs_shape)
 
     if save_cfg:
-        cfg_path = generate_cfg(frozen_pb, model_type, inputs, inputs_shape)
+        cfg_path = generate_cfg(frozen_pb, model_type, inputs, inputs_shape, output_names=output_names)
     else:
         cfg_path = None
 
     return model_content, cfg_path
 
 
-def read_tflite_model(model_path, save_cfg=False, force_float_ir=None):
+def read_tflite_model(model_path, save_cfg=False, force_float_ir=None, output_names=None):
     import tensorflow as tf
 
     interpreter = tf.lite.Interpreter(model_path)
@@ -230,7 +235,7 @@ def read_tflite_model(model_path, save_cfg=False, force_float_ir=None):
         model_content += '\n' + str(output_detail)
 
     if save_cfg:
-        cfg_path = generate_cfg(model_path, 'tflite', force_float_ir)
+        cfg_path = generate_cfg(model_path, 'tflite', force_float_ir, output_names=output_names)
     else:
         cfg_path = None
 
@@ -239,7 +244,7 @@ def read_tflite_model(model_path, save_cfg=False, force_float_ir=None):
 
 def read_model(model_path, save_cfg=False, model_type=None, proto_path=None,
                input_shapes=OrderedDict(), force_float_ir=None,
-               input_dtype=[]):
+               input_dtype=[], output_names=None):
     ''' Read model and save it to log file.
     Basing on the suffix of model path, decide model type if it's not set.
     Input arg `force_float_ir` only works for onnx and tflite models for now. Defaults to None.
@@ -254,25 +259,26 @@ def read_model(model_path, save_cfg=False, model_type=None, proto_path=None,
     model_content = None
     cfg_path = None
     if model_type == 'caffe':
-        model_content, cfg_path = read_caffe_model(model_path, proto_path, save_cfg)
+        model_content, cfg_path = read_caffe_model(model_path, proto_path, save_cfg, output_names=output_names)
     elif model_type == 'onnx':
-        model_content, cfg_path = read_onnx_model(model_path, save_cfg, force_float_ir)
+        model_content, cfg_path = read_onnx_model(model_path, save_cfg, force_float_ir, output_names=output_names)
     elif model_type in ('tf', 'tensorflow'):
         if model_path.endswith('.pb'):
             model_content, cfg_path = read_tf_model(
-                model_path, save_cfg, model_type)
+                model_path, save_cfg, model_type, output_names=output_names)
         else:
             model_content, cfg_path = read_keras_model(
-                model_path, save_cfg)
+                model_path, save_cfg, output_names=output_names)
     elif model_type == 'tflite':
-        model_content, cfg_path = read_tflite_model(model_path, save_cfg, force_float_ir)
+        model_content, cfg_path = read_tflite_model(model_path, save_cfg, force_float_ir, output_names=output_names)
     elif model_type == 'torch':
         if not input_shapes:
             ERROR('Input names and shapes of torch model must be provided in read_model!')
         input_names = [name for name in input_shapes.keys()]
         input_names_str = ','.join(input_names)
         input_shapes = [shape for shape in input_shapes.values()]
-        cfg_path = generate_cfg(model_path, model_type, input_names_str, input_shapes, input_dtype=input_dtype)
+        cfg_path = generate_cfg(model_path, model_type, input_names_str, input_shapes,
+                                input_dtype=input_dtype, output_names=output_names)
     else:
         # TODO: Support other models
         ERROR('Unsupported model type!')
