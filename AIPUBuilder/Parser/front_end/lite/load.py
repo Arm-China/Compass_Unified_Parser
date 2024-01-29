@@ -342,7 +342,7 @@ def convert_tflite_to_graph(model_path, params):
                             pre_node_name = parsed_tensors_table[pre_op_info['outputs'][0]]['name']
                             src_out_port = pre_op_info['outputs'].index(
                                 in_tensor_id)
-                            edge_tensor = Tensor(shape=in_tensor['data'].shape)
+                            edge_tensor = Tensor(name=in_tensor['name'], shape=in_tensor['data'].shape)
                             edge_tensor.value = in_tensor['data']
                             if 'quant_info' in in_tensor:
                                 if 'Max' in in_tensor['quant_info'] \
@@ -362,11 +362,13 @@ def convert_tflite_to_graph(model_path, params):
                             graph.add_edge(
                                 pre_node_name, node_name, **edge_attr)
                         else:
-                            const_name = parsed_tensors_table[in_tensor_id]['name']
-                            const_tensor_count[const_name] += 1
-                            if const_tensor_count[const_name] > 1:
-                                const_name = const_name + '_' + str(in_tensor_id) + '_' + \
-                                    str(const_tensor_count[const_name] - 1)
+                            in_tensor_name = parsed_tensors_table[in_tensor_id]['name']
+                            const_tensor_count[in_tensor_name] += 1
+                            if const_tensor_count[in_tensor_name] > 1:
+                                const_name = in_tensor_name + '_' + str(in_tensor_id) + '_' + \
+                                    str(const_tensor_count[in_tensor_name] - 1)
+                            else:
+                                const_name = in_tensor_name
                             const_name = get_valid_node_name(graph, const_name)
                             assert not graph.has_node(
                                 const_name), ('The const node(%s) already exist, cannot add node into graph in convert_tflite_to_graph.' % const_name)
@@ -374,7 +376,7 @@ def convert_tflite_to_graph(model_path, params):
 
                             edge_attr = {'src_out_port': 0,
                                          'dst_in_port': in_port,
-                                         'tensor': Tensor(value=const_tensor['data'], is_const=True)
+                                         'tensor': Tensor(name=in_tensor_name, value=const_tensor['data'], is_const=True)
                                          }
                             if 'quant_info' in const_tensor:
                                 if 'Max' in const_tensor['quant_info'] \
@@ -434,16 +436,19 @@ def convert_tflite_to_graph(model_path, params):
                                   output_tensor_id)
                             continue
                         out_tensor = parsed_tensors_table[output_tensor_id]
+                        out_tensor_name = out_tensor['name']
                         out_op_id = out_tensor_operator_map[output_tensor_id]
                         out_op_info = parsed_operators_table[out_op_id]
                         out_node_name = parsed_tensors_table[out_op_info['outputs'][0]]['name']
-                        noop_node_name = parsed_tensors_table[output_tensor_id]['name'] + '_noop_' + str(
+                        noop_node_name = out_tensor_name + '_noop_' + str(
                             output_index)
                         assert graph.has_node(out_node_name) and not graph.has_node(
                             noop_node_name), 'The output node does not exist, cannot add output node into graph in convert_tflite_to_graph.'
                         graph.add_node(noop_node_name)
                         noop_node = NodeWrap(graph, noop_node_name)
                         noop_node.replace_obj('Out', {'name': noop_node_name})
+                        if out_tensor_name in params.get('output_tensor_map', {}):
+                            params['output_tensor_map'][out_tensor_name] = [noop_node_name]
 
                         src_out_port = out_op_info['outputs'].index(
                             output_tensor_id)
@@ -530,6 +535,8 @@ def convert_tflite_to_graph(model_path, params):
                                         name, out_name, **{'src_out_port': p, 'dst_in_port': 0, 'tensor': tensor})
                                     NodeWrap(graph, out_name).replace_obj(
                                         'Out', {'name': out_name})
+                                    if tensor is not None and tensor.name in params.get('output_tensor_map', {}):
+                                        params['output_tensor_map'][tensor.name] = [out_name]
 
                     clear_redundant_nodes(graph)
 
