@@ -113,7 +113,6 @@ def infer(graph, partial=False, chosen_list=None):
         'uint64': 'uint32',
         'int64': 'int32',
         'float64': 'float32',
-        'float16': 'float32',
         'bool': 'uint8'
     }
 
