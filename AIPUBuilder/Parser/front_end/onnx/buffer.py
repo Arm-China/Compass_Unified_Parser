@@ -167,9 +167,6 @@ def get_tensor_content(tensor_proto, data_dir=''):
                 ret.update({'tensor': flat.reshape(tensor_shape)})
             else:
                 ret.update({'tensor': flat})
-        if ret.get('tensor', None) is not None \
-                and ret['tensor'].dtype == 'float16':
-            ret['tensor'] = ret['tensor'].astype(np.float32)
     return ret
 
 
@@ -190,28 +187,51 @@ def get_value_content(value_proto):
     return ret
 
 
-onnx_attr_convert_mapping = [
-    ('UNDEFINED', lambda pb: pb),
-    ('FLOAT', lambda pb: pb.f),
-    ('INT', lambda pb: np.int64(pb.i)),
-    ('STRING', lambda pb: pb.s.decode('utf-8')),
-    ('TENSOR', lambda pb: get_tensor_content(pb.t)),
-    ('GRAPH', lambda pb: get_graph_content(pb.g)),
-    ('FLOATS', lambda pb: list(pb.floats)),
-    ('INTS', lambda pb: list(pb.ints)),
-    ('STRINGS', lambda pb: list(map(lambda string: string.decode('utf-8'), pb.strings))),
-    ('TENSORS', lambda pb: list(map(get_tensor_content, pb.tensors))),
-    ('GRAPHS', lambda pb: list(map(get_graph_content, pb.graphs))),
-    ('SPARSE_TENSOR', lambda pb: pb.sparse_tensor),
-    ('SPARSE_TENSORS', lambda pb: pb.sparse_tensors),
-]
+def get_attribute_content(pb, data_dir=''):
+    if pb.type == 0:
+        # 'UNDEFINED'
+        return pb
+    elif pb.type == 1:
+        # 'FLOAT'
+        return pb.f
+    elif pb.type == 2:
+        # 'INT'
+        return np.int64(pb.i)
+    elif pb.type == 3:
+        # 'STRING'
+        return pb.s.decode('utf-8')
+    elif pb.type == 4:
+        # 'TENSOR'
+        return get_tensor_content(pb.t, data_dir)
+    elif pb.type == 5:
+        # 'GRAPH'
+        return get_graph_content(pb.g, data_dir)
+    elif pb.type == 6:
+        # 'FLOATS'
+        return list(pb.floats)
+    elif pb.type == 7:
+        # 'INTS'
+        return list(pb.ints)
+    elif pb.type == 8:
+        # 'STRINGS'
+        return list(map(lambda string: string.decode('utf-8'), pb.strings))
+    elif pb.type == 9:
+        # 'TENSORS'
+        return list(map(partial(get_tensor_content, data_dir=data_dir), pb.tensors))
+    elif pb.type == 10:
+        # 'GRAPHS'
+        return list(map(partial(get_graph_content, data_dir=data_dir), pb.graphs))
+    elif pb.type == 11:
+        # 'SPARSE_TENSOR'
+        return pb.sparse_tensor
+    elif pb.type == 12:
+        # 'SPARSE_TENSORS'
+        return pb.sparse_tensors
+    else:
+        return pb
 
 
-def get_attribute_content(attribute_proto):
-    return onnx_attr_convert_mapping[attribute_proto.type][1](attribute_proto)
-
-
-def get_node_content(node_proto):
+def get_node_content(node_proto, data_dir=''):
     name_info = parse_proto_name(node_proto.name)
 
     output = []
@@ -227,7 +247,7 @@ def get_node_content(node_proto):
            'domain': node_proto.domain,
            }
     ret.update(name_info)
-    ret.update({attr.name: get_attribute_content(attr)
+    ret.update({attr.name: get_attribute_content(attr, data_dir)
                 for attr in node_proto.attribute})
     return ret
 
@@ -237,7 +257,7 @@ def get_graph_content(graph_proto, data_dir=''):
     const_names = list(parse_proto(graph_proto.initializer, get_tensor_name))
     inputs = list(parse_proto(graph_proto.input, get_value_content))
     outputs = list(parse_proto(graph_proto.output, get_value_content))
-    nodes = list(parse_proto(graph_proto.node, get_node_content))
+    nodes = list(parse_proto(graph_proto.node, partial(get_node_content, data_dir=data_dir)))
 
     output_index = {out.get('name', ''): i for i, out in enumerate(outputs)}
     for node in nodes:
