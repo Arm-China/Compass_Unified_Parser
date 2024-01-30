@@ -20,7 +20,7 @@ from ....ops.onnx_ops.nn_ops import DeformConvOp
 from .common_passes import fuse_const, remove_useless_op, remove_node_safely, insert_reshape, insert_reshape_after, \
     insert_cast, insert_constant, insert_slice, insert_slice_after, insert_tile, insert_transpose, insert_transpose_after, \
     remove_redundant_reshape, remove_redundant_transpose, insert_cast_sub_mul_for_quant, insert_mul_add_cast_after_for_dequant, \
-    insert_repeat
+    insert_repeat, convert_to_const
 
 
 def clear_useless_concat_input(graph):
@@ -2151,24 +2151,6 @@ def convert_center_crop_pad(graph):
         NodeWrap(graph, crop_pad).replace_obj('Pad', pad_attr)
     if matched:
         clear_redundant_nodes(graph)
-
-
-def convert_to_const(graph, op_type_name_list):
-    if len(graph) and op_type_name_list:
-        for node_name in graph.nodes:
-            node = NodeWrap(graph, node_name)
-            node_obj = node['object']
-            if isinstance(node_obj, OpHasOneOutPort) and node_obj.type in op_type_name_list:
-                out_tensors = node_obj.get_output_tensors()
-                if len(out_tensors) >= 1 and out_tensors[0] is not None and node_obj.is_all_outputs_const():
-                    new_attr = node_obj.copied_attr()
-                    new_attr.update({'value': out_tensors[0].copy()})
-                    node.replace_obj('Constant', new_attr)
-                    const_in_edges = graph.sorted_in_edges(node_name)
-                    graph.remove_edges_from(const_in_edges)
-        clear_redundant_nodes(graph)
-    else:
-        ERROR('[Parser]: Invalid params for convert_to_const!')
 
 
 def convert_min_max_to_clip(graph):
