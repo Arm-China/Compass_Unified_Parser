@@ -81,7 +81,7 @@ def process_tflite(model_path, params):
             # need after fuse_const
             remove_useless_op(graph, ['LiteDEQUANTIZE'])
 
-        from ..onnx.passes.middle_passes import convert_to_const
+        from ..onnx.passes.common_passes import convert_to_const
         convert_to_const(graph, ['LiteSHAPE', 'LiteZEROS_LIKE'])
 
         convert_strided_slice(graph, 'LiteSTRIDED_SLICE')

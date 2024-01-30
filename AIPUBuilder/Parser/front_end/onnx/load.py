@@ -2,11 +2,11 @@
 # Copyright © 2022-2023 Arm Technology (China) Co. Ltd.
 
 import os
-import onnx
-import numpy as np
 import copy
 from collections import defaultdict, OrderedDict
 import itertools
+import numpy as np
+import onnx
 from ...graph.graph import Graph, SubGraph
 from .buffer import get_model_content, parse_proto, get_tensor_content, get_value_content, get_node_content, get_graph_content
 from ...graph.node_wrap import NodeWrap

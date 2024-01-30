@@ -46,7 +46,7 @@ def process_tf(model_path, params):
         infer(graph)
         fuse_const(graph)
 
-        from ..onnx.passes.middle_passes import convert_to_const
+        from ..onnx.passes.common_passes import convert_to_const
         from ..tf2.passes.front_passes import convert_squeeze
         convert_to_const(
             graph, ['TfPlaceholderWithDefault', 'TfShape', 'TfSize', 'TfZerosLike', 'TfRandomUniform'])
