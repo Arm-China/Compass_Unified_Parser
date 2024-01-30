@@ -80,7 +80,7 @@ def adjust_5d_to_4d(graph):
                                    in_shape_idx[-1]]
                     src, _, in_attr = in_edge
                     insert_reshape(graph, src, node_name, in_attr,
-                                   pre_dim, type='ArmReshape')
+                                   pre_dim, type='ArmReshape', quantize=node_obj.quantize)
 
                 if node_obj.type in ('ArmMatMul', 'ArmDiv'):
                     old_dim = [output_shapes[0][0],
@@ -89,7 +89,7 @@ def adjust_5d_to_4d(graph):
                                output_shapes[0][-1]]
                 post_dim = copy.deepcopy(output_shapes[0])
                 post_reshape = insert_reshape_after(
-                    graph, node_name, post_dim, old_dim, type='ArmReshape')
+                    graph, node_name, post_dim, old_dim, type='ArmReshape', quantize=node_obj.quantize)
 
                 if node_name in graph._attr['output_names']:
                     index = graph._attr['output_names'].index(node_name)
