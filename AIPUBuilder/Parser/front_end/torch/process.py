@@ -2056,8 +2056,9 @@ def convert_torch_to_onnx(model_path, params):
             # Fix hangs issue by set_num_threads if multiprocessing is used.
             # Refer to https://github.com/pytorch/pytorch/issues/36191
             torch.set_num_threads(1)
-            # # Uncomment the following line to debug this code and torch.onnx.export:
+            # Uncomment the following line to debug this code and torch.onnx.export:
             # _export_to_onnx(model, input_tensors, onnx_model_path, input_names, output_names, onnx_opset_version)
+            # exit_code = 0
             process = Process(target=_export_to_onnx, args=(model,
                                                             input_tensors,
                                                             onnx_model_path,

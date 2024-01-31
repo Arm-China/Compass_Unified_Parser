@@ -1069,7 +1069,7 @@ class ShapeOp(OpHasOneOutPort, ConstLikeOp, OnnxOp):
                 if need_slicing:
                     shape = shape[true_start: true_end] if (
                         true_end - true_start) >= 0 else []
-            out_tensor = np.array(shape, np.int32)
+            out_tensor = np.array(shape, np.int64)
         else:
             out_tensor = None
         self.set_out_tensor(out_tensor)

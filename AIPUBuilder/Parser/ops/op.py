@@ -542,6 +542,35 @@ class Op(abc.ABC):
                   (self.name, str(e)))
             return []
 
+    def get_input_dtypes(self):
+        try:
+            ret = []
+            for _, _, _, d in self._graph.sorted_in_edges(self.name, keys=True, data=True):
+                try:
+                    ret.append(d['tensor'].get_dtype())
+                except:
+                    ret.append(None)
+            return ret
+        except Exception as e:
+            ERROR('[Parser]: Node(%s) get_input_dtypes meets error: %s' %
+                  (self.name, str(e)))
+            return []
+
+    def get_output_dtypes(self):
+        '''Returns the shape of all outputs to this op.'''
+        try:
+            ret = []
+            for _, _, _, d in self._graph.sorted_out_edges(self.name, keys=True, data=True):
+                try:
+                    ret.append(d['tensor'].get_dtype())
+                except:
+                    ret.append(None)
+            return ret
+        except Exception as e:
+            ERROR('[Parser]: Node(%s) get_output_dtypes meets error:%s' %
+                  (self.name, str(e)))
+            return []
+
     def sorted_in_consts(self):
         '''Sort the contents of the constant node in the order of name, attr, and value.'''
         ret = []
