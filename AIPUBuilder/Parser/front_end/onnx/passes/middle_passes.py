@@ -1063,13 +1063,17 @@ def convert_einsum(graph):
                                                     'axes': axes})
                             NodeWrap(graph, reduce_sum).replace_obj('ReduceSum', reduce_sum_attr)
 
-                            graph.remove_edge(einsum, out_edges[0][1])
+                            for src, dst, out_attr in out_edges:
+                                graph.remove_edge(src, dst)
+                                new_out_attr = copy.deepcopy(out_attr)
+                                new_out_attr['src_out_port'] = 0
+                                graph.add_edge(reduce_sum, dst, **new_out_attr)
 
                             in_shapes = einsum_obj.get_input_shapes()
                             graph.add_edge(einsum, reduce_sum, **{'src_out_port': 0, 'dst_in_port': 0,
                                                                   'tensor': Tensor(
                                                                       shape=in_shapes[0][:-1] + [in_shapes[1][-1]])})
-                            graph.add_edge(reduce_sum, out_edges[0][1], **copy.deepcopy(out_edges[0][-1]))
+
                             if einsum in graph._attr['output_names']:
                                 index = graph._attr['output_names'].index(einsum)
                                 graph._attr['output_names'][index] = reduce_sum
@@ -1128,33 +1132,25 @@ def convert_einsum(graph):
                         add_list[1][-2:] == out_term[-2:]:
                     # ...d, hd -> ...hd
                     in_shapes = einsum_obj.get_input_shapes()
-                    out_edges = graph.sorted_out_edges(einsum, data=True)
                     inp_0_shape = in_shapes[0]
                     inp_1_shape = in_shapes[1]
                     h, d = inp_1_shape
                     x = int(np.prod(inp_0_shape[:-1]))
                     reshape0_shape = [x, 1, d]
-                    graph.remove_edge(in_edges[0][0], einsum)
-                    reshape0 = insert_reshape_after(graph, in_edges[0][0], reshape0_shape)
                     reshape1_shape = [1, h, d]
-                    graph.remove_edge(in_edges[1][0], einsum)
-                    reshape1 = insert_reshape_after(graph, in_edges[1][0], reshape1_shape)
+                    insert_reshape(graph, in_edges[0][0], einsum, in_edges[0][-1], reshape0_shape,
+                                   quantize=einsum_obj.quantize)
+                    insert_reshape(graph, in_edges[1][0], einsum, in_edges[1][-1], reshape1_shape,
+                                   quantize=einsum_obj.quantize)
 
                     mul_attr = einsum_obj.copied_attr()
                     mul_attr.update({'opset_version': 13})
                     NodeWrap(graph, einsum).replace_obj(
                         'Mul', mul_attr)
-                    graph.add_edge(reshape0, einsum, **{'src_out_port': 0, 'dst_in_port': 0,
-                                                        'tensor': Tensor(shape=reshape0_shape)})
-                    graph.add_edge(reshape1, einsum, **{'src_out_port': 0, 'dst_in_port': 1,
-                                                        'tensor': Tensor(shape=reshape1_shape)})
 
-                    graph.remove_edge(einsum, out_edges[0][1])
                     reshape2_shape = inp_0_shape[:-1] + [h, d]
-                    reshape2 = insert_reshape_after(graph, einsum, reshape2_shape)
+                    reshape2 = insert_reshape_after(graph, einsum, reshape2_shape, quantize=einsum_obj.quantize)
 
-                    graph.add_edge(reshape2, out_edges[0][1], **{'src_out_port': 0, 'dst_in_port': 0,
-                                                                 'tensor': Tensor(shape=reshape2_shape)})
                     if einsum in graph._attr['output_names']:
                         index = graph._attr['output_names'].index(einsum)
                         graph._attr['output_names'][index] = reshape2
