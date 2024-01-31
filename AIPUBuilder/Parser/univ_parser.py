@@ -255,7 +255,7 @@ def univ_parser(params):
                 from .front_end.onnx.passes.common_passes import remove_useless_op
                 from .graph.graph_algo import infer, has_path
                 from .graph.pattern_match import single_node_matcher
-                from .writer import serialize
+                from .writer import serialize, show_in_out_map
                 from .preprocess import gamut_preprocess, preprocess
                 from .misc import special_character_conversion
 
@@ -338,6 +338,7 @@ def univ_parser(params):
                     assign_top_range_scale_zp(graph)
                     trim_weights(graph)
                     ret, txt_path, bin_path = serialize(graph, params)
+                    ret = show_in_out_map(graph, params) and ret
                 except Exception as e:
                     ERROR('[Parser]: Meets exception in serialize (%s)!' % str(e))
 

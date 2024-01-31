@@ -82,24 +82,6 @@ def serialize(graph, params):
 
         net_attr['output_tensors'] = string_list_to_string(output_tops_names)
 
-        output_tensor_map = params.get('output_tensor_map', {})
-        for output_name_from_cfg, out_node_names in output_tensor_map.items():
-            output_name_from_ir = []
-            for out_node_name in out_node_names:
-                if out_node_name not in graph.nodes:
-                    continue
-                input_info = NodeWrap(graph, out_node_name)['object'].get_inputs_info()
-                if len(input_info) > 0 and len(input_info[0]) > 0:
-                    output_name_from_ir.append(input_info[0][0])
-                else:
-                    ERROR('[Parser]: Meets invalid Out node (%s) in serialize!' % out_node_name)
-            if len(output_name_from_ir) > 0:
-                output_name_str = ', '.join(output_name_from_ir)
-                INFO('[Parser]: Output %s from cfg is shown as tensor %s in IR!' %
-                     (output_name_from_cfg, output_name_str))
-            else:
-                INFO('[Parser]: Output %s from cfg is removed/replaced by other tensors!' % output_name_from_cfg)
-
         writing_node = ''
         try:
             with open(txt_path, 'w') as txt_file:
@@ -180,3 +162,45 @@ def serialize(graph, params):
         ERROR('[Parser]: Meets invalid output dir in serialize!')
         ret = False
     return ret, txt_path, bin_path
+
+
+def show_in_out_map(graph, params):
+    '''Show the mapping of inputs from cfg and input tensors from IR, and also
+    the mappings of outputs from cfg and output tensors from IR.
+    '''
+    ret = True
+    input_tensor_map = params.get('input_tensor_map', {})
+    for input_name_from_cfg, input_node_name in input_tensor_map.items():
+        if input_node_name is None:
+            input_node_name = input_name_from_cfg
+        if input_node_name not in graph.nodes:
+            INFO('[Parser]: Input %s from cfg is removed!' % input_name_from_cfg)
+            continue
+        output_info = NodeWrap(graph, input_node_name)['object'].get_outputs_info()
+        if len(output_info) > 0 and len(output_info[0]) > 0:
+            input_tensor_name = output_info[0][0]
+            INFO('[Parser]: Input %s from cfg is shown as tensor %s in IR!' %
+                 (input_name_from_cfg, input_tensor_name))
+        else:
+            ERROR('[Parser]: Meets invalid input node (%s) in serialize!' % input_node_name)
+            ret = False
+
+    output_tensor_map = params.get('output_tensor_map', {})
+    for output_name_from_cfg, out_node_names in output_tensor_map.items():
+        output_name_from_ir = []
+        for out_node_name in out_node_names:
+            if out_node_name not in graph.nodes:
+                continue
+            input_info = NodeWrap(graph, out_node_name)['object'].get_inputs_info()
+            if len(input_info) > 0 and len(input_info[0]) > 0:
+                output_name_from_ir.append(input_info[0][0])
+            else:
+                ERROR('[Parser]: Meets invalid Out node (%s) in serialize!' % out_node_name)
+                ret = False
+        if len(output_name_from_ir) > 0:
+            output_name_str = ', '.join(output_name_from_ir)
+            INFO('[Parser]: Output %s from cfg is shown as tensor %s in IR!' %
+                 (output_name_from_cfg, output_name_str))
+        else:
+            INFO('[Parser]: Output %s from cfg is removed/replaced by other tensors!' % output_name_from_cfg)
+    return ret

@@ -1980,6 +1980,8 @@ def convert_torch_to_onnx(model_path, params):
             new_input_name = 'input_' + input_name
             WARN('[Parser]: Input name %s is invalid; rename it to %s!' %
                  (input_name, new_input_name))
+            if input_name in params.get('input_tensor_map', {}):
+                params['input_tensor_map'][input_name] = new_input_name
             params['input_shapes'].pop(input_name)
             params['input_shapes'][new_input_name] = input_shape
             input_name = new_input_name
