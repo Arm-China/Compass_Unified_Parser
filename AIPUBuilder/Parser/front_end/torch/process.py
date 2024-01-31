@@ -234,12 +234,18 @@ def convert_bitwise_and(g, input, other):
 
 @helper.parse_args('v')
 def convert_bitwise_not(g, input):
-    return g.op(CUSTOM_OPSET_18 + 'BitwiseNot', input)
+    if helper._is_bool(input):
+        return g.op('Not', input)
+    else:
+        return g.op(CUSTOM_OPSET_18 + 'BitwiseNot', input)
 
 
 @helper.parse_args('v', 'v')
 def convert_bitwise_or(g, input, other):
-    return g.op(CUSTOM_OPSET_18 + 'BitwiseOr', input, other)
+    if helper._is_bool(input) and helper._is_bool(other):
+        return g.op('Or', input, other)
+    else:
+        return g.op(CUSTOM_OPSET_18 + 'BitwiseOr', input, other)
 
 
 @helper.parse_args('v', 'v')
