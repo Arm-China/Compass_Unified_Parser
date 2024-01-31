@@ -980,70 +980,184 @@ def convert_einsum(graph):
                     continue
                 out_term = equ_list[1]
                 if len(add_list[1]) >= 2 and len(add_list[0]) >= 2 \
-                        and len(add_list[0]) == len(set(add_list[0])) \
-                        and len(add_list[1]) == len(set(add_list[1])):
-                    if add_list[0][-1] == add_list[1][-1] \
-                            and add_list[0][-2] != add_list[1][-2] \
-                            and out_term[-2:] == add_list[0][-2] + add_list[1][-2]:  # ...ij,...kj -> ...ik
-                        ein_src1, _, ein_in_attr = in_edges[1]
-                        erc_src1_dim = len(add_list[1])
-                        perm = list(range(erc_src1_dim - 2)) + [(erc_src1_dim - 1), (erc_src1_dim - 2)]
-                        insert_transpose(graph, ein_src1, einsum, ein_in_attr, perm, quantize=einsum_obj.quantize)
+                        and out_term[-2] in add_list[0][-2:] and out_term[-1] in add_list[1][-2:]:
+                    ele_0 = add_list[0][-2] if add_list[0][-1] == out_term[-2] else add_list[0][-1]
+                    ele_1 = add_list[1][-2] if add_list[1][-1] == out_term[-1] else add_list[1][-1]
+                    if ele_0 == ele_1:  # convert to MatMul
+                        trans_a = 0 if out_term[-2] == add_list[0][-2] else 1
+                        trans_b = 0 if out_term[-1] == add_list[1][-1] else 1
+                        in_shapes = einsum_obj.get_input_shapes()
+
+                        if len(in_shapes[0]) != len(in_shapes[1]):
+                            # insert reshape & tile
+                            if len(in_shapes[0]) > len(in_shapes[1]):
+                                reshape_shape = [1] * (len(in_shapes[0]) - 2) + in_shapes[1][-2:]
+                                tile_reps = [1] * len(in_shapes[0])
+                                for i, s0 in enumerate(in_shapes[0][:-2]):
+                                    for j, s1 in enumerate(in_shapes[1][:-2]):
+                                        if s0 != s1:
+                                            continue
+                                        if i == j:
+                                            reshape_shape[i] = s1
+                                reshape0 = insert_reshape(graph, in_edges[1][0], einsum, in_edges[1][-1], reshape_shape,
+                                                          quantize=einsum_obj.quantize)
+
+                                for i, s in enumerate(in_shapes[0][:-2]):
+                                    if s != reshape_shape[i]:
+                                        tile_reps[i] = s
+                                _, _, reshape0_out_attr = graph.sorted_out_edges(reshape0, data=True)[0]
+                                insert_tile(graph, reshape0, einsum, reshape0_out_attr, tile_reps,
+                                            quantize=einsum_obj.quantize)
+                            else:
+                                reshape_shape = [1] * (len(in_shapes[1]) - 2) + in_shapes[0][-2:]
+                                tile_reps = [1] * len(in_shapes[1])
+                                for i, s1 in enumerate(in_shapes[1][:-2]):
+                                    for j, s0 in enumerate(in_shapes[0][:-2]):
+                                        if s0 != s1:
+                                            continue
+                                        if i == j:
+                                            reshape_shape[i] = s0
+                                reshape0 = insert_reshape(graph, in_edges[0][0], einsum, in_edges[0][-1], reshape_shape,
+                                                          quantize=einsum_obj.quantize)
+                                for i, s in enumerate(in_shapes[1][:-2]):
+                                    if s != reshape_shape[i]:
+                                        tile_reps[i] = s
+                                _, _, reshape0_out_attr = graph.sorted_out_edges(reshape0, data=True)[0]
+                                insert_tile(graph, reshape0, einsum, reshape0_out_attr, tile_reps,
+                                            quantize=einsum_obj.quantize)
+
+                        in_edges = graph.sorted_in_edges(einsum, data=True)
+
+                        if trans_a == 1:
+                            ein_src0, _, ein_in_attr0 = in_edges[0]
+                            erc_src0_dim = len(in_shapes[0])
+                            perm = list(range(erc_src0_dim - 2)) + [(erc_src0_dim - 1), (erc_src0_dim - 2)]
+                            insert_transpose(graph, ein_src0, einsum, ein_in_attr0, perm,
+                                             quantize=einsum_obj.quantize)
+                        if trans_b == 1:
+                            ein_src1, _, ein_in_attr1 = in_edges[1]
+                            erc_src1_dim = len(in_shapes[1])
+                            perm = list(range(erc_src1_dim - 2)) + [(erc_src1_dim - 1), (erc_src1_dim - 2)]
+                            insert_transpose(graph, ein_src1, einsum, ein_in_attr1, perm,
+                                             quantize=einsum_obj.quantize)
+
                         matmul_attr = einsum_obj.copied_attr()
                         matmul_attr.update({'opset_version': 13})
                         NodeWrap(graph, einsum).replace_obj(
                             'MatMul', matmul_attr)
-                    elif add_list[0][-1] == add_list[1][-2] \
-                            and out_term[-2:] == add_list[0][-2] + add_list[1][-1]:  # ...ij,...jq -> ...iq
-                        matmul_attr = einsum_obj.copied_attr()
-                        matmul_attr.update({'opset_version': 13})
-                        NodeWrap(graph, einsum).replace_obj(
-                            'MatMul', matmul_attr)
-                    elif len(add_list[0]) == len(add_list[1]) \
-                            and len(add_list[0]) == len(out_term):  # abcd, aecd -> acbe(sum out d), or aebd(sum out c.)...
-                        src0_sum_out_dim = list(set(add_list[0]).difference(out_term))
-                        src1_sum_out_dim = list(set(add_list[1]).difference(out_term))
-                        # make sure only 1 summing out dim
-                        if len(src0_sum_out_dim) != 1 or len(src1_sum_out_dim) != 1 \
-                                or src0_sum_out_dim[0] != src1_sum_out_dim[0]:
-                            _warn_unsupported(einsum, equation)
-                            continue
-                        sum_out_dim = src0_sum_out_dim[0]
-                        src0_dim_not_in_src1 = list(set(add_list[0]).difference(add_list[1]))
-                        src1_dim_not_in_src0 = list(set(add_list[1]).difference(add_list[0]))
-                        if len(src0_dim_not_in_src1) != 1 or len(src1_dim_not_in_src0) != 1:
-                            _warn_unsupported(einsum, equation)
-                            continue
-                        src0_dim_not_in_src1 = src0_dim_not_in_src1[0]
-                        src1_dim_not_in_src0 = src1_dim_not_in_src0[0]
-                        ein_src0, _, ein0_in_attr = in_edges[0]
-                        ein_src1, _, ein1_in_attr = in_edges[1]
-                        # if out_perm is acbe, then src0(abcd) should convert to acbd
-                        src0_target_shape = add_list[0].replace(sum_out_dim, '').replace(
-                            src0_dim_not_in_src1, '') + src0_dim_not_in_src1 + sum_out_dim
-                        if src0_target_shape != add_list[0]:
-                            src0_perm = [add_list[0].index(shape) for shape in src0_target_shape]
-                            insert_transpose(graph, ein_src0, einsum, ein0_in_attr,
-                                             src0_perm, quantize=einsum_obj.quantize)
-                        # if out_perm is acbe, then src1(aecd) should convert to acde
-                        src1_target_shape = src0_target_shape[:-2] + sum_out_dim + src1_dim_not_in_src0
-                        if src1_target_shape != add_list[1]:
-                            src1_perm = [add_list[1].index(shape) for shape in src1_target_shape]
-                            insert_transpose(graph, ein_src1, einsum, ein1_in_attr,
-                                             src1_perm, quantize=einsum_obj.quantize)
-                        # for inputs abcd and aecd, after transpose, they become acbd and acde, then matmul out shape is acbe
-                        matmul_out_shape = src0_target_shape[:-1] + src1_dim_not_in_src0
-                        if matmul_out_shape != out_term:
-                            out_perm = [matmul_out_shape.index(shape) for shape in out_term]
-                            post_trans = insert_transpose_after(graph, einsum, out_perm, quantize=einsum_obj.quantize)
+
+                        if add_list[0][:-2] == add_list[1][:-2] and add_list[0][:-2] != '...' and \
+                                add_list[0][:-2] != out_term[:-2]:
+                            # need reduce sum
+                            axes = []
+                            origin_list = add_list[0][:-2]
+                            dst_list = out_term[:-2]
+                            for axis, v in enumerate(origin_list):
+                                if v not in dst_list:
+                                    axes.append(axis)
+                            out_edges = graph.sorted_out_edges(einsum, data=True)
+                            reduce_sum = get_valid_node_name(graph, f'{einsum}_ReduceSum')
+                            graph.add_node(reduce_sum)
+                            reduce_sum_attr = einsum_obj.copied_attr()
+                            reduce_sum_attr.update({'name': reduce_sum, 'opset_version': 11, 'keepdims': 0,
+                                                    'axes': axes})
+                            NodeWrap(graph, reduce_sum).replace_obj('ReduceSum', reduce_sum_attr)
+
+                            graph.remove_edge(einsum, out_edges[0][1])
+
+                            in_shapes = einsum_obj.get_input_shapes()
+                            graph.add_edge(einsum, reduce_sum, **{'src_out_port': 0, 'dst_in_port': 0,
+                                                                  'tensor': Tensor(
+                                                                      shape=in_shapes[0][:-1] + [in_shapes[1][-1]])})
+                            graph.add_edge(reduce_sum, out_edges[0][1], **copy.deepcopy(out_edges[0][-1]))
                             if einsum in graph._attr['output_names']:
                                 index = graph._attr['output_names'].index(einsum)
-                                graph._attr['output_names'][index] = post_trans
-                        matmul_attr = einsum_obj.copied_attr()
-                        matmul_attr.update({'opset_version': 13})
-                        NodeWrap(graph, einsum).replace_obj('MatMul', matmul_attr)
+                                graph._attr['output_names'][index] = reduce_sum
                     else:
                         _warn_unsupported(einsum, equation)
+                elif len(add_list[1]) >= 2 and len(add_list[0]) >= 2 \
+                        and len(add_list[0]) == len(add_list[1]) \
+                        and len(set(add_list[0])) == len(set(add_list[1])) \
+                        and len(add_list[0]) == len(out_term):  # abcd, aecd -> acbe(sum out d), or aebd(sum out c.)...
+                    src0_sum_out_dim = list(set(add_list[0]).difference(out_term))
+                    src1_sum_out_dim = list(set(add_list[1]).difference(out_term))
+                    # make sure only 1 summing out dim
+                    if len(src0_sum_out_dim) != 1 or len(src1_sum_out_dim) != 1 \
+                            or src0_sum_out_dim[0] != src1_sum_out_dim[0]:
+                        _warn_unsupported(einsum, equation)
+                        continue
+                    sum_out_dim = src0_sum_out_dim[0]
+                    src0_dim_not_in_src1 = list(set(add_list[0]).difference(add_list[1]))
+                    src1_dim_not_in_src0 = list(set(add_list[1]).difference(add_list[0]))
+                    if len(src0_dim_not_in_src1) != 1 or len(src1_dim_not_in_src0) != 1:
+                        _warn_unsupported(einsum, equation)
+                        continue
+                    src0_dim_not_in_src1 = src0_dim_not_in_src1[0]
+                    src1_dim_not_in_src0 = src1_dim_not_in_src0[0]
+                    ein_src0, _, ein0_in_attr = in_edges[0]
+                    ein_src1, _, ein1_in_attr = in_edges[1]
+                    # if out_perm is acbe, then src0(abcd) should convert to acbd
+                    src0_target_shape = add_list[0].replace(sum_out_dim, '').replace(
+                        src0_dim_not_in_src1, '') + src0_dim_not_in_src1 + sum_out_dim
+                    if src0_target_shape != add_list[0]:
+                        src0_perm = [add_list[0].index(shape) for shape in src0_target_shape]
+                        insert_transpose(graph, ein_src0, einsum, ein0_in_attr,
+                                         src0_perm, quantize=einsum_obj.quantize)
+                    # if out_perm is acbe, then src1(aecd) should convert to acde
+                    src1_target_shape = src0_target_shape[:-2] + sum_out_dim + src1_dim_not_in_src0
+                    if src1_target_shape != add_list[1]:
+                        src1_perm = [add_list[1].index(shape) for shape in src1_target_shape]
+                        insert_transpose(graph, ein_src1, einsum, ein1_in_attr,
+                                         src1_perm, quantize=einsum_obj.quantize)
+                    # for inputs abcd and aecd, after transpose, they become acbd and acde, then matmul out shape is acbe
+                    matmul_out_shape = src0_target_shape[:-1] + src1_dim_not_in_src0
+                    if matmul_out_shape != out_term:
+                        out_perm = [matmul_out_shape.index(shape) for shape in out_term]
+                        post_trans = insert_transpose_after(graph, einsum, out_perm, quantize=einsum_obj.quantize)
+                        if einsum in graph._attr['output_names']:
+                            index = graph._attr['output_names'].index(einsum)
+                            graph._attr['output_names'][index] = post_trans
+                    matmul_attr = einsum_obj.copied_attr()
+                    matmul_attr.update({'opset_version': 13})
+                    NodeWrap(graph, einsum).replace_obj('MatMul', matmul_attr)
+                elif len(add_list[0]) == 4 and \
+                        add_list[0][:3] == '...' and \
+                        len(add_list[1]) == 2 and \
+                        len(out_term) == 5 and \
+                        add_list[0][-1] == add_list[1][-1] and \
+                        add_list[1][-2:] == out_term[-2:]:
+                    # ...d, hd -> ...hd
+                    in_shapes = einsum_obj.get_input_shapes()
+                    out_edges = graph.sorted_out_edges(einsum, data=True)
+                    inp_0_shape = in_shapes[0]
+                    inp_1_shape = in_shapes[1]
+                    h, d = inp_1_shape
+                    x = int(np.prod(inp_0_shape[:-1]))
+                    reshape0_shape = [x, 1, d]
+                    graph.remove_edge(in_edges[0][0], einsum)
+                    reshape0 = insert_reshape_after(graph, in_edges[0][0], reshape0_shape)
+                    reshape1_shape = [1, h, d]
+                    graph.remove_edge(in_edges[1][0], einsum)
+                    reshape1 = insert_reshape_after(graph, in_edges[1][0], reshape1_shape)
+
+                    mul_attr = einsum_obj.copied_attr()
+                    mul_attr.update({'opset_version': 13})
+                    NodeWrap(graph, einsum).replace_obj(
+                        'Mul', mul_attr)
+                    graph.add_edge(reshape0, einsum, **{'src_out_port': 0, 'dst_in_port': 0,
+                                                        'tensor': Tensor(shape=reshape0_shape)})
+                    graph.add_edge(reshape1, einsum, **{'src_out_port': 0, 'dst_in_port': 1,
+                                                        'tensor': Tensor(shape=reshape1_shape)})
+
+                    graph.remove_edge(einsum, out_edges[0][1])
+                    reshape2_shape = inp_0_shape[:-1] + [h, d]
+                    reshape2 = insert_reshape_after(graph, einsum, reshape2_shape)
+
+                    graph.add_edge(reshape2, out_edges[0][1], **{'src_out_port': 0, 'dst_in_port': 0,
+                                                                 'tensor': Tensor(shape=reshape2_shape)})
+                    if einsum in graph._attr['output_names']:
+                        index = graph._attr['output_names'].index(einsum)
+                        graph._attr['output_names'][index] = reshape2
                 else:
                     _warn_unsupported(einsum, equation)
             else:
@@ -9542,7 +9656,7 @@ def adjust_2d_to_4d(graph):
 
 
 def adjust_3d_to_4d(graph):
-    pure_inputs_types = ['InstanceNormalization', 'LRN', 'MatMul', 'Moments']
+    pure_inputs_types = ['InstanceNormalization', 'LRN', 'MatMul', 'Moments', 'ArmGroupNorm']
     mixed_inputs_types = ['Resize']
     for op_type in pure_inputs_types + mixed_inputs_types:
         matches = single_node_matcher(graph, op_type)
@@ -9566,7 +9680,7 @@ def adjust_3d_to_4d(graph):
                     for in_port, (src, _, k, in_attr) in enumerate(in_edges):
                         if node_obj.type in mixed_inputs_types and in_port > 0:
                             continue
-                        if op_type in ('InstanceNormalization', 'LRN', 'Resize'):
+                        if op_type in ('InstanceNormalization', 'LRN', 'Resize', 'ArmGroupNorm'):
                             reshape1_dim = in_shapes[in_port][0:-
                                                               1] + [1] + in_shapes[in_port][-1:]
                         else:

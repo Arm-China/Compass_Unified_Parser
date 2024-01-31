@@ -518,9 +518,8 @@ class EinsumOp(OpHasOneOutPort, OnnxOp):
     def infer_shape(self):
         super(EinsumOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        assert len(inputs) == 2, 'Currently only two inputs are supported.'
-        out_tensor = torch.einsum(self.equation, torch.from_numpy(
-            inputs[0]), torch.from_numpy(inputs[1])).numpy()
+        # assert len(inputs) == 2, 'Currently only two inputs are supported.'
+        out_tensor = np.einsum(self.equation, *inputs)
         self.set_out_tensor(out_tensor)
 
 
