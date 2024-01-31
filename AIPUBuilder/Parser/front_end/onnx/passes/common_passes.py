@@ -34,10 +34,6 @@ def fuse_const(graph):
                 out_edge = graph.sorted_out_edges(node_name, data=True)
                 if len(out_edge) >= 1 and out_edge[0][2]['tensor'] is not None and out_edge[0][2]['tensor'].value is not None:
                     const_value = out_edge[0][2]['tensor'].value
-                    if str(const_value.dtype) == 'int64':
-                        const_value = const_value.astype(np.int32)
-                    elif str(const_value.dtype) in ['float64', ]:
-                        const_value = const_value.astype(np.float32)
                     const_attr = {'name': node_name,
                                   'value': const_value,
                                   'data_format': node_obj.data_format,
@@ -46,13 +42,27 @@ def fuse_const(graph):
                         'Constant', const_attr)
                     in_edges = graph.sorted_in_edges(node_name)
                     graph.remove_edges_from(in_edges)
-            elif node_obj.type == 'Constant':
-                value_dtype = str(node_obj.value.dtype)
-                if value_dtype == 'int64':
-                    node_obj.value = node_obj.value.astype(np.int32)
-                elif value_dtype == 'float64':
-                    node_obj.value = node_obj.value.astype(np.float32)
     clear_redundant_nodes(graph)
+
+
+def convert_64bit_const(graph):
+    matches = single_node_matcher(graph, ['Constant', 'ArmConstant'])
+    for m in matches:
+        node_obj = NodeWrap(graph, m['target'])['object']
+        if node_obj is None:
+            ERROR(
+                '[Parser]: Meets invalid Node (%s) in convert_64bit_const!' % m['target'])
+            continue
+        value = getattr(node_obj, 'value') if node_obj.type == 'Constant' else getattr(node_obj, 'weights')
+        value_dtype = str(value.dtype)
+        if value_dtype in ['int64', 'uint64', 'float64']:
+            if value_dtype == 'int64':
+                value = value.astype(np.int32)
+            elif value_dtype == 'uint64':
+                value = value.astype(np.uint32)
+            elif value_dtype == 'float64':
+                value = value.astype(np.float32)
+            setattr(node_obj, 'value' if node_obj.type == 'Constant' else 'weights', value)
 
 
 def convert_to_const(graph, op_type_name_list):
@@ -113,15 +123,6 @@ def remove_useless_op(graph, op_type_list):
             if node_obj is None:
                 continue
             if op_type == 'Cast':
-                if node_obj.to not in ArmCastOp.attributes()['to_dtype']['options']:
-                    if node_obj.to == 'bool':
-                        continue
-                    new_dtype = get_converted_dtype(
-                        node_obj.to, return_type_string=True)
-                    if new_dtype:
-                        WARN('[Parser]: Change unsupported dtype (%s) in Cast op (%s) to %s!' %
-                             (node_obj.to, node_name, new_dtype))
-                        node_obj.to = new_dtype
                 in_edges = graph.sorted_in_edges(node_name, data=True)
                 if len(in_edges) > 0 \
                         and in_edges[0][2].get('tensor', None) is not None \

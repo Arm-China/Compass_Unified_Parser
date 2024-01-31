@@ -252,7 +252,7 @@ def univ_parser(params):
                 from .front_end.onnx.passes.middle_passes import middle_passes, convert_onnx_version
                 from .front_end.onnx.passes.back_passes import back_passes, trim_weights, assign_top_range_scale_zp
                 from .front_end.onnx.passes.transform import transform_to_nhwc
-                from .front_end.onnx.passes.common_passes import remove_useless_op
+                from .front_end.onnx.passes.common_passes import remove_useless_op, convert_64bit_const
                 from .graph.graph_algo import infer, has_path
                 from .graph.pattern_match import single_node_matcher
                 from .writer import serialize, show_in_out_map
@@ -328,6 +328,7 @@ def univ_parser(params):
                         '[Parser]: Meets exception in insert special character conversion (%s)!' % str(e))
 
                 try:
+                    convert_64bit_const(graph)
                     infer(graph)
                     remove_useless_op(graph, ['ArmCast'])
                 except Exception as e:

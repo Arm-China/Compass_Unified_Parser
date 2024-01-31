@@ -326,12 +326,12 @@ def convert_onnx_to_graph(model_path, params):
                             input_type = np.dtype(
                                 single_input['type']['tensor_type']['elem_type'])
                             if input_type.name in ('int32', 'int64'):
-                                input_tensor = np.zeros(shape=input_shape).astype(np.int32)
+                                input_tensor = np.zeros(shape=input_shape).astype(input_type)
                             elif input_type.name in ('float32', 'float64',):
-                                input_tensor = np.random.ranf(size=input_shape).astype(np.float32)
+                                input_tensor = np.random.ranf(size=input_shape).astype(input_type)
                             elif input_type.name == 'bool':
                                 input_tensor = np.random.randint(
-                                    0, 2, size=input_shape).astype(np.uint8)
+                                    0, 2, size=input_shape).astype(bool)
                             else:
                                 input_tensor = np.random.ranf(
                                     size=input_shape).astype(input_type)

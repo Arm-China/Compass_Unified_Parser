@@ -4393,6 +4393,7 @@ def convert_to_onnx(graph):
     tf_ops = TfOp.get_concrete_subclass_names()
     matches = extend_lists([single_node_matcher(graph, op_type)
                             for op_type in tf_ops])
+    need_clear = False
     for m in matches:
         node_name = m['target']
         node_obj = NodeWrap(graph, node_name)['object']
@@ -4434,6 +4435,7 @@ def convert_to_onnx(graph):
                         axes_inp, _, axes_in_attr = in_edges[1]
                         if axes_in_attr['tensor'].shape is not None and len(axes_in_attr['tensor'].shape) != 1:
                             insert_reshape(graph, axes_inp, node_name, axes_in_attr, [-1])
+                    need_clear = True
                 elif pure_type in ('ArgMax', 'ArgMin'):
                     new_node_attr.update(
                         {'axis': node_obj.axis, 'keepdims': 0})
@@ -4480,6 +4482,7 @@ def convert_to_onnx(graph):
                     graph.remove_edges_from(in_edges[-1:])
                     new_node_attr.update(
                         {'axis': int(in_edges[-1][2]['tensor'].value)})
+                    need_clear = True
                 elif pure_type == 'CropAndResize':
                     if len(in_edges) < 4 or not in_edges[3][2]['tensor'].is_const:
                         ERROR(
@@ -4489,6 +4492,7 @@ def convert_to_onnx(graph):
                     new_node_attr.update({'crop_size': crop_size,
                                           'method': node_obj.method.upper()})
                     graph.remove_edges_from(in_edges[3:])
+                    need_clear = True
                 elif pure_type == 'CTCGreedyDecoder':
                     if len(in_edges) == 2 \
                             and len(node_obj.get_input_shapes()) == 2 \
@@ -4512,6 +4516,7 @@ def convert_to_onnx(graph):
                         src, _, in_attr = in_edges[0]
                         insert_transpose(graph, src, node_name,
                                          in_attr, [1, 0, 2])
+                        need_clear = True
                     else:
                         ERROR(
                             '[Parser]: Invalid TF CTCGreedyDecoder Node(%s) to convert to Onnx!' % node_name)
@@ -4522,6 +4527,7 @@ def convert_to_onnx(graph):
                         axis_value = int(in_edges[1][2]['tensor'].value)
                         new_node_attr.update({'axis': axis_value})
                         graph.remove_edges_from(in_edges[1:])
+                        need_clear = True
                 elif pure_type == 'ExpandDims':
                     if len(in_edges) >= 2 \
                             and len(node_obj.get_input_shapes()) >= 2 \
@@ -4539,6 +4545,7 @@ def convert_to_onnx(graph):
                                         node_name,
                                         in_port=1,
                                         data_format='NHWC')
+                        need_clear = True
                     else:
                         ERROR(
                             '[Parser]: Invalid TF ExpandDims Node(%s) to convert to Onnx!' % node_name)
@@ -4553,6 +4560,7 @@ def convert_to_onnx(graph):
                                           })
                 elif pure_type == 'InTopKV2':
                     graph.remove_edges_from(in_edges[2:])
+                    need_clear = True
                 elif pure_type == 'LeftShift':
                     new_node_attr.update({'direction': 'LEFT'})
                 elif pure_type == 'LRN':
@@ -4563,6 +4571,7 @@ def convert_to_onnx(graph):
                     flatten_dim = 'NHWC' if node_obj.include_batch_in_index else 'HWC'
                     new_node_attr.update({'flatten_dim': flatten_dim})
                     graph.remove_edges_from(in_edges[1:])
+                    need_clear = True
                 elif pure_type == 'Pack':
                     new_node_attr.update({'new_axis': True})
                 elif pure_type in ('Pad', 'PadV2', 'MirrorPad'):
@@ -4602,6 +4611,7 @@ def convert_to_onnx(graph):
                         axes = np.atleast_1d(in_edges[2][2]['tensor'].value).tolist()
                         new_node_attr.update({'shift': shift, 'axes': axes})
                         graph.remove_edges_from(in_edges[1:])
+                        need_clear = True
                     else:
                         ERROR('[Parser]: Meets invalid TF Roll(%s) that cannot be converted to Onnx!' % node_name)
                         continue
@@ -4632,6 +4642,7 @@ def convert_to_onnx(graph):
                                         node_name,
                                         in_port=2,
                                         data_format='NHWC')
+                        need_clear = True
                     else:
                         ERROR(
                             '[Parser]: Invalid TF Slice Node(%s) to convert to Onnx!' % node_name)
@@ -4646,11 +4657,12 @@ def convert_to_onnx(graph):
                         new_in_attr = copy.deepcopy(in_attr)
                         new_in_attr['dst_in_port'] = 0
                         graph.add_edge(src, node_name, **new_in_attr)
-                        new_node_attr.update(
-                            {'split': node_obj.split})
+                        new_node_attr.update({'split': node_obj.split})
+                        need_clear = True
                     elif node_obj.cur_version == 2:
                         if len(in_edges) > 1:
                             graph.remove_edges_from(in_edges[1:])
+                            need_clear = True
                         new_node_attr.update(
                             {'split': node_obj.split})
                     else:
@@ -4659,8 +4671,10 @@ def convert_to_onnx(graph):
                         continue
                 elif pure_type == 'SplitV':
                     graph.remove_edges_from(in_edges[1:])
+                    need_clear = True
                 elif pure_type == 'Sum':
                     graph.remove_edges_from(in_edges[1:])
+                    need_clear = True
                 elif pure_type == 'TensorScatterAdd':
                     new_node_attr.update({'reduction': 'add'})
                 elif pure_type == 'TopKV2':
@@ -4680,6 +4694,7 @@ def convert_to_onnx(graph):
                             '[Parser]: Invalid TF Transpose Node(%s) to convert to Onnx!' % node_name)
                         continue
                     graph.remove_edges_from(in_edges[1:])
+                    need_clear = True
 
                 new_node_attr.update(
                     {'opset_version': node_obj.correspond_onnx_op['version'],
@@ -4689,3 +4704,6 @@ def convert_to_onnx(graph):
         else:
             ERROR(
                 '[Parser]: Meets invalid TF op for Node(%s) in convert_to_onnx!' % node_name)
+
+    if need_clear:
+        clear_redundant_nodes(graph)
