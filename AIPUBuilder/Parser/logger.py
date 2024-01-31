@@ -120,6 +120,8 @@ def get_error_count():
 def init_logging(verbose, logfile=None):
     if verbose:
         logging_level = logging.DEBUG
+        lib_logger = logging.getLogger('onnxscript')
+        lib_logger.setLevel(logging.ERROR)
     else:
         logging_level = logging.INFO
     log_format = '%(message)s'
