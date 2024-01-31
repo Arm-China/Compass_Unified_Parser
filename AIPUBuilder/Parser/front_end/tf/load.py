@@ -365,10 +365,14 @@ def convert_tf_to_graph(model_path, params):
                 map(trim_tensor_name, params['output_names']))
 
         if params.get('input_names', []):
+            original_input_names = params['input_names']
             params['input_names'] = list(
-                map(trim_tensor_name, params['input_names']))
+                map(trim_tensor_name, original_input_names))
             params['input_shapes'] = {trim_tensor_name(
                 k): v for k, v in params['input_shapes'].items()}
+            for tensor_or_node_name, node_name in zip(original_input_names, params['input_names']):
+                if tensor_or_node_name in params.get('input_tensor_map', {}):
+                    params['input_tensor_map'][tensor_or_node_name] = node_name
 
     anchor_tensors = params.get('anchor_tensor_name', [])
     if anchor_tensors:
@@ -419,6 +423,8 @@ def convert_tf_to_graph(model_path, params):
                             graph._attr['input_names'][index] = n['name']
                             if out_tensor_name in params['input_shapes']:
                                 params['input_shapes'][n['name']] = params['input_shapes'].pop(out_tensor_name)
+                            if out_tensor_name in params.get('input_tensor_map', {}):
+                                params['input_tensor_map'][out_tensor_name] = n['name']
                         if out_tensor_name in graph._attr['output_names']:
                             index = graph._attr['output_names'].index(out_tensor_name)
                             if n['name'] not in graph._attr['output_names']:
