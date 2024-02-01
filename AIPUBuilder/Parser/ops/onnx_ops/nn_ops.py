@@ -492,7 +492,7 @@ class DeformConvOp(BaseConvOp, OnnxOp):
         kernel_pos_w, kernel_pos_h = np.meshgrid(np.arange(0, kw_new, dw), np.arange(0, kh_new, dh))
         kernel_pos = np.stack([kernel_pos_h, kernel_pos_w], axis=2)  # shape: [kh, kw, 2]
 
-        kernel_offset = np.zeros([oh, ow, kh, kw, 2])
+        kernel_offset = np.zeros([oh, ow, kh, kw, 2], dtype=np.int64)
         for i in range(oh):
             h_coord = bh + sth * i
             for j in range(ow):
