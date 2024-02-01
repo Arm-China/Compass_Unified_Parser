@@ -8925,6 +8925,11 @@ def split_deformable_conv(graph):
             ERROR(
                 '[Parser]: Meets unsupported input shapes of DeformConv (%s) in split_deformable_conv!' % deform_conv)
             continue
+        input_dtypes = deform_conv_obj.get_input_dtypes()
+        if len(input_dtypes) < 3 or input_dtypes[2] is None:
+            ERROR(
+                '[Parser]: Meets invalid input dtypes of DeformConv (%s) in split_deformable_conv!' % deform_conv)
+            continue
         data_format = deform_conv_obj.data_format
         if not data_format.startswith('NC'):
             WARN('[Parser]: Meets unsupported data format of DeformConv (%s) in split_deformable_conv!' % deform_conv)
@@ -8967,7 +8972,7 @@ def split_deformable_conv(graph):
         const_neg1 = np.array(-1.0, np.float32)
         offset_base_data = DeformConvOp.gen_offset_base(weights_shape, offset_shape,
                                                         kernel_shape, strides, dilations, pads,
-                                                        offset_group)
+                                                        offset_group).astype(input_dtypes[2])
 
         graph.remove_edges_from(in_edges)
         data_src, _, data_in_attr = in_edges[0]
