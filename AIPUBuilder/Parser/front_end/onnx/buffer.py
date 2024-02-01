@@ -59,12 +59,15 @@ def onnx_tensor_decoder(pb, data_dir=''):
         if pb.HasField('data_location') and pb.data_location == 1 and len(pb.external_data) > 0:
             data_file_name = pb.external_data[0].value
             data_file_path = os.path.join(data_dir, data_file_name)
-            with open(data_file_path, 'rb') as f:
-                if len(pb.external_data) >= 2:
-                    offset = int(pb.external_data[1].value)
-                else:
-                    offset = 0
-                ret = np.memmap(f, dtype=np_type, mode='r', offset=offset, shape=tuple(tensor_shape.tolist()))
+            try:
+                with open(data_file_path, 'rb') as f:
+                    if len(pb.external_data) >= 2:
+                        offset = int(pb.external_data[1].value)
+                    else:
+                        offset = 0
+                    ret = np.memmap(f, dtype=np_type, mode='r', offset=offset, shape=tuple(tensor_shape.tolist()))
+            except Exception as e:
+                raise Exception('[Parser]: %s, please check whether data file(%s) is valid' % (str(e), data_file_path))
             pb.data_location = TensorProto.DEFAULT
             del pb.external_data[:]
         else:
