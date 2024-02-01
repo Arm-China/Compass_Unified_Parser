@@ -234,7 +234,7 @@ def convert_bitwise_and(g, input, other):
 
 @helper.parse_args('v')
 def convert_bitwise_not(g, input):
-    if helper._is_bool(input):
+    if input.type().scalarType() == 'Bool':
         return g.op('Not', input)
     else:
         return g.op(CUSTOM_OPSET_18 + 'BitwiseNot', input)
@@ -242,7 +242,7 @@ def convert_bitwise_not(g, input):
 
 @helper.parse_args('v', 'v')
 def convert_bitwise_or(g, input, other):
-    if helper._is_bool(input) and helper._is_bool(other):
+    if input.type().scalarType() == 'Bool' and other.type().scalarType() == 'Bool':
         return g.op('Or', input, other)
     else:
         return g.op(CUSTOM_OPSET_18 + 'BitwiseOr', input, other)
