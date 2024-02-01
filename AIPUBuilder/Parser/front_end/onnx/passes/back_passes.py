@@ -2181,10 +2181,13 @@ def rename_cast(graph):
         cast_obj = NodeWrap(graph, cast)['object']
         out_edges = graph.sorted_out_edges(cast, data=True)
         if cast_obj is not None and len(out_edges) > 0:
-            if cast_obj.to in ArmCastOp.attributes()['to_dtype']['options'] + ['bool']:
+            to_dtype_map = {'bool': 'uint8', 'int64': 'int32', 'float64': 'float32'}
+            if cast_obj.to in ArmCastOp.attributes()['to_dtype']['options'] + list(to_dtype_map.keys()):
                 cast_attr = cast_obj.copied_attr()
-                if cast_obj.to == 'bool':
-                    to_dtype = 'uint8'
+                if cast_obj.to in to_dtype_map:
+                    to_dtype = to_dtype_map[cast_obj.to]
+                    WARN('[Parser]: Change unsupported to_dtype %s of Cast Op (%s) to %s!' %
+                         (cast_obj.to, cast, to_dtype))
                 else:
                     to_dtype = cast_obj.to
                 ignore_scale_zp = True
