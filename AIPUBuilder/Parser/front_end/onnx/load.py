@@ -411,6 +411,7 @@ def convert_onnx_to_graph(model_path, params):
                         graph.add_node(op_name)
                     NodeWrap(graph, op_name).replace_obj(node_type, op_attr)
                     for in_port, in_tensor_info in enumerate(node['input']):
+                        edge_attr = {}
                         in_tensor_name, in_tensor_out_port = in_tensor_info[
                             'name'], in_tensor_info['out_port']
                         in_tensor_names.add(in_tensor_name)
@@ -459,10 +460,13 @@ def convert_onnx_to_graph(model_path, params):
                                                                    value=graph._attr['input_tensors'][pre_op_name].value,
                                                                    is_const=True)}
                                                  )
+                            else:
+                                edge_attr.update({'tensor': Tensor(name=in_tensor_name)})
                             graph.add_edge(pre_op_name, op_name, **edge_attr)
                         if anchor_tensors \
                                 and any(val is None for val in anchor_tensors_value) \
-                                and in_tensor_name in anchor_tensors:
+                                and in_tensor_name in anchor_tensors \
+                                and edge_attr.get('tensor', None) is not None:
                             if not edge_attr['tensor'].is_const:
                                 WARN('[Parser]: Meet non-const anchor (%s) in convert_onnx_to_graph!' % in_tensor_name)
                             else:
