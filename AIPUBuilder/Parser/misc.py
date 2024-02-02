@@ -3,10 +3,12 @@
 
 
 # cython: language_level=3
-from .logger import ERROR, WARN, DEBUG
 import re
+import os
+from .logger import ERROR, WARN, DEBUG, INFO
 from .graph.node_wrap import NodeWrap
 from .graph.graph_algo import get_valid_node_name
+from .common.utils import is_file, is_dir
 
 
 def special_character_conversion(graph, params):
