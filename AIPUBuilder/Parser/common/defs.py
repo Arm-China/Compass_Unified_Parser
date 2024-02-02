@@ -139,8 +139,7 @@ class Tensor(object):
     def __init__(self, **kwargs):
         super(Tensor, self).__init__()
         for attr in Tensor.DEFAULTS.keys():
-            setattr(self, attr, kwargs.get(
-                attr, copy.deepcopy(Tensor.DEFAULTS[attr])))
+            setattr(self, attr, kwargs.get(attr, Tensor.DEFAULTS[attr]))
         st = getattr(self, 'supported_types', [])
         if getattr(self, 'value') is not None:
             setattr(self, 'shape', getattr(self, 'value').shape)
