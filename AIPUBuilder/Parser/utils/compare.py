@@ -19,6 +19,9 @@ def compare_data(data1, data2):
         data1 = np.array(data1)
     if np.isscalar(data2):
         data2 = np.array(data2)
+    if data1.dtype != data2.dtype:
+        DEBUG('Different dtype! The output dtype of first data is %s, output dtype of second data is %s.' %
+              (str(data1.dtype), str(data2.dtype)))
     if data1.dtype != np.float32:
         data1 = data1.astype(np.float32)
     if data2.dtype != np.float32:

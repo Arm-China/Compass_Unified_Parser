@@ -150,6 +150,9 @@ class BatchNormalizationOp(LayoutConcernedOp, OpHasVariableOutPorts, OnnxOp):
         inputs = self.get_input_tensors()
         assert len(inputs) >= 5 and inputs[0].ndim >= 2, \
             'Meets invalid inputs of BatchNormalizationOp(%s) in infer_shape!' % self.name
+        input_dtype = inputs[0].dtype
+        mean_var_dtype = inputs[3].dtype
+        inputs = [inp.astype(np.float32) for inp in inputs]
         is_training = self.training_mode
         if is_training:
             reshape_dim = None
@@ -175,6 +178,9 @@ class BatchNormalizationOp(LayoutConcernedOp, OpHasVariableOutPorts, OnnxOp):
             out_tensor_list = [o.numpy() for o in out_list]
             if reshape_dim is not None:
                 out_tensor_list[0] = np.reshape(out_tensor_list[0], inputs[0].shape)
+            out_tensor_list[0] = out_tensor_list[0].astype(input_dtype)
+            out_tensor_list[1] = out_tensor_list[1].astype(mean_var_dtype)
+            out_tensor_list[2] = out_tensor_list[2].astype(mean_var_dtype)
         else:
             if self.data_format[0] == 'N' and self.data_format[-1] == 'C':
                 out_tensor = tf.nn.batch_normalization(inputs[0],
@@ -198,6 +204,7 @@ class BatchNormalizationOp(LayoutConcernedOp, OpHasVariableOutPorts, OnnxOp):
                     biases = np.reshape(biases, reshape_dim)
                 out_tensor = inputs[0] * weights + biases
                 out_tensor_list = [out_tensor]
+            out_tensor_list[0] = out_tensor_list[0].astype(input_dtype)
         self.set_out_tensor(out_tensor_list)
 
 

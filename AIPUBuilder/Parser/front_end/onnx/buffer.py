@@ -75,7 +75,7 @@ def onnx_tensor_decoder(pb, data_dir=''):
                 assert data_type_name not in ['STRING', 'UNDEFINED']
                 ret = np.frombuffer(pb.raw_data, dtype=np_type)
             else:
-                if data_type_name in ['INT32', 'INT16', 'INT8', 'UINT16', 'UINT8', 'BOOL', 'FLOAT16']:
+                if data_type_name in ['INT32', 'INT16', 'INT8', 'UINT16', 'UINT8', 'BOOL']:
                     ret = np.array(pb.int32_data, dtype=np_type)
                 elif data_type_name == 'INT64':
                     ret = np.array(pb.int64_data, dtype=np_type)
@@ -85,6 +85,11 @@ def onnx_tensor_decoder(pb, data_dir=''):
                     ret = np.array(pb.string_data, dtype=np_type)
                 elif data_type_name in ['FLOAT', 'COMPLEX64']:
                     ret = np.array(pb.float_data, dtype=np_type)
+                elif data_type_name == 'FLOAT16':
+                    # from TENSOR_TYPE_MAP in onnx/mapping.py and make_tensor in onnx/helper.py float16
+                    # data is stored in uint16:
+                    # vals = (np.array(vals).astype(np_dtype).view(dtype=np.uint16).flatten().tolist())
+                    ret = np.frombuffer(np.array(pb.int32_data, dtype=np.uint16).tobytes(), dtype=np_type)
                 elif data_type_name in ['DOUBLE', 'COMPLEX128']:
                     ret = np.array(pb.double_data, dtype=np_type)
                 else:

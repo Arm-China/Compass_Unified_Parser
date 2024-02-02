@@ -216,6 +216,13 @@ def convert_bn_train(graph):
             input_shapes = fusebnv3_obj.get_input_shapes()
             x_shape = input_shapes[0]
             if x_shape is None or None in x_shape:
+                ERROR(
+                    '[Parser]: Meets invalid input shapes of BatchNormalization node(%s) in convert_bn_train!' % fusebnv3)
+                continue
+            input_dtypes = fusebnv3_obj.get_input_dtypes()
+            if len(input_dtypes) < 5 or input_dtypes[0] is None or input_dtypes[3] is None:
+                ERROR(
+                    '[Parser]: Meets invalid input dtypes of BatchNormalization node(%s) in convert_bn_train!' % fusebnv3)
                 continue
             matched = True
             x_src, _, x_out_attr = fusebnv3_in_edges[0]
@@ -227,6 +234,8 @@ def convert_bn_train(graph):
             inp_rank = len(x_shape)
             eps = fusebnv3_obj.epsilon
             momentum = fusebnv3_obj.momentum
+            input_dtype = input_dtypes[0]
+            mean_var_dtype = input_dtypes[3]
             if fusebnv3_obj.data_format == 'NCHW':
                 dims = [0] + list(range(2, inp_rank))
                 reshape_dim = [x_shape[1]] + [1] * (inp_rank - 2)
@@ -240,7 +249,7 @@ def convert_bn_train(graph):
             inp_shape = np.array(x_shape, np.dtype(np.int32))
             reduce_dims = np.take(inp_shape, np.array(dims, np.int32), axis=0)
             cnt_float = np.prod(reduce_dims, axis=tuple(
-                [0]), keepdims=False).astype(np.float32)
+                [0]), keepdims=False).astype(mean_var_dtype)
             # current_mean_value = np.mean(x, axis=tuple(dims), keepdims=True)
             current_mean_shape = tuple([1 if shape in dims else shape for shape in x_shape])
             # sub_value = np.subtract(x, current_mean_value)
@@ -295,9 +304,9 @@ def convert_bn_train(graph):
             graph.add_edge(mul_scale, y, **{'tensor': Tensor(shape=x_shape)})
             graph.add_edge(offset, y, **offset_out_attr)
 
-            insert_constant(graph, current_var_eps + '_add', np.array(eps).astype(np.float32),
+            insert_constant(graph, current_var_eps + '_add', np.array(eps).astype(mean_var_dtype),
                             current_var_eps, in_port=1, data_format='NHWC')
-            insert_constant(graph, weights + '_pow', np.array(-0.5).astype(np.float32),
+            insert_constant(graph, weights + '_pow', np.array(-0.5).astype(mean_var_dtype),
                             weights, in_port=1, data_format='NHWC')
             insert_constant(graph, current_var + '_cnt_float', np.array(cnt_float),
                             current_var, in_port=1, data_format='NHWC')
@@ -338,14 +347,14 @@ def convert_bn_train(graph):
             mul_in_mean_in_attr = copy.deepcopy(inmean_out_attr)
             mul_in_mean_in_attr.update({'dst_in_port': 0})
             graph.add_edge(input_mean, mul_in_mean, **mul_in_mean_in_attr)
-            insert_constant(graph, mul_in_mean + '_momentum', np.array(momentum).astype(np.float32),
+            insert_constant(graph, mul_in_mean + '_momentum', np.array(momentum).astype(mean_var_dtype),
                             mul_in_mean, in_port=1, data_format='NHWC')
             # reshaped_current_mean * (1 - momentum)
             graph.add_node(mul_cur_mean)
             mul_cur_mean_in_attr = {'dst_in_port': 0, 'tensor': Tensor(shape=current_mean_shape)}
             reshaped_current_mean = insert_reshape(graph, current_mean, mul_cur_mean, mul_cur_mean_in_attr, weights_shape) \
                 if fusebnv3_obj.data_format == 'NCHW' else current_mean
-            insert_constant(graph, mul_cur_mean + '_momentum', np.array(1 - momentum).astype(np.float32),
+            insert_constant(graph, mul_cur_mean + '_momentum', np.array(1 - momentum).astype(mean_var_dtype),
                             mul_cur_mean, in_port=1, data_format='NHWC')
             # input_mean * momentum + reshaped_current_mean * (1 - momentum)
             mul_in_mean_value = None if mul_in_mean_in_attr['tensor'].value is None \
@@ -377,11 +386,11 @@ def convert_bn_train(graph):
             mul_in_var_in_attr = copy.deepcopy(invar_out_attr)
             mul_in_var_in_attr.update({'dst_in_port': 0})
             graph.add_edge(input_var, mul_in_var, **mul_in_var_in_attr)
-            insert_constant(graph, mul_in_var + '_momentum', np.array(momentum).astype(np.float32),
+            insert_constant(graph, mul_in_var + '_momentum', np.array(momentum).astype(mean_var_dtype),
                             mul_in_var, in_port=1, data_format='NHWC')
             # current_var * (1 - momentum)
             graph.add_edge(current_var, mul_cur_var, **{'tensor': Tensor(shape=weights_shape)})
-            insert_constant(graph, mul_cur_var + '_momentum', np.array(1 - momentum).astype(np.float32),
+            insert_constant(graph, mul_cur_var + '_momentum', np.array(1 - momentum).astype(mean_var_dtype),
                             mul_cur_var, in_port=1, data_format='NHWC')
             # input_var * momentum + current_var * (1 - momentum)
             mul_in_var_value = None if mul_in_var_in_attr['tensor'].value is None \
