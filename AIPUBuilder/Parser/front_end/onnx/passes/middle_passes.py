@@ -20,7 +20,7 @@ from ....ops.onnx_ops.nn_ops import DeformConvOp
 from .common_passes import fuse_const, remove_useless_op, remove_node_safely, insert_reshape, insert_reshape_after, \
     insert_cast, insert_constant, insert_slice, insert_slice_after, insert_tile, insert_transpose, insert_transpose_after, \
     remove_redundant_reshape, remove_redundant_transpose, insert_cast_sub_mul_for_quant, insert_mul_add_cast_after_for_dequant, \
-    insert_repeat, convert_to_const
+    insert_repeat, convert_to_const, insert_cast_after
 
 
 def clear_useless_concat_input(graph):
@@ -7700,10 +7700,34 @@ def merge_rms_norm(graph):
                                     ('cast2', 'mul'),
                                     ('mul_const', 'mul'),
                                 ])
-    for m in matches + matches2:
-        has_cast = ('cast1' in m)
+    matches3 = matched_patterns(graph,
+                                nodes=[
+                                    ('pow', {'op': 'Pow'}),
+                                    ('pow_y', {'op': 'Constant'}),
+                                    ('mean', {'op': 'ReduceMean'}),
+                                    ('add', {'op': 'Add'}),
+                                    ('add_const', {'op': 'Constant'}),
+                                    ('sqrt', {'op': 'Sqrt'}),
+                                    ('div', {'op': 'Div'}),
+                                    ('cast1', {'op': 'Cast'}),
+                                    ('mul', {'op': 'Mul'}),
+                                    ('mul_const', {'op': 'Constant'}),
+                                ],
+                                edges=[
+                                    ('pow_y', 'pow', {'dst_in_port': 1}),
+                                    ('pow', 'mean'),
+                                    ('mean', 'add'),
+                                    ('add_const', 'add'),
+                                    ('add', 'sqrt'),
+                                    ('sqrt', 'div', {'dst_in_port': 1}),
+                                    ('div', 'cast1'),
+                                    ('cast1', 'mul'),
+                                    ('mul_const', 'mul'),
+                                ])
+    for m in matches + matches2 + matches3:
+        cast_names = [] if 'cast1' not in m else (['cast1', 'cast2'] if 'cast2' in m else ['cast1'])
         key_names = ['pow', 'pow_y', 'mean', 'add_const',
-                     'div', 'mul', 'mul_const'] + (['cast1', 'cast2'] if has_cast else [])
+                     'div', 'mul', 'mul_const'] + cast_names
         node_objs = {k: NodeWrap(graph, m[k])['object'] for k in key_names}
         if any(obj is None for obj in node_objs.values()):
             ERROR('[Parser]: Meets invalid nodes in merge_rms_norm!')
@@ -7724,9 +7748,12 @@ def merge_rms_norm(graph):
         if len(input_shapes) < 1 or input_shapes[0] is None or None in input_shapes[0]:
             ERROR('[Parser]: Meets invalid input shape of Pow(%s) node in merge_rms_norm!' % m['pow'])
             continue
-        if has_cast and ('float' not in node_objs['cast1'].to or 'float' not in node_objs['cast2'].to):
-            continue
         input_shape = input_shapes[0]
+        input_dtypes = node_objs['pow'].get_input_dtypes()
+        if len(input_dtypes) < 1 or input_dtypes[0] is None:
+            ERROR('[Parser]: Meets invalid input dtype of Pow(%s) node in merge_rms_norm!' % m['pow'])
+            continue
+        input_dtype = input_dtypes[0]
         norm_axes = OpHasAxis.make_axes_non_negative(node_objs['mean'].axes, len(input_shape))
         weights = OpHasAxis.align_axes(node_objs['mul_const'].value, norm_axes, input_shape)
         if weights is None:
@@ -7741,8 +7768,17 @@ def merge_rms_norm(graph):
         graph.remove_edges_from(mul_in_edges)
         graph.add_edge(src, m['mul'], **src_in_attr)
         rms_norm_attr = node_objs['mul'].copied_attr()
-        rms_norm_attr.update({'axes': norm_axes, 'weights': weights, 'epsilon': epsilon})
+        rms_norm_attr.update({'axes': norm_axes, 'weights': weights.astype(input_dtype), 'epsilon': epsilon})
         NodeWrap(graph, m['mul']).replace_obj('ArmRMSNorm', rms_norm_attr)
+        out_node = m['mul']
+        from_dtype = input_dtype
+        for cast in cast_names:
+            cast_to_dtype = node_objs[cast].to
+            out_node = insert_cast_after(graph, out_node, from_dtype, cast_to_dtype)
+            from_dtype = cast_to_dtype
+        if out_node != m['mul'] and m['mul'] in graph._attr['output_names']:
+            index = graph._attr['output_names'].index(m['mul'])
+            graph._attr['output_names'][index] = out_node
     if matched:
         clear_redundant_nodes(graph)
 
