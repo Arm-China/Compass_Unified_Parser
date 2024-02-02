@@ -1202,8 +1202,7 @@ class PowOp(OpNeedBroadcast, OpHasAxis, OpHasOneOutPort, OnnxOp):
             out_tensor = np.power(inputs[0], second_input)
         else:
             out_tensor = np.power(*inputs)
-        if out_tensor.dtype == 'float64':
-            out_tensor = out_tensor.astype(np.float32)
+        out_tensor = out_tensor.astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
     def __getattr__(self, item):
