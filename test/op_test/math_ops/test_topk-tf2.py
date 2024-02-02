@@ -7,10 +7,10 @@ from tensorflow import keras
 from utils.run import run_parser
 
 
-def create_topk_model(model_path, input_shape, largest):
+def create_topk_model(model_path, input_shape, largest, input_dtype):
     ''' Create tensorflow model for topk op.
     '''
-    input_data = keras.Input(shape=input_shape[1:], batch_size=input_shape[0], name='X')
+    input_data = keras.Input(shape=input_shape[1:], batch_size=input_shape[0], dtype=input_dtype, name='X')
     values1, indices1 = tf.math.top_k(input_data, k=largest, sorted=True)
     # FIXME: Check the similarity of sorted=False after opt fixes the sorted issue
     # values2, indices2 = tf.math.top_k(input_data, k=largest, sorted=False)
@@ -30,14 +30,14 @@ input_shape = [3, 5, 6]
 
 # Generate input data
 feed_dict = {}
-data = np.random.randint(0, 3, input_shape).astype(np.float32) * 100
-# print(data)
-feed_dict['X:0'] = data
+data = np.random.randint(0, 3, input_shape) * 100
+for input_dtype in ('float16', 'float32'):
+    feed_dict['X:0'] = data.astype(input_dtype)
 
-model_path = TEST_NAME + '.h5'
-# Create model
-create_topk_model(model_path, input_shape, largest=4)
+    model_path = '-'.join([TEST_NAME, input_dtype]) + '.h5'
+    # Create model
+    create_topk_model(model_path, input_shape, 4, input_dtype)
 
-# Run tests with parser and compare result with runtime
-exit_status = run_parser(model_path, feed_dict, verify=True)
-assert exit_status
+    # Run tests with parser and compare result with runtime
+    exit_status = run_parser(model_path, feed_dict, verify=True)
+    assert exit_status

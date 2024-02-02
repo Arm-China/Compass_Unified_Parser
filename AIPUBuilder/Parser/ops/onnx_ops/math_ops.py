@@ -2618,17 +2618,15 @@ class TopKOp(OpHasAxis, OpHasMultipleOutPorts, OnnxOp):
     def infer_shape(self):
         super(TopKOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        if inputs[0].dtype == bool:
-            inputs[0] = inputs[0].astype(np.int32)
-        input_tensor = torch.from_numpy(inputs[0])
+        input_tensor = torch.from_numpy(inputs[0].astype(np.float64))
         cur_ver = self.cur_version
         k = self.k if cur_ver == 1 else int(inputs[1])
         largest = bool(self.largest) if cur_ver >= 11 else True
         need_sorted = bool(self.sorted) if cur_ver >= 11 else True
         out_tensor_list = torch.topk(
             input_tensor, k, dim=self.axis, largest=largest, sorted=need_sorted)
-        out_tensor_list = [ot.numpy() if i == 0 else ot.numpy().astype(
-            np.int32) for (i, ot) in enumerate(out_tensor_list)]
+        out_tensor_list = [ot.numpy().astype(inputs[0].dtype) if i == 0 else ot.numpy().astype(
+            np.int64) for (i, ot) in enumerate(out_tensor_list)]
         self.set_out_tensor(out_tensor_list)
 
 

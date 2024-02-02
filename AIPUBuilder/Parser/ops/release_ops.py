@@ -4691,10 +4691,12 @@ class ArmTopKOp(OpHasAxis, OpHasMultipleOutPorts, ArmOp):
     def infer_shape(self):
         super(ArmTopKOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        input_tensor = torch.from_numpy(inputs[0])
+        # "topk_cpu" not implemented for 'Half'
+        input_tensor = torch.from_numpy(inputs[0].astype(np.float64))
         out_tensor_list = torch.topk(input_tensor, self.k, dim=self.axis, largest=bool(
             self.largest), sorted=bool(self.sorted))
         out_tensor_list = [ot.numpy() for ot in out_tensor_list]
+        out_tensor_list[0] = out_tensor_list[0].astype(inputs[0].dtype)
         out_tensor_list[1] = out_tensor_list[1].astype(np.int32)
         self.set_out_tensor(out_tensor_list)
 

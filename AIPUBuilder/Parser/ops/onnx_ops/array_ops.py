@@ -736,7 +736,7 @@ class RangeOp(OpHasOneOutPort, ConstLikeOp, OnnxOp):
         if any(val is None for val in [self.start, self.limit, self.delta]):
             out_tensor = None
         else:
-            out_tensor = np.arange(self.start, self.limit, self.delta)
+            out_tensor = np.arange(self.start, self.limit, self.delta).astype(self.start.dtype)
         self.set_out_tensor(out_tensor)
 
     def __getattr__(self, item):
