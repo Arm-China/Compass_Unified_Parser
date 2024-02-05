@@ -124,6 +124,12 @@ def univ_parser(params):
         else:
             graph = None
 
+            tmp_tensors_dir = '.%s_tmp_tensors' % params.get('model_name', '')
+            tmp_tensors_path = os.path.join(output_dir, tmp_tensors_dir)
+            if not os.path.exists(tmp_tensors_path):
+                os.mkdir(tmp_tensors_path)
+            params['tmp_tensors_path'] = tmp_tensors_path
+
             import tensorflow as tf
             tf.config.set_visible_devices([], 'GPU')
             if int(tf.__version__.split('.')[0]) < 2:
@@ -268,6 +274,10 @@ def univ_parser(params):
             else:
                 WARN('[Parser]: Got invalid or empty graph from model!')
                 ret = True
+
+            if os.path.exists(tmp_tensors_path):
+                import shutil
+                shutil.rmtree(tmp_tensors_path)
     else:
         ERROR('[Parser]: Meets invalid parameters for universal parser!')
         ret = False

@@ -1663,19 +1663,19 @@ def convert_torch_to_onnx(model_path, params):
     # Load TorchScript/non-TorchScript model
     is_torch_script_model = False
     try:
-        model = torch.load(model_path) if torch.cuda.is_available() else torch.load(model_path, map_location='cpu')
-        is_torch_script_model = isinstance(model, torch.jit._script.RecursiveScriptModule)
+        model = torch.jit.load(model_path, map_location=torch.device('cpu'))
+        is_torch_script_model = True
+    except RuntimeError:
+        try:
+            model = torch.load(model_path, map_location=torch.device('cpu'))
+            if isinstance(model, torch.nn.Module):
+                model.eval()
+            else:
+                FATAL('[Parser]: The Model is neither a TorchScript pt nor a nn.Module, please provide valid file!')
+        except Exception as e:
+            FATAL('[Parser]: Fail to load model (%s) because %s!' % (model_path, str(e)))
     except Exception as e:
-        FATAL('[Parser]: Fail to load model (%s) because %s!' %
-              (model_path, str(e)))
-    try:
-        if not is_torch_script_model:
-            if isinstance(model, dict):
-                FATAL('[Parser]: The Model is weight only which not support yet, please provide traced TorchScript to parser!')
-            model.eval()
-    except Exception as e:
-        FATAL('[Parser]: Fail to eval model (%s) because %s!' %
-              (model_path, str(e)))
+        FATAL('[Parser]: Fail to load model (%s) because %s!' % (model_path, str(e)))
 
     # Get onnx opset version to target
     # From https://onnxruntime.ai/docs/reference/compatibility.html,
