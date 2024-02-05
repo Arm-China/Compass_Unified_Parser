@@ -512,8 +512,10 @@ def convert_nms(graph):
 
                 # Manipulate edges and nodes
                 if center_box is True:
+                    origin_box_num = box_shape[1]
                     add_num = np.array(
-                        onnx_batch * [[-0.5] * box_num + [-0.5] * box_num + [0.5] * box_num + [0.5] * box_num],
+                        onnx_batch * [[-0.5] * origin_box_num + [-0.5] * origin_box_num +
+                                      [0.5] * origin_box_num + [0.5] * origin_box_num],
                         dtype=np.float32)
                     split = get_valid_node_name(graph, nms + '_split')
                     xcenter_reshape = get_valid_node_name(
