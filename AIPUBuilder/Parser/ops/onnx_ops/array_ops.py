@@ -230,11 +230,14 @@ class ConstantOp(OpHasOneOutPort, ConstLikeOp, OnnxOp):
                 if cur_ver in (1, 9):
                     return self._attr['value'].value
                 elif cur_ver in (11, 12, 13):
-                    values = np.asarray([self._attr[k].value for k, _ in type(
-                        self).attributes()[cur_ver].items() if self._attr[k].value is not None])
+                    keys = [k for k in type(
+                        self).attributes()[cur_ver].keys() if self._attr[k].value is not None]
                     assert len(
-                        values) == 1, 'The length of value is invalid in ConstantOp.'
-                    return values[0]
+                        keys) == 1, 'Meets invalid value in ConstantOp (%s)!' % self.name
+                    value = np.asarray(self._attr[keys[0]].value)
+                    if keys[0] in ('value_float', 'value_floats'):
+                        value = value.astype(np.float32)
+                    return value
                 else:
                     ERROR('[Parser]: Unsupported op version [%s] for %s!' %
                           (cur_ver, type(self).__name__))
