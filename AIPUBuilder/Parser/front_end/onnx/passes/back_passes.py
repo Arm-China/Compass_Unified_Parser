@@ -2587,8 +2587,8 @@ def rename_matmulinteger(graph):
         matmul_obj = NodeWrap(graph, matmul)['object']
         in_edges = graph.sorted_in_edges(matmul)
         if matmul_obj is not None and 2 <= len(in_edges) <= 4:
-            inputs = matmul_obj.get_input_tensors()
-            if inputs[0].dtype in (np.int8, np.uint8) and inputs[1].dtype in (np.int8, np.uint8):
+            input_dtypes = matmul_obj.get_input_dtypes()
+            if len(input_dtypes) >= 2 and all(dtype in ('int8', 'uint8') for dtype in input_dtypes[:2]):
                 a_zp = matmul_obj.a_zero_point
                 b_zp = matmul_obj.b_zero_point
                 graph.remove_edges_from(in_edges[2:])
