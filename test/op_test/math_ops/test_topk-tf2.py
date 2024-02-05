@@ -16,7 +16,8 @@ def create_topk_model(model_path, input_shape, largest, input_dtype):
     # values2, indices2 = tf.math.top_k(input_data, k=largest, sorted=False)
     values2, indices2 = tf.math.top_k(input_data, k=largest, sorted=True)
     y1 = tf.math.add(values1, values2, name='Y1')
-    y2 = tf.math.add(indices1, indices2, name='Y2')
+    y2 = tf.math.add(tf.cast(values2, dtype=tf.int32), indices2, name='Y2')
+    y3 = tf.math.add(indices1, y2, name='Y3')
 
     model = keras.models.Model([input_data], [y1, y2])
     # model.summary()
@@ -39,5 +40,6 @@ for input_dtype in ('float16', 'float32'):
     create_topk_model(model_path, input_shape, 4, input_dtype)
 
     # Run tests with parser and compare result with runtime
-    exit_status = run_parser(model_path, feed_dict, verify=True)
+    exit_status = run_parser(model_path, feed_dict, verify=True,
+                             unexpected_logs=['The dtype of inputs should be the same in AddOp'])
     assert exit_status

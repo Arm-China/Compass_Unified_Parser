@@ -735,6 +735,48 @@ def convert_reverse(graph, op_type='TfReverseV2'):
             graph._attr['output_names'][index] = out_node
 
 
+def convert_topk(graph, op_type='TfTopKV2'):
+    if op_type not in ('TfTopKV2', 'Tftop_k', 'LiteTOPK_V2'):
+        ERROR('[Parser]: Meets invalid Op type (%s) in convert_topk!' % op_type)
+        return
+    matched = False
+    matches = single_node_matcher(graph, op_type)
+    for m in matches:
+        topk = m['target']
+        topk_obj = NodeWrap(graph, topk)['object']
+        in_edges = graph.sorted_in_edges(topk, data=True)
+        out_edges = graph.sorted_out_edges(topk, data=True)
+        if topk_obj is None or len(in_edges) < 2 \
+                or len(out_edges) < 1:
+            ERROR('[Parser]: Meets invalid Op (%s) in convert_topk!' % topk)
+            continue
+        input_dtypes = topk_obj.get_input_dtypes()
+        if len(input_dtypes) < 2 or input_dtypes[1] is None:
+            ERROR('[Parser]: Meets invalid input dtypes of Node (%s) in convert_topk!' % topk)
+            continue
+        indices_out_dtype = None
+        if len(topk_obj.get_out_ports()) >= 2:
+            output_dtypes = topk_obj.get_output_dtypes()
+            if len(output_dtypes) >= 2 and output_dtypes[-1] is None:
+                ERROR('[Parser]: Meets invalid output dtypes of Node (%s) in convert_topk!' % topk)
+                continue
+            indices_out_dtype = output_dtypes[-1]
+        matched = True
+        graph.remove_edges_from(in_edges[2:])
+        topk_attr = topk_obj.copied_attr()
+        topk_attr.update({'opset_version': 11})
+        NodeWrap(graph, topk).replace_obj('TopK', topk_attr)
+        if input_dtypes[1] != 'int64':
+            k_src, _, k_in_attr = in_edges[1]
+            insert_cast(graph, k_src, topk, 'int64', k_in_attr)
+        if indices_out_dtype is not None and indices_out_dtype != 'int64':
+            post_cast = insert_cast_after(graph, topk, 'int64', indices_out_dtype, out_port=1)
+            # cannot just update output_names because topk has 2 outputs; because the cast of int64
+            # will be removed in the end so the updating of output_names can be ignored here.
+    if matched:
+        clear_redundant_nodes(graph)
+
+
 def remove_identity_n(graph):
     matched = False
     matches = single_node_matcher(graph, 'TfIdentityN')
