@@ -89,6 +89,9 @@ def process_tflite(model_path, params):
         from ..tf.passes.front_passes import convert_floordiv
         convert_floordiv(graph, op_type='LiteFLOOR_DIV')
 
+        from ..tf.passes.front_passes import convert_topk
+        convert_topk(graph, op_type='LiteTOPK_V2')
+
         convert_deconv(graph)
         convert_negative_pool_pad(graph)
         remove_redundant_broadcast_to(graph)

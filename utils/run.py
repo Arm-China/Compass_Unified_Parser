@@ -33,11 +33,13 @@ def generate_ir(cfg_path, verbose=False, expected_logs=[], unexpected_logs=[]):
                 INFO('Find [%s] from parser log as expected!' % log)
             else:
                 ERROR('Cannot find [%s] from parser log!' % log)
+                run_pass = False
         for log in unexpected_logs:
             if log not in log_content:
                 INFO('Cannot find [%s] from parser log as expected!' % log)
             else:
                 ERROR('Find unexpected [%s] from parser log!' % log)
+                run_pass = False
     return run_pass
 
 

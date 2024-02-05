@@ -15,7 +15,7 @@ from .passes.front_passes import merge_gru, merge_gru2, merge_lstm, merge_zero_f
     convert_matmul, convert_invert_permutation, convert_reverse, convert_d2s_or_s2d, convert_onehot, \
     remove_isfinite_select, merge_fasterrcnn, merge_keras_maskrcnn, merge_lstm2, \
     merge_embedding_lookup_sparse, merge_embedding_lookup_sparse_with_weights, merge_overlap_and_add, \
-    convert_floordiv, merge_sufficient_statistics, merge_sufficient_statistics2
+    convert_floordiv, merge_sufficient_statistics, merge_sufficient_statistics2, convert_topk
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
@@ -63,6 +63,7 @@ def process_tf(model_path, params):
         convert_reverse_sequence(graph, op_type='TfReverseSequence')
         convert_scatternd(graph, op_type='TfScatterNd')
         convert_scatternd2(graph, op_type='TfScatterNd')
+        convert_topk(graph, op_type='TfTopKV2')
         split_b2s(graph)
         split_s2b(graph, 'TfSpaceToBatchND')
         split_special_floormod(graph)

@@ -535,9 +535,12 @@ def remove_redundant_cast(graph):
 
 def insert_cast(graph, src, dst, dst_type, in_attr=None, key=None, type='Cast'):
     ret = None
+    allowed_dtypes = ArmCastOp.attributes()['to_dtype']['options']
+    if type == 'Cast':
+        allowed_dtypes += ['int64', 'float64']
     if graph is not None \
             and len(graph) >= 2 \
-            and dst_type in ArmCastOp.attributes()['to_dtype']['options'] \
+            and dst_type in allowed_dtypes \
             and graph.has_node(src) \
             and graph.has_node(dst) \
             and type in ('Cast', 'ArmCast'):
@@ -549,12 +552,13 @@ def insert_cast(graph, src, dst, dst_type, in_attr=None, key=None, type='Cast'):
             graph, dst + '_pre_cast_' + str(in_attr.get('dst_in_port', 0)))
         cast_in_attr = copy.deepcopy(in_attr)
         cast_in_attr['dst_in_port'] = 0
+        cast_out_tensor = Tensor()
         if in_attr.get('tensor', None) is not None and in_attr['tensor'].value is not None:
-            casted_value = in_attr['tensor'].value.astype(np.dtype(dst_type))
+            cast_out_tensor.value = in_attr['tensor'].value.astype(np.dtype(dst_type))
         else:
-            casted_value = None
+            cast_out_tensor.dtype = dst_type
         cast_out_attr = {'src_out_port': 0, 'dst_in_port': in_attr.get(
-            'dst_in_port', 0), 'tensor': Tensor(value=casted_value)}
+            'dst_in_port', 0), 'tensor': cast_out_tensor}
         graph.add_edge(src, cast, **cast_in_attr)
         graph.add_edge(cast, dst, **cast_out_attr)
         if type == 'Cast':
@@ -570,8 +574,11 @@ def insert_cast(graph, src, dst, dst_type, in_attr=None, key=None, type='Cast'):
 
 def insert_cast_after(graph, src, from_dtype, to_dtype, out_port=0, type='Cast'):
     ret = None
+    allowed_dtypes = ArmCastOp.attributes()['to_dtype']['options']
+    if type == 'Cast':
+        allowed_dtypes += ['int64', 'float64']
     if graph.has_node(src) \
-            and to_dtype in ArmCastOp.attributes()['to_dtype']['options'] \
+            and to_dtype in allowed_dtypes \
             and type in ('Cast', 'ArmCast') \
             and NodeWrap(graph, src)['object'] is not None \
             and out_port in NodeWrap(graph, src)['object'].get_out_ports():
@@ -580,21 +587,24 @@ def insert_cast_after(graph, src, from_dtype, to_dtype, out_port=0, type='Cast')
         else:
             cast = src + '_post_cast_' + str(out_port)
         cast = get_valid_node_name(graph, cast)
-        cast_in_tensor_value = None
+        cast_in_tensor = Tensor()
         for _, dst, k, out_attr in graph.sorted_out_edges(src, keys=True, data=True):
             if out_attr['src_out_port'] == out_port:
                 new_out_attr = copy.deepcopy(out_attr)
                 new_out_attr['src_out_port'] = 0
-                if new_out_attr['tensor'] is not None \
-                        and new_out_attr['tensor'].value is not None:
-                    new_out_attr['tensor'].value = new_out_attr['tensor'].value.astype(
-                        np.dtype(to_dtype))
-                    cast_in_tensor_value = new_out_attr['tensor'].value.astype(
-                        np.dtype(from_dtype))
+                if new_out_attr['tensor'] is not None:
+                    if new_out_attr['tensor'].value is not None:
+                        new_out_attr['tensor'].value = new_out_attr['tensor'].value.astype(
+                            np.dtype(to_dtype))
+                        cast_in_tensor.value = new_out_attr['tensor'].value.astype(
+                            np.dtype(from_dtype))
+                    else:
+                        new_out_attr['tensor'].dtype = to_dtype
+                        cast_in_tensor.dtype = from_dtype
                 graph.remove_edge(src, dst, k)
                 graph.add_edge(cast, dst, **new_out_attr)
         graph.add_edge(src, cast, **{'src_out_port': out_port,
-                                     'dst_in_port': 0, 'tensor': Tensor(value=cast_in_tensor_value)})
+                                     'dst_in_port': 0, 'tensor': cast_in_tensor})
         if type == 'Cast':
             cast_attr = {'name': cast, 'opset_version': 1, 'to': to_dtype}
         else:
