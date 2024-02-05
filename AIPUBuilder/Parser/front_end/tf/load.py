@@ -168,7 +168,7 @@ def get_possible_outputs(graph_def):
     with g.as_default():
         tfv1.import_graph_def(graph_def, name='')
         for node in g.as_graph_def().node:
-            if len(_children(node.name, g)) == 0:
+            if len(_children(node.name, g)) == 0 and len(node.input) > 0:
                 output_names.append(node.name)
     return output_names
 
