@@ -473,8 +473,6 @@ def convert_nms(graph):
                 score_reshape_dim = [score_shape[0],
                                      score_shape[1] * score_shape[2]]
                 tile_dim = [1, class_num, 1]
-                add_num = np.array(
-                    onnx_batch * [[-0.5] * box_num + [-0.5] * box_num + [0.5] * box_num + [0.5] * box_num])
                 reshape_box_1_dim = [onnx_batch, box_num]
                 reshapedim2 = [onnx_batch, box_shape[2], box_num]
 
@@ -514,6 +512,9 @@ def convert_nms(graph):
 
                 # Manipulate edges and nodes
                 if center_box is True:
+                    add_num = np.array(
+                        onnx_batch * [[-0.5] * box_num + [-0.5] * box_num + [0.5] * box_num + [0.5] * box_num],
+                        dtype=np.float32)
                     split = get_valid_node_name(graph, nms + '_split')
                     xcenter_reshape = get_valid_node_name(
                         graph, nms + '_reshape1')
