@@ -2707,7 +2707,7 @@ class ArmInTopKOp(OpHasOneOutPort, ArmOp):
 class ArmLayerNormOp(OpHasAxis, OpHasBiases, OpHasWeights, OpHasVariableOutPorts, ArmOp):
     @classmethod
     def cast_in_ports(cls):
-        return {0: ['float32', 'float16']}
+        return {0: ['float32', 'float16', 'int8', 'uint8']}
 
     @classmethod
     def attributes(cls):
@@ -4410,7 +4410,7 @@ class ArmSliceOp(OpHasOneOutPort, ArmOp):
 class ArmSoftmaxOp(OpHasAxis, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
-        return {0: ['float32', 'float16']}
+        return {0: ['float32', 'float16', 'int8', 'uint8']}
 
     @classmethod
     def attributes(cls):
@@ -4424,8 +4424,8 @@ class ArmSoftmaxOp(OpHasAxis, OpHasOneOutPort, ArmOp):
     def infer_shape(self, input_tensor: np.ndarray = None):
         super(ArmSoftmaxOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.nn.softmax(inputs[0], axis=self.axis).numpy()
-        self.set_out_tensor(out_tensor)
+        out_tensor = tf.nn.softmax(inputs[0].astype(np.float32), axis=self.axis).numpy()
+        self.set_out_tensor(out_tensor.astype(inputs[0].dtype))
 
 
 class ArmSpaceToBatchOp(OpHasOneOutPort, ArmOp):

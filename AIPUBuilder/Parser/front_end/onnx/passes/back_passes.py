@@ -3276,26 +3276,20 @@ def fuse_quant_op(graph, op_list):
     op_list = [op_list] if not isinstance(op_list, (list, tuple)) else list(op_list)
 
     matched = False
-    matches = matched_patterns(graph,
-                               nodes=[
-                                   ('float_op', {'op': op_list}),
-                                   ('quant', {'op': 'ArmQuantize'}),
-                               ],
-                               edges=[
-                                   ('float_op', 'quant')
-                               ])
+    matches = single_node_matcher(graph, op_list)
     for m in matches:
-        float_op, quant = m['float_op'], m['quant']
+        float_op = m['target']
         in_edges = graph.sorted_in_edges(float_op, data=True)
         if len(in_edges) < 1:
             ERROR('[Parser]: Meets invalid float Op(%s) in fuse_quant_op!' % float_op)
             continue
         out_edges = graph.sorted_out_edges(float_op, data=True)
-        if len(out_edges) != 1:
+        if len(out_edges) < 1:
             continue
 
         op_in_names = [e[0] for e in in_edges]
-        names = op_in_names + [float_op, quant]
+        op_out_names = [e[1] for e in out_edges]
+        names = op_in_names + [float_op] + op_out_names
         obj_dict = {n: NodeWrap(graph, n)['object'] for n in names}
         if any(v is None for v in obj_dict.values()):
             ERROR('[Parser]: Meets invalid Op in fuse_quant_op!')
@@ -3305,12 +3299,11 @@ def fuse_quant_op(graph, op_list):
         if any(len(graph.sorted_in_edges(n)) != 1 for n in op_in_names):
             ERROR('[Parser]: Meets invalid ArmDeQuantize Op in fuse_quant_op!')
             continue
+        if any(obj_dict[n].type != 'ArmQuantize' for n in op_out_names):
+            continue
 
         matched = True
-        y_scale, y_zp = obj_dict[quant].scale, obj_dict[quant].zero_point
-        quant_out_edges = graph.sorted_out_edges(quant, data=True)
         graph.remove_edges_from(in_edges)
-        graph.remove_edge(float_op, quant)
 
         for i, dequant in enumerate(op_in_names):
             dequant_in_edges = graph.sorted_in_edges(dequant, data=True)
@@ -3322,15 +3315,24 @@ def fuse_quant_op(graph, op_list):
             new_in_attr['tensor'].scale_zp = (x_scale, x_zp)
             graph.add_edge(src, float_op, **new_in_attr)
 
-        for _, dst, out_attr in quant_out_edges:
-            graph.remove_edge(quant, dst)
-            out_attr['tensor'].dtype = str(y_zp.dtype)
-            out_attr['tensor'].scale_zp = (y_scale, y_zp)
-            graph.add_edge(float_op, dst, **out_attr)
+        for quant in op_out_names:
+            src_out_port = graph.sorted_in_edges(quant, data=True)[0][2]['src_out_port']
+            y_scale, y_zp = obj_dict[quant].scale, obj_dict[quant].zero_point
+            quant_out_edges = graph.sorted_out_edges(quant, data=True)
+            for _, dst, out_attr in quant_out_edges:
+                graph.remove_edge(quant, dst)
+                out_attr['tensor'].dtype = str(y_zp.dtype)
+                out_attr['tensor'].scale_zp = (y_scale, y_zp)
+                dst_in_attr = copy.deepcopy(out_attr)
+                dst_in_attr.update({'src_out_port': src_out_port})
+                graph.add_edge(float_op, dst, **dst_in_attr)
 
-        if quant in graph._attr['output_names']:
-            index = graph._attr['output_names'].index(quant)
-            graph._attr['output_names'][index] = float_op
+            if quant in graph._attr['output_names']:
+                index = graph._attr['output_names'].index(quant)
+                if float_op in graph._attr['output_names']:
+                    graph._attr['output_names'].pop(index)
+                else:
+                    graph._attr['output_names'][index] = float_op
 
         obj_dict[float_op].quantize = True
 
@@ -5587,7 +5589,7 @@ def back_passes(graph, params):
 
     fuse_const(graph)
     remove_const(graph)
-    fuse_quant_op(graph, ['ArmEltwise'])
+    fuse_quant_op(graph, ['ArmEltwise', 'ArmSlice'])
 
     if graph._attr['framework'] in (Framework.ONNX, Framework.CAFFE):
         iter_times = min(max(len(graph) // 15, 15), 20)

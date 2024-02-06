@@ -26,11 +26,12 @@ def process_onnx(graph, model_path, params):
         merge_rcnn(graph, params)
         merge_qconv(graph)
         merge_qmatmul(graph)
-        merge_q_multiple(graph, ['Add', 'Concat', 'Gemm', 'Mul'])
-        merge_q_unary(graph, ['AdaptivePool', 'AveragePool', 'Celu', 'Clip', 'Elu', 'Flatten',
+        merge_q_multiple(graph, ['Add', 'Concat', 'Gemm', 'Mul', 'Split'])
+        merge_q_unary(graph, ['AdaptivePool', 'AveragePool', 'Celu', 'Clip', 'Elu', 'Expand', 'Flatten',
                               'GlobalAveragePool', 'GlobalMaxPool',
                               'HardSwish', 'HardSigmoid', 'LeakyRelu', 'LRN', 'MaxPool',
-                              'ReduceMean', 'Relu', 'Reshape', 'Slice', 'Sigmoid', 'Transpose',
+                              'ReduceMean', 'Relu', 'Reshape',
+                              'Slice', 'Sigmoid', 'Softmax', 'Squeeze', 'Transpose',
                               ])
         convert_mmcv_deform_conv(graph)
 
