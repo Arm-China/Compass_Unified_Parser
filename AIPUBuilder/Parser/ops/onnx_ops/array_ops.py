@@ -1018,14 +1018,15 @@ class ScatterElementsOp(OpHasOneOutPort, OpHasAxis, OnnxOp):
         super(ScatterElementsOp, self).infer_shape()
         inputs = self.get_input_tensors()
         data, indices, updates = inputs
-        data_torch = torch.from_numpy(data)
+        # data_torch = torch.from_numpy(data)  # data_torch and data share the same memory
+        data_torch = torch.from_numpy(np.array(data))
         indices = GatherElementsOp.make_indices_non_negative(
             indices, inputs[0].shape[self.axis])
         index_torch = torch.from_numpy(np.array(indices).astype(np.int64))
         update_torch = torch.from_numpy(np.array(updates).astype(data.dtype))
         if self.reduction == 'none':
             out_tensor = torch.Tensor.scatter_(
-                data_torch, src=update_torch, dim=self.axis, index=index_torch).numpy()
+                data_torch, src=update_torch, dim=self.axis, index=index_torch).numpy()  # in place operation
         else:
             onnx_reduction_map = {'mul': 'prod', 'add': 'sum', 'max': 'amax', 'min': 'amin'}
             assert self.reduction in onnx_reduction_map, 'Meets invalid reduction %s in infer_shape of ScatterElementsOp!' % self.reduction
