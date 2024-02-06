@@ -4272,7 +4272,7 @@ class ArmScatterElementsOp(OpHasOneOutPort, OpHasAxis, ArmOp):
 
     @classmethod
     def cast_in_ports(cls):
-        return {0: ['float32', 'float16'], 1: 'int32', 2: ['float32', 'float16']}
+        return {1: 'int32'}
 
     @classmethod
     def attributes(cls):
@@ -4290,7 +4290,7 @@ class ArmScatterElementsOp(OpHasOneOutPort, OpHasAxis, ArmOp):
         from .onnx_ops.array_ops import GatherElementsOp
         indices = GatherElementsOp.make_indices_non_negative(
             indices, inputs[0].shape[self.axis])
-        data_torch = torch.from_numpy(data)
+        data_torch = torch.from_numpy(np.array(data))
         index_torch = torch.from_numpy(np.array(indices).astype(np.int64))
         update_torch = torch.from_numpy(updates)
         if self.reduction == 'NONE':
