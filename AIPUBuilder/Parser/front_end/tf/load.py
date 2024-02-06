@@ -339,14 +339,13 @@ def parse_pb(model_path, params, anchor_tensors):
     return parse_graph_def(graph_def, params, anchor_tensors)
 
 
-def convert_tf_to_graph(model_path, params):
+def convert_tf_to_graph(graph, model_path, params):
     '''Parse the tensorflow model into a graph structure.'''
 
     from ...plugin_loader import PARSER_OP_DICT
     is_keras_model = model_path.endswith('.h5') or model_path.endswith('.hdf5') or model_path.endswith(
         '.keras') or is_dir(model_path)
 
-    graph = Graph(name=params.get('model_name', ''))
     graph._attr['framework'] = Framework.TENSORFLOW
     graph._attr['output_tensor_names'] = params.get('output_tensor_names', [])
     graph._attr['is_keras_model'] = is_keras_model

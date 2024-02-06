@@ -5,7 +5,7 @@
 from ..tf.load import convert_tf_to_graph
 
 
-def convert_tf2_to_graph(model_path, params):
+def convert_tf2_to_graph(graph, model_path, params):
     '''Reuse convert_tf_to_graph from tf.load for now.'''
 
-    return convert_tf_to_graph(model_path, params)
+    return convert_tf_to_graph(graph, model_path, params)

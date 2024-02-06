@@ -111,13 +111,10 @@ def convert_attr_to_onnx(attr_dict):
     return new_attr
 
 
-def convert_caffe_to_graph(model_path, params):
+def convert_caffe_to_graph(graph, model_path, params):
     '''Parse the caffe model into a graph structure.'''
 
     from ...plugin_loader import PARSER_OP_DICT
-    if not params.get('model_name', ''):
-        params['model_name'] = 'caffe_model'
-    graph = Graph(name=params['model_name'])
     graph._attr['framework'] = Framework.CAFFE
     graph._attr['output_tensor_names'] = params.get('output_tensor_names', [])
 

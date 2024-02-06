@@ -19,9 +19,9 @@ from .passes.front_passes import merge_gru, merge_gru2, merge_lstm, merge_zero_f
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
-def process_tf(model_path, params):
+def process_tf(graph, model_path, params):
     '''Do some preprocessing on the graph under the tensorflow framework.'''
-    graph = convert_tf_to_graph(model_path, params)
+    graph = convert_tf_to_graph(graph, model_path, params)
     record_output_tensors(graph)
 
     if graph is not None and len(graph) > 0:
