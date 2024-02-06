@@ -956,14 +956,14 @@ def place_reshape(graph, reshape, dim, data_format='NHWC'):
                     data_format=data_format)
 
 
-def insert_slice(graph, src, dst, in_attr, begin, size, key=None, type='Slice', data_format='NHWC'):
+def insert_slice(graph, src, dst, in_attr, begin, size, key=None, type='Slice', data_format='NHWC', quantize=False):
     ret = None
     if graph.has_node(src) and graph.has_node(dst) and begin and size and type in ('Slice', 'ArmSlice'):
         if has_path(graph, src, dst):
             graph.remove_edge(src, dst, key=key)
         slice = get_valid_node_name(graph, src + '_post_slice')
         graph.add_node(slice)
-        slice_attr = {'name': slice}
+        slice_attr = {'name': slice, 'quantize': quantize}
 
         starts = np.array(begin, np.int32)
         size = np.array(size, np.int32)

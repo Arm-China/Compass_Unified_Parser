@@ -675,25 +675,20 @@ def merge_q_multiple(graph, op_list):
         op_list = list(op_list)
 
     matched = False
-    matches = matched_patterns(graph,
-                               nodes=[
-                                   ('float_op', {'op': op_list}),
-                                   ('quant', {'op': 'QuantizeLinear'}),
-                               ],
-                               edges=[
-                                   ('float_op', 'quant')
-                               ])
+    matches = single_node_matcher(graph, op_list)
     for m in matches:
-        in_edges = graph.sorted_in_edges(m['float_op'], data=True)
+        float_op = m['target']
+        in_edges = graph.sorted_in_edges(float_op, data=True)
         if len(in_edges) < 1:
-            ERROR('[Parser]: Meets invalid float Op(%s) in merge_q_multiple!' % m['float_op'])
+            ERROR('[Parser]: Meets invalid float Op(%s) in merge_q_multiple!' % float_op)
             continue
-        out_edges = graph.sorted_out_edges(m['float_op'], data=True)
-        if len(out_edges) != 1:
+        out_edges = graph.sorted_out_edges(float_op, data=True)
+        if len(out_edges) < 1:
             continue
 
         op_in_names = [e[0] for e in in_edges]
-        names = op_in_names + [m['float_op'], m['quant']]
+        op_out_names = [e[1] for e in out_edges]
+        names = op_in_names + [float_op] + op_out_names
         obj_dict = {n: NodeWrap(graph, n)['object'] for n in names}
         if any(v is None for v in obj_dict.values()):
             error_node = [n for n in obj_dict if obj_dict[n] is None][0]
@@ -701,9 +696,11 @@ def merge_q_multiple(graph, op_list):
             continue
         if any(obj_dict[n].type != 'DequantizeLinear' for n in op_in_names):
             continue
+        if any(obj_dict[n].type != 'QuantizeLinear' for n in op_out_names):
+            continue
 
         found_invalid_dequant = False
-        for dequant in op_in_names:
+        for dequant in op_in_names + op_out_names:
             dequant_in_edges = graph.sorted_in_edges(dequant, data=True)
             if len(dequant_in_edges) not in (2, 3):
                 ERROR('[Parser]: Meets invalid Quantize Op(%s) in merge_q_multiple!' % dequant)
@@ -712,24 +709,13 @@ def merge_q_multiple(graph, op_list):
             if any(e[2]['tensor'].value is None for e in dequant_in_edges[1:]) \
                     or any(not e[2]['tensor'].is_const for e in dequant_in_edges[1:]):
                 found_invalid_dequant = True
-                continue
+                break
         if found_invalid_dequant:
-            continue
-
-        quant_in_edges = graph.sorted_in_edges(m['quant'], data=True)
-        if len(quant_in_edges) not in (2, 3):
-            ERROR('[Parser]: Meets invalid Quantize Op(%s) in merge_q_multiple!' % m['quant'])
-            continue
-        if any(e[2]['tensor'].value is None for e in quant_in_edges[1:]) \
-                or any(not e[2]['tensor'].is_const for e in quant_in_edges[1:]):
             continue
 
         matched = True
 
-        y_scale, y_zp = obj_dict[m['quant']].y_scale, obj_dict[m['quant']].y_zero_point
-
         graph.remove_edges_from(in_edges)
-        graph.remove_edge(m['float_op'], m['quant'])
 
         for i, dequant in enumerate(op_in_names):
             dequant_in_edges = graph.sorted_in_edges(dequant, data=True)
@@ -739,19 +725,27 @@ def merge_q_multiple(graph, op_list):
             x_scale, x_zp = obj_dict[dequant].x_scale, obj_dict[dequant].x_zero_point
             new_in_attr['tensor'].dtype = str(x_zp.dtype)
             new_in_attr['tensor'].scale_zp = (x_scale, x_zp)
-            graph.add_edge(src, m['float_op'], **new_in_attr)
+            graph.add_edge(src, float_op, **new_in_attr)
 
-        for _, dst, out_attr in graph.sorted_out_edges(m['quant'], data=True):
-            graph.remove_edge(m['quant'], dst)
-            out_attr['tensor'].dtype = str(y_zp.dtype)
-            out_attr['tensor'].scale_zp = (y_scale, y_zp)
-            graph.add_edge(m['float_op'], dst, **out_attr)
+        for quant in op_out_names:
+            src_out_port = graph.sorted_in_edges(quant, data=True)[0][2]['src_out_port']
+            y_scale, y_zp = obj_dict[quant].y_scale, obj_dict[quant].y_zero_point
+            for _, dst, out_attr in graph.sorted_out_edges(quant, data=True):
+                graph.remove_edge(quant, dst)
+                out_attr['tensor'].dtype = str(y_zp.dtype)
+                out_attr['tensor'].scale_zp = (y_scale, y_zp)
+                dst_in_attr = copy.deepcopy(out_attr)
+                dst_in_attr.update({'src_out_port': src_out_port})
+                graph.add_edge(float_op, dst, **dst_in_attr)
 
-        if m['quant'] in graph._attr['output_names']:
-            index = graph._attr['output_names'].index(m['quant'])
-            graph._attr['output_names'][index] = m['float_op']
+            if quant in graph._attr['output_names']:
+                index = graph._attr['output_names'].index(quant)
+                if float_op in graph._attr['output_names']:
+                    graph._attr['output_names'].pop(index)
+                else:
+                    graph._attr['output_names'][index] = float_op
 
-        obj_dict[m['float_op']].quantize = True
+        obj_dict[float_op].quantize = True
 
     if matched:
         clear_redundant_nodes(graph)

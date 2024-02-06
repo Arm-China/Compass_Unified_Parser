@@ -273,6 +273,7 @@ class ConvOp(BaseConvOp, OnnxOp):
     def infer_shape(self):
         super(ConvOp, self).infer_shape()
         inputs = self.get_input_tensors()
+        input_dtype = inputs[0].dtype
         if self.weights is not None:
             w = self.weights
         elif self.weights is None and len(inputs) >= 2:
@@ -333,7 +334,7 @@ class ConvOp(BaseConvOp, OnnxOp):
                                                  dilations=self.dilations,
                                                  data_format='NHWC')
             out_shape = [inputs[0].shape[0]] + out_shape + [self.num_output]
-            out_tensor = np.random.ranf(size=out_shape).astype(np.float32)
+            out_tensor = np.random.ranf(size=out_shape).astype(input_dtype)
 
         else:
             out_shape = BaseConvOp.cal_out_shape(inputs[0].shape[2:],
@@ -344,7 +345,7 @@ class ConvOp(BaseConvOp, OnnxOp):
                                                  dilations=self.dilations,
                                                  data_format='NCHW')
             out_shape = [inputs[0].shape[0], self.num_output] + out_shape
-            out_tensor = np.random.ranf(size=out_shape).astype(np.float32)
+            out_tensor = np.random.ranf(size=out_shape).astype(input_dtype)
 
         if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
             self.pads, _ = OpHasPaddingStrides.cal_pads(
