@@ -215,11 +215,10 @@ def update_tensor(tflite_path, tensor_table):
     return tensor_table
 
 
-def convert_tflite_to_graph(model_path, params):
+def convert_tflite_to_graph(graph, model_path, params):
     '''Parse the tflite model into a graph structure.'''
 
     from ...plugin_loader import PARSER_OP_DICT
-    graph = Graph(name=params.get('model_name', ''))
     graph._attr['framework'] = Framework.TFLITE
     graph._attr['output_tensor_names'] = params.get('output_tensor_names', [])
     force_float = True \

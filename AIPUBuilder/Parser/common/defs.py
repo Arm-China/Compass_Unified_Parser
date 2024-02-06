@@ -133,7 +133,7 @@ class Tensor(object):
                 'is_const': False,
                 'min_max': tuple(),
                 'scale_zp': tuple(),
-                'dtype': None
+                'dtype': None,
                 }
 
     def __init__(self, **kwargs):

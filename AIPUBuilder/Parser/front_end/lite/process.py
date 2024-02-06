@@ -17,9 +17,9 @@ from ...graph.graph_algo import infer, clear_redundant_nodes
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
-def process_tflite(model_path, params):
+def process_tflite(graph, model_path, params):
     '''Do some preprocessing on the graph under the tflite framework.'''
-    graph = convert_tflite_to_graph(model_path, params)
+    graph = convert_tflite_to_graph(graph, model_path, params)
     record_output_tensors(graph)
     if graph is not None and len(graph) > 0:
         apply_subgraph_plugin(graph)

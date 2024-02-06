@@ -11,9 +11,9 @@ from .passes.keras_front_passes import process_keras_op_before_infer, process_ke
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
-def process_tf2(model_path, params):
+def process_tf2(graph, model_path, params):
     '''Do some preprocessing on the graph under the tensorflow framework.'''
-    graph = convert_tf2_to_graph(model_path, params)
+    graph = convert_tf2_to_graph(graph, model_path, params)
     record_output_tensors(graph)
 
     if graph is not None and len(graph) > 0:

@@ -222,9 +222,8 @@ def attr_value_converter(attr_dict, source, root_graph_info=None):
             attr_dict.update({key: sub_graph})
 
 
-def convert_onnx_to_graph(model_path, params):
+def convert_onnx_to_graph(graph, model_path, params):
     '''Parse the onnx model into a graph structure.'''
-    graph = Graph(name=params.get('model_name', ''))
     graph._attr['framework'] = Framework.ONNX
     graph._attr['output_tensor_names'] = params.get('output_tensor_names', [])
     graph._attr['output_names'] = copy.deepcopy(params.get('output_names', []))

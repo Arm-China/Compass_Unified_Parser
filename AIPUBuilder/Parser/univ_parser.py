@@ -8,6 +8,7 @@ import onnx
 import torch
 from collections import OrderedDict
 from .common.utils import is_file, is_dir, multi_string_to_list, list_string_to_list
+from .graph.graph import Graph
 from .logger import *
 
 
@@ -122,7 +123,9 @@ def univ_parser(params):
             ERROR('[Parser]: Meets invalid output directory(%s)!' % output_dir)
             ret = False
         else:
-            graph = None
+            if not params.get('model_name', ''):
+                params['model_name'] = model_type + '_model'
+            graph = Graph(name=params['model_name'])
 
             tmp_tensors_dir = '.%s_tmp_tensors' % params.get('model_name', '')
             tmp_tensors_path = os.path.join(output_dir, tmp_tensors_dir)
@@ -145,22 +148,22 @@ def univ_parser(params):
                 '''The models under different frameworks are parsed and finally converted into representations under the onnx framework.'''
                 if model_type == 'onnx':
                     from .front_end.onnx.process import process_onnx
-                    graph = process_onnx(model_path, params)
+                    graph = process_onnx(graph, model_path, params)
                 elif model_type == 'tflite':
                     from .front_end.lite.process import process_tflite
-                    graph = process_tflite(model_path, params)
+                    graph = process_tflite(graph, model_path, params)
                 elif model_type == 'caffe':
                     from .front_end.caffe.process import process_caffe
-                    graph = process_caffe(model_path, params)
+                    graph = process_caffe(graph, model_path, params)
                 elif model_type in ('tf', 'tensorflow'):
                     is_keras_model = model_path.endswith('.h5') or model_path.endswith('.hdf5') or model_path.endswith(
                         '.keras') or is_dir(model_path)
                     if is_keras_model:
                         from .front_end.tf2.process import process_tf2
-                        graph = process_tf2(model_path, params)
+                        graph = process_tf2(graph, model_path, params)
                     else:
                         from .front_end.tf.process import process_tf
-                        graph = process_tf(model_path, params)
+                        graph = process_tf(graph, model_path, params)
                 else:
                     ERROR('[Parser]: Framework %s is not supported!' %
                           params.get('model_type', ''))
