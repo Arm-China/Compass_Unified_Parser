@@ -157,9 +157,14 @@ def convert_1d_pooling(graph):
                     in_edges = graph.sorted_in_edges(pool, data=True)
                     out_edges = graph.sorted_out_edges(pool, data=True)
                     in_shape, out_shape = in_shapes[0], out_shapes[0]
-                    pre_reshape_dim = (
-                        [in_shape[0], 1] + in_shape[1:]) if pool_obj.data_format == 'NHWC' else (in_shape[0:2] + [1, in_shape[-1]])
+                    if pool_obj.data_format == 'NHWC':
+                        pre_reshape_dim = [in_shape[0], 1] + in_shape[1:]
+                        post_old_dim = [out_shape[0], 1] + out_shape[1:]
+                    else:
+                        pre_reshape_dim = in_shape[0:2] + [1, in_shape[-1]]
+                        post_old_dim = out_shape[0:2] + [1, out_shape[-1]]
                     post_reshape_dim = out_shape
+                    quantize = pool_obj.quantize
                     # Get attributes firstly, then update their value because default value of attributes
                     # can be affected by others(default value of dilations changes if kernel_shape updates).
                     kernel_shape = pool_obj.kernel_shape
@@ -175,23 +180,10 @@ def convert_1d_pooling(graph):
                         pool_obj.dilations = [1] + dilations
                     src, _, in_attr = in_edges[0]
                     insert_reshape(
-                        graph, src, pool, in_attr, pre_reshape_dim, data_format=pool_obj.data_format)
-
-                    pool_out_tensor = None
-                    post_reshape = get_valid_node_name(
-                        graph, pool + '_post_reshape')
-                    for _, dst, out_attr in out_edges:
-                        graph.remove_edge(pool, dst)
-                        graph.add_edge(post_reshape, dst, **out_attr)
-                        if pool_out_tensor is None:
-                            pool_out_tensor = copy.deepcopy(out_attr['tensor'])
-                    graph.add_edge(
-                        pool, post_reshape, **{'src_out_port': 0, 'dst_in_port': 0, 'tensor': pool_out_tensor})
-                    NodeWrap(graph, post_reshape).replace_obj(
-                        'Reshape', {'name': post_reshape, 'opset_version': 5})
-                    insert_constant(graph, post_reshape + '_shape', np.array(post_reshape_dim,
-                                                                             np.int64), post_reshape, in_port=1, data_format=pool_obj.data_format)
-
+                        graph, src, pool, in_attr, pre_reshape_dim, data_format=pool_obj.data_format,
+                        quantize=quantize)
+                    post_reshape = insert_reshape_after(graph, pool, post_reshape_dim, old_dim=post_old_dim,
+                                                        quantize=quantize)
                     if pool in graph._attr['output_names']:
                         index = graph._attr['output_names'].index(pool)
                         graph._attr['output_names'][index] = post_reshape
@@ -1715,8 +1707,9 @@ def convert_special_transpose(graph):
                 src, _, in_attr = in_edges[0]
                 transpose_obj.perm = (
                     np.array(transpose_obj.perm[1:], np.int32) - 1).tolist()
-                insert_reshape(graph, src, transpose, in_attr, dim1)
-                post_reshape = insert_reshape_after(graph, transpose, dim2)
+                quantize = transpose_obj.quantize
+                insert_reshape(graph, src, transpose, in_attr, dim1, quantize=quantize)
+                post_reshape = insert_reshape_after(graph, transpose, dim2, quantize=quantize)
                 if transpose in graph._attr['output_names']:
                     index = graph._attr['output_names'].index(transpose)
                     graph._attr['output_names'][index] = post_reshape
@@ -10061,7 +10054,8 @@ def adjust_3d_to_4d(graph):
                         reshape = insert_reshape_after(graph,
                                                        node_name,
                                                        ports_shape[out_port],
-                                                       out_port=out_port)
+                                                       out_port=out_port,
+                                                       quantize=node_obj.quantize)
                         reshape2_nodes.append(reshape)
 
                     if op_type == 'InstanceNormalization':

@@ -33,6 +33,9 @@ def process_onnx(graph, model_path, params):
                               'ReduceMean', 'Relu', 'Reshape',
                               'Slice', 'Sigmoid', 'Softmax', 'Squeeze', 'Transpose',
                               ])
+        from ..lite.passes.front_passes import split_quatized_mean
+        split_quatized_mean(graph, 'ReduceMean')
+
         convert_mmcv_deform_conv(graph)
 
         fuse_weights_const(graph)
