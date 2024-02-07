@@ -3222,12 +3222,13 @@ def split_expand(graph):
                 graph.remove_edges_from(in_edges[1:])
                 input_shape = input_shapes[0]
                 shape_value = shape_obj.value.astype(np.int32)
+                quantize = expand_obj.quantize
                 # Dimensions are right alignment
                 if shape_value.size > len(input_shape):
                     diff_size = shape_value.size - len(input_shape)
                     input_shape = [1] * diff_size + input_shape
                     src, _, in_attr = in_edges[0]
-                    insert_reshape(graph, src, expand, in_attr, input_shape)
+                    insert_reshape(graph, src, expand, in_attr, input_shape, quantize=quantize)
                 elif shape_value.size < len(input_shape):
                     diff_size = len(input_shape) - shape_value.size
                     shape_value = np.concatenate(
@@ -3239,7 +3240,7 @@ def split_expand(graph):
                 insert_constant(graph, expand + '_reps', tile_reps,
                                 expand, in_port=1, data_format='NHWC')
                 NodeWrap(graph, expand).replace_obj(
-                    'Tile', {'name': expand, 'opset_version': 6})
+                    'Tile', {'name': expand, 'opset_version': 6, 'quantize': quantize})
             else:
                 ERROR(
                     '[Parser]: Meets invalid shape of Expand Node (%s) in split_expand!' % expand)

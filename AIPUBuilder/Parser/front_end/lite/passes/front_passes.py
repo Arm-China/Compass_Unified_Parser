@@ -3048,8 +3048,11 @@ def split_not_equal(graph, op_type='TfNotEqual'):
         clear_redundant_nodes(graph)
 
 
-def split_quatized_mean(graph):
-    matches = single_node_matcher(graph, 'LiteMEAN')
+def split_quatized_mean(graph, op_type='LiteMEAN'):
+    if op_type not in ('LiteMEAN', 'ReduceMean'):
+        ERROR('[Parser]: Meets invalid Op type (%s) in split_quatized_mean!' % op_type)
+        return
+    matches = single_node_matcher(graph, op_type)
     for m in matches:
         mean = m['target']
         mean_obj = NodeWrap(graph, mean)['object']
@@ -3057,7 +3060,7 @@ def split_quatized_mean(graph):
             continue
         in_edges = graph.sorted_in_edges(mean, data=True)
         out_edges = graph.sorted_out_edges(mean, data=True)
-        if len(in_edges) < 2 or len(out_edges) < 1:
+        if len(in_edges) < 1 or len(out_edges) < 1:
             continue
         if in_edges[0][2]['tensor'] is None \
                 or out_edges[0][2]['tensor'] is None:
@@ -3073,11 +3076,12 @@ def split_quatized_mean(graph):
                 or len(output_scale_zp) != 2:
             continue
         output_shapes = mean_obj.get_output_shapes()
-        if len(output_shapes) < 1 or output_shapes[0] is None:
-            continue
+        if len(output_shapes) < 1 or output_shapes[0] is None or None in output_shapes[0]:
+            add_value = np.array(0, dtype=input_dtype)
+        else:
+            output_shape = output_shapes[0]
+            add_value = np.zeros(output_shape).astype(input_dtype)
         axes = mean_obj.axes
-        output_shape = output_shapes[0]
-        add_value = np.zeros(output_shape).astype(input_dtype)
         post_add = get_valid_node_name(graph, mean + '_post_add')
         for _, dst, out_attr in out_edges:
             graph.remove_edge(mean, dst)
