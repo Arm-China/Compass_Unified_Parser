@@ -1244,7 +1244,7 @@ def convert_special_matmul_to_fc(graph):
                                     'biases': biases,
                                     'biases_scale_zp': [biases_scale, biases_zp]})
             else:
-                biases = np.zeros([weights.shape[0]], np.float32)
+                biases = np.zeros([weights.shape[0]], w_obj.value.dtype)
                 matmul_attr.update({'weights': weights, 'biases': biases})
             NodeWrap(graph, matmul).replace_obj('FullyConnected', matmul_attr)
             if len(input_shapes[0]) > 2:
