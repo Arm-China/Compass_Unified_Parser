@@ -2156,7 +2156,7 @@ def rename_bn(graph):
         bn_obj = NodeWrap(graph, bn)['object']
         if bn_obj.training_mode:
             WARN(
-                '[Parser]: Meets unsupported training mode for BatchNormalization Op in ranme_bn(%s)' % bn)
+                '[Parser]: Meets unsupported training mode for BatchNormalization Op in rename_bn(%s)' % bn)
             continue
         gamma, beta, mean, var = [c[2] for c in bn_obj.sorted_in_consts()]
         if len(gamma.shape) > 1 \
@@ -2164,11 +2164,17 @@ def rename_bn(graph):
                 or len(mean.shape) > 1 \
                 or len(var.shape) > 1:
             continue
+        input_dtypes = bn_obj.get_input_dtypes()
+        if len(input_dtypes) < 1 or input_dtypes[0] is None:
+            WARN(
+                '[Parser]: Meets invalid dtype of BatchNormalization Op(%s) in rename_bn!' % bn)
+            continue
         weights = gamma / np.sqrt(var + bn_obj.epsilon)
         biases = beta - gamma * mean / np.sqrt(var + bn_obj.epsilon)
         new_attr_dict = bn_obj.copied_attr()
         new_attr_dict.update(
-            {'num_output': biases.size, 'weights': weights, 'biases': biases, 'axis': -1})
+            {'num_output': biases.size, 'weights': weights.astype(input_dtypes[0]),
+             'biases': biases.astype(input_dtypes[0]), 'axis': -1})
         NodeWrap(graph, bn).replace_obj('ArmBatchNorm', new_attr_dict)
         in_edges = graph.sorted_in_edges(bn)
         graph.remove_edges_from(in_edges[1:])

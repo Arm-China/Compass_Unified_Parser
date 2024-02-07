@@ -550,7 +550,7 @@ class ArmBatchNormOp(BaseLinearOp, OpHasAxis, ArmOp):
         if self.axis < 0:
             self.axis += len(inputs[0].shape)
         out_tensor = (inputs[0] * self.weights +
-                      self.biases).astype(np.float32)
+                      self.biases).astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
     def write_attrs(self, txt_file):
