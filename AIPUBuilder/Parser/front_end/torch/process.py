@@ -17,7 +17,7 @@ from .utils import get_tuple_from_tensor_type, quantized_args, quantize_helper, 
     get_onnx_pool_output_shape, get_torch_pool_output_shape
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 from ...common.utils import get_version
-from ...common.defs import FLOAT_EQUAL
+from ...common.defs import FLOAT_EQUAL, INT_MAX
 
 # global variance
 ONNX_OPSET_VERSION = 9
@@ -1302,6 +1302,7 @@ def convert_index_put(g, x, indices_list_value, values, accumulate=False):
         for ind in indices_list[1:]:
             index = opset9.add(g, index, ind)
         broadcast_index_shape = g.op('Shape', index)
+        broadcast_index_size = helper._get_tensor_sizes(index)
         indices_list = [
             helper._unsqueeze_helper(
                 g, opset9.expand(g, ind, broadcast_index_shape, None), [-1]
@@ -1318,31 +1319,33 @@ def convert_index_put(g, x, indices_list_value, values, accumulate=False):
                 return opset9.masked_fill(g, x, bool_inp, values)
             return masked_scatter(g, x, bool_inp, values)
         broadcast_index_shape = g.op('Shape', index)
+        broadcast_index_size = helper._get_tensor_sizes(index)
         index = helper._unsqueeze_helper(g, index, [-1])
-    import sys
-    sub_data_shape = helper._slice_helper(
-        g, g.op('Shape', x), axes=[0], starts=[len(indices_list)], ends=[sys.maxsize]
-    )
-    exp_values_shape = g.op('Concat', broadcast_index_shape,
-                            sub_data_shape, axis_i=0)
-    # Check if values is a singular value and expand accordingly
+
     inp_shape = helper._get_tensor_sizes(x)
     values_shape = helper._get_tensor_sizes(values)
     index_shape = helper._get_tensor_sizes(index)
-    if values_shape is not None and None not in values_shape:
+
+    if inp_shape is None or None in inp_shape or values_shape is None or None in values_shape or index_shape is None or None in index_shape:
+        sub_data_shape = helper._slice_helper(
+            g, g.op('Shape', x), axes=[0], starts=[len(indices_list)], ends=[INT_MAX]
+        )
+        exp_values_shape_t = g.op('Concat', broadcast_index_shape,
+                                  sub_data_shape, axis_i=0)
+    else:
+        sub_data_shape = inp_shape[len(indices_list):]
+        exp_values_shape = np.concatenate([np.array(broadcast_index_size), np.array(sub_data_shape)], axis=0).tolist()
+        exp_values_shape_t = g.op('Constant', value_t=torch.tensor(exp_values_shape, dtype=torch.int64))
         need_expand = True
-        if index_shape is not None and None not in index_shape \
-                and np.prod(index_shape[:-1]) == np.prod(values_shape):
+        if values_shape and np.prod(values_shape) == np.prod(exp_values_shape):
             need_expand = False
-        elif inp_shape is not None and None not in inp_shape \
-                and values_shape == inp_shape:
-            need_expand = False
+
         if need_expand:
             try:
-                values = opset9.expand(g, values, exp_values_shape, None)
+                values = opset9.expand(g, values, exp_values_shape_t, None)
             except:
                 pass
-    values = helper._reshape_helper(g, values, exp_values_shape)
+    values = helper._reshape_helper(g, values, exp_values_shape_t)
 
     dtype = x.type().scalarType()
     if dtype is not None and dtype != values.type().scalarType():
