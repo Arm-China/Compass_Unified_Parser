@@ -550,7 +550,12 @@ def convert_onnx_to_graph(graph, model_path, params):
 
                 if anchor_tensors and anchor_tensors_value:
                     try:
-                        graph._attr['anchors'] = np.reshape(np.concatenate(anchor_tensors_value, axis=-1), [-1, 4])
+                        if all(len(value.shape) > 1 and value.shape[-1] == 4 for value in anchor_tensors_value):
+                            concat_axis = -2
+                        else:
+                            concat_axis = -1
+                        graph._attr['anchors'] = np.reshape(np.concatenate(
+                            anchor_tensors_value, axis=concat_axis), [-1, 4])
                     except:
                         WARN('[Parser]: Cannot get anchor tensors (%s) in convert_onnx_to_graph!' % str(anchor_tensors))
 
