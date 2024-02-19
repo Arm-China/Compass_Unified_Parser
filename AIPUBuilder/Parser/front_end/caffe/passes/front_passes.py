@@ -191,8 +191,7 @@ def convert_lstm(graph):
                     or cond_in_attr['tensor'].value is None \
                     or not cond_in_attr['tensor'].is_const \
                     or not FLOAT_EQUAL(cond_in_attr['tensor'].value, 1):
-                WARN('[Parser]: Only supports cond==ones of CaffeLSTM(%s) in convert_lstm!' % lstm)
-                continue
+                WARN('[Parser]: Only supports cond==ones of CaffeLSTM(%s) in convert_lstm! Will treat cond as ones!' % lstm)
             matched = True
             input_shapes = lstm_obj.get_input_shapes()
             hidden_size = lstm_obj.num_output
