@@ -150,7 +150,10 @@ class Tensor(object):
     def get_dtype(self):
         value = getattr(self, 'value')
         if value is not None:
-            return str(value.dtype)
+            ret = str(value.dtype)
+            if ret == 'object':
+                ret = None
+            return ret
         else:
             dtype = getattr(self, 'dtype')
             if dtype is not None:

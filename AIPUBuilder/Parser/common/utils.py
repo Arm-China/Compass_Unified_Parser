@@ -183,7 +183,6 @@ def get_closest_dtype(origin_dtype, available_dtypes):
                 can_list.append(str(dtype) + str(int(np.power(2, e))))
         return can_list
 
-    import re
     closest_dtype = None
     dtype = re.findall(r'[a-zA-Z]+', origin_dtype)[0]
     bits = re.findall(r'\d+', origin_dtype)[0]
