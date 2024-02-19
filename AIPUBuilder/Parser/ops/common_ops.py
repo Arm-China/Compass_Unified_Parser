@@ -477,7 +477,7 @@ class HardSwishOp(LayoutUnawareOp, OpHasOneOutPort, CommonOp):
     def infer_shape(self):
         super(HardSwishOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = (inputs[0] * tf.nn.relu6(inputs[0] + 3) / 6).numpy()
+        out_tensor = (inputs[0] * tf.nn.relu6(inputs[0] + 3) / 6).numpy().astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
 
