@@ -360,8 +360,8 @@ def convert_tf_to_graph(graph, model_path, params):
 
     if not is_keras_model:
         if params.get('output_names', []):
-            params['output_names'] = list(
-                map(trim_tensor_name, params['output_names']))
+            params['output_names'] = list(set(list(
+                map(trim_tensor_name, params['output_names']))))
 
         if params.get('input_names', []):
             original_input_names = params['input_names']
