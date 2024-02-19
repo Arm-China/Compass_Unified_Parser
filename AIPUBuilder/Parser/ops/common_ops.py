@@ -990,8 +990,8 @@ class SiluOp(LayoutUnawareOp, ActivationOnlyOp, CommonOp):
     def infer_shape(self):
         super(SiluOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = (inputs[0]) * tf.sigmoid(inputs[0]).numpy()
-        self.set_out_tensor(out_tensor)
+        out_tensor = (inputs[0]) * tf.sigmoid(inputs[0].astype(np.float32)).numpy()
+        self.set_out_tensor(out_tensor.astype(inputs[0].dtype))
 
 
 class SufficientStatisticsOp(OpHasAxis, OpHasMultipleOutPorts, CommonOp):
