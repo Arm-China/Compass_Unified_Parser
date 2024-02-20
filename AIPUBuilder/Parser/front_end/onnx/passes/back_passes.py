@@ -3559,8 +3559,10 @@ def detection_post_process(graph, params):
                 vaild_box_num = out1_out_shapes[0][1]
 
             anchors = None
-            if graph._attr['framework'].name == 'CAFFE' or \
-                    params.get('detection_postprocess', '').upper() == 'SSD_RESNET':
+            is_xy_box_format = (params.get('box_format', '').upper() == 'XY')
+            if graph._attr['framework'].name == 'CAFFE' \
+                    or params.get('detection_postprocess', '').upper() == 'SSD_RESNET' \
+                    or is_xy_box_format:
                 box_out_edges = graph.sorted_out_edges(box_predict, data=True)
                 if len(box_out_edges) == 1:
                     split = get_valid_node_name(
@@ -3610,16 +3612,24 @@ def detection_post_process(graph, params):
                 class_predict_out_edges[0][2]['tensor'])
             box_predict_tensor = copy.deepcopy(
                 box_predict_out_edges[0][2]['tensor'])
-            # Add Softmax if class_predict is not sigmoid or softmax
+            # Add Sigmoid/Softmax if class_predict is not sigmoid or softmax
             if class_pred_obj.type not in ('ArmActivation', 'ArmSoftmax') and \
                     class_pred_parent_obj.type not in ('ArmActivation', 'ArmSoftmax'):
-                softmax = get_valid_node_name(
-                    graph, class_predict + '_softmax')
-                graph.add_edge(class_predict, softmax, **
+                act = params.get('ssd_activation', 'softmax').lower()
+                if act not in ('softmax', 'sigmoid'):
+                    ERROR('[Parser]: Meet invalid value of activation (%s) in detection_post_process! '
+                          'Supported values are softmax, sigmoid!' % act)
+                act_node = get_valid_node_name(
+                    graph, class_predict + '_' + act)
+                graph.add_edge(class_predict, act_node, **
                                {'tensor': class_predict_out_edges[0][2]['tensor']})
-                NodeWrap(graph, softmax).replace_obj(
-                    'ArmSoftmax', {'name': softmax})
-                class_predict = softmax
+                if act == 'softmax':
+                    NodeWrap(graph, act_node).replace_obj(
+                        'ArmSoftmax', {'name': act_node})
+                else:
+                    NodeWrap(graph, act_node).replace_obj(
+                        'ArmActivation', {'name': act_node, 'method': 'SIGMOID'})
+                class_predict = act_node
 
             decode_box = get_valid_node_name(
                 graph, params['model_name'] + '_decode_box')
@@ -3698,8 +3708,7 @@ def detection_post_process(graph, params):
                     feature_map.append(u_input_shapes[0][1:3])
 
             image_width = int(params.get('image_width', 300))
-            image_height = int(params.get('image_width', 300))
-
+            image_height = int(params.get('image_height', 300))
             if graph._attr['framework'].name == 'CAFFE':
                 anchors = graph._attr.get('anchors', None)
             elif graph._attr['framework'].name in ['ONNX', 'TFLITE', 'TENSORFLOW']:
@@ -3712,6 +3721,10 @@ def detection_post_process(graph, params):
                     anchors = ArmDecodeBoxOp.generate_anchors(feature_map)
 
             if anchors is not None:
+                if is_xy_box_format and anchors.shape[-1] == 4:
+                    DEBUG('Change anchor format from xywh/xyxy to yxhw/yxyx!')
+                    split0, split1, split2, split3 = np.split(anchors, 4, axis=-1)
+                    anchors = np.concatenate([split1, split0, split3, split2], axis=-1)
                 anchor_tensor_format = params.get(
                     'anchor_tensor_format', 'center').upper()
                 supported_anchor_format = ['CENTER', 'CORNER']
@@ -3719,6 +3732,7 @@ def detection_post_process(graph, params):
                     ERROR('[Parser]: Meet invalid value of anchor_tensor_format! Supported values are %s!' %
                           str(supported_anchor_format)[1:-1])
                 elif anchor_tensor_format == 'CORNER':
+                    DEBUG('Change anchor format from yxyx to yxhw!')
                     anchors = OpHasAnchors.convert_to_center_coordinate(
                         anchors)
 
@@ -3731,6 +3745,7 @@ def detection_post_process(graph, params):
                               'max_box_num': max_box_num,
                               'class_num': int(params.get('class_num', class_num)),
                               'score_threshold': float(params.get('score_threshold', 0.5)),
+                              'proposal_normalized': params.get('proposal_normalized', True),
                               }
             if params.get('variance', ''):
                 decodebox_attr.update(

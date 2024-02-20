@@ -1528,6 +1528,7 @@ class ArmDecodeBoxOp(OpHasAnchors, OpHasMultipleOutPorts, ArmOp):
                 'score_threshold': {'type': AttrType.FLOAT, 'default': 0.5},
                 'variance': {'type': AttrType.FLOATS, 'default': []},
                 'firstbox_scale': {'type': AttrType.FLOATS, 'default': []},
+                'proposal_normalized': {'type': AttrType.BOOL, 'default': True},
                 }
 
     def __init__(self, graph, attr_dict=None):
@@ -1582,6 +1583,7 @@ class ArmDecodeBoxOp(OpHasAnchors, OpHasMultipleOutPorts, ArmOp):
             txt_file.write('score_threshold=%f\n' % self.score_threshold)
             txt_file.write('feature_map=[%s]\n' %
                            list_list_to_string(self.feature_map))
+            txt_file.write('proposal_normalized=%s\n' % str(self.proposal_normalized).lower())
             if self.variance:
                 txt_file.write('variance=[%s]\n' %
                                list_list_to_string(self.variance))

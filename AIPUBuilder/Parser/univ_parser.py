@@ -119,6 +119,7 @@ def univ_parser(params):
             WARN('[Parser]: input_data_format in config file will be deprecated!')
         params['input_data_format'] = 'NCHW' if model_type in ('onnx', 'caffe', 'torch') else 'NHWC'
         params['output_tensor_names'] = params['output_names'][:]
+        params['proposal_normalized'] = (params.get('proposal_normalized', 'true').lower() in ('1', 'true'))
 
         if not is_file(model_path) and not is_dir(model_path):
             ERROR('[Parser]: Meets invalid model file/directory(%s)!' % model_path)

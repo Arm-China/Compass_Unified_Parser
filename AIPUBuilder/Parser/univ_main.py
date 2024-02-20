@@ -70,6 +70,12 @@ optional arguments in Common section of <net.cfg>:
                         detection_postprocess is used.
     image_width         Input image width. Required if detection_postprocess is used.
     image_height        Input image height. Required if detection_postprocess is used.
+    box_format          The format of box used as the input of SSD. Format 'xy' and 'yx' are supported.
+                        The default format is 'yx'.
+    ssd_activation      The activation applied to class input of SSD. It's ignored if activation has been
+                        applied. 'softmax'(default) and 'sigmoid' is supported.
+    proposal_normalized It's used to indicate whether box/anchor is normalized for SSD.
+                        '1'(or 'true', default) and '0'(or 'false') are supported.
     preprocess_type     The pre-processing to be applied on the model input(s). The following types are
                         supported(case insensitive):
                         RESIZE, RGB2BGR, BGR2RGB, RGB2GRAY, and BGR2GRAY.
