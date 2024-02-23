@@ -1665,12 +1665,14 @@ def convert_torch_to_onnx(model_path, params):
 
     # Load TorchScript/non-TorchScript model
     is_torch_script_model = False
+    is_cuda_available = torch.cuda.is_available()
+    device = 'cuda' if is_cuda_available else 'cpu'
     try:
-        model = torch.jit.load(model_path, map_location=torch.device('cpu'))
+        model = torch.jit.load(model_path, map_location=torch.device(device))
         is_torch_script_model = True
     except RuntimeError:
         try:
-            model = torch.load(model_path, map_location=torch.device('cpu'))
+            model = torch.load(model_path, map_location=torch.device(device))
             if isinstance(model, torch.nn.Module):
                 model.eval()
             else:
@@ -2013,7 +2015,7 @@ def convert_torch_to_onnx(model_path, params):
             tensor = torch.randn(input_shape, dtype=tensor_dtype)
         else:
             tensor = torch.zeros(input_shape, dtype=tensor_dtype)
-        if torch.cuda.is_available():
+        if is_cuda_available:
             tensor = tensor.cuda()
         tensor_list.append(tensor)
 
@@ -2046,7 +2048,7 @@ def convert_torch_to_onnx(model_path, params):
     onnx_model_path = os.path.join(params.get('output_dir', './'),
                                    os.path.basename(model_path) + '.onnx')
     INFO('[Parser]: Convert torch model (%s) to onnx model...' % model_path)
-    if torch.cuda.is_available():
+    if is_cuda_available:
         try:
             parallel_model = nn.DataParallel(model)
             _export_to_onnx(parallel_model.module, input_tensors, onnx_model_path,
