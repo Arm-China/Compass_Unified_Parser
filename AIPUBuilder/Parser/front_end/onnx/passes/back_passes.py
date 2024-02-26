@@ -5387,6 +5387,7 @@ def assign_top_range_scale_zp(graph):
             WARN('[Parser]: Meets unsupported zp type(%s)!' % str(dtype))
         return dtype
 
+    has_quantize_nodes = False
     for n in graph.nodes:
         n_obj = NodeWrap(graph, n)['object']
         if n_obj is not None:
@@ -5408,6 +5409,10 @@ def assign_top_range_scale_zp(graph):
                     n_obj.top_ranges = [None if s is None else np.array(s, dtype=np.float32) for s in top_ranges_value]
                     n_obj.top_ranges_offset = [-1] * len(n_obj.top_ranges)
             if graph._attr.get('quantize', False):
+                if n_obj.quantize:
+                    has_quantize_nodes = True
+                else:
+                    continue
                 if not any('scale_zp' in info for info in top_info[3]):
                     continue
                 out_ports = n_obj.get_out_ports()
@@ -5438,6 +5443,8 @@ def assign_top_range_scale_zp(graph):
                     'top_scales and top_zps should have the same size!'
         else:
             ERROR('[Parser]: Meets invalid Node(%s) in assign_top_range_scale_zp!' % n)
+    if graph._attr.get('quantize', False) and not has_quantize_nodes:
+        graph._attr['quantize'] = False
 
 
 def back_passes(graph, params):
