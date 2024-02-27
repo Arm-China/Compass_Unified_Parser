@@ -1190,6 +1190,7 @@ class LayerNormalizationOp(OpHasAxis, OpHasVariableOutPorts, OnnxOp):
         inputs = self.get_input_tensors()
         assert len(inputs) in (2, 3), 'LayerNormalizationOp expects 2 or 3 inputs, but got %d' % len(inputs)
         input_length = len(inputs[0].shape)
+        input_dtype = inputs[0].dtype
         self.axes = OpHasAxis.make_axes_non_negative(self.axes, input_length)
         inp = np.array(inputs[0], np.float32) if self.stash_type else inputs[0]
         mean = np.mean(inp, axis=tuple(self.axes), keepdims=True)
@@ -1203,7 +1204,7 @@ class LayerNormalizationOp(OpHasAxis, OpHasVariableOutPorts, OnnxOp):
             biases = OpHasAxis.expand_to(inputs[2], self.axes, input_length)
         else:
             biases = np.zeros_like(weights)
-        out_tensors = [normalized * weights + biases]
+        out_tensors = [np.array(normalized * weights + biases, dtype=input_dtype)]
         out_ports = self.get_out_ports()
         if 1 in out_ports:
             out_tensors.append(np.array(mean, np.float32))

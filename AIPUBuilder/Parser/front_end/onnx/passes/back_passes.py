@@ -4707,6 +4707,8 @@ def sink_single_transpose(graph):
                     slope_perm = Op.cal_inverse_perm(transpose_obj.perm)
                     unaware_obj.negative_slope = np.transpose(
                         unaware_obj.negative_slope, slope_perm)
+                if unaware_obj.type == 'ArmQuantize':
+                    transpose_obj.quantize = True
                 if unaware in graph._attr['output_names']:
                     index = graph._attr['output_names'].index(unaware)
                     graph._attr['output_names'][index] = transpose
