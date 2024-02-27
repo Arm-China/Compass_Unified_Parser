@@ -391,8 +391,16 @@ def convert_onnx_to_graph(graph, model_path, params):
                         opset_version = opset_import_map[domain]
                         if domain == 'com.microsoft':
                             node_type = node_type + 'Ms'
+                    quantize = False
+                    if not force_not_quantize:
+                        if node['type'] in ('QuantizeLinear', 'QGemm') or node['type'].startswith('QLinear'):
+                            quantize = True
+                            graph_is_quantized = True
+                        elif node['type'] == 'DequantizeLinear':
+                            graph_is_quantized = True
                     op_attr.update({'data_format': params.get('input_data_format', 'NCHW'),
-                                    'opset_version': opset_version
+                                    'opset_version': opset_version,
+                                    'quantize': quantize
                                     })
                     attr_value_converter(
                         op_attr, params['source'], root_graph_info=root_info)
@@ -540,11 +548,6 @@ def convert_onnx_to_graph(graph, model_path, params):
                         else:
                             ERROR(
                                 '[Parser]: Meets invalid Loop Op(%s) in convert_onnx_to_graph!' % op_name)
-
-                    if not graph_is_quantized and not force_not_quantize \
-                            and (node['type'] in ('QuantizeLinear', 'DequantizeLinear', 'QGemm')
-                                 or node['type'].startswith('QLinear')):
-                        graph_is_quantized = True
 
                 graph._attr['quantize'] = graph_is_quantized
 
