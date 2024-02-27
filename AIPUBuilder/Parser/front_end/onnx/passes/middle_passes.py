@@ -5218,12 +5218,11 @@ def merge_q_ln(graph):
         matched = True
         graph.remove_edges_from(add2_in_edges)
         graph.add_edge(dequant_src, m['add_2'], **dequant_in_attr)
-        ln_weight_attr = copy.deepcopy(gamma_out_attr)
-        ln_weight_attr.update({'dst_in_port': 1})
-        graph.add_edge(m['gamma'], m['add_2'], **ln_weight_attr)
-        ln_bias_attr = copy.deepcopy(beta_out_attr)
-        ln_bias_attr.update({'dst_in_port': 2})
-        graph.add_edge(m['beta'], m['add_2'], **ln_bias_attr)
+        insert_constant(graph, m['add_2'] + '_weight', gamma,
+                        m['add_2'], in_port=1, scale_zp=gamma_out_attr['tensor'].scale_zp, quantize=True)
+        # bias should be int32 dtype, no matter input is int8 or uint8
+        insert_constant(graph, m['add_2'] + '_bias', np.array(beta, dtype=np.int32),
+                        m['add_2'], in_port=2, scale_zp=beta_out_attr['tensor'].scale_zp, quantize=True)
 
         ln_attr = obj_dict['add_2'].copied_attr()
         ln_attr.update({'axis': len(input_shapes[0]) - 1,
@@ -8249,10 +8248,16 @@ def rearrange_matmul_reshape_bias(graph):
                 bias_in_attr = copy.deepcopy(matmul_out_edges[0][2])
                 bias_in_attr['dst_in_port'] = bias_main_in_port
                 graph.add_edge(matmul, bias, **bias_in_attr)
-                bias_out_attr = copy.deepcopy(matmul_out_edges[0][2])
+                bias_out_attr = copy.deepcopy(bias_out_edges[0][2])
                 bias_out_attr['dst_in_port'] = 0
+                matmul_out_shape = matmul_out_edges[0][2]['tensor'].get_shape()
                 if bias_out_attr['tensor'].value is not None:
-                    bias_out_attr['tensor'].value += bias_obj_in_consts[0][2]
+                    if matmul_out_shape is not None and None not in matmul_out_shape:
+                        bias_out_attr['tensor'].value = np.reshape(bias_out_attr['tensor'].value, matmul_out_shape)
+                    else:
+                        bias_out_attr['tensor'].value = None
+                else:
+                    bias_out_attr['tensor'].shape = matmul_out_shape
                 graph.add_edge(bias, reshape, **bias_out_attr)
                 if bias in graph._attr['output_names']:
                     index = graph._attr['output_names'].index(bias)
