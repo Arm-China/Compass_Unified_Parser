@@ -4903,7 +4903,7 @@ def sink_transpose_with_const(graph):
                     if unaware_out_tensor.value is None and out_attr['tensor'].value is not None:
                         unaware_out_tensor.value = np.transpose(
                             out_attr['tensor'].value, inverse_perm)
-                    elif unaware_out_tensor.shape is None:
+                    else:
                         out_shape = out_attr['tensor'].get_shape()
                         if out_shape is not None and None not in out_shape:
                             unaware_out_tensor.shape = tuple([out_shape[idx] for idx in inverse_perm])
@@ -4992,10 +4992,12 @@ def sink_transpose_through_concat(graph):
             concat_output = None
         concat_out_attr = copy.deepcopy(concat_out_edges[0][2])
         concat_out_attr.update({'dst_in_port': 0})
-        if concat_out_attr['tensor'] is not None:
+        if concat_out_attr['tensor'].value is not None:
             concat_out_attr['tensor'].value = concat_output
         else:
-            concat_out_attr['tensor'] = Tensor(value=concat_output)
+            ori_shape = concat_out_attr['tensor'].shape
+            new_shape = tuple(ori_shape[idx] for idx in inverse_perm)
+            concat_out_attr['tensor'].shape = new_shape
         graph.add_edge(concat, post_trans, **concat_out_attr)
         if concat in graph._attr['output_names']:
             index = graph._attr['output_names'].index(concat)
