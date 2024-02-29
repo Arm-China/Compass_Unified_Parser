@@ -2923,7 +2923,7 @@ def convert_qmatmul(graph):
         if qmatmul_obj is None or len(in_edges) != 8:
             ERROR('[Parser]: Meets invalid QLinearMatMul node(%s) in convert_qmatmul!' % qmatmul)
             continue
-        qmatmul_src_a, qmatmul_src_b = in_edges[0][0], in_edges[1][0]
+        qmatmul_src_a, qmatmul_src_b = in_edges[0][0], in_edges[3][0]
         qmatmul_src_a_obj = NodeWrap(graph, qmatmul_src_a)['object']
         qmatmul_src_b_obj = NodeWrap(graph, qmatmul_src_b)['object']
         if qmatmul_src_a_obj is None or qmatmul_src_b_obj is None:
