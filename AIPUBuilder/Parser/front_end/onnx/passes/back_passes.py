@@ -4900,15 +4900,14 @@ def sink_transpose_with_const(graph):
                 for _, dst, out_attr in unaware_out_edges:
                     graph.remove_edge(unaware, dst)
                     graph.add_edge(post_trans, dst, **out_attr)
-                    if unaware_out_tensor.value is None and out_attr['tensor'].value is not None:
-                        unaware_out_tensor.value = np.transpose(
-                            out_attr['tensor'].value, inverse_perm)
-                    else:
-                        out_shape = out_attr['tensor'].get_shape()
-                        if out_shape is not None and None not in out_shape:
-                            unaware_out_tensor.shape = tuple([out_shape[idx] for idx in inverse_perm])
-                graph.add_edge(unaware, post_trans, **
-                               {'tensor': unaware_out_tensor})
+                    if out_attr['tensor'].value is not None:
+                        unaware_out_tensor.value = np.transpose(out_attr['tensor'].value,
+                                                                inverse_perm)
+                    out_shape = out_attr['tensor'].get_shape()
+                    if out_shape is not None and None not in out_shape:
+                        unaware_out_tensor.shape = tuple([out_shape[idx]
+                                                          for idx in inverse_perm])
+                graph.add_edge(unaware, post_trans, **{'tensor': unaware_out_tensor})
 
                 trans_out_edges = graph.sorted_out_edges(trans)
                 if len(trans_out_edges) == 0:
@@ -4952,6 +4951,11 @@ def sink_transpose_through_concat(graph):
         concat_out_edges = graph.sorted_out_edges(concat, data=True)
         if len(concat_out_edges) < 1:
             continue
+        concat_in_shapes = concat_obj.get_input_shapes()
+        if len(concat_in_shapes) != len(concat_in_edges) \
+                or None in concat_in_shapes \
+                or any(d is None for s in concat_in_shapes for d in s):
+            continue
         all_src_are_trans = True
         in_trans_names = []
         in_trans_objs = {}
@@ -4972,7 +4976,7 @@ def sink_transpose_through_concat(graph):
         if any([in_trans_objs[in_trans_names[0]].perm != in_trans_objs[name].perm for name in in_trans_names]):
             continue
         perm = in_trans_objs[in_trans_names[0]].perm
-        inverse_perm = [perm.index(i) for i in range(len(perm))]
+        inverse_perm = Op.cal_inverse_perm(perm)
         for i, (trans, _, concat_in_attr) in enumerate(concat_in_edges):
             insert_transpose(graph, trans, concat, concat_in_attr, inverse_perm, type='ArmTranspose')
         post_trans = get_valid_node_name(graph, concat + '_post_transpose')
@@ -4988,16 +4992,22 @@ def sink_transpose_through_concat(graph):
             concat_inputs = [edge_attr['tensor'].value for _,
                              _, edge_attr in concat_in_edges]
             concat_output = np.concatenate(concat_inputs, concat_obj.axis)
+            concat_output = np.transpose(concat_output, inverse_perm)
+            concat_shape = concat_output.shape
         else:
             concat_output = None
+            concat_dim = np.sum(s[axis] for s in concat_in_shapes)
+            concat_shape = tuple(concat_dim if i == axis else d
+                                 for i, d in enumerate(concat_in_shapes[0]))
+            concat_shape = tuple(np.array(concat_shape)[inverse_perm].tolist())
         concat_out_attr = copy.deepcopy(concat_out_edges[0][2])
         concat_out_attr.update({'dst_in_port': 0})
-        if concat_out_attr['tensor'].value is not None:
+        if concat_out_attr['tensor'] is not None:
             concat_out_attr['tensor'].value = concat_output
+            concat_out_attr['tensor'].shape = concat_shape
         else:
-            ori_shape = concat_out_attr['tensor'].shape
-            new_shape = tuple(ori_shape[idx] for idx in inverse_perm)
-            concat_out_attr['tensor'].shape = new_shape
+            concat_out_attr['tensor'] = Tensor(value=concat_output,
+                                               shape=concat_shape)
         graph.add_edge(concat, post_trans, **concat_out_attr)
         if concat in graph._attr['output_names']:
             index = graph._attr['output_names'].index(concat)
