@@ -29,7 +29,7 @@ from ....plugin_loader import PARSER_OP_DICT
 
 def adjust_5d_to_4d(graph):
     matches = [single_node_matcher(graph, type_name) for type_name in (
-        'ArmActivation', 'ArmBatchNorm', 'ArmDiv', 'ArmLRN', 'ArmMatMul', 'ArmSlice')]
+        'ArmActivation', 'ArmBatchNorm', 'ArmDiv', 'ArmInstanceNorm', 'ArmLRN', 'ArmMatMul', 'ArmSlice')]
     matches = extend_lists(matches)
     for m in matches:
         node_name = m['target']
@@ -65,6 +65,8 @@ def adjust_5d_to_4d(graph):
                                last_2_dim,
                                in_shape[-1]]
                     node_obj.axis = 3
+                elif node_obj.type == 'ArmInstanceNorm':
+                    node_obj.non_channel_axes = [1, 2]
                 elif node_obj.type == 'ArmSlice':
                     pre_dim = list(in_shape[1:])
                     node_obj.starts = node_obj.starts[1:]
