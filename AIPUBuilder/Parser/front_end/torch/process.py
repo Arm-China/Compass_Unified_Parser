@@ -1665,8 +1665,15 @@ def convert_torch_to_onnx(model_path, params):
 
     # Load TorchScript/non-TorchScript model
     is_torch_script_model = False
+    force_cpu = params.get('force_cpu', False)
     is_cuda_available = torch.cuda.is_available()
-    device = 'cuda' if is_cuda_available else 'cpu'
+    use_gpu = is_cuda_available and (not force_cpu)
+    if force_cpu:
+        device = 'cpu'
+    else:
+        device = 'cuda' if is_cuda_available else 'cpu'
+    WARN('[Parser]: In pytorch %s mode now. Please check \'force_cpu\' in config file and confirm whether your model is created in the same mode!' % device.upper())
+
     try:
         model = torch.jit.load(model_path, map_location=torch.device(device))
         is_torch_script_model = True
@@ -2015,7 +2022,7 @@ def convert_torch_to_onnx(model_path, params):
             tensor = torch.randn(input_shape, dtype=tensor_dtype)
         else:
             tensor = torch.zeros(input_shape, dtype=tensor_dtype)
-        if is_cuda_available:
+        if use_gpu:
             tensor = tensor.cuda()
         tensor_list.append(tensor)
 
@@ -2048,7 +2055,7 @@ def convert_torch_to_onnx(model_path, params):
     onnx_model_path = os.path.join(params.get('output_dir', './'),
                                    os.path.basename(model_path) + '.onnx')
     INFO('[Parser]: Convert torch model (%s) to onnx model...' % model_path)
-    if is_cuda_available:
+    if use_gpu:
         try:
             parallel_model = nn.DataParallel(model)
             _export_to_onnx(parallel_model.module, input_tensors, onnx_model_path,
