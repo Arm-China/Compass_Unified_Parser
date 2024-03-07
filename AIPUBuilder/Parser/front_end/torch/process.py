@@ -1072,6 +1072,97 @@ def convert_size(g, input, dim=None):
     return size(g, input, dim)
 
 
+@helper.parse_args('v', 'v', 'v', 'v', 'f', 'b', 'v')
+def convert_scaled_dot_product_attention(g, query, key, value, attn_mask, dropout_p, is_causal, scale=None):
+    # Refer to torch/onnx/symbolic_opset14.py
+    def _causal_attention_mask(g, query, key):
+        query_shape = g.op('Shape', query)
+        key_shape = g.op('Shape', key)
+
+        last_idx = g.op('Constant', value_t=torch.tensor([-1], dtype=torch.int64))
+        second_last_idx = g.op('Constant', value_t=torch.tensor([-2], dtype=torch.int64))
+        target_length = g.op('Slice', query_shape, second_last_idx, last_idx)
+        source_length = g.op('Slice', key_shape, second_last_idx, last_idx)
+        # attn_mask = torch.ones(L, S) := {
+        size = g.op('Concat', target_length, source_length, axis_i=0)
+        mask_type = helper.pytorch_name_to_type[query.type().scalarType()]
+        attn_mask = g.op('ConstantOfShape', size,
+                         value_t=torch.tensor([1.0], dtype=mask_type))
+        # }
+        attn_mask = g.op('Trilu', attn_mask, upper_i=0)
+        # The causal mask has 0s in the lower triangle and -inf in the upper triangle.
+        const_zero = g.op('Constant', value_t=torch.tensor([0.0], dtype=mask_type))
+        const_neg_inf = g.op('Constant', value_t=torch.tensor([-float('inf')], dtype=mask_type))
+        attn_mask = g.op(
+            'Where', g.op('Equal', attn_mask, const_zero), const_neg_inf, const_zero
+        )
+        return attn_mask
+
+    def _attention_scale(g, query):
+        query_shape = g.op('Shape', query)
+        query_shape_last = g.op(
+            'Slice', query_shape,
+            g.op('Constant', value_t=torch.tensor([-1], dtype=torch.int64)),
+            g.op('Constant', value_t=torch.tensor([torch.onnx._constants.INT64_MAX], dtype=torch.int64)),
+        )
+        query_type = query.type().scalarType()
+        embedding_size = g.op(
+            'Cast',
+            query_shape_last,
+            to_i=helper.cast_pytorch_to_onnx[query_type],
+        )
+        const_one = g.op('Constant', value_t=torch.tensor([1.0], dtype=helper.pytorch_name_to_type[query_type]))
+        scale = g.op('Div', const_one, g.op('Sqrt', embedding_size))
+        return scale
+
+    assert (not is_causal) or (
+        is_causal and helper._is_none(attn_mask)
+    ), 'is_causal and attn_mask cannot be set at the same time'
+
+    if is_causal:
+        attn_mask = _causal_attention_mask(g, query, key)
+
+    if scale is None or helper._is_none(scale):
+        scale = _attention_scale(g, query)
+
+    # Swap the last two axes of key
+    key_shape = helper._get_tensor_rank(key)
+    key_transposed_axes = list(range(key_shape))
+    key_transposed_axes[-1], key_transposed_axes[-2] = (
+        key_transposed_axes[-2],
+        key_transposed_axes[-1],
+    )
+    key_transposed = g.op('Transpose', key, perm_i=key_transposed_axes)
+
+    # Scale q, k before matmul
+    query_scaled = g.op('Mul', query, g.op('Sqrt', scale))
+    key_transposed_scaled = g.op('Mul', key_transposed, g.op('Sqrt', scale))
+    mul_qk = g.op('MatMul', query_scaled, key_transposed_scaled)
+
+    if helper._is_none(attn_mask):
+        mul_qk_add = mul_qk
+    elif attn_mask.type().scalarType() == 'Bool':
+        # Turn the Boolean mask to float: attn_mask.masked_fill(not attn_mask, -float('inf'))
+        mask_type = helper.pytorch_name_to_type[query.type().scalarType()]
+        const_zero = g.op('Constant', value_t=torch.tensor([0.0], dtype=mask_type))
+        const_neg_inf = g.op('Constant', value_t=torch.tensor([-float('inf')], dtype=mask_type))
+        attn_mask = g.op('Where', attn_mask, const_zero, const_neg_inf)
+        mul_qk_add = g.op('Add', mul_qk, attn_mask)
+    else:
+        mul_qk_add = g.op('Add', mul_qk, attn_mask)
+
+    attn_weight = g.op('Softmax', mul_qk_add, axis_i=-1)
+
+    if dropout_p != 0:
+        attn_weight = g.op(
+            'Dropout',
+            attn_weight,
+            g.op('Constant', value_t=torch.tensor(dropout_p, dtype=torch.float)),
+        )
+
+    return g.op('MatMul', attn_weight, value)
+
+
 def convert_scatter_by_slice(g, input, src, dim=0, start=None, end=None, step=1):
     input_shape = helper._get_tensor_sizes(input)
     shape_at_dim = input_shape[dim]
@@ -1767,6 +1858,13 @@ def convert_torch_to_onnx(model_path, params):
             'aten::logical_not', convert_logical_not, onnx_opset_version)
         torch.onnx.register_custom_op_symbolic(
             'aten::atan2', convert_atan2, onnx_opset_version)
+    if torch_version < '2.2.0':
+        # The op aten::scaled_dot_product_attention is supported in latest torch.
+        # Refer to https://github.com/pytorch/pytorch/pull/99658
+        # But the bug in helper._is_none causes crash when scale is not None, which is fixed since 2.2.0.
+        # Refer to https://github.com/pytorch/pytorch/pull/110956
+        torch.onnx.register_custom_op_symbolic(
+            'aten::scaled_dot_product_attention', convert_scaled_dot_product_attention, onnx_opset_version)
 
     if onnx_opset_version >= 16:
         torch.onnx.register_custom_op_symbolic(
