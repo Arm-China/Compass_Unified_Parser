@@ -22,7 +22,7 @@ def fast_parser_test(ref_ir, ref_w, cfg=None, log=None, bk_ref_ir=None):
         log = sys.stdout
     else:
         log = open(log, "w")
-        log.write(datetime.datetime.now().strftime("%Y_%m_%d-%H_%M_%S")+"\n")
+        log.write(datetime.datetime.now().strftime("%Y_%m_%d-%H_%M_%S") + "\n")
     config = configparser.ConfigParser()
     config.read(cfg)
     outdir = config["Common"]["output_dir"]
@@ -32,8 +32,8 @@ def fast_parser_test(ref_ir, ref_w, cfg=None, log=None, bk_ref_ir=None):
         framework = "tf"
     model_name = config["Common"]["model_name"]
     name = framework + '_' + model_name
-    out_ir = os.path.join(outdir, model_name+".txt")
-    out_w = os.path.join(outdir, model_name+".bin")
+    out_ir = os.path.join(outdir, model_name + ".txt")
+    out_w = os.path.join(outdir, model_name + ".bin")
     cmd = ["python3", mainpy, "-c", cfg]
     print("testing ", name)
     pid = subprocess.Popen(cmd, stdout=log, stderr=log)
