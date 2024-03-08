@@ -179,7 +179,7 @@ class ArmActivationOp(LayoutUnawareOp, OpHasMethod, OpHasOneOutPort, ArmOp):
 
     def silu(self):
         inputs = self.get_input_tensors()
-        tor_arr = torch.from_numpy(inputs[0])
+        tor_arr = torch.from_numpy(inputs[0].astype(np.float32))
         m = torch.nn.SiLU()
         out_tensor = m(tor_arr)
         tor2numpy = out_tensor.numpy().astype(inputs[0].dtype)
