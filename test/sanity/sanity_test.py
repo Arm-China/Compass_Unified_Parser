@@ -8,7 +8,7 @@ import configparser
 
 WORKING_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_DIR = "/project/ai/zhouyi_compass/Model"
-fast_test = os.path.abspath(os.path.join(WORKING_DIR, "fast_paser_test.py"))
+fast_test = os.path.abspath(os.path.join(WORKING_DIR, "fast_parser_test.py"))
 jm = JobManager()
 print("Parser sanity test working in %s" % WORKING_DIR)
 TF_BENCHMARK = {
