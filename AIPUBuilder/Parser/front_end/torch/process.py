@@ -1711,7 +1711,8 @@ def convert_torch_to_onnx(model_path, params):
                         onnx_model_path,
                         input_names,
                         output_names,
-                        onnx_opset_version=None):
+                        onnx_opset_version=None,
+                        do_constant_folding=True):
         custom_opsets = {'opset_11': 11}
         if onnx_opset_version is not None:
             if onnx_opset_version < 18:
@@ -1728,7 +1729,8 @@ def convert_torch_to_onnx(model_path, params):
                           output_names=output_names,
                           opset_version=onnx_opset_version,
                           training=torch._C._onnx.TrainingMode.PRESERVE,
-                          custom_opsets=custom_opsets)
+                          custom_opsets=custom_opsets,
+                          do_constant_folding=do_constant_folding)
         return
 
     def _flatten_type(torch_type):
@@ -2156,8 +2158,12 @@ def convert_torch_to_onnx(model_path, params):
     if use_gpu:
         try:
             parallel_model = nn.DataParallel(model)
+            # Fail to convert because "Expected all tensors to be on the same device, but found at least two devices"
+            # See https://github.com/pytorch/pytorch/issues/102947
+            # The issue is fixed in https://github.com/pytorch/pytorch/pull/101329 (>= torch 2.1.0)
+            do_constant_folding = False if torch_version < '2.1.0' else True
             _export_to_onnx(parallel_model.module, input_tensors, onnx_model_path,
-                            input_names, output_names, onnx_opset_version)
+                            input_names, output_names, onnx_opset_version, do_constant_folding)
         except Exception as e:
             FATAL('[Parser]: Fail to convert model (%s) to onnx because %s' %
                   (model_path, str(e)))
