@@ -159,8 +159,38 @@ def remove_useless_op(graph, op_type_list):
                 in_edges = graph.sorted_in_edges(node_name)
                 if len(in_edges) <= 1:
                     removing_nodes.append(node_name)
-            elif op_type in ('Dropout', 'Dummy', 'Identity'):
+            elif op_type in ('Dummy', 'Identity'):
                 removing_nodes.append(node_name)
+            elif op_type == 'Dropout':
+                in_edges = graph.sorted_in_edges(node_name, data=True)
+                if len(in_edges) != 3:
+                    continue
+                if not in_edges[1][2]['tensor'].is_const or not in_edges[2][2]['tensor'].is_const:
+                    continue
+                if not node_obj.training_mode or FLOAT_EQUAL(node_obj.ratio, 0.0):
+                    out_ports = node_obj.get_out_ports()
+                    if len(out_ports) == 2:
+                        in_shapes = node_obj.get_input_shapes()
+                        if len(in_shapes) < 1 or in_shapes[0] is None:
+                            continue
+                        mask_value = np.tile(True, in_shapes[0])
+                        mask_name = get_valid_node_name(graph, node_name + '_out_mask')
+                        out_edges = graph.sorted_out_edges(node_name, keys=True, data=True)
+                        for _, dst, k, out_attr in out_edges:
+                            if out_attr['src_out_port'] == 1:
+                                graph.remove_edge(node_name, dst, key=k)
+                                graph.add_edge(mask_name,
+                                               dst,
+                                               **{'src_out_port': 0,
+                                                  'dst_in_port': out_attr['dst_in_port'],
+                                                  'tensor': Tensor(value=mask_value, name=mask_name, is_const=True)
+                                                  })
+                        NodeWrap(graph, mask_name).replace_obj('Constant', {
+                            'name': mask_name, 'value': mask_value, 'opset_version': 9})
+                    removing_nodes.append(node_name)
+                    graph.remove_edges_from(in_edges[1:])
+                else:
+                    continue
             elif op_type == 'Expand':
                 in_shapes = node_obj.get_input_shapes()
                 if len(in_shapes) < 1 or in_shapes[0] is None:

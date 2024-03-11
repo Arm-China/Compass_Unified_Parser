@@ -542,12 +542,21 @@ class DeformConvOp(BaseConvOp, OnnxOp):
 class DropoutOp(OpHasVariableOutPorts, OnnxOp):
     @classmethod
     def attributes(cls):
-        return {1: {'is_test': {'type': AttrType.INT, 'default': 0}},
-                6: {'is_test': {'type': AttrType.INT, 'default': 0}},
-                7: {},
-                10: {},
-                12: {'training_mode': {'type': AttrType.INT, 'default': 0}},
-                13: {'training_mode': {'type': AttrType.INT, 'default': 0}},
+        return {1: {'consumed_inputs': {'type': AttrType.INTS},
+                    'is_test': {'type': AttrType.BOOL, 'default': False},
+                    'ratio': {'type': AttrType.FLOAT, 'default': 0.5}
+                    },
+                6: {'is_test': {'type': AttrType.BOOL, 'default': False},
+                    'ratio': {'type': AttrType.FLOAT, 'default': 0.5}
+                    },
+                7: {'ratio': {'type': AttrType.FLOAT, 'default': 0.5}
+                    },
+                10: {'ratio': {'type': AttrType.FLOAT, 'default': 0.5}
+                     },
+                12: {'seed': {'type': AttrType.INT, 'default': 0, 'required': False}
+                     },
+                13: {'seed': {'type': AttrType.INT, 'default': 0, 'required': False}
+                     }
                 }
 
     def __init__(self, graph, attr_dict=None):
@@ -560,30 +569,46 @@ class DropoutOp(OpHasVariableOutPorts, OnnxOp):
         try:
             if item == 'is_test':
                 if self.cur_version <= 6:
-                    ret = bool(self.__dict__['_attr'][item].value)
+                    ret = self.__dict__['_attr'][item].value
                 else:
-                    if self.cur_version >= 12:
-                        ret = not(
-                            bool(self.__dict__['_attr']['training_mode'].value))
-                    else:
-                        ret = True
-                    self.__dict__['_attr'][item] = Attribute(
-                        item, {'type': AttrType.INT, 'value': int(ret)})
+                    ret = None
+                    self.__dict__['_attr'][item] = Attribute(item, {'type': AttrType.BOOL, 'value': ret})
             elif item == 'training_mode':
-                if self.cur_version >= 12:
-                    input_tensors = self.get_input_tensors()
-                    if len(input_tensors) >= 3:
-                        ret = bool(input_tensors[2].item())
-                    else:
-                        ret = bool(self.__dict__['_attr'][item].value)
+                if self.cur_version <= 6:
+                    ret = not self.__dict__['_attr']['is_test'].value
+                elif 6 < self.cur_version < 12:
+                    ret = False
                 else:
-                    if self.cur_version <= 6:
-                        ret = not(
-                            bool(self.__dict__['_attr']['is_test'].value))
+                    input_tensors = self.get_input_tensors()
+                    if len(input_tensors) >= 3 and input_tensors[2] is not None:
+                        training_mode_tensor = np.array(input_tensors[2])
+                        if training_mode_tensor.size == 1:
+                            ret = bool(training_mode_tensor)
+                        else:
+                            ret = None
                     else:
                         ret = False
-                    self.__dict__['_attr'][item] = Attribute(
-                        item, {'type': AttrType.INT, 'value': int(ret)})
+                self.__dict__['_attr'][item] = Attribute(item, {'type': AttrType.BOOL, 'value': ret})
+            elif item == 'ratio':
+                if self.cur_version < 12:
+                    ret = self.__dict__['_attr'][item].value
+                else:
+                    input_tensors = self.get_input_tensors()
+                    if len(input_tensors) >= 2 and input_tensors[1] is not None:
+                        ratio_tensor = np.array(input_tensors[1])
+                        if ratio_tensor.size == 1 and (0.0 <= ratio_tensor < 1.0):
+                            ret = ratio_tensor
+                        else:
+                            ret = None
+                    else:
+                        ret = np.array(0.5, np.float32)
+                    self.__dict__['_attr'][item] = Attribute(item, {'type': AttrType.FLOAT, 'value': ret})
+            elif item == 'seed':
+                if self.cur_version < 12:
+                    ret = 0
+                    self.__dict__['_attr'][item] = Attribute(item, {'type': AttrType.INT, 'value': ret})
+                else:
+                    ret = self.__dict__['_attr'][item].value
         except:
             ret = None
         if ret is None:
@@ -592,18 +617,27 @@ class DropoutOp(OpHasVariableOutPorts, OnnxOp):
 
     def infer_shape(self):
         super(DropoutOp, self).infer_shape()
+        if self.training_mode and not FLOAT_EQUAL(self.ratio, 0.0):
+            WARN('[Parser]: Dropout (%s) does not support training mode!' % self.name)
         inputs = self.get_input_tensors()
         in_shape = inputs[0].shape
-        if self.cur_version >= 12:
-            mask_value = np.tile(True, in_shape)
+        if FLOAT_EQUAL(self.ratio, 0.0) or (self.training_mode in (None, False)):
+            output = inputs[0]
+            if len(self.get_out_ports()) == 2:
+                mask = np.tile(True, in_shape)
+                if self.cur_version < 10:
+                    mask = mask.astype(inputs[0].dtype)
+                self.set_out_tensor([output, mask])
+            else:
+                self.set_out_tensor(output)
         else:
-            mask_value = np.tile(False, in_shape)
-        if bool(self.training_mode):
-            WARN('[Parser]: Dropout (%s) does not support training mode!' % self.name)
-        if 1 not in self.get_out_ports() or (self.cur_version < 7 and bool(self.is_test)):
-            self.set_out_tensor([inputs[0]])
-        else:
-            self.set_out_tensor([inputs[0], mask_value])
+            rng = np.random.default_rng(self.seed)
+            uniform = rng.uniform(0.0, 1.0, in_shape)
+            mask = uniform >= self.ratio
+            output = mask.astype(np.array(self.ratio).dtype) * inputs[0] / (1.0 - self.ratio)
+            if self.cur_version < 10:
+                mask = mask.astype(inputs[0].dtype)
+            self.set_out_tensor([output, mask])
 
     def convert_version(self):
         max_ver = type(self).max_ver()
@@ -614,33 +648,21 @@ class DropoutOp(OpHasVariableOutPorts, OnnxOp):
                 '[Parser]: Meets invalid Dropout Node (%s) in convert_version!' % self.name)
             return
 
-        out_edges = self._graph.sorted_out_edges(
-            self.name, keys=True, data=True)
-        if cur_ver < 7:
-            for _, dst, k, out_attr in out_edges:
-                if out_attr['src_out_port'] == 1:
-                    self._graph.remove_edge(self.name, dst, key=k)
-            return
-
-        from ...graph.graph_algo import get_valid_node_name
-        from ...graph.node_wrap import NodeWrap
-        in_edges = self._graph.sorted_in_edges(self.name)
-        in_shape = self.get_input_shapes()[0]
-        mask = get_valid_node_name(self._graph, self.name + '_mask')
-        mask_value = np.tile(True if cur_ver >= 12 else False, in_shape)
-        mask_used = False
-        for _, dst, k, out_attr in out_edges:
-            if out_attr['src_out_port'] == 1:
-                mask_used = True
-                self._graph.remove_edge(self.name, dst, key=k)
-                new_attr = copy.deepcopy(out_attr)
-                new_attr.update(
-                    {'src_out_port': 0, 'tensor': Tensor(value=mask_value)})
-                self._graph.add_edge(mask, dst, **new_attr)
-        self._graph.remove_edges_from(in_edges[1:])
-        if mask_used:
-            mask_attr = {'name': mask, 'value': mask_value, 'opset_version': 9}
-            NodeWrap(self._graph, mask).replace_obj('Constant', mask_attr)
+        in_edges = self._graph.sorted_in_edges(self.name, data=True)
+        assert len(in_edges) >= 1
+        if len(in_edges) < 2:
+            from ...front_end.onnx.passes.common_passes import insert_constant
+            insert_constant(self._graph, self.name + '_ratio', np.array(self.ratio), self.name, in_port=1)
+            insert_constant(self._graph, self.name + '_training_mode',
+                            np.array(self.training_mode), self.name, in_port=2)
+        elif len(in_edges) < 3:
+            from ...front_end.onnx.passes.common_passes import insert_constant
+            insert_constant(self._graph, self.name + '_training_mode',
+                            np.array(self.training_mode), self.name, in_port=2)
+        if cur_ver < 10 and len(self.get_out_ports()) == 2:
+            from ...front_end.onnx.passes.common_passes import insert_cast_after
+            post_cast = insert_cast_after(self._graph, self.name, 'bool',
+                                          in_edges[0][2]['tensor'].get_dtype(), out_port=1)
         if cur_ver < max_ver:
             self.cur_version = max_ver
 
