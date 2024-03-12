@@ -1302,6 +1302,28 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
                      'nearest_mode': {'type': AttrType.STRING,
                                       'default': 'round_prefer_floor',
                                       'options': ['simple', 'round_prefer_floor', 'round_prefer_ceil', 'floor', 'ceil']},
+                     },
+                19: {'antialias': {'type': AttrType.BOOL, 'default': False},
+                     'axes': {'type': AttrType.INTS, 'default': None},
+                     'coordinate_transformation_mode': {'type': AttrType.STRING,
+                                                        'default': 'half_pixel',
+                                                        'options': ['half_pixel',
+                                                                    'half_pixel_symmetric',
+                                                                    'pytorch_half_pixel',
+                                                                    'align_corners',
+                                                                    'asymmetric',
+                                                                    'tf_crop_and_resize']
+                                                        },
+                     'cubic_coeff_a': {'type': AttrType.FLOAT, 'default': -0.75},
+                     'exclude_outside': {'type': AttrType.INT, 'default': 0},
+                     'extrapolation_value': {'type': AttrType.FLOAT, 'default': 0.0},
+                     'keep_aspect_ratio_policy': {'type': AttrType.STRING,
+                                                  'default': 'stretch',
+                                                  'options': ['stretch', 'not_larger', 'not_smaller']},
+                     'mode': {'type': AttrType.STRING, 'default': 'nearest', 'options': ['nearest', 'linear', 'cubic']},
+                     'nearest_mode': {'type': AttrType.STRING,
+                                      'default': 'round_prefer_floor',
+                                      'options': ['simple', 'round_prefer_floor', 'round_prefer_ceil', 'floor', 'ceil']},
                      }
                 }
 
@@ -1515,6 +1537,11 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
                     (x_resized * (roi_end - roi_start) * (length_original - 1)) / (length_resized - 1)
             else:
                 ret = 0.5 * (roi_start + roi_end) * (length_original - 1)
+        elif coordinate_transform_mode == 'half_pixel_symmetric':
+            adjustment = int(length_resized) / length_resized
+            center = length_original / 2
+            offset = center * (1 - adjustment)
+            ret = offset + (x_resized + 0.5) / x_scale - 0.5
         else:  # half_pixel
             ret = ((x_resized + 0.5) / x_scale) - 0.5
         return ret
