@@ -4042,10 +4042,12 @@ class ArmResizeOp(OpHasMethod, OpHasOneOutPort, ArmOp):
                 'method': {'options': ['NEAREST', 'BILINEAR'], 'default': 'BILINEAR'},
                 'mode': {'type': AttrType.STRING,
                          'default': 'half_pixel',
-                         'options': ['half_pixel', 'align_corners', 'asymmetric', 'pytorch_half_pixel', 'tf_half_pixel_for_nn']},
+                         'options': ['half_pixel', 'half_pixel_symmetric', 'align_corners', 'asymmetric', 'pytorch_half_pixel', 'tf_half_pixel_for_nn']},
                 'nearest_mode': {'type': AttrType.STRING,
                                  'default': 'round_prefer_floor',
                                  'options': ['simple', 'round_prefer_floor', 'round_prefer_ceil', 'floor', 'ceil']},
+                'antialias': {'type': AttrType.BOOL, 'default': False},
+                'exclude_outside': {'type': AttrType.BOOL, 'default': False},
                 }
 
     def __init__(self, graph, attr_dict=None):
@@ -4086,6 +4088,8 @@ class ArmResizeOp(OpHasMethod, OpHasOneOutPort, ArmOp):
                 if len(self.factors) == 3:
                     txt_file.write('ratio_z=%.8f\n' % self.factors[-3])
             txt_file.write('mode=%s\n' % self.mode.upper())
+            txt_file.write('antialias=%s\n' % str(bool(self.antialias)).lower())
+            txt_file.write('exclude_outside=%s\n' % str(bool(self.exclude_outside)).lower())
             if self.method.upper() == 'NEAREST':
                 txt_file.write('nearest_mode=%s\n' % self.nearest_mode.upper())
         return ret

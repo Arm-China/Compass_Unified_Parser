@@ -2938,10 +2938,6 @@ def rename_resize(graph):
                 WARN(
                     '[Parser]: Can not support Resize Op (%s) with none-1 scales in batch or channel dimension in rename_resize!' % resize)
                 continue
-            if resize_obj.antialias:
-                WARN(
-                    '[Parser]: Meets unsupported Resize Op (%s) with antialias=1 in rename_resize!' % resize)
-                continue
             if resize_obj.coordinate_transformation_mode == 'tf_crop_and_resize':
                 if resize_obj.roi is None \
                         or resize_obj.roi.size != 8 \
