@@ -629,7 +629,7 @@ class DropoutOp(OpHasVariableOutPorts, OnnxOp):
                     mask = mask.astype(inputs[0].dtype)
                 self.set_out_tensor([output, mask])
             else:
-                self.set_out_tensor(output)
+                self.set_out_tensor([output])
         else:
             rng = np.random.default_rng(self.seed)
             uniform = rng.uniform(0.0, 1.0, in_shape)
