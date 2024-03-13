@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
+
+
 import numpy as np
 from AIPUBuilder.Parser.plugin_op import ParserOp
 from AIPUBuilder.Parser.plugin_loader import register_plugin, PluginType
