@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# Copyright © 2022-2023 Arm Technology (China) Co. Ltd.
+# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
 
 
 from ..tf.load import convert_tf_to_graph

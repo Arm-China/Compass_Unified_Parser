@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# Copyright © 2022-2023 Arm Technology (China) Co. Ltd.
+# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
 
 
 from AIPUBuilder.Parser.utils.model import generate_cfg, read_caffe_model, read_keras_model, \
