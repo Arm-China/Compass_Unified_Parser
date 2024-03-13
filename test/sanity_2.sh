@@ -59,6 +59,12 @@ then
     for f in $filelist
     do
         f_without_prefix=${f#"test/"}
+        # Ignore changes that only update comments or add blank lines
+        has_valid_change=`git diff --ignore-blank-lines -G "^[^#]" HEAD^ -- $f_without_prefix`
+        if [[ -z $has_valid_change ]]
+        then
+            continue
+        fi
         echo "SANITY TESTING: "$f_without_prefix
         python3 $f_without_prefix
         exit_code=$?
