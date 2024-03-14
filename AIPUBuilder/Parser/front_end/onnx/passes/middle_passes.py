@@ -21,6 +21,7 @@ from .common_passes import fuse_const, remove_useless_op, remove_node_safely, in
     insert_cast, insert_constant, insert_slice, insert_slice_after, insert_tile, insert_transpose, insert_transpose_after, \
     remove_redundant_reshape, remove_redundant_transpose, insert_cast_sub_mul_for_quant, insert_mul_add_cast_after_for_dequant, \
     insert_repeat, convert_to_const, insert_cast_after
+from .back_passes import merge_same_op_at_out_port
 
 
 def clear_useless_concat_input(graph):
@@ -10196,6 +10197,7 @@ def middle_passes(graph, params):
     fuse_const(graph)
     decompose_const_if(graph, params)
     decompose_const_loop(graph, params)
+    merge_same_op_at_out_port(graph, ['Cast'])
 
     merge_q_ln(graph)
     merge_q_gelu(graph)

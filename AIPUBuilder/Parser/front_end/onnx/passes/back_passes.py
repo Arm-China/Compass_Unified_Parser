@@ -5342,8 +5342,7 @@ def sink_transpose_through_slice_pair(graph):
         clear_redundant_nodes(graph)
 
 
-def merge_same_op_at_out_port(graph, op_types=list()):
-    op_types = list(set(op_types).union(['ArmTranspose', 'ArmReshape']))
+def merge_same_op_at_out_port(graph, op_types=['ArmTranspose', 'ArmReshape']):
     matches = single_node_matcher(graph, {})
     for m in matches:
         node = m['target']
@@ -5374,6 +5373,9 @@ def merge_same_op_at_out_port(graph, op_types=list()):
                         continue
                 elif op == 'ArmTranspose':
                     if any(cur_objs[0].perm != obj.perm for obj in cur_objs[1:]):
+                        continue
+                elif op == 'Cast':
+                    if any((cur_objs[0].to != obj.to or cur_objs[0].saturate != obj.saturate) for obj in cur_objs[1:]):
                         continue
                 else:
                     # not supported yet
