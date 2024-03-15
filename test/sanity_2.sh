@@ -21,6 +21,7 @@ failed_op_tests=""
 failed_pass_tests=""
 failed_change_tests=""
 failed_specfied_tests=""
+tested_tests=""
 
 # 1 If you commit like: [Parser_op] ...
 if grep -i '\[Parser_op\]' temp.log
@@ -28,6 +29,7 @@ then
     for f in `find ./op_test -type f -name '*.py'`
     do
         echo "SANITY TESTING: "$f
+        tested_tests=$tested_tests" "$f
         python3 $f
         exit_code=$?
         if [[ $exit_code != 0 ]]
@@ -43,6 +45,7 @@ then
     for f in `find ./pass_test -type f -name '*.py'`
     do
         echo "SANITY TESTING: "$f
+        tested_tests=$tested_tests" "$f
         python3 $f
         exit_code=$?
         if [[ $exit_code != 0 ]]
@@ -65,7 +68,14 @@ then
         then
             continue
         fi
+        # Skip the test if it has been tested
+        if [[ $tested_tests == *"$f_without_prefix"* ]]
+        then
+            echo "$f_without_prefix has been tested; Ignore it!"
+            continue
+        fi
         echo "SANITY TESTING: "$f_without_prefix
+        tested_tests=$tested_tests" "$f_without_prefix
         python3 $f_without_prefix
         exit_code=$?
         if [[ $exit_code != 0 ]]
@@ -99,6 +109,13 @@ then
             do
                 if [[ $file != *".py" ]]
                 then
+                    continue
+                fi
+                # Skip the test if it has been tested
+                file_without_prefix=${file#"./"}
+                if [[ $tested_tests == *"$file_without_prefix"* ]]
+                then
+                    echo "$file_without_prefix has been tested; Ignore it!"
                     continue
                 fi
                 echo "SANITY TESTING: "$file
