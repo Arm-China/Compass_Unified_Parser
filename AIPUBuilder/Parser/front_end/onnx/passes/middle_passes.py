@@ -2428,65 +2428,69 @@ def convert_dequantizelinear(graph):
             ERROR(
                 '[Parser]: Meets invalid DequantizeLinear Op(%s) in convert_dequantizelinear!' % dequant)
             continue
+        inp, _, inp_in_attr = dequant_in_edges[0]
         scale, _, scale_in_attr = dequant_in_edges[1]
         zp, _, zp_in_attr = dequant_in_edges[2]
         if graph._attr.get('quantize', False) \
                 and scale_in_attr['tensor'].is_const and zp_in_attr['tensor'].is_const:
-            continue
-
-        input_shapes = dequant_obj.get_input_shapes()
-        if dequant_obj.axis is not None and len(input_shapes[1]) == 1:
-            dequant_axis = dequant_obj.axis
+            inp_obj = NodeWrap(graph, inp)['object']
+            if inp_obj is not None and not inp_obj.quantize:
+                inp_obj.quantize = True
+                if inp_in_attr['tensor'] is None:
+                    inp_in_attr['tensor'] = Tensor()
+                inp_in_attr['tensor'].dtype = zp_in_attr['tensor'].get_dtype()
+                inp_in_attr['tensor'].scale_zp = (scale_in_attr['tensor'].value, zp_in_attr['tensor'].value)
         else:
-            dequant_axis = -1
-        dequant_axis = OpHasAxis.make_axes_non_negative(
-            dequant_axis, len(input_shapes[0]))
-        if len(input_shapes[0]) <= dequant_axis:
-            ERROR(
-                '[Parser]: Meets invalid axis(%d) in DequantizeLinear Op(%s) in convert_dequantizelinear!' % (dequant_axis, dequant))
-            continue
-        axis_dim = input_shapes[0][dequant_axis]
-        if input_shapes[1] != input_shapes[2] \
-                or len(input_shapes[1]) not in (0, 1) \
-                or (len(input_shapes[1]) == 1 and input_shapes[1][0] != axis_dim):
-            ERROR(
-                '[Parser]: Meets different shapes of x_scale and x_zero_point in DequantizeLinear Op(%s) in convert_dequantizelinear!' % dequant)
-            continue
-        inp, _, inp_in_attr = dequant_in_edges[0]
-        scale, _, scale_in_attr = dequant_in_edges[1]
-        zp, _, zp_in_attr = dequant_in_edges[2]
-        graph.remove_edges_from(dequant_in_edges)
-
-        sub = get_valid_node_name(graph, dequant + '_sub')
-        graph.add_node(sub)
-        graph.add_edge(inp, sub, **inp_in_attr)
-        new_zp_in_attr = copy.deepcopy(zp_in_attr)
-        new_zp_in_attr.update({'dst_in_port': 1})
-        graph.add_edge(zp, sub, **new_zp_in_attr)
-        sub_out_attr = copy.deepcopy(inp_in_attr)
-        sub_out_attr.update({'src_out_port': 0, 'dst_in_port': 0})
-        if sub_out_attr['tensor'] is not None:
-            if sub_out_attr['tensor'].value is not None:
-                sub_out_attr['tensor'].value = sub_out_attr['tensor'].value.astype(np.float32)
+            input_shapes = dequant_obj.get_input_shapes()
+            if dequant_obj.axis is not None and len(input_shapes[1]) == 1:
+                dequant_axis = dequant_obj.axis
             else:
-                sub_out_attr['tensor'].dtype = 'float32'
-        graph.add_edge(sub, dequant, **sub_out_attr)
-        NodeWrap(graph, sub).replace_obj(
-            'Sub', {'name': sub, 'opset_version': 13})
+                dequant_axis = -1
+            dequant_axis = OpHasAxis.make_axes_non_negative(
+                dequant_axis, len(input_shapes[0]))
+            if len(input_shapes[0]) <= dequant_axis:
+                ERROR(
+                    '[Parser]: Meets invalid axis(%d) in DequantizeLinear Op(%s) in convert_dequantizelinear!' % (dequant_axis, dequant))
+                continue
+            axis_dim = input_shapes[0][dequant_axis]
+            if input_shapes[1] != input_shapes[2] \
+                    or len(input_shapes[1]) not in (0, 1) \
+                    or (len(input_shapes[1]) == 1 and input_shapes[1][0] != axis_dim):
+                ERROR(
+                    '[Parser]: Meets different shapes of x_scale and x_zero_point in DequantizeLinear Op(%s) in convert_dequantizelinear!' % dequant)
+                continue
+            graph.remove_edges_from(dequant_in_edges)
 
-        graph.add_edge(scale, dequant, **scale_in_attr)
-        mul_attr = dequant_obj.copied_attr()
-        mul_attr.update({'opset_version': 13, 'quantize': False})
-        NodeWrap(graph, dequant).replace_obj('Mul', mul_attr)
+            sub = get_valid_node_name(graph, dequant + '_sub')
+            graph.add_node(sub)
+            graph.add_edge(inp, sub, **inp_in_attr)
+            new_zp_in_attr = copy.deepcopy(zp_in_attr)
+            new_zp_in_attr.update({'dst_in_port': 1})
+            graph.add_edge(zp, sub, **new_zp_in_attr)
+            sub_out_attr = copy.deepcopy(inp_in_attr)
+            sub_out_attr.update({'src_out_port': 0, 'dst_in_port': 0})
+            if sub_out_attr['tensor'] is not None:
+                if sub_out_attr['tensor'].value is not None:
+                    sub_out_attr['tensor'].value = sub_out_attr['tensor'].value.astype(np.float32)
+                else:
+                    sub_out_attr['tensor'].dtype = 'float32'
+            graph.add_edge(sub, dequant, **sub_out_attr)
+            NodeWrap(graph, sub).replace_obj(
+                'Sub', {'name': sub, 'opset_version': 13})
 
-        insert_cast(graph, inp, sub, 'float32', inp_in_attr)
-        insert_cast(graph, zp, sub, 'float32', new_zp_in_attr)
+            graph.add_edge(scale, dequant, **scale_in_attr)
+            mul_attr = dequant_obj.copied_attr()
+            mul_attr.update({'opset_version': 13, 'quantize': False})
+            NodeWrap(graph, dequant).replace_obj('Mul', mul_attr)
 
-        if len(input_shapes[1]) == 1 and dequant_axis != len(input_shapes[0]) - 1:
-            dim = [1 if idx != dequant_axis else axis_dim for idx in range(
-                len(input_shapes[0]))]
-            insert_reshape(graph, scale, dequant, scale_in_attr, dim)
-            insert_reshape(graph, zp, sub, new_zp_in_attr, dim)
+            insert_cast(graph, inp, sub, 'float32', inp_in_attr)
+            insert_cast(graph, zp, sub, 'float32', new_zp_in_attr)
+
+            if len(input_shapes[1]) == 1 and dequant_axis != len(input_shapes[0]) - 1:
+                dim = [1 if idx != dequant_axis else axis_dim for idx in range(
+                    len(input_shapes[0]))]
+                insert_reshape(graph, scale, dequant, scale_in_attr, dim)
+                insert_reshape(graph, zp, sub, new_zp_in_attr, dim)
 
 
 def convert_quantizelinear(graph):
