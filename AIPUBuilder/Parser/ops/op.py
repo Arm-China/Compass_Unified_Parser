@@ -151,6 +151,7 @@ class Op(abc.ABC):
                                 'required': True},
                 'cur_version': {'type': AttrType.INT, 'default': 0, 'required': False},
                 'quantize': {'type': AttrType.BOOL, 'default': False, 'options': [0, 1, False, True]},
+                'activation_quantization_axis': {'type': AttrType.INTS, 'default': None},
                 'top_scales': {'type': AttrType.TENSORS, 'default': []},
                 'top_scales_offset': {'type': AttrType.INTS, 'default': []},
                 'top_scales_list': {'type': AttrType.TENSORS, 'default': []},
@@ -438,6 +439,12 @@ class Op(abc.ABC):
                     txt_file.write('layer_top_zp_shape=[%s]\n' % zps_shape)
                     txt_file.write('layer_top_zp_type=[%s]\n' % zps_type)
                     txt_file.write('layer_top_zp_size=[%s]\n' % zps_size)
+                if self.quantize and self.activation_quantization_axis is not None \
+                        and len(self.activation_quantization_axis) == len(top_info[3]):
+                    activation_quantization_axis = [
+                        str(axis) if axis is not None else 'NONE' for axis in self.activation_quantization_axis]
+                    activation_quantization_axis = string_list_to_string(activation_quantization_axis)
+                    txt_file.write('activation_quantization_axis=[%s]\n' % activation_quantization_axis)
         else:
             FATAL(
                 '[Parser]: Invalid file to write properties for Node(%s) in write_attrs!' % (self.name))
@@ -656,11 +663,13 @@ class Op(abc.ABC):
             if len(d['tensor'].min_max) == 2:
                 min_max = np.array(d['tensor'].min_max, dtype=np.float32)
                 info_value[2].update({'min_max': min_max})
-            if quantize and d['tensor'].dtype is not None:
-                info_value[2].update({'dtype': str(d['tensor'].dtype)})
-            if quantize and len(d['tensor'].scale_zp) == 2:
-                scale_zp = (np.array(d['tensor'].scale_zp[0]), np.array(d['tensor'].scale_zp[1]))
-                info_value[2].update({'scale_zp': scale_zp})
+            if quantize:
+                if d['tensor'].dtype is not None:
+                    info_value[2].update({'dtype': str(d['tensor'].dtype)})
+                if len(d['tensor'].scale_zp) == 2:
+                    scale_zp = (np.array(d['tensor'].scale_zp[0]), np.array(d['tensor'].scale_zp[1]))
+                    info_value[2].update({'scale_zp': scale_zp})
+                info_value[2].update({'activation_quantization_axis': d['tensor'].activation_quantization_axis})
             info.update({u + name_suffix: info_value})
         if len(info) > 0:
             ret = [(k, *v) for k, v in info.items()]

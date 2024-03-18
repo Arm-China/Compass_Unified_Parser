@@ -2440,6 +2440,7 @@ def convert_dequantizelinear(graph):
                     inp_in_attr['tensor'] = Tensor()
                 inp_in_attr['tensor'].dtype = zp_in_attr['tensor'].get_dtype()
                 inp_in_attr['tensor'].scale_zp = (scale_in_attr['tensor'].value, zp_in_attr['tensor'].value)
+                inp_obj.activation_quantization_axis = dequant_obj.axis
         else:
             input_shapes = dequant_obj.get_input_shapes()
             if dequant_obj.axis is not None and len(input_shapes[1]) == 1:
@@ -2540,6 +2541,7 @@ def convert_quantizelinear(graph):
                     out_attr['tensor'] = Tensor()
                 out_attr['tensor'].dtype = str(zp_dtype)
                 out_attr['tensor'].scale_zp = (scale_in_attr['tensor'].value, zp_in_attr['tensor'].value)
+                out_attr['tensor'].activation_quantization_axis = quant_obj.axis
         else:
             inp, _, inp_in_attr = quant_in_edges[0]
             inp_dtype = inp_in_attr['tensor'].get_dtype()

@@ -521,6 +521,7 @@ def merge_qconv(graph):
         new_in_attr = copy.deepcopy(in_attr)
         new_in_attr['tensor'].dtype = str(x_zp.dtype)
         new_in_attr['tensor'].scale_zp = (x_scale, x_zp)
+        new_in_attr['tensor'].activation_quantization_axis = obj_dict['x_dequant'].axis
         graph.remove_edges_from(
             graph.sorted_in_edges(m['conv']) + conv_out_edges)
         graph.add_edge(src, m['conv'], **new_in_attr)
@@ -537,6 +538,7 @@ def merge_qconv(graph):
             graph.remove_edge(m['y_quant'], dst)
             out_attr['tensor'].dtype = str(y_zp.dtype)
             out_attr['tensor'].scale_zp = (y_scale, y_zp)
+            out_attr['tensor'].activation_quantization_axis = obj_dict['y_quant'].axis
             graph.add_edge(last_node, dst, **out_attr)
 
         if m['y_quant'] in graph._attr['output_names']:
@@ -694,6 +696,13 @@ def merge_q_multiple(graph, op_list):
             error_node = [n for n in obj_dict if obj_dict[n] is None][0]
             ERROR('[Parser]: Meets invalid Op(%s) in merge_q_multiple!' % error_node)
             continue
+
+        # For some ops, need special treatment. For example, the second input of Split
+        # could be split(length of each output), and should not check DequantizeLinear
+        # op for it.
+        if obj_dict[float_op].type == 'Split':
+            op_in_names = op_in_names[:1]
+
         if any(obj_dict[n].type != 'DequantizeLinear' for n in op_in_names):
             continue
         if any(obj_dict[n].type != 'QuantizeLinear' for n in op_out_names):
@@ -715,16 +724,19 @@ def merge_q_multiple(graph, op_list):
 
         matched = True
 
-        graph.remove_edges_from(in_edges)
-
         for i, dequant in enumerate(op_in_names):
+            graph.remove_edge(dequant, float_op)
             dequant_in_edges = graph.sorted_in_edges(dequant, data=True)
             src, _, in_attr = dequant_in_edges[0]
+            src_obj = NodeWrap(graph, src)['object']
+            if src_obj is not None and not src_obj.quantize:
+                src_obj.quantize = True
             new_in_attr = copy.deepcopy(in_attr)
             new_in_attr['dst_in_port'] = i
             x_scale, x_zp = obj_dict[dequant].x_scale, obj_dict[dequant].x_zero_point
             new_in_attr['tensor'].dtype = str(x_zp.dtype)
             new_in_attr['tensor'].scale_zp = (x_scale, x_zp)
+            new_in_attr['tensor'].activation_quantization_axis = obj_dict[dequant].axis
             graph.add_edge(src, float_op, **new_in_attr)
 
         for quant in op_out_names:
@@ -734,6 +746,7 @@ def merge_q_multiple(graph, op_list):
                 graph.remove_edge(quant, dst)
                 out_attr['tensor'].dtype = str(y_zp.dtype)
                 out_attr['tensor'].scale_zp = (y_scale, y_zp)
+                out_attr['tensor'].activation_quantization_axis = obj_dict[quant].axis
                 dst_in_attr = copy.deepcopy(out_attr)
                 dst_in_attr.update({'src_out_port': src_out_port})
                 graph.add_edge(float_op, dst, **dst_in_attr)
@@ -847,9 +860,13 @@ def merge_q_unary(graph, op_list):
                 '[Parser]: Op (%s) output zeropoint dtype is int32, now convert it to int16!' % m['float_op'])
 
         src, _, in_attr = dequant_in_edges[0]
+        src_obj = NodeWrap(graph, src)['object']
+        if src_obj is not None and not src_obj.quantize:
+            src_obj.quantize = True
         new_in_attr = copy.deepcopy(in_attr)
         new_in_attr['tensor'].dtype = str(x_zp.dtype)
         new_in_attr['tensor'].scale_zp = (x_scale, x_zp)
+        new_in_attr['tensor'].activation_quantization_axis = obj_dict['dequant'].axis
 
         graph.remove_edges_from(op_in_edges[:1])
         graph.remove_edge(m['float_op'], m['quant'])
@@ -858,6 +875,7 @@ def merge_q_unary(graph, op_list):
             graph.remove_edge(m['quant'], dst)
             out_attr['tensor'].dtype = str(y_zp.dtype)
             out_attr['tensor'].scale_zp = (y_scale, y_zp)
+            out_attr['tensor'].activation_quantization_axis = obj_dict['quant'].axis
             graph.add_edge(m['float_op'], dst, **out_attr)
         if m['quant'] in graph._attr['output_names']:
             index = graph._attr['output_names'].index(m['quant'])

@@ -697,10 +697,12 @@ def rename_quantize_dequantize(graph):
         if quantize_obj.type == 'DequantizeLinear':
             if not inp_attr['tensor'].scale_zp:
                 inp_attr['tensor'].scale_zp = (scale, zp)
+                inp_attr['tensor'].activation_quantization_axis = quantize_obj.axis
         else:
             for _, _, _, out_attr in out_edges:
                 if not out_attr['tensor'].scale_zp:
                     out_attr['tensor'].scale_zp = (scale, zp)
+                    out_attr['tensor'].activation_quantization_axis = quantize_obj.axis
         graph.remove_edge(scale_name, quantize, key=k1)
         graph.remove_edge(zp_name, quantize, key=k2)
         quantize_attr = quantize_obj.copied_attr()
@@ -3126,6 +3128,7 @@ def rename_tile(graph):
                     if out_attr['tensor'] is not None:
                         out_attr['tensor'].dtype = in_attr['tensor'].dtype
                         out_attr['tensor'].scale_zp = in_attr['tensor'].scale_zp
+                        out_attr['tensor'].activation_quantization_axis = in_attr['tensor'].activation_quantization_axis
 
 
 def rename_topk(graph):
@@ -3318,6 +3321,7 @@ def fuse_quant_op(graph, op_list):
             x_scale, x_zp = obj_dict[dequant].scale, obj_dict[dequant].zero_point
             new_in_attr['tensor'].dtype = str(x_zp.dtype)
             new_in_attr['tensor'].scale_zp = (x_scale, x_zp)
+            new_in_attr['tensor'].activation_quantization_axis = obj_dict[dequant].axis
             graph.add_edge(src, float_op, **new_in_attr)
 
         for quant in op_out_names:
@@ -3328,6 +3332,7 @@ def fuse_quant_op(graph, op_list):
                 graph.remove_edge(quant, dst)
                 out_attr['tensor'].dtype = str(y_zp.dtype)
                 out_attr['tensor'].scale_zp = (y_scale, y_zp)
+                out_attr['tensor'].activation_quantization_axis = obj_dict[quant].axis
                 dst_in_attr = copy.deepcopy(out_attr)
                 dst_in_attr.update({'src_out_port': src_out_port})
                 graph.add_edge(float_op, dst, **dst_in_attr)
@@ -4834,6 +4839,7 @@ def sink_reshape_through_cast(graph):
             if cast_out_tensor is not None and len(cast_out_tensor.scale_zp) > 0:
                 reshape_in_attr['tensor'].scale_zp = cast_out_tensor.scale_zp
                 reshape_in_attr['tensor'].dtype = cast_out_tensor.dtype
+                reshape_in_attr['tensor'].activation_quantization_axis = cast_out_tensor.activation_quantization_axis
         graph.add_edge(cast, reshape, **reshape_in_attr)
         for _, dst, out_attr in cast_out_edges:
             graph.add_edge(reshape, dst, **out_attr)
@@ -5457,6 +5463,10 @@ def assign_top_range_scale_zp(graph):
                 assert len(n_obj.top_scales_list) == len(n_obj.top_zps_list) \
                     and len(n_obj.top_scales) == len(n_obj.top_zps), \
                     'top_scales and top_zps should have the same size!'
+                top_activation_quantization_axis = [t_info.get(
+                    'activation_quantization_axis', None) for t_info in top_info[3]]
+                if any(axis is not None for axis in top_activation_quantization_axis):
+                    n_obj.activation_quantization_axis = top_activation_quantization_axis
         else:
             ERROR('[Parser]: Meets invalid Node(%s) in assign_top_range_scale_zp!' % n)
     if graph._attr.get('quantize', False) and not has_quantize_nodes:
