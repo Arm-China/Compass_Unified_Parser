@@ -5426,6 +5426,8 @@ def assign_top_range_scale_zp(graph):
                 if n_obj.quantize:
                     has_quantize_nodes = True
                 else:
+                    if n_obj.type == 'ArmDeQuantize':
+                        has_quantize_nodes = True
                     continue
                 if not any('scale_zp' in info for info in top_info[3]):
                     continue
