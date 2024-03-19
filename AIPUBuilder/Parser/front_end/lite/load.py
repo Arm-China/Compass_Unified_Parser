@@ -29,6 +29,9 @@ def convert_attr_to_onnx(attr_dict):
         elif k == 'Alpha':
             new_attr.update({'alpha': v})
             new_attr.pop(k)
+        elif k == 'Approximate':
+            new_attr.update({'approximate': v})
+            new_attr.pop(k)
         elif k == 'AsymmetricQuantizeInputs':
             new_attr.update({'asymmetric_quantize_inputs': int(v)})
             new_attr.pop(k)

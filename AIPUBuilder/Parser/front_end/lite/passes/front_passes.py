@@ -3278,6 +3278,8 @@ def convert_to_onnx(graph):
                                     data_format='NHWC')
                 elif pure_type == 'FLOOR_MOD':
                     new_node_attr.update({'fmod': 0})
+                elif pure_type == 'GELU':
+                    new_node_attr.update({'approximate': 'tanh' if node_obj.approximate else 'none'})
                 elif pure_type == 'L2_NORMALIZATION':
                     new_node_attr.update({'p': 2})
                 elif pure_type == 'LOCAL_RESPONSE_NORMALIZATION':

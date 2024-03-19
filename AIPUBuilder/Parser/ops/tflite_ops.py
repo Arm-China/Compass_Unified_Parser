@@ -1075,6 +1075,29 @@ class LiteGATHER_NDOp(OpHasOneOutPort, TfliteOp):
         return {'type': 'GatherND', 'version': 11}
 
 
+class LiteGELUOp(ActivationOnlyOp, TfliteOp):
+    @classmethod
+    def attributes(cls):
+        return {1: {'approximate': {'type': AttrType.BOOL, 'default': False},
+                    }}
+
+    def __init__(self, graph, attr_dict=None):
+        super(LiteGELUOp, self).__init__(graph, attr_dict)
+        self.update_attributes(LiteGELUOp, attr_dict)
+        assert self.check_required(), 'LiteGELUOp is missing a required parameter.'
+        self.activations = 'GELU'
+
+    def infer_shape(self):
+        super(LiteGELUOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = tf.nn.gelu(inputs[0], approximate=self.approximate).numpy()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'Gelu', 'version': 20}
+
+
 class LiteGREATEROp(OpHasOneOutPort, TfliteOp):
     @classmethod
     def attributes(cls):
