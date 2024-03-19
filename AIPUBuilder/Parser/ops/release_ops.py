@@ -1047,7 +1047,7 @@ class ArmConvIntegerOp(BaseConvOp, ArmOp):
 class ArmConvTransposeOp(BaseActivationOp, BaseConvOp, ArmOp):
     @classmethod
     def cast_in_ports(cls):
-        return {0: ['float32', 'float16', 'uint8']}
+        return {0: ['float32', 'float16', 'uint8', 'int8']}
 
     @classmethod
     def attributes(cls):
@@ -1103,7 +1103,7 @@ class ArmConvTransposeOp(BaseActivationOp, BaseConvOp, ArmOp):
 class ArmConvTranspose3DOp(BaseActivationOp, BaseConvOp, ArmOp):
     @classmethod
     def cast_in_ports(cls):
-        return {0: ['float32', 'float16']}
+        return {0: ['float32', 'float16', 'uint8', 'int8']}
 
     @classmethod
     def attributes(cls):
