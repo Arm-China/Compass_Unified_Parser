@@ -2485,13 +2485,13 @@ def convert_dequantizelinear(graph):
             NodeWrap(graph, dequant).replace_obj('Mul', mul_attr)
 
             insert_cast(graph, inp, sub, 'float32', inp_in_attr)
-            insert_cast(graph, zp, sub, 'float32', new_zp_in_attr)
+            float_zp = insert_cast(graph, zp, sub, 'float32', new_zp_in_attr)
 
             if len(input_shapes[1]) == 1 and dequant_axis != len(input_shapes[0]) - 1:
                 dim = [1 if idx != dequant_axis else axis_dim for idx in range(
                     len(input_shapes[0]))]
                 insert_reshape(graph, scale, dequant, scale_in_attr, dim)
-                insert_reshape(graph, zp, sub, new_zp_in_attr, dim)
+                insert_reshape(graph, zp, float_zp, new_zp_in_attr, dim)
 
 
 def convert_quantizelinear(graph):
