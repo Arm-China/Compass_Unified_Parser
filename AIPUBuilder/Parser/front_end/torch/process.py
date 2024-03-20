@@ -1248,9 +1248,10 @@ def convert_threshold(g, x, threshold, value):
 
 
 def convert_quantized_sigmoid(g, x, op_scale, op_zero_point):
-    x, _, _, _ = helper.dequantize_helper(g, x)
+    x, _, x_zp, _ = helper.dequantize_helper(g, x)
+    out_scalar_type = x_zp.type().scalarType()
     output = opset9.sigmoid(g, x)
-    return quantize_helper(g, output, op_scale, op_zero_point)
+    return quantize_helper(g, output, op_scale, op_zero_point, zero_point_scalar_type=out_scalar_type)
 
 
 @helper.parse_args('v', 'is')

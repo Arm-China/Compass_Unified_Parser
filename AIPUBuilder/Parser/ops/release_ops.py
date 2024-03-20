@@ -974,7 +974,7 @@ class ArmConvolutionOp(BaseActivationOp, BaseConvOp, ArmOp):
                                              dilations=self.dilations,
                                              data_format='NHWC')
         out_shape = [inputs[0].shape[0]] + out_shape + [self.num_output]
-        out_tensor = np.random.ranf(size=out_shape).astype(np.float32)
+        out_tensor = np.random.ranf(size=out_shape).astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
 
@@ -998,7 +998,7 @@ class ArmConvolution3DOp(BaseActivationOp, BaseConvOp, ArmOp):
                                              dilations=self.dilations,
                                              data_format='NHWC')
         out_shape = [inputs[0].shape[0]] + out_shape + [self.num_output]
-        out_tensor = np.random.ranf(size=out_shape).astype(np.float32)
+        out_tensor = np.random.ranf(size=out_shape).astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
 
@@ -2821,7 +2821,7 @@ class ArmLogicalOp(LayoutUnawareOp, OpHasMethod, OpHasOneOutPort, ArmOp):
 class ArmLRNOp(OpHasMethod, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
-        return {0: ['float32', 'float16']}
+        return {0: ['float32', 'float16', 'int8', 'uint8']}
 
     @classmethod
     def attributes(cls):
@@ -2843,12 +2843,12 @@ class ArmLRNOp(OpHasMethod, OpHasOneOutPort, ArmOp):
             list(range(1, len(inputs[0].shape) - 1))
         perm2 = [0] + list(range(2, len(inputs[0].shape))) + [1]
         inp = np.transpose(inputs[0], axes=perm1)
-        lrn = torch.nn.functional.local_response_norm(torch.from_numpy(inp),
+        lrn = torch.nn.functional.local_response_norm(torch.from_numpy(inp.astype(np.float32)),
                                                       self.size,
                                                       alpha=self.alpha,
                                                       beta=self.beta,
                                                       k=self.bias).numpy()
-        out_tensor = np.transpose(lrn, axes=perm2)
+        out_tensor = np.transpose(lrn, axes=perm2).astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
     def write_attrs(self, txt_file):
@@ -4227,7 +4227,7 @@ class ArmRoundOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
 class ArmRsqrtOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
-        return {0: ['float32', 'float16']}
+        return {0: ['float32', 'float16', 'int8', 'uint8']}
 
     def infer_shape(self):
         super(ArmRsqrtOp, self).infer_shape()
@@ -4603,7 +4603,7 @@ class ArmSquareOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
 class ArmSquaredDifferenceOp(OpNeedBroadcast, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
-        return {0: ['float32', 'float16'], 1: ['float32', 'float16']}
+        return {0: ['float32', 'float16', 'int8', 'uint8'], 1: ['float32', 'float16', 'int8', 'uint8']}
 
     def infer_shape(self):
         super(ArmSquaredDifferenceOp, self).infer_shape()

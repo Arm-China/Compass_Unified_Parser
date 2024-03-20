@@ -391,7 +391,7 @@ class LiteCONV_2DOp(BaseActivationOp, BaseConvOp, TfliteOp):
                                   data_format='NHWC')
         out_tensor = tf.nn.bias_add(
             out_tensor, self.biases, data_format='NHWC').numpy()
-        out_tensor = self.cal_activation(out_tensor)
+        out_tensor = self.cal_activation(out_tensor).astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
         if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
             self.pads, _ = OpHasPaddingStrides.cal_pads(
@@ -2771,8 +2771,8 @@ class LiteTANHOp(ActivationOnlyOp, TfliteOp):
     def infer_shape(self):
         super(LiteTANHOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.tanh(inputs[0]).numpy()
-        self.set_out_tensor(out_tensor)
+        out_tensor = tf.tanh(inputs[0].astype(np.float32)).numpy()
+        self.set_out_tensor(out_tensor.astype(inputs[0].dtype))
 
     @property
     def correspond_onnx_op(self):

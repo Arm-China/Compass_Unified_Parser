@@ -2511,7 +2511,7 @@ class SqrtOp(LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
         super(SqrtOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor = np.sqrt(inputs[0])
-        self.set_out_tensor(out_tensor)
+        self.set_out_tensor(out_tensor.astype(inputs[0].dtype))
 
 
 class SubOp(OpNeedBroadcast, OpHasAxis, OpHasOneOutPort, OnnxOp):
@@ -2603,8 +2603,8 @@ class TanhOp(LayoutUnawareOp, BaseActivationOp, OnnxOp):
     def infer_shape(self):
         super(TanhOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.tanh(inputs[0]).numpy()
-        self.set_out_tensor(out_tensor)
+        out_tensor = tf.tanh(inputs[0].astype(np.float32)).numpy()
+        self.set_out_tensor(out_tensor.astype(inputs[0].dtype))
 
 
 class TanOp(LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
