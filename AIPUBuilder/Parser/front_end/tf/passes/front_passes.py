@@ -256,12 +256,16 @@ def convert_invert_permutation(graph):
         NodeWrap(graph, topk_out_val).replace_obj('Out', {'name': topk_out_val})
 
 
-def convert_matmul(graph):
+def convert_matmul(graph, op_type_list=['TfMatMul', 'TfBatchMatMulV2', 'TfBatchMatMul', 'Tfmatmul']):
+    if not isinstance(op_type_list, list):
+        op_type_list = [op_type_list]
+    if any(t not in ['TfMatMul', 'TfBatchMatMulV2', 'TfBatchMatMul', 'Tfmatmul', 'LiteBATCH_MATMUL'] for t in op_type_list):
+        ERROR('[Parser]: Meets invalid op_type_list (%s) in convert_matmul!' % str(op_type_list))
+        return
     need_clear = False
     matches = matched_patterns(graph,
                                nodes=[
-                                   ('matmul', {
-                                       'op': ['TfMatMul', 'TfBatchMatMulV2', 'TfBatchMatMul', 'Tfmatmul']}),
+                                   ('matmul', {'op': op_type_list}),
                                ],
                                edges=[])
     for m in matches:

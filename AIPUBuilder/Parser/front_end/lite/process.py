@@ -92,6 +92,9 @@ def process_tflite(graph, model_path, params):
         from ..tf.passes.front_passes import convert_topk
         convert_topk(graph, op_type='LiteTOPK_V2')
 
+        from ..tf.passes.front_passes import convert_matmul
+        convert_matmul(graph, 'LiteBATCH_MATMUL')
+
         convert_deconv(graph)
         convert_negative_pool_pad(graph)
         remove_redundant_broadcast_to(graph)
