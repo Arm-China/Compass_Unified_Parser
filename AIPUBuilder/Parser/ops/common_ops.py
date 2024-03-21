@@ -296,7 +296,8 @@ class DivModOp(OpNeedBroadcast, LayoutUnawareOp, OpHasMultipleOutPorts, CommonOp
                 second_input = np.ones_like(inputs[1])
                 out0, out1 = np.divmod(inputs[0], second_input)
         else:
-            out0 = torch.div(torch.tensor(inputs[0]), torch.tensor(inputs[1]), rounding_mode=self.mode).numpy()
+            out0 = torch.div(torch.tensor(inputs[0].astype(np.int64)), torch.tensor(inputs[1].astype(np.int64)),
+                             rounding_mode=self.mode).numpy().astype(inputs[0].dtype)
             out1 = (inputs[0] - out0 * inputs[1])
         self.set_out_tensor([out0, out1])
 

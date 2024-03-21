@@ -1774,7 +1774,8 @@ class ArmDivOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
 class ArmDivModOp(LayoutUnawareOp, OpHasMultipleOutPorts, ArmOp):
     @classmethod
     def cast_in_ports(cls):
-        return {0: ['int8', 'uint8', 'int32', 'uint32'], 1: ['int8', 'uint8', 'int32', 'uint32']}
+        return {0: ['int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32'],
+                1: ['int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32']}
 
     @classmethod
     def num_in_ports(cls):
@@ -1793,8 +1794,10 @@ class ArmDivModOp(LayoutUnawareOp, OpHasMultipleOutPorts, ArmOp):
         super(ArmDivModOp, self).infer_shape()
         inputs = self.get_input_tensors()
         assert len(inputs) == 2, 'Expects 2 inputs for ArmDivMod op (%s), but got %d' % (self.name, len(inputs))
+        input_dtype = inputs[0].dtype
         try:
-            out0 = torch.div(torch.tensor(inputs[0]), torch.tensor(inputs[1]), rounding_mode=self.mode).numpy()
+            out0 = torch.div(torch.tensor(inputs[0].astype(np.int64)), torch.tensor(inputs[1].astype(np.int64)),
+                             rounding_mode=self.mode).numpy().astype(input_dtype)
         except:
             in_consts = self.sorted_in_consts()
             if len(in_consts) == 2 \
@@ -1804,7 +1807,8 @@ class ArmDivModOp(LayoutUnawareOp, OpHasMultipleOutPorts, ArmOp):
             else:
                 WARN('[Parser]: The second input of ArmDivMod Op (%s) is replaced by ones in infer_shape!' % self.name)
                 second_input = np.ones_like(inputs[1])
-                out0 = torch.div(torch.tensor(inputs[0]), torch.tensor(second_input), rounding_mode=self.mode).numpy()
+                out0 = torch.div(torch.tensor(inputs[0].astype(np.int64)), torch.tensor(second_input.astype(np.int64)),
+                                 rounding_mode=self.mode).numpy().astype(input_dtype)
         out1 = (inputs[0] - out0 * inputs[1]) if out0 is not None else None
         self.set_out_tensor([out0, out1])
 
