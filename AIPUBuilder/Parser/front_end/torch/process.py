@@ -406,7 +406,7 @@ def convert_dict_construct(g, key_0, value_0, key_1=None, value_1=None):
 
 
 @helper.parse_args('v', 'v', 'v')
-@helper.quantized_args(True, False, False)
+@quantized_args(True, False, False)
 def convert_div(g, input, other, *args):
     from torch.onnx.symbolic_opset10 import div
     return div(g, input, other, *args)
@@ -442,7 +442,7 @@ def convert_fake_quantize_per_tensor_affine(g, inputs, scale, zero_point, quant_
 
 
 @helper.parse_args('v', 'i', 'i')
-@helper.quantized_args(True, False, False)
+@quantized_args(True, False, False)
 def convert_flatten(g, input, start_dim, end_dim):
     input_rank = helper._get_tensor_rank(input)
     assert input_rank is not None, 'Meets unknown rank in convert_flatten!'
@@ -628,19 +628,19 @@ def convert_avg_pool(g, input, kernel_size, strides, paddings, ceil_mode, count_
     return slice_out
 
 
-@helper.quantized_args(True, False, False, False, False, False, False)
+@quantized_args(True, False, False, False, False, False, False)
 @helper.parse_args('v', 'is', 'is', 'is', 'i', 'i', 'none')
 def convert_avg_pool1d(g, inp, kernel_size, stride, padding, ceil_mode, count_include_pad, divisor_override=None):
     return convert_avg_pool(g, inp, kernel_size, stride, padding, ceil_mode, count_include_pad, divisor_override, 1)
 
 
-@helper.quantized_args(True, False, False, False, False, False, False)
+@quantized_args(True, False, False, False, False, False, False)
 @helper.parse_args('v', 'is', 'is', 'is', 'i', 'i', 'none')
 def convert_avg_pool2d(g, inp, kernel_size, stride, padding, ceil_mode, count_include_pad, divisor_override=None):
     return convert_avg_pool(g, inp, kernel_size, stride, padding, ceil_mode, count_include_pad, divisor_override, 2)
 
 
-@helper.quantized_args(True, False, False, False, False, False, False)
+@quantized_args(True, False, False, False, False, False, False)
 @helper.parse_args('v', 'is', 'is', 'is', 'i', 'i', 'none')
 def convert_avg_pool3d(g, inp, kernel_size, stride, padding, ceil_mode, count_include_pad, divisor_override=None):
     return convert_avg_pool(g, inp, kernel_size, stride, padding, ceil_mode, count_include_pad, divisor_override, 3)

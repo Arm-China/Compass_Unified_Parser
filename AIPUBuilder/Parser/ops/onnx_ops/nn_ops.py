@@ -469,7 +469,7 @@ class ConvTransposeOp(BaseDeconvOp, OnnxOp):
             # The number of channels in the output should be equal to W.shape[1] * group
             out_shape = [inputs[0].shape[0],
                          self.num_output] + self.output_shape
-        out_tensor = np.random.ranf(size=out_shape).astype(np.float32)
+        out_tensor = np.random.ranf(size=out_shape).astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
 
