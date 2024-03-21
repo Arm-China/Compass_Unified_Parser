@@ -4608,6 +4608,7 @@ def insert_cast_if_must(graph):
         for n in ds:
             obj = NodeWrap(graph, n)['object']
             if obj is not None:
+                quantize = obj.quantize
                 if isinstance(obj, ArmOp) and len(obj.cast_in_ports()) > 0:
                     in_edges = graph.sorted_in_edges(n, data=True, keys=True)
                     cast_in_ports = {}
@@ -4625,6 +4626,9 @@ def insert_cast_if_must(graph):
                                     cast_type_all = cast_in_ports[cast_key]
                                     if in_attr.get('tensor', None) is not None:
                                         dtype = in_attr['tensor'].get_dtype()
+                                        if quantize and dtype is not None \
+                                                and dtype in ('uint8', 'int8', 'int32'):
+                                            break
                                         if dtype is not None and all(dtype != cast_type for cast_type in cast_type_all):
                                             happened = True
                                             cast_type = get_converted_dtype(dtype, return_type_string=True)
