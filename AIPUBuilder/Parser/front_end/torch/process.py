@@ -728,39 +728,35 @@ def convert_max_pool(g, input, kernel_size, strides, paddings, dilations, ceil_m
     assert isinstance(dim, int) and dim in [
         1, 2, 3], 'Meets invalid dim in convert_max_pool!'
     if not ceil_mode:
-        if return_indices:
-            try:
+        try:
+            if return_indices:
                 from torch.onnx.symbolic_opset10 import max_pool1d_with_indices, max_pool2d_with_indices, \
                     max_pool3d_with_indices
                 max_pool_func = max_pool1d_with_indices if dim == 1 else (
                     max_pool2d_with_indices if dim == 2 else max_pool3d_with_indices)
-            except ImportError:  # torch 2.1
-                from torch.onnx.symbolic_opset10 import _max_pool
-                if dim == 1:
-                    max_pool_func = _max_pool('max_pool1d_with_indices',
-                                              torch.nn.modules.utils._single, 1, return_indices=True)
-                elif dim == 2:
-                    max_pool_func = _max_pool('max_pool2d_with_indices',
-                                              torch.nn.modules.utils._pair, 2, return_indices=True)
-                else:  # dim == 3
-                    max_pool_func = _max_pool('max_pool3d_with_indices',
-                                              torch.nn.modules.utils._triple, 3, return_indices=True)
+            else:
+                from torch.onnx.symbolic_opset10 import max_pool1d, max_pool2d, max_pool3d
+                max_pool_func = max_pool1d if dim == 1 else (
+                    max_pool2d if dim == 2 else max_pool3d)
+        except ImportError:  # >= torch 2.1
+            from torch.onnx.symbolic_opset10 import _max_pool
+            torch_version = torch.__version__
+            max_pool_func_name = 'max_pool1d_with_indices' if dim == 1 else (
+                'max_pool2d_with_indices' if dim == 2 else 'max_pool3d_with_indices')
+            cnt_param = torch.nn.modules.utils._single if dim == 1 else (
+                torch.nn.modules.utils._pair if dim == 2 else torch.nn.modules.utils._triple)
+            if torch_version >= '2.2.0':
+                # parameters of _max_pool changed since torch 2.2.0
+                # Refer to https://github.com/pytorch/pytorch/commit/e8e3afb784f28562aa9463da06c38b0fb574b01c
+                max_pool_func = _max_pool(max_pool_func_name, dim, return_indices=return_indices)
+            else:
+                max_pool_func = _max_pool(max_pool_func_name,
+                                          cnt_param, dim, return_indices=return_indices)
+        if return_indices:
             max_pool, indices = max_pool_func(
                 g, input, kernel_size, strides, paddings, dilations, ceil_mode)
             return (max_pool, indices)
         else:
-            try:
-                from torch.onnx.symbolic_opset10 import max_pool1d, max_pool2d, max_pool3d
-                max_pool_func = max_pool1d if dim == 1 else (
-                    max_pool2d if dim == 2 else max_pool3d)
-            except ImportError:  # torch 2.1
-                from torch.onnx.symbolic_opset10 import _max_pool
-                if dim == 1:
-                    max_pool_func = _max_pool('max_pool1d', torch.nn.modules.utils._single, 1, return_indices=False)
-                elif dim == 2:
-                    max_pool_func = _max_pool('max_pool2d', torch.nn.modules.utils._pair, 2, return_indices=False)
-                else:  # dim == 3
-                    max_pool_func = _max_pool('max_pool3d', torch.nn.modules.utils._triple, 3, return_indices=False)
             max_pool = max_pool_func(
                 g, input, kernel_size, strides, paddings, dilations, ceil_mode)
             return max_pool
