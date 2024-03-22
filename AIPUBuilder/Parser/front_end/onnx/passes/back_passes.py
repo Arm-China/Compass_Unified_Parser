@@ -2432,8 +2432,15 @@ def rename_gridsample(graph):
     for m in matches:
         gridsample = m['target']
         gridsample_obj = NodeWrap(graph, gridsample)['object']
+        input_shapes = gridsample_obj.get_input_shapes()
+        if len(input_shapes) < 1 or input_shapes[0] is None:
+            ERROR('[Parser]: Meets invalid inputs of GridSample Node(%s) in rename_gridsample!' % gridsample)
+            continue
+        mode = gridsample_obj.mode
+        if len(input_shapes[0]) == 4 and mode == 'linear':
+            mode = 'bilinear'
         gridsample_attr = gridsample_obj.copied_attr()
-        gridsample_attr.update({'method': gridsample_obj.mode.upper()})
+        gridsample_attr.update({'method': mode.upper()})
         NodeWrap(graph, gridsample).replace_obj(
             'ArmGridSample', gridsample_attr)
 

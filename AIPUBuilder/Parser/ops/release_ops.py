@@ -2435,7 +2435,7 @@ class ArmGridSampleOp(LayoutConcernedOp, OpHasMethod, OpHasOneOutPort, ArmOp):
     @classmethod
     def attributes(cls):
         return {'align_corners': {'type': AttrType.INT, 'default': 0, 'options': [0, 1]},
-                'method': {'type': AttrType.STRING, 'default': 'BILINEAR', 'options': ['BILINEAR', 'NEAREST', 'BICUBIC']},
+                'method': {'type': AttrType.STRING, 'default': 'BILINEAR', 'options': ['BILINEAR', 'NEAREST', 'CUBIC', 'LINEAR']},
                 'padding_mode': {'type': AttrType.STRING, 'default': 'zeros', 'options': ['zeros', 'border', 'reflection']}
                 }
 
@@ -2448,14 +2448,18 @@ class ArmGridSampleOp(LayoutConcernedOp, OpHasMethod, OpHasOneOutPort, ArmOp):
         super(ArmGridSampleOp, self).infer_shape()
         inputs = self.get_input_tensors()
 
-        inp = np.transpose(inputs[0], (0, 3, 1, 2))
-        out_tensor = torch.nn.functional.grid_sample(torch.from_numpy(inp),
-                                                     torch.from_numpy(
-                                                         inputs[1]),
-                                                     mode=self.method.lower(),
-                                                     padding_mode=self.padding_mode,
-                                                     align_corners=bool(self.align_corners)).numpy()
-        out_tensor = np.transpose(out_tensor, (0, 2, 3, 1))
+        # # Below is for 4d input only
+        # inp = np.transpose(inputs[0], (0, 3, 1, 2))
+        # out_tensor = torch.nn.functional.grid_sample(torch.from_numpy(inp),
+        #                                              torch.from_numpy(
+        #                                                  inputs[1]),
+        #                                              mode=self.method.lower(),
+        #                                              padding_mode=self.padding_mode,
+        #                                              align_corners=bool(self.align_corners)).numpy()
+        # out_tensor = np.transpose(out_tensor, (0, 2, 3, 1))
+        spatial_output_shape = list(inputs[1].shape[1:-1])
+        output_shape = [inputs[0].shape[0]] + spatial_output_shape + [inputs[0].shape[-1]]
+        out_tensor = np.random.ranf(output_shape).astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
     def write_attrs(self, txt_file):

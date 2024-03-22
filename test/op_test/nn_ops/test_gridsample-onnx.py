@@ -45,11 +45,11 @@ grid_shape = [1, 64, 128, 2]
 feed_dict = dict()
 feed_dict['X'] = np.random.ranf(input_shape).astype(np.float32) * 100
 feed_dict['Grid'] = 2.0 * np.random.ranf(grid_shape).astype(np.float32) - 1.0
-input_data_path = 'input.npy'
-np.save(input_data_path, feed_dict)
+# input_data_path = 'input.npy'
+# np.save(input_data_path, feed_dict)
 
 # TODO: OPT doesn't support 'bicubic' and 'reflection' for now. Ignore it for now.
-for mode in ('bilinear', 'nearest', ):
+for mode in ('bicubic', 'bilinear', 'nearest', ):
     for padding_mode in ('zeros', 'border', ):
         for align_corners in (0, 1):
             model_name = '-'.join([OP_NAME, mode,
@@ -61,6 +61,13 @@ for mode in ('bilinear', 'nearest', ):
                 grid_shape, mode, padding_mode, align_corners)
 
             # Run tests with parser and compare result with runtime
+            if mode == 'bicubic':
+                verify = False
+                method = 'CUBIC'
+            else:
+                verify = True
+                method = mode.upper()
             exit_status = run_parser(
-                model_path, feed_dict, model_type=None, save_output=True, verify=True)
+                model_path, feed_dict, verify=verify,
+                expected_keywords=['method=' + method, 'align_corners=' + ('true' if align_corners else 'false')])
             assert exit_status
