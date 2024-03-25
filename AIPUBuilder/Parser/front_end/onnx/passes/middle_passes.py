@@ -9845,10 +9845,11 @@ def adjust_1d_matmul(graph):
         for in_port, (src, _, k, in_attr) in enumerate(in_edges):
             pre_reshape_dim = [1] * (1 - in_port) + \
                 in_shapes[in_port] + [1] * (in_port)
-            insert_reshape(graph, src, matmul, in_attr, pre_reshape_dim, key=k)
+            insert_reshape(graph, src, matmul, in_attr, pre_reshape_dim, key=k,
+                           quantize=node_obj.quantize)
 
         post_reshape = insert_reshape_after(
-            graph, matmul, old_dim=[1, 1], new_dim=out_shapes[0])
+            graph, matmul, old_dim=[1, 1], new_dim=out_shapes[0], quantize=node_obj.quantize)
         if matmul in graph._attr['output_names']:
             index = graph._attr['output_names'].index(matmul)
             graph._attr['output_names'][index] = post_reshape
@@ -9877,10 +9878,10 @@ def align_matmul_input(graph):
             else:
                 reshape_dim = [1] * dim_diff + list(input_shapes[edge_index])
             src, _, k, in_attr = in_edges[edge_index]
-            insert_reshape(graph, src, matmul, in_attr, reshape_dim, key=k)
+            insert_reshape(graph, src, matmul, in_attr, reshape_dim, key=k, quantize=obj.quantize)
             out_shape = obj.get_output_shapes()[0]
             post_reshape = insert_reshape_after(
-                graph, matmul, out_shape, old_dim=list(out_shape))
+                graph, matmul, out_shape, old_dim=list(out_shape), quantize=obj.quantize)
             if matmul in graph._attr['output_names']:
                 index = graph._attr['output_names'].index(matmul)
                 graph._attr['output_names'][index] = post_reshape
