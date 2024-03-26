@@ -417,9 +417,12 @@ def convert_tflite_to_graph(graph, model_path, params):
                             WARN('Original model expects input shape of input %s to be %s. '
                                  'Now reset it to %s basing on config file!' % (net_in_name, str(shape), str(new_shape)))
                             shape = new_shape
-                        if str(net_in_tensor.dtype).find('int') != -1:
-                            net_in_tensor = np.zeros(
-                                shape, net_in_tensor.dtype)
+                        if graph_is_quantized:
+                            net_in_dtype = parsed_tensors_table[net_in].get('dtype', str(net_in_tensor.dtype))
+                        else:
+                            net_in_dtype = str(net_in_tensor.dtype)
+                        if net_in_dtype.find('int') != -1:
+                            net_in_tensor = np.zeros(shape, net_in_dtype)
                         else:
                             net_in_tensor = (np.random.ranf(
                                 size=shape) * 100).astype(net_in_tensor.dtype)

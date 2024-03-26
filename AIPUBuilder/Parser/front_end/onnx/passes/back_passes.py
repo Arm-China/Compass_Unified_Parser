@@ -4627,7 +4627,7 @@ def insert_cast_if_must(graph):
                                     if in_attr.get('tensor', None) is not None:
                                         dtype = in_attr['tensor'].get_dtype()
                                         if quantize and dtype is not None \
-                                                and dtype in ('uint8', 'int8', 'int32'):
+                                                and dtype in ('uint8', 'int8', 'int16', 'int32'):
                                             break
                                         if dtype is not None and all(dtype != cast_type for cast_type in cast_type_all):
                                             happened = True

@@ -211,8 +211,9 @@ class LiteBATCH_MATMULOp(OpHasOneOutPort, TfliteOp):
         super(LiteBATCH_MATMULOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor = tf.raw_ops.BatchMatMulV2(
-            x=inputs[0], y=inputs[1], adj_x=self.adj_x, adj_y=self.adj_y).numpy()
-        self.set_out_tensor(out_tensor)
+            x=inputs[0].astype(np.float32), y=inputs[1].astype(np.float32),
+            adj_x=self.adj_x, adj_y=self.adj_y).numpy()
+        self.set_out_tensor(out_tensor.astype(inputs[0].dtype))
 
     @property
     def correspond_onnx_op(self):
