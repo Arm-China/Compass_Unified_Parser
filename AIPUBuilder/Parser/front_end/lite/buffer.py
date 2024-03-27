@@ -304,7 +304,7 @@ def parse_quantization_info(quant_info, tensor_dtype=None):
                 and 'Scale' in ret and 'ZeroPoint' in ret:
             min_value = (np.iinfo(tensor_dtype).min - ret['ZeroPoint']) * ret['Scale']
             max_value = (np.iinfo(tensor_dtype).max - ret['ZeroPoint']) * ret['Scale']
-            ret.update({'Min': min_value, 'Max': max_value})
+            ret.update({'Min': min_value.astype(np.float32), 'Max': max_value.astype(np.float32)})
     return ret
 
 

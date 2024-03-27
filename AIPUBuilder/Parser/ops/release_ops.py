@@ -1627,7 +1627,7 @@ class ArmDepthwiseConvOp(BaseActivationOp, BaseConvOp, ArmOp):
                                              dilations=self.dilations,
                                              data_format='NHWC')
         out_shape = [inputs[0].shape[0]] + out_shape + [self.num_output]
-        out_tensor = np.random.ranf(size=out_shape).astype(np.float32)
+        out_tensor = np.random.ranf(size=out_shape).astype(inputs[0].dtype)
 
         self.set_out_tensor(out_tensor)
 
@@ -2191,7 +2191,7 @@ class ArmFullyConnectedOp(BaseActivationOp, BaseLinearOp, ArmOp):
                                 np.transpose(self.weights, axes=type(
                                     self).perm_onnx_to_tf())
                                 ) + self.biases).numpy()
-        out_tensor = self.cal_activation(out_tensor)
+        out_tensor = self.cal_activation(out_tensor).astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
 
@@ -4076,7 +4076,7 @@ class ArmResizeOp(OpHasMethod, OpHasOneOutPort, ArmOp):
                                                      size=tuple(size),
                                                      mode='nearest'
                                                      ).numpy()
-        out_tensor = np.transpose(out_tensor, inverse_perm)
+        out_tensor = np.transpose(out_tensor, inverse_perm).astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
     def write_attrs(self, txt_file):
@@ -4236,7 +4236,7 @@ class ArmRsqrtOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
     def infer_shape(self):
         super(ArmRsqrtOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensors = np.sqrt(inputs[0])
+        out_tensors = np.sqrt(inputs[0]).astype(inputs[0].dtype)
         self.set_out_tensor(out_tensors)
 
 

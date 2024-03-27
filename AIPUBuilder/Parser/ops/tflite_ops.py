@@ -138,13 +138,13 @@ class LiteAVERAGE_POOL_2DOp(BaseActivationOp, OpHasPaddingStrides, TfliteOp):
     def infer_shape(self):
         super(LiteAVERAGE_POOL_2DOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.nn.avg_pool(inputs[0],
+        out_tensor = tf.nn.avg_pool(inputs[0].astype(np.float32),
                                     ksize=[1] + self.kernel_shape + [1],
                                     strides=[1] + self.strides + [1],
                                     padding='VALID' if self.auto_pad in (
                                         'VALID', 'NOTSET') else 'SAME',
                                     data_format='NHWC').numpy()
-        out_tensor = self.cal_activation(out_tensor)
+        out_tensor = self.cal_activation(out_tensor).astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
         if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
             self.pads, _ = OpHasPaddingStrides.cal_pads(
@@ -699,7 +699,7 @@ class LiteDEPTHWISE_CONV_2DOp(BaseActivationOp, BaseConvOp, TfliteOp):
                                              dilations=self.dilations,
                                              data_format='NHWC')
         out_shape = [inputs[0].shape[0]] + out_shape + [self.num_output]
-        out_tensor = np.random.ranf(size=out_shape).astype(np.float32)
+        out_tensor = np.random.ranf(size=out_shape).astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
         if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
@@ -1151,7 +1151,7 @@ class LiteHARD_SWISHOp(OpHasOneOutPort, TfliteOp):
         super(LiteHARD_SWISHOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor = (inputs[0] * tf.nn.relu6(inputs[0] + 3) / 6).numpy()
-        self.set_out_tensor(out_tensor)
+        self.set_out_tensor(out_tensor.astype(inputs[0].dtype))
 
     @property
     def correspond_onnx_op(self):
@@ -1353,7 +1353,7 @@ class LiteLOGISTICOp(OpHasOneOutPort, TfliteOp):
         else:
             inp = inputs[0]
         out_tensor = tf.sigmoid(inp).numpy()
-        self.set_out_tensor(out_tensor)
+        self.set_out_tensor(out_tensor.astype(inputs[0].dtype))
 
     @property
     def correspond_onnx_op(self):
@@ -1424,7 +1424,7 @@ class LiteMAX_POOL_2DOp(BaseActivationOp, OpHasPaddingStrides, TfliteOp):
                                     padding='VALID' if self.auto_pad in (
                                         'VALID', 'NOTSET') else 'SAME',
                                     data_format='NHWC').numpy()
-        out_tensor = self.cal_activation(out_tensor)
+        out_tensor = self.cal_activation(out_tensor).astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
         if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
             self.pads, _ = OpHasPaddingStrides.cal_pads(
@@ -2129,7 +2129,7 @@ class LiteRESIZE_BILINEAROp(OpHasOneOutPort, TfliteOp):
             self.half_pixel = False
         out_tensor = tf.compat.v1.image.resize_bilinear(
             *inputs, align_corners=self.align_corners, half_pixel_centers=self.half_pixel).numpy()
-        self.set_out_tensor(out_tensor)
+        self.set_out_tensor(out_tensor.astype(inputs[0].dtype))
 
     @property
     def correspond_onnx_op(self):
@@ -2485,8 +2485,8 @@ class LiteSOFTMAXOp(OpHasAxis, OpHasOneOutPort, TfliteOp):
         inputs = self.get_input_tensors()
         self.axis = OpHasAxis.make_axes_non_negative(
             self.axis, len(inputs[0].shape))
-        out_tensor = tf.nn.softmax(inputs[0], axis=self.axis).numpy()
-        self.set_out_tensor(out_tensor)
+        out_tensor = tf.nn.softmax(inputs[0].astype(np.float32), axis=self.axis).numpy()
+        self.set_out_tensor(out_tensor.astype(inputs[0].dtype))
 
     @property
     def correspond_onnx_op(self):

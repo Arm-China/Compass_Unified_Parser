@@ -1834,7 +1834,7 @@ class PReluOp(OpNeedUniBroadcast, BaseReluOp, OnnxOp):
             self.negative_slope = inputs[1].astype(np.float32)
         broad_casted = OpNeedUniBroadcast.broad_cast(
             [inputs[0], self.negative_slope])
-        out_tensor = self.cal_activation(*broad_casted)
+        out_tensor = self.cal_activation(*broad_casted).astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
 
