@@ -2445,18 +2445,19 @@ def convert_dequantizelinear(graph):
             input_shapes = dequant_obj.get_input_shapes()
             if dequant_obj.axis is not None and len(input_shapes[1]) == 1:
                 dequant_axis = dequant_obj.axis
+                dequant_axis = OpHasAxis.make_axes_non_negative(
+                    dequant_axis, len(input_shapes[0]))
+                if len(input_shapes[0]) <= dequant_axis:
+                    ERROR(
+                        '[Parser]: Meets invalid axis(%d) in DequantizeLinear Op(%s) in convert_dequantizelinear!' % (dequant_axis, dequant))
+                    continue
             else:
-                dequant_axis = -1
-            dequant_axis = OpHasAxis.make_axes_non_negative(
-                dequant_axis, len(input_shapes[0]))
-            if len(input_shapes[0]) <= dequant_axis:
-                ERROR(
-                    '[Parser]: Meets invalid axis(%d) in DequantizeLinear Op(%s) in convert_dequantizelinear!' % (dequant_axis, dequant))
-                continue
-            axis_dim = input_shapes[0][dequant_axis]
+                dequant_axis = None
             if input_shapes[1] != input_shapes[2] \
                     or len(input_shapes[1]) not in (0, 1) \
-                    or (len(input_shapes[1]) == 1 and input_shapes[1][0] != axis_dim):
+                    or (dequant_axis is not None
+                        and len(input_shapes[1]) == 1
+                        and input_shapes[1][0] != input_shapes[0][dequant_axis]):
                 ERROR(
                     '[Parser]: Meets different shapes of x_scale and x_zero_point in DequantizeLinear Op(%s) in convert_dequantizelinear!' % dequant)
                 continue
@@ -2487,8 +2488,9 @@ def convert_dequantizelinear(graph):
             insert_cast(graph, inp, sub, 'float32', inp_in_attr)
             float_zp = insert_cast(graph, zp, sub, 'float32', new_zp_in_attr)
 
-            if len(input_shapes[1]) == 1 and dequant_axis != len(input_shapes[0]) - 1:
-                dim = [1 if idx != dequant_axis else axis_dim for idx in range(
+            if len(input_shapes[1]) == 1 and dequant_axis is not None \
+                    and dequant_axis != len(input_shapes[0]) - 1:
+                dim = [1 if idx != dequant_axis else input_shapes[0][dequant_axis] for idx in range(
                     len(input_shapes[0]))]
                 insert_reshape(graph, scale, dequant, scale_in_attr, dim)
                 insert_reshape(graph, zp, float_zp, new_zp_in_attr, dim)
