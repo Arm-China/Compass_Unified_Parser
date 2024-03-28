@@ -7,7 +7,7 @@ import itertools
 import copy
 from functools import reduce
 from collections import OrderedDict
-from ....common.defs import Tensor, FLOAT_EQUAL, TYPE_MAX
+from ....common.defs import Tensor, FLOAT_EQUAL, FLOAT64_EQUAL, TYPE_MAX
 from ....logger import INFO, DEBUG, WARN, ERROR, FATAL
 from ....common.utils import extend_lists, get_converted_dtype
 from ....graph.node_wrap import NodeWrap
@@ -8653,8 +8653,8 @@ def rename_single_mul_or_add_or_sub(graph):
                 continue
 
             if (n_obj.type in ('Mul', 'Div') and FLOAT_EQUAL(in_consts[0][2], 1.) and int(np.prod(main_input_shape)) > in_tensors[const_in_port].size) \
-                    or (n_obj.type == 'Add' and FLOAT_EQUAL(in_consts[0][2], 0.)) \
-                    or (n_obj.type == 'Sub' and FLOAT_EQUAL(in_consts[0][2], 0.) and const_in_port == 1):
+                    or (n_obj.type == 'Add' and FLOAT64_EQUAL(in_consts[0][2], 0.)) \
+                    or (n_obj.type == 'Sub' and FLOAT64_EQUAL(in_consts[0][2], 0.) and const_in_port == 1):
                 src, _, k, const_in_attr = in_edges[const_in_port]
                 graph.remove_edge(src, n, key=k)
                 remove_node_safely(graph, n)
