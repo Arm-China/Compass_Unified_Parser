@@ -11,7 +11,7 @@ from ..logger import INFO, DEBUG, WARN, ERROR, FATAL
 class LiteADDOp(BaseActivationOp, TfliteOp):
     @classmethod
     def attributes(cls):
-        return {1: {}, 2: {}}
+        return {1: {}, 2: {}, 3: {}}
 
     def __init__(self, graph, attr_dict=None):
         super(LiteADDOp, self).__init__(graph, attr_dict)
@@ -794,7 +794,7 @@ class LiteDEQUANTIZEOp(OpHasOneOutPort, TfliteOp):
 class LiteDIVOp(BaseActivationOp, TfliteOp):
     @classmethod
     def attributes(cls):
-        return {1: {}, 2: {}}
+        return {1: {}, 2: {}, 3: {}}
 
     def __init__(self, graph, attr_dict=None):
         super(LiteDIVOp, self).__init__(graph, attr_dict)
@@ -1080,7 +1080,10 @@ class LiteGELUOp(ActivationOnlyOp, TfliteOp):
     @classmethod
     def attributes(cls):
         return {1: {'approximate': {'type': AttrType.BOOL, 'default': False},
-                    }}
+                    },
+                2: {'approximate': {'type': AttrType.BOOL, 'default': False},
+                    }
+                }
 
     def __init__(self, graph, attr_dict=None):
         super(LiteGELUOp, self).__init__(graph, attr_dict)
@@ -1091,7 +1094,8 @@ class LiteGELUOp(ActivationOnlyOp, TfliteOp):
     def infer_shape(self):
         super(LiteGELUOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.nn.gelu(inputs[0], approximate=self.approximate).numpy()
+        out_tensor = tf.nn.gelu(inputs[0].astype(np.float32), approximate=self.approximate).numpy()
+        out_tensor = out_tensor.astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
     @property
@@ -1573,7 +1577,7 @@ class LiteLOGOp(OpHasOneOutPort, TfliteOp):
 class LiteMULOp(BaseActivationOp, OpHasOneOutPort, TfliteOp):
     @classmethod
     def attributes(cls):
-        return {1: {}, 2: {}}
+        return {1: {}, 2: {}, 3: {}}
 
     def __init__(self, graph, attr_dict=None):
         super(LiteMULOp, self).__init__(graph, attr_dict)
@@ -2827,7 +2831,10 @@ class LiteTRANSPOSEOp(OpHasOneOutPort, TfliteOp):
     @classmethod
     def attributes(cls):
         return {1: {'perm': {'type': AttrType.INTS, 'default': [], 'required': False}},
-                2: {'perm': {'type': AttrType.INTS, 'default': [], 'required': False}}}
+                2: {'perm': {'type': AttrType.INTS, 'default': [], 'required': False}},
+                3: {'perm': {'type': AttrType.INTS, 'default': [], 'required': False}},
+                4: {'perm': {'type': AttrType.INTS, 'default': [], 'required': False}}
+                }
 
     def __init__(self, graph, attr_dict=None):
         super(LiteTRANSPOSEOp, self).__init__(graph, attr_dict)
