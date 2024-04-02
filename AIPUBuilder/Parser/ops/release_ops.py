@@ -2726,6 +2726,7 @@ class ArmLayerNormOp(OpHasAxis, OpHasBiases, OpHasWeights, OpHasVariableOutPorts
     def infer_shape(self):
         super(ArmLayerNormOp, self).infer_shape()
         inputs = self.get_input_tensors()
+        input_dtype = inputs[0].dtype
         mean = np.mean(inputs[0], axis=tuple(self.axes), keepdims=True)
         variance = np.var(inputs[0], axis=tuple(self.axes), keepdims=True)
         ngamma = 1.0 / ((variance + self.epsilon) ** 0.5)
@@ -2734,7 +2735,7 @@ class ArmLayerNormOp(OpHasAxis, OpHasBiases, OpHasWeights, OpHasVariableOutPorts
             self.axes, len(inputs[0].shape))
         weights = OpHasAxis.expand_to(self.weights, axes, len(inputs[0].shape))
         biases = OpHasAxis.expand_to(self.biases, axes, len(inputs[0].shape))
-        out_tensor = (normalized * weights + biases).astype(np.float32)
+        out_tensor = (normalized * weights + biases).astype(input_dtype)
         out_tensors = [out_tensor]
         out_ports = self.get_out_ports()
         if 1 in out_ports or 2 in out_ports:
