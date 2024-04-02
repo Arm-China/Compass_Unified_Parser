@@ -3843,6 +3843,8 @@ class ArmReduceOp(OpHasMethod, OpHasAxis, OpHasOneOutPort, ArmOp):
             inputs[0], tuple(self.axes), bool(self.keepdims))
         if out_tensor.dtype == bool:
             out_tensor = out_tensor.astype(np.uint8)
+        else:
+            out_tensor = out_tensor.astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
 
