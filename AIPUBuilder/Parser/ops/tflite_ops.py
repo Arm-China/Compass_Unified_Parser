@@ -467,6 +467,7 @@ class LiteCONV_3DOp(BaseActivationOp, BaseConvOp, TfliteOp):
         out_tensor = tf.nn.bias_add(
             out_tensor, self.biases, data_format='NHWC').numpy()
         out_tensor = self.cal_activation(out_tensor)
+        out_tensor = out_tensor.astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
         if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
             self.pads, _ = OpHasPaddingStrides.cal_pads(
@@ -545,6 +546,7 @@ class LiteCONV_3D_TRANSPOSEOp(BaseActivationOp, BaseDeconvOp, TfliteOp):
                                             padding='VALID' if self.auto_pad in ('VALID', 'NOTSET') else 'SAME')
         out_tensor = tf.nn.bias_add(
             out_tensor, self.biases, data_format='NHWC').numpy()
+        out_tensor = out_tensor.astype(inputs[1].dtype)
         self.set_out_tensor(out_tensor)
         self.output_shape = inputs[0].tolist()[1:-1]
 
@@ -2912,6 +2914,7 @@ class LiteTRANSPOSE_CONVOp(BaseActivationOp, BaseDeconvOp, TfliteOp):
                                             padding='VALID' if self.auto_pad in ('VALID', 'NOTSET') else 'SAME')
         out_tensor = tf.nn.bias_add(
             out_tensor, self.biases, data_format='NHWC').numpy()
+        out_tensor = out_tensor.astype(inputs[1].dtype)
         self.set_out_tensor(out_tensor)
         self.output_shape = inputs[0].tolist()[1:-1]
 

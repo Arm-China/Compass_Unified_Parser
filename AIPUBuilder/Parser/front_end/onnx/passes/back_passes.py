@@ -1227,14 +1227,12 @@ def merge_square(graph):
         if any([obj is None for obj in node_objs.values()]):
             ERROR('[Parser]: Meets invalid node in merge_square!')
             continue
-
         power = node_objs['const'].value
         if FLOAT_EQUAL(power, 2.):
             matched = True
             graph.remove_edge(m['const'], m['pow'])
             NodeWrap(graph, m['pow']).replace_obj(
-                'ArmSquare', {'name': m['pow']})
-
+                'ArmSquare', node_objs['pow'].copied_attr())
     if matched:
         clear_redundant_nodes(graph)
 
@@ -1248,17 +1246,14 @@ def merge_square2(graph):
         if mul_obj is None or len(mul_obj.get_input_shapes()) != 2:
             ERROR('[Parser]: Meets invalid node(%s) in merge_square2!' % mul)
             continue
-
         mul_in_edges = graph.sorted_in_edges(mul, keys=True, data=True)
         src1, _, _, in_attr1 = mul_in_edges[0]
         src2, _, k2, in_attr2 = mul_in_edges[1]
         if src1 != src2 or in_attr1['src_out_port'] != in_attr2['src_out_port']:
             continue
-
         matched = True
         graph.remove_edge(src2, mul, key=k2)
-        NodeWrap(graph, mul).replace_obj('ArmSquare', {'name': mul})
-
+        NodeWrap(graph, mul).replace_obj('ArmSquare', mul_obj.copied_attr())
     if matched:
         clear_redundant_nodes(graph)
 

@@ -1086,7 +1086,7 @@ class ArmConvTransposeOp(BaseActivationOp, BaseConvOp, ArmOp):
         '''
         out_shape = [inputs[0].shape[0]] + \
             self.output_shape + [self.num_output]
-        out_tensor = np.random.ranf(size=out_shape).astype(np.float32)
+        out_tensor = np.random.ranf(size=out_shape).astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
     def write_attrs(self, txt_file):
