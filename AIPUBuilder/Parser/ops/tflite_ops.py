@@ -898,9 +898,7 @@ class LiteEXPAND_DIMSOp(OpHasAxis, OpHasOneOutPort, TfliteOp):
 class LiteFILLOp(OpHasOneOutPort, TfliteOp):
     @classmethod
     def attributes(cls):
-        return {1: {},
-                2: {},
-                }
+        return {1: {}, 2: {}, 3: {}}
 
     def __init__(self, graph, attr_dict=None):
         super(LiteFILLOp, self).__init__(graph, attr_dict)
@@ -2695,6 +2693,12 @@ class LiteSTRIDED_SLICEOp(OpHasOneOutPort, TfliteOp):
                     'ellipsis_mask': {'type': AttrType.INT, 'default': 0},
                     'new_axis_mask': {'type': AttrType.INT, 'default': 0},
                     'shrink_axis_mask': {'type': AttrType.INT, 'default': 0}
+                    },
+                4: {'begin_mask': {'type': AttrType.INT, 'default': 0},
+                    'end_mask': {'type': AttrType.INT, 'default': 0},
+                    'ellipsis_mask': {'type': AttrType.INT, 'default': 0},
+                    'new_axis_mask': {'type': AttrType.INT, 'default': 0},
+                    'shrink_axis_mask': {'type': AttrType.INT, 'default': 0}
                     }
                 }
 
@@ -2833,7 +2837,8 @@ class LiteTRANSPOSEOp(OpHasOneOutPort, TfliteOp):
         return {1: {'perm': {'type': AttrType.INTS, 'default': [], 'required': False}},
                 2: {'perm': {'type': AttrType.INTS, 'default': [], 'required': False}},
                 3: {'perm': {'type': AttrType.INTS, 'default': [], 'required': False}},
-                4: {'perm': {'type': AttrType.INTS, 'default': [], 'required': False}}
+                4: {'perm': {'type': AttrType.INTS, 'default': [], 'required': False}},
+                6: {'perm': {'type': AttrType.INTS, 'default': [], 'required': False}}
                 }
 
     def __init__(self, graph, attr_dict=None):
