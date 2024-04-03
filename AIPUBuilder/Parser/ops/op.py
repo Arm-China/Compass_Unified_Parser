@@ -3636,3 +3636,10 @@ class ArmOp(Op):
     @classmethod
     def num_in_ports(cls):
         return 1
+
+    @abc.abstractmethod
+    def infer_shape(self):
+        super(ArmOp, self).infer_shape()
+        input_dtypes = self.get_input_dtypes()
+        if any('64' in type_str for type_str in input_dtypes):
+            ERROR('[Parser]: Meets 64 bits inputs for %sOp(%s) in infer_shape!' % (self.type, self.name))
