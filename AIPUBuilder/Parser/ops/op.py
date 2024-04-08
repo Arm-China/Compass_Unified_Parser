@@ -3642,4 +3642,4 @@ class ArmOp(Op):
         super(ArmOp, self).infer_shape()
         input_dtypes = self.get_input_dtypes()
         if any('64' in type_str for type_str in input_dtypes):
-            ERROR('[Parser]: Meets 64 bits inputs for %sOp(%s) in infer_shape!' % (self.type, self.name))
+            WARN('[Parser]: Meets 64 bits inputs for %sOp(%s) in infer_shape!' % (self.type, self.name))
