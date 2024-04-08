@@ -4257,6 +4257,7 @@ def merge_embedding_lookup_sparse(graph):
         graph.add_edge(src, m['segment'], **in_attr)
         ids_in_attr['dst_in_port'] = 1
         graph.add_edge(ids, m['segment'], **ids_in_attr)
+        insert_cast(graph, ids, m['segment'], 'int32', in_attr=ids_in_attr)
         value_in_attr['dst_in_port'] = 2
         graph.add_edge(value, m['segment'], **value_in_attr)
         insert_constant(graph, m['segment'] + '_weights', weights,
@@ -4418,6 +4419,7 @@ def merge_embedding_lookup_sparse_with_weights(graph):
         graph.remove_edges_from(last_in_edges)
         graph.add_edge(src, last_name, **in_attr)
         graph.add_edge(indices_name, last_name, **indices_in_attr)
+        insert_cast(graph, indices_name, last_name, 'int32', in_attr=indices_in_attr)
         ids_in_attr = copy.deepcopy(unique_in_attr)
         ids_in_attr['dst_in_port'] = 2
         graph.add_edge(ids_name, last_name, **ids_in_attr)
