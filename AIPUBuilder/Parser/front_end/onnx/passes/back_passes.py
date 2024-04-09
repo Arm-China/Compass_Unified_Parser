@@ -161,7 +161,8 @@ def convert_uni_gru(graph):
                     inp, _, inp_in_attr = in_edges[0]
                     init_h, _, init_h_in_attr = in_edges[1]
                 insert_reshape(graph, init_h, gru, init_h_in_attr, [
-                               batch_size, hidden_size])
+                               batch_size, hidden_size],
+                               quantize=gru_obj.quantize)
 
                 out_rev = None
                 if gru_obj.direction == 'reverse':
@@ -204,7 +205,8 @@ def convert_uni_gru(graph):
                         batch_size, 1, hidden_size]
                     gru_out_node = (out_rev if p == 0 and out_rev is not None else gru)
                     reshape = insert_reshape_after(
-                        graph, gru_out_node, reshape_dim, old_dim=old_dim, out_port=p)
+                        graph, gru_out_node, reshape_dim, old_dim=old_dim, out_port=p,
+                        quantize=gru_obj.quantize)
                     last_name = reshape
                     if not gru_obj.layout:
                         post_trans_perm = [1, 2, 0, 3] if p == 0 else [1, 0, 2]
@@ -2276,7 +2278,7 @@ def rename_compress(graph):
                 compress_obj.axis = 0
                 src, _, in_attr = in_edges[0]
                 insert_reshape(graph, src, compress, in_attr,
-                               [-1], type='ArmReshape')
+                               [-1], type='ArmReshape', quantize=compress_obj.quantize)
                 in_edges = graph.sorted_in_edges(compress, data=True)
             if NodeWrap(graph, in_edges[1][0])['object'].type not in ('Constant', 'ArmConstant'):
                 need_clear = True
@@ -2387,7 +2389,8 @@ def rename_gemm(graph):
                             if ret[0]['reshape']:
                                 in_port = 2
                                 insert_reshape(
-                                    graph, in_edges[in_port][0], gemm, in_edges[in_port][2], ret[0]['reshape'])
+                                    graph, in_edges[in_port][0], gemm, in_edges[in_port][2], ret[0]['reshape'],
+                                    quantize=gemm_obj.quantize)
                                 in_edges = graph.sorted_in_edges(gemm, data=True)
                             if ret[0]['tile']:
                                 insert_tile(
@@ -2672,7 +2675,8 @@ def rename_moments(graph):
                     reshape = insert_reshape_after(graph,
                                                    moments,
                                                    out_shape,
-                                                   out_port=out_port)
+                                                   out_port=out_port,
+                                                   quantize=moments_obj.quantize)
                     post_reshapes.append(reshape)
                 if moments in graph._attr['output_names'] and post_reshapes:
                     index = graph._attr['output_names'].index(moments)
@@ -2884,7 +2888,8 @@ def rename_reduce(graph):
                 if not out_shape:
                     out_shape = []
                 reshape = insert_reshape_after(
-                    graph, reduce, out_shape, type='Reshape')
+                    graph, reduce, out_shape, type='Reshape',
+                    quantize=reduce_obj.quantize)
                 if reduce in graph._attr['output_names']:
                     index = graph._attr['output_names'].index(reduce)
                     graph._attr['output_names'][index] = reshape
@@ -3038,7 +3043,8 @@ def rename_roialign(graph):
             index_inp, _, index_attr = in_edges[2]
             reshape_dim = list(input_shapes[2]) + [1]
             insert_reshape(graph, index_inp, concat, index_attr,
-                           reshape_dim, type='ArmReshape')
+                           reshape_dim, type='ArmReshape',
+                           quantize=node_obj.quantize)
 
             # concat->roialign
             graph.add_edge(concat, node_name, **
@@ -3186,7 +3192,7 @@ def split_crd_d2s(graph):
                            d2s_obj.blocksize, c // d2s_obj.blocksize ** 2]
                 perm = [0, 1, 4, 2, 5, 3]
                 src, _, in_attr = in_edges[0]
-                reshape = insert_reshape(graph, src, d2s, in_attr, dim)
+                reshape = insert_reshape(graph, src, d2s, in_attr, dim, quantize=d2s_obj.quantize)
                 in_edges = graph.sorted_in_edges(d2s, data=True)
                 _, _, in_attr2 = in_edges[0]
                 insert_transpose(graph, reshape, d2s, in_attr2, perm)
