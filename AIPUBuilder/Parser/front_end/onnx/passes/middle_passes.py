@@ -3498,6 +3498,58 @@ def merge_divmod2(graph):
         clear_redundant_nodes(graph)
 
 
+def merge_gather_slice(graph):
+    matched = False
+    matches = matched_patterns(graph, nodes=[
+        ('indices', {'op': 'Constant', 'unique': False}),
+        ('gather', {'op': 'Gather', 'unique': False}),
+        ('add_const', {'op': 'Constant', 'unique': False}),
+        ('add', {'op': 'Add'}),
+        ('slice', {'op': 'Slice'}),
+    ], edges=[
+        ('indices', 'gather', {'dst_in_port': 1}),
+        ('gather', 'add'),
+        ('add_const', 'add'),
+        ('gather', 'slice', {'dst_in_port': 1}),
+        ('add', 'slice', {'dst_in_port': 2}),
+    ])
+    for m in matches:
+        names = ['indices', 'gather', 'add_const', 'add', 'slice']
+        node_objs = {name: NodeWrap(graph, m[name])['object'] for name in names}
+        if any(obj is None for obj in node_objs.values()):
+            ERROR('[Parser]: Meets invalid nodes in merge_gather_slice!')
+            continue
+        if node_objs['indices'].value.ndim != 0 or node_objs['indices'].value != 0 \
+                or node_objs['add_const'].value.ndim != 0 or node_objs['add_const'].value != 1:
+            continue
+        gather_input_shapes = node_objs['gather'].get_input_shapes()
+        if len(gather_input_shapes) < 1 or gather_input_shapes[0] is None \
+                or None in gather_input_shapes[0] or int(np.prod(gather_input_shapes[0])) != 1:
+            continue
+        gather_output_shapes = node_objs['gather'].get_output_shapes()
+        if len(gather_output_shapes) < 1 or gather_output_shapes[0] is None \
+                or gather_output_shapes[0] != [1]:
+            continue
+        slice_in_edges = graph.sorted_in_edges(m['slice'], data=True)
+        if len(slice_in_edges) > 3:
+            axes_in_attr = slice_in_edges[3][2]['tensor']
+            if axes_in_attr is None or not axes_in_attr.is_const \
+                    or axes_in_attr.value is None or axes_in_attr.value.item(0) != 0:
+                continue
+        if len(slice_in_edges) > 4:
+            steps_in_attr = slice_in_edges[4][2]['tensor']
+            if steps_in_attr is None or not steps_in_attr.is_const \
+                    or steps_in_attr.value is None or steps_in_attr.value.item(0) != 1:
+                continue
+        matched = True
+        graph.remove_edges_from(slice_in_edges[2:])
+        gather_attr = node_objs['slice'].copied_attr()
+        gather_attr.update({'opset_version': 13, 'axis': 0})
+        NodeWrap(graph, m['slice']).replace_obj('Gather', gather_attr)
+    if matched:
+        clear_redundant_nodes(graph)
+
+
 def merge_gelu_1(graph):
     matched = False
     matches = matched_patterns(graph,
@@ -10382,6 +10434,7 @@ def middle_passes(graph, params):
     convert_special_matmul_to_fc(graph)
     remove_redundant_mul(graph)
     fuse_mul_add_or_sub(graph)
+    merge_gather_slice(graph)
     remove_special_gather(graph)
     fuse_gather_const_mul(graph)
     convert_gather_to_slice(graph)
