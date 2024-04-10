@@ -3099,9 +3099,12 @@ def rename_slice(graph):
     for m in matches:
         slice = m['target']
         slice_obj = NodeWrap(graph, slice)['object']
-        in_edges = graph.sorted_in_edges(slice)
+        in_edges = graph.sorted_in_edges(slice, data=True)
         if slice_obj is not None \
                 and ((slice_obj.cur_version == 1 and len(in_edges) == 1) or (slice_obj.cur_version > 1 and 3 <= len(in_edges) <= 5)):
+            if len(in_edges) > 1 and any(not in_attr['tensor'].is_const for _, _, in_attr in in_edges[1:]):
+                ERROR('Meets unsupported non-const starts/ends/axes/steps of Slice Node(%s) in rename_slice!' % slice)
+                continue
             graph.remove_edges_from(in_edges[1:])
             slice_attr = slice_obj.copied_attr()
             ends = np.array(slice_obj.ends, np.int64)

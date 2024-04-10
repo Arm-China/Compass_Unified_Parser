@@ -319,6 +319,9 @@ def remove_useless_op(graph, op_type_list):
                             '[Parser]: Meets unsupported Roll(%s) to remove in remove_useless_op!' % node_name)
                         continue
             elif op_type == 'Slice':
+                in_edges = graph.sorted_in_edges(node_name, data=True)
+                if len(in_edges) > 1 and any(not in_attr['tensor'].is_const for _, _, in_attr in in_edges[1:]):
+                    continue
                 input_shapes = node_obj.get_input_shapes()
                 output_shapes = node_obj.get_output_shapes()
                 if len(input_shapes) >= 1 \
