@@ -3330,7 +3330,7 @@ class ArmNormalizationOp(OpHasMethod, OpHasAxis, OpHasOneOutPort, ArmOp):
 class ArmOneHotOp(OpHasOneOutPort, OpHasAxis, ArmOp):
     @classmethod
     def cast_in_ports(cls):
-        return {0: 'int32'}
+        return {}
 
     @classmethod
     def attributes(cls):
