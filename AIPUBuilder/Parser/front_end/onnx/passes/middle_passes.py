@@ -911,6 +911,8 @@ def convert_gemm_to_fc(graph):
             if NodeWrap(graph, input2)['object'].type == 'Constant' \
                     and (not input3 or NodeWrap(graph, input3)['object'].type == 'Constant'):
                 W = NodeWrap(graph, input2)['object'].value
+                if bool(gemm_obj.transB):
+                    W = np.transpose(W)
                 num_output = W.shape[-1]
                 b = NodeWrap(graph, input3)[
                     'object'].value if input3 else np.zeros((num_output,), np.float32)
@@ -926,8 +928,6 @@ def convert_gemm_to_fc(graph):
                 else:
                     W = W * gemm_obj.alpha
                     b = np.array(b * gemm_obj.beta, dtype=np.float32)
-                if bool(gemm_obj.transB):
-                    W = np.transpose(W)
                 fc_attr.update({'weights': np.transpose(W), 'biases': b})
                 NodeWrap(graph, gemm).replace_obj('FullyConnected', fc_attr)
                 graph.remove_edge(input2, gemm)
