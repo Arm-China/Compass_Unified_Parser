@@ -986,6 +986,39 @@ def convert_einsum(graph):
                     continue
                 out_term = equ_list[1]
                 if len(add_list[1]) >= 2 and len(add_list[0]) >= 2 \
+                        and set(add_list[0]).symmetric_difference(add_list[1]) == set(out_term) \
+                        and ''.join([in0 for in0, out in zip(add_list[0], out_term) if in0 == out]) + \
+                            ''.join(reversed([in1 for in1, out in zip(reversed(add_list[1]), reversed(out_term)) if in1 == out])) == out_term:
+                    # abcd,cdef->abef
+                    in_edges = graph.sorted_in_edges(einsum, data=True)
+                    in_shapes = einsum_obj.get_input_shapes()
+                    if len(in_edges) < 2 or len(in_shapes) < 2 \
+                            or any(shape is None or None in shape for shape in in_shapes):
+                        ERROR('[Parser]: Meets invalid inputs of Einsum(%s) in convert_einsum!' % einsum)
+                        continue
+                    in0_keep_dim = [s for s in add_list[0] if s in out_term]  # [a,b]
+                    in0_keep_shape = in_shapes[0][:len(in0_keep_dim)]  # [a,b]
+                    in0_shape = in0_keep_shape + [-1]  # [a,b,-1]
+                    in1_reduce_dim = [s for s in add_list[1] if s not in out_term]  # [c,d]
+                    in1_keep_shape = in_shapes[1][len(in1_reduce_dim):]  # [e,f]
+                    in1_keep_prod = int(np.prod(in1_keep_shape))  # e*f
+                    in1_shape = [-1, in1_keep_prod]  # [-1,e*f]
+                    matmul_out_shape = in0_keep_shape + [in1_keep_prod]  # [a,b,e*f]
+                    einsum_out_shape = in0_keep_shape + in1_keep_shape  # [a,b,e,f]
+                    in0, _, in0_attr = in_edges[0]
+                    in1, _, in1_attr = in_edges[1]
+                    quantize = einsum_obj.quantize
+                    insert_reshape(graph, in0, einsum, in0_attr, in0_shape, quantize=quantize)
+                    insert_reshape(graph, in1, einsum, in1_attr, in1_shape, quantize=quantize)
+                    post_reshape = insert_reshape_after(
+                        graph, einsum, einsum_out_shape, old_dim=matmul_out_shape, quantize=quantize)
+                    matmul_attr = einsum_obj.copied_attr()
+                    matmul_attr.update({'opset_version': 13})
+                    NodeWrap(graph, einsum).replace_obj('MatMul', matmul_attr)
+                    if einsum in graph._attr['output_names']:
+                        index = graph._attr['output_names'].index(einsum)
+                        graph._attr['output_names'][index] = post_reshape
+                elif len(add_list[1]) >= 2 and len(add_list[0]) >= 2 \
                         and out_term[-2] in add_list[0][-2:] and out_term[-1] in add_list[1][-2:]:
                     ele_0 = add_list[0][-2] if add_list[0][-1] == out_term[-2] else add_list[0][-1]
                     ele_1 = add_list[1][-2] if add_list[1][-1] == out_term[-1] else add_list[1][-1]
