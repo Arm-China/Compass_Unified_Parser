@@ -212,7 +212,7 @@ class AtanhOp(LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
         super(AtanhOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor = np.arctanh(*inputs)
-        self.set_out_tensor(out_tensor)
+        self.set_out_tensor(out_tensor.astype(inputs[0].dtype))
 
 
 class AtanOp(LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
