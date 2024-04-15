@@ -926,6 +926,29 @@ def merge_sequence_construct_and_at(graph):
         clear_redundant_nodes(graph)
 
 
+def merge_sequence_construct_and_concat(graph):
+    '''Merge inputs->SequenceConstruct->ConcatFromSequence to inputs->ConcatFromSequence.
+    '''
+    matched = False
+    matches = two_nodes_matcher(graph, 'SequenceConstruct', 'ConcatFromSequence')
+    for m in matches:
+        seq_construct, seq_concat = m['begin'], m['end']
+        seq_construct_obj = NodeWrap(graph, seq_construct)['object']
+        seq_concat_obj = NodeWrap(graph, seq_concat)['object']
+        construct_in_edges = graph.sorted_in_edges(seq_construct, data=True)
+        seq_num = len(construct_in_edges)
+        if seq_construct_obj is None or seq_concat_obj is None or seq_num < 1:
+            ERROR(
+                '[Parser]: Meets invalid SequenceConstruct/ConcatFromSequence Op in merge_sequence_construct_and_concat!')
+            continue
+        matched = True
+        graph.remove_edge(seq_construct, seq_concat)
+        for src, _, in_attr in construct_in_edges:
+            graph.add_edge(src, seq_concat, **in_attr)
+    if matched:
+        clear_redundant_nodes(graph)
+
+
 def merge_rcnn(graph, params):
     def _convert_to_x_first(graph, node_name):
         '''Add split and concat to convert output from (ymin, xmin, ymax, xmax) to (xmin, ymin, xmax, ymax).
