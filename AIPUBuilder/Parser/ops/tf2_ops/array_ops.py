@@ -245,8 +245,8 @@ class Tfone_hotOp(OpHasAxis, OpHasOneOutPort, Tf2Op):
     @classmethod
     def attributes(cls):
         return {2: {'axis': {'default': -1},
-                    'on_value': {'type': AttrType.FLOAT, 'default': 1},
-                    'off_value': {'type': AttrType.FLOAT, 'default': 0},
+                    'on_value': {'type': AttrType.TENSOR, 'default': 1},
+                    'off_value': {'type': AttrType.TENSOR, 'default': 0},
                     }
                 }
 

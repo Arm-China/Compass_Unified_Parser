@@ -2769,8 +2769,10 @@ def rename_onehot(graph):
             graph.remove_edges_from(in_edges[1:])
             depth = int(in_edges[1][2]['tensor'].value)
             values = in_edges[2][2]['tensor'].value
-            values = np.array(values).astype(
-                np.float32) if values.dtype == 'float64' or values.dtype == 'int64' else values
+            if values.dtype == 'float64':
+                values = np.array(values).astype(np.float32)
+            elif values.dtype == 'int64':
+                values = np.array(values).astype(np.int32)
 
             onehot_attr = onehot_obj.copied_attr()
             onehot_attr.update({'depth': depth, 'values': values})

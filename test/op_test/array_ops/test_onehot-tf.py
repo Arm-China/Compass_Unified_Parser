@@ -44,5 +44,5 @@ for input_shape in input_shapes:
             # Run tests with parser and compare result with runtime
             exit_status = run_parser(
                 model_path, feed_dict, model_type='tf', save_output=False, verify=True,
-                unexpected_keywords=['layer_type=Cast'])
+                unexpected_keywords=['layer_type=Cast', 'layer_top_type=[float32]'])
             assert exit_status
