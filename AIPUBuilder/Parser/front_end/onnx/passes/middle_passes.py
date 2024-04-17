@@ -3530,21 +3530,27 @@ def merge_gather_slice(graph):
         if len(gather_output_shapes) < 1 or gather_output_shapes[0] is None \
                 or gather_output_shapes[0] != [1]:
             continue
+        slice_input_shapes = node_objs['slice'].get_input_shapes()
+        if len(slice_input_shapes) < 1 or slice_input_shapes[0] is None:
+            continue
         slice_in_edges = graph.sorted_in_edges(m['slice'], data=True)
         if len(slice_in_edges) > 3:
             axes_in_attr = slice_in_edges[3][2]['tensor']
             if axes_in_attr is None or not axes_in_attr.is_const \
-                    or axes_in_attr.value is None or axes_in_attr.value.item(0) != 0:
+                    or axes_in_attr.value is None or axes_in_attr.value.size != 1:
                 continue
         if len(slice_in_edges) > 4:
             steps_in_attr = slice_in_edges[4][2]['tensor']
             if steps_in_attr is None or not steps_in_attr.is_const \
-                    or steps_in_attr.value is None or steps_in_attr.value.item(0) != 1:
+                    or steps_in_attr.value is None or steps_in_attr.value.size != 1 \
+                    or steps_in_attr.value.item(0) != 1:
                 continue
         matched = True
+        axis = axes_in_attr.value.item(0)
+        axis = (axis + len(slice_input_shapes[0])) if axis < 0 else axis
         graph.remove_edges_from(slice_in_edges[2:])
         gather_attr = node_objs['slice'].copied_attr()
-        gather_attr.update({'opset_version': 13, 'axis': 0})
+        gather_attr.update({'opset_version': 13, 'axis': axis, 'axes': None})
         NodeWrap(graph, m['slice']).replace_obj('Gather', gather_attr)
     if matched:
         clear_redundant_nodes(graph)

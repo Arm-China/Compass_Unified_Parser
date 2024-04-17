@@ -1277,6 +1277,10 @@ class SliceOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
             self.cur_version = max_ver
 
         in_edges = self._graph.sorted_in_edges(self.name, keys=True, data=True)
+        # return if any one of starts/ends/axes/steps is not const
+        if any(in_attr.get('tensor', None) is not None and not in_attr['tensor'].is_const for _, _, _, in_attr in in_edges[1:]):
+            return
+
         if len(in_edges) >= 2:
             src, _, k, in_attr = in_edges[1]
             if in_attr.get('tensor', None) is None \
