@@ -8797,7 +8797,7 @@ def rename_single_mul_or_add_or_sub(graph):
 
                 tiled_const_value = np.tile(
                     in_consts[0][2], num_output) if in_consts[0][2].size == 1 else in_consts[0][2]
-                tiled_const_value = tiled_const_value.astype(np.float32)
+
                 if tiled_const_value.shape[-1] > num_output:
                     num_output = tiled_const_value.shape[-1]
                     src, _, _, in_attr = in_edges[main_input_port]
@@ -8806,17 +8806,17 @@ def rename_single_mul_or_add_or_sub(graph):
                     in_edges = graph.sorted_in_edges(n, keys=True, data=True)
 
                 if n_obj.type == 'Sub' and in_consts[0][1] == 0:
-                    gamma_value = - np.ones((num_output, ), np.float32)
+                    gamma_value = - np.ones((num_output, ), input_dtype)
                     beta_value = tiled_const_value
                 else:
                     gamma_value = tiled_const_value \
                         if n_obj.type == 'Mul' \
-                        else (1 / tiled_const_value if n_obj.type == 'Div' else np.ones((num_output, ), np.float32))
-                    beta_value = np.zeros((num_output, ), np.float32) \
+                        else (1 / tiled_const_value if n_obj.type == 'Div' else np.ones((num_output, ), input_dtype))
+                    beta_value = np.zeros((num_output, ), input_dtype) \
                         if n_obj.type in ('Mul', 'Div') \
                         else (tiled_const_value if n_obj.type == 'Add' else -tiled_const_value)
-                mean_value = np.zeros((num_output, ), np.float32)
-                var_value = np.ones((num_output,), np.float32)
+                mean_value = np.zeros((num_output, ), input_dtype)
+                var_value = np.ones((num_output,), input_dtype)
                 gamma = get_valid_node_name(graph, n + '_gamma')
                 beta = get_valid_node_name(graph, n + '_beta')
                 mean = get_valid_node_name(graph, n + '_mean')
