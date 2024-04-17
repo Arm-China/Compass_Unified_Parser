@@ -342,6 +342,44 @@ class ArmAdaptivePoolOp(OpHasMethod, OpHasOneOutPort, ArmOp):
         return ret
 
 
+class ArmAffineGridOp(OpHasOneOutPort, ArmOp):
+    @classmethod
+    def cast_in_ports(cls):
+        return {0: ['float32', 'float16'], 1: ['int32']}
+
+    @classmethod
+    def num_in_ports(cls):
+        return 2
+
+    @classmethod
+    def attributes(cls):
+        return {'align_corners': {'type': AttrType.BOOL, 'default': False},
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(ArmAffineGridOp, self).__init__(graph, attr_dict)
+        self.update_attributes(ArmAffineGridOp, attr_dict)
+        assert self.check_required(), 'ArmAffineGridOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(ArmAffineGridOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        assert len(inputs) >= 2 and inputs[1].ndim == 1, \
+            'Meets invalid inputs of ArmAffineGridOp(%s) in infer_shape!' % self.name
+        theta = torch.from_numpy(inputs[0].astype(np.float32))
+        out_tensor = torch.nn.functional.affine_grid(theta,
+                                                     size=inputs[1].tolist(),
+                                                     align_corners=self.align_corners).numpy()
+        self.set_out_tensor(out_tensor.astype(inputs[0].dtype))
+
+    def write_attrs(self, txt_file):
+        ret = super(ArmAffineGridOp, self).write_attrs(txt_file)
+        if ret:
+            txt_file.write('align_corners=%s\n' %
+                           str(bool(self.align_corners)).lower())
+        return ret
+
+
 class ArmArgMinMaxOp(OpHasMethod, OpHasAxis, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):

@@ -11,6 +11,29 @@ from ...common.defs import FLOAT_EQUAL
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
+class AffineGridOp(OpHasOneOutPort, OnnxOp):
+    @classmethod
+    def attributes(cls):
+        return {20: {'align_corners': {'type': AttrType.BOOL, 'default': False}},
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(AffineGridOp, self).__init__(graph, attr_dict)
+        self.update_attributes(AffineGridOp, attr_dict)
+        assert self.check_required(), 'AffineGridOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(AffineGridOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        assert len(inputs) >= 2 and inputs[1].ndim == 1, \
+            'Meets invalid inputs of AffineGridOp(%s) in infer_shape!' % self.name
+        theta = torch.from_numpy(inputs[0].astype(np.float32))
+        out_tensor = torch.nn.functional.affine_grid(theta,
+                                                     size=inputs[1].tolist(),
+                                                     align_corners=self.align_corners).numpy()
+        self.set_out_tensor(out_tensor.astype(inputs[0].dtype))
+
+
 class AveragePoolOp(BaseOnnxPoolOp, OpHasOneOutPort):
     @classmethod
     def attributes(cls):
