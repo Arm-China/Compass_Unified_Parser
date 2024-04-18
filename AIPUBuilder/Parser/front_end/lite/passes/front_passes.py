@@ -11,7 +11,7 @@ from ....graph.node_wrap import NodeWrap
 from ....graph.graph_algo import get_valid_node_name, clear_redundant_nodes
 from ....graph.pattern_match import matched_patterns, single_node_matcher, two_nodes_matcher
 from ...onnx.passes.common_passes import insert_constant, remove_node_safely, insert_transpose, insert_reshape, \
-    insert_gather, insert_reshape_after, insert_tile
+    insert_gather, insert_reshape_after, insert_tile, insert_cast_after
 from ....common.defs import Tensor, FLOAT_EQUAL
 from ....common.utils import extend_lists
 from ....logger import INFO, DEBUG, WARN, ERROR, FATAL
@@ -3254,7 +3254,12 @@ def convert_to_onnx(graph):
                                 and node_obj.group == 1:
                             new_node_attr.update(
                                 {'group': new_weights.shape[0] // getattr(node_obj, 'multiplier')})
-                if pure_type == 'CAST':
+                if pure_type in ('ARG_MIN', 'ARG_MAX') and not node_obj.quantize:
+                    post_cast = insert_cast_after(graph, node_name, 'int64', node_obj.to)
+                    if node_name in graph._attr['output_names']:
+                        index = graph._attr['output_names'].index(node_name)
+                        graph._attr['output_names'][index] = post_cast
+                elif pure_type == 'CAST':
                     new_node_attr.update({'saturate': False})
                 elif pure_type == 'ELU':
                     new_node_attr.update({'alpha': 1.})
