@@ -6,7 +6,6 @@ import copy
 import numpy as np
 import tensorflow as tf
 import tensorflow.compat.v1 as tfv1
-from tensorflow.keras import backend as K
 from collections import OrderedDict
 from ...common.defs import FLOAT_EQUAL
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
@@ -156,11 +155,11 @@ def get_node_type(layer):
 
 def get_node_input(layer, input_info_dict):
     assert isinstance(input_info_dict, dict), 'Expect input_info_dict to be a dict!'
-    arg_pos_dict = layer._call_fn_arg_positions
-    arg_defaults_dict = layer._call_fn_arg_defaults
-
     if not input_info_dict:
         return []
+
+    arg_pos_dict = getattr(layer, '_call_fn_arg_positions', {})
+    arg_defaults_dict = getattr(layer, '_call_fn_arg_defaults', {})
 
     if not arg_pos_dict:
         return [value for _, value in input_info_dict.items()]
@@ -333,6 +332,7 @@ def parse_keras(model_path, params):
         else:
             outputs.append(layer.output)
     try:
+        from tensorflow.keras import backend as K
         functors = K.function([model.input], outputs)
         outputs_value = functors(feed_model_inputs)
     except Exception as e:
