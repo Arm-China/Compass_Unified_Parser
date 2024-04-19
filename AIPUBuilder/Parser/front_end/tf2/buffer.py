@@ -160,6 +160,15 @@ def get_node_input(layer, input_info_dict):
 
     arg_pos_dict = getattr(layer, '_call_fn_arg_positions', {})
     arg_defaults_dict = getattr(layer, '_call_fn_arg_defaults', {})
+    if not arg_pos_dict:
+        call_spec = getattr(layer, '_call_spec')
+        if call_spec is not None:
+            arg_pos_dict = call_spec.arg_positions
+            defaults = call_spec.full_argspec.defaults
+            if defaults is not None:
+                keys = reversed(call_spec.full_argspec.args)
+                values = reversed(defaults)
+                arg_defaults_dict = {k: v for k, v in zip(keys, values)}
 
     if not arg_pos_dict:
         return [value for _, value in input_info_dict.items()]
@@ -173,6 +182,7 @@ def get_node_input(layer, input_info_dict):
             if isinstance(input_tensors, (list, tuple)):
                 if len(input_tensors) == 0:
                     continue
+                input_tensors_name = [tensor.name for tensor in input_tensors]
             else:
                 if not tf.is_tensor(input_tensors):
                     continue
@@ -180,9 +190,10 @@ def get_node_input(layer, input_info_dict):
                     input_info = input_info_dict['_CONSTANT_VALUE']
                     node_input_info.append(input_info)
                     continue
+                input_tensors_name = [input_tensors.name]
             inbound_layers = layer.inbound_nodes[arg_pos].inbound_layers
             inbound_layers = inbound_layers if isinstance(inbound_layers, (list, tuple)) else [inbound_layers]
-            inbound_nodes = [node.name for node in inbound_layers]
+            inbound_nodes = [node.name for node in inbound_layers][:len(input_tensors_name)]
             for node_name in inbound_nodes:
                 if node_name in input_info_dict:
                     input_info = input_info_dict[node_name]
