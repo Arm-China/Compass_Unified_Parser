@@ -775,8 +775,9 @@ def convert_topk(graph, op_type='TfTopKV2'):
             insert_cast(graph, k_src, topk, 'int64', k_in_attr)
         if indices_out_dtype is not None and indices_out_dtype != 'int64':
             post_cast = insert_cast_after(graph, topk, 'int64', indices_out_dtype, out_port=1)
-            # cannot just update output_names because topk has 2 outputs; because the cast of int64
-            # will be removed in the end so the updating of output_names can be ignored here.
+            if topk in graph._attr['output_names']:
+                index = graph._attr['output_names'].index(topk)
+                graph._attr['output_names'].insert(index + 1, post_cast)
     if matched:
         clear_redundant_nodes(graph)
 
