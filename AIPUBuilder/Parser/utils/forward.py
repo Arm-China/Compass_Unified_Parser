@@ -61,8 +61,7 @@ def keras_forward(model_path, feed_dict, output_names=None, save_output=True):
     import tensorflow as tf
     from tensorflow.keras import backend as K
 
-    load_options = tf.saved_model.LoadOptions(allow_partial_checkpoint=True)
-    model = tf.keras.models.load_model(model_path, compile=False, options=load_options)
+    model = tf.keras.models.load_model(model_path, compile=False)
 
     output_dict = {}
     if output_names is None:

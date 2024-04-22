@@ -293,19 +293,7 @@ def parse_keras(model_path, params):
     nodes_dict, tensors, np_tensors = OrderedDict(), OrderedDict(), OrderedDict()
     input_shapes = params['input_shapes'].copy()
     try:
-        if tf.__version__ < '2.12':
-            load_options = tf.saved_model.LoadOptions(
-                allow_partial_checkpoint=True)
-            model = tf.keras.models.load_model(
-                model_path, compile=False, options=load_options)
-        else:
-            is_saved_model = os.path.isdir(model_path)
-            if is_saved_model:
-                load_options = tf.saved_model.LoadOptions(
-                    allow_partial_checkpoint=True)
-                model = tf.saved_model.load(model_path, options=load_options)
-            else:
-                model = tf.keras.models.load_model(model_path, compile=False)
+        model = tf.keras.models.load_model(model_path, compile=False)
     except Exception as e:
         WARN('[Parser]: Reading saved model/h5 file (%s) meets error (%s)!' %
              (model_path, str(e)))
