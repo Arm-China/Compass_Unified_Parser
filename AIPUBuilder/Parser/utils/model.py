@@ -101,8 +101,19 @@ def read_caffe_model(model_path, proto_path, save_cfg=False, output_names=None):
 
 def read_keras_model(model_path, save_cfg=False, output_names=None):
     import tensorflow as tf
-    load_options = tf.saved_model.LoadOptions(allow_partial_checkpoint=True)
-    model = tf.keras.models.load_model(model_path, compile=False, options=load_options)
+    if tf.__version__ < '2.12':
+        load_options = tf.saved_model.LoadOptions(
+            allow_partial_checkpoint=True)
+        model = tf.keras.models.load_model(
+            model_path, compile=False, options=load_options)
+    else:
+        is_saved_model = os.path.isdir(model_path)
+        if is_saved_model:
+            load_options = tf.saved_model.LoadOptions(
+                allow_partial_checkpoint=True)
+            model = tf.saved_model.load(model_path, options=load_options)
+        else:
+            model = tf.keras.models.load_model(model_path, compile=False)
 
     model_content = model_path
     model_content += '\n--------------- summary ---------------\n'
