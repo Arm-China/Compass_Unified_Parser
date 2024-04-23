@@ -276,7 +276,8 @@ class LiteCASTOp(OpHasOneOutPort, TfliteOp):
     @classmethod
     def attributes(cls):
         return {1: {'to': {'type': AttrType.STRING, 'required': False}},
-                2: {'to': {'type': AttrType.STRING, 'required': False}}
+                2: {'to': {'type': AttrType.STRING, 'required': False}},
+                4: {'to': {'type': AttrType.STRING, 'required': False}}
                 }
 
     def __init__(self, graph, attr_dict=None):

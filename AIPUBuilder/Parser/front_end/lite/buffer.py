@@ -179,7 +179,8 @@ tensor_type_map = {
     12: np.uint64,
     13: lambda x: x,
     14: lambda x: x,
-    15: np.uint32
+    15: np.uint32,
+    16: np.uint16
 }
 
 
