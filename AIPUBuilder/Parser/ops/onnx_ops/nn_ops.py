@@ -1410,7 +1410,7 @@ class InstanceNormalizationOp(OpHasBiases, OpHasWeights, LayoutConcernedOp, OpHa
         normalized = (inputs[0] - mean) * ngamma
         out_tensor = np.reshape(self.weights, reshape_dim) * \
             normalized + np.reshape(self.biases, reshape_dim)
-        self.set_out_tensor(out_tensor)
+        self.set_out_tensor(out_tensor.astype(inputs[0].dtype))
 
 
 class LayerNormalizationOp(OpHasAxis, OpHasVariableOutPorts, OnnxOp):

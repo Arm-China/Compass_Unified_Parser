@@ -2551,7 +2551,7 @@ class ArmGroupNormOp(OpHasAxis, OpHasBiases, OpHasWeights, OpHasOneOutPort, ArmO
                              1 else 1 for i in range(len(inputs[0].shape))]
         weights = np.reshape(self.weights, weight_bias_shape)
         biases = np.reshape(self.biases, weight_bias_shape)
-        normalized = (normalized * weights + biases).astype(np.float32)
+        normalized = (normalized * weights + biases).astype(inputs[0].dtype)
         out_tensor = np.transpose(normalized, Op.cal_inverse_perm(src_perm))
         self.set_out_tensor(out_tensor)
 
@@ -2717,7 +2717,7 @@ class ArmInstanceNormOp(OpHasBiases, OpHasWeights, OpHasOneOutPort, ArmOp):
         ngamma = 1.0 / ((variance + self.epsilon) ** (.5))
         normalized = (inputs[0] - mean) * ngamma
         out_tensor = (normalized * self.weights +
-                      self.biases).astype(np.float32)
+                      self.biases).astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
     def write_attrs(self, txt_file):
