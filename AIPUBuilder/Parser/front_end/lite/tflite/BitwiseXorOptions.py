@@ -7,24 +7,24 @@ from flatbuffers.compat import import_numpy
 np = import_numpy()
 
 
-class SpaceToBatchNDOptions(object):
+class BitwiseXorOptions(object):
     __slots__ = ['_tab']
 
     @classmethod
-    def GetRootAsSpaceToBatchNDOptions(cls, buf, offset):
+    def GetRootAsBitwiseXorOptions(cls, buf, offset):
         n = flatbuffers.encode.Get(flatbuffers.packer.uoffset, buf, offset)
-        x = SpaceToBatchNDOptions()
+        x = BitwiseXorOptions()
         x.Init(buf, n + offset)
         return x
 
     @classmethod
-    def SpaceToBatchNDOptionsBufferHasIdentifier(cls, buf, offset, size_prefixed=False):
+    def BitwiseXorOptionsBufferHasIdentifier(cls, buf, offset, size_prefixed=False):
         return flatbuffers.util.BufferHasIdentifier(buf, offset, b"\x54\x46\x4C\x33", size_prefixed=size_prefixed)
 
-    # SpaceToBatchNDOptions
+    # BitwiseXorOptions
     def Init(self, buf, pos):
         self._tab = flatbuffers.table.Table(buf, pos)
 
 
-def SpaceToBatchNDOptionsStart(builder): builder.StartObject(0)
-def SpaceToBatchNDOptionsEnd(builder): return builder.EndObject()
+def BitwiseXorOptionsStart(builder): builder.StartObject(0)
+def BitwiseXorOptionsEnd(builder): return builder.EndObject()

@@ -7,24 +7,24 @@ from flatbuffers.compat import import_numpy
 np = import_numpy()
 
 
-class SpaceToBatchNDOptions(object):
+class RightShiftOptions(object):
     __slots__ = ['_tab']
 
     @classmethod
-    def GetRootAsSpaceToBatchNDOptions(cls, buf, offset):
+    def GetRootAsRightShiftOptions(cls, buf, offset):
         n = flatbuffers.encode.Get(flatbuffers.packer.uoffset, buf, offset)
-        x = SpaceToBatchNDOptions()
+        x = RightShiftOptions()
         x.Init(buf, n + offset)
         return x
 
     @classmethod
-    def SpaceToBatchNDOptionsBufferHasIdentifier(cls, buf, offset, size_prefixed=False):
+    def RightShiftOptionsBufferHasIdentifier(cls, buf, offset, size_prefixed=False):
         return flatbuffers.util.BufferHasIdentifier(buf, offset, b"\x54\x46\x4C\x33", size_prefixed=size_prefixed)
 
-    # SpaceToBatchNDOptions
+    # RightShiftOptions
     def Init(self, buf, pos):
         self._tab = flatbuffers.table.Table(buf, pos)
 
 
-def SpaceToBatchNDOptionsStart(builder): builder.StartObject(0)
-def SpaceToBatchNDOptionsEnd(builder): return builder.EndObject()
+def RightShiftOptionsStart(builder): builder.StartObject(0)
+def RightShiftOptionsEnd(builder): return builder.EndObject()

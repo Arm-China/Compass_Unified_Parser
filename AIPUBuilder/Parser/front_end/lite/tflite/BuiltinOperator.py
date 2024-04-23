@@ -162,3 +162,6 @@ class BuiltinOperator(object):
     ATAN2 = 156
     UNSORTED_SEGMENT_MIN = 157
     SIGN = 158
+    BITCAST = 159
+    BITWISE_XOR = 160
+    RIGHT_SHIFT = 161

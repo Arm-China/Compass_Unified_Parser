@@ -3,6 +3,8 @@
 # namespace: tflite
 
 import flatbuffers
+from flatbuffers.compat import import_numpy
+np = import_numpy()
 
 
 class SqueezeOptions(object):
@@ -14,6 +16,10 @@ class SqueezeOptions(object):
         x = SqueezeOptions()
         x.Init(buf, n + offset)
         return x
+
+    @classmethod
+    def SqueezeOptionsBufferHasIdentifier(cls, buf, offset, size_prefixed=False):
+        return flatbuffers.util.BufferHasIdentifier(buf, offset, b"\x54\x46\x4C\x33", size_prefixed=size_prefixed)
 
     # SqueezeOptions
     def Init(self, buf, pos):
@@ -40,6 +46,11 @@ class SqueezeOptions(object):
         if o != 0:
             return self._tab.VectorLen(o)
         return 0
+
+    # SqueezeOptions
+    def SqueezeDimsIsNone(self):
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(4))
+        return o == 0
 
 
 def SqueezeOptionsStart(builder): builder.StartObject(1)

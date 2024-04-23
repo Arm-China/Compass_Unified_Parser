@@ -3,6 +3,8 @@
 # namespace: tflite
 
 import flatbuffers
+from flatbuffers.compat import import_numpy
+np = import_numpy()
 
 
 class Tensor(object):
@@ -14,6 +16,10 @@ class Tensor(object):
         x = Tensor()
         x.Init(buf, n + offset)
         return x
+
+    @classmethod
+    def TensorBufferHasIdentifier(cls, buf, offset, size_prefixed=False):
+        return flatbuffers.util.BufferHasIdentifier(buf, offset, b"\x54\x46\x4C\x33", size_prefixed=size_prefixed)
 
     # Tensor
     def Init(self, buf, pos):
@@ -40,6 +46,11 @@ class Tensor(object):
         if o != 0:
             return self._tab.VectorLen(o)
         return 0
+
+    # Tensor
+    def ShapeIsNone(self):
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(4))
+        return o == 0
 
     # Tensor
     def Type(self):
@@ -114,6 +125,11 @@ class Tensor(object):
         return 0
 
     # Tensor
+    def ShapeSignatureIsNone(self):
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(18))
+        return o == 0
+
+    # Tensor
     def HasRank(self):
         o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(20))
         if o != 0:
@@ -139,6 +155,11 @@ class Tensor(object):
         if o != 0:
             return self._tab.VectorLen(o)
         return 0
+
+    # Tensor
+    def VariantTensorsIsNone(self):
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(22))
+        return o == 0
 
 
 def TensorStart(builder): builder.StartObject(10)

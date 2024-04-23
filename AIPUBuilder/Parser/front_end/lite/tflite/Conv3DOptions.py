@@ -3,6 +3,8 @@
 # namespace: tflite
 
 import flatbuffers
+from flatbuffers.compat import import_numpy
+np = import_numpy()
 
 
 class Conv3DOptions(object):
@@ -14,6 +16,10 @@ class Conv3DOptions(object):
         x = Conv3DOptions()
         x.Init(buf, n + offset)
         return x
+
+    @classmethod
+    def Conv3DOptionsBufferHasIdentifier(cls, buf, offset, size_prefixed=False):
+        return flatbuffers.util.BufferHasIdentifier(buf, offset, b"\x54\x46\x4C\x33", size_prefixed=size_prefixed)
 
     # Conv3DOptions
     def Init(self, buf, pos):

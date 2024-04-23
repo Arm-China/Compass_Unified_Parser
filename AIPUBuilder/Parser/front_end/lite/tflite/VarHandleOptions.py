@@ -3,6 +3,8 @@
 # namespace: tflite
 
 import flatbuffers
+from flatbuffers.compat import import_numpy
+np = import_numpy()
 
 
 class VarHandleOptions(object):
@@ -14,6 +16,10 @@ class VarHandleOptions(object):
         x = VarHandleOptions()
         x.Init(buf, n + offset)
         return x
+
+    @classmethod
+    def VarHandleOptionsBufferHasIdentifier(cls, buf, offset, size_prefixed=False):
+        return flatbuffers.util.BufferHasIdentifier(buf, offset, b"\x54\x46\x4C\x33", size_prefixed=size_prefixed)
 
     # VarHandleOptions
     def Init(self, buf, pos):

@@ -3,6 +3,8 @@
 # namespace: tflite
 
 import flatbuffers
+from flatbuffers.compat import import_numpy
+np = import_numpy()
 
 
 class VariantSubType(object):
@@ -14,6 +16,10 @@ class VariantSubType(object):
         x = VariantSubType()
         x.Init(buf, n + offset)
         return x
+
+    @classmethod
+    def VariantSubTypeBufferHasIdentifier(cls, buf, offset, size_prefixed=False):
+        return flatbuffers.util.BufferHasIdentifier(buf, offset, b"\x54\x46\x4C\x33", size_prefixed=size_prefixed)
 
     # VariantSubType
     def Init(self, buf, pos):
@@ -40,6 +46,11 @@ class VariantSubType(object):
         if o != 0:
             return self._tab.VectorLen(o)
         return 0
+
+    # VariantSubType
+    def ShapeIsNone(self):
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(4))
+        return o == 0
 
     # VariantSubType
     def Type(self):

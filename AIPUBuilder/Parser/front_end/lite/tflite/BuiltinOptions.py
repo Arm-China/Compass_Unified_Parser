@@ -127,3 +127,6 @@ class BuiltinOptions(object):
     UnsortedSegmentSumOptions = 121
     ATan2Options = 122
     SignOptions = 123
+    BitcastOptions = 124
+    BitwiseXorOptions = 125
+    RightShiftOptions = 126

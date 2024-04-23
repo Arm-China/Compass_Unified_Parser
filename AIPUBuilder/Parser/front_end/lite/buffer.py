@@ -27,6 +27,8 @@ from .tflite.BatchMatMulOptions import BatchMatMulOptions
 from .tflite.BatchToSpaceNDOptions import BatchToSpaceNDOptions
 from .tflite.BidirectionalSequenceLSTMOptions import BidirectionalSequenceLSTMOptions
 from .tflite.BidirectionalSequenceRNNOptions import BidirectionalSequenceRNNOptions
+from .tflite.BitcastOptions import BitcastOptions
+from .tflite.BitwiseXorOptions import BitwiseXorOptions
 from .tflite.BroadcastToOptions import BroadcastToOptions
 from .tflite.BucketizeOptions import BucketizeOptions
 from .tflite.CallOnceOptions import CallOnceOptions
@@ -105,6 +107,7 @@ from .tflite.ResizeNearestNeighborOptions import ResizeNearestNeighborOptions
 from .tflite.ReverseSequenceOptions import ReverseSequenceOptions
 from .tflite.ReverseV2Options import ReverseV2Options
 from .tflite.Rfft2dOptions import Rfft2dOptions
+from .tflite.RightShiftOptions import RightShiftOptions
 from .tflite.RNNOptions import RNNOptions
 from .tflite.ScatterNdOptions import ScatterNdOptions
 from .tflite.SegmentSumOptions import SegmentSumOptions
