@@ -947,6 +947,7 @@ def convert_meshgrid(g, tensor_list, indexing='ij'):
         concat_node = g.op('Concat', *size_nodes, axis_i=0)
         new_outs = []
         for idx in range(len(inputs)):
+            outs[idx].setType(unpacked_inputs[0].type())
             new_outs.append(helper._reshape_helper(g, outs[idx], concat_node))
         outs = new_outs
     else:
@@ -1858,10 +1859,6 @@ def convert_torch_to_onnx(model_path, params):
         torch.onnx.register_custom_op_symbolic(
             'aten::atan2', convert_atan2, onnx_opset_version)
     if torch_version < '2.2.0':
-        # The indexing issue of aten::meshgrid is fixed since 2.2.0.
-        # Refer to https://github.com/pytorch/pytorch/pull/109350
-        torch.onnx.register_custom_op_symbolic(
-            'aten::meshgrid', convert_meshgrid, onnx_opset_version)
         # The op aten::scaled_dot_product_attention is supported in latest torch.
         # Refer to https://github.com/pytorch/pytorch/pull/99658
         # But the bug in helper._is_none causes crash when scale is not None, which is fixed since 2.2.0.
@@ -1976,6 +1973,8 @@ def convert_torch_to_onnx(model_path, params):
     torch.onnx.register_custom_op_symbolic(
         'aten::mean', convert_reduce_mean, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
+        'aten::meshgrid', convert_meshgrid, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
         'aten::repeat_interleave', convert_repeat_interleave, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::round', convert_round, onnx_opset_version)
@@ -2057,12 +2056,6 @@ def convert_torch_to_onnx(model_path, params):
         if dict_nodes and all(node.output().debugName() in model_output_names for node in dict_nodes):
             torch.onnx.register_custom_op_symbolic(
                 'prim::DictConstruct', convert_dict_construct, onnx_opset_version)
-        # Only convert aten::meshgrid to custom ops when it's ouput node.
-        if torch_version >= '2.2.0':
-            meshgrid_nodes = model.graph.findAllNodes('aten::meshgrid')
-            if meshgrid_nodes and any(node.output().debugName() in model_output_names for node in meshgrid_nodes):
-                torch.onnx.register_custom_op_symbolic(
-                    'aten::meshgrid', convert_meshgrid, onnx_opset_version)
 
     # Convert torch op to custom onnx op
     torch.onnx.register_custom_op_symbolic(

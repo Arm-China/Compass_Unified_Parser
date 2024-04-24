@@ -38,5 +38,6 @@ for indexing in ('ij', 'xy', ):
     model_path = '-'.join([TEST_NAME, indexing]) + '.pt'
     # prepare model and input datas
     create_meshgrid_model(model_path, indexing)
-    exit_status = run_parser(model_path, feed_dict)
+    # always convert to Meshgrid otherwise it would be non-connected graph
+    exit_status = run_parser(model_path, feed_dict, expected_keywords=['layer_type=Meshgrid'])
     assert exit_status
