@@ -2243,6 +2243,27 @@ class LiteREVERSE_V2Op(OpHasAxis, OpHasOneOutPort, TfliteOp):
         self.set_out_tensor(out_tensor)
 
 
+class LiteRIGHT_SHIFTOp(OpHasOneOutPort, TfliteOp):
+    @classmethod
+    def attributes(cls):
+        return {1: {}, 2: {}}
+
+    def __init__(self, graph, attr_dict=None):
+        super(LiteRIGHT_SHIFTOp, self).__init__(graph, attr_dict)
+        self.update_attributes(LiteRIGHT_SHIFTOp, attr_dict)
+        assert self.check_required(), 'LiteRIGHT_SHIFTOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(LiteRIGHT_SHIFTOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = np.right_shift(inputs[0], inputs[1])
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'BitShift', 'version': 11}
+
+
 class LiteROUNDOp(OpHasOneOutPort, TfliteOp):
     @classmethod
     def attributes(cls):
@@ -2393,6 +2414,27 @@ class LiteSHAPEOp(OpHasOneOutPort, ConstLikeOp, TfliteOp):
     @property
     def correspond_onnx_op(self):
         return {'type': 'Shape', 'version': 13}
+
+
+class LiteSIGNOp(OpHasOneOutPort, TfliteOp):
+    @classmethod
+    def attributes(cls):
+        return {1: {}, 2: {}}
+
+    def __init__(self, graph, attr_dict=None):
+        super(LiteSIGNOp, self).__init__(graph, attr_dict)
+        self.update_attributes(LiteSIGNOp, attr_dict)
+        assert self.check_required(), 'LiteSIGNOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(LiteSIGNOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = np.sign(inputs[0])
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'Sign', 'version': 13}
 
 
 class LiteSINOp(OpHasOneOutPort, TfliteOp):

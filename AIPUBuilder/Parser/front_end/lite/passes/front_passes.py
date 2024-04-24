@@ -3259,6 +3259,8 @@ def convert_to_onnx(graph):
                     if node_name in graph._attr['output_names']:
                         index = graph._attr['output_names'].index(node_name)
                         graph._attr['output_names'][index] = post_cast
+                elif pure_type == 'RIGHT_SHIFT':
+                    new_node_attr.update({'direction': 'RIGHT'})
                 elif pure_type == 'CAST':
                     new_node_attr.update({'saturate': False})
                 elif pure_type == 'ELU':
