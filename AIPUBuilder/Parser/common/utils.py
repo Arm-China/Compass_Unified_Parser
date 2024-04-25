@@ -119,6 +119,15 @@ def list_list_to_string(list_list):
 num_list_to_string = list_list_to_string
 
 
+def version_to_tuple(version_str):
+    version_tuple = tuple()
+    try:
+        version_tuple = tuple(map(int, version_str.split('.')))
+    except Exception as e:
+        ERROR('[Parser]: Cannot get version tuple for %s in version_to_tuple because %s!' % (version_str, str(e)))
+    return version_tuple
+
+
 def get_random_array(shape, type_str):
     return np.random.ranf(size=shape).astype(dtype=np.dtype(type_str))
 
