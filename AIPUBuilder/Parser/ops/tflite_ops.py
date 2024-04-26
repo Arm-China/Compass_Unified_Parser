@@ -1833,9 +1833,10 @@ class LitePRELUOp(OpHasOneOutPort, TfliteOp):
     def infer_shape(self):
         super(LitePRELUOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = (tf.nn.relu(
-            inputs[0]) + (inputs[0] - tf.abs(inputs[0])) * inputs[1]).numpy()
-        self.set_out_tensor(out_tensor)
+        inp0 = inputs[0].astype(np.float32)
+        inp1 = inputs[1].astype(np.float32)
+        out_tensor = (tf.nn.relu(inp0) + (inp0 - tf.abs(inp0)) * inp1).numpy()
+        self.set_out_tensor(out_tensor.astype(inputs[0].dtype))
 
     @property
     def correspond_onnx_op(self):

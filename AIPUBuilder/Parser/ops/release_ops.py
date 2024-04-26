@@ -109,7 +109,7 @@ class ArmActivationOp(LayoutUnawareOp, OpHasMethod, OpHasOneOutPort, ArmOp):
               'HARDSIGMOID': lambda x, alpha, beta, cmi, cma: tf.math.maximum(cmi, tf.math.minimum(cma, alpha * x + beta)),
               'LEAKYRELU': lambda x, y: tf.nn.leaky_relu(x, y),
               'MISH': lambda x: (x * tf.math.tanh(tf.math.log(tf.math.exp(x) + 1))),
-              'PRELU': lambda x, y: tf.clip_by_value(x, 0, float('inf')) + tf.clip_by_value(x, float('-inf'), 0) * y,
+              'PRELU': lambda x, y: np.clip(x, a_min=0, a_max=None) + np.clip(x, a_min=None, a_max=0) * y,
               'RELU': tf.nn.relu,
               'RELU6': tf.nn.relu6,
               'SELU': lambda x: (x),
@@ -149,7 +149,7 @@ class ArmActivationOp(LayoutUnawareOp, OpHasMethod, OpHasOneOutPort, ArmOp):
         elif self.method == 'PRELU':
             if not self.quantize:
                 self.negative_slope = self.negative_slope.astype(np.float32)
-            out_tensor = func(inputs[0], self.negative_slope).numpy().astype(inputs[0].dtype)
+            out_tensor = func(inputs[0], self.negative_slope).astype(inputs[0].dtype)
         elif self.method == 'SELU':
             out_tensor = self.selu()
         elif self.method == 'SHRINK':
