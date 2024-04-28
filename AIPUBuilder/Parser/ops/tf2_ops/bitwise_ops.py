@@ -16,7 +16,7 @@ class Tfbitwise_andOp(OpHasOneOutPort, Tf2Op):
 
     @property
     def correspond_onnx_op(self):
-        return {'type': 'And', 'version': 7}
+        return {'type': 'BitwiseAnd', 'version': 18}
 
 
 class Tfbitwise_orOp(OpHasOneOutPort, Tf2Op):
@@ -28,7 +28,7 @@ class Tfbitwise_orOp(OpHasOneOutPort, Tf2Op):
 
     @property
     def correspond_onnx_op(self):
-        return {'type': 'Or', 'version': 7}
+        return {'type': 'BitwiseOr', 'version': 18}
 
 
 class Tfbitwise_xorOp(OpHasOneOutPort, Tf2Op):
@@ -40,7 +40,7 @@ class Tfbitwise_xorOp(OpHasOneOutPort, Tf2Op):
 
     @property
     def correspond_onnx_op(self):
-        return {'type': 'Xor', 'version': 7}
+        return {'type': 'BitwiseXor', 'version': 18}
 
 
 class Tfleft_shiftOp(OpHasOneOutPort, Tf2Op):
