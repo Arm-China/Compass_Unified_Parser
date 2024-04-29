@@ -30,7 +30,7 @@ TF_BENCHMARK = {
         'resnet_v2_50',
         'shufflenet_v2',
         'transformer_mini',
-        'transformer_official',
+        # 'transformer_official',
         'wavenet',
         'yolo_v2_416',
     ],

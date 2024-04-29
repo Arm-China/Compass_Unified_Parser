@@ -237,6 +237,22 @@ class LiteBATCH_TO_SPACE_NDOp(OpHasOneOutPort, TfliteOp):
         self.set_out_tensor(out_tensor)
 
 
+class LiteBITWISE_XOROp(OpHasOneOutPort, TfliteOp):
+    @classmethod
+    def attributes(cls):
+        return {1: {}}
+
+    def infer_shape(self):
+        super(LiteBITWISE_XOROp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = tf.bitwise.bitwise_xor(*inputs).numpy()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'BitwiseXor', 'version': 18}
+
+
 class LiteBROADCAST_TOOp(OpHasOneOutPort, TfliteOp):
     @classmethod
     def attributes(cls):
