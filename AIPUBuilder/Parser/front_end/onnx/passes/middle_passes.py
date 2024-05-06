@@ -1216,7 +1216,8 @@ def convert_special_clip_to_relu(graph):
                     and inputs[2] is not None \
                     and FLOAT_EQUAL(inputs[1], 0) \
                     and in_edges[0][2]['tensor'].get_dtype() is not None \
-                    and inputs[2] >= TYPE_MAX(in_edges[0][2]['tensor'].get_dtype()):
+                    and inputs[2] >= TYPE_MAX(in_edges[0][2]['tensor'].get_dtype()) \
+                    and not clip_obj.quantize:
                 graph.remove_edges_from(in_edges[1:])
                 NodeWrap(graph, clip).replace_obj(
                     'Relu', {'name': clip, 'opset_version': 6})
