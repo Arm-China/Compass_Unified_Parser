@@ -1699,6 +1699,7 @@ class LSTMOp(BaseRnnOp, OpHasBiases, OpHasWeights, OnnxOp):
         super(LSTMOp, self).infer_shape()
         inputs = self.get_input_tensors()
         num_directions = 2 if self.direction == 'bidirectional' else 1
+        input_dtype = inputs[0].dtype
         if not self.layout:
             self.time_steps, batch_size, self.input_size = inputs[0].shape
             init_shape = (num_directions, batch_size, self.hidden_size)
@@ -1707,15 +1708,15 @@ class LSTMOp(BaseRnnOp, OpHasBiases, OpHasWeights, OnnxOp):
             init_shape = (batch_size, num_directions, self.hidden_size)
         W, R = inputs[1:3]
         B = inputs[3] if (len(inputs) >= 4 and inputs[3] is not None) else np.zeros(
-            (num_directions, 8 * self.hidden_size), dtype=np.float32)
+            (num_directions, 8 * self.hidden_size), dtype=input_dtype)
         sequence_lens = inputs[4] if (len(inputs) >= 5 and inputs[4] is not None) else (
             np.ones((batch_size,), dtype=np.int32) * self.time_steps)
         initial_h = inputs[5] if (len(inputs) >= 6 and inputs[5] is not None) else np.zeros(
-            init_shape, dtype=np.float32)
+            init_shape, dtype=input_dtype)
         initial_c = inputs[6] if (len(inputs) >= 7 and inputs[6] is not None) else np.zeros(
-            init_shape, dtype=np.float32)
+            init_shape, dtype=input_dtype)
         p = inputs[7] if (len(inputs) == 8 and inputs[7] is not None) else np.zeros(
-            (num_directions, 3 * self.hidden_size), dtype=np.float32)
+            (num_directions, 3 * self.hidden_size), dtype=input_dtype)
 
         weights_list = LSTMOp.extract_weights(
             W, B, R, self.hidden_size, num_directions)
@@ -1762,9 +1763,9 @@ class LSTMOp(BaseRnnOp, OpHasBiases, OpHasWeights, OnnxOp):
                 '''
 
                 output_gate_res = np.random.ranf(
-                    (batch_size, self.hidden_size)).astype(np.float32)
+                    (batch_size, self.hidden_size)).astype(input_dtype)
                 input_add_forget = np.random.ranf(
-                    (batch_size, self.hidden_size)).astype(np.float32)
+                    (batch_size, self.hidden_size)).astype(input_dtype)
 
                 direction_out.append(output_gate_res)
                 if s == self.time_steps - 1:
@@ -1839,6 +1840,7 @@ class LSTMOp(BaseRnnOp, OpHasBiases, OpHasWeights, OnnxOp):
             self.cur_version = max_ver
 
         from ...front_end.onnx.passes.common_passes import insert_constant
+        input_dtype = self.get_input_dtypes()[0]
         in_edges = self._graph.sorted_in_edges(self.name, keys=True, data=True)
         num_directions = 2 if self.direction == 'bidirectional' else 1
         batch_size = in_edges[0][3]['tensor'].shape[0] if self.layout else in_edges[0][3]['tensor'].shape[1]
@@ -1846,15 +1848,15 @@ class LSTMOp(BaseRnnOp, OpHasBiases, OpHasWeights, OnnxOp):
             if self.layout \
             else [num_directions, batch_size, self.hidden_size]
         if _need_insert_constant(in_edges, 7):
-            P = np.zeros((num_directions, 3 * self.hidden_size), np.float32)
+            P = np.zeros((num_directions, 3 * self.hidden_size), input_dtype)
             insert_constant(self._graph, self.name +
                             '_P', P, self.name, in_port=7)
         if _need_insert_constant(in_edges, 6):
-            initial_c = np.zeros(initial_state_shape, np.float32)
+            initial_c = np.zeros(initial_state_shape, input_dtype)
             insert_constant(self._graph, self.name + '_initial_c',
                             initial_c, self.name, in_port=6)
         if _need_insert_constant(in_edges, 5):
-            initial_h = np.zeros(initial_state_shape, np.float32)
+            initial_h = np.zeros(initial_state_shape, input_dtype)
             insert_constant(self._graph, self.name + '_initial_h',
                             initial_h, self.name, in_port=5)
         if _need_insert_constant(in_edges, 4):
@@ -1862,7 +1864,7 @@ class LSTMOp(BaseRnnOp, OpHasBiases, OpHasWeights, OnnxOp):
             insert_constant(self._graph, self.name + '_sequence_lens',
                             sequence_lens, self.name, in_port=4)
         if _need_insert_constant(in_edges, 3):
-            B = np.zeros((num_directions, 8 * self.hidden_size), np.float32)
+            B = np.zeros((num_directions, 8 * self.hidden_size), input_dtype)
             insert_constant(self._graph, self.name +
                             '_B', B, self.name, in_port=3)
 
