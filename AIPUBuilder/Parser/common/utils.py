@@ -213,3 +213,20 @@ def get_closest_dtype(origin_dtype, available_dtypes):
     if closest_dtype is None or final_step < 0:
         WARN(f'[Parser]: Cast from {origin_dtype} to {matched_dtype} here may cause similarity down!')
     return matched_dtype
+
+
+def get_dict_params(params):
+    ret = {}
+    if isinstance(params, str) and len(params) > 0:
+        param_pattern = re.compile(r'\{\s*[^\{^\}]*\s*\}')
+        all_params = re.findall(param_pattern, params)
+        if len(all_params) > 0:
+            all_params = all_params[0].lstrip('{').lstrip(' ').rstrip('}').rstrip(' ')
+            meta_pattern = re.compile(r'[\s*[a-zA-Z_]*\s*\:\s*[0-9]*\s*,*]*')
+            meta_found = re.findall(meta_pattern, all_params)
+            for m in meta_found:
+                key, value = m.split(':')[:]
+                key = key.lstrip(' ').rstrip(' ')
+                value = value.lstrip(' ').rstrip(' ').rstrip(',')
+                ret.update({key: int(value)})
+    return ret

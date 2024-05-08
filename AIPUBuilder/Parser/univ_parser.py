@@ -7,7 +7,7 @@ import numpy as np
 import onnx
 import torch
 from collections import OrderedDict
-from .common.utils import is_file, is_dir, multi_string_to_list, list_string_to_list
+from .common.utils import is_file, is_dir, multi_string_to_list, list_string_to_list, get_dict_params
 from .graph.graph import Graph
 from .logger import *
 
@@ -111,6 +111,11 @@ def univ_parser(params):
                 FATAL(
                     '[Parser]: Length of input_names should be equal to length of input_shapes! '
                     'Please check config file!')
+
+        if len(params['input_names']) == 0 and len(params['input_shapes']) == 0 and 'input_dimensions' in params:
+            params['input_dimensions'] = get_dict_params(params['input_dimensions'])
+        else:
+            params['input_dimensions'] = {}
 
         if 'batch_size' in params:
             WARN(
