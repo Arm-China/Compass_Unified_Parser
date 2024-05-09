@@ -6,7 +6,8 @@ from .load import convert_onnx_to_graph
 from ...graph.graph_algo import infer
 from .passes.front_passes import fuse_weights_const, convert_special_prelu, merge_qconv, merge_qmatmul, \
     merge_q_multiple, merge_q_unary, convert_special_sequence_construct, merge_sequence_construct_and_at, \
-    merge_sequence_construct_and_concat, decompose_loop, merge_rcnn, convert_mmcv_deform_conv
+    merge_sequence_construct_and_concat, decompose_loop, merge_rcnn, convert_mmcv_deform_conv, \
+    merge_qgemm, uplift_quant
 from .passes.common_passes import remove_useless_op, apply_subgraph_plugin, record_output_tensors
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 
@@ -24,6 +25,7 @@ def process_onnx(graph, model_path, params):
 
         infer(graph, partial=True)
         merge_rcnn(graph, params)
+        uplift_quant(graph)
         merge_qconv(graph)
         merge_qmatmul(graph)
         merge_q_multiple(graph, ['Add', 'Concat', 'Gemm', 'Mul', 'Split'])
@@ -45,6 +47,8 @@ def process_onnx(graph, model_path, params):
         merge_sequence_construct_and_concat(graph)
         decompose_loop(graph, params)
         infer(graph)
+
+        merge_qgemm(graph)
 
     else:
         WARN('[Parser]: Got empty graph in process_onnx!')

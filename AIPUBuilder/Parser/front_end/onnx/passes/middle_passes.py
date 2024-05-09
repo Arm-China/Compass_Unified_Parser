@@ -2814,7 +2814,6 @@ def convert_qgemm(graph):
             ERROR('[Parser]: Meets invalid zero_point dtype of QLinearGemmMs node(%s) in convert_qgemm!' % qgemm)
             continue
         matched = True
-        graph.remove_edges_from(in_edges[1:])
         a_scale, a_zp = qgemm_obj.a_scale, qgemm_obj.a_zero_point
         b_scale, b_zp = qgemm_obj.b_scale, qgemm_obj.b_zero_point
         y_scale, y_zp = qgemm_obj.y_scale, qgemm_obj.y_zero_point
@@ -2829,6 +2828,7 @@ def convert_qgemm(graph):
                          or not c_src_in_attr['tensor'].is_const
                          or c_src_in_attr['tensor'].value is not None)
 
+        graph.remove_edges_from(in_edges[1:])
         if graph._attr.get('quantize', False):
             if y_scale is None:  # y_dtype is float32
                 graph.remove_edge(a_src, qgemm)

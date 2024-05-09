@@ -419,6 +419,66 @@ def convert_mmcv_deform_conv(graph):
         NodeWrap(graph, deform_conv).replace_obj('DeformConv', deform_conv_attr)
 
 
+def uplift_quant(graph):
+    '''For Gemm/Conv+Relu+QuantizeLinear, change to Gemm/Conv+QuantizeLinear+Relu(quantized).
+    Note: 1) src type could be other types(only if Relu will be 'with_activation' in IR);
+          2) float_op could be other activations op or float op whose input/output have same scale/zp.
+    '''
+    if not graph._attr.get('quantize', False):
+        return
+    matched = False
+    matches = two_nodes_matcher(graph, 'Relu', 'QuantizeLinear')
+    for m in matches:
+        float_op, quant = m['begin'], m['end']
+        float_op_obj = NodeWrap(graph, float_op)['object']
+        quant_obj = NodeWrap(graph, quant)['object']
+        float_op_in_edges = graph.sorted_in_edges(float_op, data=True)
+        if float_op_obj is None or len(float_op_in_edges) != 1:
+            ERROR('[Parser]: Meets invalid node(%s) in uplift_quant!' % float_op)
+            continue
+        float_op_out_edges = graph.sorted_out_edges(float_op, data=True)
+        if len(float_op_out_edges) != 1 or float_op_out_edges[0][2]['dst_in_port'] != 0:
+            continue
+        src, _, in_attr = float_op_in_edges[0]
+        src_obj = NodeWrap(graph, src)['object']
+        if src_obj is None:
+            ERROR('[Parser]: Meets invalid input node(%s) in uplift_quant!' % src)
+            continue
+        if src_obj.type not in ('Gemm', 'Conv'):
+            continue
+        quant_out_edges = graph.sorted_out_edges(quant, data=True)
+        if len(quant_out_edges) < 1:
+            continue
+        quant_in_edges = graph.sorted_in_edges(quant, data=True)
+        if len(quant_in_edges) not in (2, 3):
+            ERROR('[Parser]: Meets invalid QuantizeLinear Op(%s) in uplift_quant!' % quant)
+            continue
+        if any(e[2]['tensor'].value is None for e in quant_in_edges[1:]) \
+                or any(not e[2]['tensor'].is_const for e in quant_in_edges[1:]):
+            continue
+        matched = True
+        graph.remove_edges_from(float_op_in_edges + quant_out_edges)
+        graph.remove_edge(float_op, quant)
+        graph.add_edge(src, quant, **in_attr)
+        quant_out_attr = copy.deepcopy(quant_out_edges[0][2])
+        quant_out_attr.update({'dst_in_port': 0})
+        y_scale, y_zp = quant_obj.y_scale, quant_obj.y_zero_point
+        quant_out_attr['tensor'].dtype = str(y_zp.dtype)
+        quant_out_attr['tensor'].scale_zp = (y_scale, y_zp)
+        quant_out_attr['tensor'].activation_quantization_axis = quant_obj.axis
+        graph.add_edge(quant, float_op, **quant_out_attr)
+        for _, dst, out_attr in quant_out_edges:
+            new_out_attr = copy.deepcopy(quant_out_attr)
+            new_out_attr.update({'dst_in_port': out_attr['dst_in_port']})
+            graph.add_edge(float_op, dst, **new_out_attr)
+        float_op_obj.quantize = True
+        if quant in graph._attr['output_names']:
+            index = graph._attr['output_names'].index(quant)
+            graph._attr['output_names'][index] = float_op
+    if matched:
+        clear_redundant_nodes(graph)
+
+
 def merge_qconv(graph):
     if not graph._attr.get('quantize', False):
         return
@@ -573,6 +633,173 @@ def merge_qconv(graph):
                               'biases': biases, 'biases_scale_zp': [b_scale, b_zp]})
 
         NodeWrap(graph, m['conv']).replace_obj(op_type, conv_attr)
+
+    if matched:
+        clear_redundant_nodes(graph)
+
+
+def merge_qgemm(graph):
+    # Merge patterns into QGemmMs. This pass should be done after infer(to get input/output
+    # shapes for the inserted Reshape nodes) and before fuse_const(avoid DequantizeLinear
+    # being merged into Constant).
+    if not graph._attr.get('quantize', False):
+        return
+    matched = False
+    matches_non_2d = matched_patterns(graph,
+                                      nodes=[
+                                          ('x_dequant', {'op': 'DequantizeLinear', 'unique': False}),
+                                          ('w_dequant', {'op': 'DequantizeLinear', 'unique': False}),
+                                          ('trans', {'op': 'Transpose'}),
+                                          ('b_dequant', {'op': 'DequantizeLinear', 'unique': False}),
+                                          ('gemm', {'op': 'MatMul'}),
+                                          ('add', {'op': 'Add'}),
+                                          ('y_quant', {'op': 'QuantizeLinear'}),
+                                      ],
+                                      edges=[
+                                          ('x_dequant', 'gemm', {'dst_in_port': 0}),
+                                          ('w_dequant', 'trans'),
+                                          ('trans', 'gemm', {'dst_in_port': 1}),
+                                          ('b_dequant', 'add'),
+                                          ('gemm', 'add'),
+                                          ('add', 'y_quant')
+                                      ])
+    matches_non_2d_with_relu = matched_patterns(graph,
+                                                nodes=[
+                                                    ('x_dequant', {'op': 'DequantizeLinear', 'unique': False}),
+                                                    ('w_dequant', {'op': 'DequantizeLinear', 'unique': False}),
+                                                    ('trans', {'op': 'Transpose'}),
+                                                    ('b_dequant', {'op': 'DequantizeLinear', 'unique': False}),
+                                                    ('gemm', {'op': 'MatMul'}),
+                                                    ('add', {'op': 'Add'}),
+                                                    ('relu', {'op': 'Relu'}),
+                                                    ('y_quant', {'op': 'QuantizeLinear'}),
+                                                ],
+                                                edges=[
+                                                    ('x_dequant', 'gemm', {'dst_in_port': 0}),
+                                                    ('w_dequant', 'trans'),
+                                                    ('trans', 'gemm', {'dst_in_port': 1}),
+                                                    ('b_dequant', 'add'),
+                                                    ('gemm', 'add'),
+                                                    ('add', 'relu'),
+                                                    ('relu', 'y_quant')
+                                                ])
+    for m in matches_non_2d + matches_non_2d_with_relu:
+        names = ['x_dequant', 'w_dequant', 'b_dequant', 'gemm', 'add', 'y_quant', 'trans'] \
+            + (['relu'] if 'relu' in m else [])
+        obj_dict = {n: NodeWrap(graph, m[n])['object'] for n in names}
+        if any(v is None for v in obj_dict.values()):
+            error_node = [n for n in obj_dict if obj_dict[n] is None][0]
+            ERROR('[Parser]: Meets invalid Op(%s) in merge_qgemm!' % error_node)
+            continue
+        x_dequant_in_edges = graph.sorted_in_edges(m['x_dequant'], data=True)
+        x_dequant_in_shapes = obj_dict['x_dequant'].get_input_shapes()
+        if len(x_dequant_in_edges) not in (2, 3) or len(x_dequant_in_shapes) < 1 \
+                or x_dequant_in_shapes[0] is None or None in x_dequant_in_shapes[0]:
+            ERROR(
+                '[Parser]: Meets invalid Dequantize Op(%s) in merge_qgemm!' % m['x_dequant'])
+            continue
+        if any(e[2]['tensor'].value is None for e in x_dequant_in_edges[1:]) \
+                or any(not e[2]['tensor'].is_const for e in x_dequant_in_edges[1:]):
+            continue
+        w_dequant_in_edges = graph.sorted_in_edges(m['w_dequant'], data=True)
+        if len(w_dequant_in_edges) not in (2, 3):
+            ERROR(
+                '[Parser]: Meets invalid Dequantize Op(%s) in merge_qgemm!' % m['w_dequant'])
+            continue
+        if any(e[2]['tensor'].value is None for e in w_dequant_in_edges) \
+                or any(not e[2]['tensor'].is_const for e in w_dequant_in_edges):
+            continue
+        b_dequant_in_edges = graph.sorted_in_edges(m['b_dequant'], data=True)
+        if len(b_dequant_in_edges) not in (2, 3):
+            ERROR(
+                '[Parser]: Meets invalid Dequantize Op(%s) in merge_qgemm!' % m['b_dequant'])
+            continue
+        if any(e[2]['tensor'].value is None for e in b_dequant_in_edges) \
+                or any(not e[2]['tensor'].is_const for e in b_dequant_in_edges):
+            continue
+        gemm_out_edges = graph.sorted_out_edges(m['gemm'], data=True)
+        if len(gemm_out_edges) != 1:
+            continue
+        relu = m['relu'] if 'relu' in m else None
+        if relu is not None and len(graph.sorted_out_edges(relu)) != 1:
+            continue
+        if len(graph.sorted_out_edges(m['add'])) != 1 or obj_dict['trans'].perm != [1, 0]:
+            continue
+        y_quant_in_edges = graph.sorted_in_edges(m['y_quant'], data=True)
+        y_quant_out_shapes = obj_dict['y_quant'].get_output_shapes()
+        if len(y_quant_in_edges) not in (2, 3) or len(y_quant_out_shapes) < 1 \
+                or y_quant_out_shapes[0] is None or None in y_quant_out_shapes[0]:
+            ERROR('[Parser]: Meets invalid Quantize Op(%s) in merge_qgemm!' % m['y_quant'])
+            continue
+        if any(e[2]['tensor'].value is None for e in y_quant_in_edges[1:]) \
+                or any(not e[2]['tensor'].is_const for e in y_quant_in_edges[1:]):
+            continue
+
+        src, _, in_attr = x_dequant_in_edges[0]
+        x_scale, x_zp = obj_dict['x_dequant'].x_scale, obj_dict['x_dequant'].x_zero_point
+        w_scale, w_zp = obj_dict['w_dequant'].x_scale, obj_dict['w_dequant'].x_zero_point
+        b_scale, b_zp = obj_dict['b_dequant'].x_scale, obj_dict['b_dequant'].x_zero_point
+        y_scale, y_zp = obj_dict['y_quant'].y_scale, obj_dict['y_quant'].y_zero_point
+        weights = w_dequant_in_edges[0][2]['tensor'].value
+        biases = b_dequant_in_edges[0][2]['tensor'].value
+
+        if not FLOAT_EQUAL(w_scale*x_scale, b_scale) or not np.all(b_zp == 0):
+            continue
+
+        matched = True
+        new_in_attr = copy.deepcopy(in_attr)
+        new_in_attr['tensor'].dtype = str(x_zp.dtype)
+        new_in_attr['tensor'].scale_zp = (x_scale, x_zp)
+        new_in_attr['tensor'].activation_quantization_axis = obj_dict['x_dequant'].axis
+        graph.remove_edges_from(
+            graph.sorted_in_edges(m['gemm']) + gemm_out_edges)
+        graph.add_edge(src, m['gemm'], **new_in_attr)
+        last_node = m['gemm']
+        if relu is not None:
+            graph.remove_edges_from(graph.sorted_in_edges(relu) + graph.sorted_out_edges(relu))
+            gemm_out_attr = gemm_out_edges[0][2]
+            gemm_out_attr['tensor'].dtype = str(y_zp.dtype)
+            gemm_out_attr['tensor'].scale_zp = (y_scale, y_zp)
+            graph.add_edge(m['gemm'], relu, **gemm_out_attr)
+            last_node = relu
+            obj_dict['relu'].quantize = True
+        for _, dst, out_attr in graph.sorted_out_edges(m['y_quant'], data=True):
+            graph.remove_edge(m['y_quant'], dst)
+            out_attr['tensor'].dtype = str(y_zp.dtype)
+            out_attr['tensor'].scale_zp = (y_scale, y_zp)
+            out_attr['tensor'].activation_quantization_axis = obj_dict['y_quant'].axis
+            graph.add_edge(last_node, dst, **out_attr)
+        if len(x_dequant_in_shapes[0]) != 2 and len(y_quant_out_shapes[0]) != 2:
+            pre_shape = [int(np.prod(x_dequant_in_shapes[0][:-1])), x_dequant_in_shapes[0][-1]]
+            insert_reshape(graph, src, m['gemm'], new_in_attr, pre_shape, quantize=True)
+            post_shape = y_quant_out_shapes[0]
+            post_new_shape = [int(np.prod(y_quant_out_shapes[0][:-1])), y_quant_out_shapes[0][-1]]
+            last_node = insert_reshape_after(graph, last_node, post_shape, post_new_shape, quantize=True)
+
+        if m['y_quant'] in graph._attr['output_names']:
+            index = graph._attr['output_names'].index(m['y_quant'])
+            graph._attr['output_names'][index] = last_node
+
+        gemm_attr = obj_dict['gemm'].copied_attr()
+        gemm_attr.update({'quantize': True, 'opset_version': 1, 'transB': True})
+        insert_constant(graph, m['gemm'] + '_x_scale',
+                        x_scale, m['gemm'], in_port=1, data_format='NHWC')
+        insert_constant(graph, m['gemm'] + '_x_zero_point',
+                        x_zp, m['gemm'], in_port=2, data_format='NHWC')
+        insert_constant(graph, m['gemm'] + '_w', weights,
+                        m['gemm'], in_port=3, data_format='NHWC')
+        insert_constant(graph, m['gemm'] + '_w_scale',
+                        w_scale, m['gemm'], in_port=4, data_format='NHWC')
+        insert_constant(graph, m['gemm'] + '_w_zero_point',
+                        w_zp, m['gemm'], in_port=5, data_format='NHWC')
+        insert_constant(graph, m['gemm'] + '_B', biases,
+                        m['gemm'], in_port=6, data_format='NHWC')
+        insert_constant(graph, m['gemm'] + '_y_scale',
+                        y_scale, m['gemm'], in_port=7, data_format='NHWC')
+        insert_constant(graph, m['gemm'] + '_y_zero_point',
+                        y_zp, m['gemm'], in_port=8, data_format='NHWC')
+
+        NodeWrap(graph, m['gemm']).replace_obj('QGemmMs', gemm_attr)
 
     if matched:
         clear_redundant_nodes(graph)
