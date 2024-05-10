@@ -420,31 +420,38 @@ def convert_mmcv_deform_conv(graph):
 
 
 def uplift_quant(graph):
-    '''For Gemm/Conv+Relu+QuantizeLinear, change to Gemm/Conv+QuantizeLinear+Relu(quantized).
+    '''For DequantizeLinear+Gemm/Conv/...+Relu/...+QuantizeLinear, switch QuantizeLinear and Relu(quantized).
     Note: 1) src type could be other types(only if Relu will be 'with_activation' in IR);
           2) float_op could be other activations op or float op whose input/output have same scale/zp.
     '''
     if not graph._attr.get('quantize', False):
         return
     matched = False
-    matches = two_nodes_matcher(graph, 'Relu', 'QuantizeLinear')
+    matches = matched_patterns(graph,
+                               nodes=[
+                                   ('x_dequant', {'op': 'DequantizeLinear', 'unique': False}),
+                                   ('src', {'op': ['Conv', 'ConvTranspose', 'Gemm']}),
+                                   ('float_op', {'op': ['LeakyRelu', 'Relu']}),
+                                   ('quant', {'op': 'QuantizeLinear'}),
+                               ],
+                               edges=[
+                                   ('x_dequant', 'src', {'dst_in_port': 0}),
+                                   ('src', 'float_op', {'dst_in_port': 0}),
+                                   ('float_op', 'quant', {'dst_in_port': 0}),
+                               ])
     for m in matches:
-        float_op, quant = m['begin'], m['end']
+        float_op, quant, src = m['float_op'], m['quant'], m['src']
         float_op_obj = NodeWrap(graph, float_op)['object']
         quant_obj = NodeWrap(graph, quant)['object']
         float_op_in_edges = graph.sorted_in_edges(float_op, data=True)
         if float_op_obj is None or len(float_op_in_edges) != 1:
             ERROR('[Parser]: Meets invalid node(%s) in uplift_quant!' % float_op)
             continue
+        if quant_obj is None:
+            ERROR('[Parser]: Meets invalid QuantizeLinear node(%s) in uplift_quant!' % quant)
+            continue
         float_op_out_edges = graph.sorted_out_edges(float_op, data=True)
-        if len(float_op_out_edges) != 1 or float_op_out_edges[0][2]['dst_in_port'] != 0:
-            continue
-        src, _, in_attr = float_op_in_edges[0]
-        src_obj = NodeWrap(graph, src)['object']
-        if src_obj is None:
-            ERROR('[Parser]: Meets invalid input node(%s) in uplift_quant!' % src)
-            continue
-        if src_obj.type not in ('Gemm', 'Conv'):
+        if len(float_op_out_edges) != 1:
             continue
         quant_out_edges = graph.sorted_out_edges(quant, data=True)
         if len(quant_out_edges) < 1:
@@ -459,6 +466,7 @@ def uplift_quant(graph):
         matched = True
         graph.remove_edges_from(float_op_in_edges + quant_out_edges)
         graph.remove_edge(float_op, quant)
+        src, _, in_attr = float_op_in_edges[0]
         graph.add_edge(src, quant, **in_attr)
         quant_out_attr = copy.deepcopy(quant_out_edges[0][2])
         quant_out_attr.update({'dst_in_port': 0})
@@ -497,16 +505,15 @@ def merge_qconv(graph):
                                    ('b_dequant', 'conv', {'dst_in_port': 2}),
                                    ('conv', 'y_quant')
                                ])
-    matches_with_relu = matched_patterns(graph,
+    matches_with_bias = matched_patterns(graph,
                                          nodes=[
                                              ('x_dequant', {
                                               'op': 'DequantizeLinear', 'unique': False}),
                                              ('w_dequant', {
                                               'op': 'DequantizeLinear', 'unique': False}),
-                                             ('b_dequant', {
-                                              'op': 'DequantizeLinear', 'unique': False}),
+                                             ('bias', {
+                                              'op': 'Constant', 'unique': False}),
                                              ('conv', {'op': 'Conv'}),
-                                             ('relu', {'op': 'Relu'}),
                                              ('y_quant', {
                                               'op': 'QuantizeLinear'}),
                                          ],
@@ -514,14 +521,14 @@ def merge_qconv(graph):
                                              ('x_dequant', 'conv'),
                                              ('w_dequant', 'conv',
                                               {'dst_in_port': 1}),
-                                             ('b_dequant', 'conv',
+                                             ('bias', 'conv',
                                               {'dst_in_port': 2}),
-                                             ('conv', 'relu'),
-                                             ('relu', 'y_quant'),
+                                             ('conv', 'y_quant'),
                                          ])
-    for m in matches + matches_with_relu:
-        names = ['x_dequant', 'w_dequant', 'b_dequant', 'conv',
-                 'y_quant'] + (['relu'] if 'relu' in m else [])
+    for m in matches + matches_with_bias:
+        is_float_bias = ('bias' in m)
+        names = ['x_dequant', 'w_dequant', 'conv',
+                 'y_quant'] + (['bias'] if is_float_bias else ['b_dequant'])
         obj_dict = {n: NodeWrap(graph, m[n])['object'] for n in names}
         if any(v is None for v in obj_dict.values()):
             error_node = [n for n in obj_dict if obj_dict[n] is None][0]
@@ -543,19 +550,8 @@ def merge_qconv(graph):
         if any(e[2]['tensor'].value is None for e in w_dequant_in_edges) \
                 or any(not e[2]['tensor'].is_const for e in w_dequant_in_edges):
             continue
-        b_dequant_in_edges = graph.sorted_in_edges(m['b_dequant'], data=True)
-        if len(b_dequant_in_edges) not in (2, 3):
-            ERROR(
-                '[Parser]: Meets invalid Dequantize Op(%s) in merge_qconv!' % m['b_dequant'])
-            continue
-        if any(e[2]['tensor'].value is None for e in b_dequant_in_edges) \
-                or any(not e[2]['tensor'].is_const for e in b_dequant_in_edges):
-            continue
         conv_out_edges = graph.sorted_out_edges(m['conv'], data=True)
         if len(conv_out_edges) != 1:
-            continue
-        relu = m['relu'] if 'relu' in m else None
-        if relu is not None and len(graph.sorted_out_edges(relu)) != 1:
             continue
         y_quant_in_edges = graph.sorted_in_edges(m['y_quant'], data=True)
         if len(y_quant_in_edges) not in (2, 3):
@@ -569,13 +565,27 @@ def merge_qconv(graph):
         src, _, in_attr = x_dequant_in_edges[0]
         x_scale, x_zp = obj_dict['x_dequant'].x_scale, obj_dict['x_dequant'].x_zero_point
         w_scale, w_zp = obj_dict['w_dequant'].x_scale, obj_dict['w_dequant'].x_zero_point
-        b_scale, b_zp = obj_dict['b_dequant'].x_scale, obj_dict['b_dequant'].x_zero_point
         y_scale, y_zp = obj_dict['y_quant'].y_scale, obj_dict['y_quant'].y_zero_point
         weights = w_dequant_in_edges[0][2]['tensor'].value
-        biases = b_dequant_in_edges[0][2]['tensor'].value
-
-        if not FLOAT_EQUAL(w_scale*x_scale, b_scale) or not np.all(b_zp == 0):
-            continue
+        if not is_float_bias:
+            b_dequant_in_edges = graph.sorted_in_edges(m['b_dequant'], data=True)
+            if len(b_dequant_in_edges) not in (2, 3):
+                ERROR(
+                    '[Parser]: Meets invalid Dequantize Op(%s) in merge_qconv!' % m['b_dequant'])
+                continue
+            if any(e[2]['tensor'].value is None for e in b_dequant_in_edges) \
+                    or any(not e[2]['tensor'].is_const for e in b_dequant_in_edges):
+                continue
+            b_scale, b_zp = obj_dict['b_dequant'].x_scale, obj_dict['b_dequant'].x_zero_point
+            if not FLOAT_EQUAL(w_scale*x_scale, b_scale) or not np.all(b_zp == 0):
+                continue
+            biases = b_dequant_in_edges[0][2]['tensor'].value
+        else:
+            b_scale = w_scale * x_scale
+            b_zp = np.zeros_like(b_scale, dtype=np.int32)
+            biases = np.round(obj_dict['bias'].value / b_scale)
+            zp_dtype = y_zp.dtype
+            biases = np.clip(biases, np.iinfo(zp_dtype).min, np.iinfo(zp_dtype).max).astype(zp_dtype)
 
         matched = True
         new_in_attr = copy.deepcopy(in_attr)
@@ -585,25 +595,16 @@ def merge_qconv(graph):
         graph.remove_edges_from(
             graph.sorted_in_edges(m['conv']) + conv_out_edges)
         graph.add_edge(src, m['conv'], **new_in_attr)
-        last_node = m['conv']
-        if relu is not None:
-            graph.remove_edges_from(graph.sorted_out_edges(relu))
-            conv_out_attr = conv_out_edges[0][2]
-            conv_out_attr['tensor'].dtype = str(y_zp.dtype)
-            conv_out_attr['tensor'].scale_zp = (y_scale, y_zp)
-            graph.add_edge(m['conv'], relu, **conv_out_attr)
-            last_node = relu
-            obj_dict['relu'].quantize = True
         for _, dst, out_attr in graph.sorted_out_edges(m['y_quant'], data=True):
             graph.remove_edge(m['y_quant'], dst)
             out_attr['tensor'].dtype = str(y_zp.dtype)
             out_attr['tensor'].scale_zp = (y_scale, y_zp)
             out_attr['tensor'].activation_quantization_axis = obj_dict['y_quant'].axis
-            graph.add_edge(last_node, dst, **out_attr)
+            graph.add_edge(m['conv'], dst, **out_attr)
 
         if m['y_quant'] in graph._attr['output_names']:
             index = graph._attr['output_names'].index(m['y_quant'])
-            graph._attr['output_names'][index] = last_node
+            graph._attr['output_names'][index] = m['conv']
 
         conv_attr = obj_dict['conv'].copied_attr()
         conv_attr.update({'quantize': True})

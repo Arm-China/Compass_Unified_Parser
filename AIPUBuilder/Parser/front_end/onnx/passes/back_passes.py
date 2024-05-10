@@ -23,7 +23,7 @@ from .common_passes import remove_node_safely, insert_cast, insert_cast_after, i
     insert_reshape, insert_reshape_after, insert_constant, \
     insert_slice, insert_transpose, remove_redundant_bn, remove_redundant_reshape, remove_redundant_transpose, \
     remove_redundant_transpose2, remove_useless_op, fuse_const, insert_gather, remove_redundant_cast, \
-    insert_transpose_after
+    insert_transpose_after, merge_same_op_at_out_port
 from ....plugin_loader import PARSER_OP_DICT
 
 
@@ -5378,59 +5378,6 @@ def sink_transpose_through_slice_pair(graph):
 
     if matched:
         clear_redundant_nodes(graph)
-
-
-def merge_same_op_at_out_port(graph, op_types=['ArmTranspose', 'ArmReshape']):
-    matches = single_node_matcher(graph, {})
-    for m in matches:
-        node = m['target']
-        if not graph.has_node(node):
-            continue
-        node_obj = NodeWrap(graph, node)['object']
-        if node_obj is None or node_obj.type == 'Out':
-            continue
-        out_ports = node_obj.get_out_ports()
-        if len(out_ports) < 1:
-            continue
-        out_edges = graph.sorted_out_edges(node, keys=True, data=True)
-        if len(out_edges) < 2:
-            continue
-        for p in out_ports:
-            cur_p_edges = [e for e in out_edges if (e[3]['src_out_port'] == p and graph.has_node(
-                e[1]) and NodeWrap(graph, e[1])['object'] is not None)]
-            if len(cur_p_edges) < 2:
-                continue
-            for op in op_types:
-                cur_type_edges = [e for e in cur_p_edges if (graph.has_node(e[1]) and NodeWrap(
-                    graph, e[1])['object'] is not None and NodeWrap(graph, e[1])['object'].type == op)]
-                if len(cur_type_edges) < 2:
-                    continue
-                cur_objs = [NodeWrap(graph, e[1])['object'] for e in cur_type_edges]
-                if op == 'ArmReshape':
-                    if any(cur_objs[0].dim != obj.dim for obj in cur_objs[1:]):
-                        continue
-                elif op == 'ArmTranspose':
-                    if any(cur_objs[0].perm != obj.perm for obj in cur_objs[1:]):
-                        continue
-                elif op == 'Cast':
-                    if any((cur_objs[0].to != obj.to or cur_objs[0].saturate != obj.saturate) for obj in cur_objs[1:]):
-                        continue
-                else:
-                    # not supported yet
-                    continue
-                keep_out_node = cur_type_edges[0][1]
-                for _, removing_out, k, _ in cur_type_edges[1:]:
-                    graph.remove_edge(node, removing_out, key=k)
-                    for _, dst, meta_k, out_attr in graph.sorted_out_edges(removing_out, keys=True, data=True):
-                        graph.remove_edge(removing_out, dst, key=meta_k)
-                        graph.add_edge(keep_out_node, dst, **out_attr)
-                    graph.remove_node(removing_out)
-                    if removing_out in graph._attr['output_names']:
-                        index = graph._attr['output_names'].index(removing_out)
-                        if keep_out_node not in graph._attr['output_names']:
-                            graph._attr['output_names'][index] = keep_out_node
-                        else:
-                            graph._attr['output_names'].pop(index)
 
 
 def assign_top_range_scale_zp(graph):
