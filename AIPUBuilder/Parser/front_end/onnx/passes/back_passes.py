@@ -5380,6 +5380,71 @@ def sink_transpose_through_slice_pair(graph):
         clear_redundant_nodes(graph)
 
 
+def sink_quantize_through_concat(graph):
+    if not graph._attr.get('quantize', False):
+        return
+    matched = False
+    matches = single_node_matcher(graph, 'ArmConcat')
+    for m in matches:
+        concat = m['target']
+        concat_obj = NodeWrap(graph, concat)['object']
+        concat_in_edges = graph.sorted_in_edges(concat, data=True)
+        if concat_obj is None or len(concat_in_edges) < 1:
+            ERROR(
+                '[Parser]: Meets invalid Concat Node(%s) in sink_quantize_through_concat!' % concat)
+            continue
+        concat_out_edges = graph.sorted_out_edges(concat, data=True)
+        if len(concat_out_edges) < 1:
+            continue
+        all_src_are_quant = True
+        in_quant_names = []
+        in_ports = []
+        in_quant_objs = {}
+        for src, _, in_attr in concat_in_edges:
+            src_obj = NodeWrap(graph, src)['object']
+            if src_obj is None or src_obj.type != 'ArmQuantize' \
+                    or len(graph.sorted_in_edges(src)) != 1:
+                all_src_are_quant = False
+                break
+            in_quant_names.append(src)
+            in_ports.append(in_attr['dst_in_port'])
+            in_quant_objs[src] = src_obj
+        if not all_src_are_quant:
+            continue
+        quant_obj = in_quant_objs[in_quant_names[0]]
+        quant_scale = quant_obj.scale
+        quant_zp = quant_obj.zero_point
+        quant_axis = quant_obj.axis
+        if any((not FLOAT_EQUAL(quant_scale, in_quant_objs[name].scale)
+                or quant_zp != in_quant_objs[name].zero_point
+                or quant_axis != in_quant_objs[name].axis) for name in in_quant_names[1:]):
+            continue
+        matched = True
+        quant_attr = quant_obj.copied_attr()
+        graph.remove_edges_from(concat_in_edges + concat_out_edges)
+        for quant, dst_in_port in zip(in_quant_names, in_ports):
+            quant_src, _, in_attr = graph.sorted_in_edges(quant, data=True)[0]
+            concat_in_attr = copy.deepcopy(in_attr)
+            concat_in_attr.update({'dst_in_port': dst_in_port})
+            graph.add_edge(quant_src, concat, **concat_in_attr)
+        post_quant = get_valid_node_name(graph, concat + '_post_quant')
+        concat_out_attr = copy.deepcopy(concat_out_edges[0][2])
+        concat_out_attr.update({'dst_in_port': 0})
+        graph.add_edge(concat, post_quant, **concat_out_attr)
+        for _, dst, out_attr in concat_out_edges:
+            graph.add_edge(post_quant, dst, **out_attr)
+
+        concat_obj.quantize = False
+        if concat in graph._attr['output_names']:
+            index = graph._attr['output_names'].index(concat)
+            graph._attr['output_names'][index] = post_quant
+
+        quant_attr.update({'name': post_quant})
+        NodeWrap(graph, post_quant).replace_obj('ArmQuantize', quant_attr)
+    if matched:
+        clear_redundant_nodes(graph)
+
+
 def assign_top_range_scale_zp(graph):
     def _type_map(dtype):
         if str(dtype) not in ['int8', 'uint8', 'int16', 'int32']:
@@ -5602,6 +5667,7 @@ def back_passes(graph, params):
 
     remove_redundant_bn(graph)
     sink_transpose_through_special_reshape(graph)
+    sink_quantize_through_concat(graph)
     remove_redundant_reshape_transpose(graph)
     remove_redundant_reshape(graph, 'ArmReshape')
     remove_redundant_transpose(graph)

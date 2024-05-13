@@ -487,6 +487,75 @@ def uplift_quant(graph):
         clear_redundant_nodes(graph)
 
 
+def uplift_quant_through_concat(graph):
+    '''Convert x1/x2/...->Concat->QuantizeLinear to the following pattern so that
+    QuantizeLinear can merge with other nodes before Concat(x1/x2/...):
+          x1             x2           ...
+          |              |            ...
+    QuantizeLinear QuantizeLinear     ...
+               \         |           /
+               Concat(quantized)
+    '''
+    if not graph._attr.get('quantize', False):
+        return
+    matched = False
+    matches = two_nodes_matcher(graph, 'Concat', 'QuantizeLinear')
+    for m in matches:
+        float_op, quant = m['begin'], m['end']
+        float_obj = NodeWrap(graph, float_op)['object']
+        quant_obj = NodeWrap(graph, quant)['object']
+        if float_obj is None or quant_obj is None:
+            ERROR('[Parser]: Meets invalid nodes in uplift_quant_through_concat!')
+            continue
+        float_out_edges = graph.sorted_out_edges(float_op, data=True)
+        if len(float_out_edges) != 1:
+            continue
+        quant_in_edges = graph.sorted_in_edges(quant, data=True)
+        if len(quant_in_edges) not in (2, 3):
+            ERROR('[Parser]: Meets invalid QuantizeLinear Op(%s) in uplift_quant_through_concat!' % quant)
+            continue
+        if any(e[2]['tensor'].value is None for e in quant_in_edges[1:]) \
+                or any(not e[2]['tensor'].is_const for e in quant_in_edges[1:]):
+            continue
+        matched = True
+        quant_attr = quant_obj.copied_attr()
+        y_scale_val, y_zp_val, axis = quant_obj.y_scale, quant_obj.y_zero_point, quant_obj.axis
+        y_scale, _, y_scale_in_attr = quant_in_edges[1]
+        y_zp, y_zp_in_attr = None, None
+        if len(quant_in_edges) == 3:
+            y_zp, _, y_zp_in_attr = quant_in_edges[2]
+        quant_out_edges = graph.sorted_out_edges(quant, data=True)
+        float_in_edges = graph.sorted_in_edges(float_op, data=True)
+        graph.remove_edges_from(quant_in_edges + quant_out_edges + float_in_edges)
+        for idx, (src, _, in_attr) in enumerate(float_in_edges):
+            pre_quant = get_valid_node_name(graph, src + '_quant' + str(idx))
+            src_out_attr = copy.deepcopy(in_attr)
+            src_out_attr.update({'dst_in_port': 0})
+            graph.add_edge(src, pre_quant, **src_out_attr)
+            graph.add_edge(y_scale, pre_quant, **y_scale_in_attr)
+            if y_zp is not None:
+                graph.add_edge(y_zp, pre_quant, **y_zp_in_attr)
+            in_attr.update({'src_out_port': 0})
+            in_attr['tensor'].dtype = str(y_zp_val.dtype)
+            in_attr['tensor'].scale_zp = (y_scale_val, y_zp_val)
+            in_attr['tensor'].activation_quantization_axis = axis
+            graph.add_edge(pre_quant, float_op, **in_attr)
+            pre_quant_attr = copy.deepcopy(quant_attr)
+            pre_quant_attr.update({'name': pre_quant})
+            NodeWrap(graph, pre_quant).replace_obj('QuantizeLinear', pre_quant_attr)
+        for _, dst, out_attr in quant_out_edges:
+            out_attr['tensor'].dtype = str(y_zp_val.dtype)
+            out_attr['tensor'].scale_zp = (y_scale_val, y_zp_val)
+            out_attr['tensor'].activation_quantization_axis = axis
+            graph.add_edge(float_op, dst, **out_attr)
+        float_obj.quantize = True
+        if quant in graph._attr['output_names']:
+            index = graph._attr['output_names'].index(quant)
+            graph._attr['output_names'][index] = float_op
+    if matched:
+        clear_redundant_nodes(graph)
+
+
 def merge_qconv(graph):
     if not graph._attr.get('quantize', False):
         return
