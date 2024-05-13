@@ -1467,6 +1467,9 @@ def apply_preprocess_plugin(graph):
 
 
 def merge_same_op_at_out_port(graph, op_types=['ArmTranspose', 'ArmReshape']):
+    '''Merge ANY->Transpose/Reshape/others(*n) to ANY->Transpose/Reshape/others(*1) if other
+    inputs and attrs of n Transpose/Reshape/others nodes are same.
+    '''
     matches = single_node_matcher(graph, {})
     for m in matches:
         node = m['target']
@@ -1481,15 +1484,12 @@ def merge_same_op_at_out_port(graph, op_types=['ArmTranspose', 'ArmReshape']):
         out_edges = graph.sorted_out_edges(node, keys=True, data=True)
         if len(out_edges) < 2:
             continue
-        if node_obj.type == 'QuantizeLinear':
-            in_edges = graph.sorted_in_edges(node, data=True)
-            if any(e[2]['tensor'].value is None for e in in_edges[1:]) \
-                    or any(not e[2]['tensor'].is_const for e in in_edges[1:]):
-                continue
         for p in out_ports:
             cur_p_edges = [e for e in out_edges if (e[3]['src_out_port'] == p and graph.has_node(
                 e[1]) and NodeWrap(graph, e[1])['object'] is not None)]
             if len(cur_p_edges) < 2:
+                continue
+            if any(e[3]['dst_in_port'] != 0 for e in cur_p_edges):
                 continue
             for op in op_types:
                 cur_type_edges = [e for e in cur_p_edges if (graph.has_node(e[1]) and NodeWrap(
@@ -1507,6 +1507,12 @@ def merge_same_op_at_out_port(graph, op_types=['ArmTranspose', 'ArmReshape']):
                     if any((cur_objs[0].to != obj.to or cur_objs[0].saturate != obj.saturate) for obj in cur_objs[1:]):
                         continue
                 elif op == 'QuantizeLinear':
+                    quant_nodes = [e[1] for e in cur_p_edges]
+                    for quant_node in quant_nodes:
+                        quant_in_edges = graph.sorted_in_edges(quant_node, data=True)
+                        if any(e[2]['tensor'].value is None for e in quant_in_edges[1:]) \
+                                or any(not e[2]['tensor'].is_const for e in quant_in_edges[1:]):
+                            continue
                     if any((cur_objs[0].axis != obj.axis or not FLOAT_EQUAL(cur_objs[0].y_scale, obj.y_scale)
                             or cur_objs[0].y_zero_point != obj.y_zero_point) for obj in cur_objs[1:]):
                         continue
