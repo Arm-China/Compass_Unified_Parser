@@ -701,7 +701,7 @@ class OpHasOneOutPort(Op):
                     if tensor_data is not None:
                         d['tensor'].shape = d['tensor'].value.shape
                         d['tensor'].is_const = is_const
-                        if not self.quantize:
+                        if not self.quantize or d['tensor'].dtype is None:
                             d['tensor'].dtype = str(d['tensor'].value.dtype)
                 else:
                     d['tensor'] = Tensor(value=tensor_data)
@@ -755,7 +755,7 @@ class OpHasMultipleOutPorts(Op):
                             if t is not None:
                                 d['tensor'].shape = d['tensor'].value.shape
                                 d['tensor'].is_const = is_const
-                                if not self.quantize:
+                                if not self.quantize or d['tensor'].dtype is None:
                                     d['tensor'].dtype = str(d['tensor'].value.dtype)
                         else:
                             d['tensor'] = Tensor(value=t, is_const=is_const)
@@ -808,7 +808,7 @@ class OpHasVariableOutPorts(Op):
                             d['src_out_port'])]
                         d['tensor'].shape = d['tensor'].value.shape
                         d['tensor'].is_const = is_const
-                        if not self.quantize:
+                        if not self.quantize or d['tensor'].dtype is None:
                             d['tensor'].dtype = str(d['tensor'].value.dtype)
                     else:
                         d['tensor'] = Tensor(
@@ -819,7 +819,7 @@ class OpHasVariableOutPorts(Op):
                         d['tensor'].value = tensor_data_list[0]
                         d['tensor'].shape = d['tensor'].value.shape
                         d['tensor'].is_const = is_const
-                        if not self.quantize:
+                        if not self.quantize or d['tensor'].dtype is None:
                             d['tensor'].dtype = str(d['tensor'].value.dtype)
                     else:
                         d['tensor'] = Tensor(value=tensor_data_list[0])

@@ -19,6 +19,10 @@ def fuse_weights_const(graph):
         src_obj = NodeWrap(graph, src_name)['object']
         if src_obj.type in ('Constant', 'TfConst'):
             data = src_obj.value
+        elif src_obj.type == 'DequantizeLinear' and edge_attr['tensor'].is_const:
+            input_tensors = src_obj.get_input_tensors()
+            data = None if len(input_tensors) < 1 else input_tensors[0]
+            edge_attr['tensor'].scale_zp = [src_obj.x_scale, src_obj.x_zero_point]
         elif (edge_attr.get('tensor', None) is not None and edge_attr['tensor'].is_const):
             data = edge_attr['tensor'].value
         else:
@@ -55,6 +59,7 @@ def fuse_weights_const(graph):
                             if len(edge_attr['tensor'].scale_zp) == 2:
                                 node_obj.weights_scale_zp = list(
                                     edge_attr['tensor'].scale_zp)
+                                node_obj.quantize = True
                         matched = True
                         graph.remove_edge(src_name, node_name, key=k)
                     elif i == biases_in_port and isinstance(data, np.ndarray):
@@ -66,6 +71,7 @@ def fuse_weights_const(graph):
                             if len(edge_attr['tensor'].scale_zp) == 2:
                                 node_obj.biases_scale_zp = list(
                                     edge_attr['tensor'].scale_zp)
+                                node_obj.quantize = True
                         matched = True
                         graph.remove_edge(src_name, node_name, key=k)
                 except Exception as e:
@@ -84,6 +90,7 @@ def fuse_weights_const(graph):
                         if len(edge_attr['tensor'].scale_zp) == 2:
                             node_obj.weights_scale_zp = list(
                                 edge_attr['tensor'].scale_zp)
+                            node_obj.quantize = True
                     matched = True
                     graph.remove_edge(src_name, node_name, key=k)
     if matched:
@@ -650,11 +657,8 @@ def merge_qconv(graph):
                 continue
             biases = b_dequant_in_edges[0][2]['tensor'].value
         else:
-            b_scale = w_scale * x_scale
-            b_zp = np.zeros_like(b_scale, dtype=np.int32)
-            biases = np.round(obj_dict['bias'].value / b_scale)
-            zp_dtype = y_zp.dtype
-            biases = np.clip(biases, np.iinfo(zp_dtype).min, np.iinfo(zp_dtype).max).astype(zp_dtype)
+            b_scale, b_zp = None, None
+            biases = obj_dict['bias'].value
 
         matched = True
         new_in_attr = copy.deepcopy(in_attr)
@@ -678,24 +682,30 @@ def merge_qconv(graph):
         conv_attr = obj_dict['conv'].copied_attr()
         conv_attr.update({'quantize': True})
         if obj_dict['conv'].type == 'Conv':
-            op_type = 'QLinearConv'
-            conv_attr.update({'opset_version': 10})
-            insert_constant(graph, m['conv'] + '_x_scale',
-                            x_scale, m['conv'], in_port=1, data_format='NHWC')
-            insert_constant(graph, m['conv'] + '_x_zero_point',
-                            x_zp, m['conv'], in_port=2, data_format='NHWC')
-            insert_constant(graph, m['conv'] + '_w', weights,
-                            m['conv'], in_port=3, data_format='NHWC')
-            insert_constant(graph, m['conv'] + '_w_scale',
-                            w_scale, m['conv'], in_port=4, data_format='NHWC')
-            insert_constant(graph, m['conv'] + '_w_zero_point',
-                            w_zp, m['conv'], in_port=5, data_format='NHWC')
-            insert_constant(graph, m['conv'] + '_y_scale',
-                            y_scale, m['conv'], in_port=6, data_format='NHWC')
-            insert_constant(graph, m['conv'] + '_y_zero_point',
-                            y_zp, m['conv'], in_port=7, data_format='NHWC')
-            insert_constant(graph, m['conv'] + '_B', biases,
-                            m['conv'], in_port=8, data_format='NHWC')
+            if is_float_bias:
+                op_type = 'Conv'
+                conv_attr.update({'opset_version': 11,
+                                  'weights': weights, 'weights_scale_zp': [w_scale, w_zp],
+                                  'biases': biases, 'biases_scale_zp': [b_scale, b_zp]})
+            else:
+                op_type = 'QLinearConv'
+                conv_attr.update({'opset_version': 10})
+                insert_constant(graph, m['conv'] + '_x_scale',
+                                x_scale, m['conv'], in_port=1, data_format='NHWC')
+                insert_constant(graph, m['conv'] + '_x_zero_point',
+                                x_zp, m['conv'], in_port=2, data_format='NHWC')
+                insert_constant(graph, m['conv'] + '_w', weights,
+                                m['conv'], in_port=3, data_format='NHWC')
+                insert_constant(graph, m['conv'] + '_w_scale',
+                                w_scale, m['conv'], in_port=4, data_format='NHWC')
+                insert_constant(graph, m['conv'] + '_w_zero_point',
+                                w_zp, m['conv'], in_port=5, data_format='NHWC')
+                insert_constant(graph, m['conv'] + '_y_scale',
+                                y_scale, m['conv'], in_port=6, data_format='NHWC')
+                insert_constant(graph, m['conv'] + '_y_zero_point',
+                                y_zp, m['conv'], in_port=7, data_format='NHWC')
+                insert_constant(graph, m['conv'] + '_B', biases,
+                                m['conv'], in_port=8, data_format='NHWC')
         else:
             op_type = 'ConvTranspose'
             conv_attr.update({'opset_version': 11,
