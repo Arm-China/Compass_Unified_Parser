@@ -2367,7 +2367,11 @@ class LiteSEGMENT_SUMOp(OpHasOneOutPort, TfliteOp):
 class LiteSELECTOp(OpHasOneOutPort, TfliteOp):
     @classmethod
     def attributes(cls):
-        return {1: {}, 2: {}}
+        return {1: {},
+                2: {},  # support int8
+                3: {},  # support 5d
+                4: {},  # support uint32
+                }
 
     def __init__(self, graph, attr_dict=None):
         super(LiteSELECTOp, self).__init__(graph, attr_dict)
