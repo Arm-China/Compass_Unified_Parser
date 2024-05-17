@@ -16,11 +16,7 @@ from .pattern_match import single_node_matcher
 from ..ops.op import InputLikeOp
 from ..ops.common_ops import UndefinedOp
 from ..common.defs import Tensor
-from ..logger import INFO, DEBUG, WARN, ERROR, FATAL
-try:
-    from AIPUBuilder import __release__
-except ImportError:
-    __release__ = True
+from ..logger import INFO, DEBUG, WARN, ERROR, FATAL, WARN_EXCEPTION
 
 
 def cal_path_length(g, source, target):
@@ -132,7 +128,7 @@ def infer(graph, partial=False, chosen_list=None):
                     if not edge_tensor.is_const:
                         graph._attr['tensor_counter'][hash(edge_tensor)] += 1
 
-        log_func = DEBUG if partial else (WARN if __release__ else ERROR)
+        log_func = DEBUG if partial else WARN_EXCEPTION
         for node_name in nodes_list:
 
             if chosen_list and node_name not in chosen_list:

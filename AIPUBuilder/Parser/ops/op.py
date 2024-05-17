@@ -13,7 +13,7 @@ import numpy as np
 import torch
 import tensorflow as tf
 from ..common.defs import TensorType, Tensor, AttrType, Attribute, Framework, FLOAT_EQUAL
-from ..logger import INFO, DEBUG, WARN, ERROR, FATAL
+from ..logger import INFO, DEBUG, WARN, ERROR, FATAL, WARN_EXCEPTION
 from ..common.utils import num_list_to_string, string_list_to_string, extend_lists
 
 
@@ -2575,7 +2575,7 @@ class TfliteOp(Op):
         super(TfliteOp, self).__init__(graph, attr_dict)
         self.update_attributes(TfliteOp, attr_dict)
         if self.opcode_version not in type(self).attributes():
-            WARN('[Parser]: Node(%s) Opcode Version %d is not implemented for %s! But will try to proceed.' % (
+            WARN_EXCEPTION('[Parser]: Node(%s) Opcode Version %d is not implemented for %s! But will try to proceed.' % (
                 self.name, self.opcode_version, type(self).__name__))
 
     @property
