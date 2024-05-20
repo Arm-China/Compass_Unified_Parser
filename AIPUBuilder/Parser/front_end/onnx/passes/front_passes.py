@@ -193,11 +193,43 @@ def decompose_loop(graph, params):
                     pass
 
             graph.remove_edges_from(in_edges)
-            # TODO: Condition False
             if not condition:
-                for index, (_, dst, out_attr) in enumerate(loop_out_edges):
+                loop_out_ports = loop_obj.get_out_ports()
+                if any(p >= 2 for p in loop_out_ports) \
+                        or (1 in loop_out_ports and len(in_edges) != 3):
+                    WARN('[Parser]: Meets unsupported Loop Node(%s) in decompose_const_loop!' % loop)
+                    continue
+                const = None
+                if 1 in loop_out_ports:
+                    v_initial, _, v_initial_in_attr = in_edges[2]
+                    shape = get_valid_node_name(graph, loop + '_shape')
+                    shape_in_attr = copy.deepcopy(v_initial_in_attr)
+                    shape_in_attr.update({'dst_in_port': 0})
+                    graph.add_edge(v_initial, shape, **shape_in_attr)
+                    concat = get_valid_node_name(graph, shape + '_concat')
+                    graph.add_edge(shape, concat, **{'src_out_port': 0, 'dst_in_port': 1})
+                    insert_constant(graph, concat + '_zero', np.array([0], dtype=np.int64), concat, in_port=0)
+                    const = get_valid_node_name(graph, shape + '_const')
+                    graph.add_edge(concat, const)
+                    NodeWrap(graph, shape).replace_obj('Shape', {'name': shape, 'opset_version': 1})
+                    NodeWrap(graph, concat).replace_obj('Concat', {'name': concat, 'opset_version': 13, 'axis': 0})
+                    NodeWrap(graph, const).replace_obj('ConstantOfShape', {'name': const, 'opset_version': 9})
+                for _, dst, out_attr in loop_out_edges:
                     graph.remove_edge(loop, dst)
-                    graph.add_edge(in_edges[-1][0], dst, **out_attr)
+                    if out_attr['src_out_port'] == 0:
+                        graph.add_edge(in_edges[2][0], dst, **out_attr)
+                    else:
+                        const_out_attr = copy.deepcopy(out_attr)
+                        const_out_attr.update({'src_out_port': 0})
+                        graph.add_edge(const, dst, **const_out_attr)
+                if loop in graph._attr['output_names']:
+                    index = graph._attr['output_names'].index(loop)
+                    if in_edges[-1][0] not in graph._attr['output_names']:
+                        graph._attr['output_names'][index] = in_edges[-1][0]
+                    else:
+                        graph._attr['output_names'].pop(index)
+                    if const is not None:
+                        WARN('[Parser]: The output of Node(%s) has zero shape, which will be removed from graph!' % loop)
                 continue
 
             last_loop_res = subgraph_main_out
@@ -211,7 +243,7 @@ def decompose_loop(graph, params):
                             # reset iter_num in first subgraph
                             if sub_src == in_edges[0][0] and graph.nodes[sub_src]['op'] in ['Dummy', 'Constant']:
                                 cur_count_value = np.array(
-                                    i, np.dtype(np.int32))
+                                    i, np.dtype(np.int64))
                                 in_attr['tensor'].value = cur_count_value
                                 NodeWrap(graph, sub_src).replace_obj('Constant', {
                                     'name': sub_src, 'opset_version': 9, 'value': cur_count_value})
@@ -250,7 +282,7 @@ def decompose_loop(graph, params):
                                     new_const = get_valid_node_name(
                                         graph, src + name_suffix)
                                     cur_count_value = np.array(
-                                        i, np.dtype(np.int32))
+                                        i, np.dtype(np.int64))
                                     new_in_attr = copy.deepcopy(in_attr)
                                     new_in_attr['tensor'].value = cur_count_value
                                     new_in_attr['tensor'].name = new_const
