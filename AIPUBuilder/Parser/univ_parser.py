@@ -139,8 +139,7 @@ def univ_parser(params):
 
             tmp_tensors_dir = '.%s_tmp_tensors' % params.get('model_name', '')
             tmp_tensors_path = os.path.join(output_dir, tmp_tensors_dir)
-            if not os.path.exists(tmp_tensors_path):
-                os.mkdir(tmp_tensors_path)
+            os.makedirs(tmp_tensors_path, exist_ok=True)  # folder could possibly be created by other processes
             params['tmp_tensors_path'] = tmp_tensors_path
 
             import tensorflow as tf
