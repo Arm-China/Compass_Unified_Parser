@@ -2153,8 +2153,10 @@ def convert_torch_to_onnx(model_path, params):
             parallel_model = nn.DataParallel(model)
             # Fail to convert because "Expected all tensors to be on the same device, but found at least two devices"
             # See https://github.com/pytorch/pytorch/issues/102947
-            # The issue is fixed in https://github.com/pytorch/pytorch/pull/101329 (>= torch 2.1.0)
-            do_constant_folding = False if torch_version < version_to_tuple('2.1.0') else True
+            # The issue is partially fixed in https://github.com/pytorch/pytorch/pull/101329 (>= torch 2.1.0)
+            # # do_constant_folding = False if torch_version < version_to_tuple('2.1.0') else True
+            # Above error can still be seen in latest torch version so keep disabling it.
+            do_constant_folding = False
             _export_to_onnx(parallel_model.module, input_tensors, onnx_model_path,
                             input_names, output_names, onnx_opset_version, do_constant_folding)
         except Exception as e:
