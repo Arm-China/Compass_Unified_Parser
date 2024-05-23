@@ -542,6 +542,54 @@ def remove_redundant_transpose2(graph):
         clear_redundant_nodes(graph)
 
 
+def remove_redundant_transpose3(graph):
+    '''Remove Transpose nodes from the following patterns if their perm are inversed.
+    sink_single_transpose won't work for this case because the first Transpose has more than 1 children.
+        x -> Transpose -> Quantize(or others) -> Transpose
+                     \--> (other children)
+    Merge to:
+        x -> Quantize(or others)
+         \-> Transpose --> (other children)
+    '''
+    matched = False
+    matches = matched_patterns(graph,
+                               nodes=[('trans1', {'op': 'ArmTranspose', 'unique': False}),
+                                      ('unaware', {'op': ['ArmQuantize', 'ArmDeQuantize']}),  # or other ops
+                                      ('trans2', {'op': 'ArmTranspose'})],
+                               edges=[('trans1', 'unaware'),
+                                      ('unaware', 'trans2')]
+                               )
+    for m in matches:
+        trans1, trans2, unaware = m['trans1'], m['trans2'], m['unaware']
+        trans1_obj, trans2_obj, unaware_obj = [NodeWrap(
+            graph, name)['object'] for name in [trans1, trans2, unaware]]
+        trans1_in_edges = graph.sorted_in_edges(trans1, data=True)
+        if trans1_obj is None or trans2_obj is None or unaware_obj is None \
+                or len(trans1_obj.perm) != len(trans2_obj.perm) \
+                or len(trans1_in_edges) < 1:
+            ERROR('[Parser]: Meets invalid nodes in remove_redundant_transpose3!')
+            continue
+        merged_perm = ArmTransposeOp.cal_merged_perm(trans1_obj.perm, trans2_obj.perm)
+        if merged_perm != list(range(len(merged_perm))):
+            continue
+        unaware_out_edges = graph.sorted_out_edges(unaware)
+        if len(unaware_out_edges) != 1:
+            continue
+        matched = True
+        unaware_in_edges = graph.sorted_in_edges(unaware)
+        trans2_out_edges = graph.sorted_out_edges(trans2, data=True)
+        graph.remove_edges_from(unaware_in_edges + unaware_out_edges + trans2_out_edges)
+        src, _, in_attr = trans1_in_edges[0]
+        graph.add_edge(src, unaware, **in_attr)
+        for _, dst, out_attr in trans2_out_edges:
+            graph.add_edge(unaware, dst, **out_attr)
+        if trans2 in graph._attr['output_names']:
+            index = graph._attr['output_names'].index(trans2)
+            graph._attr['output_names'][index] = unaware
+    if matched:
+        clear_redundant_nodes(graph)
+
+
 def remove_redundant_cast(graph):
     cast_types = ['Cast', 'ArmCast']
     cast_combinations = itertools.product(cast_types, cast_types)

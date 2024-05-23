@@ -23,7 +23,7 @@ from .common_passes import remove_node_safely, insert_cast, insert_cast_after, i
     insert_reshape, insert_reshape_after, insert_constant, \
     insert_slice, insert_transpose, remove_redundant_bn, remove_redundant_reshape, remove_redundant_transpose, \
     remove_redundant_transpose2, remove_useless_op, fuse_const, insert_gather, remove_redundant_cast, \
-    insert_transpose_after, merge_same_op_at_out_port
+    insert_transpose_after, merge_same_op_at_out_port, remove_redundant_transpose3
 from ....plugin_loader import PARSER_OP_DICT
 
 
@@ -5698,6 +5698,7 @@ def back_passes(graph, params):
                           ]:
                     f(graph)
                     remove_redundant_transpose(graph)
+                    remove_redundant_transpose3(graph)
                     remove_redundant_reshape(graph, 'ArmReshape')
                     remove_useless_op(graph, ['ArmReshape', 'ArmTranspose'])
                 if len(nodes_num_list) < 4:
