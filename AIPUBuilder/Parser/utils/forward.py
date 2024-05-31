@@ -143,6 +143,7 @@ def onnx_forward(model_path, feed_dict, output_names=None, save_output=True):
         output_names = model_output_names
         output_dict = {name: None for name in output_names}
 
+    new_model_folder = ''
     if output_names != model_output_names:
         assert isinstance(output_names, list), 'Argument output_names should be a list!'
         model = onnx.load(model_path)
@@ -161,8 +162,17 @@ def onnx_forward(model_path, feed_dict, output_names=None, save_output=True):
             output_dict = {name: None for name in output_names}
         for output in output_names:
             model.graph.output.extend([onnx.ValueInfoProto(name=output)])
-            print("Model add output %s" % output)
-        sess = rt.InferenceSession(model.SerializeToString())
+            INFO('Model add output %s' % output)
+        if model.ByteSize() < onnx.checker.MAXIMUM_PROTOBUF:
+            sess = rt.InferenceSession(model.SerializeToString())
+        else:  # protobuf size exceeds limitation
+            model_name = model_path.rsplit('.', 1)[0].rsplit('/', 1)[-1]
+            new_model_folder = '.%s_tmp_onnx' % model_name
+            os.makedirs(new_model_folder, exist_ok=True)
+            new_model_path = os.path.join(new_model_folder, 'new.onnx')
+            onnx.save_model(model, new_model_path,
+                            save_as_external_data=True, all_tensors_to_one_file=False, convert_attribute=True)
+            sess = rt.InferenceSession(new_model_path)
 
     model_inputs = sess.get_inputs()
     input_names_from_feed_dict = list(feed_dict.keys())
@@ -182,7 +192,7 @@ def onnx_forward(model_path, feed_dict, output_names=None, save_output=True):
     try:
         output_data = sess.run(output_names, updated_feed_dict)
     except Exception as e:
-        ERROR("Fail to run because %s" % str(e))
+        ERROR('Fail to run because %s' % str(e))
 
     for out_name, out_data in zip(output_names, output_data):
         if isinstance(out_data, list):
@@ -190,6 +200,10 @@ def onnx_forward(model_path, feed_dict, output_names=None, save_output=True):
             out_data = out_data[0]
         if out_name in output_dict:
             output_dict[out_name] = out_data
+
+    if new_model_folder:
+        # INFO('Remove tmp folder %s' % new_model_folder)
+        os.system('rm -rf %s' % new_model_folder)
 
     if save_output:
         save_data_to_file('onnx_outputs.npy', output_dict)
