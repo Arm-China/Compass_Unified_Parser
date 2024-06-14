@@ -1405,8 +1405,18 @@ def apply_pattern_subgraph_plugin(graph):
         innodes, outnodes = get_io_nodes(
             plugin.pattern_nodes, plugin.pattern_edges)
 
-        nodes = [(name, {'op': get_op_name(optype)})
-                 for name, optype in plugin.pattern_nodes]
+        nodes = []
+        for name, optype in plugin.pattern_nodes:
+            if isinstance(optype, dict):
+                assert 'op' in optype, 'key: op MUST be set in node'
+                if 'unique' in optype:
+                    nodes.append((name, {'op': get_op_name(optype['op']),
+                                         'unique': bool(optype['unique'])}))
+                else:
+                    nodes.append((name, {'op': get_op_name(optype['op'])}))
+            else:
+                nodes.append((name, {'op': get_op_name(optype)}))
+
         matches = matched_patterns(graph,
                                    nodes=nodes,
                                    edges=plugin.pattern_edges)
