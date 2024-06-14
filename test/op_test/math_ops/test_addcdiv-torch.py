@@ -4,8 +4,9 @@
 
 import torch
 import numpy as np
-from utils.run import run_parser
 import pytest
+import os
+from utils.run import run_parser
 
 
 class addcdiv_model_default(torch.nn.Module):
@@ -59,3 +60,7 @@ def test_addcdiv(input_shapes, value):
     create_addcdiv_model(model_path, value)
     exit_status = run_parser(model_path, feed_dict)
     assert exit_status
+
+
+if __name__ == '__main__':
+    pytest.main([__file__])
