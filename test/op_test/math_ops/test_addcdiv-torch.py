@@ -63,4 +63,5 @@ def test_addcdiv(input_shapes, value):
 
 
 if __name__ == '__main__':
-    pytest.main([__file__])
+    ret = pytest.main(['-x', __file__])
+    assert ret == 0  # sanity_2.sh need to check the exit code
