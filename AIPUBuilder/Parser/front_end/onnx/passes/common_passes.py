@@ -1297,6 +1297,8 @@ def merge_pattern_to_plugin(graph, plugin_node_optype, innodes, outnodes, match=
         innode_in_edges = graph.sorted_in_edges(innode, data=True)
         graph.remove_edges_from(innode_in_edges)
         for src, _, in_attr in innode_in_edges:
+            if match is not None and src in list(match.values()):
+                continue
             add_plugin_in_edge(src, in_attr, in_port)
             input_map.append(in_port)
             in_port += 1
@@ -1309,6 +1311,8 @@ def merge_pattern_to_plugin(graph, plugin_node_optype, innodes, outnodes, match=
         graph.remove_edges_from(outnode_in_edges)
         for src, _, in_attr in outnode_in_edges:
             if any((node == src or has_path(graph, node, src)) for node in innodes):
+                continue
+            if match is not None and src in list(match.values()):
                 continue
             add_plugin_in_edge(src, in_attr, in_port)
             input_map.append(in_port)
@@ -1386,25 +1390,34 @@ def apply_pattern_subgraph_plugin(graph):
             framework in optype_prefix else optype
         return op_name
 
-    def get_io_nodes(nodes, edges):
-        has_successors = set()
-        has_precusors = set()
-        for edge in edges:
-            has_successors.add(edge[0])
-            has_precusors.add(edge[1])
-        inputs = []
-        outputs = []
-        for node in nodes:
-            if node[0] not in has_precusors:
-                inputs.append(node[0])
-            if node[0] not in has_successors:
-                outputs.append(node[0])
-        return inputs, outputs
+    def get_io_nodes(nodes, edges, graph, match):
+        def get_edges_num(n_name, _edges, edge_type):
+            idx = 0 if edge_type == 'out' else 1
+            edg_num = 0
+            for e in _edges:
+                if e[idx] == n_name:
+                    edg_num += 1
+            return edg_num
+
+        _in_nodes = []
+        _out_nodes = []
+        for n in nodes:
+            node_in_edges = graph.sorted_in_edges(match[n[0]], data=True)
+            if node_in_edges:
+                pattern_in_edge_num = get_edges_num(n[0], edges, 'in')
+                if len(node_in_edges) > pattern_in_edge_num:
+                    _in_nodes.append(match[n[0]])
+
+            node_out_edges = graph.sorted_out_edges(match[n[0]], data=True)
+            _unique = n[1]['unique'] if 'unique' in n[1] else True
+            if node_out_edges:
+                pattern_out_edge_num = get_edges_num(n[0], edges, 'out')
+                if len(node_out_edges) > pattern_out_edge_num and _unique:
+                    _out_nodes.append(match[n[0]])
+
+        return _in_nodes, _out_nodes
 
     for plugin in pattern_subgraph:
-        innodes, outnodes = get_io_nodes(
-            plugin.pattern_nodes, plugin.pattern_edges)
-
         nodes = []
         for name, optype in plugin.pattern_nodes:
             if isinstance(optype, dict):
@@ -1421,12 +1434,12 @@ def apply_pattern_subgraph_plugin(graph):
                                    nodes=nodes,
                                    edges=plugin.pattern_edges)
         for m in matches:
-            innodes = [m[i] for i in innodes]
-            outnodes = [m[i] for i in outnodes]
+            in_nodes, out_nodes = get_io_nodes(
+                plugin.pattern_nodes, plugin.pattern_edges, graph, m)
             merge_pattern_to_plugin(
-                graph, plugin.op_type, innodes, outnodes, m)
+                graph, plugin.op_type, in_nodes, out_nodes, m)
             DEBUG('[Parser]: pattern based subgraph plugin applied: {[%s]->[%s]} merged to %s' %
-                  (','.join([str(n) for n in innodes]), ','.join([str(n) for n in outnodes]), plugin.op_type))
+                  (','.join([str(n) for n in in_nodes]), ','.join([str(n) for n in out_nodes]), plugin.op_type))
 
 
 def apply_named_subgraph_plugin(graph):
