@@ -1281,13 +1281,15 @@ def merge_pattern_to_plugin(graph, plugin_node_optype, innodes, outnodes, match=
         new_in_attr.update({'dst_in_port': in_port})
         graph.add_edge(src, plugin_node, **new_in_attr)
 
+    cutoff = None if match is None else len(match)
+
     all_nodes = set()
     for src in innodes:
         for dst in outnodes:
             if src == dst:
                 all_nodes.add(src)
                 continue
-            for path in all_simple_paths(graph, src, dst):
+            for path in all_simple_paths(graph, src, dst, cutoff=cutoff):
                 all_nodes.update(path)
 
     in_port = 0
