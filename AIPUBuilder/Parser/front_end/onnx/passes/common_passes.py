@@ -1292,7 +1292,7 @@ def merge_pattern_to_plugin(graph, plugin_node_optype, innodes, outnodes, match=
             for path in all_simple_paths(graph, src, dst, cutoff=cutoff):
                 all_nodes.update(path)
 
-    in_port = 0
+    inp_tensor_names = []
     input_index_map = []
     for innode in innodes:
         input_map = []
@@ -1301,12 +1301,17 @@ def merge_pattern_to_plugin(graph, plugin_node_optype, innodes, outnodes, match=
         for src, _, in_attr in innode_in_edges:
             if match is not None and src in list(match.values()):
                 continue
+            if (src, in_attr['src_out_port']) not in inp_tensor_names:
+                inp_tensor_names.append((src, in_attr['src_out_port']))
+            else:
+                continue
+            in_port = len(inp_tensor_names) - 1
             add_plugin_in_edge(src, in_attr, in_port)
             input_map.append(in_port)
-            in_port += 1
-        input_index_map.append(input_map)
+        if input_map:
+            input_index_map.append(input_map)
 
-    out_port = 0
+    out_tensor_names = []
     for outnode in outnodes:
         input_map = []
         outnode_in_edges = graph.sorted_in_edges(outnode, data=True)
@@ -1316,17 +1321,23 @@ def merge_pattern_to_plugin(graph, plugin_node_optype, innodes, outnodes, match=
                 continue
             if match is not None and src in list(match.values()):
                 continue
+            if (src, in_attr['src_out_port']) not in inp_tensor_names:
+                inp_tensor_names.append((src, in_attr['src_out_port']))
+            else:
+                continue
+            in_port = len(inp_tensor_names) - 1
             add_plugin_in_edge(src, in_attr, in_port)
             input_map.append(in_port)
-            in_port += 1
-        input_index_map.append(input_map)
+        if input_map:
+            input_index_map.append(input_map)
         outnode_out_edges = graph.sorted_out_edges(outnode, data=True)
         graph.remove_edges_from(outnode_out_edges)
-        for _, dst, out_attr in outnode_out_edges:
+        for out, dst, out_attr in outnode_out_edges:
+            if (out, out_attr['dst_in_port']) not in out_tensor_names:
+                out_tensor_names.append((out, out_attr['dst_in_port']))
             new_out_attr = copy.deepcopy(out_attr)
-            new_out_attr.update({'src_out_port': out_port})
+            new_out_attr.update({'src_out_port': len(out_tensor_names) - 1})
             graph.add_edge(plugin_node, dst, **new_out_attr)
-            out_port += 1
 
     # get attributes before remove it
     attr_names_map = {}
@@ -1380,6 +1391,8 @@ def apply_pattern_subgraph_plugin(graph):
     pattern_subgraph = list(pattern_subgraph)
     pattern_subgraph.sort(key=lambda x: x.priority, reverse=True)
 
+    plugin_ops = []
+
     def get_op_name(optype):
         optype_prefix = {
             Framework.TFLITE: lambda x: 'Lite' + x,
@@ -1390,6 +1403,8 @@ def apply_pattern_subgraph_plugin(graph):
         framework = graph._attr.get('framework', Framework.NONE)
         op_name = optype_prefix[framework](optype) if \
             framework in optype_prefix else optype
+        if optype in plugin_ops:
+            op_name = f'Plugin{optype}'
         return op_name
 
     def get_io_nodes(nodes, edges, graph, match):
@@ -1420,6 +1435,7 @@ def apply_pattern_subgraph_plugin(graph):
         return _in_nodes, _out_nodes
 
     for plugin in pattern_subgraph:
+        plugin_ops.append(plugin.op_type)
         nodes = []
         for name, optype in plugin.pattern_nodes:
             if isinstance(optype, dict):
