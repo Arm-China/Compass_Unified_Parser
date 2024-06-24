@@ -261,7 +261,7 @@ def univ_parser(params):
 
                 try:
                     convert_64bit_const(graph)
-                    infer(graph)
+                    infer(graph, final=True)
                     remove_useless_op(graph, ['ArmCast'])
                 except Exception as e:
                     ERROR('[Parser]: Meets exception in last infer (%s)!' % str(e))

@@ -14,7 +14,7 @@ from networkx.algorithms import has_path, all_simple_paths, shortest_path_length
 from .graph import Graph, SubGraph
 from .pattern_match import single_node_matcher
 from ..ops.op import InputLikeOp
-from ..ops.common_ops import UndefinedOp
+from ..ops.common_ops import UndefinedOp, PluginOp
 from ..common.defs import Tensor
 from ..logger import INFO, DEBUG, WARN, ERROR, FATAL, WARN_EXCEPTION
 
@@ -104,7 +104,7 @@ def clear_redundant_nodes(g, outputs=None):
         ERROR('[Parser]: Can not proceed without output names in clear_redundant_nodes!')
 
 
-def infer(graph, partial=False, chosen_list=None):
+def infer(graph, partial=False, chosen_list=None, final=False):
     if chosen_list is None:
         chosen_list = list()
     ''' Infer all nodes of the graph.   '''
@@ -158,6 +158,8 @@ def infer(graph, partial=False, chosen_list=None):
                         node_obj.infer_shape(infer_data)
                     elif isinstance(node_obj, UndefinedOp):
                         log_func('[Parser]: Meet unsupported op type %s in Node(%s)!' % (node_obj.type, node_name))
+                    elif isinstance(node_obj, PluginOp):
+                        node_obj.infer_shape(final=final)
                     else:
                         node_obj.infer_shape()
                 except Exception as e:
