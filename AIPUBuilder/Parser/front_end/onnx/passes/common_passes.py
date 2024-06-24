@@ -1308,8 +1308,7 @@ def merge_pattern_to_plugin(graph, plugin_node_optype, innodes, outnodes, match=
             in_port = len(inp_tensor_names) - 1
             add_plugin_in_edge(src, in_attr, in_port)
             input_map.append(in_port)
-        if input_map:
-            input_index_map.append(input_map)
+        input_index_map.append(input_map)
 
     out_tensor_names = []
     for outnode in outnodes:
@@ -1328,8 +1327,7 @@ def merge_pattern_to_plugin(graph, plugin_node_optype, innodes, outnodes, match=
             in_port = len(inp_tensor_names) - 1
             add_plugin_in_edge(src, in_attr, in_port)
             input_map.append(in_port)
-        if input_map:
-            input_index_map.append(input_map)
+        input_index_map.append(input_map)
         outnode_out_edges = graph.sorted_out_edges(outnode, data=True)
         graph.remove_edges_from(outnode_out_edges)
         for out, dst, out_attr in outnode_out_edges:
@@ -1394,6 +1392,8 @@ def apply_pattern_subgraph_plugin(graph):
     plugin_ops = []
 
     def get_op_name(optype):
+        if optype in plugin_ops:
+            return f'Plugin{optype}'
         optype_prefix = {
             Framework.TFLITE: lambda x: 'Lite' + x,
             Framework.CAFFE: lambda x: 'Caffe' + x.upper(),
@@ -1403,8 +1403,6 @@ def apply_pattern_subgraph_plugin(graph):
         framework = graph._attr.get('framework', Framework.NONE)
         op_name = optype_prefix[framework](optype) if \
             framework in optype_prefix else optype
-        if optype in plugin_ops:
-            op_name = f'Plugin{optype}'
         return op_name
 
     def get_io_nodes(nodes, edges, graph, match):
