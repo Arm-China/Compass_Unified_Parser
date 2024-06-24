@@ -706,9 +706,16 @@ class PluginOp(OpHasVariableOutPorts, CommonOp):
         in_edges = self._graph.sorted_in_edges(self.name)
         self._graph.remove_edges_from([edge for idx, edge in enumerate(in_edges) if idx in remove_edge_indexes])
 
-    def infer_shape(self):
+    def infer_shape(self, final=False):
         # Do infer_shape only once for plugin
         if len(self.out_tensors) > 0:
+            if final:
+                for i, t in enumerate(self.out_tensors):
+                    if isinstance(t, np.ndarray) and hasattr(t, 'dtype'):
+                        if t.dtype == np.int64:
+                            self.out_tensors[i] = t.astype(np.int32)
+                        elif t.dtype == np.float64:
+                            self.out_tensors[i] = t.astype(np.float32)
             self.set_out_tensor(self.out_tensors)
             return
         super(PluginOp, self).infer_shape()
@@ -724,6 +731,13 @@ class PluginOp(OpHasVariableOutPorts, CommonOp):
             try:
                 DEBUG('[Parser]: Call plugin infer_shape!')
                 out_tensors = self._plugin.infer_shape(inputs)
+                if final:
+                    for i, t in enumerate(out_tensors):
+                        if isinstance(t, np.ndarray) and hasattr(t, 'dtype'):
+                            if t.dtype == np.int64:
+                                out_tensors[i] = t.astype(np.int32)
+                            elif t.dtype == np.float64:
+                                out_tensors[i] = t.astype(np.float32)
             except Exception as e:
                 ERROR('[Parser]: plugin type (%s) infer shape meets error %s! ' %
                       (self.type, str(e)))
