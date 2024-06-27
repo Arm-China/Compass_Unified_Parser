@@ -1726,7 +1726,7 @@ def convert_torch_to_onnx(model_path, params):
                           input_names=input_names,
                           output_names=output_names,
                           opset_version=onnx_opset_version,
-                          training=torch._C._onnx.TrainingMode.PRESERVE,
+                          training=torch.onnx.TrainingMode.PRESERVE,
                           custom_opsets=custom_opsets,
                           do_constant_folding=do_constant_folding)
         return
