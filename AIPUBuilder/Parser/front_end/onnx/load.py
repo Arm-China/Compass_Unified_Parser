@@ -278,7 +278,7 @@ def convert_onnx_to_graph(graph, model_path, params):
             graph._attr['opset_version'] = max([opset_ver] + list(opset_import_map.values()))
             g = model.graph
             if len(g.node) > 0:
-                g_content = get_graph_content(g, model_dir)
+                g_content = get_graph_content(g, model_dir, params=params)
                 const_values = g_content['consts']
                 const_names = g_content['const_names']
                 const_names = {c_info['name']: None for c_info in const_names}

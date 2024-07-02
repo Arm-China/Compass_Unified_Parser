@@ -101,8 +101,7 @@ def read_caffe_model(model_path, proto_path, save_cfg=False, output_names=None):
 
 def read_keras_model(model_path, save_cfg=False, output_names=None):
     import tensorflow as tf
-    load_options = tf.saved_model.LoadOptions(allow_partial_checkpoint=True)
-    model = tf.keras.models.load_model(model_path, compile=False, options=load_options)
+    model = tf.keras.models.load_model(model_path, compile=False)
 
     model_content = model_path
     model_content += '\n--------------- summary ---------------\n'

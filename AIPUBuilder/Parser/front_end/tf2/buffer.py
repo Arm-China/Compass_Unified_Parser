@@ -3,10 +3,11 @@
 
 
 import copy
+import os
+
 import numpy as np
 import tensorflow as tf
 import tensorflow.compat.v1 as tfv1
-from tensorflow.keras import backend as K
 from collections import OrderedDict
 from ...common.defs import FLOAT_EQUAL
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
@@ -156,11 +157,20 @@ def get_node_type(layer):
 
 def get_node_input(layer, input_info_dict):
     assert isinstance(input_info_dict, dict), 'Expect input_info_dict to be a dict!'
-    arg_pos_dict = layer._call_fn_arg_positions
-    arg_defaults_dict = layer._call_fn_arg_defaults
-
     if not input_info_dict:
         return []
+
+    arg_pos_dict = getattr(layer, '_call_fn_arg_positions', {})
+    arg_defaults_dict = getattr(layer, '_call_fn_arg_defaults', {})
+    if not arg_pos_dict:
+        call_spec = getattr(layer, '_call_spec')
+        if call_spec is not None:
+            arg_pos_dict = call_spec.arg_positions
+            defaults = call_spec.full_argspec.defaults
+            if defaults is not None:
+                keys = reversed(call_spec.full_argspec.args)
+                values = reversed(defaults)
+                arg_defaults_dict = {k: v for k, v in zip(keys, values)}
 
     if not arg_pos_dict:
         return [value for _, value in input_info_dict.items()]
@@ -174,6 +184,7 @@ def get_node_input(layer, input_info_dict):
             if isinstance(input_tensors, (list, tuple)):
                 if len(input_tensors) == 0:
                     continue
+                input_tensors_name = [tensor.name for tensor in input_tensors]
             else:
                 if not tf.is_tensor(input_tensors):
                     continue
@@ -181,9 +192,10 @@ def get_node_input(layer, input_info_dict):
                     input_info = input_info_dict['_CONSTANT_VALUE']
                     node_input_info.append(input_info)
                     continue
+                input_tensors_name = [input_tensors.name]
             inbound_layers = layer.inbound_nodes[arg_pos].inbound_layers
             inbound_layers = inbound_layers if isinstance(inbound_layers, (list, tuple)) else [inbound_layers]
-            inbound_nodes = [node.name for node in inbound_layers]
+            inbound_nodes = [node.name for node in inbound_layers][:len(input_tensors_name)]
             for node_name in inbound_nodes:
                 if node_name in input_info_dict:
                     input_info = input_info_dict[node_name]
@@ -281,10 +293,7 @@ def parse_keras(model_path, params):
     nodes_dict, tensors, np_tensors = OrderedDict(), OrderedDict(), OrderedDict()
     input_shapes = params['input_shapes'].copy()
     try:
-        load_options = tf.saved_model.LoadOptions(
-            allow_partial_checkpoint=True)
-        model = tf.keras.models.load_model(
-            model_path, compile=False, options=load_options)
+        model = tf.keras.models.load_model(model_path, compile=False)
     except Exception as e:
         WARN('[Parser]: Reading saved model/h5 file (%s) meets error (%s)!' %
              (model_path, str(e)))
@@ -333,6 +342,7 @@ def parse_keras(model_path, params):
         else:
             outputs.append(layer.output)
     try:
+        from tensorflow.keras import backend as K
         functors = K.function([model.input], outputs)
         outputs_value = functors(feed_model_inputs)
     except Exception as e:

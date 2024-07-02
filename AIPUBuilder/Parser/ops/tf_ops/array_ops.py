@@ -432,8 +432,9 @@ class TfOneHotOp(OpHasAxis, OpHasOneOutPort, TfOp):
     @classmethod
     def attributes(cls):
         return {1: {'axis': {'default': -1},
-                    'on_value': {'type': AttrType.FLOAT, 'default': 1},
-                    'off_value': {'type': AttrType.FLOAT, 'default': 0},
+                    'on_value': {'type': AttrType.TENSOR, 'default': 1},
+                    'off_value': {'type': AttrType.TENSOR, 'default': 0},
+                    'TI': {'type': AttrType.STRING, 'default': None},
                     }
                 }
 
@@ -448,13 +449,13 @@ class TfOneHotOp(OpHasAxis, OpHasOneOutPort, TfOp):
             if item == 'on_value':
                 inputs = self.get_input_tensors()
                 if len(inputs) >= 2:
-                    ret = float(inputs[2].item())
+                    ret = inputs[2].astype(self.TI).item(0) if self.TI else inputs[2].item(0)
                     self.__dict__['_attr'][item].value = ret
 
             elif item == 'off_value':
                 inputs = self.get_input_tensors()
                 if len(inputs) >= 3:
-                    ret = float(inputs[3].item())
+                    ret = inputs[3].astype(self.TI).item(0) if self.TI else inputs[3].item(0)
                     self.__dict__['_attr'][item].value = ret
         except:
             ret = None

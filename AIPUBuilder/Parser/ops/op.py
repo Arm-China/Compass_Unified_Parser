@@ -13,7 +13,7 @@ import numpy as np
 import torch
 import tensorflow as tf
 from ..common.defs import TensorType, Tensor, AttrType, Attribute, Framework, FLOAT_EQUAL
-from ..logger import INFO, DEBUG, WARN, ERROR, FATAL
+from ..logger import INFO, DEBUG, WARN, ERROR, FATAL, WARN_EXCEPTION
 from ..common.utils import num_list_to_string, string_list_to_string, extend_lists
 
 
@@ -151,6 +151,7 @@ class Op(abc.ABC):
                                 'required': True},
                 'cur_version': {'type': AttrType.INT, 'default': 0, 'required': False},
                 'quantize': {'type': AttrType.BOOL, 'default': False, 'options': [0, 1, False, True]},
+                'activation_quantization_axis': {'type': AttrType.INTS, 'default': None},
                 'top_scales': {'type': AttrType.TENSORS, 'default': []},
                 'top_scales_offset': {'type': AttrType.INTS, 'default': []},
                 'top_scales_list': {'type': AttrType.TENSORS, 'default': []},
@@ -438,6 +439,12 @@ class Op(abc.ABC):
                     txt_file.write('layer_top_zp_shape=[%s]\n' % zps_shape)
                     txt_file.write('layer_top_zp_type=[%s]\n' % zps_type)
                     txt_file.write('layer_top_zp_size=[%s]\n' % zps_size)
+                if self.quantize and self.activation_quantization_axis is not None \
+                        and len(self.activation_quantization_axis) == len(top_info[3]):
+                    activation_quantization_axis = [
+                        str(axis) if axis is not None else 'NONE' for axis in self.activation_quantization_axis]
+                    activation_quantization_axis = string_list_to_string(activation_quantization_axis)
+                    txt_file.write('activation_quantization_axis=[%s]\n' % activation_quantization_axis)
         else:
             FATAL(
                 '[Parser]: Invalid file to write properties for Node(%s) in write_attrs!' % (self.name))
@@ -656,11 +663,13 @@ class Op(abc.ABC):
             if len(d['tensor'].min_max) == 2:
                 min_max = np.array(d['tensor'].min_max, dtype=np.float32)
                 info_value[2].update({'min_max': min_max})
-            if quantize and d['tensor'].dtype is not None:
-                info_value[2].update({'dtype': str(d['tensor'].dtype)})
-            if quantize and len(d['tensor'].scale_zp) == 2:
-                scale_zp = (np.array(d['tensor'].scale_zp[0]), np.array(d['tensor'].scale_zp[1]))
-                info_value[2].update({'scale_zp': scale_zp})
+            if quantize:
+                if d['tensor'].dtype is not None:
+                    info_value[2].update({'dtype': str(d['tensor'].dtype)})
+                if len(d['tensor'].scale_zp) == 2:
+                    scale_zp = (np.array(d['tensor'].scale_zp[0]), np.array(d['tensor'].scale_zp[1]))
+                    info_value[2].update({'scale_zp': scale_zp})
+                info_value[2].update({'activation_quantization_axis': d['tensor'].activation_quantization_axis})
             info.update({u + name_suffix: info_value})
         if len(info) > 0:
             ret = [(k, *v) for k, v in info.items()]
@@ -692,7 +701,7 @@ class OpHasOneOutPort(Op):
                     if tensor_data is not None:
                         d['tensor'].shape = d['tensor'].value.shape
                         d['tensor'].is_const = is_const
-                        if not self.quantize:
+                        if not self.quantize or d['tensor'].dtype is None:
                             d['tensor'].dtype = str(d['tensor'].value.dtype)
                 else:
                     d['tensor'] = Tensor(value=tensor_data)
@@ -746,7 +755,7 @@ class OpHasMultipleOutPorts(Op):
                             if t is not None:
                                 d['tensor'].shape = d['tensor'].value.shape
                                 d['tensor'].is_const = is_const
-                                if not self.quantize:
+                                if not self.quantize or d['tensor'].dtype is None:
                                     d['tensor'].dtype = str(d['tensor'].value.dtype)
                         else:
                             d['tensor'] = Tensor(value=t, is_const=is_const)
@@ -799,7 +808,7 @@ class OpHasVariableOutPorts(Op):
                             d['src_out_port'])]
                         d['tensor'].shape = d['tensor'].value.shape
                         d['tensor'].is_const = is_const
-                        if not self.quantize:
+                        if not self.quantize or d['tensor'].dtype is None:
                             d['tensor'].dtype = str(d['tensor'].value.dtype)
                     else:
                         d['tensor'] = Tensor(
@@ -810,7 +819,7 @@ class OpHasVariableOutPorts(Op):
                         d['tensor'].value = tensor_data_list[0]
                         d['tensor'].shape = d['tensor'].value.shape
                         d['tensor'].is_const = is_const
-                        if not self.quantize:
+                        if not self.quantize or d['tensor'].dtype is None:
                             d['tensor'].dtype = str(d['tensor'].value.dtype)
                     else:
                         d['tensor'] = Tensor(value=tensor_data_list[0])
@@ -2566,7 +2575,7 @@ class TfliteOp(Op):
         super(TfliteOp, self).__init__(graph, attr_dict)
         self.update_attributes(TfliteOp, attr_dict)
         if self.opcode_version not in type(self).attributes():
-            WARN('[Parser]: Node(%s) Opcode Version %d is not implemented for %s! But will try to proceed.' % (
+            WARN_EXCEPTION('[Parser]: Node(%s) Opcode Version %d is not implemented for %s! But will try to proceed.' % (
                 self.name, self.opcode_version, type(self).__name__))
 
     @property
@@ -3627,3 +3636,10 @@ class ArmOp(Op):
     @classmethod
     def num_in_ports(cls):
         return 1
+
+    @abc.abstractmethod
+    def infer_shape(self):
+        super(ArmOp, self).infer_shape()
+        input_dtypes = self.get_input_dtypes()
+        if any('64' in type_str for type_str in input_dtypes):
+            ERROR('[Parser]: Meets 64 bits inputs for %sOp(%s) in infer_shape!' % (self.type, self.name))

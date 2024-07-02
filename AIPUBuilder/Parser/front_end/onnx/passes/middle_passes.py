@@ -7,11 +7,12 @@ import itertools
 import copy
 from functools import reduce
 from collections import OrderedDict
-from ....common.defs import Tensor, FLOAT_EQUAL, TYPE_MAX
+from ....common.defs import Tensor, FLOAT_EQUAL, FLOAT64_EQUAL, TYPE_MAX
 from ....logger import INFO, DEBUG, WARN, ERROR, FATAL
 from ....common.utils import extend_lists, get_converted_dtype
 from ....graph.node_wrap import NodeWrap
 from ....graph.pattern_match import matched_patterns, single_node_matcher, two_nodes_matcher
+# from ....graph.pattern_generator import match_patterns_from_expression
 from ....graph.graph_algo import get_valid_node_name, clear_redundant_nodes, determined_sort, all_simple_paths, has_path
 from ....ops.op import Op, BaseLinearOp, BaseConvOp, BaseDeconvOp, BaseOnnxPoolOp, OpHasOneOutPort, OpHasPaddingStrides, OpHasAxis, \
     OnnxOp, CommonOp, OpNeedBroadcast, OpNeedUniBroadcast, OnnxReduceOp
@@ -20,7 +21,7 @@ from ....ops.onnx_ops.nn_ops import DeformConvOp
 from .common_passes import fuse_const, remove_useless_op, remove_node_safely, insert_reshape, insert_reshape_after, \
     insert_cast, insert_constant, insert_slice, insert_slice_after, insert_tile, insert_transpose, insert_transpose_after, \
     remove_redundant_reshape, remove_redundant_transpose, insert_cast_sub_mul_for_quant, insert_mul_add_cast_after_for_dequant, \
-    insert_repeat, convert_to_const, insert_cast_after
+    insert_repeat, convert_to_const, insert_cast_after, merge_same_op_at_out_port
 
 
 def clear_useless_concat_input(graph):
@@ -91,7 +92,7 @@ def convert_1d_conv(graph):
                     reshape2_dim = out_shape
 
                     src, _, in_attr = in_edges[0]
-                    insert_reshape(graph, src, conv, in_attr, reshape1_dim)
+                    insert_reshape(graph, src, conv, in_attr, reshape1_dim, quantize=conv_obj.quantize)
 
                     reshape2 = get_valid_node_name(
                         graph, conv + '_post_reshape')
@@ -203,7 +204,7 @@ def convert_bn_train(graph):
         if fusebnv3_obj is not None \
                 and len(fusebnv3_in_edges) == 5 \
                 and len(fusebnv3_obj.get_input_shapes()) == 5:
-            if fusebnv3_obj.training_mode is False:
+            if fusebnv3_obj.training_mode is False or fusebnv3_obj.quantize:
                 continue
             input_shapes = fusebnv3_obj.get_input_shapes()
             x_shape = input_shapes[0]
@@ -881,7 +882,8 @@ def convert_gather_to_slice(graph):
                 if indices_rank == 0:  # No need to reshape if indices_rank is 1(q=1) because output rank=q+(r-1)=r
                     old_dim = np.array(ends, np.int64) - np.array(starts, np.int64)
                     reshape_dim = np.delete(old_dim, gather_obj.axis)
-                    reshape = insert_reshape_after(graph, gather, reshape_dim.tolist(), old_dim.tolist())
+                    reshape = insert_reshape_after(graph, gather, reshape_dim.tolist(), old_dim.tolist(),
+                                                   quantize=gather_obj.quantize)
                     if gather in graph._attr['output_names']:
                         index = graph._attr['output_names'].index(gather)
                         graph._attr['output_names'].remove(gather)
@@ -909,6 +911,8 @@ def convert_gemm_to_fc(graph):
             if NodeWrap(graph, input2)['object'].type == 'Constant' \
                     and (not input3 or NodeWrap(graph, input3)['object'].type == 'Constant'):
                 W = NodeWrap(graph, input2)['object'].value
+                if bool(gemm_obj.transB):
+                    W = np.transpose(W)
                 num_output = W.shape[-1]
                 b = NodeWrap(graph, input3)[
                     'object'].value if input3 else np.zeros((num_output,), np.float32)
@@ -924,8 +928,6 @@ def convert_gemm_to_fc(graph):
                 else:
                     W = W * gemm_obj.alpha
                     b = np.array(b * gemm_obj.beta, dtype=np.float32)
-                if bool(gemm_obj.transB):
-                    W = np.transpose(W)
                 fc_attr.update({'weights': np.transpose(W), 'biases': b})
                 NodeWrap(graph, gemm).replace_obj('FullyConnected', fc_attr)
                 graph.remove_edge(input2, gemm)
@@ -984,6 +986,39 @@ def convert_einsum(graph):
                     continue
                 out_term = equ_list[1]
                 if len(add_list[1]) >= 2 and len(add_list[0]) >= 2 \
+                        and set(add_list[0]).symmetric_difference(add_list[1]) == set(out_term) \
+                        and ''.join([in0 for in0, out in zip(add_list[0], out_term) if in0 == out]) + \
+                            ''.join(reversed([in1 for in1, out in zip(reversed(add_list[1]), reversed(out_term)) if in1 == out])) == out_term:
+                    # abcd,cdef->abef
+                    in_edges = graph.sorted_in_edges(einsum, data=True)
+                    in_shapes = einsum_obj.get_input_shapes()
+                    if len(in_edges) < 2 or len(in_shapes) < 2 \
+                            or any(shape is None or None in shape for shape in in_shapes):
+                        ERROR('[Parser]: Meets invalid inputs of Einsum(%s) in convert_einsum!' % einsum)
+                        continue
+                    in0_keep_dim = [s for s in add_list[0] if s in out_term]  # [a,b]
+                    in0_keep_shape = in_shapes[0][:len(in0_keep_dim)]  # [a,b]
+                    in0_shape = in0_keep_shape + [-1]  # [a,b,-1]
+                    in1_reduce_dim = [s for s in add_list[1] if s not in out_term]  # [c,d]
+                    in1_keep_shape = in_shapes[1][len(in1_reduce_dim):]  # [e,f]
+                    in1_keep_prod = int(np.prod(in1_keep_shape))  # e*f
+                    in1_shape = [-1, in1_keep_prod]  # [-1,e*f]
+                    matmul_out_shape = in0_keep_shape + [in1_keep_prod]  # [a,b,e*f]
+                    einsum_out_shape = in0_keep_shape + in1_keep_shape  # [a,b,e,f]
+                    in0, _, in0_attr = in_edges[0]
+                    in1, _, in1_attr = in_edges[1]
+                    quantize = einsum_obj.quantize
+                    insert_reshape(graph, in0, einsum, in0_attr, in0_shape, quantize=quantize)
+                    insert_reshape(graph, in1, einsum, in1_attr, in1_shape, quantize=quantize)
+                    post_reshape = insert_reshape_after(
+                        graph, einsum, einsum_out_shape, old_dim=matmul_out_shape, quantize=quantize)
+                    matmul_attr = einsum_obj.copied_attr()
+                    matmul_attr.update({'opset_version': 13})
+                    NodeWrap(graph, einsum).replace_obj('MatMul', matmul_attr)
+                    if einsum in graph._attr['output_names']:
+                        index = graph._attr['output_names'].index(einsum)
+                        graph._attr['output_names'][index] = post_reshape
+                elif len(add_list[1]) >= 2 and len(add_list[0]) >= 2 \
                         and out_term[-2] in add_list[0][-2:] and out_term[-1] in add_list[1][-2:]:
                     ele_0 = add_list[0][-2] if add_list[0][-1] == out_term[-2] else add_list[0][-1]
                     ele_1 = add_list[1][-2] if add_list[1][-1] == out_term[-1] else add_list[1][-1]
@@ -1180,7 +1215,8 @@ def convert_special_clip_to_relu(graph):
                     and inputs[2] is not None \
                     and FLOAT_EQUAL(inputs[1], 0) \
                     and in_edges[0][2]['tensor'].get_dtype() is not None \
-                    and inputs[2] >= TYPE_MAX(in_edges[0][2]['tensor'].get_dtype()):
+                    and inputs[2] >= TYPE_MAX(in_edges[0][2]['tensor'].get_dtype()) \
+                    and not clip_obj.quantize:
                 graph.remove_edges_from(in_edges[1:])
                 NodeWrap(graph, clip).replace_obj(
                     'Relu', {'name': clip, 'opset_version': 6})
@@ -1334,7 +1370,7 @@ def convert_special_conv_to_mul(graph):
         if conv_obj is None:
             ERROR('[Parser]: Meets invalid Conv(%s) in convert_special_conv_to_mul!' % conv)
             continue
-        if conv_obj.weights is not None:
+        if conv_obj.weights is not None or conv_obj.quantize:
             continue
         in_edges = graph.sorted_in_edges(conv, keys=True, data=True)
         input_shapes = conv_obj.get_input_shapes()
@@ -2427,65 +2463,72 @@ def convert_dequantizelinear(graph):
             ERROR(
                 '[Parser]: Meets invalid DequantizeLinear Op(%s) in convert_dequantizelinear!' % dequant)
             continue
+        inp, _, inp_in_attr = dequant_in_edges[0]
         scale, _, scale_in_attr = dequant_in_edges[1]
         zp, _, zp_in_attr = dequant_in_edges[2]
         if graph._attr.get('quantize', False) \
                 and scale_in_attr['tensor'].is_const and zp_in_attr['tensor'].is_const:
-            continue
-
-        input_shapes = dequant_obj.get_input_shapes()
-        if dequant_obj.axis is not None and len(input_shapes[1]) == 1:
-            dequant_axis = dequant_obj.axis
+            inp_obj = NodeWrap(graph, inp)['object']
+            if inp_obj is not None and not inp_obj.quantize:
+                inp_obj.quantize = True
+                if inp_in_attr['tensor'] is None:
+                    inp_in_attr['tensor'] = Tensor()
+                inp_in_attr['tensor'].dtype = zp_in_attr['tensor'].get_dtype()
+                inp_in_attr['tensor'].scale_zp = (scale_in_attr['tensor'].value, zp_in_attr['tensor'].value)
+                inp_obj.activation_quantization_axis = dequant_obj.axis
         else:
-            dequant_axis = -1
-        dequant_axis = OpHasAxis.make_axes_non_negative(
-            dequant_axis, len(input_shapes[0]))
-        if len(input_shapes[0]) <= dequant_axis:
-            ERROR(
-                '[Parser]: Meets invalid axis(%d) in DequantizeLinear Op(%s) in convert_dequantizelinear!' % (dequant_axis, dequant))
-            continue
-        axis_dim = input_shapes[0][dequant_axis]
-        if input_shapes[1] != input_shapes[2] \
-                or len(input_shapes[1]) not in (0, 1) \
-                or (len(input_shapes[1]) == 1 and input_shapes[1][0] != axis_dim):
-            ERROR(
-                '[Parser]: Meets different shapes of x_scale and x_zero_point in DequantizeLinear Op(%s) in convert_dequantizelinear!' % dequant)
-            continue
-        inp, _, inp_in_attr = dequant_in_edges[0]
-        scale, _, scale_in_attr = dequant_in_edges[1]
-        zp, _, zp_in_attr = dequant_in_edges[2]
-        graph.remove_edges_from(dequant_in_edges)
-
-        sub = get_valid_node_name(graph, dequant + '_sub')
-        graph.add_node(sub)
-        graph.add_edge(inp, sub, **inp_in_attr)
-        new_zp_in_attr = copy.deepcopy(zp_in_attr)
-        new_zp_in_attr.update({'dst_in_port': 1})
-        graph.add_edge(zp, sub, **new_zp_in_attr)
-        sub_out_attr = copy.deepcopy(inp_in_attr)
-        sub_out_attr.update({'src_out_port': 0, 'dst_in_port': 0})
-        if sub_out_attr['tensor'] is not None:
-            if sub_out_attr['tensor'].value is not None:
-                sub_out_attr['tensor'].value = sub_out_attr['tensor'].value.astype(np.float32)
+            input_shapes = dequant_obj.get_input_shapes()
+            if dequant_obj.axis is not None and len(input_shapes[1]) == 1:
+                dequant_axis = dequant_obj.axis
+                dequant_axis = OpHasAxis.make_axes_non_negative(
+                    dequant_axis, len(input_shapes[0]))
+                if len(input_shapes[0]) <= dequant_axis:
+                    ERROR(
+                        '[Parser]: Meets invalid axis(%d) in DequantizeLinear Op(%s) in convert_dequantizelinear!' % (dequant_axis, dequant))
+                    continue
             else:
-                sub_out_attr['tensor'].dtype = 'float32'
-        graph.add_edge(sub, dequant, **sub_out_attr)
-        NodeWrap(graph, sub).replace_obj(
-            'Sub', {'name': sub, 'opset_version': 13})
+                dequant_axis = None
+            if input_shapes[1] != input_shapes[2] \
+                    or len(input_shapes[1]) not in (0, 1) \
+                    or (dequant_axis is not None
+                        and len(input_shapes[1]) == 1
+                        and input_shapes[1][0] != input_shapes[0][dequant_axis]):
+                ERROR(
+                    '[Parser]: Meets different shapes of x_scale and x_zero_point in DequantizeLinear Op(%s) in convert_dequantizelinear!' % dequant)
+                continue
+            graph.remove_edges_from(dequant_in_edges)
 
-        graph.add_edge(scale, dequant, **scale_in_attr)
-        mul_attr = dequant_obj.copied_attr()
-        mul_attr.update({'opset_version': 13, 'quantize': False})
-        NodeWrap(graph, dequant).replace_obj('Mul', mul_attr)
+            sub = get_valid_node_name(graph, dequant + '_sub')
+            graph.add_node(sub)
+            graph.add_edge(inp, sub, **inp_in_attr)
+            new_zp_in_attr = copy.deepcopy(zp_in_attr)
+            new_zp_in_attr.update({'dst_in_port': 1})
+            graph.add_edge(zp, sub, **new_zp_in_attr)
+            sub_out_attr = copy.deepcopy(inp_in_attr)
+            sub_out_attr.update({'src_out_port': 0, 'dst_in_port': 0})
+            if sub_out_attr['tensor'] is not None:
+                if sub_out_attr['tensor'].value is not None:
+                    sub_out_attr['tensor'].value = sub_out_attr['tensor'].value.astype(np.float32)
+                else:
+                    sub_out_attr['tensor'].dtype = 'float32'
+            graph.add_edge(sub, dequant, **sub_out_attr)
+            NodeWrap(graph, sub).replace_obj(
+                'Sub', {'name': sub, 'opset_version': 13})
 
-        insert_cast(graph, inp, sub, 'float32', inp_in_attr)
-        insert_cast(graph, zp, sub, 'float32', new_zp_in_attr)
+            graph.add_edge(scale, dequant, **scale_in_attr)
+            mul_attr = dequant_obj.copied_attr()
+            mul_attr.update({'opset_version': 13, 'quantize': False})
+            NodeWrap(graph, dequant).replace_obj('Mul', mul_attr)
 
-        if len(input_shapes[1]) == 1 and dequant_axis != len(input_shapes[0]) - 1:
-            dim = [1 if idx != dequant_axis else axis_dim for idx in range(
-                len(input_shapes[0]))]
-            insert_reshape(graph, scale, dequant, scale_in_attr, dim)
-            insert_reshape(graph, zp, sub, new_zp_in_attr, dim)
+            insert_cast(graph, inp, sub, 'float32', inp_in_attr)
+            float_zp = insert_cast(graph, zp, sub, 'float32', new_zp_in_attr)
+
+            if len(input_shapes[1]) == 1 and dequant_axis is not None \
+                    and dequant_axis != len(input_shapes[0]) - 1:
+                dim = [1 if idx != dequant_axis else input_shapes[0][dequant_axis] for idx in range(
+                    len(input_shapes[0]))]
+                insert_reshape(graph, scale, dequant, scale_in_attr, dim)
+                insert_reshape(graph, zp, float_zp, new_zp_in_attr, dim)
 
 
 def convert_quantizelinear(graph):
@@ -2535,6 +2578,7 @@ def convert_quantizelinear(graph):
                     out_attr['tensor'] = Tensor()
                 out_attr['tensor'].dtype = str(zp_dtype)
                 out_attr['tensor'].scale_zp = (scale_in_attr['tensor'].value, zp_in_attr['tensor'].value)
+                out_attr['tensor'].activation_quantization_axis = quant_obj.axis
         else:
             inp, _, inp_in_attr = quant_in_edges[0]
             inp_dtype = inp_in_attr['tensor'].get_dtype()
@@ -2769,7 +2813,6 @@ def convert_qgemm(graph):
             ERROR('[Parser]: Meets invalid zero_point dtype of QLinearGemmMs node(%s) in convert_qgemm!' % qgemm)
             continue
         matched = True
-        graph.remove_edges_from(in_edges[1:])
         a_scale, a_zp = qgemm_obj.a_scale, qgemm_obj.a_zero_point
         b_scale, b_zp = qgemm_obj.b_scale, qgemm_obj.b_zero_point
         y_scale, y_zp = qgemm_obj.y_scale, qgemm_obj.y_zero_point
@@ -2784,6 +2827,7 @@ def convert_qgemm(graph):
                          or not c_src_in_attr['tensor'].is_const
                          or c_src_in_attr['tensor'].value is not None)
 
+        graph.remove_edges_from(in_edges[1:])
         if graph._attr.get('quantize', False):
             if y_scale is None:  # y_dtype is float32
                 graph.remove_edge(a_src, qgemm)
@@ -3090,7 +3134,21 @@ def merge_channel_shuffle(graph):
         if reshape1_obj is not None and transpose_obj is not None and reshape2_obj is not None:
             reshape1_out_edges = graph.sorted_out_edges(reshape1, data=True)
             transpose_out_edges = graph.sorted_out_edges(transpose, data=True)
-            if len(reshape1_out_edges) == 1 and len(transpose_out_edges) == 1:
+            reshape2_out_edges = graph.sorted_out_edges(reshape2, data=True)
+            if len(reshape1_out_edges) == 1 and len(transpose_out_edges) == 1 \
+                    and len(reshape2_out_edges) >= 1:
+                if reshape1_obj.quantize:
+                    reshape1_out_scale_zp = reshape1_out_edges[0][2]['tensor'].scale_zp
+                    transpose_out_scale_zp = transpose_out_edges[0][2]['tensor'].scale_zp
+                    reshape2_out_scale_zp = reshape2_out_edges[0][2]['tensor'].scale_zp
+                    if len(reshape1_out_scale_zp) != 2 \
+                            or len(transpose_out_scale_zp) != 2 \
+                            or len(reshape2_out_scale_zp) != 2 \
+                            or not FLOAT_EQUAL(reshape1_out_scale_zp[0], transpose_out_scale_zp[0]) \
+                            or not FLOAT_EQUAL(reshape2_out_scale_zp[0], transpose_out_scale_zp[0]) \
+                            or not np.array_equal(reshape1_out_scale_zp[1], transpose_out_scale_zp[1]) \
+                            or not np.array_equal(reshape2_out_scale_zp[1], transpose_out_scale_zp[1]):
+                        continue
                 reshape1_in_shape = reshape1_obj.get_input_shapes()[0]
                 reshape1_out_shape = reshape1_obj.get_output_shapes()[0]
                 reshape2_out_shape = reshape2_obj.get_output_shapes()[0]
@@ -3123,7 +3181,8 @@ def merge_channel_shuffle(graph):
                         src, _, in_attr = in_edges[0]
                         if need_insert_reshape:
                             insert_reshape(graph, src, reshape1,
-                                           in_attr, reshape2_out_shape)
+                                           in_attr, reshape2_out_shape,
+                                           quantize=reshape1_obj.quantize)
                             in_edges = graph.sorted_in_edges(
                                 reshape1, data=True)
                             src, _, in_attr = in_edges[0]
@@ -3440,8 +3499,68 @@ def merge_divmod2(graph):
         clear_redundant_nodes(graph)
 
 
+def merge_gather_slice(graph):
+    matched = False
+    matches = matched_patterns(graph, nodes=[
+        ('indices', {'op': 'Constant', 'unique': False}),
+        ('gather', {'op': 'Gather', 'unique': False}),
+        ('add_const', {'op': 'Constant', 'unique': False}),
+        ('add', {'op': 'Add'}),
+        ('slice', {'op': 'Slice'}),
+    ], edges=[
+        ('indices', 'gather', {'dst_in_port': 1}),
+        ('gather', 'add'),
+        ('add_const', 'add'),
+        ('gather', 'slice', {'dst_in_port': 1}),
+        ('add', 'slice', {'dst_in_port': 2}),
+    ])
+    for m in matches:
+        names = ['indices', 'gather', 'add_const', 'add', 'slice']
+        node_objs = {name: NodeWrap(graph, m[name])['object'] for name in names}
+        if any(obj is None for obj in node_objs.values()):
+            ERROR('[Parser]: Meets invalid nodes in merge_gather_slice!')
+            continue
+        if node_objs['indices'].value.ndim != 0 or node_objs['indices'].value != 0 \
+                or node_objs['add_const'].value.ndim != 0 or node_objs['add_const'].value != 1:
+            continue
+        gather_input_shapes = node_objs['gather'].get_input_shapes()
+        if len(gather_input_shapes) < 1 or gather_input_shapes[0] is None \
+                or None in gather_input_shapes[0] or int(np.prod(gather_input_shapes[0])) != 1:
+            continue
+        gather_output_shapes = node_objs['gather'].get_output_shapes()
+        if len(gather_output_shapes) < 1 or gather_output_shapes[0] is None \
+                or gather_output_shapes[0] != [1]:
+            continue
+        slice_input_shapes = node_objs['slice'].get_input_shapes()
+        if len(slice_input_shapes) < 1 or slice_input_shapes[0] is None:
+            continue
+        slice_in_edges = graph.sorted_in_edges(m['slice'], data=True)
+        if len(slice_in_edges) > 3:
+            axes_in_attr = slice_in_edges[3][2]['tensor']
+            if axes_in_attr is None or not axes_in_attr.is_const \
+                    or axes_in_attr.value is None or axes_in_attr.value.size != 1:
+                continue
+        if len(slice_in_edges) > 4:
+            steps_in_attr = slice_in_edges[4][2]['tensor']
+            if steps_in_attr is None or not steps_in_attr.is_const \
+                    or steps_in_attr.value is None or steps_in_attr.value.size != 1 \
+                    or steps_in_attr.value.item(0) != 1:
+                continue
+        matched = True
+        axis = axes_in_attr.value.item(0)
+        axis = (axis + len(slice_input_shapes[0])) if axis < 0 else axis
+        graph.remove_edges_from(slice_in_edges[2:])
+        gather_attr = node_objs['slice'].copied_attr()
+        gather_attr.update({'opset_version': 13, 'axis': axis, 'axes': None})
+        NodeWrap(graph, m['slice']).replace_obj('Gather', gather_attr)
+    if matched:
+        clear_redundant_nodes(graph)
+
+
 def merge_gelu_1(graph):
     matched = False
+    # expression = 'Mul(Mul(x, Erf(x/1.41421356)+1), 0.5)'
+    # matches = match_patterns_from_expression(graph, expression)
     matches = matched_patterns(graph,
                                nodes=[
                                    ('inp', {}),
@@ -4692,6 +4811,8 @@ def merge_meshgrid(graph):
 
 
 def merge_prelu(graph):
+    # matches = match_patterns_from_expression(graph,
+    #           'slope = Constant(); half = Constant(); y = Relu(x) + (Abs(x) - x) * half * slope')
     matches = matched_patterns(graph,
                                nodes=[
                                    ('input', {}),
@@ -5415,7 +5536,8 @@ def reshape_prelu_slope(graph):
                                        prelu,
                                        in_attr,
                                        reshape_tile[0]['reshape'],
-                                       key=k)
+                                       key=k,
+                                       quantize=prelu_obj.quantize)
                         in_edges = graph.sorted_in_edges(
                             prelu, keys=True, data=True)
                     if reshape_tile[0]['tile'] is not None:
@@ -8646,8 +8768,8 @@ def rename_single_mul_or_add_or_sub(graph):
                 continue
 
             if (n_obj.type in ('Mul', 'Div') and FLOAT_EQUAL(in_consts[0][2], 1.) and int(np.prod(main_input_shape)) > in_tensors[const_in_port].size) \
-                    or (n_obj.type == 'Add' and FLOAT_EQUAL(in_consts[0][2], 0.)) \
-                    or (n_obj.type == 'Sub' and FLOAT_EQUAL(in_consts[0][2], 0.) and const_in_port == 1):
+                    or (n_obj.type == 'Add' and FLOAT64_EQUAL(in_consts[0][2], 0.)) \
+                    or (n_obj.type == 'Sub' and FLOAT64_EQUAL(in_consts[0][2], 0.) and const_in_port == 1):
                 src, _, k, const_in_attr = in_edges[const_in_port]
                 graph.remove_edge(src, n, key=k)
                 remove_node_safely(graph, n)
@@ -8680,7 +8802,7 @@ def rename_single_mul_or_add_or_sub(graph):
 
                 tiled_const_value = np.tile(
                     in_consts[0][2], num_output) if in_consts[0][2].size == 1 else in_consts[0][2]
-                tiled_const_value = tiled_const_value.astype(np.float32)
+
                 if tiled_const_value.shape[-1] > num_output:
                     num_output = tiled_const_value.shape[-1]
                     src, _, _, in_attr = in_edges[main_input_port]
@@ -8689,17 +8811,17 @@ def rename_single_mul_or_add_or_sub(graph):
                     in_edges = graph.sorted_in_edges(n, keys=True, data=True)
 
                 if n_obj.type == 'Sub' and in_consts[0][1] == 0:
-                    gamma_value = - np.ones((num_output, ), np.float32)
+                    gamma_value = - np.ones((num_output, ), input_dtype)
                     beta_value = tiled_const_value
                 else:
                     gamma_value = tiled_const_value \
                         if n_obj.type == 'Mul' \
-                        else (1 / tiled_const_value if n_obj.type == 'Div' else np.ones((num_output, ), np.float32))
-                    beta_value = np.zeros((num_output, ), np.float32) \
+                        else (1 / tiled_const_value if n_obj.type == 'Div' else np.ones((num_output, ), input_dtype))
+                    beta_value = np.zeros((num_output, ), input_dtype) \
                         if n_obj.type in ('Mul', 'Div') \
                         else (tiled_const_value if n_obj.type == 'Add' else -tiled_const_value)
-                mean_value = np.zeros((num_output, ), np.float32)
-                var_value = np.ones((num_output,), np.float32)
+                mean_value = np.zeros((num_output, ), input_dtype)
+                var_value = np.ones((num_output,), input_dtype)
                 gamma = get_valid_node_name(graph, n + '_gamma')
                 beta = get_valid_node_name(graph, n + '_beta')
                 mean = get_valid_node_name(graph, n + '_mean')
@@ -8940,6 +9062,8 @@ def split_special_gn(graph):
         if gn_obj is None or len(gn_in_edges) < 3 or len(gn_out_edges) < 1:
             ERROR('[Parser]: Meets invalid GroupNormalization Node(%s) in split_special_gn!' % gn)
             continue
+        if gn_obj.quantize:
+            continue
         scale, _, scale_in_attr = gn_in_edges[1]
         bias, _, bias_in_attr = gn_in_edges[2]
         if scale_in_attr['tensor'] is not None and scale_in_attr['tensor'].is_const \
@@ -8949,10 +9073,14 @@ def split_special_gn(graph):
         if len(gn_input_shapes) < 1 or gn_input_shapes[0] is None or None in gn_input_shapes[0]:
             ERROR('[Parser]: Meets invalid input shape of GroupNormalization Node(%s) in split_special_gn!' % gn)
             continue
+        gn_input_dtypes = gn_obj.get_input_dtypes()
+        if len(gn_input_dtypes) < 3 or gn_input_dtypes[1] is None or gn_input_dtypes[2] is None:
+            ERROR('[Parser]: Meets invalid input dtype of GroupNormalization Node(%s) in split_special_gn!' % gn)
+            continue
         graph.remove_edges_from(gn_out_edges + gn_in_edges[1:])
         num_groups = gn_obj.num_groups
-        scale_value = np.ones([num_groups], np.float32)
-        bias_value = np.zeros_like(scale_value)
+        scale_value = np.ones([num_groups], gn_input_dtypes[1])
+        bias_value = np.zeros_like(scale_value, gn_input_dtypes[2])
         insert_constant(graph, scale + '_const', scale_value, gn, in_port=1)
         insert_constant(graph, bias + '_const', bias_value, gn, in_port=2)
 
@@ -9278,6 +9406,8 @@ def split_deformable_conv(graph):
         if deform_conv_obj is None or len(in_edges) < 3 or len(input_shapes) < 3:
             ERROR(
                 '[Parser]: Meets invalid DeformConv (%s) in split_deformable_conv!' % deform_conv)
+            continue
+        if deform_conv_obj.quantize:
             continue
         if any((shape is None or None in shape or len(shape) != 4) for shape in input_shapes[:3]):
             ERROR(
@@ -9838,10 +9968,11 @@ def adjust_1d_matmul(graph):
         for in_port, (src, _, k, in_attr) in enumerate(in_edges):
             pre_reshape_dim = [1] * (1 - in_port) + \
                 in_shapes[in_port] + [1] * (in_port)
-            insert_reshape(graph, src, matmul, in_attr, pre_reshape_dim, key=k)
+            insert_reshape(graph, src, matmul, in_attr, pre_reshape_dim, key=k,
+                           quantize=node_obj.quantize)
 
         post_reshape = insert_reshape_after(
-            graph, matmul, old_dim=[1, 1], new_dim=out_shapes[0])
+            graph, matmul, old_dim=[1, 1], new_dim=out_shapes[0], quantize=node_obj.quantize)
         if matmul in graph._attr['output_names']:
             index = graph._attr['output_names'].index(matmul)
             graph._attr['output_names'][index] = post_reshape
@@ -9870,10 +10001,10 @@ def align_matmul_input(graph):
             else:
                 reshape_dim = [1] * dim_diff + list(input_shapes[edge_index])
             src, _, k, in_attr = in_edges[edge_index]
-            insert_reshape(graph, src, matmul, in_attr, reshape_dim, key=k)
+            insert_reshape(graph, src, matmul, in_attr, reshape_dim, key=k, quantize=obj.quantize)
             out_shape = obj.get_output_shapes()[0]
             post_reshape = insert_reshape_after(
-                graph, matmul, out_shape, old_dim=list(out_shape))
+                graph, matmul, out_shape, old_dim=list(out_shape), quantize=obj.quantize)
             if matmul in graph._attr['output_names']:
                 index = graph._attr['output_names'].index(matmul)
                 graph._attr['output_names'][index] = post_reshape
@@ -9969,8 +10100,9 @@ def adjust_1d_to_4d(graph):
                 continue
             src, _, k, in_attr = in_edges[0]
             pre_reshape_dim = [1, 1, 1] + in_shapes[0]
-            insert_reshape(graph, src, node_name, in_attr, pre_reshape_dim, key=k)
-            post_reshape = insert_reshape_after(graph, node_name, out_shapes[0], pre_reshape_dim)
+            insert_reshape(graph, src, node_name, in_attr, pre_reshape_dim, key=k, quantize=node_obj.quantize)
+            post_reshape = insert_reshape_after(graph, node_name, out_shapes[0], pre_reshape_dim,
+                                                quantize=node_obj.quantize)
 
             if node_name in graph._attr['output_names']:
                 index = graph._attr['output_names'].index(node_name)
@@ -10045,7 +10177,8 @@ def adjust_3d_to_4d(graph):
                         else:
                             reshape1_dim = [1] + in_shapes[in_port]
                         insert_reshape(graph, src, node_name,
-                                       in_attr, reshape1_dim, key=k)
+                                       in_attr, reshape1_dim, key=k,
+                                       quantize=node_obj.quantize)
 
                     ports_shape = OrderedDict()
                     for _, _, out_attr in out_edges:
@@ -10133,12 +10266,14 @@ def adjust_5d_to_4d(graph):
                             pre_reshape_dim = [
                                 in_shapes[0][0], in_shapes[0][1], new_w, in_shapes[0][-1]]
                             insert_reshape(graph, src, node_name,
-                                           in_attr, pre_reshape_dim, key=k)
+                                           in_attr, pre_reshape_dim, key=k,
+                                           quantize=node_obj.quantize)
 
                             src, dst, in_attr = out_edges[0]
                             post_reshape_dim = in_shapes[0]
                             new_out = insert_reshape(
-                                graph, node_name, dst, in_attr, post_reshape_dim)
+                                graph, node_name, dst, in_attr, post_reshape_dim,
+                                quantize=node_obj.quantize)
                             if node_name in graph._attr['output_names']:
                                 index = graph._attr['output_names'].index(
                                     node_name)
@@ -10170,7 +10305,8 @@ def broadcast_prelu(graph):
                             if in_shapes[1][0] == 1:
                                 reshape_shape = in_shapes[1][1:]
                                 insert_reshape(
-                                    graph, in_edges[1][0], broadcastop, in_edges[1][2], reshape_shape)
+                                    graph, in_edges[1][0], broadcastop, in_edges[1][2], reshape_shape,
+                                    quantize=broadcastop_obj.quantize)
                             else:
                                 ERROR(
                                     '[Parser]: Invalid inputs of Node(%s) for broadcasting in broadcast_prelu!' % broadcastop)
@@ -10196,6 +10332,7 @@ def middle_passes(graph, params):
     fuse_const(graph)
     decompose_const_if(graph, params)
     decompose_const_loop(graph, params)
+    merge_same_op_at_out_port(graph, ['Cast'])
 
     merge_q_ln(graph)
     merge_q_gelu(graph)
@@ -10312,14 +10449,15 @@ def middle_passes(graph, params):
     convert_special_matmul_to_fc(graph)
     remove_redundant_mul(graph)
     fuse_mul_add_or_sub(graph)
+    merge_gather_slice(graph)
     remove_special_gather(graph)
     fuse_gather_const_mul(graph)
     convert_gather_to_slice(graph)
     rearrange_matmul_reshape_bias(graph)
+    fuse_bias(graph)
     rename_single_mul_or_add_or_sub(graph)
     rearrange_fc_reshape_bn(graph)
     fuse_pad(graph)
-    fuse_bias(graph)
     fuse_linear_bn(graph)
     convert_1d_conv(graph)
     convert_reducemean_to_avgpool(graph)

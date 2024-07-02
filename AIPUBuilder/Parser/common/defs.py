@@ -20,6 +20,10 @@ def FLOAT_EQUAL(x, y): return np.all(
     (np.abs(x - y)) < (np.finfo(np.float32).resolution))
 
 
+def FLOAT64_EQUAL(x, y): return np.all(
+    (np.abs(x - y)) < (np.finfo(np.float64).resolution))
+
+
 def TYPE_MIN(x):
     if isinstance(x, str):
         x = np.dtype(x)
@@ -133,6 +137,7 @@ class Tensor(object):
                 'is_const': False,
                 'min_max': tuple(),
                 'scale_zp': tuple(),
+                'activation_quantization_axis': None,
                 'dtype': None,
                 }
 

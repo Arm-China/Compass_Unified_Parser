@@ -7,7 +7,7 @@ import numpy as np
 import onnx
 import torch
 from collections import OrderedDict
-from .common.utils import is_file, is_dir, multi_string_to_list, list_string_to_list
+from .common.utils import is_file, is_dir, multi_string_to_list, list_string_to_list, get_dict_params
 from .graph.graph import Graph
 from .logger import *
 
@@ -112,6 +112,11 @@ def univ_parser(params):
                     '[Parser]: Length of input_names should be equal to length of input_shapes! '
                     'Please check config file!')
 
+        if len(params['input_names']) == 0 and len(params['input_shapes']) == 0 and 'input_dimensions' in params:
+            params['input_dimensions'] = get_dict_params(params['input_dimensions'])
+        else:
+            params['input_dimensions'] = {}
+
         if 'batch_size' in params:
             WARN(
                 '[Parser]: batch_size in config file will be deprecated and has no effect!')
@@ -119,6 +124,7 @@ def univ_parser(params):
             WARN('[Parser]: input_data_format in config file will be deprecated!')
         params['input_data_format'] = 'NCHW' if model_type in ('onnx', 'caffe', 'torch') else 'NHWC'
         params['output_tensor_names'] = params['output_names'][:]
+        params['proposal_normalized'] = (params.get('proposal_normalized', 'true').lower() in ('1', 'true'))
 
         if not is_file(model_path) and not is_dir(model_path):
             ERROR('[Parser]: Meets invalid model file/directory(%s)!' % model_path)
@@ -133,8 +139,7 @@ def univ_parser(params):
 
             tmp_tensors_dir = '.%s_tmp_tensors' % params.get('model_name', '')
             tmp_tensors_path = os.path.join(output_dir, tmp_tensors_dir)
-            if not os.path.exists(tmp_tensors_path):
-                os.mkdir(tmp_tensors_path)
+            os.makedirs(tmp_tensors_path, exist_ok=True)  # folder could possibly be created by other processes
             params['tmp_tensors_path'] = tmp_tensors_path
 
             import tensorflow as tf

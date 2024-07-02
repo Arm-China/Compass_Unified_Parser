@@ -3,6 +3,8 @@
 # namespace: tflite
 
 import flatbuffers
+from flatbuffers.compat import import_numpy
+np = import_numpy()
 
 
 class ATan2Options(object):
@@ -14,6 +16,10 @@ class ATan2Options(object):
         x = ATan2Options()
         x.Init(buf, n + offset)
         return x
+
+    @classmethod
+    def ATan2OptionsBufferHasIdentifier(cls, buf, offset, size_prefixed=False):
+        return flatbuffers.util.BufferHasIdentifier(buf, offset, b"\x54\x46\x4C\x33", size_prefixed=size_prefixed)
 
     # ATan2Options
     def Init(self, buf, pos):

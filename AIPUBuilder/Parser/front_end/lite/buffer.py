@@ -27,6 +27,8 @@ from .tflite.BatchMatMulOptions import BatchMatMulOptions
 from .tflite.BatchToSpaceNDOptions import BatchToSpaceNDOptions
 from .tflite.BidirectionalSequenceLSTMOptions import BidirectionalSequenceLSTMOptions
 from .tflite.BidirectionalSequenceRNNOptions import BidirectionalSequenceRNNOptions
+from .tflite.BitcastOptions import BitcastOptions
+from .tflite.BitwiseXorOptions import BitwiseXorOptions
 from .tflite.BroadcastToOptions import BroadcastToOptions
 from .tflite.BucketizeOptions import BucketizeOptions
 from .tflite.CallOnceOptions import CallOnceOptions
@@ -105,6 +107,7 @@ from .tflite.ResizeNearestNeighborOptions import ResizeNearestNeighborOptions
 from .tflite.ReverseSequenceOptions import ReverseSequenceOptions
 from .tflite.ReverseV2Options import ReverseV2Options
 from .tflite.Rfft2dOptions import Rfft2dOptions
+from .tflite.RightShiftOptions import RightShiftOptions
 from .tflite.RNNOptions import RNNOptions
 from .tflite.ScatterNdOptions import ScatterNdOptions
 from .tflite.SegmentSumOptions import SegmentSumOptions
@@ -176,7 +179,8 @@ tensor_type_map = {
     12: np.uint64,
     13: lambda x: x,
     14: lambda x: x,
-    15: np.uint32
+    15: np.uint32,
+    16: np.uint16
 }
 
 
@@ -304,7 +308,7 @@ def parse_quantization_info(quant_info, tensor_dtype=None):
                 and 'Scale' in ret and 'ZeroPoint' in ret:
             min_value = (np.iinfo(tensor_dtype).min - ret['ZeroPoint']) * ret['Scale']
             max_value = (np.iinfo(tensor_dtype).max - ret['ZeroPoint']) * ret['Scale']
-            ret.update({'Min': min_value, 'Max': max_value})
+            ret.update({'Min': min_value.astype(np.float32), 'Max': max_value.astype(np.float32)})
     return ret
 
 

@@ -30,10 +30,16 @@ TF_BENCHMARK = {
         'resnet_v2_50',
         'shufflenet_v2',
         'transformer_mini',
-        'transformer_official',
+        # 'transformer_official',
         'wavenet',
         'yolo_v2_416',
     ],
+    '2_6': [
+        'efficientnet_b5',  # SavedModel
+        'inception_v3',     # keras
+        'mobilenet_v2',     # hdf5
+        'resnet_v2_50',     # h5
+    ]
 }
 
 TFLITE_BENCHMARK = {

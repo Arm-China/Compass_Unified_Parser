@@ -23,7 +23,7 @@ from .common_passes import remove_node_safely, insert_cast, insert_cast_after, i
     insert_reshape, insert_reshape_after, insert_constant, \
     insert_slice, insert_transpose, remove_redundant_bn, remove_redundant_reshape, remove_redundant_transpose, \
     remove_redundant_transpose2, remove_useless_op, fuse_const, insert_gather, remove_redundant_cast, \
-    insert_transpose_after
+    insert_transpose_after, merge_same_op_at_out_port, remove_redundant_transpose3
 from ....plugin_loader import PARSER_OP_DICT
 
 
@@ -161,7 +161,8 @@ def convert_uni_gru(graph):
                     inp, _, inp_in_attr = in_edges[0]
                     init_h, _, init_h_in_attr = in_edges[1]
                 insert_reshape(graph, init_h, gru, init_h_in_attr, [
-                               batch_size, hidden_size])
+                               batch_size, hidden_size],
+                               quantize=gru_obj.quantize)
 
                 out_rev = None
                 if gru_obj.direction == 'reverse':
@@ -204,7 +205,8 @@ def convert_uni_gru(graph):
                         batch_size, 1, hidden_size]
                     gru_out_node = (out_rev if p == 0 and out_rev is not None else gru)
                     reshape = insert_reshape_after(
-                        graph, gru_out_node, reshape_dim, old_dim=old_dim, out_port=p)
+                        graph, gru_out_node, reshape_dim, old_dim=old_dim, out_port=p,
+                        quantize=gru_obj.quantize)
                     last_name = reshape
                     if not gru_obj.layout:
                         post_trans_perm = [1, 2, 0, 3] if p == 0 else [1, 0, 2]
@@ -697,10 +699,12 @@ def rename_quantize_dequantize(graph):
         if quantize_obj.type == 'DequantizeLinear':
             if not inp_attr['tensor'].scale_zp:
                 inp_attr['tensor'].scale_zp = (scale, zp)
+                inp_attr['tensor'].activation_quantization_axis = quantize_obj.axis
         else:
             for _, _, _, out_attr in out_edges:
                 if not out_attr['tensor'].scale_zp:
                     out_attr['tensor'].scale_zp = (scale, zp)
+                    out_attr['tensor'].activation_quantization_axis = quantize_obj.axis
         graph.remove_edge(scale_name, quantize, key=k1)
         graph.remove_edge(zp_name, quantize, key=k2)
         quantize_attr = quantize_obj.copied_attr()
@@ -1225,14 +1229,12 @@ def merge_square(graph):
         if any([obj is None for obj in node_objs.values()]):
             ERROR('[Parser]: Meets invalid node in merge_square!')
             continue
-
         power = node_objs['const'].value
         if FLOAT_EQUAL(power, 2.):
             matched = True
             graph.remove_edge(m['const'], m['pow'])
             NodeWrap(graph, m['pow']).replace_obj(
-                'ArmSquare', {'name': m['pow']})
-
+                'ArmSquare', node_objs['pow'].copied_attr())
     if matched:
         clear_redundant_nodes(graph)
 
@@ -1246,17 +1248,14 @@ def merge_square2(graph):
         if mul_obj is None or len(mul_obj.get_input_shapes()) != 2:
             ERROR('[Parser]: Meets invalid node(%s) in merge_square2!' % mul)
             continue
-
         mul_in_edges = graph.sorted_in_edges(mul, keys=True, data=True)
         src1, _, _, in_attr1 = mul_in_edges[0]
         src2, _, k2, in_attr2 = mul_in_edges[1]
         if src1 != src2 or in_attr1['src_out_port'] != in_attr2['src_out_port']:
             continue
-
         matched = True
         graph.remove_edge(src2, mul, key=k2)
-        NodeWrap(graph, mul).replace_obj('ArmSquare', {'name': mul})
-
+        NodeWrap(graph, mul).replace_obj('ArmSquare', mul_obj.copied_attr())
     if matched:
         clear_redundant_nodes(graph)
 
@@ -2279,7 +2278,7 @@ def rename_compress(graph):
                 compress_obj.axis = 0
                 src, _, in_attr = in_edges[0]
                 insert_reshape(graph, src, compress, in_attr,
-                               [-1], type='ArmReshape')
+                               [-1], type='ArmReshape', quantize=compress_obj.quantize)
                 in_edges = graph.sorted_in_edges(compress, data=True)
             if NodeWrap(graph, in_edges[1][0])['object'].type not in ('Constant', 'ArmConstant'):
                 need_clear = True
@@ -2390,7 +2389,8 @@ def rename_gemm(graph):
                             if ret[0]['reshape']:
                                 in_port = 2
                                 insert_reshape(
-                                    graph, in_edges[in_port][0], gemm, in_edges[in_port][2], ret[0]['reshape'])
+                                    graph, in_edges[in_port][0], gemm, in_edges[in_port][2], ret[0]['reshape'],
+                                    quantize=gemm_obj.quantize)
                                 in_edges = graph.sorted_in_edges(gemm, data=True)
                             if ret[0]['tile']:
                                 insert_tile(
@@ -2435,8 +2435,15 @@ def rename_gridsample(graph):
     for m in matches:
         gridsample = m['target']
         gridsample_obj = NodeWrap(graph, gridsample)['object']
+        input_shapes = gridsample_obj.get_input_shapes()
+        if len(input_shapes) < 1 or input_shapes[0] is None:
+            ERROR('[Parser]: Meets invalid inputs of GridSample Node(%s) in rename_gridsample!' % gridsample)
+            continue
+        mode = gridsample_obj.mode
+        if len(input_shapes[0]) == 4 and mode == 'linear':
+            mode = 'bilinear'
         gridsample_attr = gridsample_obj.copied_attr()
-        gridsample_attr.update({'method': gridsample_obj.mode.upper()})
+        gridsample_attr.update({'method': mode.upper()})
         NodeWrap(graph, gridsample).replace_obj(
             'ArmGridSample', gridsample_attr)
 
@@ -2668,7 +2675,8 @@ def rename_moments(graph):
                     reshape = insert_reshape_after(graph,
                                                    moments,
                                                    out_shape,
-                                                   out_port=out_port)
+                                                   out_port=out_port,
+                                                   quantize=moments_obj.quantize)
                     post_reshapes.append(reshape)
                 if moments in graph._attr['output_names'] and post_reshapes:
                     index = graph._attr['output_names'].index(moments)
@@ -2761,8 +2769,10 @@ def rename_onehot(graph):
             graph.remove_edges_from(in_edges[1:])
             depth = int(in_edges[1][2]['tensor'].value)
             values = in_edges[2][2]['tensor'].value
-            values = np.array(values).astype(
-                np.float32) if values.dtype == 'float64' or values.dtype == 'int64' else values
+            if values.dtype == 'float64':
+                values = np.array(values).astype(np.float32)
+            elif values.dtype == 'int64':
+                values = np.array(values).astype(np.int32)
 
             onehot_attr = onehot_obj.copied_attr()
             onehot_attr.update({'depth': depth, 'values': values})
@@ -2880,7 +2890,8 @@ def rename_reduce(graph):
                 if not out_shape:
                     out_shape = []
                 reshape = insert_reshape_after(
-                    graph, reduce, out_shape, type='Reshape')
+                    graph, reduce, out_shape, type='Reshape',
+                    quantize=reduce_obj.quantize)
                 if reduce in graph._attr['output_names']:
                     index = graph._attr['output_names'].index(reduce)
                     graph._attr['output_names'][index] = reshape
@@ -3034,7 +3045,8 @@ def rename_roialign(graph):
             index_inp, _, index_attr = in_edges[2]
             reshape_dim = list(input_shapes[2]) + [1]
             insert_reshape(graph, index_inp, concat, index_attr,
-                           reshape_dim, type='ArmReshape')
+                           reshape_dim, type='ArmReshape',
+                           quantize=node_obj.quantize)
 
             # concat->roialign
             graph.add_edge(concat, node_name, **
@@ -3089,9 +3101,12 @@ def rename_slice(graph):
     for m in matches:
         slice = m['target']
         slice_obj = NodeWrap(graph, slice)['object']
-        in_edges = graph.sorted_in_edges(slice)
+        in_edges = graph.sorted_in_edges(slice, data=True)
         if slice_obj is not None \
                 and ((slice_obj.cur_version == 1 and len(in_edges) == 1) or (slice_obj.cur_version > 1 and 3 <= len(in_edges) <= 5)):
+            if len(in_edges) > 1 and any(not in_attr['tensor'].is_const for _, _, in_attr in in_edges[1:]):
+                ERROR('Meets unsupported non-const starts/ends/axes/steps of Slice Node(%s) in rename_slice!' % slice)
+                continue
             graph.remove_edges_from(in_edges[1:])
             slice_attr = slice_obj.copied_attr()
             ends = np.array(slice_obj.ends, np.int64)
@@ -3126,6 +3141,7 @@ def rename_tile(graph):
                     if out_attr['tensor'] is not None:
                         out_attr['tensor'].dtype = in_attr['tensor'].dtype
                         out_attr['tensor'].scale_zp = in_attr['tensor'].scale_zp
+                        out_attr['tensor'].activation_quantization_axis = in_attr['tensor'].activation_quantization_axis
 
 
 def rename_topk(graph):
@@ -3181,7 +3197,7 @@ def split_crd_d2s(graph):
                            d2s_obj.blocksize, c // d2s_obj.blocksize ** 2]
                 perm = [0, 1, 4, 2, 5, 3]
                 src, _, in_attr = in_edges[0]
-                reshape = insert_reshape(graph, src, d2s, in_attr, dim)
+                reshape = insert_reshape(graph, src, d2s, in_attr, dim, quantize=d2s_obj.quantize)
                 in_edges = graph.sorted_in_edges(d2s, data=True)
                 _, _, in_attr2 = in_edges[0]
                 insert_transpose(graph, reshape, d2s, in_attr2, perm)
@@ -3318,6 +3334,7 @@ def fuse_quant_op(graph, op_list):
             x_scale, x_zp = obj_dict[dequant].scale, obj_dict[dequant].zero_point
             new_in_attr['tensor'].dtype = str(x_zp.dtype)
             new_in_attr['tensor'].scale_zp = (x_scale, x_zp)
+            new_in_attr['tensor'].activation_quantization_axis = obj_dict[dequant].axis
             graph.add_edge(src, float_op, **new_in_attr)
 
         for quant in op_out_names:
@@ -3328,6 +3345,7 @@ def fuse_quant_op(graph, op_list):
                 graph.remove_edge(quant, dst)
                 out_attr['tensor'].dtype = str(y_zp.dtype)
                 out_attr['tensor'].scale_zp = (y_scale, y_zp)
+                out_attr['tensor'].activation_quantization_axis = obj_dict[quant].axis
                 dst_in_attr = copy.deepcopy(out_attr)
                 dst_in_attr.update({'src_out_port': src_out_port})
                 graph.add_edge(float_op, dst, **dst_in_attr)
@@ -3541,8 +3559,10 @@ def detection_post_process(graph, params):
                 vaild_box_num = out1_out_shapes[0][1]
 
             anchors = None
-            if graph._attr['framework'].name == 'CAFFE' or \
-                    params.get('detection_postprocess', '').upper() == 'SSD_RESNET':
+            is_xy_box_format = (params.get('box_format', '').upper() == 'XY')
+            if graph._attr['framework'].name == 'CAFFE' \
+                    or params.get('detection_postprocess', '').upper() == 'SSD_RESNET' \
+                    or is_xy_box_format:
                 box_out_edges = graph.sorted_out_edges(box_predict, data=True)
                 if len(box_out_edges) == 1:
                     split = get_valid_node_name(
@@ -3592,16 +3612,24 @@ def detection_post_process(graph, params):
                 class_predict_out_edges[0][2]['tensor'])
             box_predict_tensor = copy.deepcopy(
                 box_predict_out_edges[0][2]['tensor'])
-            # Add Softmax if class_predict is not sigmoid or softmax
+            # Add Sigmoid/Softmax if class_predict is not sigmoid or softmax
             if class_pred_obj.type not in ('ArmActivation', 'ArmSoftmax') and \
                     class_pred_parent_obj.type not in ('ArmActivation', 'ArmSoftmax'):
-                softmax = get_valid_node_name(
-                    graph, class_predict + '_softmax')
-                graph.add_edge(class_predict, softmax, **
+                act = params.get('ssd_activation', 'softmax').lower()
+                if act not in ('softmax', 'sigmoid'):
+                    ERROR('[Parser]: Meet invalid value of activation (%s) in detection_post_process! '
+                          'Supported values are softmax, sigmoid!' % act)
+                act_node = get_valid_node_name(
+                    graph, class_predict + '_' + act)
+                graph.add_edge(class_predict, act_node, **
                                {'tensor': class_predict_out_edges[0][2]['tensor']})
-                NodeWrap(graph, softmax).replace_obj(
-                    'ArmSoftmax', {'name': softmax})
-                class_predict = softmax
+                if act == 'softmax':
+                    NodeWrap(graph, act_node).replace_obj(
+                        'ArmSoftmax', {'name': act_node})
+                else:
+                    NodeWrap(graph, act_node).replace_obj(
+                        'ArmActivation', {'name': act_node, 'method': 'SIGMOID'})
+                class_predict = act_node
 
             decode_box = get_valid_node_name(
                 graph, params['model_name'] + '_decode_box')
@@ -3680,8 +3708,7 @@ def detection_post_process(graph, params):
                     feature_map.append(u_input_shapes[0][1:3])
 
             image_width = int(params.get('image_width', 300))
-            image_height = int(params.get('image_width', 300))
-
+            image_height = int(params.get('image_height', 300))
             if graph._attr['framework'].name == 'CAFFE':
                 anchors = graph._attr.get('anchors', None)
             elif graph._attr['framework'].name in ['ONNX', 'TFLITE', 'TENSORFLOW']:
@@ -3694,6 +3721,10 @@ def detection_post_process(graph, params):
                     anchors = ArmDecodeBoxOp.generate_anchors(feature_map)
 
             if anchors is not None:
+                if is_xy_box_format and anchors.shape[-1] == 4:
+                    DEBUG('Change anchor format from xywh/xyxy to yxhw/yxyx!')
+                    split0, split1, split2, split3 = np.split(anchors, 4, axis=-1)
+                    anchors = np.concatenate([split1, split0, split3, split2], axis=-1)
                 anchor_tensor_format = params.get(
                     'anchor_tensor_format', 'center').upper()
                 supported_anchor_format = ['CENTER', 'CORNER']
@@ -3701,6 +3732,7 @@ def detection_post_process(graph, params):
                     ERROR('[Parser]: Meet invalid value of anchor_tensor_format! Supported values are %s!' %
                           str(supported_anchor_format)[1:-1])
                 elif anchor_tensor_format == 'CORNER':
+                    DEBUG('Change anchor format from yxyx to yxhw!')
                     anchors = OpHasAnchors.convert_to_center_coordinate(
                         anchors)
 
@@ -3713,6 +3745,7 @@ def detection_post_process(graph, params):
                               'max_box_num': max_box_num,
                               'class_num': int(params.get('class_num', class_num)),
                               'score_threshold': float(params.get('score_threshold', 0.5)),
+                              'proposal_normalized': params.get('proposal_normalized', True),
                               }
             if params.get('variance', ''):
                 decodebox_attr.update(
@@ -4603,6 +4636,7 @@ def insert_cast_if_must(graph):
         for n in ds:
             obj = NodeWrap(graph, n)['object']
             if obj is not None:
+                quantize = obj.quantize
                 if isinstance(obj, ArmOp) and len(obj.cast_in_ports()) > 0:
                     in_edges = graph.sorted_in_edges(n, data=True, keys=True)
                     cast_in_ports = {}
@@ -4620,6 +4654,9 @@ def insert_cast_if_must(graph):
                                     cast_type_all = cast_in_ports[cast_key]
                                     if in_attr.get('tensor', None) is not None:
                                         dtype = in_attr['tensor'].get_dtype()
+                                        if quantize and dtype is not None \
+                                                and dtype in ('uint8', 'int8', 'int16', 'int32'):
+                                            break
                                         if dtype is not None and all(dtype != cast_type for cast_type in cast_type_all):
                                             happened = True
                                             cast_type = get_converted_dtype(dtype, return_type_string=True)
@@ -4834,6 +4871,7 @@ def sink_reshape_through_cast(graph):
             if cast_out_tensor is not None and len(cast_out_tensor.scale_zp) > 0:
                 reshape_in_attr['tensor'].scale_zp = cast_out_tensor.scale_zp
                 reshape_in_attr['tensor'].dtype = cast_out_tensor.dtype
+                reshape_in_attr['tensor'].activation_quantization_axis = cast_out_tensor.activation_quantization_axis
         graph.add_edge(cast, reshape, **reshape_in_attr)
         for _, dst, out_attr in cast_out_edges:
             graph.add_edge(reshape, dst, **out_attr)
@@ -5342,55 +5380,69 @@ def sink_transpose_through_slice_pair(graph):
         clear_redundant_nodes(graph)
 
 
-def merge_same_op_at_out_port(graph, op_types=list()):
-    op_types = list(set(op_types).union(['ArmTranspose', 'ArmReshape']))
-    matches = single_node_matcher(graph, {})
+def sink_quantize_through_concat(graph):
+    if not graph._attr.get('quantize', False):
+        return
+    matched = False
+    matches = single_node_matcher(graph, 'ArmConcat')
     for m in matches:
-        node = m['target']
-        if not graph.has_node(node):
+        concat = m['target']
+        concat_obj = NodeWrap(graph, concat)['object']
+        concat_in_edges = graph.sorted_in_edges(concat, data=True)
+        if concat_obj is None or len(concat_in_edges) < 1:
+            ERROR(
+                '[Parser]: Meets invalid Concat Node(%s) in sink_quantize_through_concat!' % concat)
             continue
-        node_obj = NodeWrap(graph, node)['object']
-        if node_obj is None or node_obj.type == 'Out':
+        concat_out_edges = graph.sorted_out_edges(concat, data=True)
+        if len(concat_out_edges) < 1:
             continue
-        out_ports = node_obj.get_out_ports()
-        if len(out_ports) < 1:
+        all_src_are_quant = True
+        in_quant_names = []
+        in_ports = []
+        in_quant_objs = {}
+        for src, _, in_attr in concat_in_edges:
+            src_obj = NodeWrap(graph, src)['object']
+            if src_obj is None or src_obj.type != 'ArmQuantize' \
+                    or len(graph.sorted_in_edges(src)) != 1:
+                all_src_are_quant = False
+                break
+            in_quant_names.append(src)
+            in_ports.append(in_attr['dst_in_port'])
+            in_quant_objs[src] = src_obj
+        if not all_src_are_quant:
             continue
-        out_edges = graph.sorted_out_edges(node, keys=True, data=True)
-        if len(out_edges) < 2:
+        quant_obj = in_quant_objs[in_quant_names[0]]
+        quant_scale = quant_obj.scale
+        quant_zp = quant_obj.zero_point
+        quant_axis = quant_obj.axis
+        if any((not FLOAT_EQUAL(quant_scale, in_quant_objs[name].scale)
+                or quant_zp != in_quant_objs[name].zero_point
+                or quant_axis != in_quant_objs[name].axis) for name in in_quant_names[1:]):
             continue
-        for p in out_ports:
-            cur_p_edges = [e for e in out_edges if (e[3]['src_out_port'] == p and graph.has_node(
-                e[1]) and NodeWrap(graph, e[1])['object'] is not None)]
-            if len(cur_p_edges) < 2:
-                continue
-            for op in op_types:
-                cur_type_edges = [e for e in cur_p_edges if (graph.has_node(e[1]) and NodeWrap(
-                    graph, e[1])['object'] is not None and NodeWrap(graph, e[1])['object'].type == op)]
-                if len(cur_type_edges) < 2:
-                    continue
-                cur_objs = [NodeWrap(graph, e[1])['object'] for e in cur_type_edges]
-                if op == 'ArmReshape':
-                    if any(cur_objs[0].dim != obj.dim for obj in cur_objs[1:]):
-                        continue
-                elif op == 'ArmTranspose':
-                    if any(cur_objs[0].perm != obj.perm for obj in cur_objs[1:]):
-                        continue
-                else:
-                    # not supported yet
-                    continue
-                keep_out_node = cur_type_edges[0][1]
-                for _, removing_out, k, _ in cur_type_edges[1:]:
-                    graph.remove_edge(node, removing_out, key=k)
-                    for _, dst, meta_k, out_attr in graph.sorted_out_edges(removing_out, keys=True, data=True):
-                        graph.remove_edge(removing_out, dst, key=meta_k)
-                        graph.add_edge(keep_out_node, dst, **out_attr)
-                    graph.remove_node(removing_out)
-                    if removing_out in graph._attr['output_names']:
-                        index = graph._attr['output_names'].index(removing_out)
-                        if keep_out_node not in graph._attr['output_names']:
-                            graph._attr['output_names'][index] = keep_out_node
-                        else:
-                            graph._attr['output_names'].pop(index)
+        matched = True
+        quant_attr = quant_obj.copied_attr()
+        graph.remove_edges_from(concat_in_edges + concat_out_edges)
+        for quant, dst_in_port in zip(in_quant_names, in_ports):
+            quant_src, _, in_attr = graph.sorted_in_edges(quant, data=True)[0]
+            concat_in_attr = copy.deepcopy(in_attr)
+            concat_in_attr.update({'dst_in_port': dst_in_port})
+            graph.add_edge(quant_src, concat, **concat_in_attr)
+        post_quant = get_valid_node_name(graph, concat + '_post_quant')
+        concat_out_attr = copy.deepcopy(concat_out_edges[0][2])
+        concat_out_attr.update({'dst_in_port': 0})
+        graph.add_edge(concat, post_quant, **concat_out_attr)
+        for _, dst, out_attr in concat_out_edges:
+            graph.add_edge(post_quant, dst, **out_attr)
+
+        concat_obj.quantize = False
+        if concat in graph._attr['output_names']:
+            index = graph._attr['output_names'].index(concat)
+            graph._attr['output_names'][index] = post_quant
+
+        quant_attr.update({'name': post_quant})
+        NodeWrap(graph, post_quant).replace_obj('ArmQuantize', quant_attr)
+    if matched:
+        clear_redundant_nodes(graph)
 
 
 def assign_top_range_scale_zp(graph):
@@ -5424,6 +5476,8 @@ def assign_top_range_scale_zp(graph):
                 if n_obj.quantize:
                     has_quantize_nodes = True
                 else:
+                    if n_obj.type == 'ArmDeQuantize':
+                        has_quantize_nodes = True
                     continue
                 if not any('scale_zp' in info for info in top_info[3]):
                     continue
@@ -5453,6 +5507,10 @@ def assign_top_range_scale_zp(graph):
                 assert len(n_obj.top_scales_list) == len(n_obj.top_zps_list) \
                     and len(n_obj.top_scales) == len(n_obj.top_zps), \
                     'top_scales and top_zps should have the same size!'
+                top_activation_quantization_axis = [t_info.get(
+                    'activation_quantization_axis', None) for t_info in top_info[3]]
+                if any(axis is not None for axis in top_activation_quantization_axis):
+                    n_obj.activation_quantization_axis = top_activation_quantization_axis
         else:
             ERROR('[Parser]: Meets invalid Node(%s) in assign_top_range_scale_zp!' % n)
     if graph._attr.get('quantize', False) and not has_quantize_nodes:
@@ -5535,9 +5593,11 @@ def back_passes(graph, params):
     simple_rename(graph, 'Acos', 'ArmAcos')
     simple_rename(graph, 'Acosh', 'ArmAcosh')
     simple_rename(graph, 'AdaptivePool', 'ArmAdaptivePool')
+    simple_rename(graph, 'AffineGrid', 'ArmAffineGrid')
     simple_rename(graph, 'Asin', 'ArmAsin')
     simple_rename(graph, 'Asinh', 'ArmAsinh')
     simple_rename(graph, 'Atan', 'ArmAtan')
+    simple_rename(graph, 'Atanh', 'ArmAtanh')
     simple_rename(graph, 'BatchGather', 'ArmGather')
     simple_rename(graph, 'BitShift', 'ArmBitShift')
     simple_rename(graph, 'BNLL', 'ArmBNLL')
@@ -5607,6 +5667,7 @@ def back_passes(graph, params):
 
     remove_redundant_bn(graph)
     sink_transpose_through_special_reshape(graph)
+    sink_quantize_through_concat(graph)
     remove_redundant_reshape_transpose(graph)
     remove_redundant_reshape(graph, 'ArmReshape')
     remove_redundant_transpose(graph)
@@ -5637,6 +5698,7 @@ def back_passes(graph, params):
                           ]:
                     f(graph)
                     remove_redundant_transpose(graph)
+                    remove_redundant_transpose3(graph)
                     remove_redundant_reshape(graph, 'ArmReshape')
                     remove_useless_op(graph, ['ArmReshape', 'ArmTranspose'])
                 if len(nodes_num_list) < 4:

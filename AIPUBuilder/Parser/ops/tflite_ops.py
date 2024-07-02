@@ -11,7 +11,7 @@ from ..logger import INFO, DEBUG, WARN, ERROR, FATAL
 class LiteADDOp(BaseActivationOp, TfliteOp):
     @classmethod
     def attributes(cls):
-        return {1: {}, 2: {}}
+        return {1: {}, 2: {}, 3: {}}
 
     def __init__(self, graph, attr_dict=None):
         super(LiteADDOp, self).__init__(graph, attr_dict)
@@ -138,13 +138,13 @@ class LiteAVERAGE_POOL_2DOp(BaseActivationOp, OpHasPaddingStrides, TfliteOp):
     def infer_shape(self):
         super(LiteAVERAGE_POOL_2DOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.nn.avg_pool(inputs[0],
+        out_tensor = tf.nn.avg_pool(inputs[0].astype(np.float32),
                                     ksize=[1] + self.kernel_shape + [1],
                                     strides=[1] + self.strides + [1],
                                     padding='VALID' if self.auto_pad in (
                                         'VALID', 'NOTSET') else 'SAME',
                                     data_format='NHWC').numpy()
-        out_tensor = self.cal_activation(out_tensor)
+        out_tensor = self.cal_activation(out_tensor).astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
         if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
             self.pads, _ = OpHasPaddingStrides.cal_pads(
@@ -211,8 +211,9 @@ class LiteBATCH_MATMULOp(OpHasOneOutPort, TfliteOp):
         super(LiteBATCH_MATMULOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor = tf.raw_ops.BatchMatMulV2(
-            x=inputs[0], y=inputs[1], adj_x=self.adj_x, adj_y=self.adj_y).numpy()
-        self.set_out_tensor(out_tensor)
+            x=inputs[0].astype(np.float32), y=inputs[1].astype(np.float32),
+            adj_x=self.adj_x, adj_y=self.adj_y).numpy()
+        self.set_out_tensor(out_tensor.astype(inputs[0].dtype))
 
     @property
     def correspond_onnx_op(self):
@@ -234,6 +235,22 @@ class LiteBATCH_TO_SPACE_NDOp(OpHasOneOutPort, TfliteOp):
         inputs = self.get_input_tensors()
         out_tensor = tf.compat.v1.batch_to_space_nd(*inputs).numpy()
         self.set_out_tensor(out_tensor)
+
+
+class LiteBITWISE_XOROp(OpHasOneOutPort, TfliteOp):
+    @classmethod
+    def attributes(cls):
+        return {1: {}}
+
+    def infer_shape(self):
+        super(LiteBITWISE_XOROp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = tf.bitwise.bitwise_xor(*inputs).numpy()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'BitwiseXor', 'version': 18}
 
 
 class LiteBROADCAST_TOOp(OpHasOneOutPort, TfliteOp):
@@ -275,7 +292,10 @@ class LiteCASTOp(OpHasOneOutPort, TfliteOp):
     @classmethod
     def attributes(cls):
         return {1: {'to': {'type': AttrType.STRING, 'required': False}},
-                2: {'to': {'type': AttrType.STRING, 'required': False}}
+                2: {'to': {'type': AttrType.STRING, 'required': False}},
+                3: {'to': {'type': AttrType.STRING, 'required': False}},
+                4: {'to': {'type': AttrType.STRING, 'required': False}},
+                5: {'to': {'type': AttrType.STRING, 'required': False}},
                 }
 
     def __init__(self, graph, attr_dict=None):
@@ -391,7 +411,7 @@ class LiteCONV_2DOp(BaseActivationOp, BaseConvOp, TfliteOp):
                                   data_format='NHWC')
         out_tensor = tf.nn.bias_add(
             out_tensor, self.biases, data_format='NHWC').numpy()
-        out_tensor = self.cal_activation(out_tensor)
+        out_tensor = self.cal_activation(out_tensor).astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
         if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
             self.pads, _ = OpHasPaddingStrides.cal_pads(
@@ -466,6 +486,7 @@ class LiteCONV_3DOp(BaseActivationOp, BaseConvOp, TfliteOp):
         out_tensor = tf.nn.bias_add(
             out_tensor, self.biases, data_format='NHWC').numpy()
         out_tensor = self.cal_activation(out_tensor)
+        out_tensor = out_tensor.astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
         if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
             self.pads, _ = OpHasPaddingStrides.cal_pads(
@@ -544,6 +565,7 @@ class LiteCONV_3D_TRANSPOSEOp(BaseActivationOp, BaseDeconvOp, TfliteOp):
                                             padding='VALID' if self.auto_pad in ('VALID', 'NOTSET') else 'SAME')
         out_tensor = tf.nn.bias_add(
             out_tensor, self.biases, data_format='NHWC').numpy()
+        out_tensor = out_tensor.astype(inputs[1].dtype)
         self.set_out_tensor(out_tensor)
         self.output_shape = inputs[0].tolist()[1:-1]
 
@@ -698,7 +720,7 @@ class LiteDEPTHWISE_CONV_2DOp(BaseActivationOp, BaseConvOp, TfliteOp):
                                              dilations=self.dilations,
                                              data_format='NHWC')
         out_shape = [inputs[0].shape[0]] + out_shape + [self.num_output]
-        out_tensor = np.random.ranf(size=out_shape).astype(np.float32)
+        out_tensor = np.random.ranf(size=out_shape).astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
         if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
@@ -793,7 +815,7 @@ class LiteDEQUANTIZEOp(OpHasOneOutPort, TfliteOp):
 class LiteDIVOp(BaseActivationOp, TfliteOp):
     @classmethod
     def attributes(cls):
-        return {1: {}, 2: {}}
+        return {1: {}, 2: {}, 3: {}}
 
     def __init__(self, graph, attr_dict=None):
         super(LiteDIVOp, self).__init__(graph, attr_dict)
@@ -897,9 +919,7 @@ class LiteEXPAND_DIMSOp(OpHasAxis, OpHasOneOutPort, TfliteOp):
 class LiteFILLOp(OpHasOneOutPort, TfliteOp):
     @classmethod
     def attributes(cls):
-        return {1: {},
-                2: {},
-                }
+        return {1: {}, 2: {}, 3: {}}
 
     def __init__(self, graph, attr_dict=None):
         super(LiteFILLOp, self).__init__(graph, attr_dict)
@@ -1075,6 +1095,33 @@ class LiteGATHER_NDOp(OpHasOneOutPort, TfliteOp):
         return {'type': 'GatherND', 'version': 11}
 
 
+class LiteGELUOp(ActivationOnlyOp, TfliteOp):
+    @classmethod
+    def attributes(cls):
+        return {1: {'approximate': {'type': AttrType.BOOL, 'default': False},
+                    },
+                2: {'approximate': {'type': AttrType.BOOL, 'default': False},
+                    }
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(LiteGELUOp, self).__init__(graph, attr_dict)
+        self.update_attributes(LiteGELUOp, attr_dict)
+        assert self.check_required(), 'LiteGELUOp is missing a required parameter.'
+        self.activations = 'GELU'
+
+    def infer_shape(self):
+        super(LiteGELUOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = tf.nn.gelu(inputs[0].astype(np.float32), approximate=self.approximate).numpy()
+        out_tensor = out_tensor.astype(inputs[0].dtype)
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'Gelu', 'version': 20}
+
+
 class LiteGREATEROp(OpHasOneOutPort, TfliteOp):
     @classmethod
     def attributes(cls):
@@ -1127,7 +1174,7 @@ class LiteHARD_SWISHOp(OpHasOneOutPort, TfliteOp):
         super(LiteHARD_SWISHOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor = (inputs[0] * tf.nn.relu6(inputs[0] + 3) / 6).numpy()
-        self.set_out_tensor(out_tensor)
+        self.set_out_tensor(out_tensor.astype(inputs[0].dtype))
 
     @property
     def correspond_onnx_op(self):
@@ -1329,7 +1376,7 @@ class LiteLOGISTICOp(OpHasOneOutPort, TfliteOp):
         else:
             inp = inputs[0]
         out_tensor = tf.sigmoid(inp).numpy()
-        self.set_out_tensor(out_tensor)
+        self.set_out_tensor(out_tensor.astype(inputs[0].dtype))
 
     @property
     def correspond_onnx_op(self):
@@ -1400,7 +1447,7 @@ class LiteMAX_POOL_2DOp(BaseActivationOp, OpHasPaddingStrides, TfliteOp):
                                     padding='VALID' if self.auto_pad in (
                                         'VALID', 'NOTSET') else 'SAME',
                                     data_format='NHWC').numpy()
-        out_tensor = self.cal_activation(out_tensor)
+        out_tensor = self.cal_activation(out_tensor).astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
         if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
             self.pads, _ = OpHasPaddingStrides.cal_pads(
@@ -1549,7 +1596,7 @@ class LiteLOGOp(OpHasOneOutPort, TfliteOp):
 class LiteMULOp(BaseActivationOp, OpHasOneOutPort, TfliteOp):
     @classmethod
     def attributes(cls):
-        return {1: {}, 2: {}}
+        return {1: {}, 2: {}, 3: {}}
 
     def __init__(self, graph, attr_dict=None):
         super(LiteMULOp, self).__init__(graph, attr_dict)
@@ -1786,9 +1833,10 @@ class LitePRELUOp(OpHasOneOutPort, TfliteOp):
     def infer_shape(self):
         super(LitePRELUOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = (tf.nn.relu(
-            inputs[0]) + (inputs[0] - tf.abs(inputs[0])) * inputs[1]).numpy()
-        self.set_out_tensor(out_tensor)
+        inp0 = inputs[0].astype(np.float32)
+        inp1 = inputs[1].astype(np.float32)
+        out_tensor = (tf.nn.relu(inp0) + (inp0 - tf.abs(inp0)) * inp1).numpy()
+        self.set_out_tensor(out_tensor.astype(inputs[0].dtype))
 
     @property
     def correspond_onnx_op(self):
@@ -2105,7 +2153,7 @@ class LiteRESIZE_BILINEAROp(OpHasOneOutPort, TfliteOp):
             self.half_pixel = False
         out_tensor = tf.compat.v1.image.resize_bilinear(
             *inputs, align_corners=self.align_corners, half_pixel_centers=self.half_pixel).numpy()
-        self.set_out_tensor(out_tensor)
+        self.set_out_tensor(out_tensor.astype(inputs[0].dtype))
 
     @property
     def correspond_onnx_op(self):
@@ -2214,6 +2262,27 @@ class LiteREVERSE_V2Op(OpHasAxis, OpHasOneOutPort, TfliteOp):
         self.set_out_tensor(out_tensor)
 
 
+class LiteRIGHT_SHIFTOp(OpHasOneOutPort, TfliteOp):
+    @classmethod
+    def attributes(cls):
+        return {1: {}, 2: {}}
+
+    def __init__(self, graph, attr_dict=None):
+        super(LiteRIGHT_SHIFTOp, self).__init__(graph, attr_dict)
+        self.update_attributes(LiteRIGHT_SHIFTOp, attr_dict)
+        assert self.check_required(), 'LiteRIGHT_SHIFTOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(LiteRIGHT_SHIFTOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = np.right_shift(inputs[0], inputs[1])
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'BitShift', 'version': 11}
+
+
 class LiteROUNDOp(OpHasOneOutPort, TfliteOp):
     @classmethod
     def attributes(cls):
@@ -2298,7 +2367,11 @@ class LiteSEGMENT_SUMOp(OpHasOneOutPort, TfliteOp):
 class LiteSELECTOp(OpHasOneOutPort, TfliteOp):
     @classmethod
     def attributes(cls):
-        return {1: {}, 2: {}}
+        return {1: {},
+                2: {},  # support int8
+                3: {},  # support 5d
+                4: {},  # support uint32
+                }
 
     def __init__(self, graph, attr_dict=None):
         super(LiteSELECTOp, self).__init__(graph, attr_dict)
@@ -2364,6 +2437,27 @@ class LiteSHAPEOp(OpHasOneOutPort, ConstLikeOp, TfliteOp):
     @property
     def correspond_onnx_op(self):
         return {'type': 'Shape', 'version': 13}
+
+
+class LiteSIGNOp(OpHasOneOutPort, TfliteOp):
+    @classmethod
+    def attributes(cls):
+        return {1: {}, 2: {}}
+
+    def __init__(self, graph, attr_dict=None):
+        super(LiteSIGNOp, self).__init__(graph, attr_dict)
+        self.update_attributes(LiteSIGNOp, attr_dict)
+        assert self.check_required(), 'LiteSIGNOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(LiteSIGNOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = np.sign(inputs[0])
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'Sign', 'version': 13}
 
 
 class LiteSINOp(OpHasOneOutPort, TfliteOp):
@@ -2461,8 +2555,8 @@ class LiteSOFTMAXOp(OpHasAxis, OpHasOneOutPort, TfliteOp):
         inputs = self.get_input_tensors()
         self.axis = OpHasAxis.make_axes_non_negative(
             self.axis, len(inputs[0].shape))
-        out_tensor = tf.nn.softmax(inputs[0], axis=self.axis).numpy()
-        self.set_out_tensor(out_tensor)
+        out_tensor = tf.nn.softmax(inputs[0].astype(np.float32), axis=self.axis).numpy()
+        self.set_out_tensor(out_tensor.astype(inputs[0].dtype))
 
     @property
     def correspond_onnx_op(self):
@@ -2667,6 +2761,12 @@ class LiteSTRIDED_SLICEOp(OpHasOneOutPort, TfliteOp):
                     'ellipsis_mask': {'type': AttrType.INT, 'default': 0},
                     'new_axis_mask': {'type': AttrType.INT, 'default': 0},
                     'shrink_axis_mask': {'type': AttrType.INT, 'default': 0}
+                    },
+                4: {'begin_mask': {'type': AttrType.INT, 'default': 0},
+                    'end_mask': {'type': AttrType.INT, 'default': 0},
+                    'ellipsis_mask': {'type': AttrType.INT, 'default': 0},
+                    'new_axis_mask': {'type': AttrType.INT, 'default': 0},
+                    'shrink_axis_mask': {'type': AttrType.INT, 'default': 0}
                     }
                 }
 
@@ -2748,8 +2848,8 @@ class LiteTANHOp(ActivationOnlyOp, TfliteOp):
     def infer_shape(self):
         super(LiteTANHOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.tanh(inputs[0]).numpy()
-        self.set_out_tensor(out_tensor)
+        out_tensor = tf.tanh(inputs[0].astype(np.float32)).numpy()
+        self.set_out_tensor(out_tensor.astype(inputs[0].dtype))
 
     @property
     def correspond_onnx_op(self):
@@ -2803,7 +2903,11 @@ class LiteTRANSPOSEOp(OpHasOneOutPort, TfliteOp):
     @classmethod
     def attributes(cls):
         return {1: {'perm': {'type': AttrType.INTS, 'default': [], 'required': False}},
-                2: {'perm': {'type': AttrType.INTS, 'default': [], 'required': False}}}
+                2: {'perm': {'type': AttrType.INTS, 'default': [], 'required': False}},
+                3: {'perm': {'type': AttrType.INTS, 'default': [], 'required': False}},
+                4: {'perm': {'type': AttrType.INTS, 'default': [], 'required': False}},
+                6: {'perm': {'type': AttrType.INTS, 'default': [], 'required': False}}
+                }
 
     def __init__(self, graph, attr_dict=None):
         super(LiteTRANSPOSEOp, self).__init__(graph, attr_dict)
@@ -2876,6 +2980,7 @@ class LiteTRANSPOSE_CONVOp(BaseActivationOp, BaseDeconvOp, TfliteOp):
                                             padding='VALID' if self.auto_pad in ('VALID', 'NOTSET') else 'SAME')
         out_tensor = tf.nn.bias_add(
             out_tensor, self.biases, data_format='NHWC').numpy()
+        out_tensor = out_tensor.astype(inputs[1].dtype)
         self.set_out_tensor(out_tensor)
         self.output_shape = inputs[0].tolist()[1:-1]
 

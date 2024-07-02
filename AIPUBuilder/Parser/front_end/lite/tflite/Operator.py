@@ -3,6 +3,8 @@
 # namespace: tflite
 
 import flatbuffers
+from flatbuffers.compat import import_numpy
+np = import_numpy()
 
 
 class Operator(object):
@@ -14,6 +16,10 @@ class Operator(object):
         x = Operator()
         x.Init(buf, n + offset)
         return x
+
+    @classmethod
+    def OperatorBufferHasIdentifier(cls, buf, offset, size_prefixed=False):
+        return flatbuffers.util.BufferHasIdentifier(buf, offset, b"\x54\x46\x4C\x33", size_prefixed=size_prefixed)
 
     # Operator
     def Init(self, buf, pos):
@@ -49,6 +55,11 @@ class Operator(object):
         return 0
 
     # Operator
+    def InputsIsNone(self):
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(6))
+        return o == 0
+
+    # Operator
     def Outputs(self, j):
         o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(8))
         if o != 0:
@@ -69,6 +80,11 @@ class Operator(object):
         if o != 0:
             return self._tab.VectorLen(o)
         return 0
+
+    # Operator
+    def OutputsIsNone(self):
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(8))
+        return o == 0
 
     # Operator
     def BuiltinOptionsType(self):
@@ -110,6 +126,11 @@ class Operator(object):
         return 0
 
     # Operator
+    def CustomOptionsIsNone(self):
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(14))
+        return o == 0
+
+    # Operator
     def CustomOptionsFormat(self):
         o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(16))
         if o != 0:
@@ -139,6 +160,11 @@ class Operator(object):
         return 0
 
     # Operator
+    def MutatingVariableInputsIsNone(self):
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(18))
+        return o == 0
+
+    # Operator
     def Intermediates(self, j):
         o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(20))
         if o != 0:
@@ -159,6 +185,11 @@ class Operator(object):
         if o != 0:
             return self._tab.VectorLen(o)
         return 0
+
+    # Operator
+    def IntermediatesIsNone(self):
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(20))
+        return o == 0
 
 
 def OperatorStart(builder): builder.StartObject(9)

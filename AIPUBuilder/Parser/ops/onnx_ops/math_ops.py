@@ -212,7 +212,7 @@ class AtanhOp(LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
         super(AtanhOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor = np.arctanh(*inputs)
-        self.set_out_tensor(out_tensor)
+        self.set_out_tensor(out_tensor.astype(inputs[0].dtype))
 
 
 class AtanOp(LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
@@ -1387,7 +1387,11 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
                     inputs = self.get_input_tensors()
                     if cur_ver >= 11:
                         try:
-                            if inputs[1] is not None:
+                            ret = self.__dict__['_attr'][item].value
+                        except:
+                            ret = None
+                        try:
+                            if ret is None and (inputs[1] is not None and inputs[1].size != 0):
                                 ret = np.array(inputs[1], np.float32)
                                 axes = self.axes
                                 if cur_ver >= 18 and axes is not None:
@@ -1396,6 +1400,8 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
                                     complete_idx = axes + [(axis + input_length) for axis in axes]
                                     np.put(new_roi, complete_idx, np.array(ret[:(len(axes) * 2)]))
                                     ret = new_roi
+                                    self.__dict__['_attr'][item] = Attribute(
+                                        item, {'type': AttrType.TENSOR, 'value': ret})
                         except:
                             pass
                         if ret is None:
@@ -1406,15 +1412,20 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
                         ret = np.array(inputs[1], np.float32)
                     else:
                         try:
-                            if inputs[2] is not None:
+                            ret = self.__dict__['_attr'][item].value
+                        except:
+                            ret = None
+                        try:
+                            if ret is None and (inputs[2] is not None and inputs[2].size != 0):
                                 ret = np.array(inputs[2], np.float32)
                                 axes = self.axes
                                 if cur_ver >= 18 and axes is not None:
                                     input_length = len(inputs[0].shape)
                                     new_scales = np.ones([input_length], np.float32)
-                                    complete_idx = axes + [(axis + input_length) for axis in axes]
-                                    np.put(new_scales, complete_idx, np.array(ret[:len(axes)]))
+                                    np.put(new_scales, axes, ret)
                                     ret = new_scales
+                                    self.__dict__['_attr'][item] = Attribute(
+                                        item, {'type': AttrType.TENSOR, 'value': ret})
                         except:
                             pass
                         if ret is None:
@@ -1425,15 +1436,20 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
                         ret = None
                     else:
                         try:
-                            if inputs[3] is not None:
+                            ret = self.__dict__['_attr'][item].value
+                        except:
+                            ret = None
+                        try:
+                            if ret is None and (inputs[3] is not None and inputs[3].size != 0):
                                 ret = np.array(inputs[3], np.int64)
                                 axes = self.axes
                                 if cur_ver >= 18 and axes is not None:
                                     input_length = len(inputs[0].shape)
                                     new_sizes = np.array(inputs[0].shape, np.int64)
-                                    complete_idx = axes + [(axis + input_length) for axis in axes]
-                                    np.put(new_sizes, complete_idx, np.array(ret[:len(axes)]))
+                                    np.put(new_sizes, axes, ret)
                                     ret = new_sizes
+                                    self.__dict__['_attr'][item] = Attribute(
+                                        item, {'type': AttrType.TENSOR, 'value': ret})
                         except:
                             pass
                     if ret is None:
@@ -1466,6 +1482,7 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
                         if ret is not None:
                             input_length = len(self.get_input_shapes()[0])
                             ret = [(axis + input_length) if axis < 0 else axis for axis in ret]
+                            self.__dict__['_attr'][item].value = ret
                     else:
                         ret = None
                 elif item == 'keep_aspect_ratio_policy':
@@ -2109,15 +2126,17 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
                 else:
                     min_max_fn = max
                     scale_in_policy = np.finfo(np.float32).min
-                original_out_size = self.sizes
-                adjusted_out_size = copy.deepcopy(original_out_size)
                 for axis in axes:
-                    scale_in_policy = min_max_fn(original_out_size[axis] / input_dim_np[axis], scale_in_policy)
+                    scale_in_policy = min_max_fn(self.sizes[axis] / input_dim_np[axis], scale_in_policy)
+                # For non-resizable axes (those not specified in axes), the output size will be equal to the input size.
+                adjusted_out_size = copy.deepcopy(input_dim_np)
                 for axis in axes:
                     adjusted_out_size[axis] = int(ResizeOp.get_nearest_pixel(
                         'round_prefer_ceil', scale_in_policy * input_dim_np[axis]))
                 self.sizes = adjusted_out_size
+                self.keep_aspect_ratio_policy = 'stretch'  # void sizes being updated again
             self.scales = np.array(self.sizes, np.float32) / input_dim_np
+
         if self.cur_version == 10:
             out_shape = np.floor(
                 input_dim_np * self.scales).astype(np.int64).tolist()
@@ -2492,7 +2511,7 @@ class SqrtOp(LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
         super(SqrtOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor = np.sqrt(inputs[0])
-        self.set_out_tensor(out_tensor)
+        self.set_out_tensor(out_tensor.astype(inputs[0].dtype))
 
 
 class SubOp(OpNeedBroadcast, OpHasAxis, OpHasOneOutPort, OnnxOp):
@@ -2584,8 +2603,8 @@ class TanhOp(LayoutUnawareOp, BaseActivationOp, OnnxOp):
     def infer_shape(self):
         super(TanhOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.tanh(inputs[0]).numpy()
-        self.set_out_tensor(out_tensor)
+        out_tensor = tf.tanh(inputs[0].astype(np.float32)).numpy()
+        self.set_out_tensor(out_tensor.astype(inputs[0].dtype))
 
 
 class TanOp(LayoutUnawareOp, OpHasOneOutPort, OnnxOp):

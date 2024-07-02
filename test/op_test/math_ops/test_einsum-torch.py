@@ -27,11 +27,11 @@ def create_einsum_model(model_path, equation):
 
 
 TEST_NAME = 'einsum'
-model_path = TEST_NAME + '.pt'
 shape_dict = {'i': 10, 'j': 12, 'k': 14, 'l': 15, 'm': 9, 'n': 8,
               'a': 4, 'b': 5}
 
 for equation in (
+        'abij,ijk->abk', 'abij,ijmn->abmn',
         'nijkl,imkln->ikjnm', 'ijknl,niljm->nikjm',
         'ijkl,imkl->ikjm', 'ijkl,iljm->ikjm',
         'mij,jk->mik', 'ij,mkj->mik', 'mij,mjk->mik', 'mij,mkj->mik',
@@ -39,7 +39,8 @@ for equation in (
         'l m n i k, l m n j k -> l m n i j',
         'l m n i j, l m n j k -> l m n i k',
         'ij,jk->ik', 'ij,kj->ik',
-        'ijkl,ilm->ijkm', '...i,ji->...ji', 'ijkl,ijkm->ilm',):
+        'ijkl,ilm->ijkm', '...i,ji->...ji', 'ijkl,ijkm->ilm',
+):
     if '...' in equation:
         new_equation = equation.replace('...', 'ab')
     else:
@@ -52,6 +53,7 @@ for equation in (
     feed_dict = {'x1': x1_data, 'x2': x2_data}
     np.save('input', feed_dict)
 
+    model_path = '-'.join([TEST_NAME, input1.replace(' ', ''), input2.replace(' ', '')]) + '.pt'
     create_einsum_model(model_path, equation)
     exit_status = run_parser(model_path, feed_dict)
     assert exit_status

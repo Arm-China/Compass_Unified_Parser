@@ -3,6 +3,8 @@
 # namespace: tflite
 
 import flatbuffers
+from flatbuffers.compat import import_numpy
+np = import_numpy()
 
 
 class SignatureDef(object):
@@ -14,6 +16,10 @@ class SignatureDef(object):
         x = SignatureDef()
         x.Init(buf, n + offset)
         return x
+
+    @classmethod
+    def SignatureDefBufferHasIdentifier(cls, buf, offset, size_prefixed=False):
+        return flatbuffers.util.BufferHasIdentifier(buf, offset, b"\x54\x46\x4C\x33", size_prefixed=size_prefixed)
 
     # SignatureDef
     def Init(self, buf, pos):
@@ -40,6 +46,11 @@ class SignatureDef(object):
         return 0
 
     # SignatureDef
+    def InputsIsNone(self):
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(4))
+        return o == 0
+
+    # SignatureDef
     def Outputs(self, j):
         o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(6))
         if o != 0:
@@ -58,6 +69,11 @@ class SignatureDef(object):
         if o != 0:
             return self._tab.VectorLen(o)
         return 0
+
+    # SignatureDef
+    def OutputsIsNone(self):
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(6))
+        return o == 0
 
     # SignatureDef
     def SignatureKey(self):

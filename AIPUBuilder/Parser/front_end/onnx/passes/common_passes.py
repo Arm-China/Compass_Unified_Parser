@@ -319,6 +319,9 @@ def remove_useless_op(graph, op_type_list):
                             '[Parser]: Meets unsupported Roll(%s) to remove in remove_useless_op!' % node_name)
                         continue
             elif op_type == 'Slice':
+                in_edges = graph.sorted_in_edges(node_name, data=True)
+                if len(in_edges) > 1 and any(not in_attr['tensor'].is_const for _, _, in_attr in in_edges[1:]):
+                    continue
                 input_shapes = node_obj.get_input_shapes()
                 output_shapes = node_obj.get_output_shapes()
                 if len(input_shapes) >= 1 \
@@ -535,6 +538,54 @@ def remove_redundant_transpose2(graph):
         if trans2 in graph._attr['output_names']:
             index = graph._attr['output_names'].index(trans2)
             graph._attr['output_names'][index] = new_reshape
+    if matched:
+        clear_redundant_nodes(graph)
+
+
+def remove_redundant_transpose3(graph):
+    '''Remove Transpose nodes from the following patterns if their perm are inversed.
+    sink_single_transpose won't work for this case because the first Transpose has more than 1 children.
+        x -> Transpose -> Quantize(or others) -> Transpose
+                     \--> (other children)
+    Merge to:
+        x -> Quantize(or others)
+         \-> Transpose --> (other children)
+    '''
+    matched = False
+    matches = matched_patterns(graph,
+                               nodes=[('trans1', {'op': 'ArmTranspose', 'unique': False}),
+                                      ('unaware', {'op': ['ArmQuantize', 'ArmDeQuantize']}),  # or other ops
+                                      ('trans2', {'op': 'ArmTranspose'})],
+                               edges=[('trans1', 'unaware'),
+                                      ('unaware', 'trans2')]
+                               )
+    for m in matches:
+        trans1, trans2, unaware = m['trans1'], m['trans2'], m['unaware']
+        trans1_obj, trans2_obj, unaware_obj = [NodeWrap(
+            graph, name)['object'] for name in [trans1, trans2, unaware]]
+        trans1_in_edges = graph.sorted_in_edges(trans1, data=True)
+        if trans1_obj is None or trans2_obj is None or unaware_obj is None \
+                or len(trans1_obj.perm) != len(trans2_obj.perm) \
+                or len(trans1_in_edges) < 1:
+            ERROR('[Parser]: Meets invalid nodes in remove_redundant_transpose3!')
+            continue
+        merged_perm = ArmTransposeOp.cal_merged_perm(trans1_obj.perm, trans2_obj.perm)
+        if merged_perm != list(range(len(merged_perm))):
+            continue
+        unaware_out_edges = graph.sorted_out_edges(unaware)
+        if len(unaware_out_edges) != 1:
+            continue
+        matched = True
+        unaware_in_edges = graph.sorted_in_edges(unaware)
+        trans2_out_edges = graph.sorted_out_edges(trans2, data=True)
+        graph.remove_edges_from(unaware_in_edges + unaware_out_edges + trans2_out_edges)
+        src, _, in_attr = trans1_in_edges[0]
+        graph.add_edge(src, unaware, **in_attr)
+        for _, dst, out_attr in trans2_out_edges:
+            graph.add_edge(unaware, dst, **out_attr)
+        if trans2 in graph._attr['output_names']:
+            index = graph._attr['output_names'].index(trans2)
+            graph._attr['output_names'][index] = unaware
     if matched:
         clear_redundant_nodes(graph)
 
@@ -1461,6 +1512,74 @@ def apply_preprocess_plugin(graph):
         use_default_output = 'infer_shape' not in plugin.__dict__
         applied_input_names.extend(insert_preprocess_plugin(
             graph, plugin_op_type, plugin.input_nodes, plugin.input_shapes, use_default_output))
+
+
+def merge_same_op_at_out_port(graph, op_types=['ArmTranspose', 'ArmReshape']):
+    '''Merge ANY->Transpose/Reshape/others(*n) to ANY->Transpose/Reshape/others(*1) if other
+    inputs and attrs of n Transpose/Reshape/others nodes are same.
+    '''
+    matches = single_node_matcher(graph, {})
+    for m in matches:
+        node = m['target']
+        if not graph.has_node(node):
+            continue
+        node_obj = NodeWrap(graph, node)['object']
+        if node_obj is None or node_obj.type == 'Out':
+            continue
+        out_ports = node_obj.get_out_ports()
+        if len(out_ports) < 1:
+            continue
+        out_edges = graph.sorted_out_edges(node, keys=True, data=True)
+        if len(out_edges) < 2:
+            continue
+        for p in out_ports:
+            cur_p_edges = [e for e in out_edges if (e[3]['src_out_port'] == p and graph.has_node(
+                e[1]) and NodeWrap(graph, e[1])['object'] is not None)]
+            if len(cur_p_edges) < 2:
+                continue
+            if any(e[3]['dst_in_port'] != 0 for e in cur_p_edges):
+                continue
+            for op in op_types:
+                cur_type_edges = [e for e in cur_p_edges if (graph.has_node(e[1]) and NodeWrap(
+                    graph, e[1])['object'] is not None and NodeWrap(graph, e[1])['object'].type == op)]
+                if len(cur_type_edges) < 2:
+                    continue
+                cur_objs = [NodeWrap(graph, e[1])['object'] for e in cur_type_edges]
+                if op == 'ArmReshape':
+                    if any(cur_objs[0].dim != obj.dim for obj in cur_objs[1:]):
+                        continue
+                elif op == 'ArmTranspose':
+                    if any(cur_objs[0].perm != obj.perm for obj in cur_objs[1:]):
+                        continue
+                elif op == 'Cast':
+                    if any((cur_objs[0].to != obj.to or cur_objs[0].saturate != obj.saturate) for obj in cur_objs[1:]):
+                        continue
+                elif op == 'QuantizeLinear':
+                    quant_nodes = [e[1] for e in cur_p_edges]
+                    for quant_node in quant_nodes:
+                        quant_in_edges = graph.sorted_in_edges(quant_node, data=True)
+                        if any(e[2]['tensor'].value is None for e in quant_in_edges[1:]) \
+                                or any(not e[2]['tensor'].is_const for e in quant_in_edges[1:]):
+                            continue
+                    if any((cur_objs[0].axis != obj.axis or not FLOAT_EQUAL(cur_objs[0].y_scale, obj.y_scale)
+                            or cur_objs[0].y_zero_point != obj.y_zero_point) for obj in cur_objs[1:]):
+                        continue
+                else:
+                    # not supported yet
+                    continue
+                keep_out_node = cur_type_edges[0][1]
+                for _, removing_out, k, _ in cur_type_edges[1:]:
+                    graph.remove_edge(node, removing_out, key=k)
+                    for _, dst, meta_k, out_attr in graph.sorted_out_edges(removing_out, keys=True, data=True):
+                        graph.remove_edge(removing_out, dst, key=meta_k)
+                        graph.add_edge(keep_out_node, dst, **out_attr)
+                    graph.remove_node(removing_out)
+                    if removing_out in graph._attr['output_names']:
+                        index = graph._attr['output_names'].index(removing_out)
+                        if keep_out_node not in graph._attr['output_names']:
+                            graph._attr['output_names'][index] = keep_out_node
+                        else:
+                            graph._attr['output_names'].pop(index)
 
 
 def record_output_tensors(graph, params={}):

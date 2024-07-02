@@ -16,7 +16,7 @@ from multiprocessing import Process
 from .utils import get_tuple_from_tensor_type, quantized_args, quantize_helper, quantize_helper_multi, \
     get_onnx_pool_output_shape, get_torch_pool_output_shape
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
-from ...common.utils import get_version
+from ...common.utils import get_version, version_to_tuple
 from ...common.defs import FLOAT_EQUAL, INT_MAX
 
 # global variance
@@ -406,7 +406,7 @@ def convert_dict_construct(g, key_0, value_0, key_1=None, value_1=None):
 
 
 @helper.parse_args('v', 'v', 'v')
-@helper.quantized_args(True, False, False)
+@quantized_args(True, False, False)
 def convert_div(g, input, other, *args):
     from torch.onnx.symbolic_opset10 import div
     return div(g, input, other, *args)
@@ -442,7 +442,7 @@ def convert_fake_quantize_per_tensor_affine(g, inputs, scale, zero_point, quant_
 
 
 @helper.parse_args('v', 'i', 'i')
-@helper.quantized_args(True, False, False)
+@quantized_args(True, False, False)
 def convert_flatten(g, input, start_dim, end_dim):
     input_rank = helper._get_tensor_rank(input)
     assert input_rank is not None, 'Meets unknown rank in convert_flatten!'
@@ -628,19 +628,19 @@ def convert_avg_pool(g, input, kernel_size, strides, paddings, ceil_mode, count_
     return slice_out
 
 
-@helper.quantized_args(True, False, False, False, False, False, False)
+@quantized_args(True, False, False, False, False, False, False)
 @helper.parse_args('v', 'is', 'is', 'is', 'i', 'i', 'none')
 def convert_avg_pool1d(g, inp, kernel_size, stride, padding, ceil_mode, count_include_pad, divisor_override=None):
     return convert_avg_pool(g, inp, kernel_size, stride, padding, ceil_mode, count_include_pad, divisor_override, 1)
 
 
-@helper.quantized_args(True, False, False, False, False, False, False)
+@quantized_args(True, False, False, False, False, False, False)
 @helper.parse_args('v', 'is', 'is', 'is', 'i', 'i', 'none')
 def convert_avg_pool2d(g, inp, kernel_size, stride, padding, ceil_mode, count_include_pad, divisor_override=None):
     return convert_avg_pool(g, inp, kernel_size, stride, padding, ceil_mode, count_include_pad, divisor_override, 2)
 
 
-@helper.quantized_args(True, False, False, False, False, False, False)
+@quantized_args(True, False, False, False, False, False, False)
 @helper.parse_args('v', 'is', 'is', 'is', 'i', 'i', 'none')
 def convert_avg_pool3d(g, inp, kernel_size, stride, padding, ceil_mode, count_include_pad, divisor_override=None):
     return convert_avg_pool(g, inp, kernel_size, stride, padding, ceil_mode, count_include_pad, divisor_override, 3)
@@ -728,39 +728,35 @@ def convert_max_pool(g, input, kernel_size, strides, paddings, dilations, ceil_m
     assert isinstance(dim, int) and dim in [
         1, 2, 3], 'Meets invalid dim in convert_max_pool!'
     if not ceil_mode:
-        if return_indices:
-            try:
+        try:
+            if return_indices:
                 from torch.onnx.symbolic_opset10 import max_pool1d_with_indices, max_pool2d_with_indices, \
                     max_pool3d_with_indices
                 max_pool_func = max_pool1d_with_indices if dim == 1 else (
                     max_pool2d_with_indices if dim == 2 else max_pool3d_with_indices)
-            except ImportError:  # torch 2.1
-                from torch.onnx.symbolic_opset10 import _max_pool
-                if dim == 1:
-                    max_pool_func = _max_pool('max_pool1d_with_indices',
-                                              torch.nn.modules.utils._single, 1, return_indices=True)
-                elif dim == 2:
-                    max_pool_func = _max_pool('max_pool2d_with_indices',
-                                              torch.nn.modules.utils._pair, 2, return_indices=True)
-                else:  # dim == 3
-                    max_pool_func = _max_pool('max_pool3d_with_indices',
-                                              torch.nn.modules.utils._triple, 3, return_indices=True)
+            else:
+                from torch.onnx.symbolic_opset10 import max_pool1d, max_pool2d, max_pool3d
+                max_pool_func = max_pool1d if dim == 1 else (
+                    max_pool2d if dim == 2 else max_pool3d)
+        except ImportError:  # >= torch 2.1
+            from torch.onnx.symbolic_opset10 import _max_pool
+            torch_version = version_to_tuple(torch.onnx.producer_version)
+            max_pool_func_name = 'max_pool1d_with_indices' if dim == 1 else (
+                'max_pool2d_with_indices' if dim == 2 else 'max_pool3d_with_indices')
+            cnt_param = torch.nn.modules.utils._single if dim == 1 else (
+                torch.nn.modules.utils._pair if dim == 2 else torch.nn.modules.utils._triple)
+            if torch_version >= version_to_tuple('2.2.0'):
+                # parameters of _max_pool changed since torch 2.2.0
+                # Refer to https://github.com/pytorch/pytorch/commit/e8e3afb784f28562aa9463da06c38b0fb574b01c
+                max_pool_func = _max_pool(max_pool_func_name, dim, return_indices=return_indices)
+            else:
+                max_pool_func = _max_pool(max_pool_func_name,
+                                          cnt_param, dim, return_indices=return_indices)
+        if return_indices:
             max_pool, indices = max_pool_func(
                 g, input, kernel_size, strides, paddings, dilations, ceil_mode)
             return (max_pool, indices)
         else:
-            try:
-                from torch.onnx.symbolic_opset10 import max_pool1d, max_pool2d, max_pool3d
-                max_pool_func = max_pool1d if dim == 1 else (
-                    max_pool2d if dim == 2 else max_pool3d)
-            except ImportError:  # torch 2.1
-                from torch.onnx.symbolic_opset10 import _max_pool
-                if dim == 1:
-                    max_pool_func = _max_pool('max_pool1d', torch.nn.modules.utils._single, 1, return_indices=False)
-                elif dim == 2:
-                    max_pool_func = _max_pool('max_pool2d', torch.nn.modules.utils._pair, 2, return_indices=False)
-                else:  # dim == 3
-                    max_pool_func = _max_pool('max_pool3d', torch.nn.modules.utils._triple, 3, return_indices=False)
             max_pool = max_pool_func(
                 g, input, kernel_size, strides, paddings, dilations, ceil_mode)
             return max_pool
@@ -951,6 +947,7 @@ def convert_meshgrid(g, tensor_list, indexing='ij'):
         concat_node = g.op('Concat', *size_nodes, axis_i=0)
         new_outs = []
         for idx in range(len(inputs)):
+            outs[idx].setType(unpacked_inputs[0].type())
             new_outs.append(helper._reshape_helper(g, outs[idx], concat_node))
         outs = new_outs
     else:
@@ -1248,9 +1245,10 @@ def convert_threshold(g, x, threshold, value):
 
 
 def convert_quantized_sigmoid(g, x, op_scale, op_zero_point):
-    x, _, _, _ = helper.dequantize_helper(g, x)
+    x, _, x_zp, _ = helper.dequantize_helper(g, x)
+    out_scalar_type = x_zp.type().scalarType()
     output = opset9.sigmoid(g, x)
-    return quantize_helper(g, output, op_scale, op_zero_point)
+    return quantize_helper(g, output, op_scale, op_zero_point, zero_point_scalar_type=out_scalar_type)
 
 
 @helper.parse_args('v', 'is')
@@ -1788,19 +1786,20 @@ def convert_torch_to_onnx(model_path, params):
     onnx_version = str(get_version(onnx)).split('.')
     onnx_opset_version = (
         int(onnx_version[-1]) + 5) if int(onnx_version[0]) == 1 else None
-    torch_version = str(torch.onnx.producer_version)
+    torch_version_str = str(torch.onnx.producer_version)
+    torch_version = version_to_tuple(torch_version_str)
     if onnx_opset_version is not None:
         default_onnx_main_opset = None
         default_onnx_stable_opsets = []
         try:
-            if torch_version.startswith('1.11'):
+            if torch_version_str.startswith('1.11'):
                 default_onnx_main_opset = helper._onnx_main_opset
                 default_onnx_stable_opsets = helper._onnx_stable_opsets
-            elif torch_version >= '1.13.0':
+            elif torch_version >= version_to_tuple('1.13.0'):
                 import torch.onnx._constants as Constant
                 default_onnx_main_opset = Constant.ONNX_DEFAULT_OPSET
                 default_onnx_stable_opsets = list(range(Constant.ONNX_MIN_OPSET, Constant.ONNX_MAX_OPSET + 1))
-            elif torch_version >= '1.12.0':
+            elif torch_version >= version_to_tuple('1.12.0'):
                 import torch.onnx._constants as Constant
                 default_onnx_main_opset = Constant.onnx_main_opset
                 default_onnx_stable_opsets = Constant.onnx_stable_opsets
@@ -1825,7 +1824,7 @@ def convert_torch_to_onnx(model_path, params):
               onnx_opset_version)
 
     # Convert torch op to non-custom onnx op
-    if torch_version < '2.0.1':
+    if torch_version < version_to_tuple('2.0.1'):
         # The issue of argmax/argmin is fixed in torch 2.0.1.
         # Refer to https://github.com/pytorch/pytorch/pull/79503
         torch.onnx.register_custom_op_symbolic(
@@ -1844,7 +1843,7 @@ def convert_torch_to_onnx(model_path, params):
         # Refer to https://github.com/pytorch/pytorch/pull/86182
         torch.onnx.register_custom_op_symbolic(
             'aten::t', convert_t, onnx_opset_version)
-    if torch_version < '2.1.0':
+    if torch_version < version_to_tuple('2.1.0'):
         # The issue of training is fixed in latest torch.
         # Refer to https://github.com/pytorch/pytorch/pull/86745
         if not hasattr(model, 'training'):
@@ -1860,7 +1859,7 @@ def convert_torch_to_onnx(model_path, params):
             'aten::logical_not', convert_logical_not, onnx_opset_version)
         torch.onnx.register_custom_op_symbolic(
             'aten::atan2', convert_atan2, onnx_opset_version)
-    if torch_version < '2.2.0':
+    if torch_version < version_to_tuple('2.2.0'):
         # The op aten::scaled_dot_product_attention is supported in latest torch.
         # Refer to https://github.com/pytorch/pytorch/pull/99658
         # But the bug in helper._is_none causes crash when scale is not None, which is fixed since 2.2.0.
@@ -2058,12 +2057,6 @@ def convert_torch_to_onnx(model_path, params):
         if dict_nodes and all(node.output().debugName() in model_output_names for node in dict_nodes):
             torch.onnx.register_custom_op_symbolic(
                 'prim::DictConstruct', convert_dict_construct, onnx_opset_version)
-        # Only convert aten::meshgrid to custom ops when it's ouput node.
-        # FIXME: Enable it after the issue of indexing is fixed(has been fixed in version after 2.1.0)
-        # meshgrid_nodes = model.graph.findAllNodes('aten::meshgrid')
-        # if meshgrid_nodes and any(node.output().debugName() in model_output_names for node in meshgrid_nodes):
-        #     torch.onnx.register_custom_op_symbolic(
-        #         'aten::meshgrid', convert_meshgrid, onnx_opset_version)
 
     # Convert torch op to custom onnx op
     torch.onnx.register_custom_op_symbolic(
@@ -2160,8 +2153,10 @@ def convert_torch_to_onnx(model_path, params):
             parallel_model = nn.DataParallel(model)
             # Fail to convert because "Expected all tensors to be on the same device, but found at least two devices"
             # See https://github.com/pytorch/pytorch/issues/102947
-            # The issue is fixed in https://github.com/pytorch/pytorch/pull/101329 (>= torch 2.1.0)
-            do_constant_folding = False if torch_version < '2.1.0' else True
+            # The issue is partially fixed in https://github.com/pytorch/pytorch/pull/101329 (>= torch 2.1.0)
+            # # do_constant_folding = False if torch_version < version_to_tuple('2.1.0') else True
+            # Above error can still be seen in latest torch version so keep disabling it.
+            do_constant_folding = False
             _export_to_onnx(parallel_model.module, input_tensors, onnx_model_path,
                             input_names, output_names, onnx_opset_version, do_constant_folding)
         except Exception as e:

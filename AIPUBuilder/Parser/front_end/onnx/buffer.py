@@ -3,6 +3,7 @@
 
 
 import os
+import re
 from functools import partial
 import numpy as np
 from onnx.onnx_pb import TensorProto
@@ -109,24 +110,34 @@ def parse_proto_name(proto_name):
     return {'name': proto_name, 'out_port': port}
 
 
-def get_tensor_shape_content(tensor_shape_proto):
+def get_tensor_shape_content(tensor_shape_proto, params={}):
     shape_list = []
     for d in tensor_shape_proto.dim:
         dim_value = d.dim_value
         if dim_value == 0:
             try:
-                if 'batch' in getattr(d, 'dim_param', '') \
-                        or 'N' in getattr(d, 'dim_param', ''):
-                    dim_value = 1
-                else:
-                    dim_value = int(getattr(d, 'dim_param', ''))
+                found_in_params = False
+                dim_param = getattr(d, 'dim_param', '')
+                if isinstance(dim_param, str):
+                    dim_strings = re.findall(re.compile(r'[a-zA-Z_]*'), dim_param)
+                    if len(dim_strings) > 0:
+                        dim_str = dim_strings[0]
+                        if dim_str in params.get('input_dimensions', {}):
+                            dim_param = re.sub(dim_str, str(params['input_dimensions'][dim_str]), dim_param)
+                            dim_value = eval(dim_param)
+                            found_in_params = True
+                if not found_in_params:
+                    if 'batch' in dim_param or 'N' in dim_param:
+                        dim_value = 1
+                    else:
+                        dim_value = int(dim_param)
             except:
                 pass
         shape_list.append(dim_value)
     return np.array([dim for dim in shape_list], dtype=np.int64)
 
 
-def get_tensor_message(tensor_message):
+def get_tensor_message(tensor_message, params={}):
     ret = {}
     for field in tensor_message.ListFields():
         field_name = field[0].name
@@ -134,19 +145,19 @@ def get_tensor_message(tensor_message):
         if field_name == 'elem_type':
             field_value = ONNX_NP_TENSOR_MAP[field_value][1].__name__
         elif field_name == 'shape':
-            field_value = get_tensor_shape_content(field[1])
+            field_value = get_tensor_shape_content(field[1], params=params)
         else:
             continue
         ret.update({field_name: field_value})
     return ret
 
 
-def get_type_content(type_proto):
+def get_type_content(type_proto, params={}):
     ret = {}
     for attr in ['tensor_type', 'sequence_type', 'map_type']:
         if type_proto.HasField(attr):
             ret.update({attr: get_tensor_message(
-                getattr(type_proto, 'tensor_type'))})
+                getattr(type_proto, 'tensor_type'), params=params)})
             break
     return ret
 
@@ -188,9 +199,9 @@ def get_tensor_name(tensor_proto):
     return ret
 
 
-def get_value_content(value_proto):
+def get_value_content(value_proto, params={}):
     name_info = parse_proto_name(value_proto.name)
-    ret = {'type': get_type_content(value_proto.type)}
+    ret = {'type': get_type_content(value_proto.type, params)}
     ret.update(name_info)
     return ret
 
@@ -260,10 +271,10 @@ def get_node_content(node_proto, data_dir=''):
     return ret
 
 
-def get_graph_content(graph_proto, data_dir=''):
+def get_graph_content(graph_proto, data_dir='', params={}):
     const_values = parse_proto(graph_proto.initializer, partial(get_tensor_content, data_dir=data_dir))
     const_names = list(parse_proto(graph_proto.initializer, get_tensor_name))
-    inputs = list(parse_proto(graph_proto.input, get_value_content))
+    inputs = list(parse_proto(graph_proto.input, partial(get_value_content, params=params)))
     outputs = list(parse_proto(graph_proto.output, get_value_content))
     nodes = list(parse_proto(graph_proto.node, partial(get_node_content, data_dir=data_dir)))
 

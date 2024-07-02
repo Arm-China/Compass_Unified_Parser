@@ -215,7 +215,8 @@ def quantized_args(*arg_q_descriptors, scale=None, zero_point=None):
             if isinstance(output, (list, tuple)):
                 return quantize_helper_multi(g, output, _scale, _zero_point)
             else:
-                return quantize_helper(g, output, _scale, _zero_point)
+                zp_scalar_type = None if _zero_point is None else _zero_point.type().scalarType()
+                return quantize_helper(g, output, _scale, _zero_point, zero_point_scalar_type=zp_scalar_type)
 
         return wrapper
 

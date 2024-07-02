@@ -10,11 +10,16 @@ import sys
 import os
 import logging
 import traceback
+try:
+    from AIPUBuilder import __release__
+except ImportError:
+    __release__ = True
 
 __all__ = [
     'LOGGER',
     'INFO',
     'WARN',
+    'WARN_EXCEPTION',
     'DEBUG',
     'ERROR',
     'FATAL',
@@ -91,6 +96,13 @@ def DEBUG(msg, *args, **kwargs):
 
 def WARN(msg, *args, **kwargs):
     LOGGER.warning(msg, *args, **kwargs)
+
+
+def WARN_EXCEPTION(msg, *args, **kwargs):
+    if __release__:
+        WARN(msg, *args, **kwargs)
+    else:
+        ERROR(msg, *args, **kwargs)
 
 
 def ERROR(msg, *args, **kwargs):

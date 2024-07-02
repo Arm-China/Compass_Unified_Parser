@@ -256,12 +256,16 @@ def convert_invert_permutation(graph):
         NodeWrap(graph, topk_out_val).replace_obj('Out', {'name': topk_out_val})
 
 
-def convert_matmul(graph):
+def convert_matmul(graph, op_type_list=['TfMatMul', 'TfBatchMatMulV2', 'TfBatchMatMul', 'Tfmatmul']):
+    if not isinstance(op_type_list, list):
+        op_type_list = [op_type_list]
+    if any(t not in ['TfMatMul', 'TfBatchMatMulV2', 'TfBatchMatMul', 'Tfmatmul', 'LiteBATCH_MATMUL'] for t in op_type_list):
+        ERROR('[Parser]: Meets invalid op_type_list (%s) in convert_matmul!' % str(op_type_list))
+        return
     need_clear = False
     matches = matched_patterns(graph,
                                nodes=[
-                                   ('matmul', {
-                                       'op': ['TfMatMul', 'TfBatchMatMulV2', 'TfBatchMatMul', 'Tfmatmul']}),
+                                   ('matmul', {'op': op_type_list}),
                                ],
                                edges=[])
     for m in matches:
@@ -771,8 +775,9 @@ def convert_topk(graph, op_type='TfTopKV2'):
             insert_cast(graph, k_src, topk, 'int64', k_in_attr)
         if indices_out_dtype is not None and indices_out_dtype != 'int64':
             post_cast = insert_cast_after(graph, topk, 'int64', indices_out_dtype, out_port=1)
-            # cannot just update output_names because topk has 2 outputs; because the cast of int64
-            # will be removed in the end so the updating of output_names can be ignored here.
+            if topk in graph._attr['output_names']:
+                index = graph._attr['output_names'].index(topk)
+                graph._attr['output_names'].insert(index + 1, post_cast)
     if matched:
         clear_redundant_nodes(graph)
 
@@ -4253,6 +4258,7 @@ def merge_embedding_lookup_sparse(graph):
         graph.add_edge(src, m['segment'], **in_attr)
         ids_in_attr['dst_in_port'] = 1
         graph.add_edge(ids, m['segment'], **ids_in_attr)
+        insert_cast(graph, ids, m['segment'], 'int32', in_attr=ids_in_attr)
         value_in_attr['dst_in_port'] = 2
         graph.add_edge(value, m['segment'], **value_in_attr)
         insert_constant(graph, m['segment'] + '_weights', weights,
@@ -4414,6 +4420,7 @@ def merge_embedding_lookup_sparse_with_weights(graph):
         graph.remove_edges_from(last_in_edges)
         graph.add_edge(src, last_name, **in_attr)
         graph.add_edge(indices_name, last_name, **indices_in_attr)
+        insert_cast(graph, indices_name, last_name, 'int32', in_attr=indices_in_attr)
         ids_in_attr = copy.deepcopy(unique_in_attr)
         ids_in_attr['dst_in_port'] = 2
         graph.add_edge(ids_name, last_name, **ids_in_attr)

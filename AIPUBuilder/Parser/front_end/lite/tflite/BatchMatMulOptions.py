@@ -3,6 +3,8 @@
 # namespace: tflite
 
 import flatbuffers
+from flatbuffers.compat import import_numpy
+np = import_numpy()
 
 
 class BatchMatMulOptions(object):
@@ -14,6 +16,10 @@ class BatchMatMulOptions(object):
         x = BatchMatMulOptions()
         x.Init(buf, n + offset)
         return x
+
+    @classmethod
+    def BatchMatMulOptionsBufferHasIdentifier(cls, buf, offset, size_prefixed=False):
+        return flatbuffers.util.BufferHasIdentifier(buf, offset, b"\x54\x46\x4C\x33", size_prefixed=size_prefixed)
 
     # BatchMatMulOptions
     def Init(self, buf, pos):
