@@ -465,18 +465,18 @@ class CaffeDECONVOLUTIONOp(OpHasAxis, BaseConvOp, CaffeHasBiasTerm, CaffeHasPad)
         self.axis = OpHasAxis.make_axes_non_negative(
             self.axis, len(inputs[0].shape))
         input_tensor = torch.from_numpy(inputs[0])
+        dim_num = len(input_tensor.shape)
         torch_weights = torch.from_numpy(np.transpose(
-            self.weights, axes=CaffeDECONVOLUTIONOp.perm_caffe_to_onnx()))
+            self.weights, axes=CaffeDECONVOLUTIONOp.perm_caffe_to_onnx(dim=dim_num)))
         torch_biases = torch.from_numpy(self.biases)
-        out_tensor = torch.nn.functional.conv_transpose2d(input_tensor,
-                                                          torch_weights,
-                                                          bias=torch_biases,
-                                                          stride=(
-                                                              self.strides[0], self.strides[1]),
-                                                          padding=(
-                                                              self.pads[0], self.pads[1]),
-                                                          groups=self.group,
-                                                          dilation=(self.dilations[0], self.dilations[1])).numpy()
+        op_func = torch.nn.functional.conv_transpose2d if dim_num == 4 else torch.nn.functional.conv_transpose3d
+        out_tensor = op_func(input_tensor,
+                             torch_weights,
+                             bias=torch_biases,
+                             stride=tuple(self.strides),
+                             padding=tuple(self.pads[:(dim_num - 2)]),
+                             groups=self.group,
+                             dilation=tuple(self.dilations)).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
