@@ -367,8 +367,9 @@ class ArmAffineGridOp(OpHasOneOutPort, ArmOp):
         assert len(inputs) >= 2 and inputs[1].ndim == 1, \
             'Meets invalid inputs of ArmAffineGridOp(%s) in infer_shape!' % self.name
         theta = torch.from_numpy(inputs[0].astype(np.float32))
+        size = [inputs[1][0], inputs[1][-1]] + inputs[1][1:-1].tolist()
         out_tensor = torch.nn.functional.affine_grid(theta,
-                                                     size=inputs[1].tolist(),
+                                                     size=size,
                                                      align_corners=self.align_corners).numpy()
         self.set_out_tensor(out_tensor.astype(inputs[0].dtype))
 

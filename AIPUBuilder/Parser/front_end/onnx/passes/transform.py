@@ -266,7 +266,7 @@ def insert_transpose_for_layoutconcern(graph):
 
 
 def nhwc_for_other(graph):
-    ops = ['CTCGreedyDecoder', 'Pad']
+    ops = ['AffineGrid', 'CTCGreedyDecoder', 'Pad']
     matches = [single_node_matcher(graph, op_type) for op_type in ops]
     matches = extend_lists(matches)
     for m in matches:
@@ -280,6 +280,14 @@ def nhwc_for_other(graph):
                     if len(in_edges) >= 2 and len(in_shapes[0]) == 3:
                         src, _, in_attr = in_edges[0]
                         insert_transpose(graph, src, node, in_attr, [1, 0, 2], quantize=node_obj.quantize)
+                elif node_obj.type == 'AffineGrid':
+                    in_edges = graph.sorted_in_edges(node, data=True)
+                    in_shapes = node_obj.get_input_shapes()
+                    if len(in_edges) >= 2 and len(in_shapes[1]) == 1 and in_shapes[1][0] is not None:
+                        src, _, in_attr = in_edges[1]
+                        insert_gather(graph, src, node,
+                                      np.array([0] + list(range(2, in_shapes[1][0])) + [1], np.int32),
+                                      edge_attr=in_attr)
                 node_obj.data_format = 'NHWC'
         else:
             ERROR('[Parser]: Meets invalid Op (%s) in nhwc_for_other!' % node)
