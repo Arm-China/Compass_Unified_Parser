@@ -9,6 +9,7 @@ import copy
 from functools import reduce
 from collections import OrderedDict, defaultdict
 from collections.abc import Iterable
+import itertools
 import numpy as np
 import torch
 import tensorflow as tf
@@ -2515,6 +2516,81 @@ class BaseOnnxPoolOp(OpHasPaddingStrides, OnnxOp):
         else:
             out_shape = np.ceil(in_shape / strides)
         return out_shape.astype(np.int64).tolist()
+
+    @staticmethod
+    def pool(padded_input, in_shape, kernel_shape, strides, out_shape, pooling_method,
+             pads, dilations=None, count_include_pad=0, p=1):
+        def lp_pool_p(x, p_value=p):
+            y = 0
+            for v in np.nditer(x):
+                y += abs(v) ** p_value
+            return y ** (1.0 / p_value)
+
+        spatial_size = len(in_shape) - 2
+        y = np.zeros([in_shape[0], in_shape[1], *list(out_shape)], dtype=padded_input.dtype)
+        if dilations is None:
+            dilations = np.ones([spatial_size], dtype=np.int64)
+        if pads is None:
+            pads = np.zeros([spatial_size * 2], dtype=np.int64)
+        elif len(pads) == 1:
+            pads = pads * spatial_size * 2
+        strides = strides or [1] * spatial_size
+
+        for shape in itertools.product(
+                range(in_shape[0]),
+                range(in_shape[1]),
+                *[
+                    range(
+                        int(
+                            (
+                                in_shape[i + 2]
+                                + pads[i]
+                                + pads[i + spatial_size]
+                                - (1 + (kernel_shape[i] - 1) * dilations[i])
+                            )
+                            / strides[i]
+                            + 1
+                        )
+                    )
+                    for i in range(spatial_size)
+                ],
+        ):
+            window = padded_input[shape[0], shape[1]]
+            window_vals = np.array(
+                [
+                    window[i]
+                    for i in list(
+                        itertools.product(
+                            *[
+                                range(
+                                    strides[i] * shape[i + 2],
+                                    strides[i] * shape[i + 2]
+                                    + (1 + (kernel_shape[i] - 1) * dilations[i]),
+                                    dilations[i],
+                                )
+                                for i in range(spatial_size)
+                            ]
+                        )
+                    )
+                ]
+            )
+            if pooling_method == "AVG":
+                f = np.average
+            elif pooling_method == "MAX":
+                f = np.max
+            elif pooling_method == "LPPOOL":
+                f = lp_pool_p
+            else:
+                ERROR(
+                    f'[Parser]: Pooling type {pooling_method} does not support. Should be AVG, MAX'
+                )
+                return y
+
+            if count_include_pad == 1 and (pooling_method in {'AVG', 'LPPOOL'}):
+                y[shape] = f(window_vals)
+            else:
+                y[shape] = f(window_vals[np.where(~np.isnan(window_vals))])
+        return y
 
     @classmethod
     def attributes(cls):

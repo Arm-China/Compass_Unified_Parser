@@ -2707,6 +2707,61 @@ def convert_qadd(graph):
         clear_redundant_nodes(graph)
 
 
+def convert_qavgpool(graph):
+    matched = False
+    matches = single_node_matcher(graph, 'QLinearAveragePoolMs')
+    for m in matches:
+        qpool = m['target']
+        qpool_obj = NodeWrap(graph, qpool)['object']
+        in_edges = graph.sorted_in_edges(qpool, data=True)
+        if qpool_obj is None or len(in_edges) != 5:
+            ERROR('[Parser]: Meets invalid QLinearAveragePoolMs node(%s) in convert_qavgpool!' % qpool)
+            continue
+        qpool_src = in_edges[0][0]
+        qpool_src_obj = NodeWrap(graph, qpool_src)['object']
+        if qpool_src_obj is None:
+            ERROR('[Parser]: Meets invalid input node(%s) of QLinearConv in convert_qpool!' % qpool_src)
+            continue
+        if any((e[2]['tensor'] is None or not e[2]['tensor'].is_const) for e in in_edges[1:]):
+            WARN('[Parser]: Only supports QLinearAveragePoolMs(%s) with constant scale/zp in convert_qavgpool!' % qpool)
+            continue
+        x_dtype = str(qpool_obj.x_zero_point.dtype)
+        y_dtype = str(qpool_obj.y_zero_point.dtype)
+        if any(dtype not in ('int8', 'uint8') for dtype in (x_dtype, y_dtype)):
+            ERROR('[Parser]: Meets invalid zero_point dtype of QLinearAveragePoolMs node(%s) in convert_qavgpool!' % qpool)
+            continue
+        matched = True
+        graph.remove_edges_from(in_edges[1:])
+        x_scale, x_zp = qpool_obj.x_scale, qpool_obj.x_zero_point
+        y_scale, y_zp = qpool_obj.y_scale, qpool_obj.y_zero_point
+        qpool_attr = qpool_obj.copied_attr()
+        qpool_attr.update({'data_format': ('NCHW' if qpool_obj.channels_last == 0 else 'NHWC'),
+                           'opset_version': 1})
+        src, _, src_in_attr = in_edges[0]
+        if graph._attr.get('quantize', False):
+            qpool_src_obj.quantize = True
+            src_in_attr['tensor'].dtype = str(x_dtype)
+            src_in_attr['tensor'].scale_zp = (x_scale, x_zp)
+
+            out_edges = graph.sorted_out_edges(qpool, data=True)
+            for _, _, out_attr in out_edges:
+                out_attr['tensor'].dtype = str(y_dtype)
+                out_attr['tensor'].scale_zp = (y_scale, y_zp)
+
+            qpool_attr.update({'quantize': True})
+        else:
+            insert_cast_sub_mul_for_quant(graph, src, qpool, x_scale, x_zp,
+                                          src_in_attr)
+            out_cast = insert_mul_add_cast_after_for_dequant(graph, qpool, y_dtype, y_scale,
+                                                             y_zp)
+            if qpool in graph._attr['output_names']:
+                index = graph._attr['output_names'].index(qpool)
+                graph._attr['output_names'][index] = out_cast
+        NodeWrap(graph, qpool).replace_obj('AveragePool', qpool_attr)
+    if matched:
+        clear_redundant_nodes(graph)
+
+
 def convert_qconv(graph):
     matched = False
     matches = single_node_matcher(graph, 'QLinearConv')
@@ -10337,6 +10392,7 @@ def middle_passes(graph, params):
     merge_q_ln(graph)
     merge_q_gelu(graph)
     convert_qadd(graph)
+    convert_qavgpool(graph)
     convert_qconv(graph)
     convert_qgemm(graph)
     convert_qglobal_avgpool(graph)

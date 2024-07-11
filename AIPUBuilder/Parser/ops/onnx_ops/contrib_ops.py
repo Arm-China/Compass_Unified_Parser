@@ -1,9 +1,105 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
-
+import torch
 
 from ..op import *
 import numpy as np
+
+
+class QLinearAveragePoolMsOp(BaseOnnxPoolOp, OpHasOneOutPort, OnnxOp):
+    @classmethod
+    def attributes(cls):
+        return {1: {'channels_last': {'type': AttrType.INT, 'default': 0},
+                    'kernel_shape': {'type': AttrType.INTS, 'required': True},
+                    'auto_pad': {'type': AttrType.STRING, 'default': 'NOTSET'},
+                    'ceil_mode': {'type': AttrType.INT, 'default': 0},
+                    'count_include_pad': {'type': AttrType.INT, 'default': 0}}}
+
+    def __init__(self, graph, attr_dict=None):
+        super(QLinearAveragePoolMsOp, self).__init__(graph, attr_dict)
+        self.update_attributes(QLinearAveragePoolMsOp, attr_dict)
+        assert self.check_required(), 'QLinearAveragePoolMsOp is missing a required parameter.'
+
+    def __getattr__(self, item):
+        try:
+            ret = self.__dict__['_attr'][item].value
+        except:
+            ret = None
+        try:
+            input_names = ['x', 'x_scale', 'x_zero_point', 'y_scale', 'y_zero_point']
+            if item in input_names:
+                item_idx = input_names.index(item)
+                inputs = self.get_input_tensors()
+                if len(inputs) > item_idx:
+                    ret = inputs[item_idx]
+                    if 'scale' in item:
+                        ret = np.array(ret).astype(np.float32)
+                    self.__dict__['_attr'][item] = Attribute(item, {'type': AttrType.TENSOR, 'value': ret})
+        except:
+            ret = None
+        if ret is None:
+            ret = super(QLinearAveragePoolMsOp, self).__getattr__(item)
+        return ret
+
+    def infer_shape(self):
+        super(QLinearAveragePoolMsOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        assert len(inputs) == 5, 'Meets invalid inputs length of QLinearAveragePoolMsOp(%s)' % self.name
+        pading_value = np.nan if self.count_include_pad == 0 else 0
+        in_shape = inputs[0].shape[1:-1] if self.data_format == 'NHWC' else inputs[0].shape[2:]
+        spatial_dim = len(inputs[0].shape) - 2
+        out_shape = BaseOnnxPoolOp.cal_out_shape(
+            in_shape, self.pads, self.strides, self.kernel_shape, self.auto_pad, dilations=self.dilations,
+            ceil_mode=self.ceil_mode)
+        if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
+            # re-calculate pads
+            self.pads, _ = OpHasPaddingStrides.cal_pads(
+                in_shape,
+                out_shape,
+                self.strides,
+                self.kernel_shape,
+                self.auto_pad,
+                dilations=self.dilations,
+                is_transpose=False,
+            )
+            self.auto_pad = 'NOTSET'
+        float_x = (self.x.astype(np.int32) - self.x_zero_point) * self.x_scale
+        n_dims = len(self.pads) // 2
+        pads_np = [(self.pads[i], self.pads[i + n_dims]) for i in range(n_dims)]
+        if self.data_format == 'NHWC':
+            perm = [0, spatial_dim + 1] + list(range(1, spatial_dim + 1))
+            float_x = np.transpose(float_x, perm)
+        padded_input = np.pad(
+            float_x,
+            ((0, 0), (0, 0), *pads_np),
+            mode="constant",
+            constant_values=pading_value,
+        )
+        float_y = BaseOnnxPoolOp.pool(
+            padded_input,
+            float_x.shape,
+            self.kernel_shape,
+            self.strides,
+            out_shape,
+            'AVG',
+            self.pads,
+            self.dilations,
+            self.count_include_pad
+        )
+        if self.data_format == 'NHWC':
+            perm = [0] + list(range(2, spatial_dim + 2)) + [1]
+            float_y = np.transpose(float_y, perm)
+        if self.y_scale is not None:
+            assert self.y_zero_point is not None, \
+                'y_zero_point of QLinearAveragePoolMsOp(%s) must not be null if y_scale is not null' % self.name
+            out_min = np.iinfo(self.y_zero_point.dtype).min
+            out_max = np.iinfo(self.y_zero_point.dtype).max
+            out_tensor = np.clip(np.around(float_y / self.y_scale) + self.y_zero_point,
+                                 out_min, out_max).astype(self.y_zero_point.dtype)
+        else:
+            assert self.y_zero_point is None, \
+                'y_zero_point of QLinearAveragePoolMsOp(%s) must be null if y_scale is null' % self.name
+        self.set_out_tensor(out_tensor)
 
 
 class QGemmMsOp(OpHasOneOutPort, OnnxOp):
