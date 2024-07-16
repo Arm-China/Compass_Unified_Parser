@@ -10508,7 +10508,8 @@ def middle_passes(graph, params):
     merge_gather_slice(graph)
     remove_special_gather(graph)
     fuse_gather_const_mul(graph)
-    convert_gather_to_slice(graph)
+    if not params['ds_compat']:
+        convert_gather_to_slice(graph)
     rearrange_matmul_reshape_bias(graph)
     fuse_bias(graph)
     rename_single_mul_or_add_or_sub(graph)

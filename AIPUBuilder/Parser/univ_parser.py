@@ -49,6 +49,14 @@ def univ_parser(params):
         params['input_shapes'] = list_string_to_list(
             params['input_shapes']) if 'input_shapes' in params else []
 
+        if 'ds_compat' in params:
+            ds_compat = str(params['ds_compat']).lower() == 'true'
+            if ds_compat:
+                WARN('[Parser]: dynamic_shape compatibility mode is enabled, some passes will be disabled!')
+            params['ds_compat'] = ds_compat
+        else:
+            params['ds_compat'] = False
+
         def _parse_npy(key_name):
             input_npy = {}
             if params.get(key_name, ''):
