@@ -2720,7 +2720,7 @@ def convert_qavgpool(graph):
         qpool_src = in_edges[0][0]
         qpool_src_obj = NodeWrap(graph, qpool_src)['object']
         if qpool_src_obj is None:
-            ERROR('[Parser]: Meets invalid input node(%s) of QLinearConv in convert_qpool!' % qpool_src)
+            ERROR('[Parser]: Meets invalid input node(%s) of QLinearAveragePoolMs in convert_qavgpool!' % qpool_src)
             continue
         if any((e[2]['tensor'] is None or not e[2]['tensor'].is_const) for e in in_edges[1:]):
             WARN('[Parser]: Only supports QLinearAveragePoolMs(%s) with constant scale/zp in convert_qavgpool!' % qpool)
@@ -2758,6 +2758,76 @@ def convert_qavgpool(graph):
                 index = graph._attr['output_names'].index(qpool)
                 graph._attr['output_names'][index] = out_cast
         NodeWrap(graph, qpool).replace_obj('AveragePool', qpool_attr)
+    if matched:
+        clear_redundant_nodes(graph)
+
+
+def convert_qconcat(graph):
+    matched = False
+    op_type_name = 'QLinearConcatMs'
+    matches = single_node_matcher(graph, op_type_name)
+    for m in matches:
+        qconcat = m['target']
+        qconcat_obj = NodeWrap(graph, qconcat)['object']
+        in_edges = graph.sorted_in_edges(qconcat, data=True)
+        if qconcat_obj is None or len(in_edges) < 5:
+            ERROR(f'[Parser]: Meets invalid {op_type_name} node({qconcat}) in convert_qconcat!')
+            continue
+        x_dtypes = []
+        inp_invalid = False
+        for i in range(2, len(in_edges), 3):
+            qconcat_src = in_edges[i][0]
+            qconcat_src_obj = NodeWrap(graph, qconcat_src)['object']
+            if qconcat_src_obj is None:
+                inp_invalid = True
+                ERROR(f'[Parser]: Meets invalid input node({qconcat_src}) of {op_type_name} in convert_qconcat!')
+                break
+            if any((e[2]['tensor'] is None or not e[2]['tensor'].is_const) for e in in_edges[i + 1:i + 3]):
+                inp_invalid = True
+                WARN(f'[Parser]: Only supports {op_type_name}({qconcat}) with constant scale/zp in convert_qconcat!')
+                break
+            x_dtypes.append(in_edges[i + 2][2]['tensor'].dtype)
+
+        if inp_invalid:
+            continue
+        y_dtype = str(qconcat_obj.y_zero_point.dtype)
+        if any(dtype not in ('int8', 'uint8') for dtype in x_dtypes + [y_dtype]):
+            ERROR(
+                f'[Parser]: Meets invalid zero_point dtype of {op_type_name} node({qconcat}) in convert_qconcat!')
+            continue
+        matched = True
+        y_scale, y_zp = qconcat_obj.y_scale, qconcat_obj.y_zero_point
+        qconcat_attr = qconcat_obj.copied_attr()
+        qconcat_attr.update({'opset_version': 4})
+        graph.remove_edges_from(in_edges[:2])
+        for i in range(2, len(in_edges), 3):
+            graph.remove_edges_from(in_edges[i + 1:i + 3])
+            src, _, src_in_attr = in_edges[i]
+            qconcat_src_obj = NodeWrap(graph, src)['object']
+            x_scale = in_edges[i + 1][2]['tensor'].value
+            x_zp = in_edges[i + 2][2]['tensor'].value
+            x_dtype = in_edges[i + 1][2]['tensor'].dtype
+            if graph._attr.get('quantize', False):
+                qconcat_src_obj.quantize = True
+                src_in_attr['tensor'].dtype = str(x_dtype)
+                src_in_attr['tensor'].scale_zp = (x_scale, x_zp)
+                out_edges = graph.sorted_out_edges(qconcat, data=True)
+                for _, _, out_attr in out_edges:
+                    out_attr['tensor'].dtype = str(y_dtype)
+                    out_attr['tensor'].scale_zp = (y_scale, y_zp)
+            else:
+                insert_cast_sub_mul_for_quant(graph, src, qconcat, x_scale, x_zp,
+                                              src_in_attr)
+
+        if graph._attr.get('quantize', False):
+            qconcat_attr.update({'quantize': True})
+        else:
+            out_cast = insert_mul_add_cast_after_for_dequant(graph, qconcat, y_dtype, y_scale,
+                                                             y_zp)
+            if qconcat in graph._attr['output_names']:
+                index = graph._attr['output_names'].index(qconcat)
+                graph._attr['output_names'][index] = out_cast
+        NodeWrap(graph, qconcat).replace_obj('Concat', qconcat_attr)
     if matched:
         clear_redundant_nodes(graph)
 
@@ -10393,6 +10463,7 @@ def middle_passes(graph, params):
     merge_q_gelu(graph)
     convert_qadd(graph)
     convert_qavgpool(graph)
+    convert_qconcat(graph)
     convert_qconv(graph)
     convert_qgemm(graph)
     convert_qglobal_avgpool(graph)
@@ -10538,5 +10609,3 @@ def middle_passes(graph, params):
     adjust_1d_to_4d(graph)
     adjust_2d_to_4d(graph)
     adjust_3d_to_4d(graph)
-
-    pass
