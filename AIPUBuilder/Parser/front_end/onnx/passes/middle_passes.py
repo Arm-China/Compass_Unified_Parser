@@ -3861,12 +3861,12 @@ def merge_gelu_3(graph):
     matches = matched_patterns(graph,
                                nodes=[
                                    ('div', {'op': 'Div'}),
-                                   ('divc', {'op': 'Constant'}),
+                                   ('divc', {'op': 'Constant', 'unique': False}),
                                    ('erf', {'op': 'Erf'}),
                                    ('add', {'op': 'Add'}),
-                                   ('addc2', {'op': 'Constant'}),
+                                   ('addc2', {'op': 'Constant', 'unique': False}),
                                    ('mul_1', {'op': 'Mul'}),
-                                   ('mulc', {'op': 'Constant'}),
+                                   ('mulc', {'op': 'Constant', 'unique': False}),
                                    ('mul_2', {'op': 'Mul'}),
                                ],
                                edges=[
