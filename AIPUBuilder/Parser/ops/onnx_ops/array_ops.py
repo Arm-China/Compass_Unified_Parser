@@ -37,7 +37,7 @@ class BitShiftOp(OpNeedBroadcast, OpHasOneOutPort, OnnxOp):
         self.set_out_tensor(out_tensor)
 
 
-class CastOp(OpHasOneOutPort, OnnxOp):
+class CastOp(OpHasOneOutPort, LayoutUnawareOp, SameShapeOp, OnnxOp):
     @classmethod
     def attributes(cls):
         return {1: {'to': {'type': AttrType.STRING, 'required': True}},

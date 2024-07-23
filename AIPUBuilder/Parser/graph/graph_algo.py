@@ -13,7 +13,7 @@ from .node_wrap import NodeWrap
 from networkx.algorithms import has_path, all_simple_paths, shortest_path_length
 from .graph import Graph, SubGraph
 from .pattern_match import single_node_matcher
-from ..ops.op import InputLikeOp
+from ..ops.op import InputLikeOp, SameShapeOp
 from ..ops.common_ops import UndefinedOp, PluginOp
 from ..common.defs import Tensor
 from ..logger import INFO, DEBUG, WARN, ERROR, FATAL, WARN_EXCEPTION
@@ -34,15 +34,22 @@ def nodes_in_simple_paths(graph, source, target):
     return all_path_nodes
 
 
-def get_valid_node_name(graph, base_name):
+def get_valid_node_name(graph, base_name, nodes_name=None):
     max_try_times = 1000
     ret = base_name
     i = 0
-    while graph.has_node(ret):
-        if i == max_try_times:
-            raise Exception('Cannot find valid name!')
-        ret = base_name + '_' + str(i)
-        i += 1
+    if nodes_name is None:
+        while graph.has_node(ret):
+            if i == max_try_times:
+                raise Exception('Cannot find valid name!')
+            ret = base_name + '_' + str(i)
+            i += 1
+    else:
+        while ret in nodes_name:
+            if i == max_try_times:
+                raise Exception('Cannot find valid name!')
+            ret = base_name + '_' + str(i)
+            i += 1
     return ret
 
 
@@ -139,7 +146,12 @@ def infer(graph, partial=False, chosen_list=None, final=False):
                     DEBUG('[Parser]: Subgraph Node(%s) is in infer, result is not guaranteed!' % node_name)
 
                 if partial and not node_obj.is_all_inputs_const() and not isinstance(node_obj, InputLikeOp):
-                    continue
+                    if isinstance(node_obj, SameShapeOp):
+                        inp_tensors = node_obj.get_input_tensors()
+                        if not inp_tensors or any(x is None for x in inp_tensors):
+                            continue
+                    else:
+                        continue
 
                 try:
                     if isinstance(node_obj, InputLikeOp):

@@ -3151,6 +3151,61 @@ def convert_qmatmul(graph):
         clear_redundant_nodes(graph)
 
 
+def convert_qsigmoid(graph):
+    matched = False
+    matches = single_node_matcher(graph, 'QLinearSigmoidMsOp')
+    for m in matches:
+        qsigmoid = m['target']
+        qsigmoid_obj = NodeWrap(graph, qsigmoid)['object']
+        in_edges = graph.sorted_in_edges(qsigmoid, data=True)
+        if qsigmoid_obj is None or len(in_edges) < 4:
+            ERROR('[Parser]: Meets invalid QLinearSigmoidMsOp node(%s) in convert_qsigmoid!' % qsigmoid)
+            continue
+        qsigmoid_src = in_edges[0][0]
+        qsigmoid_src_obj = NodeWrap(graph, qsigmoid_src)['object']
+        if qsigmoid_src_obj is None:
+            ERROR('[Parser]: Meets invalid input node(%s) of QLinearSigmoidMsOp in convert_qsigmoid!' % qsigmoid_src)
+            continue
+        if any((e[2]['tensor'] is None or not e[2]['tensor'].is_const) for e in in_edges[1:]):
+            WARN('[Parser]: Only supports QLinearSigmoidMsOp(%s) with constant scale/zp in convert_qsigmoid!' % qsigmoid)
+            continue
+        x_dtype = str(qsigmoid_obj.x_zero_point.dtype)
+        y_dtype = str(qsigmoid_obj.y_zero_point.dtype)
+        if any(dtype not in ('int8', 'uint8') for dtype in (x_dtype, y_dtype)):
+            ERROR(
+                '[Parser]: Meets invalid zero_point dtype of QLinearSigmoidMsOp node(%s) in convert_qsigmoid!' % qsigmoid)
+            continue
+        matched = True
+        graph.remove_edges_from(in_edges[1:])
+        x_scale, x_zp = qsigmoid_obj.x_scale, qsigmoid_obj.x_zero_point
+        y_scale, y_zp = qsigmoid_obj.y_scale, qsigmoid_obj.y_zero_point
+        qsigmoid_attr = qsigmoid_obj.copied_attr()
+        qsigmoid_attr.update({'opset_version': 6})
+        src, _, src_in_attr = in_edges[0]
+        if graph._attr.get('quantize', False):
+            qsigmoid_src_obj.quantize = True
+            src_in_attr['tensor'].dtype = str(x_dtype)
+            src_in_attr['tensor'].scale_zp = (x_scale, x_zp)
+
+            out_edges = graph.sorted_out_edges(qsigmoid, data=True)
+            for _, _, out_attr in out_edges:
+                out_attr['tensor'].dtype = str(y_dtype)
+                out_attr['tensor'].scale_zp = (y_scale, y_zp)
+
+            qsigmoid_attr.update({'quantize': True})
+        else:
+            insert_cast_sub_mul_for_quant(graph, src, qsigmoid, x_scale, x_zp,
+                                          src_in_attr)
+            out_cast = insert_mul_add_cast_after_for_dequant(graph, qsigmoid, y_dtype, y_scale,
+                                                             y_zp)
+            if qsigmoid in graph._attr['output_names']:
+                index = graph._attr['output_names'].index(qsigmoid)
+                graph._attr['output_names'][index] = out_cast
+        NodeWrap(graph, qsigmoid).replace_obj('Sigmoid', qsigmoid_attr)
+    if matched:
+        clear_redundant_nodes(graph)
+
+
 def merge_batchnorm(graph):
     bn_matches = matched_patterns(graph,
                                   nodes=[
@@ -10468,6 +10523,7 @@ def middle_passes(graph, params):
     convert_qgemm(graph)
     convert_qglobal_avgpool(graph)
     convert_qmatmul(graph)
+    convert_qsigmoid(graph)
     convert_special_conv_to_mul(graph)
 
     convert_abnormal_reshape(graph)

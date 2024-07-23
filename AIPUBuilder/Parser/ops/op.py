@@ -1066,6 +1066,14 @@ class LayoutUnawareOp(Op):
     pass
 
 
+class SameShapeOp(Op):
+    '''
+    Class SameShapeOp inherited from OP.
+    The OP's output shape is same with input shape, such as math ops, must inherit from this class.
+    '''
+    pass
+
+
 class OpHasPaddingStrides(LayoutConcernedOp):
     """
     Class OpHasPaddingStrides inherited from LayoutConcernedOp class.

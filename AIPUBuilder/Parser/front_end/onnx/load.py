@@ -368,8 +368,10 @@ def convert_onnx_to_graph(graph, model_path, params):
 
                 graph_is_quantized = False
 
+                nodes_name = [n['name'] for n in nodes]
+
                 for c in const_values:
-                    c_name = get_valid_node_name(graph, c['name'])
+                    c_name = get_valid_node_name(graph, c['name'], nodes_name)  # const tensor name maybe same with node
                     const_names[c['name']] = c_name
                     graph.add_node(c_name)
                     NodeWrap(graph, c_name).replace_obj('Constant', {'name': c_name,
