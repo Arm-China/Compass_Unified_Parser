@@ -312,6 +312,51 @@ class QLinearGlobalAveragePoolMsOp(OpHasOneOutPort, OnnxOp):
         self.set_out_tensor(out_tensor)
 
 
+class QLinearLeakyReluMsOp(OpHasOneOutPort, OnnxOp):
+    @classmethod
+    def attributes(cls):
+        return {1: {'alpha': {'type': AttrType.FLOAT, 'required': True}}}
+
+    def __init__(self, graph, attr_dict=None):
+        super(QLinearLeakyReluMsOp, self).__init__(graph, attr_dict)
+        self.update_attributes(QLinearLeakyReluMsOp, attr_dict)
+        assert self.check_required(), 'QLinearLeakyReluMsOp is missing a required parameter.'
+
+    def __getattr__(self, item):
+        try:
+            ret = self.__dict__['_attr'][item].value
+        except:
+            ret = None
+        try:
+            if ret is None:
+                input_names = ['X', 'X_scale', 'X_zero_point', 'Y_scale', 'Y_zero_point']
+                if item in input_names:
+                    item_idx = input_names.index(item)
+                    inputs = self.get_input_tensors()
+                    if len(inputs) > item_idx:
+                        ret = inputs[item_idx]
+                        if 'scale' in item:
+                            ret = np.array(ret).astype(np.float32)
+                        self.__dict__['_attr'][item] = Attribute(item, {'type': AttrType.TENSOR, 'value': ret})
+        except:
+            ret = None
+        if ret is None:
+            ret = super(QLinearLeakyReluMsOp, self).__getattr__(item)
+        return ret
+
+    def infer_shape(self):
+        super(QLinearLeakyReluMsOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        assert len(inputs) >= 4, 'Meets invalid inputs length of QLinearLeakyReluMsOp op (%s)' % self.name
+        float_x = (self.X.astype(np.int32) - self.X_zero_point) * self.X_scale
+        float_y = tf.nn.leaky_relu(float_x.astype(np.float32), alpha=self.alpha).numpy()
+        out_min = np.iinfo(self.Y_zero_point.dtype).min
+        out_max = np.iinfo(self.Y_zero_point.dtype).max
+        out_tensor = np.clip(np.around(float_y / self.Y_scale) + self.Y_zero_point,
+                             out_min, out_max).astype(self.Y_zero_point.dtype)
+        self.set_out_tensor(out_tensor)
+
+
 class QLinearSigmoidMsOp(OpHasOneOutPort, OnnxOp):
     @classmethod
     def attributes(cls):

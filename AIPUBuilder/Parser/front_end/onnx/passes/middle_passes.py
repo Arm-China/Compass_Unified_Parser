@@ -3082,6 +3082,62 @@ def convert_qglobal_avgpool(graph):
         clear_redundant_nodes(graph)
 
 
+def convert_qleakyrelu(graph):
+    matched = False
+    matches = single_node_matcher(graph, 'QLinearLeakyReluMsOp')
+    for m in matches:
+        qleakyrelu = m['target']
+        qleakyrelu_obj = NodeWrap(graph, qleakyrelu)['object']
+        in_edges = graph.sorted_in_edges(qleakyrelu, data=True)
+        if qleakyrelu_obj is None or len(in_edges) < 4:
+            ERROR('[Parser]: Meets invalid QLinearLeakyReluMsOp node(%s) in convert_qleakyrelu!' % qleakyrelu)
+            continue
+        qleakyrelu_src = in_edges[0][0]
+        qleakyrelu_src_obj = NodeWrap(graph, qleakyrelu_src)['object']
+        if qleakyrelu_src_obj is None:
+            ERROR('[Parser]: Meets invalid input node(%s) of QLinearLeakyReluMsOp in convert_qleakyrelu!' % qleakyrelu_src)
+            continue
+        if any((e[2]['tensor'] is None or not e[2]['tensor'].is_const) for e in in_edges[1:]):
+            WARN(
+                '[Parser]: Only supports QLinearLeakyReluMsOp(%s) with constant scale/zp in convert_qleakyrelu!' % qleakyrelu)
+            continue
+        x_dtype = str(qleakyrelu_obj.x_zero_point.dtype)
+        y_dtype = str(qleakyrelu_obj.y_zero_point.dtype)
+        if any(dtype not in ('int8', 'uint8') for dtype in (x_dtype, y_dtype)):
+            ERROR(
+                '[Parser]: Meets invalid zero_point dtype of QLinearLeakyReluMsOp node(%s) in convert_qleakyrelu!' % qleakyrelu)
+            continue
+        matched = True
+        graph.remove_edges_from(in_edges[1:])
+        x_scale, x_zp = qleakyrelu_obj.x_scale, qleakyrelu_obj.x_zero_point
+        y_scale, y_zp = qleakyrelu_obj.y_scale, qleakyrelu_obj.y_zero_point
+        qleakyrelu_attr = qleakyrelu_obj.copied_attr()
+        qleakyrelu_attr.update({'opset_version': 6})
+        src, _, src_in_attr = in_edges[0]
+        if graph._attr.get('quantize', False):
+            qleakyrelu_src_obj.quantize = True
+            src_in_attr['tensor'].dtype = str(x_dtype)
+            src_in_attr['tensor'].scale_zp = (x_scale, x_zp)
+
+            out_edges = graph.sorted_out_edges(qleakyrelu, data=True)
+            for _, _, out_attr in out_edges:
+                out_attr['tensor'].dtype = str(y_dtype)
+                out_attr['tensor'].scale_zp = (y_scale, y_zp)
+
+            qleakyrelu_attr.update({'quantize': True})
+        else:
+            insert_cast_sub_mul_for_quant(graph, src, qleakyrelu, x_scale, x_zp,
+                                          src_in_attr)
+            out_cast = insert_mul_add_cast_after_for_dequant(graph, qleakyrelu, y_dtype, y_scale,
+                                                             y_zp)
+            if qleakyrelu in graph._attr['output_names']:
+                index = graph._attr['output_names'].index(qleakyrelu)
+                graph._attr['output_names'][index] = out_cast
+        NodeWrap(graph, qleakyrelu).replace_obj('LeakyRelu', qleakyrelu_attr)
+    if matched:
+        clear_redundant_nodes(graph)
+
+
 def convert_qmatmul(graph):
     matched = False
     matches = single_node_matcher(graph, 'QLinearMatMul')
@@ -10522,6 +10578,7 @@ def middle_passes(graph, params):
     convert_qconv(graph)
     convert_qgemm(graph)
     convert_qglobal_avgpool(graph)
+    convert_qleakyrelu(graph)
     convert_qmatmul(graph)
     convert_qsigmoid(graph)
     convert_special_conv_to_mul(graph)
