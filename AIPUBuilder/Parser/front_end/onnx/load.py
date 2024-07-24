@@ -510,14 +510,14 @@ def convert_onnx_to_graph(graph, model_path, params):
                                     and len(loop_obj.body._attr['output_names']) == 3:
                                 if not loop_in_tensors[1]:
                                     continue
+                                loop_in_edges = graph.sorted_in_edges(
+                                    op_name, data=True)
                                 for index, (body_inp, in_port) in enumerate(loop_obj.body._attr['input_tensors']):
                                     body_in_obj = NodeWrap(
                                         graph, body_inp)['object']
                                     if body_in_obj is None:  # could be a standalone node
                                         continue
                                     body_inp_port = body_in_obj.get_in_ports()
-                                    loop_in_edges = graph.sorted_in_edges(
-                                        op_name, data=True)
                                     if len(body_inp_port) != 0 or len(loop_in_edges) != 3:
                                         continue
                                     src, _, in_attr = loop_in_edges[index]
