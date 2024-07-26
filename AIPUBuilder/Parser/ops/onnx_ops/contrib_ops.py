@@ -145,6 +145,13 @@ class QLinearAveragePoolMsOp(BaseOnnxPoolOp, OpHasOneOutPort, OnnxOp):
                     if 'scale' in item:
                         ret = np.array(ret).astype(np.float32)
                     self.__dict__['_attr'][item] = Attribute(item, {'type': AttrType.TENSOR, 'value': ret})
+            if item == 'data_format':
+                if self.channels_last == 1:
+                    self.__dict__['_attr'][item] = 'NHWC'
+                    ret = 'NHWC'
+                else:
+                    self.__dict__['_attr'][item] = 'NCHW'
+                    ret = 'NCHW'
         except:
             ret = None
         if ret is None:
