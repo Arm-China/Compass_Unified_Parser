@@ -2806,7 +2806,7 @@ def convert_qconcat(graph):
             qconcat_src_obj = NodeWrap(graph, src)['object']
             x_scale = in_edges[i + 1][2]['tensor'].value
             x_zp = in_edges[i + 2][2]['tensor'].value
-            x_dtype = in_edges[i + 1][2]['tensor'].dtype
+            x_dtype = in_edges[i][2]['tensor'].dtype
             if graph._attr.get('quantize', False):
                 qconcat_src_obj.quantize = True
                 src_in_attr['tensor'].dtype = str(x_dtype)
