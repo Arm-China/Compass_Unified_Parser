@@ -588,10 +588,11 @@ class TfFusedBatchNormV3Op(LayoutConcernedOp, OpHasVariableOutPorts, TfOp):
     def infer_shape(self):
         super(TfFusedBatchNormV3Op, self).infer_shape()
         inputs = self.get_input_tensors()
-        if any([0 in x.shape for x in inputs]):
-            return
         assert len(inputs) == 5, 'TfFusedBatchNormV3Op expects 5 inputs, but got %d.' % len(inputs)
         if self.is_training:
+            # mean & var must be empty
+            if any([0 in x.shape for x in inputs[:3]]):
+                return
             out_list = tf.raw_ops.FusedBatchNormV3(x=inputs[0], scale=inputs[1], offset=inputs[2],
                                                    mean=inputs[3], variance=inputs[4],
                                                    epsilon=self.epsilon,
@@ -599,6 +600,8 @@ class TfFusedBatchNormV3Op(LayoutConcernedOp, OpHasVariableOutPorts, TfOp):
                                                    is_training=self.is_training)
             out_tensor_list = [o.numpy() for o in out_list]
         else:
+            if any([0 in x.shape for x in inputs]):
+                return
             scale_type = inputs[1].dtype
             scale_shape = inputs[1].shape
             scale, offset, mean, variance = inputs[1:5]
