@@ -3075,13 +3075,20 @@ def split_quatized_mean(graph, op_type='LiteMEAN'):
                 or output_scale_zp is None \
                 or len(output_scale_zp) != 2:
             continue
+        input_shapes = mean_obj.get_input_shapes()
         output_shapes = mean_obj.get_output_shapes()
+        axes = mean_obj.axes
+        if all(input_shapes[0][axis] == 1 for axis in axes) and input_scale_zp == output_scale_zp:
+            # convert to reshape
+            mean_attr = mean_obj.copied_attr()
+            mean_attr.update({'opset_version': 1, 'shape': list(output_shapes[0])})
+            NodeWrap(graph, mean).replace_obj('Reshape', mean_attr)
+            continue
         if len(output_shapes) < 1 or output_shapes[0] is None or None in output_shapes[0]:
             add_value = np.array(0, dtype=input_dtype)
         else:
             output_shape = output_shapes[0]
             add_value = np.zeros(output_shape).astype(input_dtype)
-        axes = mean_obj.axes
         post_add = get_valid_node_name(graph, mean + '_post_add')
         for _, dst, out_attr in out_edges:
             graph.remove_edge(mean, dst)
