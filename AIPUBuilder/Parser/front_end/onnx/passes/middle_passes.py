@@ -3084,7 +3084,7 @@ def convert_qglobal_avgpool(graph):
 
 def convert_qleakyrelu(graph):
     matched = False
-    matches = single_node_matcher(graph, 'QLinearLeakyReluMsOp')
+    matches = single_node_matcher(graph, 'QLinearLeakyReluMs')
     for m in matches:
         qleakyrelu = m['target']
         qleakyrelu_obj = NodeWrap(graph, qleakyrelu)['object']
@@ -3101,16 +3101,16 @@ def convert_qleakyrelu(graph):
             WARN(
                 '[Parser]: Only supports QLinearLeakyReluMsOp(%s) with constant scale/zp in convert_qleakyrelu!' % qleakyrelu)
             continue
-        x_dtype = str(qleakyrelu_obj.x_zero_point.dtype)
-        y_dtype = str(qleakyrelu_obj.y_zero_point.dtype)
+        x_dtype = str(qleakyrelu_obj.X_zero_point.dtype)
+        y_dtype = str(qleakyrelu_obj.Y_zero_point.dtype)
         if any(dtype not in ('int8', 'uint8') for dtype in (x_dtype, y_dtype)):
             ERROR(
                 '[Parser]: Meets invalid zero_point dtype of QLinearLeakyReluMsOp node(%s) in convert_qleakyrelu!' % qleakyrelu)
             continue
         matched = True
         graph.remove_edges_from(in_edges[1:])
-        x_scale, x_zp = qleakyrelu_obj.x_scale, qleakyrelu_obj.x_zero_point
-        y_scale, y_zp = qleakyrelu_obj.y_scale, qleakyrelu_obj.y_zero_point
+        x_scale, x_zp = qleakyrelu_obj.X_scale, qleakyrelu_obj.X_zero_point
+        y_scale, y_zp = qleakyrelu_obj.Y_scale, qleakyrelu_obj.Y_zero_point
         qleakyrelu_attr = qleakyrelu_obj.copied_attr()
         qleakyrelu_attr.update({'opset_version': 6})
         src, _, src_in_attr = in_edges[0]
@@ -3209,7 +3209,7 @@ def convert_qmatmul(graph):
 
 def convert_qsigmoid(graph):
     matched = False
-    matches = single_node_matcher(graph, 'QLinearSigmoidMsOp')
+    matches = single_node_matcher(graph, 'QLinearSigmoidMs')
     for m in matches:
         qsigmoid = m['target']
         qsigmoid_obj = NodeWrap(graph, qsigmoid)['object']
@@ -3225,16 +3225,16 @@ def convert_qsigmoid(graph):
         if any((e[2]['tensor'] is None or not e[2]['tensor'].is_const) for e in in_edges[1:]):
             WARN('[Parser]: Only supports QLinearSigmoidMsOp(%s) with constant scale/zp in convert_qsigmoid!' % qsigmoid)
             continue
-        x_dtype = str(qsigmoid_obj.x_zero_point.dtype)
-        y_dtype = str(qsigmoid_obj.y_zero_point.dtype)
+        x_dtype = str(qsigmoid_obj.X_zero_point.dtype)
+        y_dtype = str(qsigmoid_obj.Y_zero_point.dtype)
         if any(dtype not in ('int8', 'uint8') for dtype in (x_dtype, y_dtype)):
             ERROR(
                 '[Parser]: Meets invalid zero_point dtype of QLinearSigmoidMsOp node(%s) in convert_qsigmoid!' % qsigmoid)
             continue
         matched = True
         graph.remove_edges_from(in_edges[1:])
-        x_scale, x_zp = qsigmoid_obj.x_scale, qsigmoid_obj.x_zero_point
-        y_scale, y_zp = qsigmoid_obj.y_scale, qsigmoid_obj.y_zero_point
+        x_scale, x_zp = qsigmoid_obj.X_scale, qsigmoid_obj.X_zero_point
+        y_scale, y_zp = qsigmoid_obj.Y_scale, qsigmoid_obj.Y_zero_point
         qsigmoid_attr = qsigmoid_obj.copied_attr()
         qsigmoid_attr.update({'opset_version': 6})
         src, _, src_in_attr = in_edges[0]
