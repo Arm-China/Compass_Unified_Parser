@@ -3078,7 +3078,7 @@ def split_quatized_mean(graph, op_type='LiteMEAN'):
         input_shapes = mean_obj.get_input_shapes()
         output_shapes = mean_obj.get_output_shapes()
         axes = mean_obj.axes
-        if all(input_shapes[0][axis] == 1 for axis in axes) and input_scale_zp == output_scale_zp:
+        if input_shapes and None not in input_shapes and all(input_shapes[0][axis] == 1 for axis in axes) and input_scale_zp == output_scale_zp:
             # convert to reshape
             mean_attr = mean_obj.copied_attr()
             mean_attr.update({'opset_version': 1, 'shape': list(output_shapes[0])})
