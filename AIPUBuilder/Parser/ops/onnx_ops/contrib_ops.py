@@ -322,7 +322,7 @@ class QLinearGlobalAveragePoolMsOp(OpHasOneOutPort, OnnxOp):
 class QLinearLeakyReluMsOp(OpHasOneOutPort, OnnxOp):
     @classmethod
     def attributes(cls):
-        return {1: {'alpha': {'type': AttrType.FLOAT, 'required': True}}}
+        return {1: {'alpha': {'type': AttrType.FLOAT, 'default': 0.01}}}
 
     def __init__(self, graph, attr_dict=None):
         super(QLinearLeakyReluMsOp, self).__init__(graph, attr_dict)
