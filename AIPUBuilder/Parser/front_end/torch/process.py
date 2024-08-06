@@ -2119,6 +2119,16 @@ def convert_torch_to_onnx(model_path, params):
             tensor = tensor.cuda()
         tensor_list.append(tensor)
 
+    if params.get('similarity_input_npy') != {}:
+        tensor_list = []
+        inp_npy = params.get('similarity_input_npy')
+        for k, v in input_info_dict.items():
+            assert v == list(inp_npy[k].shape), 'input shape mismatch during similarity_input_npy and cfg'
+            tensor = torch.from_numpy(inp_npy[k]).cpu()
+            if use_gpu:
+                tensor = tensor.cuda()
+            tensor_list.append(tensor)
+
     jit_model = model if is_torch_script_model else torch.jit.freeze(
         torch.jit.script(model))
     input_tensors = ()
