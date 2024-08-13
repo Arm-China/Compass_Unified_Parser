@@ -1532,7 +1532,12 @@ class LiteMEANOp(OpHasAxis, OpHasOneOutPort, TfliteOp):
 class LiteMINIMUMOp(OpHasOneOutPort, TfliteOp):
     @classmethod
     def attributes(cls):
-        return {1: {}, 2: {}}
+        return {
+            1: {},
+            2: {},  # int8
+            3: {},  # input > 4d
+            4: {}   # int16
+        }
 
     def __init__(self, graph, attr_dict=None):
         super(LiteMINIMUMOp, self).__init__(graph, attr_dict)
