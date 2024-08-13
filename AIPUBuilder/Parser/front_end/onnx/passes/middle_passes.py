@@ -5200,6 +5200,54 @@ def merge_prelu(graph):
         clear_redundant_nodes(graph)
 
 
+def merge_special_concat_split_concat(graph):
+    matches = matched_patterns(graph,
+                               nodes=[
+                                   ('concat0', {'op': 'Concat'}),
+                                   ('split', {'op': 'Split'}),
+                                   ('concat1', {'op': 'Concat'}),
+                               ],
+                               edges=[
+                                   ('concat0', 'split'),
+                                   ('split', 'concat1'),
+                               ])
+    matched = False
+    for m in matches:
+        concat0, split, concat1 = m['concat0'], m['split'], m['concat1']
+        concat0_obj = NodeWrap(graph, concat0)['object']
+        split_obj = NodeWrap(graph, split)['object']
+        concat1_obj = NodeWrap(graph, concat1)['object']
+        if all([obj is not None for obj in [concat0_obj, split_obj, concat1_obj]]):
+            concat0_in_edges = graph.sorted_in_edges(concat0, data=True)
+            concat0_axis = concat0_obj.axis
+            split_axis = split_obj.axis
+            split_out_edges = graph.sorted_out_edges(split, data=True)
+            split_size = split_obj.split
+            concat1_in_edges = graph.sorted_in_edges(concat1, data=True)
+            concat1_axis = concat1_obj.axis
+            if concat0_axis == concat1_axis and concat0_axis == split_axis and len(split_out_edges) == 1:
+                if len(concat0_in_edges) == 2 and \
+                        len(concat1_in_edges) == 2 and \
+                        len(split_size) == 2 and \
+                        (concat0_in_edges[0][0] == concat1_in_edges[0][0] or concat0_in_edges[1][0] == concat1_in_edges[1][0]):
+                    matched = True
+                    concat0_input_shapes = concat0_obj.get_input_shapes()
+                    if concat0_in_edges[0][0] == concat1_in_edges[0][0]:
+                        if concat0_input_shapes[0] and None not in concat0_input_shapes[0] and \
+                                concat0_input_shapes[0][concat0_axis] == split_size[0]:
+                            graph.remove_edges_from(concat1_in_edges[1:])
+                            src, _, in_attr = concat0_in_edges[1]
+                            graph.add_edge(src, concat1_in_edges[0][1], **in_attr)
+                    else:
+                        if concat0_input_shapes[1] and None not in concat0_input_shapes[1] and \
+                                concat0_input_shapes[1][concat0_axis] == split_size[1]:
+                            graph.remove_edges_from(concat1_in_edges[:1])
+                            src, _, in_attr = concat0_in_edges[0]
+                            graph.add_edge(src, concat1_in_edges[1][1], **in_attr)
+    if matched:
+        clear_redundant_nodes(graph)
+
+
 def convert_special_thresholdedrelu_to_relu(graph):
     '''Merge thresholdedrelu(alpha=0) to Relu.
     '''
@@ -10627,6 +10675,7 @@ def middle_passes(graph, params):
     convert_special_scatternd(graph)
     convert_special_scatternd2(graph)
     convert_special_cast(graph)
+    merge_special_concat_split_concat(graph)
     convert_global_pool(graph)
     # merge_l2pool(graph)
     convert_special_clip_to_relu(graph)
