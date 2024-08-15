@@ -4166,7 +4166,7 @@ class ArmReverseSequenceOp(OpHasOneOutPort, ArmOp):
 
     @classmethod
     def cast_in_ports(cls):
-        return {0: 'float32', 1: 'int32'}
+        return {0: ['float32', 'int32'], 1: 'int32'}
 
     @classmethod
     def attributes(cls):
