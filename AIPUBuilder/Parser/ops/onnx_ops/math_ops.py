@@ -1555,8 +1555,9 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
             else:
                 ret = 0.5 * (roi_start + roi_end) * (length_original - 1)
         elif coordinate_transform_mode == 'half_pixel_symmetric':
-            adjustment = int(length_resized) / length_resized
-            center = length_original / 2
+            out = x_scale * length_original
+            adjustment = length_resized / out
+            center = length_original / 2.
             offset = center * (1 - adjustment)
             ret = offset + (x_resized + 0.5) / x_scale - 0.5
         else:  # half_pixel
