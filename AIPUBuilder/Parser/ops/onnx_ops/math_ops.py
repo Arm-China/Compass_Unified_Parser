@@ -2163,18 +2163,24 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
                 is_nchw = (self.data_format == 'NCHW')
                 out_spatial_shape = out_shape[2:] if is_nchw else out_shape[1:-1]
                 spatial_scales = list(self.scales[2:]) if is_nchw else list(self.scales[1:-1])
+                if len(inputs[0].shape) == 3:
+                    inp = np.expand_dims(inputs[0], axis=2) if is_nchw else np.expand_dims(inputs[0], axis=1)
+                    out_spatial_shape.insert(0, 1)
+                    spatial_scales.insert(0, 1.)
+                else:
+                    inp = inputs[0]
                 if mode == 'linear':
                     if self.antialias:
                         func = ResizeOp.upsample_trilinear_antialias if len(
                             out_spatial_shape) == 3 else ResizeOp.upsample_bilinear_antialias
-                        out_tensor = func(inputs[0], out_spatial_shape, spatial_scales, self.roi,
+                        out_tensor = func(inp, out_spatial_shape, spatial_scales, self.roi,
                                           self.coordinate_transformation_mode, self.extrapolation_value,
                                           self.exclude_outside, is_nchw)
                     else:
-                        out_tensor = ResizeOp.upsample_linear(inputs[0], out_spatial_shape, spatial_scales, self.roi,
+                        out_tensor = ResizeOp.upsample_linear(inp, out_spatial_shape, spatial_scales, self.roi,
                                                               self.coordinate_transformation_mode, is_nchw)
                 elif mode == 'nearest':
-                    out_tensor = ResizeOp.upsample_nearest(inputs[0], out_spatial_shape, spatial_scales, self.roi,
+                    out_tensor = ResizeOp.upsample_nearest(inp, out_spatial_shape, spatial_scales, self.roi,
                                                            self.coordinate_transformation_mode, self.nearest_mode,
                                                            self.extrapolation_value, is_nchw)
                 else:  # mode == 'cubic'
@@ -2182,9 +2188,11 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
                     assert len(input_dim_np) == 4, 'Resize op only supports cubic mode with 4d input, but got %dd!' % \
                         len(input_dim_np)
                     func = ResizeOp.upsample_cubic_antialias if self.antialias else ResizeOp.upsample_cubic
-                    out_tensor = func(inputs[0], out_spatial_shape, spatial_scales, self.roi,
+                    out_tensor = func(inp, out_spatial_shape, spatial_scales, self.roi,
                                       self.coordinate_transformation_mode, self.cubic_coeff_a,
                                       self.exclude_outside, self.extrapolation_value, is_nchw)
+                if len(inputs[0].shape) == 3:
+                    out_tensor = np.squeeze(out_tensor, axis=2) if is_nchw else np.squeeze(out_tensor, axis=1)
         else:
             # Still use random output here to speedup parsing if inputs are non-const
             out_tensor = np.random.ranf(out_shape).astype(inputs[0].dtype)
