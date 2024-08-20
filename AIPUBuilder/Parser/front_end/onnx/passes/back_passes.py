@@ -2986,6 +2986,10 @@ def rename_resize(graph):
                 mode = resize_obj.coordinate_transformation_mode
                 method = 'NEAREST' if resize_obj.mode == 'nearest' else 'BILINEAR'
                 interp_attr = resize_obj.copied_attr()
+                if hasattr(resize_obj, 'ori_keep_aspect_ratio_policy') and \
+                        resize_obj.ori_keep_aspect_ratio_policy in ('not_larger', 'not_smaller'):
+                    sizes = None
+                    interp_attr.update({'keep_aspect_ratio_policy': resize_obj.ori_keep_aspect_ratio_policy})
                 interp_attr.update({'factors': factors,
                                     'sizes': sizes,
                                     'method': method,

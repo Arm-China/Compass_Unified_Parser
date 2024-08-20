@@ -4112,6 +4112,9 @@ class ArmResizeOp(OpHasMethod, OpHasOneOutPort, ArmOp):
                                  'options': ['simple', 'round_prefer_floor', 'round_prefer_ceil', 'floor', 'ceil']},
                 'antialias': {'type': AttrType.BOOL, 'default': False},
                 'exclude_outside': {'type': AttrType.BOOL, 'default': False},
+                'keep_aspect_ratio_policy': {'type': AttrType.STRING,
+                                             'default': 'stretch',
+                                             'options': ['not_larger', 'not_smaller', 'stretch']}
                 }
 
     def __init__(self, graph, attr_dict=None):
@@ -4126,8 +4129,12 @@ class ArmResizeOp(OpHasMethod, OpHasOneOutPort, ArmOp):
             size = self.sizes
         else:
             spatial_shape = inputs[0].shape[1:-1]
-            size = np.floor(np.array(spatial_shape) *
-                            np.array(self.factors)).astype(np.int32).tolist()
+            if self.keep_aspect_ratio_policy in ('not_larger', 'not_smaller'):
+                size = np.round(np.array(spatial_shape) *
+                                np.array(self.factors)).astype(np.int32).tolist()
+            else:
+                size = np.floor(np.array(spatial_shape) *
+                                np.array(self.factors)).astype(np.int32).tolist()
         perm = [0, len(inputs[0].shape) - 1] + \
             list(range(1, len(inputs[0].shape) - 1))
         inverse_perm = Op.cal_inverse_perm(perm)
