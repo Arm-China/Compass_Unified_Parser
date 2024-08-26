@@ -971,6 +971,9 @@ def convert_einsum(graph):
              (equation, node_name))
         return
 
+    def _is_consecutive(nums):
+        return set(nums) == set(range(min(nums), max(nums) + 1))
+
     matches = single_node_matcher(graph, 'Einsum')
     for m in matches:
         einsum = m['target']
@@ -1163,6 +1166,161 @@ def convert_einsum(graph):
                     matmul_attr = einsum_obj.copied_attr()
                     matmul_attr.update({'opset_version': 13})
                     NodeWrap(graph, einsum).replace_obj('MatMul', matmul_attr)
+                elif len(add_list[1]) >= 2 and len(add_list[0]) >= 2 and \
+                        set(add_list[0]).difference(set(out_term)) == set(add_list[1]).difference(set(out_term)) and \
+                        len(set(add_list[0]).intersection(add_list[1]).intersection(out_term)) > 0:
+                    # bmchw,bnmc -> bmhwn
+                    batch = set(add_list[0]).intersection(add_list[1]).intersection(out_term)
+                    c = set(add_list[0]).difference(set(out_term))
+                    # bmchw --> bhc, bnmc --> bcw
+                    in_edges = graph.sorted_in_edges(einsum, data=True)
+                    in_shapes = einsum_obj.get_input_shapes()
+                    out_shapes = einsum_obj.get_output_shapes()
+                    if len(in_edges) < 2 or len(in_shapes) < 2 \
+                            or any(shape is None or None in shape for shape in in_shapes):
+                        ERROR('[Parser]: Meets invalid inputs of Einsum(%s) in convert_einsum!' % einsum)
+                        continue
+                    inp_0_shape = in_shapes[0]
+                    inp_1_shape = in_shapes[1]
+                    need_reshape_0 = True if len(inp_0_shape) > 3 else False
+                    need_reshape_1 = True if len(inp_1_shape) > 3 else False
+                    need_reshape_out = True if len(out_term) > 3 else False
+                    batch_idx_input0 = [add_list[0].index(b) for b in batch]
+                    batch_idx_input0.sort()
+                    batch_idx_input1 = [add_list[1].index(b) for b in batch]
+                    batch_idx_input1.sort()
+                    batch_idx_output = [out_term.index(b) for b in batch]
+                    batch_idx_output.sort()
+                    c_idx_input0 = [add_list[0].index(b) for b in c]
+                    c_idx_input0.sort()
+                    c_idx_input1 = [add_list[1].index(b) for b in c]
+                    c_idx_input1.sort()
+                    need_transpose_0_c = False if max(c_idx_input0) == len(inp_0_shape) - 1 else True
+                    need_transpose_1_c = True if max(c_idx_input1) == len(inp_1_shape) - 1 else False
+
+                    batch_shape = [inp_0_shape[axis] for axis in batch_idx_input0]
+                    c_shape = [inp_0_shape[axis] for axis in c_idx_input0]
+                    new_batch_shape = int(np.prod(batch_shape))
+                    new_c_shape = int(np.prod(c_shape))
+                    matmul_output_shape = [new_batch_shape]
+                    if _is_consecutive(batch_idx_input0):
+                        if _is_consecutive(c_idx_input0):
+                            if need_reshape_0:
+                                if need_transpose_0_c:
+                                    h_shape = inp_0_shape[max(c_idx_input0) + 1:]
+                                    new_h_shape = int(np.prod(h_shape))
+                                    reshape_0_shape = [new_batch_shape, new_c_shape, new_h_shape]
+                                    reshape0 = insert_reshape(graph, in_edges[0][0], einsum, in_edges[0][-1],
+                                                              reshape_0_shape,
+                                                              quantize=einsum_obj.quantize)
+                                    in_edges = graph.sorted_in_edges(einsum, data=True)
+                                    insert_transpose(graph, reshape0, einsum, in_edges[0][-1], [0, 2, 1],
+                                                     quantize=einsum_obj.quantize)
+                                else:
+                                    h_shape = inp_0_shape[max(batch_idx_input0) + 1:min(c_idx_input0)]
+                                    new_h_shape = int(np.prod(h_shape))
+                                    reshape_0_shape = [new_batch_shape, new_h_shape, new_c_shape]
+                                    insert_reshape(graph, in_edges[0][0], einsum, in_edges[0][-1],
+                                                   reshape_0_shape,
+                                                   quantize=einsum_obj.quantize)
+                            else:
+                                if need_transpose_0_c:
+                                    new_h_shape = inp_0_shape[2]
+                                    insert_transpose(graph, in_edges[0][0], einsum, in_edges[0][-1], [0, 2, 1],
+                                                     quantize=einsum_obj.quantize)
+                                else:
+                                    new_h_shape = inp_0_shape[1]
+                            matmul_output_shape.append(new_h_shape)
+                        else:
+                            _warn_unsupported(einsum, einsum_obj.equation)
+                    else:
+                        _warn_unsupported(einsum, einsum_obj.equation)
+
+                    if _is_consecutive(batch_idx_input1):
+                        if _is_consecutive(c_idx_input1):
+                            if need_reshape_1:
+                                if need_transpose_1_c:
+                                    w_shape = inp_1_shape[max(batch_idx_input1) + 1:min(c_idx_input1)]
+                                    new_w_shape = int(np.prod(w_shape))
+                                    reshape_1_shape = [new_batch_shape, new_w_shape, new_c_shape]
+                                    reshape1 = insert_reshape(graph, in_edges[1][0], einsum, in_edges[1][-1],
+                                                              reshape_1_shape,
+                                                              quantize=einsum_obj.quantize)
+                                    in_edges = graph.sorted_in_edges(einsum, data=True)
+                                    insert_transpose(graph, reshape1, einsum, in_edges[1][-1], [0, 2, 1],
+                                                     quantize=einsum_obj.quantize)
+                                else:
+                                    w_shape = inp_1_shape[max(c_idx_input1) + 1:]
+                                    new_w_shape = int(np.prod(w_shape))
+                                    reshape_1_shape = [new_batch_shape, new_c_shape, new_w_shape]
+                                    insert_reshape(graph, in_edges[1][0], einsum, in_edges[1][-1],
+                                                   reshape_1_shape,
+                                                   quantize=einsum_obj.quantize)
+                            else:
+                                if need_transpose_1_c:
+                                    new_w_shape = inp_1_shape[1]
+                                    insert_transpose(graph, in_edges[1][0], einsum, in_edges[1][-1], [0, 2, 1],
+                                                     quantize=einsum_obj.quantize)
+                                else:
+                                    new_w_shape = inp_1_shape[2]
+                            matmul_output_shape.append(new_w_shape)
+                        else:
+                            _warn_unsupported(einsum, einsum_obj.equation)
+                    else:
+                        # insert transpose first
+                        perm = batch_idx_input1 + c_idx_input1
+                        left_perm = []
+                        for i in range(len(inp_1_shape)):
+                            if i not in perm:
+                                left_perm.append(i)
+                        perm = batch_idx_input1 + c_idx_input1 + left_perm
+                        transpose1 = insert_transpose(graph, in_edges[1][0], einsum, in_edges[1][-1], perm,
+                                                      quantize=einsum_obj.quantize)
+                        if need_reshape_1:
+                            new_w_shape = int(np.prod(inp_1_shape)) // (new_batch_shape * new_c_shape)
+                            reshape_1_shape = [new_batch_shape, new_c_shape, new_w_shape]
+                            in_edges = graph.sorted_in_edges(einsum, data=True)
+                            insert_reshape(graph, transpose1, einsum, in_edges[1][-1],
+                                           reshape_1_shape,
+                                           quantize=einsum_obj.quantize)
+                            matmul_output_shape.append(new_w_shape)
+
+                    matmul_attr = einsum_obj.copied_attr()
+                    matmul_attr.update({'opset_version': 13})
+                    NodeWrap(graph, einsum).replace_obj('MatMul', matmul_attr)
+
+                    _, _, matmul_out_attr = graph.sorted_out_edges(einsum, data=True)[0]
+                    matmul_out_attr['tensor'].shape = tuple(matmul_output_shape)
+
+                    matmul_output_term = [add_list[0][idx] for idx in batch_idx_input0]
+                    if need_transpose_0_c:
+                        matmul_output_term += [add_list[0][idx]
+                                               for idx in range(max(c_idx_input0) + 1, len(add_list[0]))]
+                    else:
+                        matmul_output_term += [add_list[0][idx] for idx in
+                                               range(max(batch_idx_input0) + 1, min(c_idx_input0))]
+                    for i in range(len(add_list[1])):
+                        if i not in batch_idx_input1 and i not in c_idx_input1:
+                            matmul_output_term.append(add_list[1][i])
+
+                    need_transpose_out = ''.join(matmul_output_term) != out_term
+                    if need_transpose_out:
+                        perm = [0, 2, 1]
+                        transpose_out = insert_transpose_after(graph, einsum, perm,
+                                                               quantize=einsum_obj.quantize)
+                        matmul_output_shape_updated = [matmul_output_shape[axis] for axis in perm]
+                        matmul_output_shape = matmul_output_shape_updated.copy()
+                    if need_reshape_out:
+                        reshape_out_shape = out_shapes[0]
+                        reshape_src = transpose_out if need_transpose_out else einsum
+                        reshape_out = insert_reshape_after(graph, reshape_src, reshape_out_shape,
+                                                           old_dim=matmul_output_shape,
+                                                           quantize=einsum_obj.quantize)
+                    if need_transpose_out or need_reshape_out:
+                        if einsum in graph._attr['output_names']:
+                            index = graph._attr['output_names'].index(einsum)
+                            last_out = reshape_out if need_reshape_out else transpose_out
+                            graph._attr['output_names'][index] = last_out
                 elif len(add_list[0]) == 4 and \
                         add_list[0][:3] == '...' and \
                         len(add_list[1]) == 2 and \
