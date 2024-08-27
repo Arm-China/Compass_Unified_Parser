@@ -1289,8 +1289,12 @@ def convert_einsum(graph):
                     matmul_attr.update({'opset_version': 13})
                     NodeWrap(graph, einsum).replace_obj('MatMul', matmul_attr)
 
-                    _, _, matmul_out_attr = graph.sorted_out_edges(einsum, data=True)[0]
-                    matmul_out_attr['tensor'].shape = tuple(matmul_output_shape)
+                    _, dst, matmul_out_attr = graph.sorted_out_edges(einsum, data=True)[0]
+                    if matmul_out_attr['tensor'].value is not None:
+                        in_edges = graph.sorted_in_edges(einsum, data=True)
+                        matmul_out_attr['tensor'].value = np.matmul(in_edges[0][-1]['tensor'].value,
+                                                                    in_edges[1][-1]['tensor'].value)
+                    matmul_out_attr['tensor'].shape = tuple(matmul_output_shape.copy())
 
                     matmul_output_term = [add_list[0][idx] for idx in batch_idx_input0]
                     if need_transpose_0_c:
@@ -1306,8 +1310,9 @@ def convert_einsum(graph):
                     need_transpose_out = ''.join(matmul_output_term) != out_term
                     if need_transpose_out:
                         perm = [0, 2, 1]
-                        transpose_out = insert_transpose_after(graph, einsum, perm,
-                                                               quantize=einsum_obj.quantize)
+                        trans_out_attr = copy.deepcopy(matmul_out_attr)
+                        transpose_out = insert_transpose(graph, einsum, dst, trans_out_attr, perm,
+                                                         quantize=einsum_obj.quantize)
                         matmul_output_shape_updated = [matmul_output_shape[axis] for axis in perm]
                         matmul_output_shape = matmul_output_shape_updated.copy()
                     if need_reshape_out:
