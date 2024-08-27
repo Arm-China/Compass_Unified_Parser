@@ -375,7 +375,7 @@ class LiteCONCATENATIONOp(OpHasAxis, BaseActivationOp, TfliteOp):
 class LiteCONV_2DOp(BaseActivationOp, BaseConvOp, TfliteOp):
     @classmethod
     def attributes(cls):
-        return {1: {}, 2: {}, 3: {}, 4: {}, 5: {}}
+        return {1: {}, 2: {}, 3: {}, 4: {}, 5: {}, 6: {}}
 
     @classmethod
     def perm_lite_to_onnx(cls):
@@ -401,14 +401,24 @@ class LiteCONV_2DOp(BaseActivationOp, BaseConvOp, TfliteOp):
             inp = inputs[0].astype(np.float32)
         else:
             inp = inputs[0]
-        out_tensor = tf.nn.conv2d(inp,
-                                  np.transpose(self.weights, axes=type(
-                                      self).perm_lite_to_tf()),
-                                  strides=[1] + self.strides + [1],
-                                  padding='VALID' if self.auto_pad in (
-                                      'VALID', 'NOTSET') else 'SAME',
-                                  dilations=[1] + self.dilations + [1],
-                                  data_format='NHWC')
+        if self.opcode_version == 6 and inputs[0].shape[-1] != self.weights.shape[-1]:
+            # Group Conv
+            assert inputs[0].shape[-1] % self.weights.shape[-1] == 0, 'ic or group_num not match.'
+            self.group = inputs[0].shape[-1] // self.weights.shape[-1]
+        else:
+            self.group = 1
+        conv_layer = tf.keras.layers.Conv2D(filters=self.weights.shape[0],
+                                            kernel_size=self.kernel_shape,
+                                            strides=self.strides,
+                                            padding='VALID' if self.auto_pad in ('VALID', 'NOTSET') else 'SAME',
+                                            dilation_rate=self.dilations,
+                                            groups=self.group,
+                                            use_bias=False,
+                                            activation=None)
+        out_tensor = conv_layer(inp).numpy()
+        conv_layer.set_weights([np.transpose(self.weights, axes=type(self).perm_lite_to_tf())])
+        out_tensor = conv_layer(inp).numpy()
+
         out_tensor = tf.nn.bias_add(
             out_tensor, self.biases, data_format='NHWC').numpy()
         out_tensor = self.cal_activation(out_tensor).astype(inputs[0].dtype)
