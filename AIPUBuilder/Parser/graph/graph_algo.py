@@ -107,6 +107,17 @@ def clear_redundant_nodes(g, outputs=None):
                            and pred[n][0] not in removing_nodes]
         removing_nodes = set(removing_nodes).difference(valid_out_nodes)
         g.remove_nodes_from(removing_nodes)
+        if 'subgraphs' in g._attr and len(g._attr['subgraphs']) > 0:
+            all_valid_nodes = valid_nodes
+            for k, v in list(g._attr['subgraphs'].items()):
+                if k in removing_nodes:
+                    g._attr['subgraphs'].pop(k)
+                else:
+                    all_valid_nodes += set(v.nodes)
+            for k in list(g._attr['subgraphs'].keys()):
+                if k not in all_valid_nodes:
+                    g._attr['subgraphs'].pop(k)
+
     else:
         ERROR('[Parser]: Can not proceed without output names in clear_redundant_nodes!')
 
