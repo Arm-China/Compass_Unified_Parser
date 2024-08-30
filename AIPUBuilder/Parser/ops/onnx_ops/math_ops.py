@@ -2135,11 +2135,8 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
                     adjusted_out_size[axis] = int(ResizeOp.get_nearest_pixel(
                         'round_prefer_ceil', scale_in_policy * input_dim_np[axis]))
                 self.sizes = adjusted_out_size
-                self.scales = [1.0, 1.0] + [scale_in_policy] * (len(inputs[0].shape) - 2)
-                self.ori_keep_aspect_ratio_policy = self.keep_aspect_ratio_policy
                 self.keep_aspect_ratio_policy = 'stretch'  # void sizes being updated again
-            else:
-                self.scales = np.array(self.sizes, np.float32) / input_dim_np
+            self.scales = np.array(self.sizes, np.float32) / input_dim_np
 
         if self.cur_version == 10:
             out_shape = np.floor(
