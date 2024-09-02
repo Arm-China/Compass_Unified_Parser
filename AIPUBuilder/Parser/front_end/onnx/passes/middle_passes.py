@@ -991,8 +991,50 @@ def convert_einsum(graph):
                 equation = einsum_obj.equation.replace(' ', '')
                 equ_list = equation.split('->')
                 add_list = equ_list[0].split(',')
-                if len(equ_list) != 2 or len(add_list) != 2:
+                if len(add_list) != 2:
                     ERROR('[Parser]: Meets invalid equation in convert_einsum!')
+                    continue
+                if len(equ_list) == 1:
+                    if len(add_list[0]) == len(add_list[1]):
+                        if len(add_list[0]) == 1:
+                            in_shapes = einsum_obj.get_input_shapes()
+                            if add_list[0] == add_list[1]:
+                                # 'i,i'
+                                reshape0_shape = [1, in_shapes[0][0]]
+                                reshape1_shape = [in_shapes[1][0], 1]
+                                insert_reshape(graph, in_edges[0][0], einsum, in_edges[0][-1],
+                                               reshape0_shape, quantize=einsum_obj.quantize)
+                                insert_reshape(graph, in_edges[1][0], einsum, in_edges[1][-1],
+                                               reshape1_shape, quantize=einsum_obj.quantize)
+                                post_reshape = insert_reshape_after(
+                                    graph, einsum, [], old_dim=[1, 1], quantize=einsum_obj.quantize)
+                                matmul_attr = einsum_obj.copied_attr()
+                                matmul_attr.update({'opset_version': 13})
+                                NodeWrap(graph, einsum).replace_obj('MatMul', matmul_attr)
+                                if einsum in graph._attr['output_names']:
+                                    index = graph._attr['output_names'].index(einsum)
+                                    graph._attr['output_names'][index] = post_reshape
+                            else:
+                                # 'i,j'
+                                reshape0_shape = [in_shapes[0][0], 1]
+                                reshape1_shape = [1, in_shapes[1][0]]
+                                insert_reshape(graph, in_edges[0][0], einsum, in_edges[0][-1],
+                                               reshape0_shape, quantize=einsum_obj.quantize)
+                                insert_reshape(graph, in_edges[1][0], einsum, in_edges[1][-1],
+                                               reshape1_shape, quantize=einsum_obj.quantize)
+                                matmul_attr = einsum_obj.copied_attr()
+                                matmul_attr.update({'opset_version': 13})
+                                NodeWrap(graph, einsum).replace_obj('MatMul', matmul_attr)
+                        elif len(add_list[0]) == 2 and add_list[0][-1] == add_list[1][-2]:
+                            # 'ij,jk'
+                            # TODO: support batch matmul
+                            matmul_attr = einsum_obj.copied_attr()
+                            matmul_attr.update({'opset_version': 13})
+                            NodeWrap(graph, einsum).replace_obj('MatMul', matmul_attr)
+                        else:
+                            _warn_unsupported(einsum, equation)
+                    else:
+                        _warn_unsupported(einsum, equation)
                     continue
                 out_term = equ_list[1]
                 if len(add_list[1]) >= 2 and len(add_list[0]) >= 2 \
@@ -1367,6 +1409,55 @@ def convert_einsum(graph):
                             graph._attr['output_names'][index] = last_out
                 else:
                     _warn_unsupported(einsum, equation)
+            elif len(in_edges) == 1:
+                equation = einsum_obj.equation.replace(' ', '')
+                equ_list = equation.split('->')
+                if len(equ_list[0]) == len(equ_list[1]) and set(equ_list[0]) == set(equ_list[1]):
+                    # convert to transpose
+                    perm = []
+                    for v in equ_list[0]:
+                        perm.append(equ_list[1].index(v))
+                    trans_attr = einsum_obj.copied_attr()
+                    trans_attr.update({'opset_version': 13, 'perm': perm})
+                    NodeWrap(graph, einsum).replace_obj('Transpose', trans_attr)
+                elif len(equ_list[0]) == len(equ_list[1]) + 1:
+                    if equ_list[0][:len(equ_list[1])] == equ_list[1] and \
+                            equ_list[0][-1] == equ_list[0][-2]:
+                        # batch_diagonal, convert to GatherND
+                        input_shape = einsum_obj.get_input_shapes()[0]
+                        output_shape = einsum_obj.get_output_shapes()[0]
+                        need_reshape = True if len(input_shape) > 2 else False
+                        reshape_shape = [int(np.prod(input_shape[:-1])), input_shape[-1]]
+                        if need_reshape:
+                            insert_reshape(graph, in_edges[0][0], einsum, in_edges[0][-1],
+                                           reshape_shape,
+                                           quantize=einsum_obj.quantize)
+                        indices = []
+                        for i in range(reshape_shape[0]):
+                            indices.append([i, i % reshape_shape[1]])
+                        insert_constant(graph, einsum + '_indices',
+                                        np.array(indices, np.int64), einsum, in_port=1)
+                        gather_attr = einsum_obj.copied_attr()
+                        gather_attr.update({'opset_version': 13, 'batch_dims': 0})
+                        NodeWrap(graph, einsum).replace_obj('GatherND', gather_attr)
+                        if need_reshape:
+                            reshape_out = insert_reshape_after(graph, einsum, output_shape,
+                                                               quantize=einsum_obj.quantize)
+                            if einsum in graph._attr['output_names']:
+                                index = graph._attr['output_names'].index(einsum)
+                                graph._attr['output_names'][index] = reshape_out
+                    elif len(set(equ_list[0]).difference(set(equ_list[1]))) == 1:
+                        # ReduceSum, 'ij->i'
+                        sum_shape = list(set(equ_list[0]).difference(set(equ_list[1])))[0]
+                        sum_axis = equ_list[0].index(sum_shape)
+                        reduce_sum_attr = einsum_obj.copied_attr()
+                        reduce_sum_attr.update({'opset_version': 11, 'keepdims': 0,
+                                                'axes': [sum_axis]})
+                        NodeWrap(graph, einsum).replace_obj('ReduceSum', reduce_sum_attr)
+                    else:
+                        _warn_unsupported(einsum, einsum_obj.equation)
+                else:
+                    _warn_unsupported(einsum, einsum_obj.equation)
             else:
                 _warn_unsupported(einsum, einsum_obj.equation)
         else:
