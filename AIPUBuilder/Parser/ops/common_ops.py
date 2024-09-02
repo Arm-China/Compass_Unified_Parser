@@ -306,8 +306,11 @@ class DummyOp(OpHasOneOutPort, ConstLikeOp, CommonOp):
     def __init__(self, graph, attr_dict=None):
         super(DummyOp, self).__init__(graph, attr_dict)
 
-    def infer_shape(self):
+    def infer_shape(self, input_tensor=None):
         super(DummyOp, self).infer_shape()
+        if input_tensor is not None:
+            out_tensor = input_tensor.copy()
+            self.set_out_tensor(out_tensor)
 
 
 class ErosionOp(OpHasPaddingStrides, OpHasWeights, OpHasOneOutPort, LayoutConcernedOp, CommonOp):
