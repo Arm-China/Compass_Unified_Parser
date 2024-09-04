@@ -41,6 +41,7 @@ class LoopOp(OpHasSubGraph, OnnxOp):
 
     def __init__(self, graph, attr_dict=None):
         super(LoopOp, self).__init__(graph, attr_dict)
+        self.real_loop_cnt = None
         self.update_attributes(LoopOp, attr_dict)
         assert self.check_required(), 'LoopOp is missing a required parameter.'
 
@@ -56,11 +57,14 @@ class LoopOp(OpHasSubGraph, OnnxOp):
                 in_edges[0][2]['tensor'].value is not None and \
                 in_edges[1][2]['tensor'].is_const and \
                 in_edges[1][2]['tensor'].value is not None:
-            max_count, cond_in = int(inputs[0]), bool(inputs[1])
+            max_count, ori_cond_in = int(inputs[0]), bool(inputs[1])
+            count_cond_is_const = True
         else:
             WARN(f'[Parser]: Loop({self.name}) max_count/cond_in is non-const, the infer shape is unreliable.')
-            max_count, cond_in = 5, True
+            max_count, ori_cond_in = 5, True
+            count_cond_is_const = False
 
+        cond_in = ori_cond_in
         body_inputs_num = len(self.body._attr['input_tensors'])  # 2+N
         body_outputs_num = len(self.body._attr['output_names'])  # 1+K+N
         N = body_inputs_num - 2
@@ -70,6 +74,10 @@ class LoopOp(OpHasSubGraph, OnnxOp):
         sub_nodes = determined_sort(self.body, self.body._attr['output_names'])
         output_list = []
         loop_cnt = 0
+        cond_out_root_inputs = self.body.nodes[self.body._attr['output_names'][0]]['object'].get_root_inputs()
+        cond_out_root_input_const = {}
+        for inp in cond_out_root_inputs:
+            cond_out_root_input_const[inp] = False
         for i in range(max_count):
             if cond_in:
                 for n in sub_nodes:
@@ -87,15 +95,21 @@ class LoopOp(OpHasSubGraph, OnnxOp):
                                 out_tensor = copy.deepcopy(inputs[inp_idx])
                             else:
                                 out_tensor = copy.deepcopy(output_list[inp_idx - 1])
+                        if n in cond_out_root_input_const:
+                            cond_out_root_input_const[n] = in_edges[inp_idx][-1]['tensor'].is_const
                         sub_node_obj.infer_shape(out_tensor)
                     elif sub_node_obj.type == 'Dummy':
                         # input data from parent graph
                         parent_node = self.body._attr['parent_graph'].nodes[n]
-                        out_edges = self.body._attr['parent_graph'].sorted_out_edges(parent_node['object'].name,
-                                                                                     data=True)
-                        out_tensor = out_edges[0][-1]['tensor'].value
+                        dummy_out_edges = self.body._attr['parent_graph'].sorted_out_edges(parent_node['object'].name,
+                                                                                           data=True)
+                        out_tensor = dummy_out_edges[0][-1]['tensor'].value
+                        if n in cond_out_root_input_const:
+                            cond_out_root_input_const[n] = dummy_out_edges[0][-1]['tensor'].is_const
                         sub_node_obj.infer_shape(out_tensor)
                     else:
+                        if sub_node_obj.type == 'Constant' and n in cond_out_root_input_const:
+                            cond_out_root_input_const[n] = True
                         sub_node_obj.infer_shape()
                 loop_cnt += 1
                 # Loop body outputs: 1 + N + K
@@ -108,9 +122,14 @@ class LoopOp(OpHasSubGraph, OnnxOp):
                         k_carried_away[k].append(output_list[k - K])
             else:
                 break
+        if count_cond_is_const and all(list(cond_out_root_input_const.values())):
+            self.real_loop_cnt = loop_cnt
         # Loop outputs: N + K
-        output_list = output_list[1: 1 + N]
-        output_list.extend([np.vstack(x) for x in k_carried_away])
+        if ori_cond_in:
+            output_list = output_list[1: 1 + N]
+            output_list.extend([np.vstack(x) for x in k_carried_away])
+        else:
+            output_list = inputs[2:]
         while len(output_list) < len(out_edges):
-            output_list.append(np.empty(shape=()))
+            output_list.append(np.array([]))
         self.set_out_tensor(output_list)

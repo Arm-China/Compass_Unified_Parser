@@ -579,6 +579,27 @@ class Op(abc.ABC):
                   (self.name, str(e)))
             return []
 
+    def get_root_inputs(self):
+        '''Returns all root inputs to this op'''
+        ret = []
+        checked_ops = [self.name]
+        try:
+            while checked_ops:
+                op_name = checked_ops.pop()
+                for u, _, _, d in self._graph.sorted_in_edges(op_name, keys=True, data=True):
+                    if d['tensor'].is_const:
+                        ret.append(u)
+                    else:
+                        if self._graph.has_node(u) and self._graph.nodes[u]['op'] in ['Dummy', 'ArmInput', 'Input']:
+                            ret.append(u)
+                        else:
+                            checked_ops.append(u)
+        except Exception as e:
+            ERROR('[Parser]: Node(%s) get_root_inputs meets error:%s' %
+                  (self.name, str(e)))
+            return []
+        return ret
+
     def sorted_in_consts(self):
         '''Sort the contents of the constant node in the order of name, attr, and value.'''
         ret = []

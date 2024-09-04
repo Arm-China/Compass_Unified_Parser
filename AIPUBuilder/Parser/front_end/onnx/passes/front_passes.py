@@ -3,13 +3,14 @@
 
 import copy
 import numpy as np
+from collections import OrderedDict
 from networkx.algorithms import shortest_path_length
 from ....common.defs import Tensor
 from ....ops.op import Op, OpHasWeights, OpHasBiases, KerasOp, BaseDeconvOp, ConstLikeOp, OpHasOneOutPort
 from ....graph.node_wrap import NodeWrap
 from ....graph.pattern_match import matched_patterns, single_node_matcher, two_nodes_matcher
 from ....graph.graph_algo import get_valid_node_name, determined_sort
-from ....logger import INFO, DEBUG, WARN, ERROR, FATAL
+from ....logger import INFO, DEBUG, WARN, ERROR, FATAL, WARN_EXCEPTION
 from .common_passes import clear_redundant_nodes, FLOAT_EQUAL, insert_constant, insert_reshape, insert_reshape_after, \
     insert_transpose, insert_transpose_after
 
@@ -128,80 +129,37 @@ def decompose_loop(graph, params):
     for m in matches:
         loop = m['target']
         loop_obj = NodeWrap(graph, loop)['object']
-        in_edges = graph.sorted_in_edges(loop, data=True)
+        loop_in_edges = graph.sorted_in_edges(loop, data=True)
         loop_out_edges = graph.sorted_out_edges(loop, data=True)
         if loop_obj is not None \
-                and len(in_edges) >= 2 + len(loop_obj.body._attr['root_in_ports']) \
-                and len(loop_out_edges) >= 1:
-            if not (len(in_edges) == (2 + len(loop_obj.body._attr['root_in_ports']))
-                    or len(in_edges) == (3 + len(loop_obj.body._attr['root_in_ports'])))\
-                    or not in_edges[0][2]['tensor'].is_const \
-                    or not in_edges[1][2]['tensor'].is_const \
-                    or in_edges[0][2]['tensor'].value is None \
-                    or in_edges[1][2]['tensor'].value is None:
-                continue
+                and len(loop_in_edges) >= 2 and len(loop_out_edges) >= 1 and \
+                loop_in_edges[0][2]['tensor'].is_const and \
+                loop_in_edges[0][2]['tensor'].value is not None and \
+                loop_in_edges[1][2]['tensor'].is_const and \
+                loop_in_edges[1][2]['tensor'].value is not None:
 
-            condition = in_edges[1][2]['tensor'].value
+            condition = loop_in_edges[1][2]['tensor'].value
 
-            if len(loop_obj.body._attr['output_names']) == 3:
-                subgraph_main_out = loop_obj.body._attr['output_names'][-2]
-            else:
-                DEBUG('invalid loop, need to support more forms.')
-                continue
-
-            subgraph_main_outport = loop_obj.body._attr['output_ports'][subgraph_main_out]
-            subgraph_main_nodes = determined_sort(
-                loop_obj.body, [subgraph_main_out])
-
-            # some constant nodes have been fused, skip checking them.
-            subgraph_main_nodes = [
-                x for x in subgraph_main_nodes if x in graph.nodes]
-
-            subgraph_main_nodes_objs = {n: NodeWrap(
-                graph, n)['object'] for n in subgraph_main_nodes}
-
-            const_node_list = []
-            for (node_obj_name, node_obj) in subgraph_main_nodes_objs.items():
-                if node_obj is not None \
-                        and not isinstance(node_obj, ConstLikeOp) \
-                        and isinstance(node_obj, OpHasOneOutPort) \
-                        and node_obj.is_all_inputs_const():
-                    const_node_list.append(node_obj_name)
-
-            if len(subgraph_main_nodes) > 0 \
-                    and subgraph_main_out not in subgraph_main_nodes:
-                WARN('[Parser]: Meets invalid Subgraph Nodes in decompose_const_loop!')
-                continue
-
-            try:
-                if len(subgraph_main_nodes_objs[subgraph_main_out].get_output_tensors()) < 1:
-                    continue
-                main_out_tensor = subgraph_main_nodes_objs[subgraph_main_out].get_output_tensors()[
-                    0]
-            except:
-                # TODO: subgraph_main_out node is None. Need to support more forms.
-                pass
+            N = len(loop_obj.body._attr['input_tensors']) - 2  # loop carried dependencies
+            K = len(loop_obj.body._attr['output_names']) - 1 - N  # scan_outputs
 
             matched = True
-            count = int(in_edges[0][2]['tensor'].value)
-            stack = get_valid_node_name(graph, loop + '_stack')
+            sub_graph_nodes = determined_sort(loop_obj.body, loop_obj.body._attr['output_names'])
+            k_carried_dict = OrderedDict()
+            for i in range(K):
+                scan_outs_name = get_valid_node_name(graph, f'{loop}_scan_outs_{i}')
+                k_carried_dict[scan_outs_name] = []
 
-            for n in loop_obj.body._filter_node:
-                try:
-                    NodeWrap(graph, n)['object'].in_subgraph = False
-                except:
-                    pass
-
-            graph.remove_edges_from(in_edges)
+            graph.remove_edges_from(loop_in_edges)
             if not condition:
                 loop_out_ports = loop_obj.get_out_ports()
                 if any(p >= 2 for p in loop_out_ports) \
-                        or (1 in loop_out_ports and len(in_edges) != 3):
+                        or (1 in loop_out_ports and len(loop_in_edges) != 3):
                     WARN('[Parser]: Meets unsupported Loop Node(%s) in decompose_const_loop!' % loop)
                     continue
                 const = None
                 if 1 in loop_out_ports:
-                    v_initial, _, v_initial_in_attr = in_edges[2]
+                    v_initial, _, v_initial_in_attr = loop_in_edges[2]
                     shape = get_valid_node_name(graph, loop + '_shape')
                     shape_in_attr = copy.deepcopy(v_initial_in_attr)
                     shape_in_attr.update({'dst_in_port': 0})
@@ -217,145 +175,148 @@ def decompose_loop(graph, params):
                 for _, dst, out_attr in loop_out_edges:
                     graph.remove_edge(loop, dst)
                     if out_attr['src_out_port'] == 0:
-                        graph.add_edge(in_edges[2][0], dst, **out_attr)
+                        graph.add_edge(loop_in_edges[2][0], dst, **out_attr)
                     else:
                         const_out_attr = copy.deepcopy(out_attr)
                         const_out_attr.update({'src_out_port': 0})
                         graph.add_edge(const, dst, **const_out_attr)
                 if loop in graph._attr['output_names']:
                     index = graph._attr['output_names'].index(loop)
-                    if in_edges[-1][0] not in graph._attr['output_names']:
-                        graph._attr['output_names'][index] = in_edges[-1][0]
+                    if loop_in_edges[-1][0] not in graph._attr['output_names']:
+                        graph._attr['output_names'][index] = loop_in_edges[-1][0]
                     else:
                         graph._attr['output_names'].pop(index)
                     if const is not None:
                         WARN('[Parser]: The output of Node(%s) has zero shape, which will be removed from graph!' % loop)
+                # clear subgraph
+                if loop in graph._attr['subgraphs']:
+                    graph._attr['subgraphs'].pop(loop)
                 continue
 
-            last_loop_res = subgraph_main_out
-            for i in range(count):
-                if i == 0:
-                    for n in subgraph_main_nodes:
-                        n_obj = subgraph_main_nodes_objs[n]
-                        n_in_edges = graph.sorted_in_edges(n, data=True)
+            if loop_obj.real_loop_cnt is None:
+                continue
+            loop_cnt = loop_obj.real_loop_cnt
+            last_loop_res = OrderedDict()
+            sub_main_node_map = {}
+            for i in range(loop_cnt):
+                for n in sub_graph_nodes:
+                    n_obj = loop_obj.body.nodes[n]['object']
+                    n_in_edges = loop_obj.body.sorted_in_edges(n, data=True)
 
-                        for sub_src, _, in_attr in n_in_edges:
-                            # reset iter_num in first subgraph
-                            if sub_src == in_edges[0][0] and graph.nodes[sub_src]['op'] in ['Dummy', 'Constant']:
-                                cur_count_value = np.array(
-                                    i, np.dtype(np.int64))
-                                in_attr['tensor'].value = cur_count_value
-                                NodeWrap(graph, sub_src).replace_obj('Constant', {
-                                    'name': sub_src, 'opset_version': 9, 'value': cur_count_value})
-
-                        # TODO: some special nodes need to reset attr.
-                        if n_obj.type == 'Slice':
+                    if n_obj.type in ['Input', 'Dummy']:
+                        if n_obj.type == 'Input' and list(loop_obj.body._attr['input_tensors'].keys()).index(n) == 0:
+                            # iter_num
+                            iter_num_node_name = get_valid_node_name(graph, f'{loop}_iter_{i}')
+                            graph.add_node(iter_num_node_name)
+                            sub_main_node_map[n] = iter_num_node_name
+                            iter_value = np.array(i, dtype=np.int64)
                             cur_obj_attr = n_obj.copied_attr()
-                            cur_obj_attr.update({'starts': None, 'ends': None})
-                            NodeWrap(graph, n).replace_obj(
-                                n_obj.type, cur_obj_attr)
-
-                    graph.add_edge(subgraph_main_out,
-                                   stack,
-                                   **{'src_out_port': subgraph_main_outport,
-                                      'dst_in_port': i,
-                                      'tensor': Tensor(value=main_out_tensor)})
-
-                else:
-                    for n in subgraph_main_nodes:
-                        name_suffix = '_loop_%s' % i
-                        new_n = get_valid_node_name(graph, n + name_suffix)
-                        n_obj = subgraph_main_nodes_objs[n]
-                        n_in_edges = graph.sorted_in_edges(n, data=True)
-                        if len(n_in_edges) == 0:
-                            continue
-                        for src, _, in_attr in n_in_edges:
-                            if src not in subgraph_main_nodes and not src.endswith(name_suffix):
-                                # nodes not in the sub graph.
-                                if len(loop_obj.body._attr['output_names']) == 3 and not n in const_node_list:
-                                    # add edge between last loop res with the first node of next loop.
-                                    graph.add_edge(
-                                        last_loop_res, new_n, **in_attr)
-                                    last_loop_res = new_n
-                                elif src == in_edges[0][0]:
-                                    # change iter num for constant node.
-                                    new_const = get_valid_node_name(
-                                        graph, src + name_suffix)
-                                    cur_count_value = np.array(
-                                        i, np.dtype(np.int64))
-                                    new_in_attr = copy.deepcopy(in_attr)
-                                    new_in_attr['tensor'].value = cur_count_value
-                                    new_in_attr['tensor'].name = new_const
-                                    graph.add_edge(
-                                        new_const, new_n, **new_in_attr)
-
-                                    NodeWrap(graph, new_const).replace_obj('Constant', {
-                                        'name': new_const, 'opset_version': 9, 'value': cur_count_value})
-                                else:
-                                    graph.add_edge(src, new_n, **in_attr)
-                            elif src in subgraph_main_nodes:
-                                # nodes in the sub graph
-                                new_in_attr = copy.deepcopy(in_attr)
-
-                                if n in subgraph_main_nodes:
-                                    graph.add_edge(
-                                        src + name_suffix, new_n, **new_in_attr)
-                                    if graph.nodes[src + name_suffix]['op'] is None:
-                                        src_obj = subgraph_main_nodes_objs[src]
-                                        src_obj_attr = src_obj.copied_attr()
-                                        src_obj_attr.update({'name': new_n})
-                                        NodeWrap(
-                                            graph, src + name_suffix).replace_obj(src_obj.type, src_obj_attr)
-                                else:
-                                    graph.add_edge(
-                                        src + name_suffix, new_n, **new_in_attr)
-                            else:
-                                WARN(
-                                    '[Parser]: Invalid in edges for Node(%s)!' % new_n)
+                            cur_obj_attr.update({'in_subgraph': False, 'name': iter_num_node_name,
+                                                 'value': iter_value})
+                            NodeWrap(graph, iter_num_node_name).replace_obj('Constant', cur_obj_attr)
+                        continue
+                    elif n_obj.type == 'Constant':
+                        if not graph.has_node(n):
+                            graph.add_node(n)
+                            sub_main_node_map[n] = n
+                            cur_obj_attr = n_obj.copied_attr()
+                            cur_obj_attr.update({'in_subgraph': False})
+                            NodeWrap(graph, n).replace_obj('Constant', cur_obj_attr)
+                    else:
+                        main_g_node_name = get_valid_node_name(graph, n)
+                        graph.add_node(main_g_node_name)
+                        sub_main_node_map[n] = main_g_node_name
                         cur_obj_attr = n_obj.copied_attr()
-                        cur_obj_attr.update({'name': new_n})
-                        if n_obj.type == 'Slice':
-                            cur_obj_attr.update({'starts': None, 'ends': None})
+                        cur_obj_attr.update({'in_subgraph': False, 'name': main_g_node_name})
+                        NodeWrap(graph, main_g_node_name).replace_obj(n_obj.type, cur_obj_attr)
+                        for in_e in n_in_edges:
+                            src, dst, n_in_attr = in_e
+                            src_obj = loop_obj.body.nodes[src]['object']
+                            if src_obj.type == 'Input':
+                                assert src in loop_obj.body._attr['input_tensors'], f'{src} is Input but not in subgraph input tensors.'
+                                inp_idx = list(loop_obj.body._attr['input_tensors'].keys()).index(src)
+                                if i == 0:
+                                    if inp_idx == 0:
+                                        in_attr = copy.deepcopy(n_in_attr)
+                                        graph.add_edge(sub_main_node_map[src], main_g_node_name, **in_attr)
+                                    else:
+                                        in_attr = copy.deepcopy(loop_in_edges[inp_idx][-1])
+                                        in_attr['dst_in_port'] = n_in_attr['dst_in_port']
+                                        graph.add_edge(loop_in_edges[inp_idx][0], main_g_node_name, **in_attr)
+                                else:
+                                    in_attr = copy.deepcopy(n_in_attr)
+                                    if inp_idx == 0:
+                                        graph.add_edge(sub_main_node_map[src], main_g_node_name, **in_attr)
+                                    else:
+                                        graph.add_edge(last_loop_res[inp_idx - 1], main_g_node_name, **in_attr)
+                            elif src_obj.type == 'Dummy':
+                                assert graph.has_node(src), f'{src} is Dummy but not in main graph.'
+                                in_attr = copy.deepcopy(n_in_attr)
+                                graph.add_edge(src, main_g_node_name, **in_attr)
+                            elif src_obj.type == 'Constant':
+                                if not graph.has_node(src):
+                                    graph.add_node(src)
+                                    sub_main_node_map[src] = src
+                                    cur_obj_attr = src_obj.copied_attr()
+                                    cur_obj_attr.update({'in_subgraph': False})
+                                    NodeWrap(graph, src).replace_obj('Constant', cur_obj_attr)
+                                else:
+                                    in_attr = copy.deepcopy(n_in_attr)
+                                    graph.add_edge(sub_main_node_map[src], main_g_node_name, **in_attr)
+                            else:
+                                in_attr = copy.deepcopy(n_in_attr)
+                                graph.add_edge(sub_main_node_map[src], main_g_node_name, **in_attr)
 
-                        NodeWrap(graph, new_n).replace_obj(
-                            n_obj.type, cur_obj_attr)
-                        if n == subgraph_main_out:
-                            graph.add_edge(new_n,
-                                           stack,
-                                           **{'src_out_port': subgraph_main_outport,
-                                              'dst_in_port': i,
-                                              'tensor': Tensor(value=main_out_tensor)
-                                              })
-            if len(loop_out_edges) == 1:
-                for _, dst, out_attr in loop_out_edges:
-                    graph.remove_edge(loop, dst)
-                    graph.add_edge(stack, dst, **out_attr)
-            elif len(loop_out_edges) == 2:
-                for index, (_, dst, out_attr) in enumerate(loop_out_edges):
-                    graph.remove_edge(loop, dst)
-                    if index == 1:
-                        graph.add_edge(stack, dst, **out_attr)
-            else:
-                WARN('invalid loop out_edges, need to support.')
-            NodeWrap(graph, stack).replace_obj('ConcatFromSequence', {
-                'name': stack, 'opset_version': 11, 'axis': 0, 'new_axis': 1})
+                    if n in loop_obj.body._attr['output_names']:
+                        # 1+N+K
+                        out_idx = loop_obj.body._attr['output_names'].index(n)
+                        if out_idx < 1 + N:
+                            last_loop_res[out_idx] = sub_main_node_map[n]
+                        else:
+                            scan_outs_name = list(k_carried_dict.keys())[out_idx - 1 - N]
+                            k_carried_dict[scan_outs_name].append(sub_main_node_map[n])
 
-        else:
-            ERROR(
-                '[Parser]: Meets invalid Loop Op (%s) in decompose_const_loop!' % loop)
+            graph.remove_edges_from(loop_out_edges)
+
+            # Loop have N + K outputs
+            for i in range(N):
+                _, dst, out_edge = loop_out_edges[i]
+                out_attr = copy.deepcopy(out_edge)
+                out_attr['src_out_port'] = 0
+                graph.add_edge(last_loop_res[i + 1], dst, **out_attr)
+            for i in range(K):
+                scan_outs_name = list(k_carried_dict.keys())[i]
+                graph.add_node(scan_outs_name)
+                cur_obj_attr = {'name': scan_outs_name,
+                                'opset_version': 11,
+                                'axis': 0,
+                                'new_axis': 1,
+                                'in_subgraph': False}
+                NodeWrap(graph, scan_outs_name).replace_obj('ConcatFromSequence', cur_obj_attr)
+                _, _, out_attr = loop_obj.body.sorted_out_edges(k_carried_dict[scan_outs_name][0], data=True)[0]
+                for idx, src in enumerate(k_carried_dict[scan_outs_name]):
+                    in_attr = copy.deepcopy(out_attr)
+                    in_attr['dst_in_port'] = idx
+                    graph.add_edge(src, scan_outs_name, **in_attr)
+                _, dst, out_attr = loop_out_edges[i + N]
+                new_out_attr = copy.deepcopy(out_attr)
+                new_out_attr['src_out_port'] = 0
+                graph.add_edge(scan_outs_name, dst, **new_out_attr)
+
+            if loop in graph._attr['output_names']:
+                index = graph._attr['output_names'].index(loop)
+                # N+K outputs
+                graph._attr['output_names'].pop(index)
+                for i in range(N):
+                    graph._attr['output_names'].append(last_loop_res[i + 1])
+                for i in range(K):
+                    graph._attr['output_names'].append(list(k_carried_dict.keys())[i])
+
+            # clear subgraph
+            if loop in graph._attr['subgraphs']:
+                graph._attr['subgraphs'].pop(loop)
 
     if matched:
-        if graph._attr.get('subgraph_output_names', None) is not None:
-            graph._attr['output_names'] = list(set(graph._attr['output_names']).difference(
-                list(graph._attr['subgraph_output_names'])))
-            if loop in list(set(graph._attr['output_names'])):
-                index = graph._attr['output_names'].index(loop)
-                graph._attr['output_names'].pop(index)
-                if condition:
-                    graph._attr['output_names'].append(last_loop_res)
-                    graph._attr['output_names'].append(stack)
-                else:
-                    graph._attr['output_names'].append(in_edges[-1][0])
         clear_redundant_nodes(graph)
 
 
@@ -388,7 +349,7 @@ def convert_special_sequence_construct(graph):
             out_in_attr.update({'dst_in_port': 0})
             graph.add_edge(name, out_name, **out_in_attr)
             NodeWrap(graph, out_name).replace_obj('Out', {'name': out_name})
-            graph._attr['output_names'].insert(index+idx, name)
+            graph._attr['output_names'].insert(index + idx, name)
     if matched:
         clear_redundant_nodes(graph)
 
@@ -685,7 +646,7 @@ def merge_qconv(graph):
                     or any(not e[2]['tensor'].is_const for e in b_dequant_in_edges):
                 continue
             b_scale, b_zp = obj_dict['b_dequant'].x_scale, obj_dict['b_dequant'].x_zero_point
-            if not FLOAT_EQUAL(w_scale*x_scale, b_scale) or not np.all(b_zp == 0):
+            if not FLOAT_EQUAL(w_scale * x_scale, b_scale) or not np.all(b_zp == 0):
                 continue
             biases = b_dequant_in_edges[0][2]['tensor'].value
         else:
@@ -855,7 +816,7 @@ def merge_qgemm(graph):
         weights = w_dequant_in_edges[0][2]['tensor'].value
         biases = b_dequant_in_edges[0][2]['tensor'].value
 
-        if not FLOAT_EQUAL(w_scale*x_scale, b_scale) or not np.all(b_zp == 0):
+        if not FLOAT_EQUAL(w_scale * x_scale, b_scale) or not np.all(b_zp == 0):
             continue
 
         matched = True
@@ -1184,9 +1145,9 @@ def merge_q_unary(graph, op_list):
             q_max = np.iinfo(x_zp.dtype).max
 
             q_clip_min = np.array(
-                np.clip(clip_min/x_scale+x_zp, q_min, q_max)).astype(x_zp.dtype)
+                np.clip(clip_min / x_scale + x_zp, q_min, q_max)).astype(x_zp.dtype)
             q_clip_max = np.array(
-                np.clip(clip_max/x_scale+x_zp, q_min, q_max)).astype(x_zp.dtype)
+                np.clip(clip_max / x_scale + x_zp, q_min, q_max)).astype(x_zp.dtype)
 
             insert_constant(graph, m['float_op'] + '_q_clip_min',
                             q_clip_min, m['float_op'], in_port=1)

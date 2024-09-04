@@ -114,17 +114,6 @@ def build_subgraph(name, g_content, root_graph, parent_graph_info, opset_ver):
     tensor_name_map = {t_name: (port, op_id) for (
         t_name, port), op_id in out_tensor_operator_map.items()}
 
-    # if not inputs:
-    #     WARN('[Parser]: The model does not have any inputs! Ignore input names from config file.')
-    #     params['input_names'] = []
-    # else:
-    #     input_names = copy.deepcopy(params.get('input_names', []))
-    #     for name in input_names:
-    #         if name not in tensor_name_map and name not in [n.get('name', '') for n in nodes]:
-    #             WARN(
-    #                 '[Parser]: Input name (%s) does not exit in node names or tensor names! Will ignore it!' % name)
-    #             params['input_names'].remove(name)
-
     for c in consts:
         c_name = get_valid_node_name(sub_graph, c['name'], nodes_names)  # const tensor name maybe same with node
         const_names[c['name']] = c_name
@@ -536,8 +525,6 @@ def convert_onnx_to_graph(graph, model_path, params):
                                     'opset_version': opset_version,
                                     'quantize': quantize
                                     })
-                    attr_value_converter(
-                        op_attr, params['source'], root_graph=graph, parent_graph_info=root_info)
                     if not op_attr['name']:
                         if node['output'][0]['name']:
                             op_attr.update({'name': node['output'][0]['name']})
@@ -547,6 +534,8 @@ def convert_onnx_to_graph(graph, model_path, params):
                             name = get_valid_node_name(graph, op_attr['type'])
                             op_attr.update({'name': name})
                             nodes[ni].update({'name': name})
+                    attr_value_converter(
+                        op_attr, params['source'], root_graph=graph, parent_graph_info=root_info)
                     op_name = op_attr['name']
                     if not graph.has_node(op_name):
                         graph.add_node(op_name)

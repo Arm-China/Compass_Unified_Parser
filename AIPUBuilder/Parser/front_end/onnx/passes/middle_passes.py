@@ -6050,9 +6050,6 @@ def multidirectional_broadcasting(graph):
             in_edges = graph.sorted_in_edges(broadcast, keys=True, data=True)
             if broadcast_obj is not None and len(in_edges) >= 2:
                 in_shapes = broadcast_obj.get_input_shapes()
-                if len(broadcast_obj.sorted_in_consts()) == len(in_edges):
-                    WARN(
-                        '[Parser]: Broadcast op (%s) with Constant inputs should have been fused before multidirectional_broadcasting!' % broadcast)
                 if any([s is None or None in s for s in in_shapes]):
                     ERROR(
                         '[Parser]: Meets Broadcast op (%s) with empty inputs in multidirectional_broadcasting!' % broadcast)
