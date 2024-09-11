@@ -16,6 +16,7 @@ import tensorflow as tf
 from ..common.defs import TensorType, Tensor, AttrType, Attribute, Framework, FLOAT_EQUAL
 from ..logger import INFO, DEBUG, WARN, ERROR, FATAL, WARN_EXCEPTION
 from ..common.utils import num_list_to_string, string_list_to_string, extend_lists
+from ..graph.graph import SubGraph
 
 
 class Op(abc.ABC):
@@ -146,13 +147,14 @@ class Op(abc.ABC):
         '''return attributes of OP class.'''
         return {'name': {'type': AttrType.STRING, 'default': '', 'required': True},
                 'in_subgraph': {'type': AttrType.BOOL, 'default': False},
+                'subgraphs': {'type': AttrType.STRINGS, 'default': []},
                 'data_format': {'type': AttrType.STRING,
                                 'default': 'NHWC',
                                 'options': ['NWC', 'NCW', 'NHWC', 'NCHW', 'NDHWC', 'NCDHW', 'NCHW_VECT_C'],
                                 'required': True},
                 'cur_version': {'type': AttrType.INT, 'default': 0, 'required': False},
                 'quantize': {'type': AttrType.BOOL, 'default': False, 'options': [0, 1, False, True]},
-                'activation_quantization_axis': {'type': AttrType.INTS, 'default': None},
+                'activation_quantization_axis': {'type': AttrType.INTS, 'default': []},
                 'top_scales': {'type': AttrType.TENSORS, 'default': []},
                 'top_scales_offset': {'type': AttrType.INTS, 'default': []},
                 'top_scales_list': {'type': AttrType.TENSORS, 'default': []},
@@ -2227,7 +2229,54 @@ class OpHasSubGraph(OpHasVariableOutPorts):
     Class OpHasSubGraph inherited from OpHasVariableOutPorts class.
     OP with subgraph must inherit OpHasSubGraph.
     '''
-    pass
+
+    def set_out_tensor(self, tensor_data_list, is_const=False):
+        '''set the out tensor of this op.'''
+        try:
+            from ..graph.node_wrap import NodeWrap
+            from ..graph.graph_algo import get_valid_node_name
+            if len(tensor_data_list) > 1:
+                out_ports = self.get_out_ports()
+                if len(tensor_data_list) > len(out_ports):
+                    for i in range(len(tensor_data_list)):
+                        if i not in out_ports:
+                            out = get_valid_node_name(
+                                self._graph, self.name + '_out_port_' + str(i))
+                            self._graph.add_edge(
+                                self.name, out, **{'src_out_port': i, 'dst_in_port': 0})
+                            NodeWrap(self._graph, out).replace_obj(
+                                'Out', {'name': out})
+                    out_ports = self.get_out_ports()
+                for _, _, d in self._graph.sorted_out_edges(self.name, data=True):
+                    if d.get('tensor', None) is not None:
+                        d['tensor'].value = tensor_data_list[out_ports.index(
+                            d['src_out_port'])]
+                        d['tensor'].shape = d['tensor'].value.shape
+                        d['tensor'].is_const = is_const
+                        if not self.quantize or d['tensor'].dtype is None:
+                            d['tensor'].dtype = str(d['tensor'].value.dtype)
+                    else:
+                        d['tensor'] = Tensor(
+                            value=tensor_data_list[out_ports.index(d['src_out_port'])])
+            else:
+                for _, _, d in self._graph.sorted_out_edges(self.name, data=True):
+                    if d.get('tensor', None) is not None:
+                        d['tensor'].value = tensor_data_list[0]
+                        d['tensor'].shape = d['tensor'].value.shape
+                        d['tensor'].is_const = is_const
+                        if not self.quantize or d['tensor'].dtype is None:
+                            d['tensor'].dtype = str(d['tensor'].value.dtype)
+                    else:
+                        d['tensor'] = Tensor(value=tensor_data_list[0])
+
+            self.clear_unused_tensor(is_const)
+
+        except KeyError as e:
+            ERROR('[Parser]: Node(%s) meets key error in set_out_tensor (%s)! ' %
+                  (self.name, str(e)))
+        except Exception as e:
+            ERROR('[Parser]: Node(%s) meets exception in set_out_tensor (%s)!' %
+                  (self.name, str(e)))
 
 
 class ConstLikeOp(Op):

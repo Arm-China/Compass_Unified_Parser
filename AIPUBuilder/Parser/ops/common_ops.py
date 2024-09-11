@@ -313,6 +313,17 @@ class DummyOp(OpHasOneOutPort, ConstLikeOp, CommonOp):
             self.set_out_tensor(out_tensor)
 
 
+class DummyInputOp(OpHasOneOutPort, InputLikeOp, CommonOp):
+    def __init__(self, graph, attr_dict=None):
+        super(DummyInputOp, self).__init__(graph, attr_dict)
+
+    def infer_shape(self, input_tensor=None):
+        super(DummyInputOp, self).infer_shape()
+        assert input_tensor is not None, 'input shape is empty in DummyInputOp.'
+        out_tensor = input_tensor.copy()
+        self.set_out_tensor(out_tensor)
+
+
 class ErosionOp(OpHasPaddingStrides, OpHasWeights, OpHasOneOutPort, LayoutConcernedOp, CommonOp):
     @classmethod
     def attributes(cls):

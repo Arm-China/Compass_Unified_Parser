@@ -2028,53 +2028,100 @@ def decompose_const_if(graph, params):
                 and len(if_obj.sorted_in_consts()) >= 1 \
                 and if_obj.sorted_in_consts()[0][1] == 0:
             condition = if_obj.sorted_in_consts()[0][2]
+            if_in_edges = graph.sorted_in_edges(if_name, data=True)
+            if_out_edges = graph.sorted_out_edges(if_name, data=True)
             keep_branch = if_obj.then_branch if condition else if_obj.else_branch
-            removing_branch = if_obj.else_branch if condition else if_obj.then_branch
-            keep_in_ports = keep_branch._attr['root_in_ports']
-            removing_in_ports = removing_branch._attr['root_in_ports']
-            out_edges = graph.sorted_out_edges(if_name, keys=True, data=True)
-            if len(keep_in_ports) == len(out_edges):
-                matched = True
-                in_edges = graph.sorted_in_edges(if_name, keys=True, data=True)
-                for src, _, k, in_attr in in_edges:
-                    if in_attr['dst_in_port'] == 0 or in_attr['dst_in_port'] in removing_in_ports:
-                        graph.remove_edge(src, if_name, k)
-                new_in_edges = graph.sorted_in_edges(
-                    if_name, keys=True, data=True)
-                if len(new_in_edges) == len(out_edges):
-                    for (in_edge, out_edge) in zip(new_in_edges, out_edges):
-                        in_k, out_k = in_edge[2], out_edge[2]
-                        new_attr = copy.deepcopy(in_edge[3])
-                        new_attr['dst_in_port'] = out_edge[3]['dst_in_port']
-                        graph.remove_edge(in_edge[0], if_name, key=in_k)
-                        graph.remove_edge(if_name, out_edge[1], key=out_k)
-                        graph.add_edge(in_edge[0], out_edge[1], **new_attr)
-                    if if_name in graph._attr['output_names']:
-                        index = graph._attr['output_names'].index(if_name)
-                        graph._attr['output_names'][index] = new_in_edges[0][0]
-                        for in_edge in new_in_edges[1:]:
-                            index += 1
-                            graph._attr['output_names'].insert(
-                                index, in_edge[0])
-                    if params.get('input_names', []):
-                        for inp in params['input_names'][:]:
-                            _has_path = False
-                            for out in graph._attr['output_names']:
-                                if has_path(graph, inp, out):
-                                    _has_path = True
-                                    break
-                            if _has_path is False:
-                                ind = params['input_names'].index(inp)
-                                if len(params['input_names']) == len(list(graph._attr['input_tensors'])):
-                                    key = list(graph._attr['input_tensors'])[
-                                        ind]
-                                    graph._attr['input_tensors'].pop(key)
-                                params['input_shapes'].pop(inp)
-                                params['input_names'].remove(inp)
-                    if params.get('output_names', []):
-                        params['output_names'] = graph._attr['output_names']
+            remove_branch_name = if_obj.else_branch.name if condition else if_obj.then_branch.name
+            sub_main_node_map = {}
+            matched = True
+
+            if if_name in graph._attr['subgraphs'] and \
+                    remove_branch_name in graph._attr['subgraphs'][if_name]:
+                graph._attr['subgraphs'][if_name].pop(remove_branch_name)
+
+            for n in keep_branch.nodes:
+                n_obj = keep_branch.nodes[n]['object']
+                if n_obj is None:
+                    ERROR(
+                        f'[Parser]: Meet invalid Node({n}) of root node({if_name}) in decompose_if.')
+                n_in_edges = keep_branch.sorted_in_edges(n, data=True)
+                n_out_edges = keep_branch.sorted_out_edges(n, data=True)
+                if n_obj.type in ['Input', 'DummyInput']:
+                    continue
+                elif n_obj.type == 'Constant':
+                    sub_main_node_map[n] = n
+                    if not graph.has_node(n):
+                        graph.add_node(n)
+                        cur_obj_attr = n_obj.copied_attr()
+                        cur_obj_attr.update({'in_subgraph': False})
+                        NodeWrap(graph, n).replace_obj('Constant', cur_obj_attr)
+                elif n_obj.type == 'Out':
+                    o_port = n_in_edges[0][2]['src_out_port']
+                    _, dst, out_attr = if_out_edges[o_port]
+                    in_attr = copy.deepcopy(out_attr)
+                    graph.add_edge(n_in_edges[0][0], dst, **in_attr)
                 else:
-                    ERROR('[Parser]: Meets invalid edges in decompose_const_if!')
+                    main_g_node_name = get_valid_node_name(graph, n)
+                    graph.add_node(main_g_node_name)
+                    sub_main_node_map[n] = main_g_node_name
+                    cur_obj_attr = n_obj.copied_attr()
+                    cur_obj_attr.update({'in_subgraph': False, 'name': main_g_node_name})
+                    if n_obj.type.startswith('Plugin'):
+                        NodeWrap(graph, main_g_node_name).replace_obj(n_obj.type[6:], cur_obj_attr)
+                    else:
+                        NodeWrap(graph, main_g_node_name).replace_obj(n_obj.type, cur_obj_attr)
+                    for in_e in n_in_edges:
+                        src, dst, n_in_attr = in_e
+                        src_obj = keep_branch.nodes[src]['object']
+                        if src_obj.type == 'DummyInput':
+                            assert graph.has_node(src), f'{src} is DummyInput but not in main graph.'
+                            in_attr = copy.deepcopy(n_in_attr)
+                            graph.add_edge(src, main_g_node_name, **in_attr)
+                        elif src_obj.type == 'Constant':
+                            if not graph.has_node(src):
+                                graph.add_node(src)
+                                sub_main_node_map[src] = src
+                                cur_obj_attr = src_obj.copied_attr()
+                                cur_obj_attr.update({'in_subgraph': False})
+                                NodeWrap(graph, src).replace_obj('Constant', cur_obj_attr)
+                            else:
+                                in_attr = copy.deepcopy(n_in_attr)
+                                graph.add_edge(src, main_g_node_name, **in_attr)
+                        else:
+                            in_attr = copy.deepcopy(n_in_attr)
+                            graph.add_edge(sub_main_node_map[src], main_g_node_name, **in_attr)
+
+            graph.remove_edges_from(if_in_edges)
+            graph.remove_edges_from(if_out_edges)
+
+            if if_name in graph._attr['output_names']:
+                index = graph._attr['output_names'].index(if_name)
+                graph._attr['output_names'][index] = keep_branch._attr['output_names'][0]
+                for out in keep_branch._attr['output_names'][1:]:
+                    index += 1
+                    graph._attr['output_names'].insert(index, out)
+            if params.get('input_names', []):
+                for inp in params['input_names'][:]:
+                    _has_path = False
+                    for out in graph._attr['output_names']:
+                        if has_path(graph, inp, out):
+                            _has_path = True
+                            break
+                    if _has_path is False:
+                        ind = params['input_names'].index(inp)
+                        if len(params['input_names']) == len(list(graph._attr['input_tensors'])):
+                            key = list(graph._attr['input_tensors'])[
+                                ind]
+                            graph._attr['input_tensors'].pop(key)
+                        params['input_shapes'].pop(inp)
+                        params['input_names'].remove(inp)
+            if params.get('output_names', []):
+                params['output_names'] = graph._attr['output_names']
+            # clear subgraph
+            if if_name in graph._attr['subgraphs']:
+                graph._attr['subgraphs'].pop(if_name)
+        else:
+            ERROR('[Parser]: Meets invalid edges in decompose_const_if!')
     if matched:
         clear_redundant_nodes(graph)
 
@@ -8081,13 +8128,13 @@ def decompose_const_loop(graph, params):
                     for n in subgraph_main_nodes:
                         n_in_edges = graph.sorted_in_edges(n, data=True)
                         for sub_src, _, in_attr in n_in_edges:
-                            if graph.nodes[sub_src]['op'] in ['Dummy', 'Constant'] \
+                            if graph.nodes[sub_src]['op'] in ['DummyInput', 'Constant'] \
                                 and (in_attr['tensor'].name, in_attr['src_out_port']) in loop_obj.body._attr[
                                     'input_tensors']:
                                 cur_count_value = np.array(
                                     i, np.dtype(in_attr['tensor'].dtype))
                                 in_attr['tensor'].value = cur_count_value
-                                if graph.nodes[sub_src]['op'] == 'Dummy':
+                                if graph.nodes[sub_src]['op'] == 'DummyInput':
                                     NodeWrap(graph, sub_src).replace_obj('Constant', {
                                         'name': sub_src, 'opset_version': 9, 'value': cur_count_value})
                     graph.add_edge(subgraph_main_out,
@@ -8103,7 +8150,7 @@ def decompose_const_loop(graph, params):
                         n_obj = subgraph_main_nodes_objs[n]
                         n_in_edges = graph.sorted_in_edges(n, data=True)
                         for src, _, in_attr in n_in_edges:
-                            if graph.nodes[src]['op'] in ['Dummy', 'Constant'] \
+                            if graph.nodes[src]['op'] in ['DummyInput', 'Constant'] \
                                 and (in_attr['tensor'].name, in_attr['src_out_port']) in loop_obj.body._attr[
                                     'input_tensors']:
                                 new_const = get_valid_node_name(
@@ -10910,13 +10957,15 @@ def middle_passes(graph, params):
     Among them, middle_pass focuses on operator splitting and merging,
     while back_pass focuses on converting onnx operators into Arm operators defined in IR def.
     '''
+    from .front_passes import decompose_loop
 
+    for i in range(3):
+        decompose_const_if(graph, params)
+        decompose_loop(graph, params)
     convert_to_const(graph, ['Shape', 'ConstantOfShape',
                              'Range', 'NonZero', 'EyeLike'])
 
     fuse_const(graph)
-    decompose_const_if(graph, params)
-    decompose_const_loop(graph, params)
     merge_same_op_at_out_port(graph, ['Cast'])
 
     merge_q_ln(graph)

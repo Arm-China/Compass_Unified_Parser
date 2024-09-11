@@ -201,9 +201,12 @@ def decompose_loop(graph, params):
             for i in range(loop_cnt):
                 for n in sub_graph_nodes:
                     n_obj = loop_obj.body.nodes[n]['object']
+                    if n_obj is None:
+                        ERROR(
+                            f'[Parser]: Meet invalid Node({n}) of root node({loop}) in decompose_loop.')
                     n_in_edges = loop_obj.body.sorted_in_edges(n, data=True)
 
-                    if n_obj.type in ['Input', 'Dummy']:
+                    if n_obj.type in ['Input', 'DummyInput']:
                         if n_obj.type == 'Input' and list(loop_obj.body._attr['input_tensors'].keys()).index(n) == 0:
                             # iter_num
                             iter_num_node_name = get_valid_node_name(graph, f'{loop}_iter_{i}')
@@ -216,9 +219,9 @@ def decompose_loop(graph, params):
                             NodeWrap(graph, iter_num_node_name).replace_obj('Constant', cur_obj_attr)
                         continue
                     elif n_obj.type == 'Constant':
+                        sub_main_node_map[n] = n
                         if not graph.has_node(n):
                             graph.add_node(n)
-                            sub_main_node_map[n] = n
                             cur_obj_attr = n_obj.copied_attr()
                             cur_obj_attr.update({'in_subgraph': False})
                             NodeWrap(graph, n).replace_obj('Constant', cur_obj_attr)
@@ -228,7 +231,10 @@ def decompose_loop(graph, params):
                         sub_main_node_map[n] = main_g_node_name
                         cur_obj_attr = n_obj.copied_attr()
                         cur_obj_attr.update({'in_subgraph': False, 'name': main_g_node_name})
-                        NodeWrap(graph, main_g_node_name).replace_obj(n_obj.type, cur_obj_attr)
+                        if n_obj.type.startswith('Plugin'):
+                            NodeWrap(graph, main_g_node_name).replace_obj(n_obj.type[6:], cur_obj_attr)
+                        else:
+                            NodeWrap(graph, main_g_node_name).replace_obj(n_obj.type, cur_obj_attr)
                         for in_e in n_in_edges:
                             src, dst, n_in_attr = in_e
                             src_obj = loop_obj.body.nodes[src]['object']
@@ -249,8 +255,8 @@ def decompose_loop(graph, params):
                                         graph.add_edge(sub_main_node_map[src], main_g_node_name, **in_attr)
                                     else:
                                         graph.add_edge(last_loop_res[inp_idx - 1], main_g_node_name, **in_attr)
-                            elif src_obj.type == 'Dummy':
-                                assert graph.has_node(src), f'{src} is Dummy but not in main graph.'
+                            elif src_obj.type == 'DummyInput':
+                                assert graph.has_node(src), f'{src} is DummyInput but not in main graph.'
                                 in_attr = copy.deepcopy(n_in_attr)
                                 graph.add_edge(src, main_g_node_name, **in_attr)
                             elif src_obj.type == 'Constant':
@@ -262,7 +268,7 @@ def decompose_loop(graph, params):
                                     NodeWrap(graph, src).replace_obj('Constant', cur_obj_attr)
                                 else:
                                     in_attr = copy.deepcopy(n_in_attr)
-                                    graph.add_edge(sub_main_node_map[src], main_g_node_name, **in_attr)
+                                    graph.add_edge(src, main_g_node_name, **in_attr)
                             else:
                                 in_attr = copy.deepcopy(n_in_attr)
                                 graph.add_edge(sub_main_node_map[src], main_g_node_name, **in_attr)
@@ -305,12 +311,14 @@ def decompose_loop(graph, params):
 
             if loop in graph._attr['output_names']:
                 index = graph._attr['output_names'].index(loop)
+                loop_outputs = []
                 # N+K outputs
                 graph._attr['output_names'].pop(index)
                 for i in range(N):
-                    graph._attr['output_names'].append(last_loop_res[i + 1])
+                    loop_outputs.append(last_loop_res[i + 1])
                 for i in range(K):
-                    graph._attr['output_names'].append(list(k_carried_dict.keys())[i])
+                    loop_outputs.append(list(k_carried_dict.keys())[i])
+                graph._attr['output_names'][index:index] = loop_outputs
 
             # clear subgraph
             if loop in graph._attr['subgraphs']:

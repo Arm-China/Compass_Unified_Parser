@@ -212,6 +212,16 @@ def univ_parser(params):
                         if has_path(graph, input_name, output_name):
                             has_path_flag = True
                             break
+                        else:
+                            inp_obj = graph.nodes[input_name]['object']
+                            if len(inp_obj.subgraphs) > 0 and \
+                                    'subgraphs' in graph._attr and \
+                                    len(graph._attr['subgraphs']) > 0:
+                                for sub in inp_obj.subgraphs:
+                                    for k, v in graph._attr['subgraphs'].items():
+                                        if sub in v:
+                                            has_path_flag = True
+                                            break
                     if has_path_flag is False and len(input_names) > 0:
                         out_edges = graph.sorted_out_edges(output_name, data=True)
                         if len(out_edges) > 0 and all((out_attr['tensor'] is not None and out_attr['tensor'].is_const) for _, _, out_attr in out_edges):

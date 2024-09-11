@@ -246,16 +246,15 @@ class ReadOnlyGraph(object):
 
 
 class SubGraph(Graph):
-    def __init__(self, name):
-        super(SubGraph, self).__init__()
+    def __deepcopy__(self, memodict={}):
+        return self
+
+    def __init__(self, **attr):
+        super(SubGraph, self).__init__(**attr)
         self._root = None
-        self._filter_node = list()
-        self._filter_edge = list()
-        self._attr = defaultdict()
-        self._attr['name'] = name
+        self._attr = defaultdict(int)
         self._attr['framework'] = None
         self._attr['parent_graph'] = None
-        self.name = name
         self._attr['input_tensors'] = OrderedDict()
         self._attr['output_names'] = []
         self._attr['output_ports'] = OrderedDict()
