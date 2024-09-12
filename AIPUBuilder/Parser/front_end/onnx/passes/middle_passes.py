@@ -1818,24 +1818,35 @@ def convert_special_scatternd(graph):
             src, _, src_out_attr = scatternd_in_edges[0]
             split_node = get_valid_node_name(graph, scatternd + '_split')
             graph.add_edge(src, split_node, **src_out_attr)
+            split_in_tensor = src_out_attr['tensor'].value
             if start_indice == 0:
                 split_out_attr = {'src_out_port': 1, 'dst_in_port': 1}
-                graph.add_edge(split_node, scatternd, **split_out_attr)
                 updates_out_attr.update({'dst_in_port': 0})
                 split = [indices_len_at_axis,
                          input_dim_at_axis - indices_len_at_axis]
+                if split_in_tensor is not None:
+                    split_out_tensor = np.split(split_in_tensor, split, axis=axis)[split_out_attr['src_out_port']]
+                    split_out_attr['tensor'] = Tensor(value=split_out_tensor, shape=split_out_tensor.shape)
+                graph.add_edge(split_node, scatternd, **split_out_attr)
             else:
                 split_out_0_attr = {'src_out_port': 0, 'dst_in_port': 0}
-                graph.add_edge(split_node, scatternd, **split_out_0_attr)
                 split_mid_len = indices_len_at_axis
                 split_end_len = input_dim_at_axis - start_indice - split_mid_len
                 if split_end_len != 0:
                     split_out_2_attr = {'src_out_port': 2, 'dst_in_port': 2}
-                    graph.add_edge(split_node, scatternd, **split_out_2_attr)
                     split = [start_indice, split_mid_len, split_end_len]
+                    if split_in_tensor is not None:
+                        split_out_2_tensor = np.split(split_in_tensor, split, axis=axis)[
+                            split_out_2_attr['src_out_port']]
+                        split_out_2_attr['tensor'] = Tensor(value=split_out_2_tensor, shape=split_out_2_tensor.shape)
+                    graph.add_edge(split_node, scatternd, **split_out_2_attr)
                 else:
                     split = [start_indice, split_mid_len]
+                if split_in_tensor is not None:
+                    split_out_tensor = np.split(split_in_tensor, split, axis=axis)[split_out_0_attr['src_out_port']]
+                    split_out_0_attr['tensor'] = Tensor(value=split_out_tensor, shape=split_out_tensor.shape)
                 updates_out_attr.update({'dst_in_port': 1})
+                graph.add_edge(split_node, scatternd, **split_out_0_attr)
             graph.add_edge(updates, scatternd, **updates_out_attr)
 
             NodeWrap(graph, split_node).replace_obj(
@@ -3807,7 +3818,7 @@ def merge_channel_shuffle_with_split(graph):
                             if len(split_obj.split) == group \
                                     and all([split_obj.split[0] == s for s in split_obj.split[1:]]) \
                                     and (split_obj.axis in (
-                                        -1, perm_dim - 1) if split_obj.data_format == 'NHWC' else split_obj.axis == 1):
+                                    -1, perm_dim - 1) if split_obj.data_format == 'NHWC' else split_obj.axis == 1):
                                 matched = True
                                 graph.remove_edges_from(reshape2_out_edges)
                                 reshape1_in_edges = graph.sorted_in_edges(
@@ -5564,23 +5575,33 @@ def merge_special_concat_split_concat(graph):
             if concat0_axis == concat1_axis and concat0_axis == split_axis and len(split_out_edges) == 1:
                 if len(concat0_in_edges) == 2 and \
                         len(concat1_in_edges) == 2 and \
-                        len(split_size) == 2 and \
-                        (concat0_in_edges[0][0] == concat1_in_edges[0][0] or concat0_in_edges[1][0] ==
-                         concat1_in_edges[1][0]):
-                    matched = True
+                        len(split_size) == 2:
                     concat0_input_shapes = concat0_obj.get_input_shapes()
-                    if concat0_in_edges[0][0] == concat1_in_edges[0][0]:
-                        if concat0_input_shapes[0] and None not in concat0_input_shapes[0] and \
-                                concat0_input_shapes[0][concat0_axis] == split_size[0]:
-                            graph.remove_edges_from(concat1_in_edges[1:])
-                            src, _, in_attr = concat0_in_edges[1]
-                            graph.add_edge(src, concat1_in_edges[0][1], **in_attr)
+                    if concat0_in_edges[0][0] == concat1_in_edges[0][0] or \
+                            concat0_in_edges[1][0] == concat1_in_edges[1][0]:
+                        matched = True
+                        if concat0_in_edges[0][0] == concat1_in_edges[0][0]:
+                            if concat0_input_shapes[0] and None not in concat0_input_shapes[0] and \
+                                    concat0_input_shapes[0][concat0_axis] == split_size[0]:
+                                graph.remove_edges_from(concat1_in_edges[1:])
+                                src, _, in_attr = concat0_in_edges[1]
+                                graph.add_edge(src, concat1_in_edges[0][1], **in_attr)
+                        else:
+                            if concat0_input_shapes[1] and None not in concat0_input_shapes[1] and \
+                                    concat0_input_shapes[1][concat0_axis] == split_size[1]:
+                                graph.remove_edges_from(concat1_in_edges[:1])
+                                src, _, in_attr = concat0_in_edges[0]
+                                graph.add_edge(src, concat1_in_edges[1][1], **in_attr)
                     else:
-                        if concat0_input_shapes[1] and None not in concat0_input_shapes[1] and \
-                                concat0_input_shapes[1][concat0_axis] == split_size[1]:
-                            graph.remove_edges_from(concat1_in_edges[:1])
-                            src, _, in_attr = concat0_in_edges[0]
-                            graph.add_edge(src, concat1_in_edges[1][1], **in_attr)
+                        split_out_port = split_out_edges[0][2]['src_out_port']
+                        if concat0_input_shapes[split_out_port] and \
+                                None not in concat0_input_shapes[split_out_port] and \
+                                split_size[split_out_port] == concat0_input_shapes[split_out_port][concat0_axis]:
+                            matched = True
+                            graph.remove_edges_from(concat0_in_edges)
+                            graph.remove_edges_from(split_out_edges)
+                            src, _, in_attr = concat0_in_edges[split_out_port]
+                            graph.add_edge(src, split_out_edges[0][1], **in_attr)
     if matched:
         clear_redundant_nodes(graph)
 
