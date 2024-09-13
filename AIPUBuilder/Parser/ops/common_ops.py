@@ -4,6 +4,8 @@
 
 import tensorflow as tf
 import numpy as np
+import torch
+
 from .op import *
 from ..common.utils import get_random_array, list_list_to_string
 from ..plugin_loader import PARSER_OP_DICT
@@ -841,6 +843,25 @@ class PluginOp(OpHasVariableOutPorts, CommonOp):
         return ret
 
 
+class QueryRebatchOp(OpHasOneOutPort, CommonOp):
+    def infer_shape(self):
+        super(QueryRebatchOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        cam_num = len(inputs) - 1
+        out_shape = inputs[0].shape[:]
+        out_shape.insert(1, cam_num)
+        out_tensor = np.random.ranf(out_shape).astype(inputs[0].dtype)
+        # batch = inputs[0].shape[0]
+        # query = torch.from_numpy(inputs[0])
+        # query_rebatch = torch.zeros(out_shape)
+        # for j in range(batch):
+        #     for i in range(cam_num):
+        #         index_query_per_img = torch.from_numpy(inputs[i + 1])
+        #         query_rebatch[j, i, :len(index_query_per_img)] = query[j, index_query_per_img]
+        # out_tensor = query_rebatch.numpy().astype(inputs[0].dtype)
+        self.set_out_tensor(out_tensor)
+
+
 class ReduceAllOp(OpHasAxis, OpHasOneOutPort, CommonOp):
     @classmethod
     def attributes(cls):
@@ -1021,6 +1042,25 @@ class SiluOp(LayoutUnawareOp, ActivationOnlyOp, CommonOp):
         inputs = self.get_input_tensors()
         out_tensor = (inputs[0]) * tf.sigmoid(inputs[0].astype(np.float32)).numpy()
         self.set_out_tensor(out_tensor.astype(inputs[0].dtype))
+
+
+class SlotUpdateOp(OpHasOneOutPort, CommonOp):
+    def infer_shape(self):
+        super(SlotUpdateOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        cam_num = len(inputs) - 1
+        assert cam_num == inputs[0].shape[1]
+        out_shape = inputs[0].shape[:]
+        out_shape.pop(1)
+        out_tensor = np.random.ranf(out_shape).astype(inputs[0].dtype)
+        # batch = inputs[0].shape[0]
+        # queries = torch.from_numpy(inputs[0])
+        # slots = torch.zeros_like(queries)
+        # for j in range(batch):
+        #     for i, index_query_per_img in enumerate(inputs[1:]):
+        #         slots[j, torch.from_numpy(index_query_per_img)] += queries[j, i, :len(index_query_per_img)]
+        # out_tensor = slots.numpy()
+        self.set_out_tensor(out_tensor)
 
 
 class SufficientStatisticsOp(OpHasAxis, OpHasMultipleOutPorts, CommonOp):

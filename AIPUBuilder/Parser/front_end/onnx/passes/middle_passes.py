@@ -8973,6 +8973,73 @@ def rearrange_fc_reshape_bn(graph):
             graph._attr['output_names'][index] = reshape
 
 
+def fuse_special_fc_reshape_transpose_div(graph):
+    if graph._attr.get('quantize', False):
+        return
+    matches = matched_patterns(graph,
+                               nodes=[
+                                   ('fc', {'op': 'FullyConnected'}),
+                                   ('reshape0', {'op': 'Reshape'}),
+                                   ('trans', {'op': 'Transpose'}),
+                                   ('reshape1', {'op': 'Reshape'}),
+                                   ('cons', {'op': 'Constant', 'unique': False}),
+                                   ('div', {'op': 'Div'}),
+                               ],
+                               edges=[
+                                   ('fc', 'reshape0', {'dst_in_port': 0}),
+                                   ('reshape0', 'trans', {'dst_in_port': 0}),
+                                   ('trans', 'reshape1', {'src_out_port': 0}),
+                                   ('reshape1', 'div', {'src_out_port': 0, 'dst_in_port': 0}),
+                                   ('cons', 'div', {'src_out_port': 0, 'dst_in_port': 1}),
+                               ])
+    for m in matches:
+        fc, reshape0, trans, reshape1, cons, div = m['fc'], m['reshape0'], m['trans'], m['reshape1'], m['cons'], m[
+            'div']
+        fc_obj = NodeWrap(graph, fc)['object']
+        cons_obj = NodeWrap(graph, cons)['object']
+        div_obj = NodeWrap(graph, div)['object']
+        if fc_obj is None:
+            ERROR(
+                '[Parser]: Meets invalid FullyConnected Op (%s) in fuse_special_fc_reshape_transpose_div!' % fc)
+            continue
+        if cons_obj is None:
+            ERROR(
+                '[Parser]: Meets invalid Constant Op (%s) in fuse_special_fc_reshape_transpose_div!' % cons)
+            continue
+        if div_obj is None:
+            ERROR(
+                '[Parser]: Meets invalid Div Op (%s) in fuse_special_fc_reshape_transpose_div!' % div)
+            continue
+        const_value = cons_obj.value
+        if const_value.min() != const_value.max():
+            continue
+        fc_out_edges = graph.sorted_out_edges(fc, data=True)
+        reshape0_out_edges = graph.sorted_out_edges(reshape0)
+        trans_out_edges = graph.sorted_out_edges(trans)
+        reshape1_out_edges = graph.sorted_out_edges(reshape1, data=True)
+        div_out_edges = graph.sorted_out_edges(div, data=True)
+        if len(fc_out_edges) != 1 or \
+                len(reshape0_out_edges) != 1 or \
+                len(trans_out_edges) != 1 or \
+                len(reshape1_out_edges) != 1:
+            continue
+        div_value = np.array(const_value.min(), dtype=const_value.dtype)
+        new_weights = fc_obj.weights / div_value
+        new_biases = fc_obj.biases / div_value
+        fc_obj.weights = new_weights
+        fc_obj.biases = new_biases
+        div_in_edges = graph.sorted_in_edges(div)
+        graph.remove_edges_from(div_in_edges)
+        graph.remove_edges_from(div_out_edges)
+        src, _, reshape1_out_attr = reshape1_out_edges[0]
+        for _, div_dst, div_out_attr in div_out_edges:
+            out_attr = copy.deepcopy(div_out_attr)
+            graph.add_edge(src, div_dst, **out_attr)
+        if div in graph._attr['output_names']:
+            index = graph._attr['output_names'].index(div)
+            graph._attr['output_names'][index] = reshape1
+
+
 def rearrange_matmul_reshape_bias(graph):
     matmul_reshape_bias_matches = matched_patterns(graph,
                                                    nodes=[
@@ -11129,6 +11196,7 @@ def middle_passes(graph, params):
     rearrange_pack_concat(graph)
     convert_min_max_to_clip(graph)
     remove_redundant_reshape(graph)
+    fuse_special_fc_reshape_transpose_div(graph)
     rearrange_linear_reshape_relu(graph)
     rearrange_linear_concat_relu(graph)
     convert_special_transpose(graph)
