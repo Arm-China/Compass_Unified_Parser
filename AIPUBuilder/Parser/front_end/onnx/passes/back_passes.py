@@ -710,7 +710,7 @@ def rename_quantize_dequantize(graph):
         quantize_attr = quantize_obj.copied_attr()
         quantize_attr.update({'scale': scale, 'zero_point': zp})
         if quantize_obj.type == 'QuantizeLinear':
-            quantize_attr.update({'to_dtype': dtype_str})
+            quantize_attr.update({'to_dtype': dtype_str, 'round_mode': 'ROUND_TO_EVEN'})
             NodeWrap(graph, quantize).replace_obj('ArmQuantize', quantize_attr)
         else:
             quantize_attr.update({'from_dtype': dtype_str})

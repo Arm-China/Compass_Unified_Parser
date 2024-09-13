@@ -3834,10 +3834,19 @@ class ArmPyramidROIAlignOp(OpHasOneOutPort, ArmOp):
 class ArmQuantizeOp(OpHasAxis, BaseQuantizeDequantizeOp, OpHasOneOutPort, ArmOp):
     @classmethod
     def attributes(cls):
-        return {'to_dtype': {'type': AttrType.STRING,
-                             'required': True,
-                             'options': ['int8', 'uint8', 'int32', 'uint32']}
-                }
+        return {
+            'to_dtype': {
+                'type': AttrType.STRING,
+                'required': True,
+                'options': ['int8', 'uint8', 'int32', 'uint32']
+            },
+            'round_mode': {
+                'type': AttrType.STRING,
+                'required': True,
+                'options': ['CEIL', 'FLOOR', 'TRUNC', 'ROUND_TO_EVEN'],
+                'default': 'ROUND_TO_EVEN'
+            }
+        }
 
     def __init__(self, graph, attr_dict=None):
         super(ArmQuantizeOp, self).__init__(graph, attr_dict)

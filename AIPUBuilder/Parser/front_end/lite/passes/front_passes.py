@@ -2434,7 +2434,8 @@ def convert_special_quantize(graph):
             if from_dtype == 'float32':
                 node_attr.update({'scale': out_attr['tensor'].scale_zp[0],
                                   'zero_point': out_attr['tensor'].scale_zp[1],
-                                  'to_dtype': to_dtype})
+                                  'to_dtype': to_dtype,
+                                  'round_mode': 'CEIL'})
                 NodeWrap(graph, quantize).replace_obj('ArmQuantize', node_attr)
             else:
                 node_attr.update({'opset_version': 19, 'to': to_dtype, 'saturate': True})

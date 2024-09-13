@@ -2199,6 +2199,8 @@ class BaseQuantizeDequantizeOp(Op):
     def write_attrs(self, txt_file):
         ret = super(BaseQuantizeDequantizeOp, self).write_attrs(txt_file)
         if ret:
+            if self.type == 'ArmQuantize':
+                txt_file.write('round_mode=%s\n' % str(self.round_mode).upper())
             txt_file.write('quantize_scale_type=%s\n' % str(self.scale.dtype))
             txt_file.write('quantize_scale_offset=%d\n' % self.scale_offset)
             txt_file.write('quantize_scale_size=%d\n' % (self.scale.size * self.scale.dtype.itemsize))
