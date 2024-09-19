@@ -345,7 +345,7 @@ def remove_useless_op(graph, op_type_list):
                     ERROR(
                         '[Parser]: Meets invalid Transpose(%s) to remove in remove_useless_op!' % node_name)
                     continue
-                trans_in_tensor = trans_in_edges[0][2]['tensor'].value
+                trans_in_tensor_shape = trans_in_edges[0][2]['tensor'].shape
                 perm = node_obj.perm
                 src_name = trans_in_edges[0][0]
                 src_node_obj = NodeWrap(graph, src_name)['object']
@@ -357,7 +357,8 @@ def remove_useless_op(graph, op_type_list):
                     src_node_obj.value = np.transpose(
                         src_node_obj.value, axes=perm)
                     removing_nodes.append(node_name)
-                elif trans_in_tensor is not None and list(range(len(trans_in_tensor.shape))) == perm:
+                elif trans_in_tensor_shape is not None and (list(range(len(trans_in_tensor_shape))) == perm or
+                                                            int(np.prod(trans_in_tensor_shape)) == 1):
                     removing_nodes.append(node_name)
                 elif perm and list(perm) == list(range(max(perm) + 1)):
                     removing_nodes.append(node_name)
@@ -543,7 +544,7 @@ def remove_redundant_transpose2(graph):
         clear_redundant_nodes(graph)
 
 
-def remove_redundant_transpose3(graph):
+def remove_redundant_transpose_unaware(graph):
     '''Remove Transpose nodes from the following patterns if their perm are inversed.
     sink_single_transpose won't work for this case because the first Transpose has more than 1 children.
         x -> Transpose -> Quantize(or others) -> Transpose

@@ -4718,7 +4718,11 @@ class ArmSquareOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
         self.set_out_tensor(out_tensors)
 
 
-class ArmSquaredDifferenceOp(OpNeedBroadcast, OpHasOneOutPort, ArmOp):
+class ArmSquaredDifferenceOp(OpNeedBroadcast, OpHasOneOutPort, LayoutUnawareOp, ArmOp):
+    @classmethod
+    def num_in_ports(cls):
+        return 2
+
     @classmethod
     def cast_in_ports(cls):
         return {0: ['float32', 'float16', 'int8', 'uint8'], 1: ['float32', 'float16', 'int8', 'uint8']}

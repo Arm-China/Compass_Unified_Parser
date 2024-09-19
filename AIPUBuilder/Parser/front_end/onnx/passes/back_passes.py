@@ -23,7 +23,7 @@ from .common_passes import remove_node_safely, insert_cast, insert_cast_after, i
     insert_reshape, insert_reshape_after, insert_constant, \
     insert_slice, insert_transpose, remove_redundant_bn, remove_redundant_reshape, remove_redundant_transpose, \
     remove_redundant_transpose2, remove_useless_op, fuse_const, insert_gather, remove_redundant_cast, \
-    insert_transpose_after, merge_same_op_at_out_port, remove_redundant_transpose3
+    insert_transpose_after, merge_same_op_at_out_port, remove_redundant_transpose_unaware
 from ....plugin_loader import PARSER_OP_DICT
 
 
@@ -4829,6 +4829,85 @@ def sink_double_transpose(graph):
                 trans1, trans2, unaware))
 
 
+def sink_double_reshape(graph):
+    unaware_types = set(ArmOp.get_concrete_subclass_names()).intersection(
+        LayoutUnawareOp.get_concrete_subclass_names() + ['ArmQuantize', 'ArmDeQuantize'])
+    unaware_types = sorted(list(unaware_types))
+    matches = matched_patterns(graph,
+                               nodes=[
+                                   ('reshape1', {'op': 'ArmReshape', 'unique': False}),
+                                   ('reshape2', {'op': 'ArmReshape', 'unique': False}),
+                                   ('unaware', {'op': unaware_types})
+                               ],
+                               edges=[
+                                   ('reshape1', 'unaware', {
+                                       'src_out_port': 0, 'dst_in_port': 0}),
+                                   ('reshape2', 'unaware', {
+                                       'src_out_port': 0, 'dst_in_port': 1}),
+                               ]
+                               )
+    for m in matches:
+        reshape1, reshape2, unaware = m['reshape1'], m['reshape2'], m['unaware']
+        if any(not graph.has_node(name) for name in [reshape1, reshape2, unaware]):
+            DEBUG('[Parser]: Meets invalid name that does not exist in graph in sink_double_reshape!')
+            continue
+        reshape1_obj = NodeWrap(graph, reshape1)['object']
+        reshape2_obj = NodeWrap(graph, reshape2)['object']
+        unaware_obj = NodeWrap(graph, unaware)['object']
+        if reshape1_obj is not None and reshape2_obj is not None and unaware_obj is not None:
+            if reshape1_obj.dim == reshape2_obj.dim \
+                    and unaware_obj.num_in_ports() == 2 \
+                    and len(unaware_obj.get_out_ports()) == 1:
+                reshape1_in_edges = graph.sorted_in_edges(reshape1, data=True)
+                reshape2_in_edges = graph.sorted_in_edges(reshape2, data=True)
+                if len(reshape1_in_edges) < 1 or len(reshape2_in_edges) < 1:
+                    ERROR('[Parser]: Meets invalid Node(%s) or Node(%s) in sink_double_reshape!' % (
+                        reshape1, reshape2))
+                    continue
+                if unaware_obj.type in ['ArmQuantize', 'ArmDeQuantize'] \
+                        and unaware_obj.axis is not None:
+                    continue
+                src1, _, in_attr1 = reshape1_in_edges[0]
+                src2, _, in_attr2 = reshape2_in_edges[0]
+
+                if in_attr1['tensor'].shape is None or \
+                        in_attr2['tensor'].shape is None or \
+                        in_attr1['tensor'].shape != in_attr2['tensor'].shape:
+                    continue
+
+                new_in_attr1 = copy.deepcopy(in_attr1)
+                new_in_attr2 = copy.deepcopy(in_attr2)
+                new_in_attr2['dst_in_port'] = 1
+                graph.remove_edge(reshape1, unaware)
+                graph.remove_edge(reshape2, unaware)
+                graph.add_edge(src1, unaware, **new_in_attr1)
+                graph.add_edge(src2, unaware, **new_in_attr2)
+
+                reshape1_out_edges = graph.sorted_out_edges(reshape1)
+                reshape2_out_edges = graph.sorted_out_edges(reshape2)
+                if len(reshape1_out_edges) == 0:
+                    reshape1_in_edges = graph.sorted_in_edges(reshape1)
+                    graph.remove_edges_from(reshape1_in_edges)
+                if len(reshape2_out_edges) == 0:
+                    reshape2_in_edges = graph.sorted_in_edges(reshape2)
+                    graph.remove_edges_from(reshape2_in_edges)
+
+                post_reshape = insert_reshape_after(graph, unaware, reshape1_obj.dim,
+                                                    old_dim=in_attr1['tensor'].shape,
+                                                    type='ArmReshape',
+                                                    quantize=unaware_obj.quantize)
+
+                if unaware in graph._attr['output_names']:
+                    index = graph._attr['output_names'].index(unaware)
+                    graph._attr['output_names'][index] = post_reshape
+
+                clear_redundant_nodes(graph)
+
+        else:
+            ERROR('[Parser]: Meets invalid Node(%s) or Node(%s) or Node(%s) in sink_double_reshape!' % (
+                reshape1, reshape2, unaware))
+
+
 def sink_transpose_through_argminmax(graph):
     matches = two_nodes_matcher(graph, 'ArmTranspose', 'ArmArgMinMax')
     for m in matches:
@@ -4847,6 +4926,28 @@ def sink_transpose_through_argminmax(graph):
         graph.add_edge(src, argminmax, **in_attr)
         insert_transpose_after(graph, argminmax, transpose_obj.perm, type='ArmTranspose')
         argminmax_obj.axis = Op.cal_inverse_perm(transpose_obj.perm).index(argminmax_obj.axis)
+
+
+def sink_transpose_through_norm(graph):
+    matches = two_nodes_matcher(graph, 'ArmTranspose', 'ArmNormalization')
+    for m in matches:
+        transpose, norm = m['begin'], m['end']
+        transpose_obj = NodeWrap(graph, transpose)['object']
+        norm_obj = NodeWrap(graph, norm)['object']
+        if transpose_obj is None or norm_obj is None:
+            ERROR('[Parser]: Meets invalid Transpose (%s) or Normalization (%s) in sink_transpose_through_norm!'
+                  % (transpose, norm))
+            continue
+        transpose_in_edges = graph.sorted_in_edges(transpose, data=True)
+        if len(transpose_in_edges) != 1:
+            continue
+        if len(norm_obj.axes) != 1:
+            continue
+        src, _, in_attr = transpose_in_edges[0]
+        graph.remove_edge(transpose, norm)
+        graph.add_edge(src, norm, **in_attr)
+        insert_transpose_after(graph, norm, transpose_obj.perm, type='ArmTranspose')
+        norm_obj.axes = [Op.cal_inverse_perm(transpose_obj.perm).index(norm_obj.axes[0])]
 
 
 def sink_reshape_through_cast(graph):
@@ -5059,7 +5160,7 @@ def sink_transpose_through_concat(graph):
             'ArmTranspose', post_trans_attr)
 
 
-def sink_transpose_through_norm(graph):
+def sink_transpose_through_group_norm(graph):
     '''Lower Transpose node from Transpose(perm=P)+GN(axis=C) to GN(axis=C')+Transpose(perm=P),
     in which perm of Transpose keeps unchanged, axis of GN needs changed.
     '''
@@ -5693,16 +5794,18 @@ def back_passes(graph, params):
                           sink_transpose_through_special_reshape,
                           sink_transpose_through_tile,
                           sink_transpose_through_slice_pair,
+                          sink_transpose_through_group_norm,
                           sink_transpose_through_norm,
                           sink_reshape_through_cast,
                           sink_single_transpose,
                           sink_double_transpose,
+                          sink_double_reshape,
                           sink_transpose_with_const,
                           merge_same_op_at_out_port
                           ]:
                     f(graph)
                     remove_redundant_transpose(graph)
-                    remove_redundant_transpose3(graph)
+                    remove_redundant_transpose_unaware(graph)
                     remove_redundant_reshape(graph, 'ArmReshape')
                     remove_useless_op(graph, ['ArmReshape', 'ArmTranspose'])
                 if len(nodes_num_list) < 4:

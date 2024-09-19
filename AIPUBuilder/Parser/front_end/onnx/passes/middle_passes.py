@@ -5320,6 +5320,50 @@ def merge_logical_xor(graph):
         clear_redundant_nodes(graph)
 
 
+def merge_double_reduce(graph):
+    matched = False
+    matches = [matched_patterns(graph,
+                                nodes=[
+                                    ('reduce0', {'op': reduceop}),
+                                    ('reduce1', {'op': reduceop}),
+                                ],
+                                edges=[
+                                    ('reduce0', 'reduce1')
+                                ]) for reduceop in ['ReduceMean', 'ReduceMax', 'ReduceMin', 'ReduceSum']]
+    for m in extend_lists(matches):
+        reduce0, reduce1 = m['reduce0'], m['reduce1']
+        reduce0_obj = NodeWrap(graph, reduce0)['object']
+        reduce1_obj = NodeWrap(graph, reduce1)['object']
+        if reduce0_obj is None or reduce1_obj is None:
+            ERROR('[Parser]: Meets invalid Op in merge_double_reduce!')
+            continue
+        if reduce0_obj.keepdims != reduce1_obj.keepdims:
+            continue
+        reduce1_in_edges = graph.sorted_in_edges(reduce1, data=True)
+        if len(reduce1_in_edges) != 1:
+            continue
+        matched = True
+        reduce0_in_edges = graph.sorted_in_edges(reduce0, data=True)
+        graph.remove_edges_from(reduce0_in_edges)
+        graph.remove_edges_from(reduce1_in_edges)
+        for src, _, in_attr in reduce0_in_edges:
+            new_in_attr = copy.deepcopy(in_attr)
+            graph.add_edge(src, reduce1, **new_in_attr)
+        if reduce0_obj.keepdims:
+            new_axes = reduce0_obj.axes + reduce1_obj.axes
+        else:
+            reduce1_new_axes = []
+            for axis in reduce1_obj.axes:
+                if axis < min(reduce0_obj.axes):
+                    reduce1_new_axes.append(axis)
+                else:
+                    reduce1_new_axes.append(axis + len(reduce0_obj.axes))
+            new_axes = reduce0_obj.axes + reduce1_new_axes
+        reduce1_obj.axes = new_axes.copy()
+    if matched:
+        clear_redundant_nodes(graph)
+
+
 def merge_meshgrid(graph):
     matched = False
     matches = matched_patterns(graph,
@@ -6726,6 +6770,50 @@ def merge_reducel2(graph):
         clear_redundant_nodes(graph)
 
 
+def merge_reducel2_reshape(graph):
+    matched = False
+    matches = matched_patterns(graph,
+                               nodes=[
+                                   ('l2', {'op': 'ReduceL2'}),
+                                   ('reshape', {'op': 'Reshape'}),
+                                   ('shape', {'op': 'Constant', 'unique': False}),
+                               ],
+                               edges=[
+                                   ('l2', 'reshape', {'dst_in_port': 0}),
+                                   ('shape', 'reshape', {'dst_in_port': 1}),
+                               ])
+    for m in matches:
+        l2_node, reshape_node, shape_node = m['l2'], m['reshape'], m['shape']
+        l2_obj, reshape_obj, shape_obj = [NodeWrap(graph, name)['object'] for name in
+                                          [l2_node, reshape_node, shape_node]]
+        if l2_obj is None or reshape_obj is None or shape_obj is None:
+            ERROR('[Parser]: Meets invalid node in merge_reducel2_reshape!')
+            continue
+        if l2_obj.keepdims:
+            continue
+        l2_output_shapes = l2_obj.get_output_shapes()
+        new_shape = l2_output_shapes[0].copy()
+        for axis in l2_obj.axes:
+            new_shape.insert(axis, 1)
+        if new_shape != shape_obj.value.tolist():
+            continue
+        l2_out_edges = graph.sorted_out_edges(l2_node, data=True)
+        if len(l2_out_edges) != 1:
+            continue
+        matched = True
+        reshape_out_edges = graph.sorted_out_edges(reshape_node, data=True)
+        graph.remove_edges_from(l2_out_edges)
+        l2_obj.keepdims = True
+        for _, dst, out_attr in reshape_out_edges:
+            new_out_attr = copy.deepcopy(out_attr)
+            graph.add_edge(l2_node, dst, **new_out_attr)
+        if reshape_node in graph._attr['output_names']:
+            index = graph._attr['output_names'].index(reshape_node)
+            graph._attr['output_names'][index] = l2_node
+    if matched:
+        clear_redundant_nodes(graph)
+
+
 def merge_l1norm(graph):
     matched = False
     matches = matched_patterns(graph,
@@ -6849,6 +6937,53 @@ def merge_l2norm(graph):
         l2norm_attr = l2norm_obj.copied_attr()
         l2norm_attr.update({'opset_version': 1, 'p': 2, 'axes': axes, 'epsilon': eps_obj.value.item()})
         NodeWrap(graph, l2norm).replace_obj('LpNormalization', l2norm_attr)
+    if matched:
+        clear_redundant_nodes(graph)
+
+
+def merge_l2norm2(graph):
+    matched = False
+    matches = matched_patterns(graph,
+                               nodes=[
+                                   ('l2', {'op': 'ReduceL2'}),
+                                   ('add', {'op': 'Add'}),
+                                   ('eps', {'op': 'Constant', 'unique': False}),
+                                   ('div', {'op': 'Div'}),
+                               ],
+                               edges=[
+                                   ('l2', 'add', {'dst_in_port': 0}),
+                                   ('eps', 'add', {'dst_in_port': 1}),
+                                   ('add', 'div', {'dst_in_port': 1}),
+                               ])
+    for m in matches:
+        l2_node, add_node, eps_node, div_node = m['l2'], m['add'], m['eps'], m['div']
+        l2_obj, add_obj, eps_obj, div_obj = [NodeWrap(graph, name)['object'] for name in
+                                             [l2_node, add_node, eps_node, div_node]]
+        if any([obj is None for obj in [l2_obj, add_obj, eps_obj, div_obj]]):
+            ERROR('[Parser]: Meets invalid node in merge_l2norm2!')
+            continue
+        if not l2_obj.keepdims:
+            continue
+        l2_in_edges = graph.sorted_in_edges(l2_node, data=True)
+        div_in_edges = graph.sorted_in_edges(div_node, data=True)
+        if len(graph.sorted_out_edges(l2_node)) == 1 and \
+                len(graph.sorted_out_edges(add_node)) == 1 and \
+                l2_in_edges[0][0] == div_in_edges[0][0] and \
+                int(np.prod(eps_obj.value.shape)) == 1:
+            matched = True
+            l2_out_edges = graph.sorted_out_edges(l2_node, data=True)
+            div_out_edges = graph.sorted_out_edges(div_node, data=True)
+            graph.remove_edges_from(l2_out_edges)
+            graph.remove_edges_from(div_out_edges)
+            for _, dst, out_attr in div_out_edges:
+                new_out_attr = copy.deepcopy(out_attr)
+                graph.add_edge(l2_node, dst, **new_out_attr)
+            l2norm_attr = l2_obj.copied_attr()
+            l2norm_attr.update({'opset_version': 1, 'p': 2, 'axes': l2_obj.axes, 'epsilon': eps_obj.value.item()})
+            NodeWrap(graph, l2_node).replace_obj('LpNormalization', l2norm_attr)
+            if div_node in graph._attr['output_names']:
+                index = graph._attr['output_names'].index(div_node)
+                graph._attr['output_names'][index] = l2_node
     if matched:
         clear_redundant_nodes(graph)
 
@@ -11134,13 +11269,16 @@ def middle_passes(graph, params):
     merge_erosion(graph)
     merge_reducel1(graph)
     merge_reducel2(graph)
+    merge_reducel2_reshape(graph)
     merge_l1norm(graph)
     merge_l2norm(graph)
+    merge_l2norm2(graph)
     merge_hardswish(graph)
     merge_hardswish2(graph)
     merge_hardsigmoid(graph)
     merge_hargsigmoid2(graph)
     merge_softplus(graph)
+    merge_double_reduce(graph)
     merge_softmax(graph)
     merge_mish(graph)
     merge_batchnorm(graph)
