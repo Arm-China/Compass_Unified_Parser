@@ -31,7 +31,7 @@ class IfOp(OpHasSubGraph, OnnxOp):
         out_edges = self._graph.sorted_out_edges(self.name)
         if in_edges[0][2]['tensor'].is_const and \
                 in_edges[0][2]['tensor'].value is not None:
-            if_cond = bool(inputs[0])
+            if_cond = bool(inputs[0].item())
             if_cond_is_const = True
         else:
             WARN(f'[Parser]: If({self.name}) condition is non-const, the infer shape is unreliable.')
@@ -53,7 +53,7 @@ class IfOp(OpHasSubGraph, OnnxOp):
                 dummy_out_edges = cur_sub_graph._attr['parent_graph'].sorted_out_edges(parent_node['object'].name,
                                                                                        data=True)
                 out_tensor = dummy_out_edges[0][-1]['tensor'].value
-                sub_node_obj.infer_shape(out_tensor)
+                sub_node_obj.infer_shape(out_tensor, dummy_out_edges[0][-1]['tensor'].is_const)
             else:
                 sub_node_obj.infer_shape()
 
@@ -147,7 +147,7 @@ class LoopOp(OpHasSubGraph, OnnxOp):
                             out_tensor = dummy_out_edges[0][-1]['tensor'].value
                             if n in cond_out_root_input_const:
                                 cond_out_root_input_const[n] = dummy_out_edges[0][-1]['tensor'].is_const
-                            sub_node_obj.infer_shape(out_tensor)
+                            sub_node_obj.infer_shape(out_tensor, dummy_out_edges[0][-1]['tensor'].is_const)
                         else:
                             if sub_node_obj.type == 'Constant' and n in cond_out_root_input_const:
                                 cond_out_root_input_const[n] = True

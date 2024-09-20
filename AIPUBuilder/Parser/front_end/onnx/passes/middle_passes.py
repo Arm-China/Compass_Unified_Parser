@@ -2038,7 +2038,7 @@ def decompose_const_if(graph, params):
         if if_obj is not None \
                 and len(if_obj.sorted_in_consts()) >= 1 \
                 and if_obj.sorted_in_consts()[0][1] == 0:
-            condition = if_obj.sorted_in_consts()[0][2]
+            condition = if_obj.sorted_in_consts()[0][2].item()
             if_in_edges = graph.sorted_in_edges(if_name, data=True)
             if_out_edges = graph.sorted_out_edges(if_name, data=True)
             keep_branch = if_obj.then_branch if condition else if_obj.else_branch
@@ -2068,9 +2068,10 @@ def decompose_const_if(graph, params):
                         NodeWrap(graph, n).replace_obj('Constant', cur_obj_attr)
                 elif n_obj.type == 'Out':
                     o_port = n_in_edges[0][2]['src_out_port']
-                    _, dst, out_attr = if_out_edges[o_port]
-                    in_attr = copy.deepcopy(out_attr)
-                    graph.add_edge(n_in_edges[0][0], dst, **in_attr)
+                    for _, dst, out_attr in if_out_edges:
+                        if out_attr['src_out_port'] == o_port:
+                            in_attr = copy.deepcopy(out_attr)
+                            graph.add_edge(n_in_edges[0][0], dst, **in_attr)
                 else:
                     main_g_node_name = get_valid_node_name(graph, n)
                     graph.add_node(main_g_node_name)

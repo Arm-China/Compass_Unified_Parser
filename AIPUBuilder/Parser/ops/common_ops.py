@@ -319,11 +319,34 @@ class DummyInputOp(OpHasOneOutPort, InputLikeOp, CommonOp):
     def __init__(self, graph, attr_dict=None):
         super(DummyInputOp, self).__init__(graph, attr_dict)
 
-    def infer_shape(self, input_tensor=None):
+    def infer_shape(self, input_tensor=None, is_const=False):
         super(DummyInputOp, self).infer_shape()
         assert input_tensor is not None, 'input shape is empty in DummyInputOp.'
         out_tensor = input_tensor.copy()
-        self.set_out_tensor(out_tensor)
+        self.set_out_tensor(out_tensor, is_const)
+
+    def set_out_tensor(self, tensor_data, is_const):
+        '''set the out tensor of this op.'''
+        try:
+            for _, _, d in self._graph.sorted_out_edges(self.name, data=True):
+                if d.get('tensor', None) is not None:
+                    d['tensor'].value = tensor_data
+                    if tensor_data is not None:
+                        d['tensor'].shape = d['tensor'].value.shape
+                        d['tensor'].is_const = is_const
+                        if not self.quantize or d['tensor'].dtype is None:
+                            d['tensor'].dtype = str(d['tensor'].value.dtype)
+                else:
+                    d['tensor'] = Tensor(value=tensor_data)
+
+            self.clear_unused_tensor(is_const)
+
+        except KeyError as e:
+            ERROR('[Parser]: Node(%s) meets key error in set_out_tensor (%s)!' %
+                  (self.name, str(e)))
+        except Exception as e:
+            ERROR('[Parser]: Node(%s) meets exception in set_out_tensor (%s)!' %
+                  (self.name, str(e)))
 
 
 class ErosionOp(OpHasPaddingStrides, OpHasWeights, OpHasOneOutPort, LayoutConcernedOp, CommonOp):
@@ -713,9 +736,11 @@ class PluginOp(OpHasVariableOutPorts, CommonOp):
                     len(inputs), tensor_index)
                 remove_edge_index = tensor_index
             else:
-                assert node_index < len(nest_input_index), 'Expect node_index < inputs length (%d) in subgraph plugin, but got %d' % (
+                assert node_index < len(
+                    nest_input_index), 'Expect node_index < inputs length (%d) in subgraph plugin, but got %d' % (
                     len(nest_input_index), node_index)
-                assert tensor_index < len(nest_input_index[node_index]), 'Expect tensor_index < inputs length (%d), but got %d' % (
+                assert tensor_index < len(
+                    nest_input_index[node_index]), 'Expect tensor_index < inputs length (%d), but got %d' % (
                     len(nest_input_index[node_index]), tensor_index)
                 remove_edge_index = np.sum([len(nest_input_index[idx]) for idx in range(node_index)]) + tensor_index
             remove_edge_indexes.append(remove_edge_index)
@@ -772,7 +797,8 @@ class PluginOp(OpHasVariableOutPorts, CommonOp):
         self.constants = getattr(self._plugin, 'constants', {})
         if not all((isinstance(key, str) and isinstance(val, np.ndarray))
                    for key, val in self.constants.items()):
-            ERROR('[Parser]: Invalid constants in Plugin op (%s). Expect key is string and value is numpy array!' % self.name)
+            ERROR(
+                '[Parser]: Invalid constants in Plugin op (%s). Expect key is string and value is numpy array!' % self.name)
             ERROR('constants: %s' % str(self.constants))
 
     def write_attrs(self, txt_file):
