@@ -125,8 +125,16 @@ class TfComputeAccidentalHitsOp(OpHasMultipleOutPorts, TfOp):
 class TfConv2DOp(TfHasPaddingStrides, OpHasWeights, OpHasOneOutPort):
     @classmethod
     def attributes(cls):
-        return {1: {'dilations': {'default': [1, 1, 1, 1]}}
+        return {
+            1: {
+                'dilations': {
+                    'default': [1, 1, 1, 1]
+                },
+                'group': {
+                    'default': 1
                 }
+            }
+        }
 
     @classmethod
     def perm_tf_to_onnx(cls):
@@ -154,6 +162,7 @@ class TfConv2DOp(TfHasPaddingStrides, OpHasWeights, OpHasOneOutPort):
         else:
             inp = np.transpose(inputs[0], [0, 2, 3, 1])
             padding = padding[0:1] + padding[2:4] + padding[1:2]
+        self.group = inp.shape[-1] // self.weights.shape[-2]
         spatial_padding = (np.transpose(np.array(padding))[:, 1:-1]).flatten().tolist()
         out_shape = BaseConvOp.cal_out_shape(inp.shape[1:-1],
                                              spatial_padding,
