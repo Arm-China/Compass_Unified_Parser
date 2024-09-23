@@ -874,7 +874,7 @@ class QueryRebatchOp(OpHasOneOutPort, CommonOp):
         super(QueryRebatchOp, self).infer_shape()
         inputs = self.get_input_tensors()
         cam_num = len(inputs) - 1
-        out_shape = inputs[0].shape[:]
+        out_shape = list(inputs[0].shape[:])
         out_shape.insert(1, cam_num)
         out_tensor = np.random.ranf(out_shape).astype(inputs[0].dtype)
         # batch = inputs[0].shape[0]
@@ -1076,7 +1076,7 @@ class SlotUpdateOp(OpHasOneOutPort, CommonOp):
         inputs = self.get_input_tensors()
         cam_num = len(inputs) - 1
         assert cam_num == inputs[0].shape[1]
-        out_shape = inputs[0].shape[:]
+        out_shape = list(inputs[0].shape[:])
         out_shape.pop(1)
         out_tensor = np.random.ranf(out_shape).astype(inputs[0].dtype)
         # batch = inputs[0].shape[0]

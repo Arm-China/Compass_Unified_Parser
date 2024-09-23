@@ -5738,6 +5738,7 @@ def back_passes(graph, params):
     simple_rename(graph, 'NormalizedMoments', 'ArmNormalizedMoments')
     simple_rename(graph, 'OverlapAdd', 'ArmOverlapAdd')
     simple_rename(graph, 'Pow', 'ArmPow')
+    simple_rename(graph, 'QueryRebatch', 'ArmQueryRebatch')
     simple_rename(graph, 'Reciprocal', 'ArmReciprocal')
     simple_rename(graph, 'Repeat', 'ArmRepeat')
     simple_rename(graph, 'ReverseSequence', 'ArmReverseSequence')
