@@ -5843,6 +5843,541 @@ def merge_mish(graph):
         clear_redundant_nodes(graph)
 
 
+def merge_query_rebatch(graph):
+    '''
+    This pass is used to merge QueryRebatch op defined in bevformer model
+    '''
+    matched = False
+    matches = matched_patterns(graph,
+                               nodes=[
+                                   ('gc00', {'op': 'Constant', 'unique': False}),
+                                   ('g00', {'op': 'Gather'}),
+
+                                   ('g0', {'op': 'Gather'}),
+                                   ('e0', {'op': 'Expand'}),
+                                   ('r0', {'op': 'Reshape'}),
+                                   ('scc0', {'op': 'Constant', 'unique': False}),
+                                   ('sccc0', {'op': 'Constant', 'unique': False}),
+                                   ('sc0', {'op': 'ScatterND'}),
+
+                                   ('g1', {'op': 'Gather'}),
+                                   ('e1', {'op': 'Expand'}),
+                                   ('r1', {'op': 'Reshape'}),
+                                   ('scc1', {'op': 'Constant', 'unique': False}),
+                                   ('sc1', {'op': 'ScatterND'}),
+
+                                   ('g2', {'op': 'Gather'}),
+                                   ('e2', {'op': 'Expand'}),
+                                   ('r2', {'op': 'Reshape'}),
+                                   ('scc2', {'op': 'Constant', 'unique': False}),
+                                   ('sc2', {'op': 'ScatterND'}),
+
+                                   ('g3', {'op': 'Gather'}),
+                                   ('e3', {'op': 'Expand'}),
+                                   ('r3', {'op': 'Reshape'}),
+                                   ('scc3', {'op': 'Constant', 'unique': False}),
+                                   ('sc3', {'op': 'ScatterND'}),
+
+                                   ('g4', {'op': 'Gather'}),
+                                   ('e4', {'op': 'Expand'}),
+                                   ('r4', {'op': 'Reshape'}),
+                                   ('scc4', {'op': 'Constant', 'unique': False}),
+                                   ('sc4', {'op': 'ScatterND'}),
+
+                                   ('g5', {'op': 'Gather'}),
+                                   ('e5', {'op': 'Expand'}),
+                                   ('r5', {'op': 'Reshape'}),
+                                   ('scc5', {'op': 'Constant', 'unique': False}),
+                                   ('sc5', {'op': 'ScatterND'}),
+                               ],
+                               edges=[
+                                   ('gc00', 'g00', {'src_out_port': 0, 'dst_in_port': 1}),
+                                   ('g00', 'g0', {'src_out_port': 0, 'dst_in_port': 0}),
+
+                                   ('g0', 'e0', {'src_out_port': 0, 'dst_in_port': 0}),
+
+                                   ('e0', 'r0', {'src_out_port': 0, 'dst_in_port': 0}),
+                                   ('scc0', 'sc0', {'src_out_port': 0, 'dst_in_port': 0}),
+                                   ('sccc0', 'sc0', {'src_out_port': 0, 'dst_in_port': 1}),
+                                   ('r0', 'sc0', {'src_out_port': 0, 'dst_in_port': 2}),
+
+                                   ('g00', 'g1', {'src_out_port': 0, 'dst_in_port': 0}),
+
+                                   ('g1', 'e1', {'src_out_port': 0, 'dst_in_port': 0}),
+
+                                   ('e1', 'r1', {'src_out_port': 0, 'dst_in_port': 0}),
+                                   ('sc0', 'sc1', {'src_out_port': 0, 'dst_in_port': 0}),
+                                   ('scc1', 'sc1', {'src_out_port': 0, 'dst_in_port': 1}),
+                                   ('r1', 'sc1', {'src_out_port': 0, 'dst_in_port': 2}),
+
+                                   ('g00', 'g2', {'src_out_port': 0, 'dst_in_port': 0}),
+
+                                   ('g2', 'e2', {'src_out_port': 0, 'dst_in_port': 0}),
+
+                                   ('e2', 'r2', {'src_out_port': 0, 'dst_in_port': 0}),
+                                   ('sc1', 'sc2', {'src_out_port': 0, 'dst_in_port': 0}),
+                                   ('scc2', 'sc2', {'src_out_port': 0, 'dst_in_port': 1}),
+                                   ('r2', 'sc2', {'src_out_port': 0, 'dst_in_port': 2}),
+
+                                   ('g00', 'g3', {'src_out_port': 0, 'dst_in_port': 0}),
+
+                                   ('g3', 'e3', {'src_out_port': 0, 'dst_in_port': 0}),
+
+                                   ('e3', 'r3', {'src_out_port': 0, 'dst_in_port': 0}),
+                                   ('sc2', 'sc3', {'src_out_port': 0, 'dst_in_port': 0}),
+                                   ('scc3', 'sc3', {'src_out_port': 0, 'dst_in_port': 1}),
+                                   ('r3', 'sc3', {'src_out_port': 0, 'dst_in_port': 2}),
+
+                                   ('g00', 'g4', {'src_out_port': 0, 'dst_in_port': 0}),
+
+                                   ('g4', 'e4', {'src_out_port': 0, 'dst_in_port': 0}),
+
+                                   ('e4', 'r4', {'src_out_port': 0, 'dst_in_port': 0}),
+                                   ('sc3', 'sc4', {'src_out_port': 0, 'dst_in_port': 0}),
+                                   ('scc4', 'sc4', {'src_out_port': 0, 'dst_in_port': 1}),
+                                   ('r4', 'sc4', {'src_out_port': 0, 'dst_in_port': 2}),
+
+                                   ('g00', 'g5', {'src_out_port': 0, 'dst_in_port': 0}),
+
+                                   ('g5', 'e5', {'src_out_port': 0, 'dst_in_port': 0}),
+
+                                   ('e5', 'r5', {'src_out_port': 0, 'dst_in_port': 0}),
+                                   ('sc4', 'sc5', {'src_out_port': 0, 'dst_in_port': 0}),
+                                   ('scc5', 'sc5', {'src_out_port': 0, 'dst_in_port': 1}),
+                                   ('r5', 'sc5', {'src_out_port': 0, 'dst_in_port': 2}),
+                               ])
+    for m in matches:
+        node_list = ['gc00', 'g00',
+                     'g0', 'e0', 'r0', 'scc0', 'sccc0', 'sc0',
+                     'g1', 'e1', 'r1', 'scc1', 'sc1',
+                     'g2', 'e2', 'r2', 'scc2', 'sc2',
+                     'g3', 'e3', 'r3', 'scc3', 'sc3',
+                     'g4', 'e4', 'r4', 'scc4', 'sc4',
+                     'g5', 'e5', 'r5', 'scc5', 'sc5',
+                     ]
+        for n in node_list:
+            n_obj = NodeWrap(graph, m[n])['object']
+            if n_obj is None:
+                ERROR(
+                    f'[Parser]: Meets invalid node({m[n]}) in merge_query_rebatch!')
+                continue
+
+        expand_reshape_const_in = True
+        for i in range(6):
+            expand_in_edges = graph.sorted_in_edges(m[f'e{i}'], data=True)
+            if not expand_in_edges[1][-1]['tensor'].is_const:
+                expand_reshape_const_in = False
+                break
+            reshape_in_edges = graph.sorted_in_edges(m[f'r{i}'], data=True)
+            if not reshape_in_edges[1][-1]['tensor'].is_const:
+                expand_reshape_const_in = False
+                break
+
+        if not expand_reshape_const_in:
+            continue
+
+        matched = True
+        query_in_edges = graph.sorted_in_edges(m['g00'], data=True)
+        idx0_in_edges = graph.sorted_in_edges(m['g0'], data=True)
+        idx1_in_edges = graph.sorted_in_edges(m['g1'], data=True)
+        idx2_in_edges = graph.sorted_in_edges(m['g2'], data=True)
+        idx3_in_edges = graph.sorted_in_edges(m['g3'], data=True)
+        idx4_in_edges = graph.sorted_in_edges(m['g4'], data=True)
+        idx5_in_edges = graph.sorted_in_edges(m['g5'], data=True)
+
+        graph.remove_edges_from(query_in_edges)
+        graph.remove_edges_from(idx0_in_edges)
+        graph.remove_edges_from(idx1_in_edges)
+        graph.remove_edges_from(idx2_in_edges)
+        graph.remove_edges_from(idx3_in_edges)
+        graph.remove_edges_from(idx4_in_edges)
+        graph.remove_edges_from(idx5_in_edges)
+
+        in_edges = graph.sorted_in_edges(m['sc5'], data=True)
+        graph.remove_edges_from(in_edges)
+
+        query, _, in_attr = query_in_edges[0]
+        new_in_attr = copy.deepcopy(in_attr)
+        new_in_attr['dst_in_port'] = 0
+        graph.add_edge(query, m['sc5'], **new_in_attr)
+
+        idx0, _, in_attr = idx0_in_edges[1]
+        new_in_attr = copy.deepcopy(in_attr)
+        new_in_attr['dst_in_port'] = 1
+        graph.add_edge(idx0, m['sc5'], **new_in_attr)
+        idx1, _, in_attr = idx1_in_edges[1]
+        new_in_attr = copy.deepcopy(in_attr)
+        new_in_attr['dst_in_port'] = 2
+        graph.add_edge(idx1, m['sc5'], **new_in_attr)
+        idx2, _, in_attr = idx2_in_edges[1]
+        new_in_attr = copy.deepcopy(in_attr)
+        new_in_attr['dst_in_port'] = 3
+        graph.add_edge(idx2, m['sc5'], **new_in_attr)
+        idx3, _, in_attr = idx3_in_edges[1]
+        new_in_attr = copy.deepcopy(in_attr)
+        new_in_attr['dst_in_port'] = 4
+        graph.add_edge(idx3, m['sc5'], **new_in_attr)
+        idx4, _, in_attr = idx4_in_edges[1]
+        new_in_attr = copy.deepcopy(in_attr)
+        new_in_attr['dst_in_port'] = 5
+        graph.add_edge(idx4, m['sc5'], **new_in_attr)
+        idx5, _, in_attr = idx5_in_edges[1]
+        new_in_attr = copy.deepcopy(in_attr)
+        new_in_attr['dst_in_port'] = 6
+        graph.add_edge(idx5, m['sc5'], **new_in_attr)
+        NodeWrap(graph, m['sc5']).replace_obj('QueryRebatch',
+                                              {'name': m['sc5'], 'opset_version': 1})
+    if matched:
+        clear_redundant_nodes(graph)
+
+
+def merge_slot_update(graph):
+    '''
+    This pass is used to merge SlotUpdate op defined in bevformer model
+    '''
+    matched_1 = False
+    ori_graph = None
+
+    # phase1 merge TempOp used as in phase2
+
+    matches = matched_patterns(graph,
+                               nodes=[
+                                   ('expand0c', {'op': 'Constant', 'unique': False}),
+                                   ('expand0', {'op': 'Expand'}),
+                                   ('usqc', {'op': 'Constant', 'unique': False}),
+                                   ('usq0', {'op': 'Unsqueeze'}),
+                                   ('concat0c', {'op': 'Constant', 'unique': False}),
+                                   ('concat0', {'op': 'Concat', 'unique': True}),
+                               ],
+                               edges=[
+                                   ('expand0c', 'expand0', {'src_out_port': 0, 'dst_in_port': 1}),
+                                   ('expand0', 'usq0', {'src_out_port': 0, 'dst_in_port': 0}),
+                                   ('usqc', 'usq0', {'src_out_port': 0, 'dst_in_port': 1}),
+                                   ('concat0c', 'concat0', {'src_out_port': 0, 'dst_in_port': 0}),
+                                   ('usq0', 'concat0', {'src_out_port': 0, 'dst_in_port': 1}),
+                               ])
+    if matches:
+        ori_graph = copy.deepcopy(graph)
+    for m in matches:
+        node_list = [
+            'expand0c', 'expand0', 'usqc', 'usq0', 'concat0c', 'concat0'
+        ]
+        for n in node_list:
+            n_obj = NodeWrap(graph, m[n])['object']
+            if n_obj is None:
+                ERROR(
+                    f'[Parser]: Meets invalid node({m[n]}) in merge_slot_update!')
+                continue
+
+        expand0_in_edges = graph.sorted_in_edges(m['expand0'], data=True)
+        if m['concat0'] in graph._attr['output_names']:
+            continue
+
+        matched_1 = True
+        concat0_in_edges = graph.sorted_in_edges(m['concat0'], data=True)
+        graph.remove_edges_from(expand0_in_edges)
+        graph.remove_edges_from(concat0_in_edges)
+
+        src, _, in_attr = expand0_in_edges[0]
+        new_in_attr = copy.deepcopy(in_attr)
+        new_in_attr['dst_in_port'] = 0
+        graph.add_edge(src, m['concat0'], **new_in_attr)
+
+        NodeWrap(graph, m['concat0']).replace_obj('Temp',
+                                                  {'name': m['concat0'], 'opset_version': 1})
+
+    # phase2 merge SlotUpdate
+
+    matched_2 = False
+    if matched_1:
+        matches = matched_patterns(graph,
+                                   nodes=[
+                                       ('gc0', {'op': 'Constant', 'unique': False}),
+                                       ('g0', {'op': 'Gather'}),
+                                       # 0
+
+                                       ('g00', {'op': 'Gather'}),
+                                       ('slice0', {'op': 'Slice'}),
+                                       ('g01c0', {'op': 'Constant', 'unique': False}),
+                                       ('g01', {'op': 'Gather', 'unique': False}),
+                                       ('add00', {'op': 'Add'}),
+                                       ('t0', {'op': 'Temp', 'unique': False}),
+                                       ('r0', {'op': 'Reshape'}),
+                                       ('scc0', {'op': 'Constant', 'unique': False}),
+                                       ('sc0', {'op': 'ScatterND'}),
+                                       # 1
+
+                                       ('g10', {'op': 'Gather'}),
+                                       ('g11', {'op': 'Gather'}),
+                                       ('g12c0', {'op': 'Constant', 'unique': False}),
+                                       ('g12', {'op': 'Gather'}),
+                                       ('slice1', {'op': 'Slice'}),
+                                       ('add10', {'op': 'Add'}),
+                                       ('t1', {'op': 'Temp', 'unique': False}),
+                                       ('r1', {'op': 'Reshape'}),
+                                       ('sc1', {'op': 'ScatterND'}),
+                                       # 2
+
+                                       ('g20', {'op': 'Gather'}),
+                                       ('g21', {'op': 'Gather'}),
+                                       ('g22c0', {'op': 'Constant', 'unique': False}),
+                                       ('g22', {'op': 'Gather'}),
+                                       ('slice2', {'op': 'Slice'}),
+                                       ('add20', {'op': 'Add'}),
+                                       ('t2', {'op': 'Temp', 'unique': False}),
+                                       ('r2', {'op': 'Reshape'}),
+                                       ('sc2', {'op': 'ScatterND'}),
+                                       # 3
+
+                                       ('g30', {'op': 'Gather'}),
+                                       ('g31', {'op': 'Gather'}),
+                                       ('g32c0', {'op': 'Constant', 'unique': False}),
+                                       ('g32', {'op': 'Gather'}),
+                                       ('slice3', {'op': 'Slice'}),
+                                       ('add30', {'op': 'Add'}),
+                                       ('t3', {'op': 'Temp', 'unique': False}),
+                                       ('r3', {'op': 'Reshape'}),
+                                       ('sc3', {'op': 'ScatterND'}),
+                                       # 4
+
+                                       ('g40', {'op': 'Gather'}),
+                                       ('g41', {'op': 'Gather'}),
+                                       ('g42c0', {'op': 'Constant', 'unique': False}),
+                                       ('g42', {'op': 'Gather'}),
+                                       ('slice4', {'op': 'Slice'}),
+                                       ('add40', {'op': 'Add'}),
+                                       ('t4', {'op': 'Temp', 'unique': False}),
+                                       ('r4', {'op': 'Reshape'}),
+                                       ('sc4', {'op': 'ScatterND'}),
+                                       # 5
+
+                                       ('g50', {'op': 'Gather'}),
+                                       ('g51', {'op': 'Gather'}),
+                                       ('g52c0', {'op': 'Constant', 'unique': False}),
+                                       ('g52', {'op': 'Gather'}),
+                                       ('slice5', {'op': 'Slice'}),
+                                       ('add50', {'op': 'Add'}),
+                                       ('t5', {'op': 'Temp', 'unique': False}),
+                                       ('r5', {'op': 'Reshape'}),
+                                       ('sc5', {'op': 'ScatterND'}),
+                                   ],
+                                   edges=[
+                                       ('gc0', 'g0', {'src_out_port': 0, 'dst_in_port': 1}),
+                                       # 0
+
+                                       ('g0', 'g00', {'src_out_port': 0, 'dst_in_port': 0}),
+                                       ('gc0', 'g00', {'src_out_port': 0, 'dst_in_port': 1}),
+                                       ('g00', 'slice0', {'src_out_port': 0, 'dst_in_port': 0}),
+                                       ('g01c0', 'g01', {'src_out_port': 0, 'dst_in_port': 0}),
+                                       ('g01', 'add00', {'src_out_port': 0, 'dst_in_port': 0}),
+                                       ('slice0', 'add00', {'src_out_port': 0, 'dst_in_port': 1}),
+
+                                       ('add00', 'r0', {'src_out_port': 0, 'dst_in_port': 0}),
+                                       ('scc0', 'sc0', {'src_out_port': 0, 'dst_in_port': 0}),
+                                       ('t0', 'sc0', {'src_out_port': 0, 'dst_in_port': 1}),
+                                       ('r0', 'sc0', {'src_out_port': 0, 'dst_in_port': 2}),
+                                       # 1
+                                       ('sc0', 'g10', {'src_out_port': 0, 'dst_in_port': 0}),
+                                       ('gc0', 'g10', {'src_out_port': 0, 'dst_in_port': 1}),
+                                       ('g10', 'g11', {'src_out_port': 0, 'dst_in_port': 0}),
+                                       ('g0', 'g12', {'src_out_port': 0, 'dst_in_port': 0}),
+                                       ('g12c0', 'g12', {'src_out_port': 0, 'dst_in_port': 1}),
+                                       ('g12', 'slice1', {'src_out_port': 0, 'dst_in_port': 0}),
+                                       ('g11', 'add10', {'src_out_port': 0, 'dst_in_port': 0}),
+                                       ('slice1', 'add10', {'src_out_port': 0, 'dst_in_port': 1}),
+
+                                       ('add10', 'r1', {'src_out_port': 0, 'dst_in_port': 0}),
+                                       ('r1', 'sc1', {'src_out_port': 0, 'dst_in_port': 2}),
+                                       ('t1', 'sc1', {'src_out_port': 0, 'dst_in_port': 1}),
+                                       ('sc0', 'sc1', {'src_out_port': 0, 'dst_in_port': 0}),
+                                       # 2
+                                       ('sc1', 'g20', {'src_out_port': 0, 'dst_in_port': 0}),
+                                       ('gc0', 'g20', {'src_out_port': 0, 'dst_in_port': 1}),
+                                       ('g20', 'g21', {'src_out_port': 0, 'dst_in_port': 0}),
+                                       ('g0', 'g22', {'src_out_port': 0, 'dst_in_port': 0}),
+                                       ('g22c0', 'g22', {'src_out_port': 0, 'dst_in_port': 1}),
+                                       ('g22', 'slice2', {'src_out_port': 0, 'dst_in_port': 0}),
+                                       ('g21', 'add20', {'src_out_port': 0, 'dst_in_port': 0}),
+                                       ('slice2', 'add20', {'src_out_port': 0, 'dst_in_port': 1}),
+
+                                       ('add20', 'r2', {'src_out_port': 0, 'dst_in_port': 0}),
+                                       ('r2', 'sc2', {'src_out_port': 0, 'dst_in_port': 2}),
+                                       ('t2', 'sc2', {'src_out_port': 0, 'dst_in_port': 1}),
+                                       ('sc1', 'sc2', {'src_out_port': 0, 'dst_in_port': 0}),
+                                       # 3
+
+                                       ('sc2', 'g30', {'src_out_port': 0, 'dst_in_port': 0}),
+                                       ('gc0', 'g30', {'src_out_port': 0, 'dst_in_port': 1}),
+                                       ('g30', 'g31', {'src_out_port': 0, 'dst_in_port': 0}),
+                                       ('g0', 'g32', {'src_out_port': 0, 'dst_in_port': 0}),
+                                       ('g32c0', 'g32', {'src_out_port': 0, 'dst_in_port': 1}),
+                                       ('g32', 'slice3', {'src_out_port': 0, 'dst_in_port': 0}),
+                                       ('g31', 'add30', {'src_out_port': 0, 'dst_in_port': 0}),
+                                       ('slice3', 'add30', {'src_out_port': 0, 'dst_in_port': 1}),
+
+                                       ('add30', 'r3', {'src_out_port': 0, 'dst_in_port': 0}),
+                                       ('r3', 'sc3', {'src_out_port': 0, 'dst_in_port': 2}),
+                                       ('t3', 'sc3', {'src_out_port': 0, 'dst_in_port': 1}),
+                                       ('sc2', 'sc3', {'src_out_port': 0, 'dst_in_port': 0}),
+                                       # 4
+
+                                       ('sc3', 'g40', {'src_out_port': 0, 'dst_in_port': 0}),
+                                       ('gc0', 'g40', {'src_out_port': 0, 'dst_in_port': 1}),
+                                       ('g40', 'g41', {'src_out_port': 0, 'dst_in_port': 0}),
+                                       ('g0', 'g42', {'src_out_port': 0, 'dst_in_port': 0}),
+                                       ('g42c0', 'g42', {'src_out_port': 0, 'dst_in_port': 1}),
+                                       ('g42', 'slice4', {'src_out_port': 0, 'dst_in_port': 0}),
+                                       ('g41', 'add40', {'src_out_port': 0, 'dst_in_port': 0}),
+                                       ('slice4', 'add40', {'src_out_port': 0, 'dst_in_port': 1}),
+
+                                       ('add40', 'r4', {'src_out_port': 0, 'dst_in_port': 0}),
+                                       ('r4', 'sc4', {'src_out_port': 0, 'dst_in_port': 2}),
+                                       ('t4', 'sc4', {'src_out_port': 0, 'dst_in_port': 1}),
+                                       ('sc3', 'sc4', {'src_out_port': 0, 'dst_in_port': 0}),
+                                       # 5
+
+                                       ('sc4', 'g50', {'src_out_port': 0, 'dst_in_port': 0}),
+                                       ('gc0', 'g50', {'src_out_port': 0, 'dst_in_port': 1}),
+                                       ('g50', 'g51', {'src_out_port': 0, 'dst_in_port': 0}),
+                                       ('g0', 'g52', {'src_out_port': 0, 'dst_in_port': 0}),
+                                       ('g52c0', 'g52', {'src_out_port': 0, 'dst_in_port': 1}),
+                                       ('g52', 'slice5', {'src_out_port': 0, 'dst_in_port': 0}),
+                                       ('g51', 'add50', {'src_out_port': 0, 'dst_in_port': 0}),
+                                       ('slice5', 'add50', {'src_out_port': 0, 'dst_in_port': 1}),
+
+                                       ('add50', 'r5', {'src_out_port': 0, 'dst_in_port': 0}),
+                                       ('r5', 'sc5', {'src_out_port': 0, 'dst_in_port': 2}),
+                                       ('t5', 'sc5', {'src_out_port': 0, 'dst_in_port': 1}),
+                                       ('sc4', 'sc5', {'src_out_port': 0, 'dst_in_port': 0}),
+                                   ])
+        for m in matches:
+            node_list = [
+                'gc0', 'g0',
+                'g00', 'slice0', 'g01', 'g01c0', 'add00', 't0', 'r0', 'scc0', 'sc0',
+                'g10', 'g11', 'g12c0', 'g12', 'slice1', 'add10', 't1', 'r1', 'sc1',
+                'g20', 'g21', 'g22c0', 'g22', 'slice2', 'add20', 't2', 'r2', 'sc2',
+                'g30', 'g31', 'g32c0', 'g32', 'slice3', 'add30', 't3', 'r3', 'sc3',
+                'g40', 'g41', 'g42c0', 'g42', 'slice4', 'add40', 't4', 'r4', 'sc4',
+                'g50', 'g51', 'g52c0', 'g52', 'slice5', 'add50', 't5', 'r5', 'sc5',
+            ]
+            for n in node_list:
+                n_obj = NodeWrap(graph, m[n])['object']
+                if n_obj is None:
+                    ERROR(
+                        f'[Parser]: Meets invalid node({m[n]}) in merge_slot_update!')
+                    continue
+
+            slice_const_in = True
+            for i in range(6):
+                slice_in_edges = graph.sorted_in_edges(m[f'slice{i}'], data=True)
+                if len(slice_in_edges) < 5:
+                    slice_const_in = False
+                    break
+                for j in range(4):
+                    if not slice_in_edges[j + 1][-1]['tensor'].is_const:
+                        slice_const_in = False
+                        break
+
+            if not slice_const_in:
+                continue
+
+            # check gather indices
+            g00_in_edges = graph.sorted_in_edges(m['g00'], data=True)
+            g12_in_edges = graph.sorted_in_edges(m['g12'], data=True)
+            g22_in_edges = graph.sorted_in_edges(m['g22'], data=True)
+            g32_in_edges = graph.sorted_in_edges(m['g32'], data=True)
+            g42_in_edges = graph.sorted_in_edges(m['g42'], data=True)
+            g52_in_edges = graph.sorted_in_edges(m['g52'], data=True)
+
+            if not (g00_in_edges[1][-1]['tensor'].is_const == True and
+                    np.all(g00_in_edges[1][-1]['tensor'].value == 0)) or \
+                    not (g12_in_edges[1][-1]['tensor'].is_const == True and
+                         np.all(g12_in_edges[1][-1]['tensor'].value == 1)) or \
+                    not (g22_in_edges[1][-1]['tensor'].is_const == True and
+                         np.all(g22_in_edges[1][-1]['tensor'].value == 2)) or \
+                    not (g32_in_edges[1][-1]['tensor'].is_const == True and
+                         np.all(g32_in_edges[1][-1]['tensor'].value == 3)) or \
+                    not (g42_in_edges[1][-1]['tensor'].is_const == True and
+                         np.all(g42_in_edges[1][-1]['tensor'].value == 4)) or \
+                    not (g52_in_edges[1][-1]['tensor'].is_const == True and
+                         np.all(g52_in_edges[1][-1]['tensor'].value == 5)):
+                continue
+
+            if not np.all(NodeWrap(graph, m['g01c0'])['object'].value == 0):
+                continue
+
+            g0_in_edges = graph.sorted_in_edges(m['g0'], data=True)
+            idx0_in_edges = graph.sorted_in_edges(m['t0'], data=True)
+            idx1_in_edges = graph.sorted_in_edges(m['t1'], data=True)
+            idx2_in_edges = graph.sorted_in_edges(m['t2'], data=True)
+            idx3_in_edges = graph.sorted_in_edges(m['t3'], data=True)
+            idx4_in_edges = graph.sorted_in_edges(m['t4'], data=True)
+            idx5_in_edges = graph.sorted_in_edges(m['t5'], data=True)
+            sc5_in_edges = graph.sorted_in_edges(m['sc5'], data=True)
+
+            g01_in_edges = graph.sorted_in_edges(m['g01'], data=True)
+            g11_in_edges = graph.sorted_in_edges(m['g11'], data=True)
+            g21_in_edges = graph.sorted_in_edges(m['g21'], data=True)
+            g31_in_edges = graph.sorted_in_edges(m['g31'], data=True)
+            g41_in_edges = graph.sorted_in_edges(m['g41'], data=True)
+            g51_in_edges = graph.sorted_in_edges(m['g51'], data=True)
+
+            if g01_in_edges[1][0] != idx0_in_edges[0][0] or \
+                    g11_in_edges[1][0] != idx1_in_edges[0][0] or \
+                    g21_in_edges[1][0] != idx2_in_edges[0][0] or \
+                    g31_in_edges[1][0] != idx3_in_edges[0][0] or \
+                    g41_in_edges[1][0] != idx4_in_edges[0][0] or \
+                    g51_in_edges[1][0] != idx5_in_edges[0][0]:
+                continue
+
+            matched_2 = True
+
+            graph.remove_edges_from(g0_in_edges)
+            graph.remove_edges_from(sc5_in_edges)
+
+            src, _, in_attr = g0_in_edges[0]
+            new_in_attr = copy.deepcopy(in_attr)
+            new_in_attr['dst_in_port'] = 0
+            graph.add_edge(src, m['sc5'], **new_in_attr)
+            src, _, in_attr = idx0_in_edges[0]
+            new_in_attr = copy.deepcopy(in_attr)
+            new_in_attr['dst_in_port'] = 1
+            graph.add_edge(src, m['sc5'], **new_in_attr)
+            src, _, in_attr = idx1_in_edges[0]
+            new_in_attr = copy.deepcopy(in_attr)
+            new_in_attr['dst_in_port'] = 2
+            graph.add_edge(src, m['sc5'], **new_in_attr)
+            src, _, in_attr = idx2_in_edges[0]
+            new_in_attr = copy.deepcopy(in_attr)
+            new_in_attr['dst_in_port'] = 3
+            graph.add_edge(src, m['sc5'], **new_in_attr)
+            src, _, in_attr = idx3_in_edges[0]
+            new_in_attr = copy.deepcopy(in_attr)
+            new_in_attr['dst_in_port'] = 4
+            graph.add_edge(src, m['sc5'], **new_in_attr)
+            src, _, in_attr = idx4_in_edges[0]
+            new_in_attr = copy.deepcopy(in_attr)
+            new_in_attr['dst_in_port'] = 5
+            graph.add_edge(src, m['sc5'], **new_in_attr)
+            src, _, in_attr = idx5_in_edges[0]
+            new_in_attr = copy.deepcopy(in_attr)
+            new_in_attr['dst_in_port'] = 6
+            graph.add_edge(src, m['sc5'], **new_in_attr)
+
+            NodeWrap(graph, m['sc5']).replace_obj('SlotUpdate',
+                                                  {'name': m['sc5'], 'opset_version': 1})
+    if matched_1 and not matched_2:
+        if ori_graph is not None:
+            graph = ori_graph
+            WARN(
+                '[Parser]: Meets matched TempOp but not be merged in merge_slot_update!')
+        else:
+            ERROR('[Parser]: Meet invalid copied graph in merge_slot_update!')
+
+    if matched_1 and matched_2:
+        clear_redundant_nodes(graph)
+
+
 def merge_q_ln(graph):
     matched = False
     matches = matched_patterns(graph,
@@ -9196,6 +9731,7 @@ def rearrange_fc_reshape_bn(graph):
 def fuse_special_fc_reshape_transpose_div(graph):
     if graph._attr.get('quantize', False):
         return
+    matched = False
     matches = matched_patterns(graph,
                                nodes=[
                                    ('fc', {'op': 'FullyConnected'}),
@@ -9243,6 +9779,7 @@ def fuse_special_fc_reshape_transpose_div(graph):
                 len(trans_out_edges) != 1 or \
                 len(reshape1_out_edges) != 1:
             continue
+        matched = True
         div_value = np.array(const_value.min(), dtype=const_value.dtype)
         new_weights = fc_obj.weights / div_value
         new_biases = fc_obj.biases / div_value
@@ -9258,6 +9795,8 @@ def fuse_special_fc_reshape_transpose_div(graph):
         if div in graph._attr['output_names']:
             index = graph._attr['output_names'].index(div)
             graph._attr['output_names'][index] = reshape1
+    if matched:
+        clear_redundant_nodes(graph)
 
 
 def rearrange_matmul_reshape_bias(graph):
@@ -11275,6 +11814,9 @@ def middle_passes(graph, params):
 
     fuse_const(graph)
     merge_same_op_at_out_port(graph, ['Cast'])
+
+    merge_query_rebatch(graph)
+    merge_slot_update(graph)
 
     merge_q_ln(graph)
     merge_q_gelu(graph)

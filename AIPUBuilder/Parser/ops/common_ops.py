@@ -1126,6 +1126,15 @@ class SwishOp(OpHasOneOutPort, CommonOp):
         self.set_out_tensor(out_tensor)
 
 
+class TempOp(LayoutUnawareOp, CommonOp):
+    '''
+    This OP is just used for pettern match and won't appear in the final graph.
+    '''
+
+    def infer_shape(self, input_tensor=None):
+        super(TempOp, self).infer_shape()
+
+
 class TruncOp(LayoutUnawareOp, OpHasOneOutPort, CommonOp):
     def __init__(self, graph, attr_dict=None):
         super(TruncOp, self).__init__(graph, attr_dict)

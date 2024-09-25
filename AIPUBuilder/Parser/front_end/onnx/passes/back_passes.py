@@ -5754,6 +5754,7 @@ def back_passes(graph, params):
     simple_rename(graph, 'Sign', 'ArmSign')
     simple_rename(graph, 'Sin', 'ArmSine')
     simple_rename(graph, 'Sinh', 'ArmSinh')
+    simple_rename(graph, 'SlotUpdate', 'ArmSlotUpdate')
     simple_rename(graph, 'Softmax', 'ArmSoftmax')
     simple_rename(graph, 'SpaceToDepth', 'ArmSpaceToDepth')
     simple_rename(graph, 'SufficientStatistics', 'ArmSufficientStatistics')

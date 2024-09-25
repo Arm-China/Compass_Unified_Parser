@@ -246,9 +246,6 @@ class ReadOnlyGraph(object):
 
 
 class SubGraph(Graph):
-    def __deepcopy__(self, memodict={}):
-        return self
-
     def __init__(self, **attr):
         super(SubGraph, self).__init__(**attr)
         self._root = None
