@@ -1118,7 +1118,11 @@ class SwishOp(OpHasOneOutPort, CommonOp):
     def infer_shape(self):
         super(SwishOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = (inputs[0]) * tf.sigmoid(self.alpha * inputs[0]).numpy()
+        input_dtype = str(inputs[0].dtype)
+        inp = inputs[0].astype(np.float32) if input_dtype != 'float32' else inputs[0]
+        out_tensor = inp * tf.sigmoid(self.alpha * inp).numpy()
+        if input_dtype != 'float32':
+            out_tensor = out_tensor.astype(input_dtype)
         self.set_out_tensor(out_tensor)
 
 
