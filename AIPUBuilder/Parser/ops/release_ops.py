@@ -927,6 +927,8 @@ class ArmConcatOp(OpHasAxis, OpHasOneOutPort, ArmOp):
 
         out_tensor = np.concatenate(inputs, self.axis)
         in_type_list = [inp.dtype for inp in inputs]
+        if len(set(in_type_list)) != 1:
+            ERROR(f'[Parser]: different input dtype in ArmConcatOp({self.name})!')
         if in_type_list.count(in_type_list[0]) == len(in_type_list):
             dtype = in_type_list[0]
         elif np.float32 in in_type_list:

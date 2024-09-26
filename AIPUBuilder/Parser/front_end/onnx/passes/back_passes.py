@@ -3031,8 +3031,11 @@ def rename_roialign(graph):
                 and len(input_shapes[2]) == 1:
             # concat
             concat = get_valid_node_name(graph, node_name + '_concat')
+            roi_dtype = None
             for index in [1, 2]:
                 src, dst, attr = in_edges[index]
+                if index == 1:
+                    roi_dtype = attr['tensor'].dtype
                 graph.remove_edge(src, dst)
                 attr['dst_in_port'] = 1 if index == 1 else 0
                 graph.add_edge(src, concat, **attr)
@@ -3040,13 +3043,17 @@ def rename_roialign(graph):
             concat_attr.update({'name': concat, 'axis': 1})
             NodeWrap(graph, concat).replace_obj('ArmConcat', concat_attr)
 
+            if in_edges[2][-1]['tensor'].dtype != roi_dtype:
+                insert_cast(graph, in_edges[2][0], concat, roi_dtype,
+                            in_attr=in_edges[2][-1], type='ArmCast')
+
             # gather, reshape
             indices = np.array([1, 0, 3, 2], np.int32)
             roi_inp, _, roi_attr = in_edges[1]
             insert_gather(graph, roi_inp, concat, indices,
                           axis=1, edge_attr=roi_attr)
 
-            index_inp, _, index_attr = in_edges[2]
+            index_inp, _, index_attr = graph.sorted_in_edges(concat, data=True)[0]
             reshape_dim = list(input_shapes[2]) + [1]
             insert_reshape(graph, index_inp, concat, index_attr,
                            reshape_dim, type='ArmReshape',
