@@ -822,7 +822,7 @@ class LiteDEQUANTIZEOp(OpHasOneOutPort, TfliteOp):
         self.set_out_tensor(out_tensor)
 
 
-class LiteDIVOp(BaseActivationOp, TfliteOp):
+class LiteDIVOp(BaseActivationOp, OpHasDivisor, TfliteOp):
     @classmethod
     def attributes(cls):
         return {1: {}, 2: {}, 3: {}}
@@ -968,7 +968,7 @@ class LiteFLOOROp(OpHasOneOutPort, TfliteOp):
         return {'type': 'Floor', 'version': 13}
 
 
-class LiteFLOOR_DIVOp(OpHasOneOutPort, TfliteOp):
+class LiteFLOOR_DIVOp(OpHasOneOutPort, OpHasDivisor, TfliteOp):
     @classmethod
     def attributes(cls):
         return {1: {}, 2: {}}

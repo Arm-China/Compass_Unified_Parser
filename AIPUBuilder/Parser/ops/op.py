@@ -1532,6 +1532,28 @@ class OpHasBiases(Op):
         return ret
 
 
+class OpHasDivisor(Op):
+    '''
+    Class OpHasDivisor inherited from OP.
+    Some OPs with divisor maybe caused Divide By Zero Error, can inherit from this class to avoid this error.
+    '''
+
+    def get_input_tensors(self):
+        '''Get input tensor of the node.'''
+        try:
+            inp_tensors = []
+            for i, (_, _, d) in enumerate(self._graph.sorted_in_edges(self.name, data=True)):
+                if i == 1 and not d['tensor'].is_const and \
+                        d['tensor'] is not None and np.all(d['tensor'].value == 0):
+                    tensor_shape = d['tensor'].shape
+                    d['tensor'].value = np.ones(tensor_shape, dtype=d['tensor'].dtype)
+                inp_tensors.append(d['tensor'].value if d['tensor'] is not None else None)
+            return inp_tensors
+        except Exception as e:
+            ERROR('[Parser]: An exception occurred with get_input_tensors. Node(%s) %s' % (
+                self.name, str(e)))
+
+
 class OpHasAnchors(Op):
     '''
     Class OpHasAnchors inherited from OP.

@@ -1810,7 +1810,7 @@ class ArmDetectionOutputOp(OpHasMultipleOutPorts, ArmOp):
         return ret
 
 
-class ArmDivOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
+class ArmDivOp(LayoutUnawareOp, OpHasDivisor, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
         return {0: ['float32', 'float16', 'int8', 'uint8'], 1: ['float32', 'float16', 'int8', 'uint8']}
@@ -1826,7 +1826,7 @@ class ArmDivOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
         self.set_out_tensor(out_tensors)
 
 
-class ArmDivModOp(LayoutUnawareOp, OpHasMultipleOutPorts, ArmOp):
+class ArmDivModOp(LayoutUnawareOp, OpHasDivisor, OpHasMultipleOutPorts, ArmOp):
     @classmethod
     def cast_in_ports(cls):
         return {0: ['int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32'],

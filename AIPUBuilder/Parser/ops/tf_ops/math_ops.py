@@ -533,7 +533,7 @@ class TfCoshOp(LayoutUnawareOp, OpHasOneOutPort, TfOp):
         return {'type': 'Cosh', 'version': 9}
 
 
-class TfDivOp(OpHasOneOutPort, TfOp):
+class TfDivOp(OpHasOneOutPort, OpHasDivisor, TfOp):
     def infer_shape(self):
         super(TfDivOp, self).infer_shape()
         inputs = self.get_input_tensors()
@@ -545,7 +545,7 @@ class TfDivOp(OpHasOneOutPort, TfOp):
         return {'type': 'Div', 'version': 13}
 
 
-class TfDivNoNanOp(OpHasOneOutPort, TfOp):
+class TfDivNoNanOp(OpHasOneOutPort, OpHasDivisor, TfOp):
     def infer_shape(self):
         super(TfDivNoNanOp, self).infer_shape()
         inputs = self.get_input_tensors()
@@ -601,7 +601,7 @@ class TfFloorOp(OpHasOneOutPort, TfOp):
         return {'type': 'Floor', 'version': 13}
 
 
-class TfFloorDivOp(OpHasOneOutPort, TfOp):
+class TfFloorDivOp(OpHasOneOutPort, OpHasDivisor, TfOp):
     def infer_shape(self):
         super(TfFloorDivOp, self).infer_shape()
         inputs = self.get_input_tensors()
@@ -609,7 +609,7 @@ class TfFloorDivOp(OpHasOneOutPort, TfOp):
         self.set_out_tensor(out_tensor)
 
 
-class TfFloorModOp(OpHasOneOutPort, TfOp):
+class TfFloorModOp(OpHasOneOutPort, OpHasDivisor, TfOp):
     def infer_shape(self):
         super(TfFloorModOp, self).infer_shape()
         inputs = self.get_input_tensors()
@@ -1077,7 +1077,7 @@ class TfRangeOp(OpHasOneOutPort, TfOp):
         self.set_out_tensor(out_tensor)
 
 
-class TfRealDivOp(OpHasOneOutPort, TfOp):
+class TfRealDivOp(OpHasOneOutPort, OpHasDivisor, TfOp):
     def infer_shape(self):
         super(TfRealDivOp, self).infer_shape()
         inputs = self.get_input_tensors()

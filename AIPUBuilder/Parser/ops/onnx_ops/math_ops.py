@@ -465,7 +465,7 @@ class CumSumOp(OpHasOneOutPort, OpHasAxis, OnnxOp):
         self.set_out_tensor(out_tensor)
 
 
-class DivOp(OpNeedBroadcast, OpHasOneOutPort, OnnxOp):
+class DivOp(OpNeedBroadcast, OpHasDivisor, OpHasOneOutPort, OnnxOp):
     @classmethod
     def attributes(cls):
         return {1: {'axis': {'type': AttrType.INT},

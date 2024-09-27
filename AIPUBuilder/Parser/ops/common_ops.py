@@ -273,7 +273,7 @@ class DilationOp(OpHasPaddingStrides, OpHasWeights, OpHasOneOutPort, LayoutConce
         self.set_out_tensor(out_tensor)
 
 
-class DivModOp(OpNeedBroadcast, LayoutUnawareOp, OpHasMultipleOutPorts, CommonOp):
+class DivModOp(OpNeedBroadcast, LayoutUnawareOp, OpHasDivisor, OpHasMultipleOutPorts, CommonOp):
     @classmethod
     def attributes(cls):
         return {'mode': {'type': AttrType.STRING, 'default': 'floor', 'options': ['trunc', 'floor']}}
