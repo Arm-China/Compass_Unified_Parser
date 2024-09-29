@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
-
-
+import numpy as np
 import torch
 import tensorflow as tf
 from itertools import product
@@ -321,7 +320,15 @@ class ConvOp(BaseConvOp, OnnxOp):
             self.kernel_shape = list(w.shape[2:])
 
         if self.biases is None and self.weights is not None and len(inputs) < 3:
-            self.biases = np.zeros(self.num_output, np.float32)
+            if self.quantize and np.issubdtype(self.weights.dtype, np.integer):
+                self.biases = np.zeros(self.num_output, np.int32)
+                w_scale = self.weights_scale_zp[0]
+                inp_node_name = self._graph.sorted_in_edges(self.name)[0][0]
+                inp_scale = self._graph.nodes[inp_node_name]['object'].x_scale
+                bias_scale = inp_scale * w_scale
+                self.biases_scale_zp = [bias_scale, np.zeros(bias_scale.shape, dtype=np.int32)]
+            else:
+                self.biases = np.zeros(self.num_output, np.float32)
 
         if self.data_format == 'NHWC':
             # from ..release_ops import ArmDepthwiseConvOp
