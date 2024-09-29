@@ -1735,8 +1735,8 @@ def convert_torch_to_onnx(model_path, params):
             if check:
                 os.remove(onnx_model_path)
                 onnx.save(sim_model, onnx_model_path)
-        except ImportError:
-            WARN('[Parser]: Skip simplify onnx because no onnxsim found!')
+        except:
+            WARN('[Parser]: Skip simplify onnx because error during onnxsim!')
         return
 
     def _flatten_type(torch_type):
