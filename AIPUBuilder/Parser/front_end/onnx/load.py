@@ -771,7 +771,7 @@ def convert_onnx_to_graph(graph, model_path, params):
                     if len(NodeWrap(graph, node_name)['object'].subgraphs) > 0:
                         att_dict = {
                             'name': out_node_name,
-                            'subgraphs': copy.deepcopy(NodeWrap(graph, node_name)['object'].subgraphs)
+                            'subgraphs': NodeWrap(graph, node_name)['object'].subgraphs
                         }
                     else:
                         att_dict = {

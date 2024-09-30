@@ -252,17 +252,6 @@ class Op(abc.ABC):
             except:
                 self.__dict__['_attr'][key] = value
 
-    def __deepcopy__(self, memodict={}):
-        cls = self.__class__
-        result = cls.__new__(cls)
-        memodict[id(self)] = result
-        for k, v in self.__dict__.items():
-            if k == '_attr':
-                setattr(result, k, self.copied_attr())
-            else:
-                setattr(result, k, copy.deepcopy(v, memodict))
-        return result
-
     def update_attributes(self, cls, attr_dict):
         '''update attributes of OP object.'''
         supported_ops = (OnnxOp, TfliteOp, CaffeOp, TfOp)
