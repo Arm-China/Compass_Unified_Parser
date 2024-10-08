@@ -5,7 +5,7 @@ from .load import convert_onnx_to_graph
 from ...graph.graph_algo import infer
 from .passes.front_passes import fuse_weights_const, convert_special_prelu, merge_qconv, merge_qmatmul, \
     merge_q_multiple, merge_q_unary, convert_special_sequence_construct, merge_sequence_construct_and_at, \
-    merge_sequence_construct_and_concat, decompose_loop, merge_rcnn, convert_mmcv_deform_conv, \
+    merge_sequence_construct_and_concat, merge_rcnn, convert_mmcv_deform_conv, \
     merge_qgemm, uplift_quant, uplift_quant_through_concat
 from .passes.common_passes import remove_useless_op, apply_subgraph_plugin, record_output_tensors, \
     merge_same_op_at_out_port
@@ -30,7 +30,7 @@ def process_onnx(graph, model_path, params):
         uplift_quant(graph)
         merge_qconv(graph)
         merge_qmatmul(graph)
-        merge_q_multiple(graph, ['Add', 'Concat', 'Gemm', 'Mul', 'Split'])
+        merge_q_multiple(graph, ['Add', 'Concat', 'Gemm', 'Mul', 'Split', 'Gather'])
         merge_q_unary(graph, ['AdaptivePool', 'AveragePool', 'Celu', 'Clip', 'Elu', 'Expand', 'Flatten',
                               'GlobalAveragePool', 'GlobalMaxPool',
                               'HardSwish', 'HardSigmoid', 'LeakyRelu', 'LRN', 'MaxPool',

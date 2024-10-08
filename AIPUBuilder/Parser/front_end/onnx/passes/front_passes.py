@@ -1008,7 +1008,7 @@ def merge_q_multiple(graph, op_list):
         # For some ops, need special treatment. For example, the second input of Split
         # could be split(length of each output), and should not check DequantizeLinear
         # op for it.
-        if obj_dict[float_op].type == 'Split':
+        if obj_dict[float_op].type in ['Split', 'Gather']:
             op_in_names = op_in_names[:1]
 
         if any(obj_dict[n].type != 'DequantizeLinear' for n in op_in_names):
