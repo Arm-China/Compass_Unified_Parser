@@ -5976,6 +5976,13 @@ def merge_query_rebatch(graph):
         if not expand_reshape_const_in:
             continue
 
+        sc0_input_shapes = NodeWrap(graph, m['sc0'])['object'].get_input_shapes()
+        g00_input_shapes = NodeWrap(graph, m['g00'])['object'].get_input_shapes()
+
+        max_len = sc0_input_shapes[0][2]
+        if max_len != g00_input_shapes[0][1]:
+            continue
+
         matched = True
         query_in_edges = graph.sorted_in_edges(m['g00'], data=True)
         idx0_in_edges = graph.sorted_in_edges(m['g0'], data=True)
