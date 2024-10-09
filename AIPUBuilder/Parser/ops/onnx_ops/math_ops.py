@@ -1148,7 +1148,7 @@ class NegOp(LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
         self.set_out_tensor(out_tensor)
 
 
-class NonZeroOp(LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
+class NonZeroOp(LayoutUnawareOp, DynamicShapeOp, OpHasOneOutPort, OnnxOp):
     @classmethod
     def attributes(cls):
         return {9: {},
@@ -1165,7 +1165,6 @@ class NonZeroOp(LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
         if self.is_all_inputs_const():
             inp = inputs[0]
         else:
-            WARN('[Parser]: Meets unsupported non-const input of NonZero Op (%s) in infer_shape!' % self.name)
             inp = np.ones_like(inputs[0])
         out_tensor = np.array(np.nonzero(inp), dtype=np.int64)
         self.set_out_tensor(out_tensor)

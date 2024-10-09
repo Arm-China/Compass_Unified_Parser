@@ -3247,6 +3247,22 @@ class ArmMVNOp(OpHasOneOutPort, OpHasAxis, ArmOp):
         return ret
 
 
+class ArmNonZeroOp(OpHasMultipleOutPorts, DynamicShapeOp, ArmOp):
+    def __init__(self, graph, attr_dict=None):
+        super(ArmNonZeroOp, self).__init__(graph, attr_dict)
+        self.update_attributes(ArmNonZeroOp, attr_dict)
+        assert self.check_required(), 'ArmNonZeroOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(ArmNonZeroOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        inp = np.ones_like(inputs[0])
+        out_tensor = np.array(np.nonzero(inp), dtype=np.int32)
+        count = int(np.prod(inp.shape))
+        valid_count = np.random.randint(0, high=count + 1, size=(1,), dtype=np.uint32)
+        self.set_out_tensor([out_tensor, valid_count])
+
+
 class ArmNormalizedMomentsOp(OpHasMultipleOutPorts, ArmOp):
     @classmethod
     def num_in_ports(cls):

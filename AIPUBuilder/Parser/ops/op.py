@@ -1073,6 +1073,14 @@ class OpHasAxis(Op):
         return ret
 
 
+class DynamicShapeOp(Op):
+    '''
+    Class DynamicShapeOp inherited from OP.
+    Some ops with dynamic output shape must inherit from this class.
+    '''
+    pass
+
+
 class LayoutConcernedOp(Op):
     '''
     Class LayoutConcernedOp inherited from OP.

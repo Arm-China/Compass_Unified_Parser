@@ -876,15 +876,17 @@ class QueryRebatchOp(OpHasOneOutPort, CommonOp):
         cam_num = len(inputs) - 1
         out_shape = list(inputs[0].shape[:])
         out_shape.insert(1, cam_num)
-        out_tensor = np.random.ranf(out_shape).astype(inputs[0].dtype)
-        # batch = inputs[0].shape[0]
-        # query = torch.from_numpy(inputs[0])
-        # query_rebatch = torch.zeros(out_shape)
-        # for j in range(batch):
-        #     for i in range(cam_num):
-        #         index_query_per_img = torch.from_numpy(inputs[i + 1])
-        #         query_rebatch[j, i, :len(index_query_per_img)] = query[j, index_query_per_img]
-        # out_tensor = query_rebatch.numpy().astype(inputs[0].dtype)
+        if self.is_all_inputs_const():
+            batch = inputs[0].shape[0]
+            query = torch.from_numpy(inputs[0])
+            query_rebatch = torch.zeros(out_shape)
+            for j in range(batch):
+                for i in range(cam_num):
+                    index_query_per_img = torch.from_numpy(inputs[i + 1])
+                    query_rebatch[j, i, :len(index_query_per_img)] = query[j, index_query_per_img]
+            out_tensor = query_rebatch.numpy().astype(inputs[0].dtype)
+        else:
+            out_tensor = np.random.ranf(out_shape).astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
 
@@ -1078,14 +1080,16 @@ class SlotUpdateOp(OpHasOneOutPort, CommonOp):
         assert cam_num == inputs[0].shape[1]
         out_shape = list(inputs[0].shape[:])
         out_shape.pop(1)
-        out_tensor = np.random.ranf(out_shape).astype(inputs[0].dtype)
-        # batch = inputs[0].shape[0]
-        # queries = torch.from_numpy(inputs[0])
-        # slots = torch.zeros_like(queries)
-        # for j in range(batch):
-        #     for i, index_query_per_img in enumerate(inputs[1:]):
-        #         slots[j, torch.from_numpy(index_query_per_img)] += queries[j, i, :len(index_query_per_img)]
-        # out_tensor = slots.numpy()
+        if self.is_all_inputs_const():
+            batch = inputs[0].shape[0]
+            queries = torch.from_numpy(inputs[0])
+            slots = torch.zeros_like(queries)
+            for j in range(batch):
+                for i, index_query_per_img in enumerate(inputs[1:]):
+                    slots[j, torch.from_numpy(index_query_per_img)] += queries[j, i, :len(index_query_per_img)]
+            out_tensor = slots.numpy().astype(inputs[0].dtype)
+        else:
+            out_tensor = np.random.ranf(out_shape).astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
 
