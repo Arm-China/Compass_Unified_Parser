@@ -5700,71 +5700,22 @@ def back_passes(graph, params):
     rename_topk(graph)
     rename_where(graph)
 
-    simple_rename(graph, 'Abs', 'ArmAbs')
-    simple_rename(graph, 'AccidentalHits', 'ArmAccidentalHits')
-    simple_rename(graph, 'Acos', 'ArmAcos')
-    simple_rename(graph, 'Acosh', 'ArmAcosh')
-    simple_rename(graph, 'AdaptivePool', 'ArmAdaptivePool')
-    simple_rename(graph, 'AffineGrid', 'ArmAffineGrid')
-    simple_rename(graph, 'Asin', 'ArmAsin')
-    simple_rename(graph, 'Asinh', 'ArmAsinh')
-    simple_rename(graph, 'Atan', 'ArmAtan')
-    simple_rename(graph, 'Atanh', 'ArmAtanh')
-    simple_rename(graph, 'BatchGather', 'ArmGather')
-    simple_rename(graph, 'BitShift', 'ArmBitShift')
-    simple_rename(graph, 'BNLL', 'ArmBNLL')
-    simple_rename(graph, 'Ceil', 'ArmCeil')
-    simple_rename(graph, 'ChannelShuffle', 'ArmChannelShuffle')
-    simple_rename(graph, 'Concat', 'ArmConcat')
-    simple_rename(graph, 'Cos', 'ArmCosine')
-    simple_rename(graph, 'Cosh', 'ArmCosh')
-    simple_rename(graph, 'CropAndResize', 'ArmCropAndResize')
-    simple_rename(graph, 'CTCGreedyDecoder', 'ArmCTCGreedyDecoder')
-    simple_rename(graph, 'DepthToSpace', 'ArmDepthToSpace')
-    simple_rename(graph, 'DivMod', 'ArmDivMod')
-    simple_rename(graph, 'Erf', 'ArmErf')
-    simple_rename(graph, 'Exp', 'ArmExp')
-    simple_rename(graph, 'Filter', 'ArmFilter')
-    simple_rename(graph, 'Floor', 'ArmFloor')
-    simple_rename(graph, 'FractionalPool', 'ArmFractionalPool')
-    simple_rename(graph, 'FullyConnected', 'ArmFullyConnected')
-    simple_rename(graph, 'Gather', 'ArmGather')
-    simple_rename(graph, 'GatherND', 'ArmGatherND')
-    simple_rename(graph, 'GatherElements', 'ArmGatherElements')
-    simple_rename(graph, 'Input', 'ArmInput')
-    simple_rename(graph, 'InstanceNormalization', 'ArmInstanceNorm')
-    simple_rename(graph, 'InTopK', 'ArmInTopK')
-    simple_rename(graph, 'Log', 'ArmLog')
-    simple_rename(graph, 'LogSoftmax', 'ArmLogSoftmax')
-    simple_rename(graph, 'LRN', 'ArmLRN')
-    simple_rename(graph, 'MatMul', 'ArmMatMul')
-    simple_rename(graph, 'MeanVarianceNormalization', 'ArmMVN')
-    simple_rename(graph, 'Meshgrid', 'ArmMeshgrid')
-    simple_rename(graph, 'Mod', 'ArmMod')
-    simple_rename(graph, 'Neg', 'ArmNegative')
-    simple_rename(graph, 'NonZero', 'ArmNonZero')
-    simple_rename(graph, 'NormalizedMoments', 'ArmNormalizedMoments')
-    simple_rename(graph, 'OverlapAdd', 'ArmOverlapAdd')
-    simple_rename(graph, 'Pow', 'ArmPow')
-    simple_rename(graph, 'QueryRebatch', 'ArmQueryRebatch')
-    simple_rename(graph, 'Reciprocal', 'ArmReciprocal')
-    simple_rename(graph, 'Repeat', 'ArmRepeat')
-    simple_rename(graph, 'ReverseSequence', 'ArmReverseSequence')
-    simple_rename(graph, 'Round', 'ArmRound')
-    simple_rename(graph, 'SegmentReduce', 'ArmSegmentReduce')
-    simple_rename(graph, 'Sign', 'ArmSign')
-    simple_rename(graph, 'Sin', 'ArmSine')
-    simple_rename(graph, 'Sinh', 'ArmSinh')
-    simple_rename(graph, 'SlotUpdate', 'ArmSlotUpdate')
-    simple_rename(graph, 'Softmax', 'ArmSoftmax')
-    simple_rename(graph, 'SpaceToDepth', 'ArmSpaceToDepth')
-    simple_rename(graph, 'SufficientStatistics', 'ArmSufficientStatistics')
-    simple_rename(graph, 'Split', 'ArmSplit')
-    simple_rename(graph, 'Sqrt', 'ArmSqrt')
-    simple_rename(graph, 'Tan', 'ArmTan')
-    simple_rename(graph, 'Transpose', 'ArmTranspose')
-    simple_rename(graph, 'Trunc', 'ArmTrunc')
-    simple_rename(graph, 'ZeroFraction', 'ArmZeroFraction')
+    simple_rename_list = [
+        'Abs', 'AccidentalHits', 'Acos', 'Acosh', 'AdaptivePool', 'AffineGrid', 'Asin',
+        'Asinh', 'Atan', 'Atanh', {'BatchGather': 'ArmGather'}, 'BitShift', 'BNLL',
+        'Ceil', 'ChannelShuffle', 'Concat', {'Cos': 'ArmCosine'}, 'Cosh', 'CropAndResize',
+        'CTCGreedyDecoder', 'DepthToSpace', 'DivMod', 'Erf', 'Exp', 'Filter', 'Floor',
+        'FractionalPool', 'FullyConnected', 'Gather', 'GatherND', 'GatherElements', 'Input',
+        {'InstanceNormalization': 'ArmInstanceNorm'}, 'InTopK', 'Log', 'LogSoftmax', 'LRN',
+        'MatMul', {'MeanVarianceNormalization': 'ArmMVN'}, 'Meshgrid', 'Mod', {'Neg': 'ArmNegative'},
+        'NonZero', 'NormalizedMoments', 'OverlapAdd', 'Pow', 'QueryRebatch', 'Reciprocal', 'Repeat',
+        'ReverseSequence', 'Round', 'SegmentReduce', 'Sign', {'Sin': 'ArmSine'}, 'Sinh', 'SlotUpdate',
+        'Softmax', 'SpaceToDepth', 'SufficientStatistics', 'Split', 'Sqrt', 'Tan', 'Transpose',
+        'Trunc', 'ZeroFraction'
+    ]
+
+    for op in simple_rename_list:
+        simple_rename(graph, op)
 
     fuse_relu(graph)
     rename_activations(graph)

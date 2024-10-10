@@ -47,7 +47,6 @@ def process_onnx(graph, model_path, params):
         merge_sequence_construct_and_at(graph)
         convert_special_sequence_construct(graph)
         merge_sequence_construct_and_concat(graph)
-        # decompose_loop(graph, params)
         infer(graph)
 
         merge_qgemm(graph)
