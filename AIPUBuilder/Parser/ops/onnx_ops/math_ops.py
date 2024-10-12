@@ -1221,7 +1221,7 @@ class PowOp(OpNeedBroadcast, OpHasAxis, OpHasOneOutPort, OnnxOp):
         return ret
 
 
-class ReciprocalOp(OpHasOneOutPort, OnnxOp):
+class ReciprocalOp(OpHasOneOutPort, OpHasNonZeroInput, OnnxOp):
     @classmethod
     def attributes(cls):
         return {1: {'consumed_inputs': {'type': AttrType.INTS}},
@@ -2506,7 +2506,7 @@ class SoftsignOp(LayoutUnawareOp, BaseActivationOp, OnnxOp):
         self.set_out_tensor(out_tensor.numpy())
 
 
-class SqrtOp(LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
+class SqrtOp(LayoutUnawareOp, OpHasOneOutPort, OpHasNonZeroInput, OnnxOp):
     @classmethod
     def attributes(cls):
         return {1: {'consumed_inputs': {'type': AttrType.INTS}},

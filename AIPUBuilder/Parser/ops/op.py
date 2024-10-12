@@ -1004,6 +1004,23 @@ class OpHasAxis(Op):
             np_axes[negative_axes] += len_shape
         return np_axes.tolist()
 
+    @staticmethod
+    def gen_continuous_axes_perm(axes, input_len):
+        '''Return perm & expected continuous_axes, with this perm in transpose, we can make axes continuously'''
+        axes.sort()
+        axes_len = len(axes)
+        expected_axes = sorted(list(range(input_len - 1, input_len - 1 - axes_len, -1)))
+        perm = list(range(input_len))
+        for i in range(axes_len):
+            perm[expected_axes[i]] = axes[i]
+        diff_axes = list(set(list(range(input_len))).difference(set(perm)))
+        for i in range(input_len):
+            if i not in expected_axes:
+                if perm[i] in axes:
+                    perm[i] = diff_axes[0]
+                    diff_axes.pop(0)
+        return perm, expected_axes
+
     def __init__(self, graph, attr_dict=None):
         super(OpHasAxis, self).__init__(graph, attr_dict)
         self.update_attributes(OpHasAxis, attr_dict)
@@ -1541,6 +1558,28 @@ class OpHasDivisor(Op):
             inp_tensors = []
             for i, (_, _, d) in enumerate(self._graph.sorted_in_edges(self.name, data=True)):
                 if i == 1 and not d['tensor'].is_const and \
+                        d['tensor'] is not None and np.all(d['tensor'].value == 0):
+                    tensor_shape = d['tensor'].shape
+                    d['tensor'].value = np.ones(tensor_shape, dtype=d['tensor'].dtype)
+                inp_tensors.append(d['tensor'].value if d['tensor'] is not None else None)
+            return inp_tensors
+        except Exception as e:
+            ERROR('[Parser]: An exception occurred with get_input_tensors. Node(%s) %s' % (
+                self.name, str(e)))
+
+
+class OpHasNonZeroInput(Op):
+    '''
+    Class OpHasNonZeroInput inherited from OP.
+    Some OP's input cannot be all zeros , can inherit from this class to avoid error/warning.
+    '''
+
+    def get_input_tensors(self):
+        '''Get input tensor of the node.'''
+        try:
+            inp_tensors = []
+            for i, (_, _, d) in enumerate(self._graph.sorted_in_edges(self.name, data=True)):
+                if i == 0 and not d['tensor'].is_const and \
                         d['tensor'] is not None and np.all(d['tensor'].value == 0):
                     tensor_shape = d['tensor'].shape
                     d['tensor'].value = np.ones(tensor_shape, dtype=d['tensor'].dtype)
@@ -2347,16 +2386,16 @@ class OpNeedBroadcast(Op):
                         else list(range(dim_diff, -1, -1))
                     offset = -1
                     for o in range_list:
-                        if all([sd == max_d for sd, max_d in zip(s, max_dims[o:])]):
+                        if all([max_d % sd == 0 for sd, max_d in zip(s, max_dims[o:])]):
                             offset = o
                             break
-                        if all([sd == max_d or sd == 1 for sd, max_d in zip(s, max_dims[o:])]):
+                        if all([max_d % sd == 0 or sd == 1 for sd, max_d in zip(s, max_dims[o:])]):
                             offset = o
                             break
                         if all([sd == 1 or max_d == 1 for sd, max_d in zip(s, max_dims[o:])]):
                             offset = o
                             break
-                        if all([sd == max_d or sd == 1 or max_d == 1 for sd, max_d in zip(s, max_dims[o:])]):
+                        if all([max_d % sd == 0 or sd == 1 or max_d == 1 for sd, max_d in zip(s, max_dims[o:])]):
                             offset = o
                             break
                     if offset == -1:

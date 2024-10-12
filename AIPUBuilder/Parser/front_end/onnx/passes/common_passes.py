@@ -263,7 +263,7 @@ def remove_useless_op(graph, op_type_list):
                             graph._attr['output_names'][index] = in_edges[0][0]
                         else:
                             graph._attr['output_names'].pop(index)
-            elif op_type in ('Reshape', 'ArmReshape'):
+            elif op_type in ('Reshape', 'ArmReshape', 'LiteRESHAPE'):
                 reshape_in_edges = graph.sorted_in_edges(node_name, data=True)
                 src_name = reshape_in_edges[0][0]
                 src_node_obj = NodeWrap(graph, src_name)['object']

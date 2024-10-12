@@ -4271,13 +4271,14 @@ class ArmRMSNormOp(OpHasAxis, OpHasWeights, OpHasOneOutPort, ArmOp):
     def infer_shape(self):
         super(ArmRMSNormOp, self).infer_shape()
         inputs = self.get_input_tensors()
+        input_dtype = inputs[0].dtype
         square = np.power(inputs[0], 2)
         mean = np.mean(square, axis=tuple(self.axes), keepdims=True)
         normalized = inputs[0] / np.sqrt(mean + self.epsilon)
         axes = OpHasAxis.make_axes_non_negative(
             self.axes, len(inputs[0].shape))
         weights = OpHasAxis.expand_to(self.weights, axes, len(inputs[0].shape))
-        out_tensor = (normalized * weights).astype(np.float32)
+        out_tensor = (normalized * weights).astype(input_dtype)
         self.set_out_tensor(out_tensor)
 
     def write_attrs(self, txt_file):

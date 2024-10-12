@@ -9,7 +9,7 @@ from .passes.front_passes import split_op_has_activation, split_fc, split_greate
     convert_broadcast_to, remove_redundant_broadcast_to, remove_sub_equal_select, \
     merge_special_cast_quantize, convert_special_quantize, convert_special_dequantize, split_quatized_mean, \
     merge_quantized_instance_norm, merge_quantized_lstm_cell, convert_dequantize, merge_min_quant_max_to_clip, merge_quantized_ln, \
-    merge_dqd, convert_sparse_to_dense
+    merge_dqd, convert_sparse_to_dense, merge_ln2, merge_ln3, merge_rms_norm
 # merge_quantized_lstm_cell2, merge_quantized_lstm2
 from ..onnx.passes.front_passes import fuse_weights_const, convert_deconv
 from ..onnx.passes.common_passes import apply_subgraph_plugin, record_output_tensors, remove_useless_op, fuse_const
@@ -27,6 +27,8 @@ def process_tflite(graph, model_path, params):
         fuse_weights_const(graph)
 
         split_op_has_activation(graph)
+        remove_useless_op(
+            graph, ['LiteRESHAPE'])
 
         if graph._attr.get('quantize', False):
             merge_dqd(graph, ['LiteMIRROR_PAD', 'LiteRSQRT',
@@ -40,10 +42,13 @@ def process_tflite(graph, model_path, params):
             # merge_quantized_lstm_cell2(graph)
             # merge_quantized_instance_norm(graph)
             merge_quantized_ln(graph)
-            split_quatized_mean(graph)
         else:
             merge_min_quant_max_to_clip(graph)
 
+        merge_ln2(graph)
+        merge_ln3(graph)
+        merge_rms_norm(graph)
+        split_quatized_mean(graph)
         split_fc(graph)
 
         from ..tf.passes.front_passes import split_s2b, split_b2s
