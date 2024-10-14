@@ -439,6 +439,8 @@ def merge_ln2(graph):
         gamma_v = np.atleast_1d(np.squeeze(gamma_v))
         beta_v = np.atleast_1d(np.squeeze(beta_v))
         reduce_shape = [input_shapes[0][axis] for axis in mean1_axes]
+        if not OpNeedBroadcast.is_broadcastable([reduce_shape, gamma_v.shape]):
+            continue
         ret = OpNeedBroadcast.cal_reshape_and_tile([reduce_shape, gamma_v.shape])
         if ret[0]['reshape'] != None or ret[0]['tile'] != None:
             continue
@@ -614,6 +616,8 @@ def merge_ln3(graph):
         gamma_v = np.atleast_1d(np.squeeze(gamma_v))
         beta_v = np.atleast_1d(np.squeeze(beta_v))
         reduce_shape = [input_shapes[0][axis] for axis in mean1_axes]
+        if not OpNeedBroadcast.is_broadcastable([reduce_shape, gamma_v.shape]):
+            continue
         ret = OpNeedBroadcast.cal_reshape_and_tile([reduce_shape, gamma_v.shape])
         if ret[0]['reshape'] != None or ret[0]['tile'] != None:
             continue

@@ -2386,16 +2386,16 @@ class OpNeedBroadcast(Op):
                         else list(range(dim_diff, -1, -1))
                     offset = -1
                     for o in range_list:
-                        if all([max_d % sd == 0 for sd, max_d in zip(s, max_dims[o:])]):
+                        if all([max_d == sd for sd, max_d in zip(s, max_dims[o:])]):
                             offset = o
                             break
-                        if all([max_d % sd == 0 or sd == 1 for sd, max_d in zip(s, max_dims[o:])]):
+                        if all([max_d == sd or sd == 1 for sd, max_d in zip(s, max_dims[o:])]):
                             offset = o
                             break
                         if all([sd == 1 or max_d == 1 for sd, max_d in zip(s, max_dims[o:])]):
                             offset = o
                             break
-                        if all([max_d % sd == 0 or sd == 1 or max_d == 1 for sd, max_d in zip(s, max_dims[o:])]):
+                        if all([max_d == sd or sd == 1 or max_d == 1 for sd, max_d in zip(s, max_dims[o:])]):
                             offset = o
                             break
                     if offset == -1:
@@ -2455,6 +2455,15 @@ class OpNeedBroadcast(Op):
                 ERROR(
                     '[Parser]: Number of broadcast params shoud be equal to number of inputs!')
         return ret
+
+    @staticmethod
+    def is_broadcastable(input_shapes):
+        assert len(input_shapes) >= 2 and all(s is not None for shape in input_shapes for s in shape)
+        try:
+            np.broadcast_shapes(*input_shapes)
+            return True
+        except ValueError:
+            return False
 
     @classmethod
     def attributes(cls):
