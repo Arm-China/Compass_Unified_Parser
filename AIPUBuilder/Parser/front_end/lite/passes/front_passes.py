@@ -6,7 +6,8 @@ import numpy as np
 import re
 import copy
 import torch
-from ....ops.op import ActivationOnlyOp, BaseActivationOp, OpHasWeights, TfOp, TfliteOp, OpHasPaddingStrides, OpNeedBroadcast, OpHasAxis
+from ....ops.op import Op, ActivationOnlyOp, BaseActivationOp, OpHasWeights, TfOp, TfliteOp, \
+    OpHasPaddingStrides, OpNeedBroadcast, OpHasAxis
 from ....graph.node_wrap import NodeWrap
 from ....graph.graph_algo import get_valid_node_name, clear_redundant_nodes
 from ....graph.pattern_match import matched_patterns, single_node_matcher, two_nodes_matcher
@@ -422,17 +423,13 @@ def merge_ln2(graph):
             gamma_value = gamma_v.item(0)
             gamma_dtype = gamma_v.dtype
             gamma_v = np.array(gamma_value, dtype=gamma_dtype)
-            if need_trans:
-                gamma_v = np.reshape(gamma_v, [1] * len(perm))
 
         if beta_v.max() == beta_v.min():
             beta_value = beta_v.item(0)
             beta_dtype = beta_v.dtype
             beta_v = np.array(beta_value, dtype=beta_dtype)
-            if need_trans:
-                beta_v = np.reshape(beta_v, [1] * len(perm))
 
-        if need_trans:
+        if need_trans and len(gamma_v.shape) == len(perm) and len(beta_v.shape) == len(perm):
             gamma_v = np.transpose(gamma_v, perm)
             beta_v = np.transpose(beta_v, perm)
 
@@ -456,13 +453,13 @@ def merge_ln2(graph):
         if ret[1]['tile'] != None:
             beta_v = np.tile(beta_v, ret[1]['tile'])
         gamma_out_attrs = [in_attr for src, _, in_attr in mul3_in_edges if src == gamma]
-        if len(gamma_out_attrs) != 1 or gamma_out_attrs[0]['tensor'].scale_zp is None \
-                or len(gamma_out_attrs[0]['tensor'].scale_zp) != 2:
+        if len(gamma_out_attrs) != 1 or (quant and (gamma_out_attrs[0]['tensor'].scale_zp is None
+                                                    or len(gamma_out_attrs[0]['tensor'].scale_zp) != 2)):
             continue
         gamma_out_attr = gamma_out_attrs[0]
         beta_out_attrs = [in_attr for src, _, in_attr in add2_in_edges if src == beta]
-        if len(beta_out_attrs) != 1 or beta_out_attrs[0]['tensor'].scale_zp is None \
-                or len(beta_out_attrs[0]['tensor'].scale_zp) != 2:
+        if len(beta_out_attrs) != 1 or (quant and (beta_out_attrs[0]['tensor'].scale_zp is None
+                                                   or len(beta_out_attrs[0]['tensor'].scale_zp) != 2)):
             continue
         beta_out_attr = beta_out_attrs[0]
 
@@ -500,10 +497,11 @@ def merge_ln2(graph):
             'LayerNormalization', ln_attr)
         if need_trans:
             insert_transpose(graph, mean1_in_edges[0][0], add2, inp_out_attr, perm=perm, quantize=quant)
-            trans_back_perm = []
-            for i in range(input_len):
-                trans_back_perm.append(perm.index(i))
-            insert_transpose_after(graph, add2, perm=trans_back_perm, quantize=quant)
+            trans_back_perm = Op.cal_inverse_perm(perm)
+            trans = insert_transpose_after(graph, add2, perm=trans_back_perm, quantize=quant)
+            if add2 in graph._attr['output_names']:
+                index = graph._attr['output_names'].index(add2)
+                graph._attr['output_names'][index] = trans
 
     if matched:
         clear_redundant_nodes(graph)
@@ -633,13 +631,13 @@ def merge_ln3(graph):
         if ret[1]['tile'] != None:
             beta_v = np.tile(beta_v, ret[1]['tile'])
         gamma_out_attrs = [in_attr for src, _, in_attr in mul1_in_edges if src == gamma]
-        if len(gamma_out_attrs) != 1 or gamma_out_attrs[0]['tensor'].scale_zp is None \
-                or len(gamma_out_attrs[0]['tensor'].scale_zp) != 2:
+        if len(gamma_out_attrs) != 1 or (quant and (gamma_out_attrs[0]['tensor'].scale_zp is None
+                                                    or len(gamma_out_attrs[0]['tensor'].scale_zp))) != 2:
             continue
         gamma_out_attr = gamma_out_attrs[0]
         beta_out_attrs = [in_attr for src, _, in_attr in sub_in_edges if src == beta]
-        if len(beta_out_attrs) != 1 or beta_out_attrs[0]['tensor'].scale_zp is None \
-                or len(beta_out_attrs[0]['tensor'].scale_zp) != 2:
+        if len(beta_out_attrs) != 1 or (quant and (beta_out_attrs[0]['tensor'].scale_zp is None
+                                                   or len(beta_out_attrs[0]['tensor'].scale_zp))) != 2:
             continue
         beta_out_attr = beta_out_attrs[0]
 
@@ -676,10 +674,11 @@ def merge_ln3(graph):
             'LayerNormalization', ln_attr)
         if need_trans:
             insert_transpose(graph, mean1_in_edges[0][0], add2, inp_out_attr, perm=perm, quantize=quant)
-            trans_back_perm = []
-            for i in range(input_len):
-                trans_back_perm.append(perm.index(i))
-            insert_transpose_after(graph, add2, perm=trans_back_perm, quantize=quant)
+            trans_back_perm = Op.cal_inverse_perm(perm)
+            trans = insert_transpose_after(graph, add2, perm=trans_back_perm, quantize=quant)
+            if add2 in graph._attr['output_names']:
+                index = graph._attr['output_names'].index(add2)
+                graph._attr['output_names'][index] = trans
 
     if matched:
         clear_redundant_nodes(graph)
