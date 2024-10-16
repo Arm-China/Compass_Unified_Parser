@@ -165,6 +165,10 @@ def build_subgraph(name, g_content, root_graph, parent_graph_info, opset_ver):
         if not sub_graph.has_node(op_name):
             sub_graph.add_node(op_name)
         NodeWrap(sub_graph, op_name).replace_obj(node_type, op_attr)
+        if op_name in root_graph._attr['node_in_subgraphs']:
+            op_obj = sub_graph.nodes[op_name]['object']
+            op_obj.in_subgraph = True
+            op_obj.subgraphs.extend(root_graph._attr['node_in_subgraphs'][op_name])
         for in_port, in_tensor_info in enumerate(node['input']):
             in_tensor_name, in_tensor_out_port = in_tensor_info[
                 'name'], in_tensor_info['out_port']
@@ -229,11 +233,19 @@ def build_subgraph(name, g_content, root_graph, parent_graph_info, opset_ver):
                         op_obj.in_subgraph = True
                         if sub_graph.name not in op_obj.subgraphs:
                             op_obj.subgraphs.append(sub_graph.name)
-                    else:
+                    elif pre_op_name in root_graph.nodes:
                         op_obj = root_graph.nodes[pre_op_name]['object']
                         op_obj.in_subgraph = True
                         if sub_graph.name not in op_obj.subgraphs:
                             op_obj.subgraphs.append(sub_graph.name)
+                    else:
+                        parent_graph_raw_node_names = [n['name'] for n in parent_nodes]
+                        assert pre_op_name in parent_graph_raw_node_names
+                        if pre_op_name not in root_graph._attr['node_in_subgraphs']:
+                            root_graph._attr['node_in_subgraphs'][pre_op_name] = [sub_graph.name]
+                        else:
+                            if sub_graph.name not in root_graph._attr['node_in_subgraphs'][pre_op_name]:
+                                root_graph._attr['node_in_subgraphs'][pre_op_name].append(sub_graph.name)
                     n_name = get_valid_node_name(
                         sub_graph, pre_op_name)
                     sub_graph.add_node(n_name)
@@ -363,6 +375,7 @@ def convert_onnx_to_graph(graph, model_path, params):
 
     graph._attr['force_not_quantize'] = force_not_quantize
     graph._attr['subgraphs'] = OrderedDict()
+    graph._attr['node_in_subgraphs'] = OrderedDict()
     graph._attr['subgraph_depends_nodes'] = []
     graph._attr['subgraph_output_names'] = []
 
@@ -554,6 +567,10 @@ def convert_onnx_to_graph(graph, model_path, params):
                     if not graph.has_node(op_name):
                         graph.add_node(op_name)
                     NodeWrap(graph, op_name).replace_obj(node_type, op_attr)
+                    if op_name in graph._attr['node_in_subgraphs']:
+                        op_obj = graph.nodes[op_name]['object']
+                        op_obj.in_subgraph = True
+                        op_obj.subgraphs.extend(graph._attr['node_in_subgraphs'][op_name])
                     for in_port, in_tensor_info in enumerate(node['input']):
                         edge_attr = {}
                         in_tensor_name, in_tensor_out_port = in_tensor_info[
