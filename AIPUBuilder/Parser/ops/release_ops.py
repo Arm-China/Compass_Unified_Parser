@@ -2767,6 +2767,67 @@ class ArmInTopKOp(OpHasOneOutPort, ArmOp):
         return ret
 
 
+class ArmIsInfOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
+    @classmethod
+    def num_in_ports(cls):
+        return 0
+
+    @classmethod
+    def attributes(cls):
+        return {
+            'detect_negative': {'type': AttrType.INT, 'default': 1, 'options': [0, 1]},
+            'detect_positive': {'type': AttrType.INT, 'default': 1, 'options': [0, 1]}
+        }
+
+    def __init__(self, graph, attr_dict=None):
+        super(ArmIsInfOp, self).__init__(graph, attr_dict)
+        self.update_attributes(ArmIsInfOp, attr_dict)
+        assert self.check_required(), 'ArmIsInfOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(ArmIsInfOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        if bool(self.detect_negative):
+            if bool(self.detect_positive):
+                out_tensor = np.isinf(inputs[0])
+            else:
+                out_tensor = np.isneginf(inputs[0])
+        else:
+            if bool(self.detect_positive):
+                out_tensor = np.isposinf(inputs[0])
+            else:
+                out_tensor = np.full(inputs[0].shape, dtype=bool, fill_value=False)
+        out_tensor = out_tensor.astype(np.uint8)
+        self.set_out_tensor(out_tensor)
+
+    def write_attrs(self, txt_file):
+        ret = super(ArmIsInfOp, self).write_attrs(txt_file)
+        if ret:
+            txt_file.write('detect_negative=%s\n' %
+                           str(bool(self.detect_negative)).lower())
+            txt_file.write('detect_positive=%s\n' %
+                           str(bool(self.detect_positive)).lower())
+        return ret
+
+
+class ArmIsNaNOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
+    @classmethod
+    def num_in_ports(cls):
+        return 0
+
+    def __init__(self, graph, attr_dict=None):
+        super(ArmIsNaNOp, self).__init__(graph, attr_dict)
+        self.update_attributes(ArmIsNaNOp, attr_dict)
+        assert self.check_required(), 'ArmIsNaNOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(ArmIsNaNOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = np.isnan(inputs[0])
+        out_tensor = out_tensor.astype(np.uint8)
+        self.set_out_tensor(out_tensor)
+
+
 class ArmLayerNormOp(OpHasAxis, OpHasBiases, OpHasWeights, OpHasVariableOutPorts, ArmOp):
     @classmethod
     def cast_in_ports(cls):

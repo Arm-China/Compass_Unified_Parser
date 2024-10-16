@@ -775,6 +775,63 @@ class HardmaxOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
             self.cur_version = max_ver
 
 
+class IsInfOp(LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
+    @classmethod
+    def attributes(cls):
+        return {
+            10: {'detect_negative': {'default': 1}, 'detect_positive': {'default': 1}},
+            20: {'detect_negative': {'default': 1}, 'detect_positive': {'default': 1}}
+        }
+
+    def __getattr__(self, item):
+        ret = None
+        try:
+            if item in ['detect_negative', 'detect_positive']:
+                ret = bool(self.__dict__['_attr'][item].value)
+        except:
+            ret = None
+        if ret is None:
+            ret = super(IsInfOp, self).__getattr__(item)
+        return ret
+
+    def __init__(self, graph, attr_dict=None):
+        super(IsInfOp, self).__init__(graph, attr_dict)
+        self.update_attributes(IsInfOp, attr_dict)
+        assert self.check_required(), 'IsInfOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(IsInfOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        if self.detect_negative:
+            if self.detect_positive:
+                out_tensor = np.isinf(inputs[0])
+            else:
+                out_tensor = np.isneginf(inputs[0])
+        else:
+            if self.detect_positive:
+                out_tensor = np.isposinf(inputs[0])
+            else:
+                out_tensor = np.full(inputs[0].shape, dtype=bool, fill_value=False)
+        self.set_out_tensor(out_tensor)
+
+
+class IsNaNOp(LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
+    @classmethod
+    def attributes(cls):
+        return {9: {}, 13: {}, 20: {}}
+
+    def __init__(self, graph, attr_dict=None):
+        super(IsNaNOp, self).__init__(graph, attr_dict)
+        self.update_attributes(IsNaNOp, attr_dict)
+        assert self.check_required(), 'IsNaNOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(IsNaNOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = np.isnan(inputs[0])
+        self.set_out_tensor(out_tensor)
+
+
 class LogOp(LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
     @classmethod
     def attributes(cls):

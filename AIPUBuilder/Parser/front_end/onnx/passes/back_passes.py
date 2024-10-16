@@ -5706,7 +5706,7 @@ def back_passes(graph, params):
         'Ceil', 'ChannelShuffle', 'Concat', {'Cos': 'ArmCosine'}, 'Cosh', 'CropAndResize',
         'CTCGreedyDecoder', 'DepthToSpace', 'DivMod', 'Erf', 'Exp', 'Filter', 'Floor',
         'FractionalPool', 'FullyConnected', 'Gather', 'GatherND', 'GatherElements', 'Input',
-        {'InstanceNormalization': 'ArmInstanceNorm'}, 'InTopK', 'Log', 'LogSoftmax', 'LRN',
+        {'InstanceNormalization': 'ArmInstanceNorm'}, 'InTopK', 'IsInf', 'IsNaN', 'Log', 'LogSoftmax', 'LRN',
         'MatMul', {'MeanVarianceNormalization': 'ArmMVN'}, 'Meshgrid', 'Mod', {'Neg': 'ArmNegative'},
         'NonZero', 'NormalizedMoments', 'OverlapAdd', 'Pow', 'QueryRebatch', 'Reciprocal', 'Repeat',
         'ReverseSequence', 'Round', 'SegmentReduce', 'Sign', {'Sin': 'ArmSine'}, 'Sinh', 'SlotUpdate',
