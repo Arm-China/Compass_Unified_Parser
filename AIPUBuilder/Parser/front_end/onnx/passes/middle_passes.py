@@ -8769,8 +8769,13 @@ def merge_gn(graph):
                 ERROR(
                     '[Parser]: Meets invalid biases of Node(%s) in merge_gn!' % m['norm'])
                 continue
-        matched = True
+
+        input_shapes = obj_dict['reshape_1'].get_input_shapes()
         group = expand_shape[channels_axis]
+        if input_shapes[0] and input_shapes[0][channels_axis] % group != 0:
+            continue
+
+        matched = True
         src, _, in_attr = graph.sorted_in_edges(m['reshape_1'], data=True)[0]
         graph.remove_edges_from(norm_in_edges)
         graph.add_edge(src, m['norm'], **in_attr)

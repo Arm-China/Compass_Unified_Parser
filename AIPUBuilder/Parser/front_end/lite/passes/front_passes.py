@@ -632,12 +632,12 @@ def merge_ln3(graph):
             beta_v = np.tile(beta_v, ret[1]['tile'])
         gamma_out_attrs = [in_attr for src, _, in_attr in mul1_in_edges if src == gamma]
         if len(gamma_out_attrs) != 1 or (quant and (gamma_out_attrs[0]['tensor'].scale_zp is None
-                                                    or len(gamma_out_attrs[0]['tensor'].scale_zp))) != 2:
+                                                    or len(gamma_out_attrs[0]['tensor'].scale_zp) != 2)):
             continue
         gamma_out_attr = gamma_out_attrs[0]
         beta_out_attrs = [in_attr for src, _, in_attr in sub_in_edges if src == beta]
         if len(beta_out_attrs) != 1 or (quant and (beta_out_attrs[0]['tensor'].scale_zp is None
-                                                   or len(beta_out_attrs[0]['tensor'].scale_zp))) != 2:
+                                                   or len(beta_out_attrs[0]['tensor'].scale_zp) != 2)):
             continue
         beta_out_attr = beta_out_attrs[0]
 
