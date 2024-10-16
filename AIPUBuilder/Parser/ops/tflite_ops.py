@@ -1480,7 +1480,11 @@ class LiteMAX_POOL_2DOp(BaseActivationOp, OpHasPaddingStrides, TfliteOp):
 class LiteSPARSE_TO_DENSEOp(OpHasOneOutPort, TfliteOp):
     @classmethod
     def attributes(cls):
-        return {1: {}}
+        return {
+            1: {},
+            2: {},  # int64 input
+            3: {},  # i8 or u8 input
+        }
 
     def __init__(self, graph, attr_dict=None):
         super(LiteSPARSE_TO_DENSEOp, self).__init__(graph, attr_dict)
@@ -3026,7 +3030,13 @@ class LiteUNIDIRECTIONAL_SEQUENCE_LSTMOp(OpHasOneOutPort, TfliteOp):
                     'proj_clip': {'type': AttrType.FLOAT, 'default': 0.0, 'required': False},
                     'activations': {'type': AttrType.STRING, 'default': 'TANH', 'options': ['NONE', 'RELU', 'RELU_N1_TO_1', 'RELU6', 'TANH', 'SIGN_BIT']},
                     'asymmetric_quantize_inputs': {'type': AttrType.INT, 'options': [0, 1], 'required': True}
-                    }
+                    },
+                3: {'time_major': {'type': AttrType.INT, 'options': [0, 1], 'required': True},
+                    'cell_clip': {'type': AttrType.FLOAT, 'default': 0.0, 'required': False},
+                    'proj_clip': {'type': AttrType.FLOAT, 'default': 0.0, 'required': False},
+                    'activations': {'type': AttrType.STRING, 'default': 'TANH', 'options': ['NONE', 'RELU', 'RELU_N1_TO_1', 'RELU6', 'TANH', 'SIGN_BIT']},
+                    'asymmetric_quantize_inputs': {'type': AttrType.INT, 'options': [0, 1], 'required': True}
+                    },  # asymm quant input
                 }
 
     def __init__(self, graph, attr_dict=None):
