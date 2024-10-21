@@ -108,7 +108,7 @@ def clear_redundant_nodes(g, outputs=None):
     if output_names:
         valid_nodes = determined_sort(g, output_names)
         if 'subgraphs' in g._attr and len(g._attr['subgraphs']) > 0:
-            for n in set(g.nodes):
+            for n in g.nodes:
                 node_obj = NodeWrap(g, n)['object']
                 if len(node_obj.subgraphs) > 0:
                     for sub in node_obj.subgraphs:
