@@ -270,19 +270,20 @@ def tflite_forward(model_path, feed_dict, output_names=None, save_output=True):
     import tensorflow.compat.v1 as tf
 
     interpreter = tf.lite.Interpreter(model_path)
+    input_details = interpreter.get_input_details()
+    output_details = interpreter.get_output_details()
     # try:
     #     interpreter.reset_all_variables()
     # except Exception as e:
     #     WARN('Fail to reset_all_variables in tflite_forward because %s' % str(e))
-    interpreter.allocate_tensors()
-
-    input_details = interpreter.get_input_details()
-    output_details = interpreter.get_output_details()
 
     for inp in input_details:
         if inp['name'] not in feed_dict:
             ERROR('[Parser]: Cannot find input %s from feed_dict!' % inp['name'])
             continue
+        if list(feed_dict[inp['name']].shape) != inp['shape'].tolist():
+            interpreter.resize_tensor_input(inp['index'], list(feed_dict[inp['name']].shape))
+        interpreter.allocate_tensors()
         interpreter.set_tensor(inp['index'], feed_dict[inp['name']])
     interpreter.invoke()
     output_dict = dict()
