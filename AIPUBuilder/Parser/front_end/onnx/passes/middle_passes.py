@@ -8402,6 +8402,46 @@ def merge_sign_abs_relu(graph):
         clear_redundant_nodes(graph)
 
 
+def merge_isinf(graph):
+    matched = False
+    matches = matched_patterns(graph,
+                               nodes=[
+                                   ('abs', {'op': 'Abs'}),
+                                   ('cons', {'op': 'Constant', 'unique': False}),
+                                   ('eq', {'op': 'Equal'})
+                               ],
+                               edges=[
+                                   ('abs', 'eq'),
+                                   ('cons', 'eq'),
+                               ])
+    for m in matches:
+        abs_in_edges = graph.sorted_in_edges(m['abs'], data=True)
+        eq_in_edges = graph.sorted_in_edges(m['eq'], data=True)
+        if len(abs_in_edges) < 1 or len(eq_in_edges) < 2:
+            ERROR('[Parser]: Meets invalid nodes in merge_isinf!')
+            continue
+        cons_value = NodeWrap(graph, m['cons'])['object'].value
+        if np.not_equal(cons_value, np.array(np.inf)):
+            continue
+
+        matched = True
+        graph.remove_edges_from(abs_in_edges)
+        graph.remove_edges_from(eq_in_edges)
+        src, _, in_attr = abs_in_edges[0]
+        graph.add_edge(src, m['eq'], **in_attr)
+
+        inf_attr = NodeWrap(graph, m['eq'])['object'].copied_attr()
+        inf_attr.update({
+            'detect_negative': 1,
+            'detect_positive': 1,
+            'opset_version': 10
+        })
+        NodeWrap(graph, m['eq']).replace_obj(
+            'IsInf', inf_attr)
+    if matched:
+        clear_redundant_nodes(graph)
+
+
 def merge_mvn(graph):
     matched = False
     ln_matches = matched_patterns(graph,
@@ -11792,6 +11832,7 @@ def middle_passes(graph, params):
 
     rename_reshape_like(graph)
 
+    merge_isinf(graph)
     merge_sign_abs_relu(graph)
     split_deformable_conv(graph)
     split_negative_pads(graph)

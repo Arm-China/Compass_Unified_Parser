@@ -4610,6 +4610,8 @@ def convert_to_onnx(graph):
                 elif pure_type == 'InTopKV2':
                     graph.remove_edges_from(in_edges[2:])
                     need_clear = True
+                elif pure_type == 'IsInf':
+                    new_node_attr.update({'detect_negative': 1, 'detect_positive': 1})
                 elif pure_type == 'LeftShift':
                     new_node_attr.update({'direction': 'LEFT'})
                 elif pure_type == 'LRN':

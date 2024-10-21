@@ -732,6 +732,30 @@ class TfIsFiniteOp(OpHasOneOutPort, TfOp):
         self.set_out_tensor(out_tensor)
 
 
+class TfIsInfOp(OpHasOneOutPort, TfOp):
+    def infer_shape(self):
+        super(TfIsInfOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = tf.math.is_inf(inputs[0]).numpy()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'IsInf', 'version': 10}
+
+
+class TfIsNaNOp(OpHasOneOutPort, TfOp):
+    def infer_shape(self):
+        super(TfIsNaNOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = tf.math.is_nan(inputs[0]).numpy()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'IsNaN', 'version': 13}
+
+
 class TfLessOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfLessOp, self).infer_shape()

@@ -192,6 +192,30 @@ class Tfin_top_kOp(OpHasOneOutPort, Tf2Op):
         return {'type': 'InTopK', 'version': 1}
 
 
+class Tfis_infOp(OpHasOneOutPort, Tf2Op):
+    def infer_shape(self):
+        super(Tfis_infOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = tf.math.is_inf(inputs[0]).numpy()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'IsInf', 'version': 10}
+
+
+class Tfis_nanOp(OpHasOneOutPort, Tf2Op):
+    def infer_shape(self):
+        super(Tfis_nanOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = tf.math.is_nan(inputs[0]).numpy()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'IsNaN', 'version': 13}
+
+
 class Tfl2_normalizeOp(OpHasAxis, OpHasOneOutPort, Tf2Op):
     @classmethod
     def attributes(cls):
