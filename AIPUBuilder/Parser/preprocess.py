@@ -354,7 +354,7 @@ def resize_preprocess(graph, params, hooking_node):
                                     data_format=data_format)
                     insert_constant(graph,
                                     resize + '_sizes',
-                                    np.array(input_tensor_shape, np.float32),
+                                    np.array(input_tensor_shape, np.int64),
                                     resize,
                                     in_port=3,
                                     data_format=data_format)

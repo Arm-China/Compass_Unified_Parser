@@ -3574,8 +3574,8 @@ def detection_post_process(graph, params):
             if graph._attr['framework'].name == 'CAFFE' \
                     or params.get('detection_postprocess', '').upper() == 'SSD_RESNET' \
                     or is_xy_box_format:
-                box_out_edges = graph.sorted_out_edges(box_predict, data=True)
-                if len(box_out_edges) == 1:
+                box_predict_out_edges = graph.sorted_out_edges(box_predict, data=True)
+                if len(box_predict_out_edges) == 1:
                     split = get_valid_node_name(
                         graph, box_predict + '_post_split')
                     concat = get_valid_node_name(
@@ -3588,14 +3588,14 @@ def detection_post_process(graph, params):
                                    {'src_out_port': 2, 'dst_in_port': 3})
                     graph.add_edge(split, concat, **
                                    {'src_out_port': 3, 'dst_in_port': 2})
-                    for _, dst, out_attr in box_out_edges:
-                        graph.remove_edge(box_predict, dst)
+                    for _, dst, out_attr in box_predict_out_edges:
+                        # graph.remove_edge(box_predict, dst)
                         graph.add_edge(box_predict, split, **out_attr)
-                        graph.add_edge(concat, dst)
-                    if box_predict in graph._attr['output_names']:
-                        out_index = graph._attr['output_names'].index(
-                            box_predict)
-                        graph._attr['output_names'][out_index] = concat
+                        # graph.add_edge(concat, dst)
+                    # if box_predict in graph._attr['output_names']:
+                    #     out_index = graph._attr['output_names'].index(
+                    #         box_predict)
+                    #     graph._attr['output_names'][out_index] = concat
 
                     split_attr = NodeWrap(graph, box_predict)[
                         'object'].copied_attr()
@@ -3608,12 +3608,12 @@ def detection_post_process(graph, params):
                     NodeWrap(graph, concat).replace_obj(
                         'ArmConcat', concat_attr)
                     box_predict = concat
+            else:
+                box_predict_out_edges = graph.sorted_out_edges(box_predict, data=True)
 
             class_predict_in_edges = graph.sorted_in_edges(class_predict)
             class_predict_out_edges = graph.sorted_out_edges(
                 class_predict, data=True)
-            box_predict_out_edges = graph.sorted_out_edges(
-                box_predict, data=True)
 
             class_pred_obj = NodeWrap(graph, class_predict)['object']
             class_pred_parent = class_predict_in_edges[0][0]
