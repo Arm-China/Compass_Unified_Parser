@@ -213,15 +213,18 @@ def read_tflite_model(model_path, save_cfg=False, force_float_ir=None, output_na
     import tensorflow as tf
 
     interpreter = tf.lite.Interpreter(model_path)
-    all_tensor_details = interpreter.get_tensor_details()
     interpreter.allocate_tensors()
+    all_tensor_details = interpreter.get_tensor_details()
 
     model_content = model_path
     model_content += '\nTensor Details:'
-    for tensor_item in all_tensor_details:
-        model_content += '\n' + str(tensor_item)
-        model_content += '\nWeight ' + tensor_item['name'] + ':'
-        model_content += '\n' + str(interpreter.tensor(tensor_item['index'])())
+    try:
+        for tensor_item in all_tensor_details:
+            model_content += '\n' + str(tensor_item)
+            model_content += '\nWeight ' + tensor_item['name'] + ':'
+            model_content += '\n' + str(interpreter.tensor(tensor_item['index'])())
+    except:
+        pass
 
     model_content += '\nInput Details:'
     input_details = interpreter.get_input_details()

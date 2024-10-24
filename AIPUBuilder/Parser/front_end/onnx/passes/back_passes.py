@@ -5711,7 +5711,7 @@ def back_passes(graph, params):
         'NonZero', 'NormalizedMoments', 'OverlapAdd', 'Pow', 'QueryRebatch', 'Reciprocal', 'Repeat',
         'ReverseSequence', 'Round', 'SegmentReduce', 'Sign', {'Sin': 'ArmSine'}, 'Sinh', 'SlotUpdate',
         'Softmax', 'SpaceToDepth', 'SufficientStatistics', 'Split', 'Sqrt', 'Tan', 'Transpose',
-        'Trunc', 'ZeroFraction'
+        'Trunc', 'Unique', 'ZeroFraction'
     ]
 
     for op in simple_rename_list:

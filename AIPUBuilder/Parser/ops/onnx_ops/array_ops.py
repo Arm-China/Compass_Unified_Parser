@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
-
-
+import numpy as np
 import torch
 import tensorflow as tf
 import sys
@@ -1578,7 +1577,7 @@ class TriluOp(OpHasOneOutPort, OnnxOp):
         self.set_out_tensor(out_tensor)
 
 
-class UniqueOp(OpHasVariableOutPorts, OpHasAxis, OnnxOp):
+class UniqueOp(OpHasVariableOutPorts, OpHasAxis, DynamicShapeOp, OnnxOp):
     @classmethod
     def attributes(cls):
         return {11: {'axis': {'required': False},
@@ -1604,34 +1603,32 @@ class UniqueOp(OpHasVariableOutPorts, OpHasAxis, OnnxOp):
     def infer_shape(self):
         super(UniqueOp, self).infer_shape()
         inputs = self.get_input_tensors()
+        if self.is_all_inputs_const():
+            inp = inputs[0]
+        else:
+            inp_shape = inputs[0].shape
+            inp = np.arange(int(np.prod(inp_shape)), dtype=inputs[0].dtype).reshape(inp_shape)
         y, indices, inverse_indices, counts = np.unique(
-            inputs[0], True, True, True, axis=self.axis)
+            inp, True, True, True, axis=self.axis)
         if self.sorted is False:
             argsorted_indices = np.argsort(indices)
             inverse_indices_map = {i: si for i, si in zip(
                 argsorted_indices, np.arange(len(argsorted_indices)))}
             indices = indices[argsorted_indices]
-            y = np.take(inputs[0], indices, axis=self.axis)
+            y = np.take(inp, indices, axis=self.axis)
             inverse_indices = np.asarray(
                 [inverse_indices_map[i] for i in inverse_indices], dtype=np.int64)
             counts = counts[argsorted_indices]
         out_ports = self.get_out_ports()
-        if out_ports == [0]:
-            out_tensors = [y]
-        elif out_ports == [0, 1]:
-            out_tensors = [y, indices]
-        elif out_ports == [0, 2]:
-            out_tensors = [y, inverse_indices]
-        elif out_ports == [0, 3]:
-            out_tensors = [y, counts]
-        elif out_ports == [0, 1, 2]:
-            out_tensors = [y, indices, inverse_indices]
-        elif out_ports == [0, 2, 3]:
-            out_tensors = [y, inverse_indices, counts]
-        elif out_ports == [0, 1, 3]:
-            out_tensors = [y, indices, counts]
-        else:
-            out_tensors = [y, indices, inverse_indices, counts]
+        out_dict = {
+            0: y,
+            1: indices,
+            2: inverse_indices,
+            3: counts
+        }
+        out_tensors = []
+        for port in out_ports:
+            out_tensors.append(out_dict[port])
         self.set_out_tensor(out_tensors)
 
 

@@ -4951,6 +4951,51 @@ class ArmTransposeOp(OpHasOneOutPort, ArmOp):
         return ret
 
 
+class ArmUniqueOp(OpHasVariableOutPorts, OpHasAxis, DynamicShapeOp, ArmOp):
+    @classmethod
+    def attributes(cls):
+        return {
+            'axis': {'type': AttrType.INT, 'default': None},
+            'sorted': {'type': AttrType.INT, 'default': 1, 'options': [0, 1]}
+        }
+
+    def __init__(self, graph, attr_dict=None):
+        super(ArmUniqueOp, self).__init__(graph, attr_dict)
+        self.update_attributes(ArmUniqueOp, attr_dict)
+        assert self.check_required(), 'ArmUniqueOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(ArmUniqueOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        inp_shape = inputs[0].shape
+        inp = np.arange(int(np.prod(inp_shape)), dtype=inputs[0].dtype).reshape(inp_shape)
+        y, indices, inverse_indices, counts = np.unique(
+            inp, True, True, True, axis=self.axis)
+        if self.sorted is False:
+            argsorted_indices = np.argsort(indices)
+            inverse_indices_map = {i: si for i, si in zip(
+                argsorted_indices, np.arange(len(argsorted_indices)))}
+            indices = indices[argsorted_indices]
+            y = np.take(inp, indices, axis=self.axis)
+            inverse_indices = np.asarray(
+                [inverse_indices_map[i] for i in inverse_indices], dtype=np.int64)
+            counts = counts[argsorted_indices]
+
+        out_tensors = [
+            y,
+            indices.astype(np.int32),
+            inverse_indices.astype(np.int32),
+            counts.astype(np.int32)
+        ]
+        self.set_out_tensor(out_tensors)
+
+    def write_attrs(self, txt_file):
+        ret = super(ArmUniqueOp, self).write_attrs(txt_file)
+        if ret:
+            txt_file.write('sorted=%s\n' % str(bool(self.sorted)).lower())
+        return ret
+
+
 class ArmUpsampleByIndexOp(OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):

@@ -1418,33 +1418,3 @@ class TfTopKV2Op(OpHasVariableOutPorts, TfOp):
     @property
     def correspond_onnx_op(self):
         return {'type': 'TopK', 'version': 11}
-
-
-class TfUniqueOp(OpHasVariableOutPorts, TfOp):
-    @classmethod
-    def attributes(cls):
-        return {1: {'out_idx': {'type': AttrType.STRING, 'default': 'int32', 'options': ['int32', 'int64']}
-                    }
-                }
-
-    def __init__(self, graph, attr_dict=None):
-        super(TfUniqueOp, self).__init__(graph, attr_dict)
-        self.update_attributes(TfUniqueOp, attr_dict)
-        assert self.check_required(), 'TfUniqueOp is missing a required parameter.'
-
-    def infer_shape(self):
-        super(TfUniqueOp, self).infer_shape()
-        inputs = self.get_input_tensors()
-        x, out_idx = tf.unique(
-            inputs[0], out_idx=tf.dtypes.as_dtype(self.out_idx))
-        out_ports = self.get_out_ports()
-        if out_ports == [0]:
-            out_tensors = [x.numpy()]
-        elif out_ports == [1]:
-            out_tensors = [out_idx.numpy()]
-        elif out_ports == [0, 1]:
-            out_tensors = [x.numpy(), out_idx.numpy()]
-        else:
-            ERROR('[Parser]: Meets invalid out_ports of TfUniqueOp(%s)!' % self.name)
-            out_tensors = []
-        self.set_out_tensor(out_tensors)

@@ -782,6 +782,58 @@ def convert_topk(graph, op_type='TfTopKV2'):
         clear_redundant_nodes(graph)
 
 
+def convert_unique(graph):
+    matched = False
+    matches = [single_node_matcher(graph, op_type)
+               for op_type in ['TfUniqueWithCounts', 'TfUnique', 'LiteUNIQUE',
+                               'Tfunique', 'Tfunique_with_counts']]
+    for m in extend_lists(matches):
+        unique = m['target']
+        unique_obj = NodeWrap(graph, unique)['object']
+        unique_in_edges = graph.sorted_in_edges(unique, data=True)
+        if unique_obj is None or \
+                (len(unique_in_edges) != 1 and unique_obj.type not in ['Tfunique', 'Tfunique_with_counts']) or \
+                (len(unique_in_edges) != 3 and unique_obj.type in ['Tfunique', 'Tfunique_with_counts']):
+            ERROR(
+                '[Parser]: Meets invalid TfUnique/LiteUNIQUE Op (%s) in convert_unique!' % unique)
+            continue
+
+        input_shapes = unique_obj.get_input_shapes()
+        if input_shapes[0] is None \
+                or any(d is None for d in input_shapes[0]):
+            ERROR(
+                '[Parser]: Meets invalid input shape of TfUnique/LiteUNIQUE Op (%s) in convert_unique!' % unique)
+            continue
+        matched = True
+
+        if unique_obj.type in ['Tfunique', 'Tfunique_with_counts']:
+            graph.remove_edges_from(unique_in_edges[1:])
+
+        tf_onnx_out_mapping = {
+            0: 0,
+            1: 1,
+            2: 3
+        }
+
+        unique_attr = unique_obj.copied_attr()
+        unique_out_edges = graph.sorted_out_edges(unique, data=True)
+
+        graph.remove_edges_from(unique_out_edges)
+        for src, dst, attr in unique_out_edges:
+            new_attr = copy.deepcopy(attr)
+            new_attr['src_out_port'] = tf_onnx_out_mapping[attr['src_out_port']]
+            graph.add_edge(src, dst, **new_attr)
+        unique_attr.update({'axis': None, 'sorted': 1, 'opset_version': 11})
+        NodeWrap(graph, unique).replace_obj('Unique', unique_attr)
+
+        if unique in graph._attr['output_names']:
+            out_nodes = [dst for _, dst, _ in unique_out_edges]
+            graph._attr['output_nodes'] = out_nodes
+
+    if matched:
+        clear_redundant_nodes(graph)
+
+
 def remove_identity_n(graph):
     matched = False
     matches = single_node_matcher(graph, 'TfIdentityN')

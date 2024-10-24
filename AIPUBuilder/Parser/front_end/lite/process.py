@@ -51,7 +51,8 @@ def process_tflite(graph, model_path, params):
         split_quatized_mean(graph)
         split_fc(graph)
 
-        from ..tf.passes.front_passes import split_s2b, split_b2s
+        from ..tf.passes.front_passes import split_s2b, split_b2s, convert_unique
+        convert_unique(graph)
         split_s2b(graph, 'LiteSPACE_TO_BATCH_ND')
         split_b2s(graph, 'LiteBATCH_TO_SPACE_ND')
         split_greater_or_less_equal(graph)
