@@ -129,7 +129,12 @@ def onnx_forward(model_path, feed_dict, output_names=None, save_output=True):
     import numpy as np
 
     # input_name = sess.get_inputs()[0].name
-    sess = rt.InferenceSession(model_path)
+    try:
+        sess = rt.InferenceSession(model_path)
+    except:
+        WARN('Error during onnxruntime, but we try to use onnx reference to infer..')
+        from onnx.reference import ReferenceEvaluator
+        sess = ReferenceEvaluator(model_path)
     model_output_names = [o.name for o in sess.get_outputs()]
 
     # init output_dict: the keys have the same sequence as output_names
@@ -191,8 +196,11 @@ def onnx_forward(model_path, feed_dict, output_names=None, save_output=True):
 
     try:
         output_data = sess.run(output_names, updated_feed_dict)
-    except Exception as e:
-        ERROR('Fail to run because %s' % str(e))
+    except:
+        WARN('Error during onnxruntime, but we try to use onnx reference to infer..')
+        from onnx.reference import ReferenceEvaluator
+        sess = ReferenceEvaluator(model_path)
+        output_data = sess.run(output_names, updated_feed_dict)
 
     for out_name, out_data in zip(output_names, output_data):
         if isinstance(out_data, list):
