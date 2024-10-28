@@ -3477,6 +3477,8 @@ def detection_post_process(graph, params):
                 return
 
             out1_new_dim, out2_new_dim = None, None
+            origin_out1_out_edges = graph.sorted_out_edges(out1, data=True)
+            origin_out2_out_edges = graph.sorted_out_edges(out2, data=True)
             if len(out1_out_shapes[0]) == 3 and len(out2_out_shapes[0]) == 3 \
                     and out1_out_shapes[0][1] == 1 and out2_out_shapes[0][1] == 1:
                 if out1_out_shapes[0][2] % 4 == 0 and out2_out_shapes[0][2] % (out1_out_shapes[0][2] // 4) == 0:
@@ -3531,50 +3533,63 @@ def detection_post_process(graph, params):
 
                 out1_attr = None
                 for _, out, out_attr in graph.sorted_out_edges(out1, data=True):
-                    graph.remove_edge(out1, out)
+                    # graph.remove_edge(out1, out)
                     if out1_attr is None:
                         out1_attr = copy.deepcopy(out_attr)
                         out1_attr['dst_in_port'] = 0
                     new_out_attr = copy.deepcopy(out_attr)
                     if out1_tensors[0] is not None:
                         new_out_attr['tensor'].value = np.transpose(out1_tensors[0], perm)
-                    graph.add_edge(trans1, out, **new_out_attr)
+                        out1_out_shapes = [new_out_attr['tensor'].value.shape]
+                    # graph.add_edge(trans1, out, **new_out_attr)
                 graph.add_edge(out1, trans1, **out1_attr)
                 NodeWrap(graph, trans1).replace_obj('ArmTranspose', {'name': trans1, 'perm': perm})
 
                 out2_attr = None
                 for _, out, out_attr in graph.sorted_out_edges(out2, data=True):
-                    graph.remove_edge(out2, out)
+                    # graph.remove_edge(out2, out)
                     if out2_attr is None:
                         out2_attr = copy.deepcopy(out_attr)
                         out2_attr['dst_in_port'] = 0
                     new_out_attr = copy.deepcopy(out_attr)
                     if out2_tensors[0] is not None:
                         new_out_attr['tensor'].value = np.transpose(out2_tensors[0], perm)
-                    graph.add_edge(trans2, out, **new_out_attr)
+                        out2_out_shapes = [new_out_attr['tensor'].value.shape]
+                    # graph.add_edge(trans2, out, **new_out_attr)
                 graph.add_edge(out2, trans2, **out2_attr)
                 NodeWrap(graph, trans2).replace_obj('ArmTranspose', {'name': trans2, 'perm': perm})
 
                 out1, out2 = trans1, trans2
-                graph._attr['output_names'] = [trans1, trans2]
-                out1_out_shapes = NodeWrap(graph, trans1)['object'].get_output_shapes()
-                out2_out_shapes = NodeWrap(graph, trans2)['object'].get_output_shapes()
+                # graph._attr['output_names'] = [trans1, trans2]
+                # out1_out_shapes = NodeWrap(graph, trans1)['object'].get_output_shapes()
+                # out2_out_shapes = NodeWrap(graph, trans2)['object'].get_output_shapes()
 
             if out2_out_shapes and out2_out_shapes[0][-1] == 4:
                 class_predict, box_predict = out1, out2
+                origin_box_pred_out_edges = origin_out2_out_edges
+                origin_class_pred_out_edges = origin_out1_out_edges
                 class_num = out1_out_shapes[0][-1]
                 vaild_box_num = out2_out_shapes[0][1]
             else:
                 class_predict, box_predict = out2, out1
+                origin_box_pred_out_edges = origin_out1_out_edges
+                origin_class_pred_out_edges = origin_out2_out_edges
                 class_num = out2_out_shapes[0][-1]
                 vaild_box_num = out1_out_shapes[0][1]
 
+            class_predict_in_edges = graph.sorted_in_edges(class_predict)
+            class_predict_out_edges = graph.sorted_out_edges(class_predict, data=True)
+            box_predict_out_edges = graph.sorted_out_edges(box_predict, data=True)
+
+            if not class_predict_out_edges:
+                class_predict_out_edges = origin_class_pred_out_edges
+            if not box_predict_out_edges:
+                box_predict_out_edges = origin_box_pred_out_edges
             anchors = None
             is_xy_box_format = (params.get('box_format', '').upper() == 'XY')
             if graph._attr['framework'].name == 'CAFFE' \
                     or params.get('detection_postprocess', '').upper() == 'SSD_RESNET' \
                     or is_xy_box_format:
-                box_predict_out_edges = graph.sorted_out_edges(box_predict, data=True)
                 if len(box_predict_out_edges) == 1:
                     split = get_valid_node_name(
                         graph, box_predict + '_post_split')
@@ -3608,12 +3623,6 @@ def detection_post_process(graph, params):
                     NodeWrap(graph, concat).replace_obj(
                         'ArmConcat', concat_attr)
                     box_predict = concat
-            else:
-                box_predict_out_edges = graph.sorted_out_edges(box_predict, data=True)
-
-            class_predict_in_edges = graph.sorted_in_edges(class_predict)
-            class_predict_out_edges = graph.sorted_out_edges(
-                class_predict, data=True)
 
             class_pred_obj = NodeWrap(graph, class_predict)['object']
             class_pred_parent = class_predict_in_edges[0][0]
@@ -5341,6 +5350,9 @@ def sink_transpose_through_split(graph):
             inverse_perm = [trans_obj.perm.index(
                 i) for i in range(len(trans_obj.perm))]
             trans_in_edges = graph.sorted_in_edges(trans, data=True)
+            trans_out_edges = graph.sorted_out_edges(trans, data=True)
+            if len(trans_out_edges) > 1:
+                continue
             split_out_edges = graph.sorted_out_edges(
                 split, keys=True, data=True)
             src, _, in_attr = trans_in_edges[0]
