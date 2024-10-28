@@ -744,9 +744,9 @@ class TfIsInfOp(OpHasOneOutPort, TfOp):
         return {'type': 'IsInf', 'version': 10}
 
 
-class TfIsNaNOp(OpHasOneOutPort, TfOp):
+class TfIsNanOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
-        super(TfIsNaNOp, self).infer_shape()
+        super(TfIsNanOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor = tf.math.is_nan(inputs[0]).numpy()
         self.set_out_tensor(out_tensor)
