@@ -708,6 +708,23 @@ class TfKerasGlobalMaxPooling3DOp(KerasGlobalPoolingOp):
         return {'type': 'GlobalMaxPool', 'version': 1}
 
 
+class TfKerasGroupNormalizationOp(KerasNormalizationOp):
+    def infer_shape(self):
+        super(TfKerasGroupNormalizationOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        group_norm = tf.keras.layers.GroupNormalization(
+            groups=self.group,
+            axis=self.axis,
+            epsilon=self.epsilon,
+            center=self.center,
+            scale=self.scale,
+            beta_initializer=tf.keras.initializers.Constant(self.biases),
+            gamma_initializer=tf.keras.initializers.Constant(self.weights)
+        )
+        out_tensor = group_norm(inputs[0]).numpy()
+        self.set_out_tensor(out_tensor)
+
+
 class TfKerasGRUOp(KerasRecurrentOp):
     @classmethod
     def attributes(cls):

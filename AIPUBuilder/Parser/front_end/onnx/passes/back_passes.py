@@ -2502,7 +2502,6 @@ def rename_layernorm(graph):
 
 
 def rename_groupnorm(graph):
-    matched = False
     matches = single_node_matcher(graph, 'GroupNormalization')
     for m in matches:
         groupnorm = m['target']
@@ -2519,20 +2518,23 @@ def rename_groupnorm(graph):
         bias_in_attr = in_edges[2][2]
         if scale_in_attr['tensor'] is None or not scale_in_attr['tensor'].is_const \
                 or bias_in_attr['tensor'] is None or not bias_in_attr['tensor'].is_const:
-            WARN('[Parser]: Meets unsupported non-constant scale and bias of GroupNormalization Node(%s) in rename_groupnorm!' % layernorm)
+            WARN('[Parser]: Meets unsupported non-constant scale and bias of GroupNormalization Node(%s) in rename_groupnorm!' % groupnorm)
             continue
         num_groups = groupnorm_obj.num_groups
-        scale = scale_in_attr['tensor'].value
-        bias = bias_in_attr['tensor'].value
-        if list(scale.shape) != [num_groups] \
-                or list(bias.shape) != [num_groups]:
-            ERROR('[Parser]: Meet invalid weights/biases of GroupNormalization Node(%s) in rename_groupnorm!' % groupnorm)
-            continue
-        matched = True
         channels = input_shapes[0][-1]
         channel_num_per_group = channels // num_groups
-        weights = np.repeat(scale, channel_num_per_group, axis=0)
-        biases = np.repeat(bias, channel_num_per_group, axis=0)
+        scale = scale_in_attr['tensor'].value
+        bias = bias_in_attr['tensor'].value
+        if list(scale.shape) == [num_groups]:  # maybe onnx bug, from SPEC, scale/bias should be [c]
+            scale = np.repeat(scale, channel_num_per_group, axis=0)
+        if list(bias.shape) == [num_groups]:
+            bias = np.repeat(bias, channel_num_per_group, axis=0)
+        if list(scale.shape) != [channels] \
+                or list(bias.shape) != [channels]:
+            ERROR('[Parser]: Meet invalid weights/biases of GroupNormalization Node(%s) in rename_groupnorm!' % groupnorm)
+            continue
+        weights = scale
+        biases = bias
         node_attr = groupnorm_obj.copied_attr()
         if num_groups == 1:
             tile_reps = input_shapes[0][1:-1] + [1]

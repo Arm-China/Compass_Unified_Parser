@@ -3758,7 +3758,8 @@ class KerasNormalizationOp(OpHasAxis, OpHasBiases, OpHasWeights, OpHasOneOutPort
                 'scale': {'type': AttrType.INT, 'default': 1, 'options': [0, 1]},
                 'epsilon': {'type': AttrType.FLOAT, 'default': 0.001},
                 'axis': {'default': -1},
-                'weights_list': {'type': AttrType.TENSORS, 'default': []}
+                'weights_list': {'type': AttrType.TENSORS, 'default': []},
+                'group': {'type': AttrType.INT, 'default': 32}
                 }
 
     def __init__(self, graph, attr_dict=None):
@@ -3771,6 +3772,8 @@ class KerasNormalizationOp(OpHasAxis, OpHasBiases, OpHasWeights, OpHasOneOutPort
         try:
             if item in ('center', 'scale'):
                 ret = bool(self.__dict__['_attr'][item].value)
+            elif item == 'group':
+                ret = int(self.__dict__['_attr'][item].value)
         except:
             ret = None
         if ret is None:
