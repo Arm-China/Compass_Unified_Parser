@@ -1,6 +1,9 @@
-include "/home/ik/sdk/llvm/llvm-for-mlir/install/include/mlir/IR/DialectBase.td"
-include "/home/ik/sdk/llvm/llvm-for-mlir/install/include/mlir/IR/OpBase.td"
-///include "/home/ik/sdk/llvm/llvm-for-mlir/install/include/mlir/IR/BytecodeBase.td"
+include "mlir/IR/DialectBase.td"
+include "mlir/IR/OpBase.td"
+include "mlir/IR/BuiltinTypes.td"
+
+
+
 
 def Compass_Dialect : Dialect {
     let summary = "A short one line description of compass dialect.";
@@ -10,7 +13,6 @@ def Compass_Dialect : Dialect {
         to know about the document.
     }];
   
-    /// of the dialect, such as operations ("my_dialect.foo").
     let name = "compass";
 
     /// The C++ namespace that the dialect, and its sub-components, get placed in.
@@ -30,5 +32,20 @@ Op<Compass_Dialect, mnemonic, traits> ;
 
 def InputOp:Compass_Op<"Input"> {
     let summary = "input";
+    let results = (outs F32Tensor);
+}
+
+
+def TransposeOp:Compass_Op<"Transpose"> {
+    let summary = "transpose";
+    let description = [{
+      The "transpose" operation performs tranpose operation of input tensors.
+    }];
+
+    let arguments = (ins F32Tensor:$input, I32ArrayAttr:$perm);
+    let results = (outs F32Tensor);
+
+    // Invoke a static verify method to verify this transpose operation.
+    let hasVerifier = 1;
 }
 
