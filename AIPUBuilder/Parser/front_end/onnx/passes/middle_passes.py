@@ -2656,6 +2656,19 @@ def convert_min_max_to_clip(graph):
         c1, c2 = m['const_1'], m['const_2']
         const_value_1 = NodeWrap(graph, c1)['object'].value
         const_value_2 = NodeWrap(graph, c2)['object'].value
+
+        if NodeWrap(graph, p1)['object'].quantize and NodeWrap(graph, p2)['object'].quantize:
+            quantized = True
+        else:
+            quantized = False
+
+        if quantized:
+            p1_out_edges = graph.sorted_out_edges(p1, data=True)
+            p2_out_edges = graph.sorted_out_edges(p2, data=True)
+            p1_scale_zp = p1_out_edges[0][2]['tensor'].scale_zp
+            p2_scale_zp = p2_out_edges[0][2]['tensor'].scale_zp
+            if p1_scale_zp != p2_scale_zp:
+                continue
         if len(p1_out_edges) == 1 \
                 and (const_value_1.size == 1 or np.all(const_value_1 == const_value_1.flatten()[0])) \
                 and (const_value_2.size == 1 or np.all(const_value_2 == const_value_2.flatten()[0])):
@@ -2679,7 +2692,7 @@ def convert_min_max_to_clip(graph):
                     graph.add_edge(src, p2, **p2_in_attr)
                     break
             clip_attr = {'name': p2, 'opset_version': 6,
-                         'min': clip_min, 'max': clip_max}
+                         'min': clip_min, 'max': clip_max, 'quantize': quantized}
             NodeWrap(graph, p2).replace_obj('Clip', clip_attr)
 
             if p1 in graph._attr['output_names']:
