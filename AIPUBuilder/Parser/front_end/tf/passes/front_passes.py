@@ -823,7 +823,7 @@ def convert_unique(graph):
             new_attr = copy.deepcopy(attr)
             new_attr['src_out_port'] = tf_onnx_out_mapping[attr['src_out_port']]
             graph.add_edge(src, dst, **new_attr)
-        unique_attr.update({'axis': None, 'sorted': 1, 'opset_version': 11})
+        unique_attr.update({'axis': None, 'sorted': 0, 'opset_version': 11})
         NodeWrap(graph, unique).replace_obj('Unique', unique_attr)
 
         if unique in graph._attr['output_names']:
