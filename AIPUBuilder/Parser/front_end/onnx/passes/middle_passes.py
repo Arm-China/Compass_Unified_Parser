@@ -24,7 +24,7 @@ from .common_passes import fuse_const, remove_useless_op, remove_node_safely, in
     insert_transpose_after, \
     remove_redundant_reshape, remove_redundant_transpose, insert_cast_sub_mul_for_quant, \
     insert_mul_add_cast_after_for_dequant, \
-    insert_repeat, convert_to_const, insert_cast_after, merge_same_op_at_out_port
+    insert_repeat, convert_to_const, insert_cast_after, merge_same_op_at_out_port, convert_multi_outputs_to_const
 
 
 def clear_useless_concat_input(graph):
@@ -2132,8 +2132,6 @@ def decompose_const_if(graph, params):
             # clear subgraph
             if if_name in graph._attr['subgraphs']:
                 graph._attr['subgraphs'].pop(if_name)
-        else:
-            ERROR('[Parser]: Meets invalid edges in decompose_const_if!')
     if matched:
         clear_redundant_nodes(graph)
 
@@ -11852,6 +11850,7 @@ def middle_passes(graph, params):
     split_conv_transpose(graph)
     convert_to_const(graph, ['Concat', 'Mul', 'Shape',
                              'Slice', 'Tile', 'Unsqueeze'])
+    convert_multi_outputs_to_const(graph, ['Split', 'Unique'])
     merge_gelu_1(graph)
     merge_gelu_2(graph)
     merge_gelu_3(graph)
