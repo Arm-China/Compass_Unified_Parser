@@ -19,7 +19,7 @@ from ....graph.graph_algo import has_path, get_valid_node_name, all_simple_paths
 from ....graph.pattern_match import matched_patterns, single_node_matcher, two_nodes_matcher
 
 
-def fuse_const(graph, multi_outputs=False):
+def fuse_const(graph):
     matches = single_node_matcher(graph, '')
     for m in matches:
         node_name = m['target']
@@ -29,27 +29,20 @@ def fuse_const(graph, multi_outputs=False):
                 ERROR(
                     '[Parser]: Meets invalid Node (%s) in fuse_const!' % node_name)
                 continue
-            if not isinstance(node_obj, ConstLikeOp) and node_obj.is_all_inputs_const():
-                if not multi_outputs and not isinstance(node_obj, OpHasOneOutPort):
-                    continue
-                out_edges = graph.sorted_out_edges(node_name, data=True)
-                in_edges = graph.sorted_in_edges(node_name)
-                graph.remove_edges_from(in_edges)
-                graph.remove_edges_from(out_edges)
-                for o_edge in out_edges:
-                    if o_edge[2]['tensor'] is not None and o_edge[2]['tensor'].value is not None:
-                        const_value = o_edge[2]['tensor'].value
-                        const_node_name = get_valid_node_name(graph, node_name)
-                        graph.add_node(const_node_name)
-                        const_attr = {'name': const_node_name,
-                                      'value': const_value,
-                                      'data_format': node_obj.data_format,
-                                      'opset_version': 9}
-                        NodeWrap(graph, const_node_name).replace_obj(
-                            'Constant', const_attr)
-                        _, dst, out_attr = o_edge
-                        out_attr['src_out_port'] = 0
-                        graph.add_edge(const_node_name, dst, **out_attr)
+            if not isinstance(node_obj, ConstLikeOp) \
+                    and isinstance(node_obj, OpHasOneOutPort) \
+                    and node_obj.is_all_inputs_const():
+                out_edge = graph.sorted_out_edges(node_name, data=True)
+                if len(out_edge) >= 1 and out_edge[0][2]['tensor'] is not None and out_edge[0][2]['tensor'].value is not None:
+                    const_value = out_edge[0][2]['tensor'].value
+                    const_attr = {'name': node_name,
+                                  'value': const_value,
+                                  'data_format': node_obj.data_format,
+                                  'opset_version': 9}
+                    NodeWrap(graph, node_name).replace_obj(
+                        'Constant', const_attr)
+                    in_edges = graph.sorted_in_edges(node_name)
+                    graph.remove_edges_from(in_edges)
     clear_redundant_nodes(graph)
 
 
