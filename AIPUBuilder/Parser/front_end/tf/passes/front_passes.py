@@ -811,7 +811,7 @@ def convert_unique(graph):
 
         tf_onnx_out_mapping = {
             0: 0,
-            1: 1,
+            1: 2,
             2: 3
         }
 
