@@ -11,10 +11,7 @@ from .passes.front_passes import *
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
-def process_caffe(graph, model_path, params):
-    '''Do some preprocessing on the graph under the caffe framework.'''
-    graph = convert_caffe_to_graph(graph, model_path, params)
-    record_output_tensors(graph)
+def front_process_caffe(graph, params):
     if graph is not None and len(graph) > 0:
         apply_subgraph_plugin(graph)
 
@@ -57,5 +54,13 @@ def process_caffe(graph, model_path, params):
         convert_to_onnx(graph)
         infer(graph)
     else:
-        WARN('[Parser]: Got empty graph in process_caffe!')
+        WARN('[Parser]: Got empty graph in front_process_caffe!')
+
+
+def process_caffe(graph, model_path, params):
+    '''Do some preprocessing on the graph under the caffe framework.'''
+    graph = convert_caffe_to_graph(graph, model_path, params)
+    record_output_tensors(graph)
+    front_process_caffe(graph, params)
+
     return graph

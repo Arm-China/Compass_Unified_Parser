@@ -12,10 +12,7 @@ from .passes.common_passes import remove_useless_op, apply_subgraph_plugin, reco
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
-def process_onnx(graph, model_path, params):
-    '''Do some preprocessing on the graph under the onnx framework.'''
-    graph = convert_onnx_to_graph(graph, model_path, params)
-    record_output_tensors(graph, params)
+def front_process_onnx(graph, params):
     if graph is not None and len(graph) > 0:
         apply_subgraph_plugin(graph)
 
@@ -52,5 +49,13 @@ def process_onnx(graph, model_path, params):
         merge_qgemm(graph)
 
     else:
-        WARN('[Parser]: Got empty graph in process_onnx!')
+        WARN('[Parser]: Got empty graph in front_process_onnx!')
+
+
+def process_onnx(graph, model_path, params):
+    '''Do some preprocessing on the graph under the onnx framework.'''
+    graph = convert_onnx_to_graph(graph, model_path, params)
+    record_output_tensors(graph, params)
+    front_process_onnx(graph, params)
+
     return graph

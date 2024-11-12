@@ -321,7 +321,7 @@ class DummyInputOp(OpHasOneOutPort, InputLikeOp, CommonOp):
 
     def infer_shape(self, input_tensor=None, is_const=False):
         super(DummyInputOp, self).infer_shape()
-        assert input_tensor is not None, 'input shape is empty in DummyInputOp.'
+        assert input_tensor is not None, 'input tensor is empty in DummyInputOp.'
         out_tensor = input_tensor.copy()
         self.set_out_tensor(out_tensor, is_const)
 
@@ -846,7 +846,7 @@ class PluginOp(OpHasVariableOutPorts, CommonOp):
     def write_constants(self, bin_file):
         '''Write value of constants in IR binfile.'''
         ret = True
-        if not bin_file.closed and bin_file.mode == 'wb':
+        if not bin_file.closed and bin_file.mode == 'ab':
             if not self.constants:
                 pass
             elif not self.constants_offset_dict \

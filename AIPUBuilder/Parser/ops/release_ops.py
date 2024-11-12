@@ -292,7 +292,7 @@ class ArmActivationOp(LayoutUnawareOp, OpHasMethod, OpHasOneOutPort, ArmOp):
 
     def write_negative_slope(self, bin_file):
         ret = True
-        if not bin_file.closed and bin_file.mode == 'wb':
+        if not bin_file.closed and bin_file.mode == 'ab':
             if self.negative_slope is not None \
                     and np.ndim(self.negative_slope) > 0 \
                     and self.negative_slope_offset >= 0:
@@ -2675,6 +2675,65 @@ class ArmGRUv3Op(BaseRnnOp, OpHasBiases, OpHasWeights, ArmOp):
             if self.activation_beta:
                 txt_file.write('activation_beta=[%s]\n' % num_list_to_string(
                     self.activation_beta))
+        return ret
+
+
+class ArmIfOp(OpHasSubGraph, DynamicShapeOp, ArmOp):
+    @classmethod
+    def num_in_ports(cls):
+        return 0
+
+    @classmethod
+    def attributes(cls):
+        return {
+            'then_branch': {'type': AttrType.GRAPH, 'required': True},
+            'else_branch': {'type': AttrType.GRAPH, 'required': True},
+        }
+
+    def __init__(self, graph, attr_dict=None):
+        super(ArmIfOp, self).__init__(graph, attr_dict)
+        self.update_attributes(ArmIfOp, attr_dict)
+        assert self.check_required(), 'ArmIfOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(ArmIfOp, self).infer_shape()
+        WARN(f'[Parser]: If({self.name}) condition is non-const, the infer shape is unreliable.')
+        if_cond = True
+        # True: then branch, False: else branch
+        from ..graph.graph_algo import determined_sort
+        cur_sub_graph = self.then_branch if if_cond else self.else_branch
+        sub_nodes = determined_sort(cur_sub_graph, cur_sub_graph._attr['output_names'])
+        output_list = []
+        output_const_list = []
+        for n in sub_nodes:
+            sub_node_obj = cur_sub_graph.nodes[n]['object']
+            if sub_node_obj is None:
+                ERROR(f'[Parser]: Get Node Obj Failed in If Infer of Node: {n}.')
+            if sub_node_obj.type == 'DummyInput':
+                # input data from parent graph
+                parent_node = cur_sub_graph._attr['parent_graph'].nodes[n]
+                dummy_out_edges = cur_sub_graph._attr['parent_graph'].sorted_out_edges(parent_node['object'].name,
+                                                                                       data=True)
+                out_tensor = dummy_out_edges[0][-1]['tensor'].value
+                sub_node_obj.infer_shape(out_tensor, dummy_out_edges[0][-1]['tensor'].is_const)
+            else:
+                sub_node_obj.infer_shape()
+
+        for out in cur_sub_graph._attr['output_names']:
+            is_const = cur_sub_graph.nodes[out]['object'].is_all_inputs_const()
+            for _, dst, out_attr in cur_sub_graph.sorted_out_edges(out, data=True):
+                if cur_sub_graph.nodes[dst]['object'].type == 'Out':
+                    out_port = out_attr['src_out_port']
+                    out_tensor = cur_sub_graph.nodes[out]['object'].get_output_tensors()[out_port]
+                    output_list.append(out_tensor)
+                    output_const_list.append(is_const)
+        self.set_out_tensor(output_list, all(output_const_list))
+
+    def write_attrs(self, txt_file):
+        ret = super(ArmIfOp, self).write_attrs(txt_file)
+        if ret:
+            txt_file.write('then_branch=%s\n' % self.then_branch.name)
+            txt_file.write('else_branch=%s\n' % self.else_branch.name)
         return ret
 
 

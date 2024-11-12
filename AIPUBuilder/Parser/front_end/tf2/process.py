@@ -11,11 +11,7 @@ from .passes.keras_front_passes import process_keras_op_before_infer, process_ke
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
-def process_tf2(graph, model_path, params):
-    '''Do some preprocessing on the graph under the tensorflow framework.'''
-    graph = convert_tf2_to_graph(graph, model_path, params)
-    record_output_tensors(graph)
-
+def front_process_tf2(graph, params):
     if graph is not None and len(graph) > 0:
         apply_subgraph_plugin(graph)
         remove_useless_op(graph, ['Tfstop_gradient'])
@@ -64,8 +60,15 @@ def process_tf2(graph, model_path, params):
         # FIXME: Other passes in tf front passes may be needed as well.
         from ..tf.passes.front_passes import convert_to_onnx as convert_tf_op_to_onnx
         convert_tf_op_to_onnx(graph)
-
     else:
-        WARN('[Parser]: Got empty graph for TF2 model %s in process_tf2!' %
+        WARN('[Parser]: Got empty graph for TF2 model %s in front_process_tf2!' %
              params['model_name'])
+
+
+def process_tf2(graph, model_path, params):
+    '''Do some preprocessing on the graph under the tensorflow framework.'''
+    graph = convert_tf2_to_graph(graph, model_path, params)
+    record_output_tensors(graph)
+    front_process_tf2(graph, params)
+
     return graph

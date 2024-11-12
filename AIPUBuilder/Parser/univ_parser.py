@@ -189,15 +189,12 @@ def univ_parser(params):
                 ret = False
 
             if graph:
-                from .front_end.onnx.passes.middle_passes import middle_passes, convert_onnx_version
-                from .front_end.onnx.passes.back_passes import back_passes, trim_weights, assign_top_range_scale_zp
-                from .front_end.onnx.passes.transform import transform_to_nhwc
-                from .front_end.onnx.passes.common_passes import remove_useless_op, convert_64bit_const
+                from .front_end.onnx.passes.back_passes import trim_weights, assign_top_range_scale_zp
+                from .front_end.onnx.passes.common_passes import remove_useless_op, convert_dummyinput_to_input
                 from .graph.graph_algo import infer, has_path
                 from .graph.pattern_match import single_node_matcher
                 from .writer import serialize, show_in_out_map
-                from .preprocess import gamut_preprocess, preprocess
-                from .misc import special_character_conversion, check_similarity
+                from .misc import check_similarity
 
                 '''Check if it is a connected graph.'''
                 input_names = []
@@ -230,59 +227,15 @@ def univ_parser(params):
                             ERROR('[Parser]: Graph is not a connected one!')
                             break
 
-                '''Gives a 'may be time consuming' hint for huge models.'''
-                if len(graph) >= 2000:
-                    WARN(
-                        '[Parser]: Begin to process large model (number of nodes = %d) and maybe cost quite a lot of time!' % len(graph))
+                process_graph(graph, params)
 
-                try:
-                    preprocess(graph, params)
-                except Exception as e:
-                    ERROR(
-                        '[Parser]: Meets exception in insert preprocess (%s)!' % str(e))
-
-                try:
-                    convert_onnx_version(graph)
-                except Exception as e:
-                    ERROR(
-                        '[Parser]: Meets exception in convert_onnx_version (%s)!' % str(e))
-
-                try:
-                    middle_passes(graph, params)
-                except Exception as e:
-                    ERROR('[Parser]: Meets exception in middle_passes (%s)!' % str(e))
-
-                infer(graph)
-
-                try:
-                    transform_to_nhwc(graph, params)
-                except Exception as e:
-                    ERROR(
-                        '[Parser]: Meets exception in transform_to_nhwc (%s)!' % str(e))
-
-                try:
-                    back_passes(graph, params)
-                except Exception as e:
-                    ERROR('[Parser]: Meets exception in back_passes (%s)!' % str(e))
-
-                try:
-                    gamut_preprocess(graph, params)
-                except Exception as e:
-                    ERROR(
-                        '[Parser]: Meets exception in insert gamut preprocess (%s)!' % str(e))
-
-                try:
-                    special_character_conversion(graph, params)
-                except Exception as e:
-                    ERROR(
-                        '[Parser]: Meets exception in insert special character conversion (%s)!' % str(e))
-
-                try:
-                    convert_64bit_const(graph)
-                    infer(graph, final=True)
-                    remove_useless_op(graph, ['ArmCast'])
-                except Exception as e:
-                    ERROR('[Parser]: Meets exception in last infer (%s)!' % str(e))
+                if 'subgraphs' in graph._attr and graph._attr['subgraphs']:
+                    for n_name, v in graph._attr['subgraphs'].items():
+                        for subgraph_name, subgraph in v.items():
+                            front_process_graph(model_type, model_path, subgraph, params)
+                            process_graph(subgraph, params)
+                            convert_dummyinput_to_input(subgraph)
+                            # remove_useless_op(subgraph, ['DummyInput'])
 
                 txt_path, bin_path = '', ''
                 try:
@@ -312,3 +265,92 @@ def univ_parser(params):
         ERROR('[Parser]: Meets invalid parameters for universal parser!')
         ret = False
     return ret
+
+
+def front_process_graph(model_type, model_path, graph, params):
+    if model_type == 'onnx':
+        from .front_end.onnx.process import front_process_onnx
+        graph = front_process_onnx(graph, params)
+    elif model_type == 'tflite':
+        from .front_end.lite.process import front_process_tflite
+        graph = front_process_tflite(graph, params)
+    elif model_type in ('tf', 'tensorflow'):
+        is_keras_model = model_path.endswith('.h5') or model_path.endswith('.hdf5') or model_path.endswith(
+            '.keras') or is_dir(model_path)
+        if is_keras_model:
+            from .front_end.tf2.process import front_process_tf2
+            graph = front_process_tf2(graph, params)
+        else:
+            from .front_end.tf.process import front_process_tf
+            graph = front_process_tf(graph, params)
+    elif model_type == 'caffe':
+        from .front_end.caffe.process import front_process_caffe
+        graph = front_process_caffe(graph, params)
+    else:
+        ERROR('[Parser]: Framework %s is not supported!' %
+              params.get('model_type', ''))
+    return graph
+
+
+def process_graph(graph, params):
+    from .front_end.onnx.passes.middle_passes import middle_passes, convert_onnx_version
+    from .front_end.onnx.passes.back_passes import back_passes, trim_weights, assign_top_range_scale_zp
+    from .front_end.onnx.passes.transform import transform_to_nhwc
+    from .front_end.onnx.passes.common_passes import remove_useless_op, convert_64bit_const
+    from .graph.graph_algo import infer
+    from .preprocess import gamut_preprocess, preprocess
+    from .misc import special_character_conversion
+    '''Gives a 'may be time consuming' hint for huge models.'''
+    if len(graph) >= 2000:
+        WARN(
+            '[Parser]: Begin to process large model (number of nodes = %d) and maybe cost quite a lot of time!' % len(
+                graph))
+
+    try:
+        preprocess(graph, params)
+    except Exception as e:
+        ERROR(
+            '[Parser]: Meets exception in insert preprocess (%s)!' % str(e))
+
+    try:
+        convert_onnx_version(graph)
+    except Exception as e:
+        ERROR(
+            '[Parser]: Meets exception in convert_onnx_version (%s)!' % str(e))
+
+    try:
+        middle_passes(graph, params)
+    except Exception as e:
+        ERROR('[Parser]: Meets exception in middle_passes (%s)!' % str(e))
+
+    infer(graph)
+
+    try:
+        transform_to_nhwc(graph, params)
+    except Exception as e:
+        ERROR(
+            '[Parser]: Meets exception in transform_to_nhwc (%s)!' % str(e))
+
+    try:
+        back_passes(graph, params)
+    except Exception as e:
+        ERROR('[Parser]: Meets exception in back_passes (%s)!' % str(e))
+
+    try:
+        gamut_preprocess(graph, params)
+    except Exception as e:
+        ERROR(
+            '[Parser]: Meets exception in insert gamut preprocess (%s)!' % str(e))
+
+    try:
+        special_character_conversion(graph, params)
+    except Exception as e:
+        ERROR(
+            '[Parser]: Meets exception in insert special character conversion (%s)!' % str(e))
+
+    try:
+        convert_64bit_const(graph)
+        infer(graph, final=True)
+        remove_useless_op(graph, ['ArmCast'])
+    except Exception as e:
+        ERROR('[Parser]: Meets exception in last infer (%s)!' % str(e))

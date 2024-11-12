@@ -14,6 +14,7 @@ from ....common.utils import extend_lists, get_converted_dtype
 from ....ops.op import Op, OpHasWeights, OpHasBiases, OpHasOneOutPort, ConstLikeOp, OnnxReduceOp, \
     OpHasVariableOutPorts, OpHasMultipleOutPorts
 from ....ops.onnx_ops.array_ops import CastOp
+from ....graph.graph import SubGraph
 from ....ops.release_ops import ArmCastOp, ArmTransposeOp
 from ....graph.node_wrap import NodeWrap
 from ....graph.graph_algo import has_path, get_valid_node_name, all_simple_paths, clear_redundant_nodes
@@ -86,6 +87,25 @@ def convert_to_const(graph, op_type_name_list):
         clear_redundant_nodes(graph)
     else:
         WARN('[Parser]: Invalid params for convert_to_const!')
+
+
+def convert_dummyinput_to_input(graph):
+    matches = single_node_matcher(graph, 'DummyInput')
+    for m in matches:
+        node_name = m['target']
+        if node_name in graph.nodes:
+            node_obj = NodeWrap(graph, node_name)['object']
+            if node_obj is None:
+                ERROR(
+                    '[Parser]: Meets invalid Node (%s) in convert_dummyinput_to_input!' % node_name)
+                continue
+            out_edges = graph.sorted_out_edges(node_name, data=True)
+            assert len(out_edges) == 1, 'DummyInput should only have 1 output.'
+            out_tensor = out_edges[0][-1]['tensor']
+            new_attr = node_obj.copied_attr()
+            NodeWrap(graph, node_name).replace_obj(
+                'ArmInput', new_attr)
+            graph._attr['input_tensors'].update({out_tensor.name: out_tensor})
 
 
 def convert_multi_outputs_to_const(graph, op_type_name_list):
@@ -195,7 +215,10 @@ def remove_useless_op(graph, op_type_list):
                 in_edges = graph.sorted_in_edges(node_name)
                 if len(in_edges) <= 1:
                     removing_nodes.append(node_name)
-            elif op_type in ('Dummy', 'Identity'):
+            elif op_type in ('Dummy', 'Identity', 'DummyInput'):
+                if op_type == 'DummyInput' and isinstance(graph, SubGraph):
+                    out_edges = graph.sorted_out_edges(node_name, data=True)
+                    graph.remove_edges_from(out_edges)
                 removing_nodes.append(node_name)
             elif op_type == 'Dropout':
                 in_edges = graph.sorted_in_edges(node_name, data=True)

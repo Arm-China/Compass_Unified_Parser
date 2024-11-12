@@ -208,8 +208,18 @@ def infer(graph, partial=False, chosen_list=None, final=False):
                                          (input_type_str, casted_type, node_name))
                                     graph._attr['input_tensors'][node_name].value = input_data.astype(
                                         np.dtype(casted_type))
-
-                        infer_data = graph._attr['input_tensors'][node_name].value
+                        if node_name in graph._attr['input_tensors']:
+                            infer_data = graph._attr['input_tensors'][node_name].value
+                        else:
+                            if node_obj.type == 'DummyInput' and isinstance(graph, SubGraph):
+                                parent_node = graph._attr['parent_graph'].nodes[node_name]
+                                dummy_out_edges = graph._attr['parent_graph'].sorted_out_edges(
+                                    parent_node['object'].name,
+                                    data=True)
+                                infer_data = dummy_out_edges[0][-1]['tensor'].value
+                            else:
+                                log_func('[Parser]: Meet unsupported op type %s in Node(%s)!' %
+                                         (node_obj.type, node_name))
                         node_obj.infer_shape(infer_data)
                     elif isinstance(node_obj, UndefinedOp):
                         log_func('[Parser]: Meet unsupported op type %s in Node(%s)!' % (node_obj.type, node_name))

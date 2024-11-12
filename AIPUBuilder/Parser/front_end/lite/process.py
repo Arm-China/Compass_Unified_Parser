@@ -17,10 +17,7 @@ from ...graph.graph_algo import infer, clear_redundant_nodes
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
-def process_tflite(graph, model_path, params):
-    '''Do some preprocessing on the graph under the tflite framework.'''
-    graph = convert_tflite_to_graph(graph, model_path, params)
-    record_output_tensors(graph)
+def front_process_tflite(graph, params):
     if graph is not None and len(graph) > 0:
         apply_subgraph_plugin(graph)
         infer(graph, partial=True)
@@ -59,7 +56,8 @@ def process_tflite(graph, model_path, params):
         split_not_equal(graph, 'LiteNOT_EQUAL')
         split_rsqrt(graph)
 
-        from ..tf.passes.front_passes import split_special_floormod, convert_reverse, merge_overlap_and_add, merge_sufficient_statistics, merge_sufficient_statistics2
+        from ..tf.passes.front_passes import split_special_floormod, convert_reverse, merge_overlap_and_add, \
+            merge_sufficient_statistics, merge_sufficient_statistics2
         split_special_floormod(graph, 'LiteFLOOR_MOD')
 
         remove_detection_postprocess(graph, params)
@@ -117,5 +115,13 @@ def process_tflite(graph, model_path, params):
         from ..tf.passes.front_passes import convert_to_onnx as convert_tf_op_to_onnx
         convert_tf_op_to_onnx(graph)
     else:
-        WARN('[Parser]: Got empty graph in process_tflite!')
+        WARN('[Parser]: Got empty graph in front_process_tflite!')
+
+
+def process_tflite(graph, model_path, params):
+    '''Do some preprocessing on the graph under the tflite framework.'''
+    graph = convert_tflite_to_graph(graph, model_path, params)
+    record_output_tensors(graph)
+    front_process_tflite(graph, params)
+
     return graph

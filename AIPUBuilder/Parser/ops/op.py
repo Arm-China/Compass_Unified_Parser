@@ -259,8 +259,12 @@ class Op(abc.ABC):
             for attr_key, attr_v in cls.attributes().items():
                 attr_param = copy.deepcopy(attr_v)
                 if attr_key in attr_dict:
-                    attr_param.update(
-                        {'value': copy.deepcopy(attr_dict[attr_key])})
+                    if isinstance(attr_dict[attr_key], SubGraph):
+                        attr_param.update(
+                            {'value': attr_dict[attr_key]})
+                    else:
+                        attr_param.update(
+                            {'value': copy.deepcopy(attr_dict[attr_key])})
                 elif 'default' in attr_param:
                     attr_param.update(
                         {'value': copy.deepcopy(attr_param['default'])})
@@ -306,7 +310,16 @@ class Op(abc.ABC):
 
     def copied_attr(self):
         '''Returns the copied attr of this Op.'''
-        return {k: copy.deepcopy(self._attr[k].value if isinstance(self._attr[k], Attribute) else self._attr[k]) for k in self._attr.keys()}
+        copied_attr = {}
+        for k in self._attr.keys():
+            if isinstance(self._attr[k], Attribute):
+                if self._attr[k].type == AttrType.GRAPH:
+                    copied_attr[k] = self._attr[k].value
+                else:
+                    copied_attr[k] = copy.deepcopy(self._attr[k].value)
+            else:
+                copied_attr[k] = copy.deepcopy(self._attr[k])
+        return copied_attr
 
     def check_required(self):
         '''Check if the required attr is available.'''
@@ -343,7 +356,7 @@ class Op(abc.ABC):
     def write_attrs(self, txt_file):
         '''Write the required attr in IR.'''
         ret = True
-        if not txt_file.closed and txt_file.mode == 'w':
+        if not txt_file.closed and txt_file.mode == 'a':
             bottom_info, top_info = self.get_inputs_info(), self.get_outputs_info()
             if self.name in self._graph._attr.get('duplicate_name', {}):
                 newname = self._graph._attr['duplicate_name'][self.name]
@@ -455,7 +468,7 @@ class Op(abc.ABC):
 
     def write_top_range(self, bin_file):
         ret = True
-        if not bin_file.closed and bin_file.mode == 'wb':
+        if not bin_file.closed and bin_file.mode == 'ab':
             if len(self.top_ranges) > 0 \
                     and len(self.top_ranges) == len(self.top_ranges_offset):
                 for r, r_offset in zip(self.top_ranges, self.top_ranges_offset):
@@ -467,7 +480,7 @@ class Op(abc.ABC):
 
     def write_top_scale_zp(self, bin_file):
         ret = True
-        if not bin_file.closed and bin_file.mode == 'wb':
+        if not bin_file.closed and bin_file.mode == 'ab':
             if self._graph._attr.get('quantize', False) \
                     and len(self.top_scales) > 0 \
                     and len(self.top_scales) == len(self.top_scales_offset) \
@@ -1442,7 +1455,7 @@ class OpHasWeights(Op):
     def write_weights(self, bin_file):
         '''Write the weight attr in IR bin file.'''
         ret = True
-        if not bin_file.closed and bin_file.mode == 'wb':
+        if not bin_file.closed and bin_file.mode == 'ab':
             if self.weights is not None and self.weights_offset >= 0:
                 Op.numpy_to_bin(bin_file, self.weights, self.weights_offset, self.name)
                 if self.weights_range is not None and self.weights_range_offset >= 0:
@@ -1528,7 +1541,7 @@ class OpHasBiases(Op):
     def write_biases(self, bin_file):
         '''Write the biases attr in IR bin file.'''
         ret = True
-        if not bin_file.closed and bin_file.mode == 'wb':
+        if not bin_file.closed and bin_file.mode == 'ab':
             if self.biases is not None and self.biases_offset >= 0:
                 Op.numpy_to_bin(bin_file, self.biases, self.biases_offset, self.name)
                 if self.biases_range is not None and self.biases_range_offset >= 0:
@@ -1667,7 +1680,7 @@ class OpHasAnchors(Op):
     def write_anchors(self, bin_file):
         '''Write the anchors attr in IR bin file.'''
         ret = True
-        if not bin_file.closed and bin_file.mode == 'wb':
+        if not bin_file.closed and bin_file.mode == 'ab':
             if self.xcenter is not None and self.xcenter_offset >= 0:
                 Op.numpy_to_bin(bin_file, self.xcenter, self.xcenter_offset, self.name)
             if self.ycenter is not None and self.ycenter_offset >= 0:
@@ -1979,7 +1992,7 @@ class BaseActivationOp(OpHasOneOutPort):
     def write_negative_slope(self, bin_file):
         '''Write the negative_slope attr in IR binfile.'''
         ret = True
-        if not bin_file.closed and bin_file.mode == 'wb':
+        if not bin_file.closed and bin_file.mode == 'ab':
             if self.negative_slope is not None \
                     and np.ndim(self.negative_slope) > 0 \
                     and self.negative_slope_offset >= 0:
@@ -2233,7 +2246,7 @@ class BaseRnnOp(OpHasMethod, OpHasVariableOutPorts):
         ret = True
         if not self.quantize:
             return ret
-        if not bin_file.closed and bin_file.mode == 'wb':
+        if not bin_file.closed and bin_file.mode == 'ab':
             if self.activations_scale is not None and self.activations_scale_offset >= 0 \
                     and self.activations_zp is not None and self.activations_zp_offset >= 0:
                 Op.numpy_to_bin(bin_file, self.activations_scale, self.activations_scale_offset, self.name)
@@ -2282,7 +2295,7 @@ class BaseQuantizeDequantizeOp(Op):
 
     def write_scale_zp(self, bin_file):
         ret = True
-        if not bin_file.closed and bin_file.mode == 'wb':
+        if not bin_file.closed and bin_file.mode == 'ab':
             if self.scale is not None and self.scale_offset >= 0 \
                     and self.zero_point is not None and self.zero_point_offset >= 0:
                 Op.numpy_to_bin(bin_file, self.scale, self.scale_offset, self.name)

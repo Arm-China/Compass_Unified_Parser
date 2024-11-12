@@ -19,14 +19,12 @@ from .passes.front_passes import merge_gru, merge_gru2, merge_lstm, merge_zero_f
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
-def process_tf(graph, model_path, params):
-    '''Do some preprocessing on the graph under the tensorflow framework.'''
-    graph = convert_tf_to_graph(graph, model_path, params)
-    record_output_tensors(graph)
-
+def front_process_tf(graph, params):
     if graph is not None and len(graph) > 0:
-        from ..lite.passes.front_passes import convert_scatternd, convert_scatternd2, split_rsqrt, convert_strided_slice, \
-            convert_square, convert_square_diff, split_not_equal, convert_reverse_sequence, convert_unpack, convert_sparse_to_dense
+        from ..lite.passes.front_passes import convert_scatternd, convert_scatternd2, split_rsqrt, \
+            convert_strided_slice, \
+            convert_square, convert_square_diff, split_not_equal, convert_reverse_sequence, convert_unpack, \
+            convert_sparse_to_dense
 
         apply_subgraph_plugin(graph)
         remove_useless_op(
@@ -97,6 +95,14 @@ def process_tf(graph, model_path, params):
         convert_to_onnx(graph)
 
     else:
-        WARN('[Parser]: Got empty graph for TF model %s in process_tf!' %
+        WARN('[Parser]: Got empty graph for TF model %s in front_process_tf!' %
              params['model_name'])
+
+
+def process_tf(graph, model_path, params):
+    '''Do some preprocessing on the graph under the tensorflow framework.'''
+    graph = convert_tf_to_graph(graph, model_path, params)
+    record_output_tensors(graph)
+    front_process_tf(graph, params)
+
     return graph

@@ -5719,7 +5719,7 @@ def back_passes(graph, params):
         'Asinh', 'Atan', 'Atanh', {'BatchGather': 'ArmGather'}, 'BitShift', 'BNLL',
         'Ceil', 'ChannelShuffle', 'Concat', {'Cos': 'ArmCosine'}, 'Cosh', 'CropAndResize',
         'CTCGreedyDecoder', 'DepthToSpace', 'DivMod', 'Erf', 'Exp', 'Filter', 'Floor',
-        'FractionalPool', 'FullyConnected', 'Gather', 'GatherND', 'GatherElements', 'Input',
+        'FractionalPool', 'FullyConnected', 'Gather', 'GatherND', 'GatherElements', 'If', 'Input',
         {'InstanceNormalization': 'ArmInstanceNorm'}, 'InTopK', 'IsInf', 'IsNaN', 'Log', 'LogSoftmax', 'LRN',
         'MatMul', {'MeanVarianceNormalization': 'ArmMVN'}, 'Meshgrid', 'Mod', {'Neg': 'ArmNegative'},
         'NonZero', 'NormalizedMoments', 'OverlapAdd', 'Pow', 'QueryRebatch', 'Reciprocal', 'Repeat',

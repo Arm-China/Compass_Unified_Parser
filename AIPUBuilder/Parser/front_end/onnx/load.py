@@ -211,12 +211,10 @@ def build_subgraph(name, g_content, root_graph, parent_graph_info, opset_ver):
                         else:
                             # from root graph
                             cons_value = root_graph.nodes[in_tensor_name]['object'].value
-                        sub_graph_info['const_names'].append(n_name)
-                        NodeWrap(sub_graph, n_name).replace_obj('Constant', {'name': n_name,
-                                                                             'value': cons_value,
-                                                                             'opset_version': opset_ver})
+                        # sub_graph_info['const_names'].append(n_name)
+                        NodeWrap(sub_graph, n_name).replace_obj('DummyInput', {'name': n_name})
                         edge_attr = {'src_out_port': in_tensor_out_port, 'dst_in_port': in_port, 'tensor': Tensor(
-                            name=in_tensor_name, value=cons_value, is_const=True)}
+                            name=in_tensor_name, shape=cons_value.shape, is_const=True)}
                         sub_graph.add_edge(
                             n_name, op_name, **edge_attr)
             else:
