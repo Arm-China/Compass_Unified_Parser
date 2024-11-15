@@ -25,7 +25,7 @@ INCLUDEPATH += /home/ik/code/c++/mlir/compass2mlir/include
 LIBS += /home/ik/sdk/llvm/llvm-project-mlir/install/lib/libLLVMSupport.so
 LIBS += /home/ik/sdk/llvm/llvm-project-mlir/install/lib/libMLIRIR.so
 LIBS += /home/ik/sdk/llvm/llvm-project-mlir/install/lib/libMLIRSupport.so
-
+LIBS += /home/ik/sdk/llvm/llvm-project-mlir/install/lib/libMLIRFuncDialect.so
 
 DISTFILES += \
     gen_dialect_op.sh \

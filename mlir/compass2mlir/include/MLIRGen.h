@@ -4,6 +4,8 @@
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
 
+#include "AST.h"
+
 namespace compass {
 
 class MLIRGenImpl {
@@ -14,7 +16,9 @@ public:
     _module = mlir::ModuleOp::create(mlir::UnknownLoc::get(&context));
   }
 
-  mlir::ModuleOp gen();
+  mlir::ModuleOp gen(compass::IrAST &moduleAST);
+
+  mlir::Location UnknownLoc() const { return mlir::UnknownLoc::get(&_context); }
 
 private:
   mlir::MLIRContext &_context;
@@ -25,11 +29,13 @@ private:
   /// is stateful, in particular it keeps an "insertion point": this is where
   /// the next operations will be introduced.
   mlir::OpBuilder _builder;
+
+  mlir::Value gen(compass::BlockAST &blockAST);
 };
 
 class IrAST;
-mlir::OwningOpRef<mlir::ModuleOp>
-genMlir(mlir::MLIRContext &context, std::unique_ptr<compass::IrAST> &moduleAST);
+mlir::OwningOpRef<mlir::ModuleOp> genMlir(mlir::MLIRContext &context,
+                                          compass::IrAST &moduleAST);
 } // namespace compass
 
 #endif // MLIRGEN_H

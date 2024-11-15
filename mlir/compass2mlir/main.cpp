@@ -30,7 +30,7 @@ int main(int argc, char **argv) {
   auto moduleAST = compass::parseCompassTxtBin(txtName, binName);
 
   mlir::OwningOpRef<mlir::ModuleOp> module =
-      compass::genMlir(context, moduleAST);
+      compass::genMlir(context, *moduleAST);
 
   return 0;
 }
