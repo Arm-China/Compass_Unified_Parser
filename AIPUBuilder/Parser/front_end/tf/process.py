@@ -20,6 +20,7 @@ from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
 def front_process_tf(graph, params):
+    record_output_tensors(graph)
     if graph is not None and len(graph) > 0:
         from ..lite.passes.front_passes import convert_scatternd, convert_scatternd2, split_rsqrt, \
             convert_strided_slice, \
@@ -102,7 +103,6 @@ def front_process_tf(graph, params):
 def process_tf(graph, model_path, params):
     '''Do some preprocessing on the graph under the tensorflow framework.'''
     graph = convert_tf_to_graph(graph, model_path, params)
-    record_output_tensors(graph)
     front_process_tf(graph, params)
 
     return graph

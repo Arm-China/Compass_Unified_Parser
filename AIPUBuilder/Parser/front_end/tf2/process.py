@@ -12,6 +12,7 @@ from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
 def front_process_tf2(graph, params):
+    record_output_tensors(graph)
     if graph is not None and len(graph) > 0:
         apply_subgraph_plugin(graph)
         remove_useless_op(graph, ['Tfstop_gradient'])
@@ -68,7 +69,6 @@ def front_process_tf2(graph, params):
 def process_tf2(graph, model_path, params):
     '''Do some preprocessing on the graph under the tensorflow framework.'''
     graph = convert_tf2_to_graph(graph, model_path, params)
-    record_output_tensors(graph)
     front_process_tf2(graph, params)
 
     return graph

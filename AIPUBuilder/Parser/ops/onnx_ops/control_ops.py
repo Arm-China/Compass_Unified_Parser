@@ -52,6 +52,8 @@ class IfOp(OpHasSubGraph, OnnxOp):
                 parent_node = cur_sub_graph._attr['parent_graph'].nodes[n]
                 dummy_out_edges = cur_sub_graph._attr['parent_graph'].sorted_out_edges(parent_node['object'].name,
                                                                                        data=True)
+                if len(dummy_out_edges) == 0:
+                    ERROR(f'[Parser]: Get DummpyInput({n}) Out edges failed in If Node({self.name}).')
                 out_tensor = dummy_out_edges[0][-1]['tensor'].value
                 sub_node_obj.infer_shape(out_tensor, dummy_out_edges[0][-1]['tensor'].is_const)
             else:
@@ -144,6 +146,8 @@ class LoopOp(OpHasSubGraph, OnnxOp):
                             parent_node = self.body._attr['parent_graph'].nodes[n]
                             dummy_out_edges = self.body._attr['parent_graph'].sorted_out_edges(parent_node['object'].name,
                                                                                                data=True)
+                            if len(dummy_out_edges) == 0:
+                                ERROR(f'[Parser]: Get DummpyInput({n}) Out edges failed in Loop Node({self.name}).')
                             out_tensor = dummy_out_edges[0][-1]['tensor'].value
                             if n in cond_out_root_input_const:
                                 cond_out_root_input_const[n] = dummy_out_edges[0][-1]['tensor'].is_const

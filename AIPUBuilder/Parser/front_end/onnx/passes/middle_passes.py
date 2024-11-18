@@ -10194,6 +10194,7 @@ def remove_redundant_mul(graph):
 
 
 def rename_single_mul_or_add_or_sub(graph):
+    matched = False
     mas = ['Mul', 'Div', 'Add', 'Sub']
     mas_matches = [single_node_matcher(graph, op_type) for op_type in mas]
     mas_matches = extend_lists(mas_matches)
@@ -10236,6 +10237,8 @@ def rename_single_mul_or_add_or_sub(graph):
                              and FLOAT_EQUAL(NodeWrap(graph, out_edges[0][1])['object'].max, 6)
                              )):
                 continue
+
+            matched = True
 
             if (n_obj.type in ('Mul', 'Div') and FLOAT_EQUAL(in_consts[0][2], 1.) and int(np.prod(main_input_shape)) >
                 in_tensors[const_in_port].size) \
@@ -10343,6 +10346,9 @@ def rename_single_mul_or_add_or_sub(graph):
                     index = graph._attr['output_names'].index(n)
                     if reshape_inserted and post_reshape is not None:
                         graph._attr['output_names'][index] = post_reshape
+
+    if matched:
+        clear_redundant_nodes(graph)
 
 
 def remove_sub_add_pair(graph):

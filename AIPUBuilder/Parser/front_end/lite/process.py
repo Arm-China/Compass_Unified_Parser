@@ -18,6 +18,7 @@ from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
 def front_process_tflite(graph, params):
+    record_output_tensors(graph)
     if graph is not None and len(graph) > 0:
         apply_subgraph_plugin(graph)
         infer(graph, partial=True)
@@ -121,7 +122,6 @@ def front_process_tflite(graph, params):
 def process_tflite(graph, model_path, params):
     '''Do some preprocessing on the graph under the tflite framework.'''
     graph = convert_tflite_to_graph(graph, model_path, params)
-    record_output_tensors(graph)
     front_process_tflite(graph, params)
 
     return graph

@@ -254,5 +254,6 @@ class SubGraph(Graph):
         self._attr['parent_graph'] = None
         self._attr['input_tensors'] = OrderedDict()
         self._attr['output_names'] = []
+        self._attr['output_tensor_names'] = []
         self._attr['output_ports'] = OrderedDict()
         self._attr['root_in_ports'] = []

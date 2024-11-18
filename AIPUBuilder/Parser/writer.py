@@ -113,12 +113,34 @@ def write_nodes_weights(bin_path, nodes_list, graph):
 
 
 def write_net(txt_path, bin_path, net_attr, graph):
-    sorted_list = determined_sort(graph, graph._attr['output_names'], sort_input=True)
+    sorted_list = determined_sort(graph,
+                                  graph._attr['subgraph_depends_nodes'] + graph._attr['output_names'],
+                                  sort_input=True)
     ret = write_nodes_attrs(txt_path, net_attr, sorted_list, graph)
 
     if ret:
         ret = write_nodes_weights(bin_path, sorted_list, graph)
     return ret
+
+
+def get_output_tensor_names(graph):
+    output_tops_names = []
+    out_nodes = graph._attr.get('output_nodes', [])
+    if (len(out_nodes)
+            and all([i is not None for i in out_nodes])
+            and all([NodeWrap(graph, name)['object'] for name in
+                     out_nodes])):  # due to some post process adding,the out node may be removed.
+        for name in out_nodes:
+            obj = NodeWrap(graph, name)['object']
+            out_tops = obj.get_inputs_info()
+            output_tops_names.extend(out_tops[0])
+    else:
+        for name in graph._attr['output_names']:
+            obj = NodeWrap(graph, name)['object']
+            out_tops = obj.get_outputs_info()
+            if len(out_tops) > 0:
+                output_tops_names.extend(out_tops[0])
+    return output_tops_names
 
 
 def serialize(graph, params):
@@ -141,7 +163,9 @@ def serialize(graph, params):
         if os.path.exists(bin_path):
             os.remove(bin_path)
 
-        sorted_list = determined_sort(graph, graph._attr['output_names'], sort_input=True)
+        sorted_list = determined_sort(graph,
+                                      graph._attr['subgraph_depends_nodes'] + graph._attr['output_names'],
+                                      sort_input=True)
 
         net_attr = OrderedDict()
         net_attr['model_name'] = model_name
@@ -162,23 +186,9 @@ def serialize(graph, params):
         INFO('[Parser]: The input tensor(s) is/are: %s' %
              (net_attr['input_tensors']))
 
-        output_tops_names = []
-        out_nodes = graph._attr.get('output_nodes', [])
-        if (len(out_nodes)
-            and all([i is not None for i in out_nodes])
-                and all([NodeWrap(graph, name)['object'] for name in out_nodes])):   # due to some post process adding,the out node may be removed.
-            for name in out_nodes:
-                obj = NodeWrap(graph, name)['object']
-                out_tops = obj.get_inputs_info()
-                output_tops_names.extend(out_tops[0])
-        else:
-            for name in graph._attr['output_names']:
-                obj = NodeWrap(graph, name)['object']
-                out_tops = obj.get_outputs_info()
-                if len(out_tops) > 0:
-                    output_tops_names.extend(out_tops[0])
+        output_tensor_names = get_output_tensor_names(graph)
 
-        net_attr['output_tensors'] = string_list_to_string(output_tops_names)
+        net_attr['output_tensors'] = string_list_to_string(output_tensor_names)
 
         ret = write_net(txt_path, bin_path, net_attr, graph)
 
@@ -197,7 +207,8 @@ def serialize(graph, params):
                     sub_input_tops = [obj.get_outputs_info() for obj in sub_input_objs]
                     sub_input_tops_names = [t[0][0] for t in sub_input_tops]
                     sub_net_attr['input_tensors'] = string_list_to_string(sub_input_tops_names)
-                    sub_net_attr['output_tensors'] = string_list_to_string(subgraph._attr['output_names'])
+                    sub_output_tensor_names = get_output_tensor_names(subgraph)
+                    sub_net_attr['output_tensors'] = string_list_to_string(sub_output_tensor_names)
 
                     ret = write_net(txt_path, bin_path, sub_net_attr, subgraph)
 

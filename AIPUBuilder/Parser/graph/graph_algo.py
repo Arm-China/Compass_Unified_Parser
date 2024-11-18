@@ -115,7 +115,8 @@ def clear_redundant_nodes(g, outputs=None):
                         if sub in subgraph_map:
                             root_node_name = subgraph_map[sub]
                             if root_node_name in valid_nodes:
-                                output_names.append(n)
+                                if n not in output_names:
+                                    output_names.append(n)
                                 if n not in g._attr['subgraph_depends_nodes']:
                                     g._attr['subgraph_depends_nodes'].append(n)
             valid_nodes = determined_sort(g, output_names)
@@ -150,6 +151,20 @@ def clear_redundant_nodes(g, outputs=None):
             for k in list(g._attr['subgraphs'].keys()):
                 if k not in all_valid_nodes:
                     g._attr['subgraphs'].pop(k)
+        if g._attr['subgraph_depends_nodes']:
+            for dep_n in g._attr['subgraph_depends_nodes']:
+                out_edges = g.sorted_out_edges(dep_n, data=True)
+                if not out_edges:
+                    noop_node_name = get_valid_node_name(
+                        g, dep_n + '_noop_0')
+                    g.add_node(noop_node_name)
+                    noop_node = NodeWrap(g, noop_node_name)
+                    noop_node.replace_obj(
+                        'Out', {'name': noop_node_name})
+                    out_edge_attr = {
+                        'src_out_port': 0, 'dst_in_port': 0, 'tensor': Tensor(name=dep_n)}
+                    g.add_edge(
+                        dep_n, noop_node_name, **out_edge_attr)
     else:
         ERROR('[Parser]: Can not proceed without output names in clear_redundant_nodes!')
 

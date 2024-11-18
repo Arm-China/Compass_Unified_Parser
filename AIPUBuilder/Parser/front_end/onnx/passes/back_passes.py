@@ -2306,6 +2306,25 @@ def rename_compress(graph):
         clear_redundant_nodes(graph)
 
 
+def rename_constant(graph):
+    matches = single_node_matcher(graph, 'Constant')
+    for m in matches:
+        cons = m['target']
+        cons_node = NodeWrap(graph, cons)
+        cons_obj = cons_node['object']
+        if cons_obj is None \
+                or cons_obj.value is None:
+            ERROR(
+                '[Parser]: Meets invalid Constant Op(%s) in rename_constant!' % cons)
+            continue
+        out_edges = graph.sorted_in_edges(cons, data=True)
+        if len(out_edges) == 0 and cons_obj.in_subgraph and len(cons_obj.subgraphs) > 0:
+            cons_attr = cons_obj.copied_attr()
+            cons_attr.update({'weights': cons_obj.value})
+            NodeWrap(graph, cons).replace_obj(
+                'ArmConstant', cons_attr)
+
+
 def rename_conv(graph):
     conv_types = ['Conv', 'ConvTranspose', 'ConvInteger']
     matches = matched_patterns(
@@ -4302,7 +4321,8 @@ def remove_const(graph):
     for node_name in graph.nodes:
         node = NodeWrap(graph, node_name)
         node_obj = node['object']
-        if node_obj is not None and node_obj.type in ('Constant', 'Dummy'):
+        if node_obj is not None and node_obj.type in ('Constant', 'Dummy') and \
+                not node_obj.in_subgraph:
             const_out_edges = graph.sorted_out_edges(node_name, data=True)
             if len(const_out_edges) >= 1 and node_obj.type == 'Constant':
                 const_child = const_out_edges[0][1]
@@ -4399,7 +4419,9 @@ def trim_weights(graph):
              (data_dtype, to_supported_dtype.__name__, attr_name, node_name))
         return np_data.astype(to_supported_dtype)
 
-    nodes_list = determined_sort(graph, graph._attr['output_names'], sort_input=True)
+    nodes_list = determined_sort(graph,
+                                 graph._attr['subgraph_depends_nodes'] + graph._attr['output_names'],
+                                 sort_input=True)
 
     offset = 0
     for node_name in nodes_list:
@@ -5683,6 +5705,7 @@ def back_passes(graph, params):
     rename_cast(graph)
     rename_col2im(graph)
     rename_compress(graph)
+    rename_constant(graph)
     rename_conv(graph)
     rename_dilation_erosion(graph)
     rename_div(graph)

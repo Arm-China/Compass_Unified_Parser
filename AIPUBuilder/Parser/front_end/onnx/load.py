@@ -52,8 +52,8 @@ def build_subgraph(name, g_content, root_graph, parent_graph_info, opset_ver):
 
     parent_graph = parent_graph_info['graph']
     parent_nodes = parent_graph_info['nodes']
-    parent_inputs = parent_graph_info['inputs']
-    parent_outputs = parent_graph_info['outputs']
+    # parent_inputs = parent_graph_info['inputs']
+    # parent_outputs = parent_graph_info['outputs']
     parent_const_names = parent_graph_info['const_names']
 
     sub_graph_info = OrderedDict()
@@ -207,11 +207,15 @@ def build_subgraph(name, g_content, root_graph, parent_graph_info, opset_ver):
                         n_name = get_valid_node_name(sub_graph, in_tensor_name)
                         sub_graph.add_node(n_name)
                         if in_tensor_name in parent_graph.nodes:
-                            cons_value = parent_graph.nodes[in_tensor_name]['object'].value
+                            op_obj = parent_graph.nodes[in_tensor_name]['object']
                         else:
                             # from root graph
-                            cons_value = root_graph.nodes[in_tensor_name]['object'].value
-                        # sub_graph_info['const_names'].append(n_name)
+                            op_obj = root_graph.nodes[in_tensor_name]['object']
+                        cons_value = op_obj.value
+                        op_obj.in_subgraph = True
+                        if sub_graph.name not in op_obj.subgraphs:
+                            op_obj.subgraphs.append(sub_graph.name)
+
                         NodeWrap(sub_graph, n_name).replace_obj('DummyInput', {'name': n_name})
                         edge_attr = {'src_out_port': in_tensor_out_port, 'dst_in_port': in_port, 'tensor': Tensor(
                             name=in_tensor_name, shape=cons_value.shape, is_const=True)}
@@ -292,6 +296,8 @@ def build_subgraph(name, g_content, root_graph, parent_graph_info, opset_ver):
             noop_node_name), 'Node(%s) does not exist in build_subgraph.' % (out_node_name)
         if out_node_name not in sub_graph._attr['output_names']:
             sub_graph._attr['output_names'].append(out_node_name)
+        if output['name'] not in sub_graph._attr['output_tensor_names']:
+            sub_graph._attr['output_tensor_names'].append(output['name'])
 
         sub_graph.add_node(noop_node_name)
         noop_node = NodeWrap(sub_graph, noop_node_name)

@@ -235,7 +235,6 @@ def univ_parser(params):
                             front_process_graph(model_type, model_path, subgraph, params)
                             process_graph(subgraph, params)
                             convert_dummyinput_to_input(subgraph)
-                            # remove_useless_op(subgraph, ['DummyInput'])
 
                 txt_path, bin_path = '', ''
                 try:
