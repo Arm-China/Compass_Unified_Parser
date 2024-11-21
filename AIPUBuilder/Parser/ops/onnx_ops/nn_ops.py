@@ -497,7 +497,15 @@ class ConvTransposeOp(BaseDeconvOp, OnnxOp):
             self.output_padding = self.output_padding[1:]
         self.update_pads(inputs[0].shape[1:-1] if self.data_format == 'NHWC' else inputs[0].shape[2:])
         if self.biases is None:
-            self.biases = np.zeros(self.num_output, np.float32)
+            if self.quantize and np.issubdtype(self.weights.dtype, np.integer):
+                self.biases = np.zeros(self.num_output, np.int32)
+                w_scale = self.weights_scale_zp[0]
+                inp_node_name = self._graph.sorted_in_edges(self.name)[0][0]
+                inp_scale = self._graph.nodes[inp_node_name]['object'].x_scale
+                bias_scale = inp_scale * w_scale
+                self.biases_scale_zp = [bias_scale, np.zeros(bias_scale.shape, dtype=np.int32)]
+            else:
+                self.biases = np.zeros(self.num_output, np.float32)
         if self.data_format == 'NHWC':
             out_shape = [inputs[0].shape[0]] + \
                 self.output_shape + [self.num_output]

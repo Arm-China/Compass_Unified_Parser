@@ -6,7 +6,7 @@ from ...graph.graph_algo import infer
 from .passes.front_passes import fuse_weights_const, convert_special_prelu, merge_qconv, merge_qmatmul, \
     merge_q_multiple, merge_q_unary, convert_special_sequence_construct, merge_sequence_construct_and_at, \
     merge_sequence_construct_and_concat, merge_rcnn, convert_mmcv_deform_conv, \
-    merge_qgemm, uplift_quant, uplift_quant_through_concat
+    merge_qgemm, uplift_quant, uplift_quant_through_concat, merge_qconv_no_bias
 from .passes.common_passes import remove_useless_op, apply_subgraph_plugin, record_output_tensors, \
     merge_same_op_at_out_port
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
@@ -27,6 +27,7 @@ def front_process_onnx(graph, params):
         merge_same_op_at_out_port(graph, op_types=['QuantizeLinear'])
         uplift_quant(graph)
         merge_qconv(graph)
+        merge_qconv_no_bias(graph)
         merge_qmatmul(graph)
         merge_q_multiple(graph, ['Add', 'Concat', 'Gemm', 'Mul', 'Split', 'Gather'])
         merge_q_unary(graph, ['AdaptivePool', 'AveragePool', 'Celu', 'Clip', 'Elu', 'Expand', 'Flatten',
