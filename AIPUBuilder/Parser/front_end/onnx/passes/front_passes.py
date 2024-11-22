@@ -133,8 +133,6 @@ def decompose_loop(graph, params):
         loop_out_edges = graph.sorted_out_edges(loop, data=True)
         if loop_obj is not None \
                 and len(loop_in_edges) >= 2 and len(loop_out_edges) >= 1 and \
-                loop_in_edges[0][2]['tensor'].is_const and \
-                loop_in_edges[0][2]['tensor'].value is not None and \
                 loop_in_edges[1][2]['tensor'].is_const and \
                 loop_in_edges[1][2]['tensor'].value is not None:
 
@@ -192,7 +190,9 @@ def decompose_loop(graph, params):
                 if loop in graph._attr['subgraphs']:
                     graph._attr['subgraphs'].pop(loop)
                 continue
-
+            if not loop_in_edges[0][2]['tensor'].is_const or \
+                    loop_in_edges[0][2]['tensor'].value is None:
+                continue
             if loop_obj.real_loop_cnt is None:
                 continue
             loop_cnt = loop_obj.real_loop_cnt

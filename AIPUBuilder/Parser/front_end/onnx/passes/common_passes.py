@@ -430,6 +430,10 @@ def remove_useless_op(graph, op_type_list):
                 removing_nodes.append(node_name)
 
         for rn in removing_nodes:
+            if rn in graph._attr['output_names']:
+                index = graph._attr['output_names'].index(rn)
+                pred_node_name = graph.sorted_in_edges(rn)[0][0]
+                graph._attr['output_names'][index] = pred_node_name
             remove_node_safely(graph, rn)
 
 

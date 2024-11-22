@@ -98,9 +98,15 @@ class LoopOp(OpHasSubGraph, OnnxOp):
             max_count, ori_cond_in = int(inputs[0]), bool(inputs[1])
             count_cond_is_const = True
         else:
-            WARN(f'[Parser]: Loop({self.name}) max_count/cond_in is non-const, the infer shape is unreliable.')
-            max_count, ori_cond_in = 5, True
-            count_cond_is_const = False
+            if in_edges[1][2]['tensor'].is_const and \
+                    in_edges[1][2]['tensor'].value is not None and not bool(inputs[1]):
+                # if cond_in == False, still can decompose Loop even max_count is non-const
+                max_count, ori_cond_in = 1, False
+                count_cond_is_const = True
+            else:
+                WARN(f'[Parser]: Loop({self.name}) max_count/cond_in is non-const, the infer shape is unreliable.')
+                max_count, ori_cond_in = 5, True
+                count_cond_is_const = False
 
         cond_in = ori_cond_in
         body_inputs_num = len(self.body._attr['input_tensors'])  # 2+N
