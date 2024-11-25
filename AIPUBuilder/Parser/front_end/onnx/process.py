@@ -24,7 +24,7 @@ def front_process_onnx(graph, params):
         infer(graph, partial=True)
         merge_rcnn(graph, params)
         uplift_quant_through_concat(graph)
-        merge_same_op_at_out_port(graph, op_types=['QuantizeLinear'])
+        merge_same_op_at_out_port(graph, op_types=['QuantizeLinear', 'DequantizeLinear'])
         uplift_quant(graph)
         merge_qconv(graph)
         merge_qconv_no_bias(graph)

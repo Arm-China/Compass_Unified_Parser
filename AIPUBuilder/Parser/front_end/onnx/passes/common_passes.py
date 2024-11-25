@@ -1668,15 +1668,21 @@ def merge_same_op_at_out_port(graph, op_types=['ArmTranspose', 'ArmReshape']):
                 elif op == 'Cast':
                     if any((cur_objs[0].to != obj.to or cur_objs[0].saturate != obj.saturate) for obj in cur_objs[1:]):
                         continue
-                elif op == 'QuantizeLinear':
+                elif op in ['QuantizeLinear', 'DequantizeLinear']:
+                    if op == 'QuantizeLinear':
+                        scale_attr = 'y_scale'
+                        zp_attr = 'y_zero_point'
+                    else:
+                        scale_attr = 'x_scale'
+                        zp_attr = 'x_zero_point'
                     quant_nodes = [e[1] for e in cur_p_edges]
                     for quant_node in quant_nodes:
                         quant_in_edges = graph.sorted_in_edges(quant_node, data=True)
                         if any(e[2]['tensor'].value is None for e in quant_in_edges[1:]) \
                                 or any(not e[2]['tensor'].is_const for e in quant_in_edges[1:]):
                             continue
-                    if any((cur_objs[0].axis != obj.axis or not FLOAT_EQUAL(cur_objs[0].y_scale, obj.y_scale)
-                            or cur_objs[0].y_zero_point != obj.y_zero_point) for obj in cur_objs[1:]):
+                    if any((cur_objs[0].axis != obj.axis or not FLOAT_EQUAL(getattr(cur_objs[0], scale_attr), getattr(obj, scale_attr))
+                            or getattr(cur_objs[0], zp_attr) != getattr(obj, zp_attr)) for obj in cur_objs[1:]):
                         continue
                 else:
                     # not supported yet
