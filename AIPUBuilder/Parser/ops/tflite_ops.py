@@ -572,7 +572,8 @@ class LiteCONV_3D_TRANSPOSEOp(BaseActivationOp, BaseDeconvOp, TfliteOp):
                                                 self).perm_lite_to_tf()),
                                             inputs[0],
                                             strides=[1] + self.strides + [1],
-                                            padding='VALID' if self.auto_pad in ('VALID', 'NOTSET') else 'SAME')
+                                            padding='VALID' if self.auto_pad in ('VALID', 'NOTSET') else 'SAME',
+                                            dilations=self.dilations)
         out_tensor = tf.nn.bias_add(
             out_tensor, self.biases, data_format='NHWC').numpy()
         out_tensor = out_tensor.astype(inputs[1].dtype)
