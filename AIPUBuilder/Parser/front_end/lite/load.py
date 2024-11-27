@@ -195,7 +195,9 @@ def update_tensor(tflite_path, tensor_table):
             if stop_event.isSet():
                 return table
             try:
-                interpreter = tf.lite.Interpreter(model_path=path, experimental_preserve_all_tensors=True)
+                # Set experimental_preserve_all_tensors as False default
+                # core dump will happen if True and with big feature map
+                interpreter = tf.lite.Interpreter(model_path=path, experimental_preserve_all_tensors=False)
                 interpreter.allocate_tensors()
                 interpreter.invoke()
                 tensors = interpreter.get_tensor_details()
