@@ -25,8 +25,6 @@ def front_process_tflite(graph, params):
         fuse_weights_const(graph)
 
         split_op_has_activation(graph)
-        remove_useless_op(
-            graph, ['LiteRESHAPE'])
 
         if graph._attr.get('quantize', False):
             merge_dqd(graph, ['LiteMIRROR_PAD', 'LiteRSQRT',
@@ -80,6 +78,8 @@ def front_process_tflite(graph, params):
 
         clear_redundant_nodes(graph)
         infer(graph)
+        remove_useless_op(
+            graph, ['LiteRESHAPE'])
         fuse_const(graph)
 
         if not graph._attr.get('quantize', False):

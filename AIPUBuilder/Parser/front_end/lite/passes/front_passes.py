@@ -1094,7 +1094,6 @@ def convert_unpack(graph, op_type='LiteUNPACK'):
             NodeWrap(graph, unpack).replace_obj('Split', split_attr)
 
             output_shapes = unpack_obj.get_output_shapes()
-            reshape_dim = copy.deepcopy(list(output_shapes[0]))
             last_names = []
             out_ports = unpack_obj.get_out_ports()
             for p in out_ports:
@@ -1116,9 +1115,8 @@ def convert_unpack(graph, op_type='LiteUNPACK'):
                     split_out_attr.update({'tensor': split_out_tensor})
                 graph.add_edge(unpack, reshape, **split_out_attr)
                 NodeWrap(graph, reshape).replace_obj(
-                    'Reshape', {'name': reshape, 'opset_version': 5, 'quantize': quantize})
-                insert_constant(graph, reshape + '_shape', np.array(reshape_dim,
-                                                                    np.int64), reshape, in_port=1, data_format='NHWC')
+                    'Squeeze', {'name': reshape, 'opset_version': 11,
+                                'quantize': quantize, 'axes': [unpack_obj.axis]})
                 last_names.append(reshape)
 
             if unpack in graph._attr['output_names'] and last_names:
