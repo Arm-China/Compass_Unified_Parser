@@ -260,7 +260,8 @@ def convert_tflite_to_graph(graph, model_path, params):
                 tensors_table = [(tensor, ti not in non_const_tensor_ids, linear_weights_tensor_id.get(
                     ti, '')) for ti, tensor in enumerate(tensors_table)]
                 parsed_tensors_table = list(map(partial(parse_tensor, tflite_model=model), tensors_table))
-                parsed_tensors_table = update_tensor(model_path, parsed_tensors_table)
+                # cause memory exceed for big feature map
+                # parsed_tensors_table = update_tensor(model_path, parsed_tensors_table)
 
                 tensor_name_count = defaultdict(int)
                 for in_tensor_id in non_const_tensor_ids:
