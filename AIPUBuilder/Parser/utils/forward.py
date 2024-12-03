@@ -31,6 +31,9 @@ def caffe_forward_impl(output_dict, proto_path, model_path, feed_dict, output_na
 def caffe_forward(proto_path, model_path, feed_dict, output_names=None, save_output=True):
     import multiprocessing as mp
     from multiprocessing import Process, Manager
+    import tempfile
+    # set temp dir to local to avoid .nfs error
+    tempfile.tempdir = '/tmp'
 
     # used to print multiprocess log
     # from multiprocessing import log_to_stderr
