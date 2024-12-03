@@ -322,6 +322,36 @@ def build_subgraph(name, g_content, root_graph, parent_graph_info, opset_ver):
         sub_graph.add_edge(
             out_node_name, noop_node_name, **out_edge_attr)
 
+    for inp_name, inp_tensor in sub_graph._attr['input_tensors'].items():
+        out_port = 0
+        out_edges = sub_graph.sorted_out_edges(inp_name)
+        if len(out_edges) == 0:
+            noop_node_name = inp_name + '_noop_' + str(out_port)
+            assert sub_graph.has_node(inp_name) and not sub_graph.has_node(
+                noop_node_name), 'Node(%s) does not exist in build_subgraph.' % (inp_name)
+            sub_graph.add_node(noop_node_name)
+            noop_node = NodeWrap(sub_graph, noop_node_name)
+            noop_node.replace_obj('Out', {'name': noop_node_name})
+            pending_out_port = out_port
+            current_out_ports = NodeWrap(sub_graph, inp_name)[
+                'object'].get_out_ports()
+            if pending_out_port in current_out_ports:
+                found_non_out_node = False
+                cur_out_edges = sub_graph.sorted_out_edges(
+                    inp_name, data=True)
+                for _, dst, out_attr in cur_out_edges:
+                    if out_attr.get('src_out_port', 0) == pending_out_port \
+                            and NodeWrap(sub_graph, dst)['object'] is not None \
+                            and NodeWrap(sub_graph, dst)['object'].type != 'Out':
+                        found_non_out_node = True
+                        break
+                if not found_non_out_node:
+                    pending_out_port = max(current_out_ports) + 1
+            out_edge_attr = {
+                'src_out_port': pending_out_port, 'dst_in_port': 0, 'tensor': inp_tensor}
+            sub_graph.add_edge(
+                inp_name, noop_node_name, **out_edge_attr)
+
     clear_redundant_nodes(sub_graph)
     return sub_graph
 

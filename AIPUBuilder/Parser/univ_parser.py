@@ -239,7 +239,14 @@ def univ_parser(params):
                 txt_path, bin_path = '', ''
                 try:
                     assign_top_range_scale_zp(graph)
-                    trim_weights(graph)
+                    root_offset = trim_weights(graph)
+                    init_offset = root_offset
+                    if 'subgraphs' in graph._attr and graph._attr['subgraphs']:
+                        for n_name, v in graph._attr['subgraphs'].items():
+                            for subgraph_name, subgraph in v.items():
+                                assign_top_range_scale_zp(subgraph)
+                                sub_offset = trim_weights(subgraph, init_offset)
+                                init_offset = sub_offset
                     ret, txt_path, bin_path = serialize(graph, params)
                     ret = show_in_out_map(graph, params) and ret
                 except Exception as e:

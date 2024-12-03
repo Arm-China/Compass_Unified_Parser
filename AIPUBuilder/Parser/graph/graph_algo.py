@@ -138,6 +138,12 @@ def clear_redundant_nodes(g, outputs=None):
                 else:
                     valid_out_nodes.append(n)
 
+            if isinstance(g, SubGraph) and (n in g._attr['input_tensors'] or
+                                            (g.nodes[n]['op'] == 'Out' and
+                                             len(pred[n]) == 1 and
+                                             pred[n][0] in g._attr['input_tensors'])):
+                valid_out_nodes.append(n)
+
         removing_nodes = set(removing_nodes).difference(valid_out_nodes)
         g.remove_nodes_from(removing_nodes)
         if 'subgraphs' in g._attr and len(g._attr['subgraphs']) > 0:

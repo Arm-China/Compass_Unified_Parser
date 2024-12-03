@@ -148,7 +148,6 @@ def decompose_loop(graph, params):
                 scan_outs_name = get_valid_node_name(graph, f'{loop}_scan_outs_{i}')
                 k_carried_dict[scan_outs_name] = []
 
-            graph.remove_edges_from(loop_in_edges)
             if not condition:
                 loop_out_ports = loop_obj.get_out_ports()
                 if any(p >= 2 for p in loop_out_ports) \
@@ -190,11 +189,15 @@ def decompose_loop(graph, params):
                 if loop in graph._attr['subgraphs']:
                     graph._attr['subgraphs'].pop(loop)
                 continue
+
             if not loop_in_edges[0][2]['tensor'].is_const or \
                     loop_in_edges[0][2]['tensor'].value is None:
                 continue
             if loop_obj.real_loop_cnt is None:
                 continue
+
+            graph.remove_edges_from(loop_in_edges)
+
             loop_cnt = loop_obj.real_loop_cnt
             last_loop_res = OrderedDict()
             sub_main_node_map = {}

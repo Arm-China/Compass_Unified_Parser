@@ -105,7 +105,7 @@ class LoopOp(OpHasSubGraph, OnnxOp):
                 count_cond_is_const = True
             else:
                 WARN(f'[Parser]: Loop({self.name}) max_count/cond_in is non-const, the infer shape is unreliable.')
-                max_count, ori_cond_in = 5, True
+                max_count, ori_cond_in = 2, True
                 count_cond_is_const = False
 
         cond_in = ori_cond_in

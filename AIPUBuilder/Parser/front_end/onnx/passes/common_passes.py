@@ -435,6 +435,8 @@ def remove_useless_op(graph, op_type_list):
                 pred_node_name = graph.sorted_in_edges(rn)[0][0]
                 if pred_node_name not in graph._attr['output_names']:
                     graph._attr['output_names'][index] = pred_node_name
+                else:
+                    graph._attr['output_names'].remove(rn)
             remove_node_safely(graph, rn)
 
 

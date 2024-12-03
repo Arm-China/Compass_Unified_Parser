@@ -4401,7 +4401,7 @@ def remove_special_where(graph):
         clear_redundant_nodes(graph)
 
 
-def trim_weights(graph):
+def trim_weights(graph, init_offset=0):
     def _data_in_supported_dtype(np_data, attr_name, node_name):
         if not isinstance(np_data, np.ndarray):
             np_data = np.array(np_data)
@@ -4423,7 +4423,7 @@ def trim_weights(graph):
                                  graph._attr['subgraph_depends_nodes'] + graph._attr['output_names'],
                                  sort_input=True)
 
-    offset = 0
+    offset = init_offset
     for node_name in nodes_list:
         node = NodeWrap(graph, node_name)
         node_obj = node['object']
@@ -4629,6 +4629,7 @@ def trim_weights(graph):
         else:
             ERROR(
                 '[Parser]: Meets invalid Op object for Node %s in trim_weights!' % node_name)
+    return offset
 
 
 def insert_preprocess(graph):
@@ -5743,7 +5744,8 @@ def back_passes(graph, params):
         'Ceil', 'ChannelShuffle', 'Concat', {'Cos': 'ArmCosine'}, 'Cosh', 'CropAndResize',
         'CTCGreedyDecoder', 'DepthToSpace', 'DivMod', 'Erf', 'Exp', 'Filter', 'Floor',
         'FractionalPool', 'FullyConnected', 'Gather', 'GatherND', 'GatherElements', 'If', 'Input',
-        {'InstanceNormalization': 'ArmInstanceNorm'}, 'InTopK', 'IsInf', 'IsNaN', 'Log', 'LogSoftmax', 'LRN',
+        {'InstanceNormalization': 'ArmInstanceNorm'}, 'InTopK', 'IsInf', 'IsNaN', 'Log', 'LogSoftmax',
+        'Loop', 'LRN',
         'MatMul', {'MeanVarianceNormalization': 'ArmMVN'}, 'Meshgrid', 'Mod', {'Neg': 'ArmNegative'},
         'NonZero', 'NormalizedMoments', 'OverlapAdd', 'Pow', 'QueryRebatch', 'Reciprocal', 'Repeat',
         'ReverseSequence', 'Round', 'SegmentReduce', 'Sign', {'Sin': 'ArmSine'}, 'Sinh', 'SlotUpdate',
