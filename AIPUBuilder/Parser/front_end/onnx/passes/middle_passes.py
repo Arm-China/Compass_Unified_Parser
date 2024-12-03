@@ -11819,7 +11819,7 @@ def middle_passes(graph, params):
     merge_query_rebatch(graph)
     merge_slot_update(graph)
 
-    merge_q_ln(graph)
+    # merge_q_ln(graph)
     merge_q_gelu(graph)
     convert_qadd(graph)
     convert_qavgpool(graph)
