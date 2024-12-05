@@ -6547,6 +6547,84 @@ def merge_q_ln(graph):
         clear_redundant_nodes(graph)
 
 
+def merge_q_ln_partial(graph):
+    matched = False
+    matches = matched_patterns(graph,
+                               nodes=[
+                                   ('dequant', {'op': 'DequantizeLinear'}),
+                                   ('mean_1', {'op': 'ReduceMean'}),
+                                   ('sub', {'op': 'Sub'}),
+                                   ('pow_y', {'op': 'Constant', 'unique': False}),
+                                   ('pow', {'op': 'Pow'}),
+                                   ('mean_2', {'op': 'ReduceMean'}),
+                                   ('quant_1', {'op': 'QuantizeLinear'}),
+                                   ('eps', {'op': 'Constant', 'unique': False}),
+                                   ('add_1', {'op': 'Add'}),
+                                   ('dequant_1', {'op': 'DequantizeLinear'}),
+                                   ('sqrt', {'op': 'Sqrt'}),
+                                   ('div', {'op': 'Div'}),
+                                   ('quant_2', {'op': 'QuantizeLinear'}),
+                                   ('gamma', {'op': 'Constant'}),
+                                   ('mul_1', {'op': 'Mul'}),
+                                   ('beta', {'op': 'Constant'}),
+                                   ('add_2', {'op': 'Add'}),
+                               ],
+                               edges=[
+                                   ('dequant', 'mean_1'),
+                                   ('dequant', 'sub', {'dst_in_port': 0}),
+                                   ('mean_1', 'sub', {'dst_in_port': 1}),
+                                   ('sub', 'pow', {'dst_in_port': 0}),
+                                   ('pow_y', 'pow', {'dst_in_port': 1}),
+                                   ('pow', 'mean_2'),
+                                   ('mean_2', 'quant_1', {'dst_in_port': 0}),
+                                   ('quant_1', 'add_1'),
+                                   ('eps', 'add_1'),
+                                   ('add_1', 'dequant_1', {'dst_in_port': 0}),
+                                   ('dequant_1', 'sqrt'),
+                                   ('sub', 'div', {'dst_in_port': 0}),
+                                   ('sqrt', 'div', {'dst_in_port': 1}),
+                                   ('div', 'quant_2', {'dst_in_port': 0}),
+                                   ('quant_2', 'mul_1'),
+                                   ('gamma', 'mul_1'),
+                                   ('mul_1', 'add_2'),
+                                   ('beta', 'add_2'),
+                               ])
+    for m in matches:
+        names = ['dequant', 'mean_1', 'pow_y', 'mean_2', 'quant_1', 'eps', 'add_1', 'dequant_1']
+        obj_dict = {n: NodeWrap(graph, m[n])['object'] for n in names}
+        if any(obj is None for obj in obj_dict.values()):
+            ERROR('[Parser]: Meets invalid Op in merge_q_ln_partial!')
+            continue
+        if not all(obj_dict[name].quantize for name in ['add_1']):
+            continue
+
+        quant_1_in_edges = graph.sorted_in_edges(m['quant_1'], data=True)
+        dequant_1_in_edges = graph.sorted_in_edges(m['dequant_1'], data=True)
+        eps_out_edges = graph.sorted_out_edges(m['eps'], data=True)
+        if len(quant_1_in_edges) < 2 or len(dequant_1_in_edges) < 2 or len(eps_out_edges) < 1:
+            ERROR('[Parser]: Meets invalid inputs/outputs in merge_q_ln_partial!')
+            continue
+        if not FLOAT_EQUAL(obj_dict['quant_1'].y_scale, obj_dict['dequant_1'].x_scale) \
+                or not FLOAT_EQUAL(obj_dict['quant_1'].y_zero_point, obj_dict['dequant_1'].x_zero_point):
+            continue
+        matched = True
+        eps_scale, eps_zp = eps_out_edges[0][2]['tensor'].scale_zp
+        eps_float = (obj_dict['eps'].value - eps_zp) * eps_scale
+        src, _, in_attr = quant_1_in_edges[0]
+        graph.remove_edges_from(quant_1_in_edges)
+        graph.remove_edge(m['quant_1'], m['add_1'])
+        graph.add_edge(src, m['add_1'], **in_attr)
+        for _, dst, out_attr in graph.sorted_out_edges(m['dequant_1'], data=True):
+            graph.remove_edge(m['dequant_1'], dst)
+            graph.add_edge(m['add_1'], dst, **out_attr)
+        obj_dict['eps'].value = eps_float
+        obj_dict['eps'].quantize = False
+        obj_dict['add_1'].quantize = False
+
+    if matched:
+        clear_redundant_nodes(graph)
+
+
 def merge_q_gelu(graph):
     matched = False
     matches = matched_patterns(graph,
@@ -11820,6 +11898,7 @@ def middle_passes(graph, params):
     merge_slot_update(graph)
 
     # merge_q_ln(graph)
+    merge_q_ln_partial(graph)
     merge_q_gelu(graph)
     convert_qadd(graph)
     convert_qavgpool(graph)
