@@ -67,7 +67,10 @@ def matched_patterns(graph, nodes, edges):
                 if 'op' not in n[1]:
                     nodes[i][1].update({'op': None})
                 if 'unique' not in n[1]:
-                    nodes[i][1].update({'unique': True})
+                    if nodes[i][1]['op'] in ['Constant', 'ArmConstant']:
+                        nodes[i][1].update({'unique': False})
+                    else:
+                        nodes[i][1].update({'unique': True})
         for i, e in enumerate(edges):
             if len(e) == 2:
                 edges[i] = tuple([e[0], e[1], {'src_out_port': None, 'dst_in_port': None}])
