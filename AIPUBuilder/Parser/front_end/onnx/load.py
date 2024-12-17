@@ -26,7 +26,7 @@ onnx_source_map = {
 }
 
 
-def build_subgraph(name, g_content, root_graph, parent_graph_info, opset_ver):
+def build_subgraph(name, g_content, root_graph, parent_graph_info, a_nodes, opset_ver):
     sub_graph = SubGraph(name=name)
     sub_graph._attr['framework'] = root_graph._attr['framework']
 
@@ -98,9 +98,9 @@ def build_subgraph(name, g_content, root_graph, parent_graph_info, opset_ver):
                     name=single_input['name'], value=input_tensor, is_const=is_const)
             })
 
-    all_nodes = nodes + parent_nodes
+    a_nodes += nodes
     out_tensor_operator_map = {}
-    for oi, op_info in enumerate(all_nodes):
+    for oi, op_info in enumerate(a_nodes):
         out_tensor_operator_map.update({k: oi for k in [(
             out_info['name'], out_info['out_port']) for out_info in op_info['output']]})
         node_name = op_info['name']
@@ -160,7 +160,9 @@ def build_subgraph(name, g_content, root_graph, parent_graph_info, opset_ver):
                 op_attr.update({'name': name})
                 nodes[ni].update({'name': name})
         attr_value_converter(
-            op_attr, root_graph._attr['source'], root_graph, parent_graph_info=sub_graph_info)
+            op_attr, root_graph._attr['source'], root_graph,
+            a_nodes=a_nodes,
+            parent_graph_info=sub_graph_info)
         op_name = op_attr['name']
         if not sub_graph.has_node(op_name):
             sub_graph.add_node(op_name)
@@ -226,7 +228,7 @@ def build_subgraph(name, g_content, root_graph, parent_graph_info, opset_ver):
                     in_tensor_out_port = tensor_name_map[in_tensor_name][0]
                 pre_op_id = out_tensor_operator_map[(
                     in_tensor_name, in_tensor_out_port)]
-                pre_op = all_nodes[pre_op_id]
+                pre_op = a_nodes[pre_op_id]
                 pre_op_name = pre_op['name'] if pre_op['name'] else pre_op['output'][0]['name']
                 if not sub_graph.has_node(pre_op_name):
                     # root graph op
@@ -288,7 +290,7 @@ def build_subgraph(name, g_content, root_graph, parent_graph_info, opset_ver):
         else:
             op_index_has_output = out_tensor_operator_map[(
                 output['name'], output['out_port'])]
-            out_node_name = nodes[op_index_has_output]['name']
+            out_node_name = a_nodes[op_index_has_output]['name']
             if not out_node_name:
                 out_node_name = output['name']
         noop_node_name = out_node_name + '_noop_' + str(out_index)
@@ -356,7 +358,7 @@ def build_subgraph(name, g_content, root_graph, parent_graph_info, opset_ver):
     return sub_graph
 
 
-def attr_value_converter(attr_dict, source, root_graph, parent_graph_info=None):
+def attr_value_converter(attr_dict, source, root_graph, a_nodes, parent_graph_info=None):
     for key in attr_dict:
         if key == 'activations':
             acts = [act.upper() for act in attr_dict[key]]
@@ -388,6 +390,7 @@ def attr_value_converter(attr_dict, source, root_graph, parent_graph_info=None):
                                        attr_dict[key],
                                        root_graph,
                                        parent_graph_info,
+                                       a_nodes,
                                        attr_dict.get('opset_version', 1))
             if attr_dict['name'] in root_graph._attr['subgraphs']:
                 root_graph._attr['subgraphs'][attr_dict['name']][sub_graph_name] = sub_graph
@@ -414,6 +417,7 @@ def convert_onnx_to_graph(graph, model_path, params):
     graph._attr['subgraph_output_names'] = []
 
     meta_ret = True
+    all_nodes = []
     consumer_ver = get_version(onnx)
     if consumer_ver >= 1.04:
         model = None
@@ -521,6 +525,7 @@ def convert_onnx_to_graph(graph, model_path, params):
                                 name=single_input['name'], value=input_tensor, is_const=is_const)
                         })
 
+                all_nodes += nodes
                 out_tensor_operator_map = {}
                 for oi, op_info in enumerate(nodes):
                     out_tensor_operator_map.update({k: oi for k in [(
@@ -596,7 +601,8 @@ def convert_onnx_to_graph(graph, model_path, params):
                             op_attr.update({'name': name})
                             nodes[ni].update({'name': name})
                     attr_value_converter(
-                        op_attr, params['source'], root_graph=graph, parent_graph_info=root_info)
+                        op_attr, params['source'], root_graph=graph,
+                        a_nodes=all_nodes, parent_graph_info=root_info)
                     op_name = op_attr['name']
                     if not graph.has_node(op_name):
                         graph.add_node(op_name)
@@ -812,6 +818,16 @@ def convert_onnx_to_graph(graph, model_path, params):
                             'dst_in_port': 0,
                             'tensor': Tensor(name=subgraph_out)}
                         graph.add_edge(subgraph_out, out_op_name, **out_edge_attr)
+
+                # Set output tensors if not set in params
+                if not graph._attr['output_tensor_names']:
+                    for out_index, output in enumerate(outputs):
+                        if (output['name'], output['out_port']) not in out_tensor_operator_map \
+                                and output['name'] in const_names:
+                            # Ignore the const outputs because they will make the graph not connected
+                            continue
+                        if output['name'] not in graph._attr['output_tensor_names']:
+                            graph._attr['output_tensor_names'].append(output['name'])
 
                 # Add Out node after the nodes with output tensors but without successors.
                 for (out_tensor_name, out_port), node_idx in out_tensor_operator_map.items():
