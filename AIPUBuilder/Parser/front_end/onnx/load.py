@@ -13,7 +13,7 @@ from .buffer import get_model_content, parse_proto, get_tensor_content, get_valu
 from ...graph.node_wrap import NodeWrap
 from ...graph.graph_algo import get_valid_node_name, clear_redundant_nodes, has_path
 from ...common.defs import Framework, Tensor, get_opset_version
-from ...common.utils import is_file, get_version, multi_string_to_list
+from ...common.utils import is_file, get_version, multi_string_to_list, get_target_graph
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 onnx_source_map = {
@@ -26,8 +26,16 @@ onnx_source_map = {
 }
 
 
-def build_subgraph(name, g_content, root_graph, parent_graph_info, a_nodes, opset_ver):
-    sub_graph = SubGraph(name=name)
+def build_subgraph(current_node_name,
+                   root_node_name,
+                   key,
+                   g_content,
+                   root_graph,
+                   parent_graph_info,
+                   a_nodes_info,
+                   opset_ver):
+    subgraph_name = f'{current_node_name}_{key}_subgraph'
+    sub_graph = SubGraph(name=subgraph_name)
     sub_graph._attr['framework'] = root_graph._attr['framework']
 
     nodes = g_content.get('nodes', [])
@@ -98,22 +106,6 @@ def build_subgraph(name, g_content, root_graph, parent_graph_info, a_nodes, opse
                     name=single_input['name'], value=input_tensor, is_const=is_const)
             })
 
-    a_nodes += nodes
-    out_tensor_operator_map = {}
-    for oi, op_info in enumerate(a_nodes):
-        out_tensor_operator_map.update({k: oi for k in [(
-            out_info['name'], out_info['out_port']) for out_info in op_info['output']]})
-        node_name = op_info['name']
-        if node_name in nodes_names \
-                and node_name not in (list(const_names.keys()) + parent_const_names) \
-                and op_info['type'] in ('Constant', 'ConstantOfShape') \
-                and isinstance(op_info.get('value'), dict) \
-                and op_info['value'].get('tensor', None) is not None:
-            op_info.update({'tensor': op_info['value']['tensor']})
-            const_names[node_name] = node_name
-    tensor_name_map = {t_name: (port, op_id) for (
-        t_name, port), op_id in out_tensor_operator_map.items()}
-
     for c in consts:
         c_name = get_valid_node_name(sub_graph, c['name'], nodes_names)  # const tensor name maybe same with node
         const_names[c['name']] = c_name
@@ -124,10 +116,29 @@ def build_subgraph(name, g_content, root_graph, parent_graph_info, a_nodes, opse
                                                              'opset_version': opset_ver})
     sub_graph_info.update({'const_names': list(const_names.values())})
 
-    all_consts = list(const_names.values()) + parent_const_names
+    a_nodes_info.update({subgraph_name: {
+        'nodes': nodes,
+        'consts': list(const_names.values())
+    }})
 
-    if isinstance(parent_graph, SubGraph):
-        all_consts += root_graph._attr['const_names']
+    all_consts = {}
+    out_tensor_operator_map = {}
+    for graph_name, graph_nodes_dict in a_nodes_info.items():
+        for c_name in graph_nodes_dict['consts']:
+            all_consts[c_name] = graph_name
+        for oi, op_info in enumerate(graph_nodes_dict['nodes']):
+            out_tensor_operator_map.update({k: (oi, graph_name) for k in [(
+                out_info['name'], out_info['out_port']) for out_info in op_info['output']]})
+            node_name = op_info['name']
+            if node_name in nodes_names \
+                    and node_name not in (list(const_names.keys()) + parent_const_names) \
+                    and op_info['type'] in ('Constant', 'ConstantOfShape') \
+                    and isinstance(op_info.get('value'), dict) \
+                    and op_info['value'].get('tensor', None) is not None:
+                op_info.update({'tensor': op_info['value']['tensor']})
+                const_names[node_name] = node_name
+    tensor_name_map = {t_name: (port, op_id, g_name) for (
+        t_name, port), (op_id, g_name) in out_tensor_operator_map.items()}
 
     in_tensor_names = set()
     graph_is_quantized = False
@@ -160,8 +171,11 @@ def build_subgraph(name, g_content, root_graph, parent_graph_info, a_nodes, opse
                 op_attr.update({'name': name})
                 nodes[ni].update({'name': name})
         attr_value_converter(
-            op_attr, root_graph._attr['source'], root_graph,
-            a_nodes=a_nodes,
+            op_attr,
+            root_graph._attr['source'],
+            root_graph,
+            root_node_name,
+            a_nodes_info=a_nodes_info,
             parent_graph_info=sub_graph_info)
         op_name = op_attr['name']
         if not sub_graph.has_node(op_name):
@@ -208,17 +222,31 @@ def build_subgraph(name, g_content, root_graph, parent_graph_info, a_nodes, opse
                     else:
                         n_name = get_valid_node_name(sub_graph, in_tensor_name)
                         sub_graph.add_node(n_name)
-                        if in_tensor_name in parent_graph.nodes:
-                            op_obj = parent_graph.nodes[in_tensor_name]['object']
-                        else:
-                            # from root graph
-                            op_obj = root_graph.nodes[in_tensor_name]['object']
+                        target_graph_name = all_consts[in_tensor_name]
+                        target_g = get_target_graph(target_graph_name, root_graph)
+                        op_obj = target_g.nodes[in_tensor_name]['object']
+
+                        if root_node_name not in op_obj.depend_nodes:
+                            op_obj.depend_nodes.append(root_node_name)
+                        if current_node_name not in op_obj.depend_nodes:
+                            op_obj.depend_nodes.append(current_node_name)
+
                         cons_value = op_obj.value
                         op_obj.in_subgraph = True
                         if sub_graph.name not in op_obj.subgraphs:
                             op_obj.subgraphs.append(sub_graph.name)
 
-                        NodeWrap(sub_graph, n_name).replace_obj('DummyInput', {'name': n_name})
+                        if target_graph_name == root_graph.name:
+                            if n_name not in root_graph._attr['node_in_subgraphs']:
+                                root_graph._attr['node_in_subgraphs'][n_name] = [sub_graph.name]
+                            else:
+                                if sub_graph.name not in root_graph._attr['node_in_subgraphs'][n_name]:
+                                    root_graph._attr['node_in_subgraphs'][n_name].append(sub_graph.name)
+
+                        NodeWrap(sub_graph, n_name).replace_obj('DummyInput', {
+                            'name': n_name,
+                            'target_graph': target_graph_name
+                        })
                         edge_attr = {'src_out_port': in_tensor_out_port, 'dst_in_port': in_port, 'tensor': Tensor(
                             name=in_tensor_name, shape=cons_value.shape, is_const=True)}
                         sub_graph.add_edge(
@@ -226,35 +254,34 @@ def build_subgraph(name, g_content, root_graph, parent_graph_info, a_nodes, opse
             else:
                 if in_tensor_name in tensor_name_map:
                     in_tensor_out_port = tensor_name_map[in_tensor_name][0]
-                pre_op_id = out_tensor_operator_map[(
+                pre_op_id, target_graph_name = out_tensor_operator_map[(
                     in_tensor_name, in_tensor_out_port)]
-                pre_op = a_nodes[pre_op_id]
+                pre_op = a_nodes_info[target_graph_name]['nodes'][pre_op_id]
                 pre_op_name = pre_op['name'] if pre_op['name'] else pre_op['output'][0]['name']
                 if not sub_graph.has_node(pre_op_name):
-                    # root graph op
-                    if pre_op_name in parent_graph.nodes:
-                        op_obj = parent_graph.nodes[pre_op_name]['object']
-                        op_obj.in_subgraph = True
-                        if sub_graph.name not in op_obj.subgraphs:
-                            op_obj.subgraphs.append(sub_graph.name)
-                    elif pre_op_name in root_graph.nodes:
-                        op_obj = root_graph.nodes[pre_op_name]['object']
-                        op_obj.in_subgraph = True
-                        if sub_graph.name not in op_obj.subgraphs:
-                            op_obj.subgraphs.append(sub_graph.name)
-                    else:
-                        parent_graph_raw_node_names = [n['name'] for n in parent_nodes]
-                        assert pre_op_name in parent_graph_raw_node_names
+                    target_g = get_target_graph(target_graph_name, root_graph)
+                    op_obj = target_g.nodes[pre_op_name]['object']
+                    op_obj.in_subgraph = True
+
+                    if root_node_name not in op_obj.depend_nodes:
+                        op_obj.depend_nodes.append(root_node_name)
+                    if current_node_name not in op_obj.depend_nodes:
+                        op_obj.depend_nodes.append(current_node_name)
+
+                    if sub_graph.name not in op_obj.subgraphs:
+                        op_obj.subgraphs.append(sub_graph.name)
+                    if target_graph_name == root_graph.name:
                         if pre_op_name not in root_graph._attr['node_in_subgraphs']:
                             root_graph._attr['node_in_subgraphs'][pre_op_name] = [sub_graph.name]
                         else:
                             if sub_graph.name not in root_graph._attr['node_in_subgraphs'][pre_op_name]:
                                 root_graph._attr['node_in_subgraphs'][pre_op_name].append(sub_graph.name)
+
                     n_name = get_valid_node_name(
                         sub_graph, pre_op_name)
                     sub_graph.add_node(n_name)
                     dummy_node = NodeWrap(sub_graph, n_name)
-                    dummy_attr = {'name': n_name}
+                    dummy_attr = {'name': n_name, 'target_graph': target_graph_name}
                     dummy_node.replace_obj('DummyInput', dummy_attr)
                     edge_attr = {'src_out_port': in_tensor_out_port, 'dst_in_port': in_port, 'tensor': Tensor(
                         name=in_tensor_name, is_const=False)}
@@ -289,8 +316,8 @@ def build_subgraph(name, g_content, root_graph, parent_graph_info, a_nodes, opse
             out_node_name = output['name']
         else:
             op_index_has_output = out_tensor_operator_map[(
-                output['name'], output['out_port'])]
-            out_node_name = a_nodes[op_index_has_output]['name']
+                output['name'], output['out_port'])][0]
+            out_node_name = nodes[op_index_has_output]['name']
             if not out_node_name:
                 out_node_name = output['name']
         noop_node_name = out_node_name + '_noop_' + str(out_index)
@@ -358,7 +385,7 @@ def build_subgraph(name, g_content, root_graph, parent_graph_info, a_nodes, opse
     return sub_graph
 
 
-def attr_value_converter(attr_dict, source, root_graph, a_nodes, parent_graph_info=None):
+def attr_value_converter(attr_dict, source, root_graph, root_node_name, a_nodes_info, parent_graph_info=None):
     for key in attr_dict:
         if key == 'activations':
             acts = [act.upper() for act in attr_dict[key]]
@@ -385,17 +412,18 @@ def attr_value_converter(attr_dict, source, root_graph, a_nodes, parent_graph_in
                     and attr_dict[key].get('tensor', None) is not None:
                 attr_dict.update({'value': attr_dict[key]['tensor']})
         elif key in ('then_branch', 'else_branch', 'body'):
-            sub_graph_name = attr_dict['name'] + '_' + key + '_subgraph'
-            sub_graph = build_subgraph(sub_graph_name,
+            sub_graph = build_subgraph(attr_dict['name'],
+                                       root_node_name,
+                                       key,
                                        attr_dict[key],
                                        root_graph,
                                        parent_graph_info,
-                                       a_nodes,
+                                       a_nodes_info,
                                        attr_dict.get('opset_version', 1))
             if attr_dict['name'] in root_graph._attr['subgraphs']:
-                root_graph._attr['subgraphs'][attr_dict['name']][sub_graph_name] = sub_graph
+                root_graph._attr['subgraphs'][attr_dict['name']][sub_graph.name] = sub_graph
             else:
-                root_graph._attr['subgraphs'][attr_dict['name']] = {sub_graph_name: sub_graph}
+                root_graph._attr['subgraphs'][attr_dict['name']] = {sub_graph.name: sub_graph}
             attr_dict.update({key: sub_graph})
 
 
@@ -417,7 +445,7 @@ def convert_onnx_to_graph(graph, model_path, params):
     graph._attr['subgraph_output_names'] = []
 
     meta_ret = True
-    all_nodes = []
+    all_nodes_dict = {}
     consumer_ver = get_version(onnx)
     if consumer_ver >= 1.04:
         model = None
@@ -525,7 +553,6 @@ def convert_onnx_to_graph(graph, model_path, params):
                                 name=single_input['name'], value=input_tensor, is_const=is_const)
                         })
 
-                all_nodes += nodes
                 out_tensor_operator_map = {}
                 for oi, op_info in enumerate(nodes):
                     out_tensor_operator_map.update({k: oi for k in [(
@@ -567,6 +594,11 @@ def convert_onnx_to_graph(graph, model_path, params):
                 root_info.update({'const_names': list(const_names.values())})
                 graph._attr['const_names'] = list(const_names.values())
 
+                all_nodes_dict.update({graph.name: {
+                    'nodes': nodes,
+                    'consts': list(const_names.values())
+                }})
+
                 in_tensor_names = set()
                 for ni, node in enumerate(nodes):
                     op_attr = {k: v for k, v in node.items()}
@@ -601,8 +633,12 @@ def convert_onnx_to_graph(graph, model_path, params):
                             op_attr.update({'name': name})
                             nodes[ni].update({'name': name})
                     attr_value_converter(
-                        op_attr, params['source'], root_graph=graph,
-                        a_nodes=all_nodes, parent_graph_info=root_info)
+                        op_attr,
+                        params['source'],
+                        root_graph=graph,
+                        root_node_name=op_attr['name'],
+                        a_nodes_info=all_nodes_dict,
+                        parent_graph_info=root_info)
                     op_name = op_attr['name']
                     if not graph.has_node(op_name):
                         graph.add_node(op_name)
@@ -612,7 +648,6 @@ def convert_onnx_to_graph(graph, model_path, params):
                         op_obj.in_subgraph = True
                         op_obj.subgraphs.extend(graph._attr['node_in_subgraphs'][op_name])
                     for in_port, in_tensor_info in enumerate(node['input']):
-                        edge_attr = {}
                         in_tensor_name, in_tensor_out_port = in_tensor_info[
                             'name'], in_tensor_info['out_port']
                         in_tensor_names.add(in_tensor_name)
@@ -624,7 +659,25 @@ def convert_onnx_to_graph(graph, model_path, params):
                             graph.add_node(in_tensor_name)
                             dummy_node = NodeWrap(graph, in_tensor_name)
                             dummy_attr = {'name': in_tensor_name}
-                            dummy_node.replace_obj('Dummy', dummy_attr)
+                            if node_type == 'Loop':
+                                if in_port == 0:  # max-trip-count
+                                    default_v = np.array(np.iinfo(np.int64).max, dtype=np.int64)
+                                    dummy_node.replace_obj('Constant', {
+                                        'name': in_tensor_name,
+                                        'value': default_v,
+                                        'data_format': params.get('input_data_format', 'NCHW'),
+                                        'opset_version': opset_ver
+                                    })
+                                elif in_port == 1:  # condition in
+                                    default_v = np.array(True, dtype=bool)
+                                    dummy_node.replace_obj('Constant', {
+                                        'name': in_tensor_name,
+                                        'value': default_v,
+                                        'data_format': params.get('input_data_format', 'NCHW'),
+                                        'opset_version': opset_ver
+                                    })
+                            else:
+                                dummy_node.replace_obj('Dummy', dummy_attr)
                             edge_attr = {'src_out_port': in_tensor_out_port, 'dst_in_port': in_port, 'tensor': Tensor(
                                 name=in_tensor_name, is_const=True)}
                             graph.add_edge(

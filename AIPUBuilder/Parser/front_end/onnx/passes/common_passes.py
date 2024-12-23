@@ -211,7 +211,7 @@ def remove_useless_op(graph, op_type_list):
             elif op_type == 'ChannelShuffle':
                 if node_obj.group == 1 and node_obj.splits == 1:
                     removing_nodes.append(node_name)
-            elif op_type == 'Concat':
+            elif op_type in ('Concat', 'Sum'):
                 in_edges = graph.sorted_in_edges(node_name)
                 if len(in_edges) <= 1:
                     removing_nodes.append(node_name)
@@ -902,6 +902,69 @@ def insert_constant(graph, name, value, dst, in_port=0, data_format='NCHW', cons
         graph.add_edge(const_name, dst, **edge_attr)
     else:
         ERROR('[Parser]: Invalid params for insert_constant (%s)!' % name)
+
+
+def insert_dequant_quant(graph, src, dst, in_attr, op_type, key=None, data_format='NHWC'):
+    ret = None
+    if graph.has_node(src) and graph.has_node(dst):
+        if has_path(graph, src, dst):
+            graph.remove_edge(src, dst, key=key)
+        op_postfix = 'dequantize' if op_type == 'DequantizeLinear' else 'quantize'
+        new_op = get_valid_node_name(graph, src + f'_post_{op_postfix}')
+        graph.add_node(new_op)
+        new_op_attr = {'name': new_op, 'opset_version': 13, 'quantize': True}
+
+        if in_attr['tensor'].scale_zp is None:
+            ERROR('[Parser]: No scale_zp info for insert_dequant_quant!')
+
+        scale, zp = in_attr['tensor'].scale_zp
+
+        scale = np.array(scale[0], dtype=np.float32)
+        zp = np.array(zp[0], dtype=in_attr['tensor'].value.dtype)
+
+        scale_const = get_valid_node_name(graph, new_op + '_scale')
+        graph.add_node(scale_const)
+        scale_attr = {'name': scale_const, 'value': scale,
+                      'data_format': data_format, 'opset_version': 9}
+        NodeWrap(graph, scale_const).replace_obj('Constant', scale_attr)
+        scale_const_edge_attr = {'src_out_port': 0, 'dst_in_port': 1,
+                                 'tensor': Tensor(value=scale, is_const=True)}
+        graph.add_edge(scale_const, new_op, **scale_const_edge_attr)
+
+        zp_const = get_valid_node_name(graph, new_op + '_zp')
+        graph.add_node(zp_const)
+        zp_attr = {'name': zp_const, 'value': zp,
+                   'data_format': data_format, 'opset_version': 9}
+        NodeWrap(graph, zp_const).replace_obj('Constant', zp_attr)
+        zp_const_edge_attr = {'src_out_port': 0, 'dst_in_port': 2,
+                              'tensor': Tensor(value=zp, is_const=True)}
+        graph.add_edge(zp_const, new_op, **zp_const_edge_attr)
+
+        NodeWrap(graph, new_op).replace_obj(op_type, new_op_attr)
+
+        new_op_in_attr = copy.deepcopy(in_attr)
+        new_op_in_attr.update({'dst_in_port': 0})
+        graph.add_edge(src, new_op, **new_op_in_attr)
+
+        new_op_out_attr = copy.deepcopy(in_attr)
+        out_tensor = Tensor()
+        if in_attr.get('tensor', None) is not None:
+            out_tensor = copy.deepcopy(in_attr['tensor'])
+            if in_attr['tensor'].value is not None:
+                if op_type == 'DequantizeLinear':
+                    out_tensor.value = (in_attr['tensor'].value - zp) * scale.astype(np.float32)
+                    out_tensor.min_max = ()
+                    out_tensor.scale_zp = ()
+                else:
+                    out_tensor.value = np.round(in_attr['tensor'].value / scale + zp).astype(zp.dtype)
+                out_tensor.shape = out_tensor.value.shape
+                out_tensor.dtype = out_tensor.value.dtype
+        new_op_out_attr.update({'src_out_port': 0, 'tensor': out_tensor})
+        graph.add_edge(new_op, dst, **new_op_out_attr)
+        ret = new_op
+    else:
+        ERROR('[Parser]: Invalid params for insert_dequant_quant!')
+    return ret
 
 
 def insert_gather(graph, src, dst, indices, axis=0, edge_attr=None, key=None, type='Gather'):

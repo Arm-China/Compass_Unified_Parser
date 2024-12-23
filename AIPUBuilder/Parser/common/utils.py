@@ -28,6 +28,13 @@ def get_file_name(file_path):
     return os.path.basename(file_path).split('.')[0]
 
 
+def get_target_graph(target_g_name, root_graph):
+    for _, v in root_graph._attr['subgraphs'].items():
+        if target_g_name in v:
+            return v[target_g_name]
+    return root_graph
+
+
 def readable_file(path):
     if not os.path.isfile(path):
         raise Exception('The "{}" is not existing file'.format(path))

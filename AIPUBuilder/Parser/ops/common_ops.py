@@ -316,8 +316,15 @@ class DummyOp(OpHasOneOutPort, ConstLikeOp, CommonOp):
 
 
 class DummyInputOp(OpHasOneOutPort, InputLikeOp, CommonOp):
+    @classmethod
+    def attributes(cls):
+        return {'target_graph': {'type': AttrType.STRING, 'default': '', 'required': False},
+                }
+
     def __init__(self, graph, attr_dict=None):
         super(DummyInputOp, self).__init__(graph, attr_dict)
+        self.update_attributes(DummyInputOp, attr_dict)
+        assert self.check_required(), 'DummyInputOp is missing a required parameter.'
 
     def infer_shape(self, input_tensor=None, is_const=False):
         super(DummyInputOp, self).infer_shape()

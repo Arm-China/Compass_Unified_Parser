@@ -3,6 +3,7 @@
 import numpy as np
 
 from ..op import *
+from ...common.utils import get_target_graph
 
 
 class IfOp(OpHasSubGraph, OnnxOp):
@@ -28,15 +29,12 @@ class IfOp(OpHasSubGraph, OnnxOp):
         super(IfOp, self).infer_shape()
         inputs = self.get_input_tensors()
         in_edges = self._graph.sorted_in_edges(self.name, data=True)
-        out_edges = self._graph.sorted_out_edges(self.name)
         if in_edges[0][2]['tensor'].is_const and \
                 in_edges[0][2]['tensor'].value is not None:
             if_cond = bool(inputs[0].item())
-            if_cond_is_const = True
         else:
             WARN(f'[Parser]: If({self.name}) condition is non-const, the infer shape is unreliable.')
             if_cond = True
-            if_cond_is_const = False
         # True: then branch, False: else branch
         from ...graph.graph_algo import determined_sort
         cur_sub_graph = self.then_branch if if_cond else self.else_branch
@@ -48,10 +46,10 @@ class IfOp(OpHasSubGraph, OnnxOp):
             if sub_node_obj is None:
                 ERROR(f'[Parser]: Get Node Obj Failed in If Infer of Node: {n}.')
             if sub_node_obj.type == 'DummyInput':
-                # input data from parent graph
-                parent_node = cur_sub_graph._attr['parent_graph'].nodes[n]
-                dummy_out_edges = cur_sub_graph._attr['parent_graph'].sorted_out_edges(parent_node['object'].name,
-                                                                                       data=True)
+                assert sub_node_obj.target_graph != '', 'Target graph not set for DummyInput.'
+                target_g = get_target_graph(sub_node_obj.target_graph, cur_sub_graph._root)
+                parent_node = target_g.nodes[n]
+                dummy_out_edges = target_g.sorted_out_edges(parent_node['object'].name, data=True)
                 if len(dummy_out_edges) == 0:
                     ERROR(f'[Parser]: Get DummpyInput({n}) Out edges failed in If Node({self.name}).')
                 out_tensor = dummy_out_edges[0][-1]['tensor'].value
@@ -64,9 +62,13 @@ class IfOp(OpHasSubGraph, OnnxOp):
             for _, dst, out_attr in cur_sub_graph.sorted_out_edges(out, data=True):
                 if cur_sub_graph.nodes[dst]['object'].type == 'Out':
                     out_port = out_attr['src_out_port']
-                    out_tensor = cur_sub_graph.nodes[out]['object'].get_output_tensors()[out_port]
+                    o_edges = cur_sub_graph.sorted_out_edges(out, data=True)
+                    out_tensor = o_edges[out_port][-1]['tensor'].value
                     output_list.append(out_tensor)
-                    output_const_list.append(is_const)
+                    if isinstance(cur_sub_graph.nodes[out]['object'], OpHasSubGraph):
+                        output_const_list.append(o_edges[out_port][-1]['tensor'].is_const)
+                    else:
+                        output_const_list.append(is_const)
         self.set_out_tensor(output_list, all(output_const_list))
 
 
@@ -110,7 +112,7 @@ class LoopOp(OpHasSubGraph, OnnxOp):
 
         cond_in = ori_cond_in
         body_inputs_num = len(self.body._attr['input_tensors'])  # 2+N
-        body_outputs_num = len(self.body._attr['output_names'])  # 1+K+N
+        body_outputs_num = len(self.body._attr['output_names'])  # 1+N+K
         N = body_inputs_num - 2
         K = body_outputs_num - 1 - N
         k_carried_away = [[] for i in range(K)]
@@ -148,10 +150,10 @@ class LoopOp(OpHasSubGraph, OnnxOp):
                                 cond_out_root_input_const[n] = in_edges[inp_idx][-1]['tensor'].is_const
                             sub_node_obj.infer_shape(out_tensor)
                         elif sub_node_obj.type == 'DummyInput':
-                            # input data from parent graph
-                            parent_node = self.body._attr['parent_graph'].nodes[n]
-                            dummy_out_edges = self.body._attr['parent_graph'].sorted_out_edges(parent_node['object'].name,
-                                                                                               data=True)
+                            assert sub_node_obj.target_graph != '', 'Target graph not set for DummyInput.'
+                            target_g = get_target_graph(sub_node_obj.target_graph, self.body._root)
+                            parent_node = target_g.nodes[n]
+                            dummy_out_edges = target_g.sorted_out_edges(parent_node['object'].name, data=True)
                             if len(dummy_out_edges) == 0:
                                 ERROR(f'[Parser]: Get DummpyInput({n}) Out edges failed in Loop Node({self.name}).')
                             out_tensor = dummy_out_edges[0][-1]['tensor'].value
@@ -177,7 +179,7 @@ class LoopOp(OpHasSubGraph, OnnxOp):
                             output_const_list.append(is_const)
                 last_output_list = output_list.copy()
                 last_output_const_list = output_const_list.copy()
-                cond_in = output_list[0]
+                cond_in = np.all(output_list[0])
                 if K > 0:
                     for k in range(K):
                         k_carried_away[k].append(output_list[k - K])

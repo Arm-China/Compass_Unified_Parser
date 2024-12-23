@@ -148,6 +148,7 @@ class Op(abc.ABC):
         return {'name': {'type': AttrType.STRING, 'default': '', 'required': True},
                 'in_subgraph': {'type': AttrType.BOOL, 'default': False},
                 'subgraphs': {'type': AttrType.STRINGS, 'default': []},
+                'depend_nodes': {'type': AttrType.STRINGS, 'default': [], 'required': True},
                 'data_format': {'type': AttrType.STRING,
                                 'default': 'NHWC',
                                 'options': ['NWC', 'NCW', 'NHWC', 'NCHW', 'NDHWC', 'NCDHW', 'NCHW_VECT_C'],

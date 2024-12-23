@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
-
-
+import traceback
 from collections import OrderedDict, defaultdict
 from collections.abc import Iterable
 import os
@@ -671,6 +670,7 @@ def convert_tf_to_graph(graph, model_path, params):
         except Exception as e:
             WARN('[Parser]: Reading pb/saved_model/h5 file (%s) meets error (%s)!' %
                  (model_path, str(e)))
+            traceback.print_exc()
             meta_ret = False
 
     else:
