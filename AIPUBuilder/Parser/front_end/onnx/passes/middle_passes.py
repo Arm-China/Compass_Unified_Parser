@@ -2119,6 +2119,15 @@ def _decompose_const_if(graph, params):
                             _has_path = True
                             break
                     if _has_path is False:
+                        inp_obj = NodeWrap(graph, inp)['object']
+                        if inp_obj is not None and inp_obj.depend_nodes:
+                            for op in inp_obj.depend_nodes:
+                                if graph.has_node(op) and op != if_name:
+                                    for out in graph._attr['output_names']:
+                                        if has_path(graph, op, out):
+                                            _has_path = True
+                                            break
+                    if _has_path is False:
                         ind = params['input_names'].index(inp)
                         if len(params['input_names']) == len(list(graph._attr['input_tensors'])):
                             key = list(graph._attr['input_tensors'])[
