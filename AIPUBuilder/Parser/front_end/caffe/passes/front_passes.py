@@ -1251,11 +1251,19 @@ def remove_detection_postprocess(graph):
             out_edges = graph.sorted_out_edges(detection)
             graph.remove_edges_from(in_edges + out_edges)
 
+            out_nodes = []
+
             for net_out in [conf_out, box_out]:
                 out = get_valid_node_name(graph, net_out + '_out')
+                out_nodes.append(out)
                 graph.add_edge(net_out, out, **
                                {'src_out_port': 0, 'dst_in_port': 0})
                 NodeWrap(graph, out).replace_obj('Out', {'name': out})
+
+            if out_edges[0][1] in graph._attr['output_nodes']:
+                index = graph._attr['output_nodes'].index(out_edges[0][1])
+                graph._attr['output_nodes'][index] = out_nodes[0]
+                graph._attr['output_nodes'].insert(index + 1, out_nodes[1])
 
             if detection in graph._attr['output_names']:
                 index = graph._attr['output_names'].index(detection)

@@ -125,7 +125,12 @@ def convert_multi_outputs_to_const(graph, op_type_name_list):
                 in_edges = graph.sorted_in_edges(node_name)
                 graph.remove_edges_from(in_edges)
                 graph.remove_edges_from(out_edges)
-                for o_edge in out_edges:
+                if node_name in graph._attr['output_names']:
+                    idx = graph._attr['output_names'].index(node_name)
+                    graph._attr['output_names'].pop(idx)
+                else:
+                    idx = None
+                for i, o_edge in enumerate(out_edges):
                     if o_edge[2]['tensor'] is not None and o_edge[2]['tensor'].value is not None:
                         const_value = o_edge[2]['tensor'].value
                         const_node_name = get_valid_node_name(graph, node_name)
@@ -139,6 +144,8 @@ def convert_multi_outputs_to_const(graph, op_type_name_list):
                         _, dst, out_attr = o_edge
                         out_attr['src_out_port'] = 0
                         graph.add_edge(const_node_name, dst, **out_attr)
+                        if idx is not None:
+                            graph._attr['output_names'].insert(idx + i, const_node_name)
     clear_redundant_nodes(graph)
 
 

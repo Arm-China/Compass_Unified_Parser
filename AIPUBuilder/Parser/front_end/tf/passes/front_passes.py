@@ -3874,6 +3874,7 @@ def merge_keras_maskrcnn(graph, params):
 
     graph._attr['output_names'] = [
         gather3, mrcnn_mask_reshape, topk_final, gather4]
+    graph._attr['output_nodes'].clear()
     clear_redundant_nodes(graph)
 
 

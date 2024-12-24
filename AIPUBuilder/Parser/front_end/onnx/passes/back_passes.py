@@ -3928,6 +3928,7 @@ def detection_post_process(graph, params):
                     nms_out_attr.update({'name': nms_out})
                     NodeWrap(graph, nms_out).replace_obj('Out', nms_out_attr)
                 graph._attr['output_names'].clear()
+                graph._attr['output_nodes'].clear()
                 graph._attr['output_names'] = [region, nms]
             else:
                 ERROR(
@@ -4108,6 +4109,7 @@ def detection_post_process(graph, params):
                                    {'src_out_port': 4, 'dst_in_port': 2})
 
                     graph._attr['output_names'].clear()
+                    graph._attr['output_nodes'].clear()
                     graph._attr['output_names'] = [final_region_fuse, nms]
                 else:
                     ERROR(
@@ -4235,6 +4237,7 @@ def detection_post_process(graph, params):
                         NodeWrap(graph, nms_out).replace_obj(
                             'Out', nms_out_attr)
 
+                    graph._attr['output_nodes'].clear()
                     graph._attr['output_names'] = [detection, nms]
 
                     detection_in_edges = graph.sorted_in_edges(
@@ -4362,6 +4365,7 @@ def remove_const(graph):
             else:
                 removing_const.append(node_name)
     graph.remove_nodes_from(removing_const)
+    clear_redundant_nodes(graph)
 
 
 def remove_special_where(graph):

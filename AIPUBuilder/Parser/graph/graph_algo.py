@@ -93,10 +93,14 @@ def determined_sort(g, outputs, sort_input=False):
 def clear_redundant_nodes(g, outputs=None):
     '''Delete redundant nodes in the graph.'''
     pred = g.predecessor
-    noop_names = [n for n in g.nodes if g.nodes[n]['op'] == 'Out'
-                  and pred[n]
-                  and any([p in g._attr.get('output_names', []) for p in pred[n]])
-                  ]
+    if g._attr.get('output_nodes', []):
+        noop_names = [n for n in g.nodes if g.nodes[n]['op'] == 'Out'
+                      and n in g._attr['output_nodes']]
+    else:
+        noop_names = [n for n in g.nodes if g.nodes[n]['op'] == 'Out'
+                      and pred[n]
+                      and any([p in g._attr.get('output_names', []) for p in pred[n]])
+                      ]
     output_names = outputs if outputs else (
         noop_names if noop_names else g._attr.get('output_names', []))
     subgraph_map = {}

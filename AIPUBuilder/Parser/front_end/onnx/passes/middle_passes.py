@@ -2056,7 +2056,6 @@ def _decompose_const_if(graph, params):
                     ERROR(
                         f'[Parser]: Meet invalid Node({n}) of root node({if_name}) in decompose_if.')
                 n_in_edges = keep_branch.sorted_in_edges(n, data=True)
-                n_out_edges = keep_branch.sorted_out_edges(n, data=True)
                 if n_obj.type in ['Input', 'DummyInput']:
                     continue
                 elif n_obj.type == 'Constant':
