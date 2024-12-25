@@ -3899,14 +3899,17 @@ def convert_qnorm_to_float(graph):
                                edges=[
                                    ('in', 'relu'),
                                ])
+    matches2 = single_node_matcher(graph, 'LayerNormalization')
+    matches += matches2
     for m in matches:
-        qnorm = m['in']
-        qrelu = m['relu']
+        qnorm = m['in'] if 'in' in m else m['target']
+        qrelu = m['relu'] if 'relu' in m else None
         qnorm_obj = NodeWrap(graph, qnorm)['object']
-        qrelu_obj = NodeWrap(graph, qrelu)['object']
+        if qrelu is not None:
+            qrelu_obj = NodeWrap(graph, qrelu)['object']
         in_edges = graph.sorted_in_edges(qnorm, data=True)
-        if qnorm_obj is None or qrelu_obj is None:
-            ERROR(f'[Parser]: Meets invalid QNorm/QRelu node({qnorm}) in convert_qnorm_to_float!')
+        if qnorm_obj is None:
+            ERROR(f'[Parser]: Meets invalid QNorm node({qnorm}) in convert_qnorm_to_float!')
             continue
         src, _, in_attr = in_edges[0]
         insert_dequant_quant(graph, src, qnorm, in_attr, 'DequantizeLinear')
@@ -3927,13 +3930,38 @@ def convert_qnorm_to_float(graph):
             qnorm_obj.biases_scale_zp = ()
             qnorm_obj.quantize = False
         else:
-            pass
+            q_weights_obj = NodeWrap(graph, in_edges[1][0])['object']
+            q_weights = q_weights_obj.value
+            q_weights_obj.quantize = False
+            w_scale, w_zp = in_edges[1][-1]['tensor'].scale_zp
+            f_weights = (q_weights - w_zp) * w_scale
+            f_weights = f_weights.astype(np.float32)
+            q_weights_obj.value = f_weights
+            in_edges[1][-1]['tensor'].scale_zp = ()
+            in_edges[1][-1]['tensor'].dtype = f_weights.dtype
+            if len(in_edges) > 2:
+                q_biases_obj = NodeWrap(graph, in_edges[2][0])['object']
+                q_biases_obj.quantize = False
+                q_biases = q_biases_obj.value
+                b_scale, b_zp = in_edges[2][-1]['tensor'].scale_zp
+                f_biases = (q_biases - b_zp) * b_scale
+                f_biases = f_biases.astype(np.float32)
+                q_biases_obj.value = f_biases
+                in_edges[2][-1]['tensor'].scale_zp = ()
+                in_edges[2][-1]['tensor'].dtype = f_biases.dtype
+            qnorm_obj.quantize = False
 
-        qrelu_obj.quantize = False
+        if qrelu is not None:
+            qrelu_obj.quantize = False
+            out_edges = graph.sorted_out_edges(qrelu, data=True)
+        else:
+            out_edges = graph.sorted_out_edges(qnorm, data=True)
 
-        out_edges = graph.sorted_out_edges(qrelu, data=True)
         for _, dst, out_attr in out_edges:
-            insert_dequant_quant(graph, qrelu, dst, out_attr, 'QuantizeLinear')
+            if qrelu is not None:
+                insert_dequant_quant(graph, qrelu, dst, out_attr, 'QuantizeLinear')
+            else:
+                insert_dequant_quant(graph, qnorm, dst, out_attr, 'QuantizeLinear')
 
 
 def merge_batchnorm(graph):
