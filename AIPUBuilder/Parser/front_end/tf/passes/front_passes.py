@@ -361,7 +361,8 @@ def convert_maxpoolwithargmax(graph, op_type='TfMaxPoolWithArgmax'):
             # Convert output indices from NHWC to HWC
             sub = get_valid_node_name(graph, argmaxpool + '_indices_sub')
             graph.add_edge(argmaxpool, sub, **{'src_out_port': 1,
-                                               'dst_in_port': 0, 'tensor': out_edges[0][3]['tensor']})
+                                               'dst_in_port': 0,
+                                               'tensor': copy.deepcopy(out_edges[0][3]['tensor'])})
             for _, dst, k, out_attr in out_edges:
                 if out_attr['src_out_port'] == 1:
                     graph.remove_edge(argmaxpool, dst, key=k)
