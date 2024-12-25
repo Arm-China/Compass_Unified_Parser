@@ -1507,6 +1507,7 @@ def merge_rcnn(graph, params):
     insert_reshape(graph, roi_concat, ret_boxes_split, split_in_attr, [-1, 4])
 
     graph._attr['output_names'].clear()
+    graph._attr['output_nodes'].clear()
     graph._attr['output_names'] = [roi_filter_boxes, roi_nms, resized_boxes]
 
     if is_maskrcnn:

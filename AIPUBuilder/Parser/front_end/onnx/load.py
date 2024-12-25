@@ -84,8 +84,8 @@ def build_subgraph(current_node_name,
                          )
             input_shape = single_input['type']['tensor_type']['shape'].tolist()
             if 0 in input_shape:
-                WARN('[Parser]: Shape 0 found in Input node(%s), please check subgraph!' %
-                     single_input['name'])
+                WARN('[Parser]: Shape 0 found in Input node(%s), please check subgraph(%s)!'
+                     % (single_input['name'], subgraph_name))
 
             input_type = np.dtype(
                 single_input['type']['tensor_type']['elem_type'])
@@ -223,7 +223,7 @@ def build_subgraph(current_node_name,
                         n_name = get_valid_node_name(sub_graph, in_tensor_name)
                         sub_graph.add_node(n_name)
                         target_graph_name = all_consts[in_tensor_name]
-                        target_g = get_target_graph(target_graph_name, root_graph)
+                        target_g = get_target_graph(target_graph_name, root_graph, parent_graph)
                         op_obj = target_g.nodes[in_tensor_name]['object']
 
                         if root_node_name not in op_obj.depend_nodes:
@@ -259,7 +259,7 @@ def build_subgraph(current_node_name,
                 pre_op = a_nodes_info[target_graph_name]['nodes'][pre_op_id]
                 pre_op_name = pre_op['name'] if pre_op['name'] else pre_op['output'][0]['name']
                 if not sub_graph.has_node(pre_op_name):
-                    target_g = get_target_graph(target_graph_name, root_graph)
+                    target_g = get_target_graph(target_graph_name, root_graph, parent_graph)
                     op_obj = target_g.nodes[pre_op_name]['object']
                     op_obj.in_subgraph = True
 
