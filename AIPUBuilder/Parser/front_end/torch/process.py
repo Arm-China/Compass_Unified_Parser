@@ -23,6 +23,7 @@ from ...common.defs import FLOAT_EQUAL, INT_MAX
 ONNX_OPSET_VERSION = 9
 CUSTOM_OPSET_18 = 'opset_18::'
 CUSTOM_OPSET_19 = 'opset_19::'
+CUSTOM_OPSET_20 = 'opset_20::'
 
 
 @helper.parse_args('v')
@@ -316,6 +317,13 @@ def convert_col2im(g, input, output_size, kernel_size, dilation, padding, stride
     if need_reshape:
         # reshape back to unbatched
         out = helper._squeeze_helper(g, out, [0])
+    return out
+
+
+@helper.parse_args('v', 'v', 'b')
+@quantized_args(True)
+def convert_affinegrid(g, input, output_size, align_corners=False):
+    out = g.op(CUSTOM_OPSET_20 + 'AffineGrid', input, output_size, align_corners_i=int(align_corners))
     return out
 
 
@@ -1714,9 +1722,9 @@ def convert_torch_to_onnx(model_path, params):
         custom_opsets = {'opset_11': 11}
         if onnx_opset_version is not None:
             if onnx_opset_version < 18:
-                custom_opsets.update({'opset_18': 18, 'opset_19': 19})
+                custom_opsets.update({'opset_18': 18, 'opset_19': 19, 'opset_20': 20})
             elif onnx_opset_version == 18:
-                custom_opsets.update({'opset_19': 19})
+                custom_opsets.update({'opset_19': 19, 'opset_20': 20})
         # Note: Use operator_export_type=torch.onnx.OperatorExportTypes.ONNX_ATEN_FALLBACK
         # or torch.onnx.OperatorExportTypes.ONNX_ATEN for debug if export fails.
         # The failure could be caused by unexpected input shapes.
@@ -1729,6 +1737,14 @@ def convert_torch_to_onnx(model_path, params):
                           training=torch.onnx.TrainingMode.PRESERVE,
                           custom_opsets=custom_opsets,
                           do_constant_folding=do_constant_folding)
+        try:
+            from onnxsim import simplify
+            sim_model, check = simplify(onnx_model_path, 1)
+            if check:
+                os.remove(onnx_model_path)
+                onnx.save(sim_model, onnx_model_path)
+        except:
+            WARN('[Parser]: Skip simplify onnx because error during onnxsim!')
         return
 
     def _flatten_type(torch_type):
@@ -1812,10 +1828,11 @@ def convert_torch_to_onnx(model_path, params):
             onnx_opset_version = default_onnx_main_opset
     if onnx_opset_version is None:
         onnx_opset_version = 9
-    global ONNX_OPSET_VERSION, CUSTOM_OPSET_18, CUSTOM_OPSET_19
+    global ONNX_OPSET_VERSION, CUSTOM_OPSET_18, CUSTOM_OPSET_19, CUSTOM_OPSET_20
     ONNX_OPSET_VERSION = onnx_opset_version
     CUSTOM_OPSET_18 = '' if onnx_opset_version >= 18 else CUSTOM_OPSET_18
     CUSTOM_OPSET_19 = '' if onnx_opset_version >= 19 else CUSTOM_OPSET_19
+    CUSTOM_OPSET_20 = '' if onnx_opset_version >= 20 else CUSTOM_OPSET_20
     if onnx_opset_version < 17:
         WARN('[Parser]: Default onnx opset version (%d) is lower than 17, which may cause some ops failed to convert!' %
              onnx_opset_version)
@@ -1905,6 +1922,8 @@ def convert_torch_to_onnx(model_path, params):
         'aten::addmv', convert_addmv, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::addr', convert_addr, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'aten::affine_grid_generator', convert_affinegrid, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::asinh', convert_asinh, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(

@@ -362,15 +362,12 @@ def convert_maxpoolwithargmax(graph, op_type='TfMaxPoolWithArgmax'):
             sub = get_valid_node_name(graph, argmaxpool + '_indices_sub')
             graph.add_edge(argmaxpool, sub, **{'src_out_port': 1,
                                                'dst_in_port': 0, 'tensor': out_edges[0][3]['tensor']})
-            cast_to_int = get_valid_node_name(
-                graph, argmaxpool + '_indices_to_int')
-            graph.add_edge(sub, cast_to_int)
             for _, dst, k, out_attr in out_edges:
                 if out_attr['src_out_port'] == 1:
                     graph.remove_edge(argmaxpool, dst, key=k)
                     new_out_attr = copy.deepcopy(out_attr)
                     new_out_attr.update({'src_out_port': 0})
-                    graph.add_edge(cast_to_int, dst, **new_out_attr)
+                    graph.add_edge(sub, dst, **new_out_attr)
 
             input_shapes = argmaxpool_obj.get_input_shapes()
             output_shapes = argmaxpool_obj.get_output_shapes()
@@ -379,17 +376,23 @@ def convert_maxpoolwithargmax(graph, op_type='TfMaxPoolWithArgmax'):
             sub_oprand = np.reshape(
                 np.arange(0, in_n), (in_n, 1, 1, 1)) * in_h * in_w * in_c
             sub_oprand = np.tile(
-                sub_oprand, [1, out_h, out_w, out_c]).astype(np.float32)
+                sub_oprand, [1, out_h, out_w, out_c]).astype(np.int32)
             insert_constant(graph, sub + '_oprand', sub_oprand, sub, in_port=1)
 
             NodeWrap(graph, sub).replace_obj(
                 'Sub', {'name': sub, 'opset_version': 7})
-            NodeWrap(graph, cast_to_int).replace_obj(
-                'Cast', {'name': cast_to_int, 'opset_version': 1, 'to': 'int32'})
 
             if argmaxpool in graph._attr['output_names']:
-                index = graph._attr['output_names'].index(argmaxpool)
-                graph._attr['output_names'].insert(index, cast_to_int)
+                out_nodes = []
+                for n in graph._attr['output_names']:
+                    if n == argmaxpool:
+                        out_nodes.append(graph.successor[n][0])
+                        out_nodes.append(graph.successor[sub][0])
+                    else:
+                        out_nodes.extend(graph.successor[n])
+                graph._attr['output_nodes'] = out_nodes
+                idx = graph._attr['output_names'].index(argmaxpool)
+                graph._attr['output_names'].insert(idx + 1, sub)
         graph.remove_edges_from(in_edges[1:])
         maxpool_attr = argmaxpool_obj.copied_attr()
         maxpool_attr.update({'opset_version': 12})
@@ -778,6 +781,58 @@ def convert_topk(graph, op_type='TfTopKV2'):
             if topk in graph._attr['output_names']:
                 index = graph._attr['output_names'].index(topk)
                 graph._attr['output_names'].insert(index + 1, post_cast)
+    if matched:
+        clear_redundant_nodes(graph)
+
+
+def convert_unique(graph):
+    matched = False
+    matches = [single_node_matcher(graph, op_type)
+               for op_type in ['TfUniqueWithCounts', 'TfUnique', 'LiteUNIQUE',
+                               'Tfunique', 'Tfunique_with_counts']]
+    for m in extend_lists(matches):
+        unique = m['target']
+        unique_obj = NodeWrap(graph, unique)['object']
+        unique_in_edges = graph.sorted_in_edges(unique, data=True)
+        if unique_obj is None or \
+                (len(unique_in_edges) != 1 and unique_obj.type not in ['Tfunique', 'Tfunique_with_counts']) or \
+                (len(unique_in_edges) != 3 and unique_obj.type in ['Tfunique', 'Tfunique_with_counts']):
+            ERROR(
+                '[Parser]: Meets invalid TfUnique/LiteUNIQUE Op (%s) in convert_unique!' % unique)
+            continue
+
+        input_shapes = unique_obj.get_input_shapes()
+        if input_shapes[0] is None \
+                or any(d is None for d in input_shapes[0]):
+            ERROR(
+                '[Parser]: Meets invalid input shape of TfUnique/LiteUNIQUE Op (%s) in convert_unique!' % unique)
+            continue
+        matched = True
+
+        if unique_obj.type in ['Tfunique', 'Tfunique_with_counts']:
+            graph.remove_edges_from(unique_in_edges[1:])
+
+        tf_onnx_out_mapping = {
+            0: 0,
+            1: 2,
+            2: 3
+        }
+
+        unique_attr = unique_obj.copied_attr()
+        unique_out_edges = graph.sorted_out_edges(unique, data=True)
+
+        graph.remove_edges_from(unique_out_edges)
+        for src, dst, attr in unique_out_edges:
+            new_attr = copy.deepcopy(attr)
+            new_attr['src_out_port'] = tf_onnx_out_mapping[attr['src_out_port']]
+            graph.add_edge(src, dst, **new_attr)
+        unique_attr.update({'axis': None, 'sorted': 0, 'opset_version': 11})
+        NodeWrap(graph, unique).replace_obj('Unique', unique_attr)
+
+        if unique in graph._attr['output_names']:
+            out_nodes = [dst for _, dst, _ in unique_out_edges]
+            graph._attr['output_nodes'] = out_nodes
+
     if matched:
         clear_redundant_nodes(graph)
 
@@ -4610,6 +4665,8 @@ def convert_to_onnx(graph):
                 elif pure_type == 'InTopKV2':
                     graph.remove_edges_from(in_edges[2:])
                     need_clear = True
+                elif pure_type == 'IsInf':
+                    new_node_attr.update({'detect_negative': 1, 'detect_positive': 1})
                 elif pure_type == 'LeftShift':
                     new_node_attr.update({'direction': 'LEFT'})
                 elif pure_type == 'LRN':

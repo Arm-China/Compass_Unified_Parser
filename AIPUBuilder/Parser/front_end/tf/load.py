@@ -2,7 +2,8 @@
 # Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
 
 
-from collections import OrderedDict, Iterable, defaultdict
+from collections import OrderedDict, defaultdict
+from collections.abc import Iterable
 import os
 import itertools
 import multiprocessing as mp

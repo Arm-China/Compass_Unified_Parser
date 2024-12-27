@@ -438,3 +438,68 @@ class TfsqueezeOp(OpHasAxis, OpHasOneOutPort, Tf2Op):
         inputs = self.get_input_tensors()
         out_tensor = tf.squeeze(inputs[0], axis=self.axes).numpy()
         self.set_out_tensor(out_tensor)
+
+
+class TfuniqueOp(OpHasMultipleOutPorts, DynamicShapeOp, Tf2Op):
+    @classmethod
+    def attributes(cls):
+        return {1: {'out_idx': {'type': AttrType.STRING, 'default': 'int32', 'options': ['int32', 'int64']}
+                    }
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfuniqueOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfuniqueOp, attr_dict)
+        assert self.check_required(), 'TfuniqueOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(TfuniqueOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        if self.is_all_inputs_const():
+            inp = inputs[0]
+        else:
+            inp_shape = inputs[0].shape
+            inp = np.arange(int(np.prod(inp_shape)), dtype=inputs[0].dtype).reshape(inp_shape)
+        x, out_idx = tf.unique(inp, out_idx=tf.dtypes.as_dtype(self.out_idx))
+        out_ports = self.get_out_ports()
+        out_dict = {
+            0: x.numpy(),
+            1: out_idx.numpy()
+        }
+        out_tensors = []
+        for port in out_ports:
+            out_tensors.append(out_dict[port])
+        self.set_out_tensor(out_tensors)
+
+
+class Tfunique_with_countsOp(OpHasMultipleOutPorts, DynamicShapeOp, Tf2Op):
+    @classmethod
+    def attributes(cls):
+        return {1: {'out_idx': {'type': AttrType.STRING, 'default': 'int32', 'options': ['int32', 'int64']}
+                    }
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(Tfunique_with_countsOp, self).__init__(graph, attr_dict)
+        self.update_attributes(Tfunique_with_countsOp, attr_dict)
+        assert self.check_required(), 'Tfunique_with_countsOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(Tfunique_with_countsOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        if self.is_all_inputs_const():
+            inp = inputs[0]
+        else:
+            inp_shape = inputs[0].shape
+            inp = np.arange(int(np.prod(inp_shape)), dtype=inputs[0].dtype).reshape(inp_shape)
+        x, out_idx, counts = tf.unique_with_counts(inp, out_idx=tf.dtypes.as_dtype(self.out_idx))
+        out_ports = self.get_out_ports()
+        out_dict = {
+            0: x.numpy(),
+            1: out_idx.numpy(),
+            2: counts.numpy()
+        }
+        out_tensors = []
+        for port in out_ports:
+            out_tensors.append(out_dict[port])
+        self.set_out_tensor(out_tensors)

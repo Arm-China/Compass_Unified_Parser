@@ -11,11 +11,8 @@ from .passes.keras_front_passes import process_keras_op_before_infer, process_ke
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
-def process_tf2(graph, model_path, params):
-    '''Do some preprocessing on the graph under the tensorflow framework.'''
-    graph = convert_tf2_to_graph(graph, model_path, params)
+def front_process_tf2(graph, params):
     record_output_tensors(graph)
-
     if graph is not None and len(graph) > 0:
         apply_subgraph_plugin(graph)
         remove_useless_op(graph, ['Tfstop_gradient'])
@@ -28,7 +25,7 @@ def process_tf2(graph, model_path, params):
 
         from ..tf.passes.front_passes import split_b2s, convert_d2s_or_s2d, convert_onehot, \
             convert_matmul, convert_maxpoolwithargmax, convert_nms, split_special_floormod, \
-            split_s2b, convert_floordiv, convert_topk
+            split_s2b, convert_floordiv, convert_topk, convert_unique
         split_b2s(graph, op_type='Tfbatch_to_space_nd')
 
         from ..lite.passes.front_passes import split_not_equal, split_rsqrt, convert_square, \
@@ -37,6 +34,7 @@ def process_tf2(graph, model_path, params):
         split_rsqrt(graph, op_type='Tfrsqrt')
         convert_square(graph, op_type='Tfsquare')
         convert_square_diff(graph, op_type='Tfsquared_difference')
+        convert_unique(graph)
 
         infer(graph)
 
@@ -63,8 +61,14 @@ def process_tf2(graph, model_path, params):
         # FIXME: Other passes in tf front passes may be needed as well.
         from ..tf.passes.front_passes import convert_to_onnx as convert_tf_op_to_onnx
         convert_tf_op_to_onnx(graph)
-
     else:
-        WARN('[Parser]: Got empty graph for TF2 model %s in process_tf2!' %
+        WARN('[Parser]: Got empty graph for TF2 model %s in front_process_tf2!' %
              params['model_name'])
+
+
+def process_tf2(graph, model_path, params):
+    '''Do some preprocessing on the graph under the tensorflow framework.'''
+    graph = convert_tf2_to_graph(graph, model_path, params)
+    front_process_tf2(graph, params)
+
     return graph

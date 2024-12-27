@@ -16,7 +16,7 @@ from ..logger import INFO, DEBUG, WARN, ERROR, FATAL
 class ArmAbsOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
-        return {0: ['float32', 'float16']}
+        return {0: ['float32', 'float16', 'int8', 'uint8']}
 
     def __init__(self, graph, attr_dict=None):
         super(ArmAbsOp, self).__init__(graph, attr_dict)
@@ -52,7 +52,7 @@ class ArmAccidentalHitsOp(OpHasMultipleOutPorts, ArmOp):
 class ArmAcosOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
-        return {0: ['float32', 'float16']}
+        return {0: ['float32', 'float16', 'int8', 'uint8']}
 
     def infer_shape(self):
         super(ArmAcosOp, self).infer_shape()
@@ -64,7 +64,7 @@ class ArmAcosOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
 class ArmAcoshOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
-        return {0: ['float32', 'float16']}
+        return {0: ['float32', 'float16', 'int8', 'uint8']}
 
     def infer_shape(self):
         super(ArmAcoshOp, self).infer_shape()
@@ -292,7 +292,7 @@ class ArmActivationOp(LayoutUnawareOp, OpHasMethod, OpHasOneOutPort, ArmOp):
 
     def write_negative_slope(self, bin_file):
         ret = True
-        if not bin_file.closed and bin_file.mode == 'wb':
+        if not bin_file.closed and bin_file.mode == 'ab':
             if self.negative_slope is not None \
                     and np.ndim(self.negative_slope) > 0 \
                     and self.negative_slope_offset >= 0:
@@ -384,7 +384,7 @@ class ArmAffineGridOp(OpHasOneOutPort, ArmOp):
 class ArmArgMinMaxOp(OpHasMethod, OpHasAxis, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
-        return {0: ['float32', 'float16']}
+        return {0: ['float32', 'float16', 'int8', 'uint8']}
 
     @classmethod
     def attributes(cls):
@@ -428,7 +428,7 @@ class ArmArgMinMaxOp(OpHasMethod, OpHasAxis, OpHasOneOutPort, ArmOp):
 class ArmAsinOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
-        return {0: ['float32', 'float16']}
+        return {0: ['float32', 'float16', 'int8', 'uint8']}
 
     def infer_shape(self):
         super(ArmAsinOp, self).infer_shape()
@@ -440,7 +440,7 @@ class ArmAsinOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
 class ArmAsinhOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
-        return {0: ['float32', 'float16']}
+        return {0: ['float32', 'float16', 'int8', 'uint8']}
 
     def infer_shape(self):
         super(ArmAsinhOp, self).infer_shape()
@@ -452,7 +452,7 @@ class ArmAsinhOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
 class ArmAtanOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
-        return {0: ['float32', 'float16']}
+        return {0: ['float32', 'float16', 'int8', 'uint8']}
 
     def infer_shape(self):
         super(ArmAtanOp, self).infer_shape()
@@ -464,7 +464,7 @@ class ArmAtanOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
 class ArmAtanhOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
-        return {0: ['float32', 'float16']}
+        return {0: ['float32', 'float16', 'int8', 'uint8']}
 
     def infer_shape(self):
         super(ArmAtanhOp, self).infer_shape()
@@ -927,6 +927,8 @@ class ArmConcatOp(OpHasAxis, OpHasOneOutPort, ArmOp):
 
         out_tensor = np.concatenate(inputs, self.axis)
         in_type_list = [inp.dtype for inp in inputs]
+        if len(set(in_type_list)) != 1:
+            ERROR(f'[Parser]: different input dtype in ArmConcatOp({self.name})!')
         if in_type_list.count(in_type_list[0]) == len(in_type_list):
             dtype = in_type_list[0]
         elif np.float32 in in_type_list:
@@ -943,7 +945,7 @@ class ArmConcatOp(OpHasAxis, OpHasOneOutPort, ArmOp):
 class ArmCoshOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
-        return {0: ['float32', 'float16']}
+        return {0: ['float32', 'float16', 'int8', 'uint8']}
 
     def infer_shape(self):
         super(ArmCoshOp, self).infer_shape()
@@ -1181,7 +1183,7 @@ class ArmConvTranspose3DOp(BaseActivationOp, BaseConvOp, ArmOp):
 class ArmCosineOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
-        return {0: ['float32', 'float16']}
+        return {0: ['float32', 'float16', 'int8', 'uint8']}
 
     def infer_shape(self):
         super(ArmCosineOp, self).infer_shape()
@@ -1808,10 +1810,10 @@ class ArmDetectionOutputOp(OpHasMultipleOutPorts, ArmOp):
         return ret
 
 
-class ArmDivOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
+class ArmDivOp(LayoutUnawareOp, OpHasDivisor, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
-        return {0: ['float32', 'float16'], 1: ['float32', 'float16']}
+        return {0: ['float32', 'float16', 'int8', 'uint8'], 1: ['float32', 'float16', 'int8', 'uint8']}
 
     @classmethod
     def num_in_ports(cls):
@@ -1824,7 +1826,7 @@ class ArmDivOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
         self.set_out_tensor(out_tensors)
 
 
-class ArmDivModOp(LayoutUnawareOp, OpHasMultipleOutPorts, ArmOp):
+class ArmDivModOp(LayoutUnawareOp, OpHasDivisor, OpHasMultipleOutPorts, ArmOp):
     @classmethod
     def cast_in_ports(cls):
         return {0: ['int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32'],
@@ -1956,7 +1958,7 @@ class ArmEmbeddingLookupSparseOp(OpHasOneOutPort, ArmOp):
 class ArmErfOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
-        return {0: ['float32', 'float16']}
+        return {0: ['float32', 'float16', 'int8', 'uint8']}
 
     def infer_shape(self):
         super(ArmErfOp, self).infer_shape()
@@ -1998,7 +2000,7 @@ class ArmErosionOp(OpHasPaddingStrides, OpHasWeights, OpHasOneOutPort, ArmOp):
 class ArmExpOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
-        return {0: ['float32', 'float16']}
+        return {0: ['float32', 'float16', 'int8', 'uint8']}
 
     def infer_shape(self):
         super(ArmExpOp, self).infer_shape()
@@ -2527,7 +2529,7 @@ class ArmGridSampleOp(LayoutConcernedOp, OpHasMethod, OpHasOneOutPort, ArmOp):
 class ArmGroupNormOp(OpHasAxis, OpHasBiases, OpHasWeights, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
-        return {0: ['float32', 'float16']}
+        return {0: ['float32', 'float16', 'int8', 'uint8']}
 
     @classmethod
     def attributes(cls):
@@ -2676,6 +2678,65 @@ class ArmGRUv3Op(BaseRnnOp, OpHasBiases, OpHasWeights, ArmOp):
         return ret
 
 
+class ArmIfOp(OpHasSubGraph, DynamicShapeOp, ArmOp):
+    @classmethod
+    def num_in_ports(cls):
+        return 0
+
+    @classmethod
+    def attributes(cls):
+        return {
+            'then_branch': {'type': AttrType.GRAPH, 'required': True},
+            'else_branch': {'type': AttrType.GRAPH, 'required': True},
+        }
+
+    def __init__(self, graph, attr_dict=None):
+        super(ArmIfOp, self).__init__(graph, attr_dict)
+        self.update_attributes(ArmIfOp, attr_dict)
+        assert self.check_required(), 'ArmIfOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(ArmIfOp, self).infer_shape()
+        WARN(f'[Parser]: If({self.name}) condition is non-const, the infer shape is unreliable.')
+        if_cond = True
+        # True: then branch, False: else branch
+        from ..graph.graph_algo import determined_sort
+        cur_sub_graph = self.then_branch if if_cond else self.else_branch
+        sub_nodes = determined_sort(cur_sub_graph, cur_sub_graph._attr['output_names'])
+        output_list = []
+        output_const_list = []
+        for n in sub_nodes:
+            sub_node_obj = cur_sub_graph.nodes[n]['object']
+            if sub_node_obj is None:
+                ERROR(f'[Parser]: Get Node Obj Failed in If Infer of Node: {n}.')
+            if sub_node_obj.type == 'DummyInput':
+                # input data from parent graph
+                parent_node = cur_sub_graph._attr['parent_graph'].nodes[n]
+                dummy_out_edges = cur_sub_graph._attr['parent_graph'].sorted_out_edges(parent_node['object'].name,
+                                                                                       data=True)
+                out_tensor = dummy_out_edges[0][-1]['tensor'].value
+                sub_node_obj.infer_shape(out_tensor, dummy_out_edges[0][-1]['tensor'].is_const)
+            else:
+                sub_node_obj.infer_shape()
+
+        for out in cur_sub_graph._attr['output_names']:
+            is_const = cur_sub_graph.nodes[out]['object'].is_all_inputs_const()
+            for _, dst, out_attr in cur_sub_graph.sorted_out_edges(out, data=True):
+                if cur_sub_graph.nodes[dst]['object'].type == 'Out':
+                    out_port = out_attr['src_out_port']
+                    out_tensor = cur_sub_graph.nodes[out]['object'].get_output_tensors()[out_port]
+                    output_list.append(out_tensor)
+                    output_const_list.append(is_const)
+        self.set_out_tensor(output_list, all(output_const_list))
+
+    def write_attrs(self, txt_file):
+        ret = super(ArmIfOp, self).write_attrs(txt_file)
+        if ret:
+            txt_file.write('then_branch=%s\n' % self.then_branch.name)
+            txt_file.write('else_branch=%s\n' % self.else_branch.name)
+        return ret
+
+
 class ArmInputOp(OpHasOneOutPort, InputLikeOp, ArmOp):
     @classmethod
     def num_in_ports(cls):
@@ -2691,7 +2752,7 @@ class ArmInputOp(OpHasOneOutPort, InputLikeOp, ArmOp):
 class ArmInstanceNormOp(OpHasBiases, OpHasWeights, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
-        return {0: ['float32', 'float16']}
+        return {0: ['float32', 'float16', 'int8', 'uint8']}
 
     @classmethod
     def attributes(cls):
@@ -2765,6 +2826,67 @@ class ArmInTopKOp(OpHasOneOutPort, ArmOp):
         return ret
 
 
+class ArmIsInfOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
+    @classmethod
+    def num_in_ports(cls):
+        return 0
+
+    @classmethod
+    def attributes(cls):
+        return {
+            'detect_negative': {'type': AttrType.INT, 'default': 1, 'options': [0, 1]},
+            'detect_positive': {'type': AttrType.INT, 'default': 1, 'options': [0, 1]}
+        }
+
+    def __init__(self, graph, attr_dict=None):
+        super(ArmIsInfOp, self).__init__(graph, attr_dict)
+        self.update_attributes(ArmIsInfOp, attr_dict)
+        assert self.check_required(), 'ArmIsInfOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(ArmIsInfOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        if bool(self.detect_negative):
+            if bool(self.detect_positive):
+                out_tensor = np.isinf(inputs[0])
+            else:
+                out_tensor = np.isneginf(inputs[0])
+        else:
+            if bool(self.detect_positive):
+                out_tensor = np.isposinf(inputs[0])
+            else:
+                out_tensor = np.full(inputs[0].shape, dtype=bool, fill_value=False)
+        out_tensor = out_tensor.astype(np.uint8)
+        self.set_out_tensor(out_tensor)
+
+    def write_attrs(self, txt_file):
+        ret = super(ArmIsInfOp, self).write_attrs(txt_file)
+        if ret:
+            txt_file.write('detect_negative=%s\n' %
+                           str(bool(self.detect_negative)).lower())
+            txt_file.write('detect_positive=%s\n' %
+                           str(bool(self.detect_positive)).lower())
+        return ret
+
+
+class ArmIsNaNOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
+    @classmethod
+    def num_in_ports(cls):
+        return 0
+
+    def __init__(self, graph, attr_dict=None):
+        super(ArmIsNaNOp, self).__init__(graph, attr_dict)
+        self.update_attributes(ArmIsNaNOp, attr_dict)
+        assert self.check_required(), 'ArmIsNaNOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(ArmIsNaNOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = np.isnan(inputs[0])
+        out_tensor = out_tensor.astype(np.uint8)
+        self.set_out_tensor(out_tensor)
+
+
 class ArmLayerNormOp(OpHasAxis, OpHasBiases, OpHasWeights, OpHasVariableOutPorts, ArmOp):
     @classmethod
     def cast_in_ports(cls):
@@ -2810,7 +2932,7 @@ class ArmLayerNormOp(OpHasAxis, OpHasBiases, OpHasWeights, OpHasVariableOutPorts
 class ArmLogOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
-        return {0: ['float32', 'float16']}
+        return {0: ['float32', 'float16', 'int8', 'uint8']}
 
     def infer_shape(self):
         super(ArmLogOp, self).infer_shape()
@@ -2822,7 +2944,7 @@ class ArmLogOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
 class ArmLogSoftmaxOp(OpHasAxis, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
-        return {0: ['float32', 'float16']}
+        return {0: ['float32', 'float16', 'int8', 'uint8']}
 
     @classmethod
     def attributes(cls):
@@ -3014,7 +3136,7 @@ class ArmMatMulIntegerOp(OpHasOneOutPort, ArmOp):
 class ArmMaxPoolingWithArgMaxOp(OpHasPaddingStrides, OpHasMultipleOutPorts, ArmOp):
     @classmethod
     def cast_in_ports(cls):
-        return {0: ['float32', 'float16']}
+        return {0: ['float32', 'float16', 'int8', 'uint8']}
 
     @classmethod
     def attributes(cls):
@@ -3217,7 +3339,7 @@ class ArmMVNOp(OpHasOneOutPort, OpHasAxis, ArmOp):
     '''
     @classmethod
     def cast_in_ports(cls):
-        return {0: ['float32', 'float16']}
+        return {0: ['float32', 'float16', 'int8', 'uint8']}
 
     @classmethod
     def attributes(cls):
@@ -3243,6 +3365,22 @@ class ArmMVNOp(OpHasOneOutPort, OpHasAxis, ArmOp):
         if ret:
             txt_file.write('epsilon=%1.12f\n' % self.epsilon)
         return ret
+
+
+class ArmNonZeroOp(OpHasMultipleOutPorts, DynamicShapeOp, ArmOp):
+    def __init__(self, graph, attr_dict=None):
+        super(ArmNonZeroOp, self).__init__(graph, attr_dict)
+        self.update_attributes(ArmNonZeroOp, attr_dict)
+        assert self.check_required(), 'ArmNonZeroOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(ArmNonZeroOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        inp = np.ones_like(inputs[0])
+        out_tensor = np.array(np.nonzero(inp), dtype=np.int32)
+        count = int(np.prod(inp.shape))
+        valid_count = np.random.randint(0, high=count + 1, size=(1,), dtype=np.uint32)
+        self.set_out_tensor([out_tensor, valid_count])
 
 
 class ArmNormalizedMomentsOp(OpHasMultipleOutPorts, ArmOp):
@@ -3285,7 +3423,7 @@ class ArmNormalizedMomentsOp(OpHasMultipleOutPorts, ArmOp):
 class ArmNegativeOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
-        return {0: ['float32', 'float16']}
+        return {0: ['float32', 'float16', 'int8', 'uint8']}
 
     def infer_shape(self):
         super(ArmNegativeOp, self).infer_shape()
@@ -3455,7 +3593,7 @@ class ArmOverlapAddOp(OpHasOneOutPort, ArmOp):
 class ArmPadOp(OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
-        return {0: ['float32', 'float16', 'int8']}
+        return {0: ['float32', 'float16', 'int8', 'uint8', 'int32']}
 
     @classmethod
     def attributes(cls):
@@ -3834,10 +3972,19 @@ class ArmPyramidROIAlignOp(OpHasOneOutPort, ArmOp):
 class ArmQuantizeOp(OpHasAxis, BaseQuantizeDequantizeOp, OpHasOneOutPort, ArmOp):
     @classmethod
     def attributes(cls):
-        return {'to_dtype': {'type': AttrType.STRING,
-                             'required': True,
-                             'options': ['int8', 'uint8', 'int32', 'uint32']}
-                }
+        return {
+            'to_dtype': {
+                'type': AttrType.STRING,
+                'required': True,
+                'options': ['int8', 'uint8', 'int32', 'uint32']
+            },
+            'round_mode': {
+                'type': AttrType.STRING,
+                'required': True,
+                'options': ['CEIL', 'FLOOR', 'TRUNC', 'ROUND_TO_EVEN'],
+                'default': 'ROUND_TO_EVEN'
+            }
+        }
 
     def __init__(self, graph, attr_dict=None):
         super(ArmQuantizeOp, self).__init__(graph, attr_dict)
@@ -3864,6 +4011,29 @@ class ArmQuantizeOp(OpHasAxis, BaseQuantizeDequantizeOp, OpHasOneOutPort, ArmOp)
         self.set_out_tensor(out_tensor)
 
 
+class ArmQueryRebatchOp(OpHasOneOutPort, ArmOp):
+    @classmethod
+    def num_in_ports(cls):
+        return 7
+
+    def infer_shape(self):
+        super(ArmQueryRebatchOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        cam_num = len(inputs) - 1
+        out_shape = list(inputs[0].shape[:])
+        out_shape.insert(1, cam_num)
+        out_tensor = np.random.ranf(out_shape).astype(inputs[0].dtype)
+        # batch = inputs[0].shape[0]
+        # query = torch.from_numpy(inputs[0])
+        # query_rebatch = torch.zeros(out_shape)
+        # for j in range(batch):
+        #     for i in range(cam_num):
+        #         index_query_per_img = torch.from_numpy(inputs[i + 1])
+        #         query_rebatch[j, i, :len(index_query_per_img)] = query[j, index_query_per_img]
+        # out_tensor = query_rebatch.numpy().astype(inputs[0].dtype)
+        self.set_out_tensor(out_tensor)
+
+
 class ArmReduceOp(OpHasMethod, OpHasAxis, OpHasOneOutPort, ArmOp):
     FUNC_MAP = {
         'ALL': lambda x, y, z: np.all(x, axis=y, keepdims=z),
@@ -3881,7 +4051,7 @@ class ArmReduceOp(OpHasMethod, OpHasAxis, OpHasOneOutPort, ArmOp):
 
     @classmethod
     def cast_in_ports(cls):
-        return {0: ['float32', 'float16', 'int8']}
+        return {0: ['float32', 'float16', 'int8', 'uint8']}
 
     @classmethod
     def attributes(cls):
@@ -3909,7 +4079,7 @@ class ArmReduceOp(OpHasMethod, OpHasAxis, OpHasOneOutPort, ArmOp):
 class ArmReciprocalOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
-        return {0: ['float32', 'float16']}
+        return {0: ['float32', 'float16', 'int8', 'uint8']}
 
     def infer_shape(self):
         super(ArmReciprocalOp, self).infer_shape()
@@ -4112,6 +4282,9 @@ class ArmResizeOp(OpHasMethod, OpHasOneOutPort, ArmOp):
                                  'options': ['simple', 'round_prefer_floor', 'round_prefer_ceil', 'floor', 'ceil']},
                 'antialias': {'type': AttrType.BOOL, 'default': False},
                 'exclude_outside': {'type': AttrType.BOOL, 'default': False},
+                'keep_aspect_ratio_policy': {'type': AttrType.STRING,
+                                             'default': 'stretch',
+                                             'options': ['not_larger', 'not_smaller', 'stretch']}
                 }
 
     def __init__(self, graph, attr_dict=None):
@@ -4126,8 +4299,12 @@ class ArmResizeOp(OpHasMethod, OpHasOneOutPort, ArmOp):
             size = self.sizes
         else:
             spatial_shape = inputs[0].shape[1:-1]
-            size = np.floor(np.array(spatial_shape) *
-                            np.array(self.factors)).astype(np.int32).tolist()
+            if self.keep_aspect_ratio_policy in ('not_larger', 'not_smaller'):
+                size = np.round(np.array(spatial_shape) *
+                                np.array(self.factors)).astype(np.int32).tolist()
+            else:
+                size = np.floor(np.array(spatial_shape) *
+                                np.array(self.factors)).astype(np.int32).tolist()
         perm = [0, len(inputs[0].shape) - 1] + \
             list(range(1, len(inputs[0].shape) - 1))
         inverse_perm = Op.cal_inverse_perm(perm)
@@ -4166,7 +4343,7 @@ class ArmReverseSequenceOp(OpHasOneOutPort, ArmOp):
 
     @classmethod
     def cast_in_ports(cls):
-        return {0: ['float32', 'int32'], 1: 'int32'}
+        return {0: ['float32', 'int32', 'int8', 'uint8', 'float16'], 1: 'int32'}
 
     @classmethod
     def attributes(cls):
@@ -4199,7 +4376,7 @@ class ArmReverseSequenceOp(OpHasOneOutPort, ArmOp):
 class ArmRMSNormOp(OpHasAxis, OpHasWeights, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
-        return {0: ['float32', 'float16']}
+        return {0: ['float32', 'float16', 'int8', 'uint8']}
 
     @classmethod
     def attributes(cls):
@@ -4214,13 +4391,14 @@ class ArmRMSNormOp(OpHasAxis, OpHasWeights, OpHasOneOutPort, ArmOp):
     def infer_shape(self):
         super(ArmRMSNormOp, self).infer_shape()
         inputs = self.get_input_tensors()
+        input_dtype = inputs[0].dtype
         square = np.power(inputs[0], 2)
         mean = np.mean(square, axis=tuple(self.axes), keepdims=True)
         normalized = inputs[0] / np.sqrt(mean + self.epsilon)
         axes = OpHasAxis.make_axes_non_negative(
             self.axes, len(inputs[0].shape))
         weights = OpHasAxis.expand_to(self.weights, axes, len(inputs[0].shape))
-        out_tensor = (normalized * weights).astype(np.float32)
+        out_tensor = (normalized * weights).astype(input_dtype)
         self.set_out_tensor(out_tensor)
 
     def write_attrs(self, txt_file):
@@ -4307,7 +4485,7 @@ class ArmScatterNDOp(OpHasOneOutPort, ArmOp):
 
     @classmethod
     def cast_in_ports(cls):
-        return {0: ['float32', 'float16'], 1: 'int32', 2: ['float32', 'float16']}
+        return {0: ['float32', 'float16', 'int8', 'uint8'], 1: 'int32', 2: ['float32', 'float16', 'int8', 'uint8']}
 
     @classmethod
     def attributes(cls):
@@ -4413,7 +4591,7 @@ class ArmSegmentReduceOp(OpHasMethod, OpHasOneOutPort, ArmOp):
 class ArmSignOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
-        return {0: ['float32', 'float16']}
+        return {0: ['float32', 'float16', 'int8', 'uint8']}
 
     def infer_shape(self):
         super(ArmSignOp, self).infer_shape()
@@ -4425,7 +4603,7 @@ class ArmSignOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
 class ArmSineOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
-        return {0: ['float32', 'float16']}
+        return {0: ['float32', 'float16', 'int8', 'uint8']}
 
     def infer_shape(self):
         super(ArmSineOp, self).infer_shape()
@@ -4437,7 +4615,7 @@ class ArmSineOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
 class ArmSinhOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
-        return {0: ['float32', 'float16']}
+        return {0: ['float32', 'float16', 'int8', 'uint8']}
 
     def infer_shape(self):
         super(ArmSinhOp, self).infer_shape()
@@ -4473,6 +4651,25 @@ class ArmSliceOp(OpHasOneOutPort, ArmOp):
             txt_file.write('end=[%s]\n' % list_list_to_string(self.ends))
             txt_file.write('strides=[%s]\n' % list_list_to_string(self.steps))
         return ret
+
+
+class ArmSlotUpdateOp(OpHasOneOutPort, ArmOp):
+    def infer_shape(self):
+        super(ArmSlotUpdateOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        cam_num = len(inputs) - 1
+        assert cam_num == inputs[0].shape[1]
+        out_shape = list(inputs[0].shape[:])
+        out_shape.pop(1)
+        out_tensor = np.random.ranf(out_shape).astype(inputs[0].dtype)
+        # batch = inputs[0].shape[0]
+        # queries = torch.from_numpy(inputs[0])
+        # slots = torch.zeros_like(queries)
+        # for j in range(batch):
+        #     for i, index_query_per_img in enumerate(inputs[1:]):
+        #         slots[j, torch.from_numpy(index_query_per_img)] += queries[j, i, :len(index_query_per_img)]
+        # out_tensor = slots.numpy()
+        self.set_out_tensor(out_tensor)
 
 
 class ArmSoftmaxOp(OpHasAxis, OpHasOneOutPort, ArmOp):
@@ -4643,7 +4840,7 @@ class ArmSplitOp(OpHasAxis, OpHasMultipleOutPorts, ArmOp):
 class ArmSqrtOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
-        return {0: ['float32', 'float16']}
+        return {0: ['float32', 'float16', 'int8', 'uint8']}
 
     def infer_shape(self):
         super(ArmSqrtOp, self).infer_shape()
@@ -4664,7 +4861,11 @@ class ArmSquareOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
         self.set_out_tensor(out_tensors)
 
 
-class ArmSquaredDifferenceOp(OpNeedBroadcast, OpHasOneOutPort, ArmOp):
+class ArmSquaredDifferenceOp(OpNeedBroadcast, OpHasOneOutPort, LayoutUnawareOp, ArmOp):
+    @classmethod
+    def num_in_ports(cls):
+        return 2
+
     @classmethod
     def cast_in_ports(cls):
         return {0: ['float32', 'float16', 'int8', 'uint8'], 1: ['float32', 'float16', 'int8', 'uint8']}
@@ -4703,7 +4904,7 @@ class ArmSufficientStatisticsOp(OpHasAxis, OpHasMultipleOutPorts, ArmOp):
 class ArmTanOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
-        return {0: ['float32', 'float16']}
+        return {0: ['float32', 'float16', 'int8', 'uint8']}
 
     def infer_shape(self):
         super(ArmTanOp, self).infer_shape()
@@ -4741,7 +4942,7 @@ class ArmTileOp(OpHasOneOutPort, ArmOp):
 class ArmTopKOp(OpHasAxis, OpHasMultipleOutPorts, ArmOp):
     @classmethod
     def cast_in_ports(cls):
-        return {0: ['float32', 'float16']}
+        return {0: ['float32', 'float16', 'int8', 'uint8']}
 
     @classmethod
     def attributes(cls):
@@ -4806,6 +5007,51 @@ class ArmTransposeOp(OpHasOneOutPort, ArmOp):
         ret = super(ArmTransposeOp, self).write_attrs(txt_file)
         if ret:
             txt_file.write('perm=[%s]\n' % num_list_to_string(self.perm))
+        return ret
+
+
+class ArmUniqueOp(OpHasVariableOutPorts, OpHasAxis, DynamicShapeOp, ArmOp):
+    @classmethod
+    def attributes(cls):
+        return {
+            'axis': {'type': AttrType.INT, 'default': None},
+            'sorted': {'type': AttrType.INT, 'default': 1, 'options': [0, 1]}
+        }
+
+    def __init__(self, graph, attr_dict=None):
+        super(ArmUniqueOp, self).__init__(graph, attr_dict)
+        self.update_attributes(ArmUniqueOp, attr_dict)
+        assert self.check_required(), 'ArmUniqueOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(ArmUniqueOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        inp_shape = inputs[0].shape
+        inp = np.arange(int(np.prod(inp_shape)), dtype=inputs[0].dtype).reshape(inp_shape)
+        y, indices, inverse_indices, counts = np.unique(
+            inp, True, True, True, axis=self.axis)
+        if self.sorted is False:
+            argsorted_indices = np.argsort(indices)
+            inverse_indices_map = {i: si for i, si in zip(
+                argsorted_indices, np.arange(len(argsorted_indices)))}
+            indices = indices[argsorted_indices]
+            y = np.take(inp, indices, axis=self.axis)
+            inverse_indices = np.asarray(
+                [inverse_indices_map[i] for i in inverse_indices], dtype=np.int64)
+            counts = counts[argsorted_indices]
+
+        out_tensors = [
+            y,
+            indices.astype(np.int32),
+            inverse_indices.astype(np.int32),
+            counts.astype(np.int32)
+        ]
+        self.set_out_tensor(out_tensors)
+
+    def write_attrs(self, txt_file):
+        ret = super(ArmUniqueOp, self).write_attrs(txt_file)
+        if ret:
+            txt_file.write('sorted=%s\n' % str(bool(self.sorted)).lower())
         return ret
 
 

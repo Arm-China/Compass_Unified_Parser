@@ -4,6 +4,8 @@
 
 import tensorflow as tf
 import numpy as np
+import torch
+
 from .op import *
 from ..common.utils import get_random_array, list_list_to_string
 from ..plugin_loader import PARSER_OP_DICT
@@ -271,7 +273,7 @@ class DilationOp(OpHasPaddingStrides, OpHasWeights, OpHasOneOutPort, LayoutConce
         self.set_out_tensor(out_tensor)
 
 
-class DivModOp(OpNeedBroadcast, LayoutUnawareOp, OpHasMultipleOutPorts, CommonOp):
+class DivModOp(OpNeedBroadcast, LayoutUnawareOp, OpHasDivisor, OpHasMultipleOutPorts, CommonOp):
     @classmethod
     def attributes(cls):
         return {'mode': {'type': AttrType.STRING, 'default': 'floor', 'options': ['trunc', 'floor']}}
@@ -306,8 +308,45 @@ class DummyOp(OpHasOneOutPort, ConstLikeOp, CommonOp):
     def __init__(self, graph, attr_dict=None):
         super(DummyOp, self).__init__(graph, attr_dict)
 
-    def infer_shape(self):
+    def infer_shape(self, input_tensor=None):
         super(DummyOp, self).infer_shape()
+        if input_tensor is not None:
+            out_tensor = input_tensor.copy()
+            self.set_out_tensor(out_tensor)
+
+
+class DummyInputOp(OpHasOneOutPort, InputLikeOp, CommonOp):
+    def __init__(self, graph, attr_dict=None):
+        super(DummyInputOp, self).__init__(graph, attr_dict)
+
+    def infer_shape(self, input_tensor=None, is_const=False):
+        super(DummyInputOp, self).infer_shape()
+        assert input_tensor is not None, 'input tensor is empty in DummyInputOp.'
+        out_tensor = input_tensor.copy()
+        self.set_out_tensor(out_tensor, is_const)
+
+    def set_out_tensor(self, tensor_data, is_const):
+        '''set the out tensor of this op.'''
+        try:
+            for _, _, d in self._graph.sorted_out_edges(self.name, data=True):
+                if d.get('tensor', None) is not None:
+                    d['tensor'].value = tensor_data
+                    if tensor_data is not None:
+                        d['tensor'].shape = d['tensor'].value.shape
+                        d['tensor'].is_const = is_const
+                        if not self.quantize or d['tensor'].dtype is None:
+                            d['tensor'].dtype = str(d['tensor'].value.dtype)
+                else:
+                    d['tensor'] = Tensor(value=tensor_data)
+
+            self.clear_unused_tensor(is_const)
+
+        except KeyError as e:
+            ERROR('[Parser]: Node(%s) meets key error in set_out_tensor (%s)!' %
+                  (self.name, str(e)))
+        except Exception as e:
+            ERROR('[Parser]: Node(%s) meets exception in set_out_tensor (%s)!' %
+                  (self.name, str(e)))
 
 
 class ErosionOp(OpHasPaddingStrides, OpHasWeights, OpHasOneOutPort, LayoutConcernedOp, CommonOp):
@@ -697,9 +736,11 @@ class PluginOp(OpHasVariableOutPorts, CommonOp):
                     len(inputs), tensor_index)
                 remove_edge_index = tensor_index
             else:
-                assert node_index < len(nest_input_index), 'Expect node_index < inputs length (%d) in subgraph plugin, but got %d' % (
+                assert node_index < len(
+                    nest_input_index), 'Expect node_index < inputs length (%d) in subgraph plugin, but got %d' % (
                     len(nest_input_index), node_index)
-                assert tensor_index < len(nest_input_index[node_index]), 'Expect tensor_index < inputs length (%d), but got %d' % (
+                assert tensor_index < len(
+                    nest_input_index[node_index]), 'Expect tensor_index < inputs length (%d), but got %d' % (
                     len(nest_input_index[node_index]), tensor_index)
                 remove_edge_index = np.sum([len(nest_input_index[idx]) for idx in range(node_index)]) + tensor_index
             remove_edge_indexes.append(remove_edge_index)
@@ -756,7 +797,8 @@ class PluginOp(OpHasVariableOutPorts, CommonOp):
         self.constants = getattr(self._plugin, 'constants', {})
         if not all((isinstance(key, str) and isinstance(val, np.ndarray))
                    for key, val in self.constants.items()):
-            ERROR('[Parser]: Invalid constants in Plugin op (%s). Expect key is string and value is numpy array!' % self.name)
+            ERROR(
+                '[Parser]: Invalid constants in Plugin op (%s). Expect key is string and value is numpy array!' % self.name)
             ERROR('constants: %s' % str(self.constants))
 
     def write_attrs(self, txt_file):
@@ -804,7 +846,7 @@ class PluginOp(OpHasVariableOutPorts, CommonOp):
     def write_constants(self, bin_file):
         '''Write value of constants in IR binfile.'''
         ret = True
-        if not bin_file.closed and bin_file.mode == 'wb':
+        if not bin_file.closed and bin_file.mode == 'ab':
             if not self.constants:
                 pass
             elif not self.constants_offset_dict \
@@ -825,6 +867,27 @@ class PluginOp(OpHasVariableOutPorts, CommonOp):
             FATAL(
                 '[Parser]: Invalid file to write constants for Node(%s) in write_constants!' % self.name)
         return ret
+
+
+class QueryRebatchOp(OpHasOneOutPort, CommonOp):
+    def infer_shape(self):
+        super(QueryRebatchOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        cam_num = len(inputs) - 1
+        out_shape = list(inputs[0].shape[:])
+        out_shape.insert(1, cam_num)
+        if self.is_all_inputs_const():
+            batch = inputs[0].shape[0]
+            query = torch.from_numpy(inputs[0])
+            query_rebatch = torch.zeros(out_shape)
+            for j in range(batch):
+                for i in range(cam_num):
+                    index_query_per_img = torch.from_numpy(inputs[i + 1])
+                    query_rebatch[j, i, :len(index_query_per_img)] = query[j, index_query_per_img]
+            out_tensor = query_rebatch.numpy().astype(inputs[0].dtype)
+        else:
+            out_tensor = np.random.ranf(out_shape).astype(inputs[0].dtype)
+        self.set_out_tensor(out_tensor)
 
 
 class ReduceAllOp(OpHasAxis, OpHasOneOutPort, CommonOp):
@@ -1009,6 +1072,27 @@ class SiluOp(LayoutUnawareOp, ActivationOnlyOp, CommonOp):
         self.set_out_tensor(out_tensor.astype(inputs[0].dtype))
 
 
+class SlotUpdateOp(OpHasOneOutPort, CommonOp):
+    def infer_shape(self):
+        super(SlotUpdateOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        cam_num = len(inputs) - 1
+        assert cam_num == inputs[0].shape[1]
+        out_shape = list(inputs[0].shape[:])
+        out_shape.pop(1)
+        if self.is_all_inputs_const():
+            batch = inputs[0].shape[0]
+            queries = torch.from_numpy(inputs[0])
+            slots = torch.zeros_like(queries)
+            for j in range(batch):
+                for i, index_query_per_img in enumerate(inputs[1:]):
+                    slots[j, torch.from_numpy(index_query_per_img)] += queries[j, i, :len(index_query_per_img)]
+            out_tensor = slots.numpy().astype(inputs[0].dtype)
+        else:
+            out_tensor = np.random.ranf(out_shape).astype(inputs[0].dtype)
+        self.set_out_tensor(out_tensor)
+
+
 class SufficientStatisticsOp(OpHasAxis, OpHasMultipleOutPorts, CommonOp):
     def __init__(self, graph, attr_dict=None):
         super(SufficientStatisticsOp, self).__init__(graph, attr_dict)
@@ -1038,8 +1122,21 @@ class SwishOp(OpHasOneOutPort, CommonOp):
     def infer_shape(self):
         super(SwishOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = (inputs[0]) * tf.sigmoid(self.alpha * inputs[0]).numpy()
+        input_dtype = str(inputs[0].dtype)
+        inp = inputs[0].astype(np.float32) if input_dtype != 'float32' else inputs[0]
+        out_tensor = inp * tf.sigmoid(self.alpha * inp).numpy()
+        if input_dtype != 'float32':
+            out_tensor = out_tensor.astype(input_dtype)
         self.set_out_tensor(out_tensor)
+
+
+class TempOp(LayoutUnawareOp, CommonOp):
+    '''
+    This OP is just used for pettern match and won't appear in the final graph.
+    '''
+
+    def infer_shape(self, input_tensor=None):
+        super(TempOp, self).infer_shape()
 
 
 class TruncOp(LayoutUnawareOp, OpHasOneOutPort, CommonOp):

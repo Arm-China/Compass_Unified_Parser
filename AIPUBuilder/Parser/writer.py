@@ -15,7 +15,7 @@ from .logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 def write_net_attrs(txt_file, attr):
     ret = True
-    if not txt_file.closed and txt_file.mode == 'w':
+    if not txt_file.closed and txt_file.mode == 'a':
         for k, v in attr.items():
             if k in ['input_tensors', 'output_tensors']:
                 txt_file.write('%s=[%s]\n' % (k, v))
@@ -25,6 +25,122 @@ def write_net_attrs(txt_file, attr):
         ERROR('[Parser]: Can not write net attr!')
         ret = False
     return ret
+
+
+def write_nodes_attrs(txt_path, net_attr, nodes_list, graph):
+    writing_node = ''
+    arm_op_types = ArmOp.get_concrete_subclass_names()
+    ret = True
+    try:
+        with open(txt_path, 'a') as txt_file:
+            if write_net_attrs(txt_file, net_attr):
+                for i, n in enumerate(nodes_list):
+                    writing_node = n
+                    op_obj = NodeWrap(graph, n)['object']
+                    if op_obj is not None:
+                        if op_obj.type not in arm_op_types and not isinstance(op_obj, PluginOp):
+                            ERROR('[Parser]: Writing %s op(%s) that is not supported in serialize!' % (
+                                op_obj.type, op_obj.name))
+                        txt_file.write('\nlayer_id=%d\n' % i)
+                        op_obj.write_attrs(txt_file)
+                    else:
+                        ERROR(
+                            '[Parser]: Meets invalid op for Node (%s) in serialize!' % n)
+                txt_file.write('\n\n')
+    except IOError as e:
+        ERROR('[Parser]: Meets IOError (%s) when writing attributes of node (%s) in serialize!' % (
+            str(e), writing_node))
+        ret = False
+    except Exception as e:
+        ERROR('[Parser]: Meets Exception (%s) when writing attributes of node (%s) in serialize!' % (
+            str(e), writing_node))
+        ret = False
+    return ret
+
+
+def write_nodes_weights(bin_path, nodes_list, graph):
+    writing_node = ''
+    ret = True
+    try:
+        with open(bin_path, 'ab') as bin_file:
+            for n in nodes_list:
+                writing_node = n
+                op_obj = NodeWrap(graph, n)['object']
+                if op_obj is not None:
+                    op_obj.write_top_range(bin_file)
+                    op_obj.write_top_scale_zp(bin_file)
+
+                    if isinstance(op_obj, OpHasWeights):
+                        if not op_obj.write_weights(bin_file):
+                            ret = False
+                            break
+                    if isinstance(op_obj, OpHasBiases):
+                        if not op_obj.write_biases(bin_file):
+                            ret = False
+                            break
+                    if isinstance(op_obj, OpHasAnchors):
+                        if not op_obj.write_anchors(bin_file):
+                            ret = False
+                            break
+                    if isinstance(op_obj, (BaseActivationOp, ArmActivationOp)):
+                        if not op_obj.write_negative_slope(bin_file):
+                            ret = False
+                            break
+                    if isinstance(op_obj, BaseQuantizeDequantizeOp):
+                        if not op_obj.write_scale_zp(bin_file):
+                            ret = False
+                            break
+                    if isinstance(op_obj, BaseRnnOp):
+                        if not op_obj.write_scale_zp(bin_file):
+                            ret = False
+                            break
+                    if isinstance(op_obj, PluginOp):
+                        if not op_obj.write_constants(bin_file):
+                            ret = False
+                            break
+                else:
+                    ERROR(
+                        '[Parser]: Meets invalid op for Node (%s) in serialize!' % n)
+    except IOError as e:
+        ERROR('[Parser]: Meets IOError (%s) when writing binary data of node (%s) in serialize!' % (
+            str(e), writing_node))
+        ret = False
+    except Exception as e:
+        ERROR('[Parser]: Meets Exception (%s) when writing binary data of node (%s) in serialize!' % (
+            str(e), writing_node))
+        ret = False
+    return ret
+
+
+def write_net(txt_path, bin_path, net_attr, graph):
+    sorted_list = determined_sort(graph,
+                                  graph._attr['subgraph_depends_nodes'] + graph._attr['output_names'],
+                                  sort_input=True)
+    ret = write_nodes_attrs(txt_path, net_attr, sorted_list, graph)
+
+    if ret:
+        ret = write_nodes_weights(bin_path, sorted_list, graph)
+    return ret
+
+
+def get_output_tensor_names(graph):
+    output_tops_names = []
+    out_nodes = graph._attr.get('output_nodes', [])
+    if (len(out_nodes)
+            and all([i is not None for i in out_nodes])
+            and all([NodeWrap(graph, name)['object'] for name in
+                     out_nodes])):  # due to some post process adding,the out node may be removed.
+        for name in out_nodes:
+            obj = NodeWrap(graph, name)['object']
+            out_tops = obj.get_inputs_info()
+            output_tops_names.extend(out_tops[0])
+    else:
+        for name in graph._attr['output_names']:
+            obj = NodeWrap(graph, name)['object']
+            out_tops = obj.get_outputs_info()
+            if len(out_tops) > 0:
+                output_tops_names.extend(out_tops[0])
+    return output_tops_names
 
 
 def serialize(graph, params):
@@ -42,8 +158,14 @@ def serialize(graph, params):
         txt_path = os.path.join(output_dir, model_name + '.txt')
         bin_path = os.path.join(output_dir, model_name + '.bin')
 
-        arm_op_types = ArmOp.get_concrete_subclass_names()
-        sorted_list = determined_sort(graph, graph._attr['output_names'], sort_input=True)
+        if os.path.exists(txt_path):
+            os.remove(txt_path)
+        if os.path.exists(bin_path):
+            os.remove(bin_path)
+
+        sorted_list = determined_sort(graph,
+                                      graph._attr['subgraph_depends_nodes'] + graph._attr['output_names'],
+                                      sort_input=True)
 
         net_attr = OrderedDict()
         net_attr['model_name'] = model_name
@@ -64,99 +186,31 @@ def serialize(graph, params):
         INFO('[Parser]: The input tensor(s) is/are: %s' %
              (net_attr['input_tensors']))
 
-        output_tops_names = []
-        out_nodes = graph._attr.get('output_nodes', [])
-        if (len(out_nodes)
-            and all([i is not None for i in out_nodes])
-                and all([NodeWrap(graph, name)['object'] for name in out_nodes])):   # due to some post process adding,the out node may be removed.
-            for name in out_nodes:
-                obj = NodeWrap(graph, name)['object']
-                out_tops = obj.get_inputs_info()
-                output_tops_names.extend(out_tops[0])
-        else:
-            for name in graph._attr['output_names']:
-                obj = NodeWrap(graph, name)['object']
-                out_tops = obj.get_outputs_info()
-                if len(out_tops) > 0:
-                    output_tops_names.extend(out_tops[0])
+        output_tensor_names = get_output_tensor_names(graph)
 
-        net_attr['output_tensors'] = string_list_to_string(output_tops_names)
+        net_attr['output_tensors'] = string_list_to_string(output_tensor_names)
 
-        writing_node = ''
-        try:
-            with open(txt_path, 'w') as txt_file:
-                if write_net_attrs(txt_file, net_attr):
-                    for i, n in enumerate(sorted_list):
-                        writing_node = n
-                        op_obj = NodeWrap(graph, n)['object']
-                        if op_obj is not None:
-                            if op_obj.type not in arm_op_types and not isinstance(op_obj, PluginOp):
-                                ERROR('[Parser]: Writing %s op(%s) that is not supported in serialize!' % (
-                                    op_obj.type, op_obj.name))
-                            txt_file.write('\nlayer_id=%d\n' % i)
-                            op_obj.write_attrs(txt_file)
-                        else:
-                            ERROR(
-                                '[Parser]: Meets invalid op for Node (%s) in serialize!' % n)
-        except IOError as e:
-            ERROR('[Parser]: Meets IOError (%s) when writing attributes of node (%s) in serialize!' % (
-                str(e), writing_node))
-            ret = False
-        except Exception as e:
-            ERROR('[Parser]: Meets Exception (%s) when writing attributes of node (%s) in serialize!' % (
-                str(e), writing_node))
-            ret = False
+        ret = write_net(txt_path, bin_path, net_attr, graph)
 
-        if ret:
-            writing_node = ''
-            try:
-                with open(bin_path, 'wb') as bin_file:
-                    for n in sorted_list:
-                        writing_node = n
-                        op_obj = NodeWrap(graph, n)['object']
-                        if op_obj is not None:
-                            op_obj.write_top_range(bin_file)
-                            op_obj.write_top_scale_zp(bin_file)
+        if 'subgraphs' in graph._attr and graph._attr['subgraphs']:
+            for n_name, v in graph._attr['subgraphs'].items():
+                for subgraph_name, subgraph in v.items():
+                    sorted_list = determined_sort(subgraph, subgraph._attr['output_names'], sort_input=True)
+                    sub_net_attr = OrderedDict()
+                    sub_net_attr['subgraph_name'] = subgraph_name
+                    sub_net_attr['layer_number'] = str(len(sorted_list))
+                    sub_net_attr['precision'] = 'int8' if subgraph._attr.get('quantize', False) else 'float32'
+                    sub_net_attr['compat_quantized_model'] = 'true' if subgraph._attr.get(
+                        'quantize', False) else 'false'
+                    sub_input_names = list(subgraph._attr['input_tensors'].keys())
+                    sub_input_objs = [NodeWrap(subgraph, name)['object'] for name in sub_input_names]
+                    sub_input_tops = [obj.get_outputs_info() for obj in sub_input_objs]
+                    sub_input_tops_names = [t[0][0] for t in sub_input_tops]
+                    sub_net_attr['input_tensors'] = string_list_to_string(sub_input_tops_names)
+                    sub_output_tensor_names = get_output_tensor_names(subgraph)
+                    sub_net_attr['output_tensors'] = string_list_to_string(sub_output_tensor_names)
 
-                            if isinstance(op_obj, OpHasWeights):
-                                if not op_obj.write_weights(bin_file):
-                                    ret = False
-                                    break
-                            if isinstance(op_obj, OpHasBiases):
-                                if not op_obj.write_biases(bin_file):
-                                    ret = False
-                                    break
-                            if isinstance(op_obj, OpHasAnchors):
-                                if not op_obj.write_anchors(bin_file):
-                                    ret = False
-                                    break
-                            if isinstance(op_obj, (BaseActivationOp, ArmActivationOp)):
-                                if not op_obj.write_negative_slope(bin_file):
-                                    ret = False
-                                    break
-                            if isinstance(op_obj, BaseQuantizeDequantizeOp):
-                                if not op_obj.write_scale_zp(bin_file):
-                                    ret = False
-                                    break
-                            if isinstance(op_obj, BaseRnnOp):
-                                if not op_obj.write_scale_zp(bin_file):
-                                    ret = False
-                                    break
-                            if isinstance(op_obj, PluginOp):
-                                if not op_obj.write_constants(bin_file):
-                                    ret = False
-                                    break
-                        else:
-                            ERROR(
-                                '[Parser]: Meets invalid op for Node (%s) in serialize!' % n)
-            except IOError as e:
-                ERROR('[Parser]: Meets IOError (%s) when writing binary data of node (%s) in serialize!' % (
-                    str(e), writing_node))
-                ret = False
-            except Exception as e:
-                ERROR('[Parser]: Meets Exception (%s) when writing binary data of node (%s) in serialize!' % (
-                    str(e), writing_node))
-                ret = False
+                    ret = write_net(txt_path, bin_path, sub_net_attr, subgraph)
 
     else:
         ERROR('[Parser]: Meets invalid output dir in serialize!')

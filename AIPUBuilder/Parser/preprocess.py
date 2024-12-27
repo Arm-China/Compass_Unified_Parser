@@ -332,8 +332,7 @@ def resize_preprocess(graph, params, hooking_node):
                         data_format = 'NCHW'
                     else:
                         data_format = 'NHWC'
-                    scales = np.array(input_tensor_shape, np.float32) / \
-                        np.array(shape, np.float32)
+
                     resize_attr = {
                         'name': resize,
                         'data_format': data_format,
@@ -349,9 +348,15 @@ def resize_preprocess(graph, params, hooking_node):
                                     data_format=data_format)
                     insert_constant(graph,
                                     resize + '_scales',
-                                    scales,
+                                    np.array([], np.float32),
                                     resize,
                                     in_port=2,
+                                    data_format=data_format)
+                    insert_constant(graph,
+                                    resize + '_sizes',
+                                    np.array(input_tensor_shape, np.int64),
+                                    resize,
+                                    in_port=3,
                                     data_format=data_format)
 
                     ret = resize

@@ -1132,6 +1132,71 @@ class TfUnpackOp(OpHasAxis, OpHasMultipleOutPorts, TfOp):
         self.set_out_tensor(out_tensors)
 
 
+class TfUniqueOp(OpHasMultipleOutPorts, DynamicShapeOp, TfOp):
+    @classmethod
+    def attributes(cls):
+        return {1: {'out_idx': {'type': AttrType.STRING, 'default': 'int32', 'options': ['int32', 'int64']}
+                    }
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfUniqueOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfUniqueOp, attr_dict)
+        assert self.check_required(), 'TfUniqueOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(TfUniqueOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        if self.is_all_inputs_const():
+            inp = inputs[0]
+        else:
+            inp_shape = inputs[0].shape
+            inp = np.arange(int(np.prod(inp_shape)), dtype=inputs[0].dtype).reshape(inp_shape)
+        x, out_idx = tf.unique(inp, out_idx=tf.dtypes.as_dtype(self.out_idx))
+        out_ports = self.get_out_ports()
+        out_dict = {
+            0: x.numpy(),
+            1: out_idx.numpy()
+        }
+        out_tensors = []
+        for port in out_ports:
+            out_tensors.append(out_dict[port])
+        self.set_out_tensor(out_tensors)
+
+
+class TfUniqueWithCountsOp(OpHasMultipleOutPorts, DynamicShapeOp, TfOp):
+    @classmethod
+    def attributes(cls):
+        return {1: {'out_idx': {'type': AttrType.STRING, 'default': 'int32', 'options': ['int32', 'int64']}
+                    }
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfUniqueWithCountsOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfUniqueWithCountsOp, attr_dict)
+        assert self.check_required(), 'TfUniqueWithCountsOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(TfUniqueWithCountsOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        if self.is_all_inputs_const():
+            inp = inputs[0]
+        else:
+            inp_shape = inputs[0].shape
+            inp = np.arange(int(np.prod(inp_shape)), dtype=inputs[0].dtype).reshape(inp_shape)
+        x, out_idx, counts = tf.unique_with_counts(inp, out_idx=tf.dtypes.as_dtype(self.out_idx))
+        out_ports = self.get_out_ports()
+        out_dict = {
+            0: x.numpy(),
+            1: out_idx.numpy(),
+            2: counts.numpy()
+        }
+        out_tensors = []
+        for port in out_ports:
+            out_tensors.append(out_dict[port])
+        self.set_out_tensor(out_tensors)
+
+
 class TfWhereOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfWhereOp, self).infer_shape()

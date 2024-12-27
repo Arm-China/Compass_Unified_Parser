@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
-
-
+import numpy as np
 import torch
 import tensorflow as tf
 from itertools import product
@@ -321,7 +320,15 @@ class ConvOp(BaseConvOp, OnnxOp):
             self.kernel_shape = list(w.shape[2:])
 
         if self.biases is None and self.weights is not None and len(inputs) < 3:
-            self.biases = np.zeros(self.num_output, np.float32)
+            if self.quantize and np.issubdtype(self.weights.dtype, np.integer):
+                self.biases = np.zeros(self.num_output, np.int32)
+                w_scale = self.weights_scale_zp[0]
+                inp_node_name = self._graph.sorted_in_edges(self.name)[0][0]
+                inp_scale = self._graph.nodes[inp_node_name]['object'].x_scale
+                bias_scale = inp_scale * w_scale
+                self.biases_scale_zp = [bias_scale, np.zeros(bias_scale.shape, dtype=np.int32)]
+            else:
+                self.biases = np.zeros(self.num_output, np.float32)
 
         if self.data_format == 'NHWC':
             # from ..release_ops import ArmDepthwiseConvOp
@@ -490,7 +497,15 @@ class ConvTransposeOp(BaseDeconvOp, OnnxOp):
             self.output_padding = self.output_padding[1:]
         self.update_pads(inputs[0].shape[1:-1] if self.data_format == 'NHWC' else inputs[0].shape[2:])
         if self.biases is None:
-            self.biases = np.zeros(self.num_output, np.float32)
+            if self.quantize and np.issubdtype(self.weights.dtype, np.integer):
+                self.biases = np.zeros(self.num_output, np.int32)
+                w_scale = self.weights_scale_zp[0]
+                inp_node_name = self._graph.sorted_in_edges(self.name)[0][0]
+                inp_scale = self._graph.nodes[inp_node_name]['object'].x_scale
+                bias_scale = inp_scale * w_scale
+                self.biases_scale_zp = [bias_scale, np.zeros(bias_scale.shape, dtype=np.int32)]
+            else:
+                self.biases = np.zeros(self.num_output, np.float32)
         if self.data_format == 'NHWC':
             out_shape = [inputs[0].shape[0]] + \
                 self.output_shape + [self.num_output]
@@ -1046,26 +1061,37 @@ class GroupNormalizationOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
         assert len(inputs) == 3, 'GroupNormalizationOp expects 3 inputs, but got %d' % len(inputs)
         input_dim = len(inputs[0].shape)
         pre_perm = None
-        if self.data_format.startswith('NC'):
+        if self.data_format[:2] == 'NC':
             input_tensor = inputs[0]
-            channel_axis = 1
         else:
             pre_perm = [0, input_dim - 1] + list(range(1, input_dim - 1))
             input_tensor = np.transpose(inputs[0], pre_perm)
-            channel_axis = -1
-        channels = inputs[0].shape[channel_axis]
-        channel_num_per_group = channels / self.num_groups
-        scale = np.repeat(inputs[1], channel_num_per_group, axis=0)
-        bias = np.repeat(inputs[2], channel_num_per_group, axis=0)
-        weight_bias_shape = [-1] + [1] * (input_dim - 2)
-        weights = np.reshape(scale, weight_bias_shape)
-        biases = np.reshape(bias, weight_bias_shape)
+        channel_axis = 1
+        channels = input_tensor.shape[channel_axis]
+        channel_num_per_group = channels // self.num_groups
+        new_shape = [input_tensor.shape[0], self.num_groups, channel_num_per_group, *list(input_tensor.shape[2:])]
+        x_reshaped = input_tensor.reshape(new_shape)
+        axes = tuple(range(2, len(new_shape)))
+        mean = np.mean(x_reshaped, axis=axes, keepdims=True)
+        var = np.var(x_reshaped, axis=axes, keepdims=True)
+        x_normalized = ((x_reshaped - mean) / np.sqrt(var + self.epsilon)).reshape(input_tensor.shape)
+        weight_bias_shape = [1, channels] + [1] * (input_dim - 2)
+        if list(inputs[1].shape) == [self.num_groups]:
+            # Maybe ONNX issue, from SPEC, scale/bias should be [c]
+            weights = np.repeat(inputs[1], channel_num_per_group, axis=0)
+            weights = np.reshape(weights, weight_bias_shape)
+        else:
+            weights = np.reshape(inputs[1], weight_bias_shape)
+        if list(inputs[2].shape) == [self.num_groups]:
+            biases = np.repeat(inputs[2], channel_num_per_group, axis=0)
+            biases = np.reshape(biases, weight_bias_shape)
+        else:
+            biases = np.reshape(inputs[2], weight_bias_shape)
 
-        groupnorm = torch.nn.GroupNorm(self.num_groups, channels, self.epsilon)
-        out_tensor = groupnorm(torch.from_numpy(input_tensor)).detach().numpy() * weights + biases
+        out_tensor = x_normalized * weights + biases
         if pre_perm is not None:
             out_tensor = np.transpose(out_tensor, Op.cal_inverse_perm(pre_perm))
-        self.set_out_tensor(out_tensor)
+        self.set_out_tensor(out_tensor.astype(input_tensor.dtype))
 
 
 class GRUOp(BaseRnnOp, OpHasBiases, OpHasWeights, OnnxOp):

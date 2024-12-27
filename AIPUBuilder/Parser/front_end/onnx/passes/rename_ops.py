@@ -6,11 +6,22 @@ from ....graph.node_wrap import NodeWrap
 from ....ops.op import *
 
 
-def simple_rename(graph, src_type_list, dst_type):
-    assert src_type_list and dst_type in Op.get_concrete_subclass_names(
+def simple_rename(graph, src_type, dst_type=None):
+    if dst_type is None:
+        if isinstance(src_type, str):
+            dst_type = f'Arm{src_type}'
+        elif isinstance(src_type, dict):
+            _src_type, dst_type = list(src_type.items())[0]
+            src_type = _src_type
+        else:
+            raise NotImplemented('Still not support this type in simple_rename!')
+
+    assert src_type and dst_type in Op.get_concrete_subclass_names(
     ), 'dst_type is invalid or src_type_list is empty in simple_rename.'
-    if isinstance(src_type_list, str):
-        src_type_list = [src_type_list]
+    if isinstance(src_type, str):
+        src_type_list = [src_type]
+    else:
+        src_type_list = src_type
     for n in graph.nodes:
         node = NodeWrap(graph, n)
         if node['object'] is not None and node['object'].type in src_type_list:

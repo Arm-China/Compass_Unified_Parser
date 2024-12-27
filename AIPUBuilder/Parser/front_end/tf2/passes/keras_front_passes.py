@@ -514,6 +514,46 @@ def decompose_lambda(graph):
         clear_redundant_nodes(graph)
 
 
+def convert_groupnorm(graph):
+    '''Convert keras GroupNormalization to onnx GroupNormalization. Insert transpose before and after it
+    if axis is not c axis.
+    '''
+    matches = single_node_matcher(graph, 'TfKerasGroupNormalization')
+    for m in matches:
+        groupnorm = m['target']
+        groupnorm_obj = NodeWrap(graph, groupnorm)['object']
+        in_edges = graph.sorted_in_edges(groupnorm, data=True)
+        out_edges = graph.sorted_out_edges(groupnorm, data=True)
+        if groupnorm_obj is None or len(in_edges) < 1 or len(out_edges) < 1:
+            ERROR('[Parser]: Meets invalid GroupNormalization Node(%s) in convert_groupnorm!' % groupnorm)
+            continue
+        in_shapes = groupnorm_obj.get_input_shapes()
+        if len(in_shapes) < 1 or in_shapes[0] is None:
+            ERROR('[Parser]: Meets invalid input shape of KerasGroupNormalization Node(%s) in convert_groupnorm!' % groupnorm)
+            continue
+        in_shape_len = len(in_shapes[0])
+        gn_axis = groupnorm_obj.axis if groupnorm_obj.axis > 0 else groupnorm_obj.axis + in_shape_len
+        if gn_axis != 1:
+            pre_perm = list(range(in_shape_len))
+            pre_perm[1] = gn_axis
+            pre_perm[gn_axis] = 1
+            src, _, in_attr = in_edges[0]
+            insert_transpose(graph, src, groupnorm, in_attr, pre_perm, type='ArmTranspose')
+            post_perm = Op.cal_inverse_perm(pre_perm)
+            post_trans = insert_transpose_after(graph, groupnorm, post_perm, type='ArmTranspose')
+            if groupnorm in graph._attr['output_names']:
+                index = graph._attr['output_names'].index(groupnorm)
+                graph._attr['output_names'][index] = post_trans
+
+        insert_constant(graph, groupnorm + '_scale', groupnorm_obj.weights, groupnorm, in_port=1)
+        insert_constant(graph, groupnorm + '_bias', groupnorm_obj.biases, groupnorm, in_port=2)
+
+        groupnorm_attr = groupnorm_obj.copied_attr()
+        groupnorm_attr.update({'opset_version': 18, 'epsilon': groupnorm_obj.epsilon,
+                               'num_groups': groupnorm_obj.group, 'data_format': 'NCHW'})
+        NodeWrap(graph, groupnorm).replace_obj('GroupNormalization', groupnorm_attr)
+
+
 def convert_layernorm(graph):
     '''Convert keras LayerNormalization to onnx LayerNormalization. Insert transpose before and after it
     if axes is not continuous from the last dimension.
@@ -1224,6 +1264,7 @@ def process_keras_op_after_infer(graph):
     remove_useless_op(graph, ['TfKerasDropout'])
 
     convert_batchnorm(graph)
+    convert_groupnorm(graph)
     convert_layernorm(graph)
     convert_global_pooling(graph)
     convert_softmax(graph)

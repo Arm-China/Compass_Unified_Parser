@@ -465,7 +465,7 @@ class CumSumOp(OpHasOneOutPort, OpHasAxis, OnnxOp):
         self.set_out_tensor(out_tensor)
 
 
-class DivOp(OpNeedBroadcast, OpHasOneOutPort, OnnxOp):
+class DivOp(OpNeedBroadcast, OpHasDivisor, OpHasOneOutPort, OnnxOp):
     @classmethod
     def attributes(cls):
         return {1: {'axis': {'type': AttrType.INT},
@@ -773,6 +773,63 @@ class HardmaxOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
                     ERROR(
                         '[Parser}: Meets invalid Hardmax (%s) in convert_version!' % self.name)
             self.cur_version = max_ver
+
+
+class IsInfOp(LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
+    @classmethod
+    def attributes(cls):
+        return {
+            10: {'detect_negative': {'default': 1}, 'detect_positive': {'default': 1}},
+            20: {'detect_negative': {'default': 1}, 'detect_positive': {'default': 1}}
+        }
+
+    def __getattr__(self, item):
+        ret = None
+        try:
+            if item in ['detect_negative', 'detect_positive']:
+                ret = bool(self.__dict__['_attr'][item].value)
+        except:
+            ret = None
+        if ret is None:
+            ret = super(IsInfOp, self).__getattr__(item)
+        return ret
+
+    def __init__(self, graph, attr_dict=None):
+        super(IsInfOp, self).__init__(graph, attr_dict)
+        self.update_attributes(IsInfOp, attr_dict)
+        assert self.check_required(), 'IsInfOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(IsInfOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        if self.detect_negative:
+            if self.detect_positive:
+                out_tensor = np.isinf(inputs[0])
+            else:
+                out_tensor = np.isneginf(inputs[0])
+        else:
+            if self.detect_positive:
+                out_tensor = np.isposinf(inputs[0])
+            else:
+                out_tensor = np.full(inputs[0].shape, dtype=bool, fill_value=False)
+        self.set_out_tensor(out_tensor)
+
+
+class IsNaNOp(LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
+    @classmethod
+    def attributes(cls):
+        return {9: {}, 13: {}, 20: {}}
+
+    def __init__(self, graph, attr_dict=None):
+        super(IsNaNOp, self).__init__(graph, attr_dict)
+        self.update_attributes(IsNaNOp, attr_dict)
+        assert self.check_required(), 'IsNaNOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(IsNaNOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = np.isnan(inputs[0])
+        self.set_out_tensor(out_tensor)
 
 
 class LogOp(LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
@@ -1148,7 +1205,7 @@ class NegOp(LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
         self.set_out_tensor(out_tensor)
 
 
-class NonZeroOp(LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
+class NonZeroOp(LayoutUnawareOp, DynamicShapeOp, OpHasOneOutPort, OnnxOp):
     @classmethod
     def attributes(cls):
         return {9: {},
@@ -1165,7 +1222,6 @@ class NonZeroOp(LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
         if self.is_all_inputs_const():
             inp = inputs[0]
         else:
-            WARN('[Parser]: Meets unsupported non-const input of NonZero Op (%s) in infer_shape!' % self.name)
             inp = np.ones_like(inputs[0])
         out_tensor = np.array(np.nonzero(inp), dtype=np.int64)
         self.set_out_tensor(out_tensor)
@@ -1222,7 +1278,7 @@ class PowOp(OpNeedBroadcast, OpHasAxis, OpHasOneOutPort, OnnxOp):
         return ret
 
 
-class ReciprocalOp(OpHasOneOutPort, OnnxOp):
+class ReciprocalOp(OpHasOneOutPort, OpHasNonZeroInput, OnnxOp):
     @classmethod
     def attributes(cls):
         return {1: {'consumed_inputs': {'type': AttrType.INTS}},
@@ -2135,8 +2191,11 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
                     adjusted_out_size[axis] = int(ResizeOp.get_nearest_pixel(
                         'round_prefer_ceil', scale_in_policy * input_dim_np[axis]))
                 self.sizes = adjusted_out_size
+                self.scales = [1.0, 1.0] + [scale_in_policy] * (len(inputs[0].shape) - 2)
+                self.ori_keep_aspect_ratio_policy = self.keep_aspect_ratio_policy
                 self.keep_aspect_ratio_policy = 'stretch'  # void sizes being updated again
-            self.scales = np.array(self.sizes, np.float32) / input_dim_np
+            else:
+                self.scales = np.array(self.sizes, np.float32) / input_dim_np
 
         if self.cur_version == 10:
             out_shape = np.floor(
@@ -2504,7 +2563,7 @@ class SoftsignOp(LayoutUnawareOp, BaseActivationOp, OnnxOp):
         self.set_out_tensor(out_tensor.numpy())
 
 
-class SqrtOp(LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
+class SqrtOp(LayoutUnawareOp, OpHasOneOutPort, OpHasNonZeroInput, OnnxOp):
     @classmethod
     def attributes(cls):
         return {1: {'consumed_inputs': {'type': AttrType.INTS}},

@@ -1,21 +1,18 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
 
-
 from .load import convert_onnx_to_graph
 from ...graph.graph_algo import infer
 from .passes.front_passes import fuse_weights_const, convert_special_prelu, merge_qconv, merge_qmatmul, \
     merge_q_multiple, merge_q_unary, convert_special_sequence_construct, merge_sequence_construct_and_at, \
-    merge_sequence_construct_and_concat, decompose_loop, merge_rcnn, convert_mmcv_deform_conv, \
-    merge_qgemm, uplift_quant, uplift_quant_through_concat
+    merge_sequence_construct_and_concat, merge_rcnn, convert_mmcv_deform_conv, \
+    merge_qgemm, uplift_quant, uplift_quant_through_concat, merge_qconv_no_bias
 from .passes.common_passes import remove_useless_op, apply_subgraph_plugin, record_output_tensors, \
     merge_same_op_at_out_port
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
-def process_onnx(graph, model_path, params):
-    '''Do some preprocessing on the graph under the onnx framework.'''
-    graph = convert_onnx_to_graph(graph, model_path, params)
+def front_process_onnx(graph, params):
     record_output_tensors(graph, params)
     if graph is not None and len(graph) > 0:
         apply_subgraph_plugin(graph)
@@ -27,11 +24,12 @@ def process_onnx(graph, model_path, params):
         infer(graph, partial=True)
         merge_rcnn(graph, params)
         uplift_quant_through_concat(graph)
-        merge_same_op_at_out_port(graph, op_types=['QuantizeLinear'])
+        merge_same_op_at_out_port(graph, op_types=['QuantizeLinear', 'DequantizeLinear'])
         uplift_quant(graph)
         merge_qconv(graph)
+        merge_qconv_no_bias(graph)
         merge_qmatmul(graph)
-        merge_q_multiple(graph, ['Add', 'Concat', 'Gemm', 'Mul', 'Split'])
+        merge_q_multiple(graph, ['Add', 'Concat', 'Gemm', 'Mul', 'Split', 'Gather'])
         merge_q_unary(graph, ['AdaptivePool', 'AveragePool', 'Celu', 'Clip', 'Elu', 'Expand', 'Flatten',
                               'GlobalAveragePool', 'GlobalMaxPool',
                               'HardSwish', 'HardSigmoid', 'LeakyRelu', 'LRN', 'MaxPool',
@@ -48,11 +46,17 @@ def process_onnx(graph, model_path, params):
         merge_sequence_construct_and_at(graph)
         convert_special_sequence_construct(graph)
         merge_sequence_construct_and_concat(graph)
-        decompose_loop(graph, params)
         infer(graph)
 
         merge_qgemm(graph)
 
     else:
-        WARN('[Parser]: Got empty graph in process_onnx!')
+        WARN('[Parser]: Got empty graph in front_process_onnx!')
+
+
+def process_onnx(graph, model_path, params):
+    '''Do some preprocessing on the graph under the onnx framework.'''
+    graph = convert_onnx_to_graph(graph, model_path, params)
+    front_process_onnx(graph, params)
+
     return graph

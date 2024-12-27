@@ -7,7 +7,8 @@ import re
 import numpy as np
 import onnx
 import yaml
-from collections import Iterable, defaultdict, OrderedDict
+from collections import defaultdict, OrderedDict
+from collections.abc import Iterable
 from ...graph.graph import Graph
 from ...graph.node_wrap import NodeWrap
 from ...graph.graph_algo import get_valid_node_name

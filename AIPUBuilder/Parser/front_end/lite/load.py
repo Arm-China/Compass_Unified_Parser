@@ -195,7 +195,9 @@ def update_tensor(tflite_path, tensor_table):
             if stop_event.isSet():
                 return table
             try:
-                interpreter = tf.lite.Interpreter(model_path=path, experimental_preserve_all_tensors=True)
+                # Set experimental_preserve_all_tensors as False default
+                # core dump will happen if True and with big feature map
+                interpreter = tf.lite.Interpreter(model_path=path, experimental_preserve_all_tensors=False)
                 interpreter.allocate_tensors()
                 interpreter.invoke()
                 tensors = interpreter.get_tensor_details()
@@ -258,7 +260,8 @@ def convert_tflite_to_graph(graph, model_path, params):
                 tensors_table = [(tensor, ti not in non_const_tensor_ids, linear_weights_tensor_id.get(
                     ti, '')) for ti, tensor in enumerate(tensors_table)]
                 parsed_tensors_table = list(map(partial(parse_tensor, tflite_model=model), tensors_table))
-                parsed_tensors_table = update_tensor(model_path, parsed_tensors_table)
+                # cause memory exceed for big feature map
+                # parsed_tensors_table = update_tensor(model_path, parsed_tensors_table)
 
                 tensor_name_count = defaultdict(int)
                 for in_tensor_id in non_const_tensor_ids:

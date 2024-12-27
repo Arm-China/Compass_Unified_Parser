@@ -6,7 +6,7 @@ import os
 import re
 from collections import OrderedDict
 
-from ..logger import ERROR, FATAL, INFO, WARN
+from ..logger import ERROR, FATAL, INFO, WARN, DEBUG
 from .common import (get_model_type, match_node_name,
                      save_data_to_file)
 
@@ -31,6 +31,14 @@ def caffe_forward_impl(output_dict, proto_path, model_path, feed_dict, output_na
 def caffe_forward(proto_path, model_path, feed_dict, output_names=None, save_output=True):
     import multiprocessing as mp
     from multiprocessing import Process, Manager
+    import tempfile
+    # set temp dir to local to avoid .nfs error
+    tempfile.tempdir = '/tmp'
+
+    # used to print multiprocess log
+    # from multiprocessing import log_to_stderr
+    # import logging
+    # log_to_stderr(logging.DEBUG)
 
     output_dict = {}
 
@@ -129,7 +137,12 @@ def onnx_forward(model_path, feed_dict, output_names=None, save_output=True):
     import numpy as np
 
     # input_name = sess.get_inputs()[0].name
-    sess = rt.InferenceSession(model_path)
+    try:
+        sess = rt.InferenceSession(model_path)
+    except:
+        WARN('Error during onnxruntime, but we try to use onnx reference to infer..')
+        from onnx.reference import ReferenceEvaluator
+        sess = ReferenceEvaluator(model_path)
     model_output_names = [o.name for o in sess.get_outputs()]
 
     # init output_dict: the keys have the same sequence as output_names
@@ -191,8 +204,11 @@ def onnx_forward(model_path, feed_dict, output_names=None, save_output=True):
 
     try:
         output_data = sess.run(output_names, updated_feed_dict)
-    except Exception as e:
-        ERROR('Fail to run because %s' % str(e))
+    except:
+        WARN('Error during onnxruntime, but we try to use onnx reference to infer..')
+        from onnx.reference import ReferenceEvaluator
+        sess = ReferenceEvaluator(model_path)
+        output_data = sess.run(output_names, updated_feed_dict)
 
     for out_name, out_data in zip(output_names, output_data):
         if isinstance(out_data, list):
@@ -270,19 +286,20 @@ def tflite_forward(model_path, feed_dict, output_names=None, save_output=True):
     import tensorflow.compat.v1 as tf
 
     interpreter = tf.lite.Interpreter(model_path)
+    input_details = interpreter.get_input_details()
+    output_details = interpreter.get_output_details()
     # try:
     #     interpreter.reset_all_variables()
     # except Exception as e:
     #     WARN('Fail to reset_all_variables in tflite_forward because %s' % str(e))
-    interpreter.allocate_tensors()
-
-    input_details = interpreter.get_input_details()
-    output_details = interpreter.get_output_details()
 
     for inp in input_details:
         if inp['name'] not in feed_dict:
             ERROR('[Parser]: Cannot find input %s from feed_dict!' % inp['name'])
             continue
+        if list(feed_dict[inp['name']].shape) != inp['shape'].tolist():
+            interpreter.resize_tensor_input(inp['index'], list(feed_dict[inp['name']].shape))
+        interpreter.allocate_tensors()
         interpreter.set_tensor(inp['index'], feed_dict[inp['name']])
     interpreter.invoke()
     output_dict = dict()

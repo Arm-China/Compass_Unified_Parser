@@ -99,14 +99,72 @@ def clear_redundant_nodes(g, outputs=None):
                   ]
     output_names = outputs if outputs else (
         noop_names if noop_names else g._attr.get('output_names', []))
+    subgraph_map = {}
+    g._attr['subgraph_depends_nodes'] = []
+    if 'subgraphs' in g._attr and len(g._attr['subgraphs']) > 0:
+        for k, v in g._attr['subgraphs'].items():
+            for _k in v.keys():
+                subgraph_map[_k] = k
     if output_names:
         valid_nodes = determined_sort(g, output_names)
+        if 'subgraphs' in g._attr and len(g._attr['subgraphs']) > 0:
+            for n in g.nodes:
+                node_obj = NodeWrap(g, n)['object']
+                if len(node_obj.subgraphs) > 0:
+                    for sub in node_obj.subgraphs:
+                        if sub in subgraph_map:
+                            root_node_name = subgraph_map[sub]
+                            if root_node_name in valid_nodes:
+                                if n not in output_names:
+                                    output_names.append(n)
+                                if n not in g._attr['subgraph_depends_nodes']:
+                                    g._attr['subgraph_depends_nodes'].append(n)
+            valid_nodes = determined_sort(g, output_names)
         removing_nodes = set(g.nodes).difference(valid_nodes)
-        valid_out_nodes = [n for n in removing_nodes if g.nodes[n]['op'] == 'Out'
-                           and len(pred[n]) == 1
-                           and pred[n][0] not in removing_nodes]
+        valid_out_nodes = []
+        for n in removing_nodes:
+            if g.nodes[n]['op'] == 'Out' and \
+                    len(pred[n]) == 1 and \
+                    pred[n][0] not in removing_nodes:
+                if len(g.nodes[n]['object'].subgraphs) > 0:
+                    if 'subgraphs' in g._attr and len(g._attr['subgraphs']) > 0:
+                        for sub in g.nodes[n]['object'].subgraphs:
+                            for k, v in g._attr['subgraphs'].items():
+                                if sub in v:
+                                    valid_out_nodes.append(n)
+                                    break
+                    else:
+                        continue
+                else:
+                    valid_out_nodes.append(n)
+
         removing_nodes = set(removing_nodes).difference(valid_out_nodes)
         g.remove_nodes_from(removing_nodes)
+        if 'subgraphs' in g._attr and len(g._attr['subgraphs']) > 0:
+            all_valid_nodes = valid_nodes
+            for k, v in list(g._attr['subgraphs'].items()):
+                if k in removing_nodes:
+                    g._attr['subgraphs'].pop(k)
+                else:
+                    for _v in v.values():
+                        all_valid_nodes += set(_v.nodes)
+            for k in list(g._attr['subgraphs'].keys()):
+                if k not in all_valid_nodes:
+                    g._attr['subgraphs'].pop(k)
+        if g._attr['subgraph_depends_nodes']:
+            for dep_n in g._attr['subgraph_depends_nodes']:
+                out_edges = g.sorted_out_edges(dep_n, data=True)
+                if not out_edges:
+                    noop_node_name = get_valid_node_name(
+                        g, dep_n + '_noop_0')
+                    g.add_node(noop_node_name)
+                    noop_node = NodeWrap(g, noop_node_name)
+                    noop_node.replace_obj(
+                        'Out', {'name': noop_node_name})
+                    out_edge_attr = {
+                        'src_out_port': 0, 'dst_in_port': 0, 'tensor': Tensor(name=dep_n)}
+                    g.add_edge(
+                        dep_n, noop_node_name, **out_edge_attr)
     else:
         ERROR('[Parser]: Can not proceed without output names in clear_redundant_nodes!')
 
@@ -125,7 +183,7 @@ def infer(graph, partial=False, chosen_list=None, final=False):
 
     ret = {}
     if len(graph) > 0:
-        nodes_list = determined_sort(graph, graph._attr['output_names'])
+        nodes_list = determined_sort(graph, graph._attr['subgraph_depends_nodes'] + graph._attr['output_names'])
 
         if 'tensor_counter' in graph._attr:
             graph._attr['tensor_counter'].clear()
@@ -165,8 +223,18 @@ def infer(graph, partial=False, chosen_list=None, final=False):
                                          (input_type_str, casted_type, node_name))
                                     graph._attr['input_tensors'][node_name].value = input_data.astype(
                                         np.dtype(casted_type))
-
-                        infer_data = graph._attr['input_tensors'][node_name].value
+                        if node_name in graph._attr['input_tensors']:
+                            infer_data = graph._attr['input_tensors'][node_name].value
+                        else:
+                            if node_obj.type == 'DummyInput' and isinstance(graph, SubGraph):
+                                parent_node = graph._attr['parent_graph'].nodes[node_name]
+                                dummy_out_edges = graph._attr['parent_graph'].sorted_out_edges(
+                                    parent_node['object'].name,
+                                    data=True)
+                                infer_data = dummy_out_edges[0][-1]['tensor'].value
+                            else:
+                                log_func('[Parser]: Meet unsupported op type %s in Node(%s)!' %
+                                         (node_obj.type, node_name))
                         node_obj.infer_shape(infer_data)
                     elif isinstance(node_obj, UndefinedOp):
                         log_func('[Parser]: Meet unsupported op type %s in Node(%s)!' % (node_obj.type, node_name))

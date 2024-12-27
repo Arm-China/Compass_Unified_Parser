@@ -16,6 +16,7 @@ import tensorflow as tf
 from ..common.defs import TensorType, Tensor, AttrType, Attribute, Framework, FLOAT_EQUAL
 from ..logger import INFO, DEBUG, WARN, ERROR, FATAL, WARN_EXCEPTION
 from ..common.utils import num_list_to_string, string_list_to_string, extend_lists
+from ..graph.graph import SubGraph
 
 
 class Op(abc.ABC):
@@ -146,13 +147,14 @@ class Op(abc.ABC):
         '''return attributes of OP class.'''
         return {'name': {'type': AttrType.STRING, 'default': '', 'required': True},
                 'in_subgraph': {'type': AttrType.BOOL, 'default': False},
+                'subgraphs': {'type': AttrType.STRINGS, 'default': []},
                 'data_format': {'type': AttrType.STRING,
                                 'default': 'NHWC',
                                 'options': ['NWC', 'NCW', 'NHWC', 'NCHW', 'NDHWC', 'NCDHW', 'NCHW_VECT_C'],
                                 'required': True},
                 'cur_version': {'type': AttrType.INT, 'default': 0, 'required': False},
                 'quantize': {'type': AttrType.BOOL, 'default': False, 'options': [0, 1, False, True]},
-                'activation_quantization_axis': {'type': AttrType.INTS, 'default': None},
+                'activation_quantization_axis': {'type': AttrType.INTS, 'default': []},
                 'top_scales': {'type': AttrType.TENSORS, 'default': []},
                 'top_scales_offset': {'type': AttrType.INTS, 'default': []},
                 'top_scales_list': {'type': AttrType.TENSORS, 'default': []},
@@ -257,8 +259,12 @@ class Op(abc.ABC):
             for attr_key, attr_v in cls.attributes().items():
                 attr_param = copy.deepcopy(attr_v)
                 if attr_key in attr_dict:
-                    attr_param.update(
-                        {'value': copy.deepcopy(attr_dict[attr_key])})
+                    if isinstance(attr_dict[attr_key], SubGraph):
+                        attr_param.update(
+                            {'value': attr_dict[attr_key]})
+                    else:
+                        attr_param.update(
+                            {'value': copy.deepcopy(attr_dict[attr_key])})
                 elif 'default' in attr_param:
                     attr_param.update(
                         {'value': copy.deepcopy(attr_param['default'])})
@@ -304,7 +310,16 @@ class Op(abc.ABC):
 
     def copied_attr(self):
         '''Returns the copied attr of this Op.'''
-        return {k: copy.deepcopy(self._attr[k].value if isinstance(self._attr[k], Attribute) else self._attr[k]) for k in self._attr.keys()}
+        copied_attr = {}
+        for k in self._attr.keys():
+            if isinstance(self._attr[k], Attribute):
+                if self._attr[k].type == AttrType.GRAPH:
+                    copied_attr[k] = self._attr[k].value
+                else:
+                    copied_attr[k] = copy.deepcopy(self._attr[k].value)
+            else:
+                copied_attr[k] = copy.deepcopy(self._attr[k])
+        return copied_attr
 
     def check_required(self):
         '''Check if the required attr is available.'''
@@ -341,7 +356,7 @@ class Op(abc.ABC):
     def write_attrs(self, txt_file):
         '''Write the required attr in IR.'''
         ret = True
-        if not txt_file.closed and txt_file.mode == 'w':
+        if not txt_file.closed and txt_file.mode == 'a':
             bottom_info, top_info = self.get_inputs_info(), self.get_outputs_info()
             if self.name in self._graph._attr.get('duplicate_name', {}):
                 newname = self._graph._attr['duplicate_name'][self.name]
@@ -453,7 +468,7 @@ class Op(abc.ABC):
 
     def write_top_range(self, bin_file):
         ret = True
-        if not bin_file.closed and bin_file.mode == 'wb':
+        if not bin_file.closed and bin_file.mode == 'ab':
             if len(self.top_ranges) > 0 \
                     and len(self.top_ranges) == len(self.top_ranges_offset):
                 for r, r_offset in zip(self.top_ranges, self.top_ranges_offset):
@@ -465,7 +480,7 @@ class Op(abc.ABC):
 
     def write_top_scale_zp(self, bin_file):
         ret = True
-        if not bin_file.closed and bin_file.mode == 'wb':
+        if not bin_file.closed and bin_file.mode == 'ab':
             if self._graph._attr.get('quantize', False) \
                     and len(self.top_scales) > 0 \
                     and len(self.top_scales) == len(self.top_scales_offset) \
@@ -578,6 +593,27 @@ class Op(abc.ABC):
             ERROR('[Parser]: Node(%s) get_output_dtypes meets error:%s' %
                   (self.name, str(e)))
             return []
+
+    def get_root_inputs(self):
+        '''Returns all root inputs to this op'''
+        ret = []
+        checked_ops = [self.name]
+        try:
+            while checked_ops:
+                op_name = checked_ops.pop()
+                for u, _, _, d in self._graph.sorted_in_edges(op_name, keys=True, data=True):
+                    if d['tensor'].is_const:
+                        ret.append(u)
+                    else:
+                        if self._graph.has_node(u) and self._graph.nodes[u]['op'] in ['Dummy', 'ArmInput', 'Input']:
+                            ret.append(u)
+                        else:
+                            checked_ops.append(u)
+        except Exception as e:
+            ERROR('[Parser]: Node(%s) get_root_inputs meets error:%s' %
+                  (self.name, str(e)))
+            return []
+        return ret
 
     def sorted_in_consts(self):
         '''Sort the contents of the constant node in the order of name, attr, and value.'''
@@ -981,6 +1017,23 @@ class OpHasAxis(Op):
             np_axes[negative_axes] += len_shape
         return np_axes.tolist()
 
+    @staticmethod
+    def gen_continuous_axes_perm(axes, input_len):
+        '''Return perm & expected continuous_axes, with this perm in transpose, we can make axes continuously'''
+        axes.sort()
+        axes_len = len(axes)
+        expected_axes = sorted(list(range(input_len - 1, input_len - 1 - axes_len, -1)))
+        perm = list(range(input_len))
+        for i in range(axes_len):
+            perm[expected_axes[i]] = axes[i]
+        diff_axes = list(set(list(range(input_len))).difference(set(perm)))
+        for i in range(input_len):
+            if i not in expected_axes:
+                if perm[i] in axes:
+                    perm[i] = diff_axes[0]
+                    diff_axes.pop(0)
+        return perm, expected_axes
+
     def __init__(self, graph, attr_dict=None):
         super(OpHasAxis, self).__init__(graph, attr_dict)
         self.update_attributes(OpHasAxis, attr_dict)
@@ -1048,6 +1101,14 @@ class OpHasAxis(Op):
                                                                 if isinstance(self.axis, np.ndarray)
                                                                 else self.axis))
         return ret
+
+
+class DynamicShapeOp(Op):
+    '''
+    Class DynamicShapeOp inherited from OP.
+    Some ops with dynamic output shape must inherit from this class.
+    '''
+    pass
 
 
 class LayoutConcernedOp(Op):
@@ -1394,7 +1455,7 @@ class OpHasWeights(Op):
     def write_weights(self, bin_file):
         '''Write the weight attr in IR bin file.'''
         ret = True
-        if not bin_file.closed and bin_file.mode == 'wb':
+        if not bin_file.closed and bin_file.mode == 'ab':
             if self.weights is not None and self.weights_offset >= 0:
                 Op.numpy_to_bin(bin_file, self.weights, self.weights_offset, self.name)
                 if self.weights_range is not None and self.weights_range_offset >= 0:
@@ -1480,7 +1541,7 @@ class OpHasBiases(Op):
     def write_biases(self, bin_file):
         '''Write the biases attr in IR bin file.'''
         ret = True
-        if not bin_file.closed and bin_file.mode == 'wb':
+        if not bin_file.closed and bin_file.mode == 'ab':
             if self.biases is not None and self.biases_offset >= 0:
                 Op.numpy_to_bin(bin_file, self.biases, self.biases_offset, self.name)
                 if self.biases_range is not None and self.biases_range_offset >= 0:
@@ -1496,6 +1557,50 @@ class OpHasBiases(Op):
             FATAL('[Parser]: Invalid file to write biases for Node(%s) in write_biases!' %
                   (self.name))
         return ret
+
+
+class OpHasDivisor(Op):
+    '''
+    Class OpHasDivisor inherited from OP.
+    Some OPs with divisor maybe caused Divide By Zero Error, can inherit from this class to avoid this error.
+    '''
+
+    def get_input_tensors(self):
+        '''Get input tensor of the node.'''
+        try:
+            inp_tensors = []
+            for i, (_, _, d) in enumerate(self._graph.sorted_in_edges(self.name, data=True)):
+                if i == 1 and not d['tensor'].is_const and \
+                        d['tensor'] is not None and np.all(d['tensor'].value == 0):
+                    tensor_shape = d['tensor'].shape
+                    d['tensor'].value = np.ones(tensor_shape, dtype=d['tensor'].dtype)
+                inp_tensors.append(d['tensor'].value if d['tensor'] is not None else None)
+            return inp_tensors
+        except Exception as e:
+            ERROR('[Parser]: An exception occurred with get_input_tensors. Node(%s) %s' % (
+                self.name, str(e)))
+
+
+class OpHasNonZeroInput(Op):
+    '''
+    Class OpHasNonZeroInput inherited from OP.
+    Some OP's input cannot be all zeros , can inherit from this class to avoid error/warning.
+    '''
+
+    def get_input_tensors(self):
+        '''Get input tensor of the node.'''
+        try:
+            inp_tensors = []
+            for i, (_, _, d) in enumerate(self._graph.sorted_in_edges(self.name, data=True)):
+                if i == 0 and not d['tensor'].is_const and \
+                        d['tensor'] is not None and np.all(d['tensor'].value == 0):
+                    tensor_shape = d['tensor'].shape
+                    d['tensor'].value = np.ones(tensor_shape, dtype=d['tensor'].dtype)
+                inp_tensors.append(d['tensor'].value if d['tensor'] is not None else None)
+            return inp_tensors
+        except Exception as e:
+            ERROR('[Parser]: An exception occurred with get_input_tensors. Node(%s) %s' % (
+                self.name, str(e)))
 
 
 class OpHasAnchors(Op):
@@ -1575,7 +1680,7 @@ class OpHasAnchors(Op):
     def write_anchors(self, bin_file):
         '''Write the anchors attr in IR bin file.'''
         ret = True
-        if not bin_file.closed and bin_file.mode == 'wb':
+        if not bin_file.closed and bin_file.mode == 'ab':
             if self.xcenter is not None and self.xcenter_offset >= 0:
                 Op.numpy_to_bin(bin_file, self.xcenter, self.xcenter_offset, self.name)
             if self.ycenter is not None and self.ycenter_offset >= 0:
@@ -1887,7 +1992,7 @@ class BaseActivationOp(OpHasOneOutPort):
     def write_negative_slope(self, bin_file):
         '''Write the negative_slope attr in IR binfile.'''
         ret = True
-        if not bin_file.closed and bin_file.mode == 'wb':
+        if not bin_file.closed and bin_file.mode == 'ab':
             if self.negative_slope is not None \
                     and np.ndim(self.negative_slope) > 0 \
                     and self.negative_slope_offset >= 0:
@@ -2141,7 +2246,7 @@ class BaseRnnOp(OpHasMethod, OpHasVariableOutPorts):
         ret = True
         if not self.quantize:
             return ret
-        if not bin_file.closed and bin_file.mode == 'wb':
+        if not bin_file.closed and bin_file.mode == 'ab':
             if self.activations_scale is not None and self.activations_scale_offset >= 0 \
                     and self.activations_zp is not None and self.activations_zp_offset >= 0:
                 Op.numpy_to_bin(bin_file, self.activations_scale, self.activations_scale_offset, self.name)
@@ -2176,6 +2281,8 @@ class BaseQuantizeDequantizeOp(Op):
     def write_attrs(self, txt_file):
         ret = super(BaseQuantizeDequantizeOp, self).write_attrs(txt_file)
         if ret:
+            if self.type == 'ArmQuantize':
+                txt_file.write('round_mode=%s\n' % str(self.round_mode).upper())
             txt_file.write('quantize_scale_type=%s\n' % str(self.scale.dtype))
             txt_file.write('quantize_scale_offset=%d\n' % self.scale_offset)
             txt_file.write('quantize_scale_size=%d\n' % (self.scale.size * self.scale.dtype.itemsize))
@@ -2188,7 +2295,7 @@ class BaseQuantizeDequantizeOp(Op):
 
     def write_scale_zp(self, bin_file):
         ret = True
-        if not bin_file.closed and bin_file.mode == 'wb':
+        if not bin_file.closed and bin_file.mode == 'ab':
             if self.scale is not None and self.scale_offset >= 0 \
                     and self.zero_point is not None and self.zero_point_offset >= 0:
                 Op.numpy_to_bin(bin_file, self.scale, self.scale_offset, self.name)
@@ -2206,7 +2313,54 @@ class OpHasSubGraph(OpHasVariableOutPorts):
     Class OpHasSubGraph inherited from OpHasVariableOutPorts class.
     OP with subgraph must inherit OpHasSubGraph.
     '''
-    pass
+
+    def set_out_tensor(self, tensor_data_list, is_const=False):
+        '''set the out tensor of this op.'''
+        try:
+            from ..graph.node_wrap import NodeWrap
+            from ..graph.graph_algo import get_valid_node_name
+            if len(tensor_data_list) > 1:
+                out_ports = self.get_out_ports()
+                if len(tensor_data_list) > len(out_ports):
+                    for i in range(len(tensor_data_list)):
+                        if i not in out_ports:
+                            out = get_valid_node_name(
+                                self._graph, self.name + '_out_port_' + str(i))
+                            self._graph.add_edge(
+                                self.name, out, **{'src_out_port': i, 'dst_in_port': 0})
+                            NodeWrap(self._graph, out).replace_obj(
+                                'Out', {'name': out})
+                    out_ports = self.get_out_ports()
+                for _, _, d in self._graph.sorted_out_edges(self.name, data=True):
+                    if d.get('tensor', None) is not None:
+                        d['tensor'].value = tensor_data_list[out_ports.index(
+                            d['src_out_port'])]
+                        d['tensor'].shape = d['tensor'].value.shape
+                        d['tensor'].is_const = is_const
+                        if not self.quantize or d['tensor'].dtype is None:
+                            d['tensor'].dtype = str(d['tensor'].value.dtype)
+                    else:
+                        d['tensor'] = Tensor(
+                            value=tensor_data_list[out_ports.index(d['src_out_port'])])
+            else:
+                for _, _, d in self._graph.sorted_out_edges(self.name, data=True):
+                    if d.get('tensor', None) is not None:
+                        d['tensor'].value = tensor_data_list[0]
+                        d['tensor'].shape = d['tensor'].value.shape
+                        d['tensor'].is_const = is_const
+                        if not self.quantize or d['tensor'].dtype is None:
+                            d['tensor'].dtype = str(d['tensor'].value.dtype)
+                    else:
+                        d['tensor'] = Tensor(value=tensor_data_list[0])
+
+            self.clear_unused_tensor(is_const)
+
+        except KeyError as e:
+            ERROR('[Parser]: Node(%s) meets key error in set_out_tensor (%s)! ' %
+                  (self.name, str(e)))
+        except Exception as e:
+            ERROR('[Parser]: Node(%s) meets exception in set_out_tensor (%s)!' %
+                  (self.name, str(e)))
 
 
 class ConstLikeOp(Op):
@@ -2245,16 +2399,16 @@ class OpNeedBroadcast(Op):
                         else list(range(dim_diff, -1, -1))
                     offset = -1
                     for o in range_list:
-                        if all([sd == max_d for sd, max_d in zip(s, max_dims[o:])]):
+                        if all([max_d == sd for sd, max_d in zip(s, max_dims[o:])]):
                             offset = o
                             break
-                        if all([sd == max_d or sd == 1 for sd, max_d in zip(s, max_dims[o:])]):
+                        if all([max_d == sd or sd == 1 for sd, max_d in zip(s, max_dims[o:])]):
                             offset = o
                             break
                         if all([sd == 1 or max_d == 1 for sd, max_d in zip(s, max_dims[o:])]):
                             offset = o
                             break
-                        if all([sd == max_d or sd == 1 or max_d == 1 for sd, max_d in zip(s, max_dims[o:])]):
+                        if all([max_d == sd or sd == 1 or max_d == 1 for sd, max_d in zip(s, max_dims[o:])]):
                             offset = o
                             break
                     if offset == -1:
@@ -2314,6 +2468,15 @@ class OpNeedBroadcast(Op):
                 ERROR(
                     '[Parser]: Number of broadcast params shoud be equal to number of inputs!')
         return ret
+
+    @staticmethod
+    def is_broadcastable(input_shapes):
+        assert len(input_shapes) >= 2 and all(s is not None for shape in input_shapes for s in shape)
+        try:
+            np.broadcast_shapes(*input_shapes)
+            return True
+        except ValueError:
+            return False
 
     @classmethod
     def attributes(cls):
@@ -3608,7 +3771,8 @@ class KerasNormalizationOp(OpHasAxis, OpHasBiases, OpHasWeights, OpHasOneOutPort
                 'scale': {'type': AttrType.INT, 'default': 1, 'options': [0, 1]},
                 'epsilon': {'type': AttrType.FLOAT, 'default': 0.001},
                 'axis': {'default': -1},
-                'weights_list': {'type': AttrType.TENSORS, 'default': []}
+                'weights_list': {'type': AttrType.TENSORS, 'default': []},
+                'group': {'type': AttrType.INT, 'default': 32}
                 }
 
     def __init__(self, graph, attr_dict=None):
@@ -3621,6 +3785,8 @@ class KerasNormalizationOp(OpHasAxis, OpHasBiases, OpHasWeights, OpHasOneOutPort
         try:
             if item in ('center', 'scale'):
                 ret = bool(self.__dict__['_attr'][item].value)
+            elif item == 'group':
+                ret = int(self.__dict__['_attr'][item].value)
         except:
             ret = None
         if ret is None:

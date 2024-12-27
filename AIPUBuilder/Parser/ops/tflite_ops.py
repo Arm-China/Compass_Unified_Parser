@@ -375,7 +375,7 @@ class LiteCONCATENATIONOp(OpHasAxis, BaseActivationOp, TfliteOp):
 class LiteCONV_2DOp(BaseActivationOp, BaseConvOp, TfliteOp):
     @classmethod
     def attributes(cls):
-        return {1: {}, 2: {}, 3: {}, 4: {}, 5: {}}
+        return {1: {}, 2: {}, 3: {}, 4: {}, 5: {}, 6: {}}
 
     @classmethod
     def perm_lite_to_onnx(cls):
@@ -401,14 +401,24 @@ class LiteCONV_2DOp(BaseActivationOp, BaseConvOp, TfliteOp):
             inp = inputs[0].astype(np.float32)
         else:
             inp = inputs[0]
-        out_tensor = tf.nn.conv2d(inp,
-                                  np.transpose(self.weights, axes=type(
-                                      self).perm_lite_to_tf()),
-                                  strides=[1] + self.strides + [1],
-                                  padding='VALID' if self.auto_pad in (
-                                      'VALID', 'NOTSET') else 'SAME',
-                                  dilations=[1] + self.dilations + [1],
-                                  data_format='NHWC')
+        if self.opcode_version == 6 and inputs[0].shape[-1] != self.weights.shape[-1]:
+            # Group Conv
+            assert inputs[0].shape[-1] % self.weights.shape[-1] == 0, 'ic or group_num not match.'
+            self.group = inputs[0].shape[-1] // self.weights.shape[-1]
+        else:
+            self.group = 1
+        conv_layer = tf.keras.layers.Conv2D(filters=self.weights.shape[0],
+                                            kernel_size=self.kernel_shape,
+                                            strides=self.strides,
+                                            padding='VALID' if self.auto_pad in ('VALID', 'NOTSET') else 'SAME',
+                                            dilation_rate=self.dilations,
+                                            groups=self.group,
+                                            use_bias=False,
+                                            activation=None)
+        out_tensor = conv_layer(inp).numpy()
+        conv_layer.set_weights([np.transpose(self.weights, axes=type(self).perm_lite_to_tf())])
+        out_tensor = conv_layer(inp).numpy()
+
         out_tensor = tf.nn.bias_add(
             out_tensor, self.biases, data_format='NHWC').numpy()
         out_tensor = self.cal_activation(out_tensor).astype(inputs[0].dtype)
@@ -562,7 +572,8 @@ class LiteCONV_3D_TRANSPOSEOp(BaseActivationOp, BaseDeconvOp, TfliteOp):
                                                 self).perm_lite_to_tf()),
                                             inputs[0],
                                             strides=[1] + self.strides + [1],
-                                            padding='VALID' if self.auto_pad in ('VALID', 'NOTSET') else 'SAME')
+                                            padding='VALID' if self.auto_pad in ('VALID', 'NOTSET') else 'SAME',
+                                            dilations=self.dilations)
         out_tensor = tf.nn.bias_add(
             out_tensor, self.biases, data_format='NHWC').numpy()
         out_tensor = out_tensor.astype(inputs[1].dtype)
@@ -812,7 +823,7 @@ class LiteDEQUANTIZEOp(OpHasOneOutPort, TfliteOp):
         self.set_out_tensor(out_tensor)
 
 
-class LiteDIVOp(BaseActivationOp, TfliteOp):
+class LiteDIVOp(BaseActivationOp, OpHasDivisor, TfliteOp):
     @classmethod
     def attributes(cls):
         return {1: {}, 2: {}, 3: {}}
@@ -958,7 +969,7 @@ class LiteFLOOROp(OpHasOneOutPort, TfliteOp):
         return {'type': 'Floor', 'version': 13}
 
 
-class LiteFLOOR_DIVOp(OpHasOneOutPort, TfliteOp):
+class LiteFLOOR_DIVOp(OpHasOneOutPort, OpHasDivisor, TfliteOp):
     @classmethod
     def attributes(cls):
         return {1: {}, 2: {}}
@@ -1470,7 +1481,11 @@ class LiteMAX_POOL_2DOp(BaseActivationOp, OpHasPaddingStrides, TfliteOp):
 class LiteSPARSE_TO_DENSEOp(OpHasOneOutPort, TfliteOp):
     @classmethod
     def attributes(cls):
-        return {1: {}}
+        return {
+            1: {},
+            2: {},  # int64 input
+            3: {},  # i8 or u8 input
+        }
 
     def __init__(self, graph, attr_dict=None):
         super(LiteSPARSE_TO_DENSEOp, self).__init__(graph, attr_dict)
@@ -3016,7 +3031,13 @@ class LiteUNIDIRECTIONAL_SEQUENCE_LSTMOp(OpHasOneOutPort, TfliteOp):
                     'proj_clip': {'type': AttrType.FLOAT, 'default': 0.0, 'required': False},
                     'activations': {'type': AttrType.STRING, 'default': 'TANH', 'options': ['NONE', 'RELU', 'RELU_N1_TO_1', 'RELU6', 'TANH', 'SIGN_BIT']},
                     'asymmetric_quantize_inputs': {'type': AttrType.INT, 'options': [0, 1], 'required': True}
-                    }
+                    },
+                3: {'time_major': {'type': AttrType.INT, 'options': [0, 1], 'required': True},
+                    'cell_clip': {'type': AttrType.FLOAT, 'default': 0.0, 'required': False},
+                    'proj_clip': {'type': AttrType.FLOAT, 'default': 0.0, 'required': False},
+                    'activations': {'type': AttrType.STRING, 'default': 'TANH', 'options': ['NONE', 'RELU', 'RELU_N1_TO_1', 'RELU6', 'TANH', 'SIGN_BIT']},
+                    'asymmetric_quantize_inputs': {'type': AttrType.INT, 'options': [0, 1], 'required': True}
+                    },  # asymm quant input
                 }
 
     def __init__(self, graph, attr_dict=None):
@@ -3138,6 +3159,38 @@ class LiteUNIDIRECTIONAL_SEQUENCE_LSTMOp(OpHasOneOutPort, TfliteOp):
         if self.time_major:
             out_tensor = np.transpose(out_tensor, (1, 0, 2))
         self.set_out_tensor(out_tensor)
+
+
+class LiteUNIQUEOp(OpHasVariableOutPorts, DynamicShapeOp, TfliteOp):
+    @classmethod
+    def attributes(cls):
+        return {1: {'out_idx': {'type': AttrType.STRING, 'default': 'int32', 'options': ['int32', 'int64']}
+                    }
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(LiteUNIQUEOp, self).__init__(graph, attr_dict)
+        self.update_attributes(LiteUNIQUEOp, attr_dict)
+        assert self.check_required(), 'LiteUNIQUEOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(LiteUNIQUEOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        if self.is_all_inputs_const():
+            inp = inputs[0]
+        else:
+            inp_shape = inputs[0].shape
+            inp = np.arange(int(np.prod(inp_shape)), dtype=inputs[0].dtype).reshape(inp_shape)
+        x, out_idx = tf.unique(inp, out_idx=tf.dtypes.as_dtype(self.out_idx))
+        out_ports = self.get_out_ports()
+        out_dict = {
+            0: x.numpy(),
+            1: out_idx.numpy()
+        }
+        out_tensors = []
+        for port in out_ports:
+            out_tensors.append(out_dict[port])
+        self.set_out_tensor(out_tensors)
 
 
 class LiteUNPACKOp(OpHasAxis, OpHasMultipleOutPorts, TfliteOp):
