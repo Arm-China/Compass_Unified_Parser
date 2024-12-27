@@ -12259,7 +12259,8 @@ def middle_passes(graph, params):
     convert_qleakyrelu(graph)
     convert_qmatmul(graph)
     convert_qsigmoid(graph)
-    # convert_qnorm_to_float(graph)
+    if params['force_fp_norm']:
+        convert_qnorm_to_float(graph)
     convert_special_conv_to_mul(graph)
 
     convert_abnormal_reshape(graph)
