@@ -59,7 +59,7 @@ def build_subgraph(current_node_name,
     nodes_names = [n['name'] for n in nodes]
 
     parent_graph = parent_graph_info['graph']
-    parent_nodes = parent_graph_info['nodes']
+    # parent_nodes = parent_graph_info['nodes']
     # parent_inputs = parent_graph_info['inputs']
     # parent_outputs = parent_graph_info['outputs']
     parent_const_names = parent_graph_info['const_names']
@@ -260,22 +260,30 @@ def build_subgraph(current_node_name,
                 pre_op_name = pre_op['name'] if pre_op['name'] else pre_op['output'][0]['name']
                 if not sub_graph.has_node(pre_op_name):
                     target_g = get_target_graph(target_graph_name, root_graph, parent_graph)
-                    op_obj = target_g.nodes[pre_op_name]['object']
-                    op_obj.in_subgraph = True
+                    if pre_op_name in target_g.nodes:
+                        op_obj = target_g.nodes[pre_op_name]['object']
+                        op_obj.in_subgraph = True
 
-                    if root_node_name not in op_obj.depend_nodes:
-                        op_obj.depend_nodes.append(root_node_name)
-                    if current_node_name not in op_obj.depend_nodes:
-                        op_obj.depend_nodes.append(current_node_name)
+                        if root_node_name not in op_obj.depend_nodes:
+                            op_obj.depend_nodes.append(root_node_name)
+                        if current_node_name not in op_obj.depend_nodes:
+                            op_obj.depend_nodes.append(current_node_name)
 
-                    if sub_graph.name not in op_obj.subgraphs:
-                        op_obj.subgraphs.append(sub_graph.name)
-                    if target_graph_name == root_graph.name:
-                        if pre_op_name not in root_graph._attr['node_in_subgraphs']:
-                            root_graph._attr['node_in_subgraphs'][pre_op_name] = [sub_graph.name]
-                        else:
-                            if sub_graph.name not in root_graph._attr['node_in_subgraphs'][pre_op_name]:
-                                root_graph._attr['node_in_subgraphs'][pre_op_name].append(sub_graph.name)
+                        if sub_graph.name not in op_obj.subgraphs:
+                            op_obj.subgraphs.append(sub_graph.name)
+                    else:
+                        if target_graph_name == root_graph.name:
+                            if pre_op_name not in root_graph._attr['node_in_subgraphs']:
+                                root_graph._attr['node_in_subgraphs'][pre_op_name] = [[sub_graph.name],
+                                                                                      [root_node_name, current_node_name]]
+                            else:
+                                tmp_list = root_graph._attr['node_in_subgraphs'][pre_op_name]
+                                if sub_graph.name not in tmp_list[0]:
+                                    root_graph._attr['node_in_subgraphs'][pre_op_name][0].append(sub_graph.name)
+                                if root_node_name not in tmp_list[1]:
+                                    root_graph._attr['node_in_subgraphs'][pre_op_name][1].append(root_node_name)
+                                if current_node_name not in tmp_list[1]:
+                                    root_graph._attr['node_in_subgraphs'][pre_op_name][1].append(current_node_name)
 
                     n_name = get_valid_node_name(
                         sub_graph, pre_op_name)
@@ -646,7 +654,8 @@ def convert_onnx_to_graph(graph, model_path, params):
                     if op_name in graph._attr['node_in_subgraphs']:
                         op_obj = graph.nodes[op_name]['object']
                         op_obj.in_subgraph = True
-                        op_obj.subgraphs.extend(graph._attr['node_in_subgraphs'][op_name])
+                        op_obj.depend_nodes.extend(list(set(graph._attr['node_in_subgraphs'][op_name][1])))
+                        op_obj.subgraphs.extend(graph._attr['node_in_subgraphs'][op_name][0])
                     for in_port, in_tensor_info in enumerate(node['input']):
                         in_tensor_name, in_tensor_out_port = in_tensor_info[
                             'name'], in_tensor_info['out_port']
