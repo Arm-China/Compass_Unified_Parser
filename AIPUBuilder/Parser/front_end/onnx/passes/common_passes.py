@@ -422,9 +422,15 @@ def remove_useless_op(graph, op_type_list):
                     src_node_obj.value = np.transpose(
                         src_node_obj.value, axes=perm)
                     removing_nodes.append(node_name)
-                elif trans_in_tensor_shape is not None and (list(range(len(trans_in_tensor_shape))) == perm or
-                                                            int(np.prod(trans_in_tensor_shape)) == 1):
-                    removing_nodes.append(node_name)
+                elif trans_in_tensor_shape is not None:
+                    no_change_perm = list(range(len(trans_in_tensor_shape)))
+                    if (no_change_perm == perm or
+                            int(np.prod(trans_in_tensor_shape)) == 1):
+                        removing_nodes.append(node_name)
+                    else:
+                        diff_values = [v1 for i, (v1, v2) in enumerate(zip(perm, no_change_perm)) if v1 != v2]
+                        if all([trans_in_tensor_shape[axis] == 1 for axis in diff_values]):
+                            removing_nodes.append(node_name)
                 elif perm and list(perm) == list(range(max(perm) + 1)):
                     removing_nodes.append(node_name)
             elif op_type == 'Upsample':
@@ -498,15 +504,49 @@ def remove_redundant_reshape(graph, type='Reshape'):
         reshape_1_obj = NodeWrap(graph, reshape_1)['object']
         reshape_2_obj = NodeWrap(graph, reshape_2)['object']
         reshape_1_in_shapes = reshape_1_obj.get_input_shapes()
-        reshape_1_out_shapes = reshape_1_obj.get_output_shapes()
         reshape_2_out_shapes = reshape_2_obj.get_output_shapes()
-        # TODO: When removing nodes, should consider whether it is output.
-        # need to optimize other passes in the future.
+        reshape_1_edges = graph.sorted_in_edges(reshape_1, data=True)
+        reshape_1_out_edges = graph.sorted_out_edges(reshape_1, data=True)
+        reshape_2_out_edges = graph.sorted_out_edges(reshape_2, data=True)
         if len(reshape_1_in_shapes) >= 1 \
-                and len(reshape_1_out_shapes) == 1 \
                 and len(reshape_2_out_shapes) >= 1 \
                 and reshape_1 not in graph._attr['output_names']:
-            remove_node_safely(graph, reshape_1)
+            if len(reshape_1_out_edges) == 1:
+                remove_node_safely(graph, reshape_1)
+                if reshape_1_in_shapes[0] == reshape_2_out_shapes[0]:
+                    src, _, in_attr = reshape_1_edges[0]
+                    graph.remove_edges_from(reshape_1_edges)
+                    graph.remove_edges_from(reshape_2_out_edges)
+                    for _, dst, out_attr in reshape_2_out_edges:
+                        new_out_attr = copy.deepcopy(out_attr)
+                        new_out_attr['src_out_port'] = in_attr['src_out_port']
+                        graph.add_edge(src, dst, **new_out_attr)
+                    if reshape_2 in graph._attr['output_names']:
+                        index = graph._attr['output_names'].index(reshape_2)
+                        graph._attr['output_names'][index] = src
+                clear_redundant_nodes(graph)
+            elif len(reshape_1_out_edges) > 1:
+                reshape_1_out_node_objs = []
+                for src, dst, out_attr in reshape_1_out_edges:
+                    reshape_1_out_node_objs.append(NodeWrap(graph, dst)['object'])
+                if all([n_obj.type == type for n_obj in reshape_1_out_node_objs]):
+                    all_reshape_2_out_shapes = []
+                    for n_obj in reshape_1_out_node_objs:
+                        all_reshape_2_out_shapes.append(n_obj.get_output_shapes())
+                    if all([reshape_1_in_shapes[0] == out_shapes[0] for out_shapes in all_reshape_2_out_shapes]):
+                        src, _, in_attr = reshape_1_edges[0]
+                        graph.remove_edges_from(reshape_1_edges)
+                        for _, dst1, out_attr1 in reshape_1_out_edges:
+                            reshape_2_out_edges = graph.sorted_out_edges(dst1, data=True)
+                            graph.remove_edges_from(reshape_2_out_edges)
+                            for _, dst2, out_attr2 in reshape_2_out_edges:
+                                new_out_attr = copy.deepcopy(out_attr2)
+                                new_out_attr['src_out_port'] = in_attr['src_out_port']
+                                graph.add_edge(src, dst2, **new_out_attr)
+                            if dst1 in graph._attr['output_names']:
+                                index = graph._attr['output_names'].index(dst1)
+                                graph._attr['output_names'][index] = dst1
+                        clear_redundant_nodes(graph)
 
 
 def remove_redundant_transpose(graph):

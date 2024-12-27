@@ -1791,7 +1791,7 @@ class LitePACKOp(OpHasAxis, OpHasOneOutPort, TfliteOp):
         super(LitePACKOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor = tf.stack(inputs, axis=self.axis).numpy()
-        self.set_out_tensor(out_tensor)
+        self.set_out_tensor(out_tensor.astype(inputs[0].dtype))
 
     @property
     def correspond_onnx_op(self):

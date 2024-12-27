@@ -9,8 +9,7 @@ from .passes.front_passes import split_op_has_activation, split_fc, split_greate
     convert_broadcast_to, remove_redundant_broadcast_to, remove_sub_equal_select, \
     merge_special_cast_quantize, convert_special_quantize, convert_special_dequantize, split_quatized_mean, \
     merge_quantized_instance_norm, merge_quantized_lstm_cell, convert_dequantize, merge_min_quant_max_to_clip, merge_quantized_ln, \
-    merge_dqd, convert_sparse_to_dense, merge_ln2, merge_ln3, merge_rms_norm
-# merge_quantized_lstm_cell2, merge_quantized_lstm2
+    merge_dqd, convert_sparse_to_dense, merge_ln2, merge_ln3, merge_rms_norm, merge_quantized_lstm_cell2, merge_quantized_lstm2
 from ..onnx.passes.front_passes import fuse_weights_const, convert_deconv
 from ..onnx.passes.common_passes import apply_subgraph_plugin, record_output_tensors, remove_useless_op, fuse_const
 from ...graph.graph_algo import infer, clear_redundant_nodes
@@ -35,7 +34,7 @@ def front_process_tflite(graph, params):
             # merge_quantized_lstm(graph)
             # merge_quantized_lstm2(graph)
             merge_quantized_lstm_cell(graph)
-            # merge_quantized_lstm_cell2(graph)
+            merge_quantized_lstm_cell2(graph)
             # merge_quantized_instance_norm(graph)
             merge_quantized_ln(graph)
         else:
