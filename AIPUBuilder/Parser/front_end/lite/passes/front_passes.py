@@ -2476,8 +2476,8 @@ def merge_quantized_lstm_cell2(graph):
 
         # get scale/zp from the output tensor of sum0, icfo, mul_i_and_c, mul_f_and_c_prev, c_lut,
         # cout, hout and f_in if forget_bias exists
-        act_nodes = [m[name] for name in ['fc', 'sigmoid_sp0', 'sigmoid_sp1',
-                                          'tanh_sp2', 'sigmoid_sp3', 'mul_sp02', 'mul_sp1', 'tanh_c',
+        act_nodes = [m[name] for name in ['fc', 'sigmoid_sp0', 'tanh_sp2',
+                                          'sigmoid_sp1', 'sigmoid_sp3', 'mul_sp02', 'mul_sp1', 'tanh_c',
                                           'add_cout', 'mul_hout']]
         activations_scale, activations_zp = get_out_tensor_scale_zp(graph, act_nodes)
         if None in activations_scale or None in activations_zp:

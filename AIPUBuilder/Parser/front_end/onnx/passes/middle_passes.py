@@ -12259,7 +12259,7 @@ def middle_passes(graph, params):
     convert_qleakyrelu(graph)
     convert_qmatmul(graph)
     convert_qsigmoid(graph)
-    if params['force_fp_norm']:
+    if params.get('force_fp_norm', False):
         convert_qnorm_to_float(graph)
     convert_special_conv_to_mul(graph)
 
@@ -12379,7 +12379,7 @@ def middle_passes(graph, params):
     merge_gather_slice(graph)
     remove_special_gather(graph)
     fuse_gather_const_mul(graph)
-    if not params['ds_compat']:
+    if not params.get('ds_compat', False):
         convert_gather_to_slice(graph)
     rearrange_matmul_reshape_bias(graph)
     fuse_bias(graph)
