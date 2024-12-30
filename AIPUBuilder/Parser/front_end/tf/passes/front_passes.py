@@ -3182,6 +3182,7 @@ def merge_fasterrcnn(graph):
     graph._attr['output_names'].remove(secondstage_boxpredictor)
     graph._attr['output_names'].remove(secondstage_reshape)
     graph._attr['output_names'].extend([detection_output, nms2])
+    graph._attr['output_nodes'].clear()
 
     anchor_value = OpHasAnchors.convert_to_center_coordinate(_tile_anchor((img_height, img_width),
                                                                           (16, 16),

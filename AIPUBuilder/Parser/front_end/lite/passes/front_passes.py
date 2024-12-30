@@ -854,7 +854,6 @@ def convert_scatternd(graph, op_type='TfScatterNd'):
             matched = True
             indices = indices_obj.value
             updates = in_edges[1][2]['tensor'].value
-            data = data_obj.value
 
             outer_dims = len(indices.shape) - 1
             indices_nd = indices.shape[-1]
@@ -926,8 +925,6 @@ def convert_scatternd(graph, op_type='TfScatterNd'):
                     gathered_ref_indices).astype(np.int32), post_segmentsum, in_port=1, data_format='NHWC')
                 insert_constant(graph, post_reshape + '_indices', out_shape,
                                 post_reshape, in_port=1, data_format='NHWC')
-                insert_constant(graph, indices_name + '_new', gathered_ref_indices,
-                                out_edge[0][1], in_port=0, data_format='NHWC')
 
                 NodeWrap(graph, updates_reshape).replace_obj(
                     'Reshape', {'name': updates_reshape, 'shape': np.array(updates_reshape_dim)})
