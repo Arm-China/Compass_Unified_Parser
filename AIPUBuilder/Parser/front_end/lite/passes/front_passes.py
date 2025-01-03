@@ -12,7 +12,7 @@ from ....graph.node_wrap import NodeWrap
 from ....graph.graph_algo import get_valid_node_name, clear_redundant_nodes
 from ....graph.pattern_match import matched_patterns, single_node_matcher, two_nodes_matcher
 from ...onnx.passes.common_passes import insert_constant, remove_node_safely, insert_transpose, insert_reshape, \
-    insert_gather, insert_reshape_after, insert_tile, insert_cast_after, insert_transpose_after
+    insert_gather, insert_reshape_after, insert_tile, insert_cast_after, insert_transpose_after, insert_dequant_quant
 from ....common.defs import Tensor, FLOAT_EQUAL
 from ....common.utils import extend_lists
 from ....logger import INFO, DEBUG, WARN, ERROR, FATAL
@@ -2468,31 +2468,38 @@ def merge_quantized_lstm_cell2(graph):
         if batch_size != batch_from_cell:
             continue
 
+        if graph._attr.get('quantize', False):
+            quant = True
+        else:
+            quant = False
+
         # Get weights and biases
         weights = objs_dict['fc'].weights
-        weights_scale_zp = objs_dict['fc'].weights_scale_zp
         biases = objs_dict['fc'].biases
-        biases_scale_zp = objs_dict['fc'].biases_scale_zp
+        if quant:
+            weights_scale_zp = objs_dict['fc'].weights_scale_zp
+            biases_scale_zp = objs_dict['fc'].biases_scale_zp
 
         # get scale/zp from the output tensor of sum0, icfo, mul_i_and_c, mul_f_and_c_prev, c_lut,
         # cout, hout and f_in if forget_bias exists
-        act_nodes = [m[name] for name in ['fc', 'sigmoid_sp0', 'tanh_sp2',
-                                          'sigmoid_sp1', 'sigmoid_sp3', 'mul_sp02', 'mul_sp1', 'tanh_c',
-                                          'add_cout', 'mul_hout']]
-        activations_scale, activations_zp = get_out_tensor_scale_zp(graph, act_nodes)
-        if None in activations_scale or None in activations_zp:
-            continue
+        if quant:
+            act_nodes = [m[name] for name in ['fc', 'sigmoid_sp0', 'tanh_sp2',
+                                              'sigmoid_sp1', 'sigmoid_sp3', 'mul_sp02', 'mul_sp1', 'tanh_c',
+                                              'add_cout', 'mul_hout']]
+            activations_scale, activations_zp = get_out_tensor_scale_zp(graph, act_nodes)
+            if None in activations_scale or None in activations_zp:
+                continue
 
         matched = True
         # Prepare inputs for onnx lstm
         # insert zero Hidden
         kernel_weights = weights
         recurrent_weights = np.zeros([4 * hidden_size, hidden_size], dtype=weights.dtype)
-        input_w, cell_w, forget_w, output_w = np.split(
+        input_w, forget_w, cell_w, output_w = np.split(
             kernel_weights, 4, axis=0)
-        input_r, cell_r, forget_r, output_r = np.split(
+        input_r, forget_r, cell_r, output_r = np.split(
             recurrent_weights, 4, axis=0)
-        input_wb, cell_wb, forget_wb, output_wb = np.split(biases, 4, axis=0)
+        input_wb, forget_wb, cell_wb, output_wb = np.split(biases, 4, axis=0)
         W_value = np.stack([np.concatenate(
             [input_w, output_w, forget_w, cell_w], axis=0)])
         R_value = np.stack([np.concatenate(
@@ -2510,7 +2517,7 @@ def merge_quantized_lstm_cell2(graph):
         graph.remove_edge(src, m['fc'])
         graph.add_edge(src, lstm, **in_attr)
         src_new_dim = [1, batch_size, input_size]
-        insert_reshape(graph, src, lstm, in_attr, src_new_dim)
+        insert_reshape(graph, src, lstm, in_attr, src_new_dim, quantize=quant)
 
         # Connect W, R, B and sequence_lens with lstm
         insert_constant(graph, lstm + '_W', W_value, lstm,
@@ -2534,7 +2541,7 @@ def merge_quantized_lstm_cell2(graph):
         initial_c_in_attr['dst_in_port'] = 6
         graph.add_edge(initial_c, lstm, **initial_c_in_attr)
         src_new_dim = [1, batch_size, hidden_size]
-        insert_reshape(graph, initial_c, lstm, initial_c_in_attr, src_new_dim)
+        insert_reshape(graph, initial_c, lstm, initial_c_in_attr, src_new_dim, quantize=quant)
 
         # Connect the dst nodes of the hidden and the cell with lstm
         hout = m['mul_hout']
@@ -2565,15 +2572,20 @@ def merge_quantized_lstm_cell2(graph):
         # Convert to onnx lstm
         lstm_attr = {'name': lstm,
                      'opset_version': 14,
-                     'quantize': 1,
+                     'quantize': 0,
                      'layout': False,
                      'hidden_size': hidden_size,
                      'direction': 'forward',
-                     'weights_scale_zp': [np.array([weights_scale_zp[0].item(), weights_scale_zp[0].item()], np.float32),
-                                          np.array([weights_scale_zp[1].item(), weights_scale_zp[1].item()], np.int32)],
-                     'biases_scale_zp': biases_scale_zp,
-                     'activations_scale': np.array(activations_scale, np.float32),
-                     'activations_zp': np.array(activations_zp, np.int32)}
+                     }
+        if quant:
+            lstm_attr.update({
+                'quantize': 1,
+                'weights_scale_zp': [np.array([weights_scale_zp[0].item(), weights_scale_zp[0].item()], np.float32),
+                                     np.array([weights_scale_zp[1].item(), weights_scale_zp[1].item()], np.int32)],
+                'biases_scale_zp': biases_scale_zp,
+                'activations_scale': np.array(activations_scale, np.float32),
+                'activations_zp': np.array(activations_zp, np.int32)
+            })
         NodeWrap(graph, lstm).replace_obj('LSTM', lstm_attr)
 
     if matched:

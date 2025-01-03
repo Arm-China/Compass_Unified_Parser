@@ -457,8 +457,12 @@ def opt_forward(txt_path, bin_path, feed_dict, output_names=None, save_output=Tr
         WARN('Outputs name len != outputs data len. Will save parts of outputs.')
 
     output_dict = {}
+    import numpy as np
     for name, value in zip(output_names, outputs):
-        output_dict[name] = value
+        if isinstance(value, np.ndarray):
+            output_dict[name] = value
+        else:
+            output_dict[name] = value.cpu().numpy()
 
     if save_output:
         save_data_to_file('opt_outputs.npy', output_dict)

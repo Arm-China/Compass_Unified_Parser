@@ -967,7 +967,7 @@ def insert_dequant_quant(graph, src, dst, in_attr, op_type, key=None, data_forma
         scale, zp = in_attr['tensor'].scale_zp
 
         scale = np.array(scale[0], dtype=np.float32)
-        zp = np.array(zp[0], dtype=in_attr['tensor'].value.dtype)
+        zp = np.array(zp[0], dtype=in_attr['tensor'].dtype)
 
         scale_const = get_valid_node_name(graph, new_op + '_scale')
         graph.add_node(scale_const)
@@ -1005,7 +1005,7 @@ def insert_dequant_quant(graph, src, dst, in_attr, op_type, key=None, data_forma
                 else:
                     out_tensor.value = np.round(in_attr['tensor'].value / scale + zp).astype(zp.dtype)
                 out_tensor.shape = out_tensor.value.shape
-                out_tensor.dtype = out_tensor.value.dtype
+                out_tensor.dtype = str(out_tensor.value.dtype)
         new_op_out_attr.update({'src_out_port': 0, 'tensor': out_tensor})
         graph.add_edge(new_op, dst, **new_op_out_attr)
         ret = new_op

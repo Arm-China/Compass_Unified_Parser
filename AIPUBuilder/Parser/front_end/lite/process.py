@@ -34,12 +34,13 @@ def front_process_tflite(graph, params):
             # merge_quantized_lstm(graph)
             # merge_quantized_lstm2(graph)
             merge_quantized_lstm_cell(graph)
-            merge_quantized_lstm_cell2(graph)
+            # merge_quantized_lstm_cell2(graph)
             # merge_quantized_instance_norm(graph)
             merge_quantized_ln(graph)
         else:
             merge_min_quant_max_to_clip(graph)
 
+        merge_quantized_lstm_cell2(graph)
         merge_ln2(graph)
         merge_ln3(graph)
         merge_rms_norm(graph)

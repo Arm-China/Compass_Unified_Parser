@@ -100,7 +100,7 @@ def list_string_to_list(list_string):
 
 # ['aa', 'bb'] to 'aa,bb'
 def string_list_to_string(string_list):
-    return reduce(lambda x, y: (x + ',' + y), string_list) if string_list else ''
+    return reduce(lambda x, y: (str(x) + ',' + str(y)), string_list) if string_list else ''
 
 
 # 'AA,BB' to ['AA','BB']
