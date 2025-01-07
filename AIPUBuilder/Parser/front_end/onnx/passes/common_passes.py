@@ -527,8 +527,12 @@ def remove_redundant_reshape(graph, type='Reshape'):
                 clear_redundant_nodes(graph)
             elif len(reshape_1_out_edges) > 1:
                 reshape_1_out_node_objs = []
+                reshape_2_nodes = []
                 for src, dst, out_attr in reshape_1_out_edges:
+                    reshape_2_nodes.append(dst)
                     reshape_1_out_node_objs.append(NodeWrap(graph, dst)['object'])
+                if all([rs2 in graph._attr['output_names'] for rs2 in reshape_2_nodes]):
+                    continue
                 if all([n_obj.type == type for n_obj in reshape_1_out_node_objs]):
                     all_reshape_2_out_shapes = []
                     for n_obj in reshape_1_out_node_objs:
@@ -545,7 +549,7 @@ def remove_redundant_reshape(graph, type='Reshape'):
                                 graph.add_edge(src, dst2, **new_out_attr)
                             if dst1 in graph._attr['output_names']:
                                 index = graph._attr['output_names'].index(dst1)
-                                graph._attr['output_names'][index] = dst1
+                                graph._attr['output_names'][index] = src
                         clear_redundant_nodes(graph)
 
 

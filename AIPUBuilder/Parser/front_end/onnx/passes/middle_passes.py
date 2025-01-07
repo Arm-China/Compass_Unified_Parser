@@ -8884,6 +8884,102 @@ def merge_isinf(graph):
         clear_redundant_nodes(graph)
 
 
+def merge_multi_matmuls(graph):
+    '''
+    This pass is used to merge 4 matmuls into a BatchMatMul in mobilebert
+    '''
+    matched = False
+    mm_matches = matched_patterns(graph,
+                                  nodes=[
+                                      ('split0', {'op': 'Split'}),
+                                      ('rs00', {'op': 'Reshape'}),
+                                      ('rs01', {'op': 'Reshape'}),
+                                      ('rs02', {'op': 'Reshape'}),
+                                      ('rs03', {'op': 'Reshape'}),
+                                      ('split1', {'op': 'Split'}),
+                                      ('rs10', {'op': 'Reshape'}),
+                                      ('rs11', {'op': 'Reshape'}),
+                                      ('rs12', {'op': 'Reshape'}),
+                                      ('rs13', {'op': 'Reshape'}),
+                                      ('matmul0', {'op': 'MatMul'}),
+                                      ('matmul1', {'op': 'MatMul'}),
+                                      ('matmul2', {'op': 'MatMul'}),
+                                      ('matmul3', {'op': 'MatMul'}),
+                                      ('concat', {'op': 'ConcatFromSequence'}),
+                                  ],
+                                  edges=[
+                                      ('split0', 'rs00', {'src_out_port': 0}),
+                                      ('split0', 'rs01', {'src_out_port': 1}),
+                                      ('split0', 'rs02', {'src_out_port': 2}),
+                                      ('split0', 'rs03', {'src_out_port': 3}),
+                                      ('split1', 'rs10', {'src_out_port': 0}),
+                                      ('split1', 'rs11', {'src_out_port': 1}),
+                                      ('split1', 'rs12', {'src_out_port': 2}),
+                                      ('split1', 'rs13', {'src_out_port': 3}),
+                                      ('rs00', 'matmul0'),
+                                      ('rs10', 'matmul0'),
+                                      ('rs01', 'matmul1'),
+                                      ('rs11', 'matmul1'),
+                                      ('rs02', 'matmul2'),
+                                      ('rs12', 'matmul2'),
+                                      ('rs03', 'matmul3'),
+                                      ('rs13', 'matmul3'),
+                                      ('matmul0', 'concat', {'dst_in_port': 0}),
+                                      ('matmul1', 'concat', {'dst_in_port': 1}),
+                                      ('matmul2', 'concat', {'dst_in_port': 2}),
+                                      ('matmul3', 'concat', {'dst_in_port': 3}),
+                                  ])
+    for m in mm_matches:
+        objs_dict = {m[name]: NodeWrap(graph, m[name])['object'] for name in [
+            'split0', 'split1', 'matmul0', 'matmul1', 'matmul2', 'matmul3', 'concat']}
+        if all([graph.has_node(n) for n in objs_dict.keys()]) and all([v is not None for v in objs_dict.values()]):
+            sp0_obj = objs_dict[m['split0']]
+            sp1_obj = objs_dict[m['split1']]
+            concat_obj = objs_dict[m['concat']]
+            if sp0_obj.axis == sp1_obj.axis == concat_obj.axis and sp0_obj.axis == 0:
+                sp0_in_edges = graph.sorted_in_edges(m['split0'], data=True)
+                sp1_in_edges = graph.sorted_in_edges(m['split1'], data=True)
+
+                mm0_in_edges = graph.sorted_in_edges(m['matmul0'])
+
+                is_split0_inp0 = mm0_in_edges[0][0] == m['rs00']
+
+                for mm in ['matmul0', 'matmul1', 'matmul2', 'matmul3']:
+                    mm_out_edges = graph.sorted_out_edges(m[mm])
+                    if len(mm_out_edges) != 1:
+                        return
+
+                concat_in_edges = graph.sorted_in_edges(m['concat'])
+                if len(concat_in_edges) != 4:
+                    continue
+
+                matched = True
+                graph.remove_edges_from(concat_in_edges)
+                graph.remove_edges_from(sp0_in_edges)
+                graph.remove_edges_from(sp1_in_edges)
+
+                if is_split0_inp0:
+                    src_0, _, in0_attr = sp0_in_edges[0]
+                    src_1, _, in1_attr = sp1_in_edges[0]
+                else:
+                    src_0, _, in0_attr = sp1_in_edges[0]
+                    src_1, _, in1_attr = sp0_in_edges[0]
+
+                in0_attr['dst_in_port'] = 0
+                in1_attr['dst_in_port'] = 1
+
+                graph.add_edge(src_0, m['concat'], **in0_attr)
+                graph.add_edge(src_1, m['concat'], **in1_attr)
+
+                mm_attr = objs_dict[m['concat']].copied_attr()
+                mm_attr.update({'opset_version': 13})
+                NodeWrap(graph, m['concat']).replace_obj('MatMul', mm_attr)
+        else:
+            ERROR('[Parser]: Meets invalid nodes in merge_multi_matmuls!')
+    if matched:
+        clear_redundant_nodes(graph)
+
+
 def merge_mvn(graph):
     matched = False
     ln_matches = matched_patterns(graph,
@@ -12280,6 +12376,7 @@ def middle_passes(graph, params):
 
     rename_reshape_like(graph)
 
+    merge_multi_matmuls(graph)
     merge_isinf(graph)
     merge_sign_abs_relu(graph)
     split_deformable_conv(graph)
