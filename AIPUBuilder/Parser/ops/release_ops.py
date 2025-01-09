@@ -2743,14 +2743,39 @@ class ArmIfOp(OpHasSubGraph, DynamicShapeOp, ArmOp):
 
 class ArmInputOp(OpHasOneOutPort, InputLikeOp, ArmOp):
     @classmethod
+    def attributes(cls):
+        return {
+            'layout': {
+                'type': AttrType.STRING,
+                'options': [
+                    'None', 'Flat', 'NCHW', 'NHWC', 'NCHWC4', 'NCHWC8', 'NCHWC16', 'NCHWC32',
+                    'NDHWC', 'NDCHWC16', 'NDCHWC32', 'NCDHWC16', 'NCDHWC32'
+                ],
+                'default': 'None'
+            }
+        }
+
+    @classmethod
     def num_in_ports(cls):
         return 0
+
+    def __init__(self, graph, attr_dict=None):
+        super(ArmInputOp, self).__init__(graph, attr_dict)
+        self.update_attributes(ArmInputOp, attr_dict)
+        assert self.check_required(), 'ArmInputOp is missing a required parameter.'
 
     def infer_shape(self, input_tensor=None):
         super(ArmInputOp, self).infer_shape()
         assert input_tensor is not None, 'input tensor is empty in ArmInputOp.'
         out_tensor = input_tensor.copy()
         self.set_out_tensor(out_tensor)
+
+    def write_attrs(self, txt_file):
+        ret = super(ArmInputOp, self).write_attrs(txt_file)
+        if ret:
+            if self.layout is not None and self.layout != 'None':
+                txt_file.write('layout=%s\n' % self.layout)
+        return ret
 
 
 class ArmInstanceNormOp(OpHasBiases, OpHasWeights, OpHasOneOutPort, ArmOp):
@@ -4590,7 +4615,7 @@ class ArmRoundOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
     def infer_shape(self):
         super(ArmRoundOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = np.round(inputs[0]).astype(np.float32)
+        out_tensor = np.round(inputs[0])
         self.set_out_tensor(out_tensor)
 
 
