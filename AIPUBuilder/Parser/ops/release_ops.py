@@ -2773,7 +2773,7 @@ class ArmInputOp(OpHasOneOutPort, InputLikeOp, ArmOp):
     def write_attrs(self, txt_file):
         ret = super(ArmInputOp, self).write_attrs(txt_file)
         if ret:
-            if self.layout is not None and self.layout != 'None':
+            if self.layout and self.layout != 'None':
                 txt_file.write('layout=%s\n' % self.layout)
         return ret
 

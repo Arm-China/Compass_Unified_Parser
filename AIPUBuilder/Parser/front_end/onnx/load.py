@@ -516,12 +516,15 @@ def convert_onnx_to_graph(graph, model_path, params):
 
                 for single_input in inputs:
                     if single_input['name'] not in const_names:
-                        nodes.insert(0, {'name': single_input['name'],
-                                         'out_port': 0,
-                                         'type': 'Input',
-                                         'input': [],
-                                         'output': [{'name': single_input['name'], 'out_port': 0}]}
-                                     )
+                        input_attr = {'name': single_input['name'],
+                                      'out_port': 0,
+                                      'type': 'Input',
+                                      'input': [],
+                                      'output': [{'name': single_input['name'], 'out_port': 0}]}
+                        if single_input['name'] in params['input_layouts'] and \
+                                params['input_layouts'][single_input['name']]:
+                            input_attr.update({'layout': params['input_layouts'][single_input['name']]})
+                        nodes.insert(0, input_attr)
                         input_shape = single_input['type']['tensor_type']['shape'].tolist()
                         if 'input_shapes' in params and len(input_shape) >= 1:
                             name = single_input['name']

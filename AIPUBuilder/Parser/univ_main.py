@@ -60,6 +60,15 @@ optional arguments in Common section of <net.cfg>:
                         2) Three inputs, in which the dtype of the first input is int32, the second is uint8,
                            and the third is float32:
                            input_dtype=int32,uint8,float32
+    input_layout        The layout of input(s), Graph Builder will use this layout to do layout scheduling if set. 
+                        Use comma to separate for several layout string.
+                        The sequence of several layout should be aligned with inputs.
+                        Example:
+                        1) One input and the layout of the only one input is NCHW:
+                           input_layout=NCHW
+                        2) Three inputs, in which the layout of the first input is NCHW, the second not set,
+                           and the third is NCHWC32:
+                           input_layout=NCHW,None,NCHWC32
     iou_threshold       Overlap threshold value between two boxes. Required if detection_postprocess is used.
     obj_threshold       Confidence threshold value of the current box. Required if detection_postprocess in
                         (case insensitive):

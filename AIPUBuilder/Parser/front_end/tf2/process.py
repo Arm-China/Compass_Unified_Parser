@@ -50,7 +50,7 @@ def front_process_tf2(graph, params):
         split_special_floormod(graph, op_type='Tffloormod')
         split_s2b(graph, op_type='Tfspace_to_batch_nd')
 
-        process_keras_op_after_infer(graph)
+        process_keras_op_after_infer(graph, params)
 
         convert_l2_normalize(graph)
         convert_lp_norm(graph)
@@ -60,7 +60,7 @@ def front_process_tf2(graph, params):
         # To support lambda op in tf2 model, need convert tf op to onnx as well.
         # FIXME: Other passes in tf front passes may be needed as well.
         from ..tf.passes.front_passes import convert_to_onnx as convert_tf_op_to_onnx
-        convert_tf_op_to_onnx(graph)
+        convert_tf_op_to_onnx(graph, params)
     else:
         WARN('[Parser]: Got empty graph for TF2 model %s in front_process_tf2!' %
              params['model_name'])

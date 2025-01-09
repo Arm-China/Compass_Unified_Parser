@@ -221,7 +221,7 @@ def convert_lp_norm(graph):
                                                     'keepdims': norm_keepdims,
                                                     'axes': [norm_axes[0]],
                                                     'opset_version': 13})
-            reduce_max_axis = (norm_axes[1]-1) if not bool(norm_keepdims) \
+            reduce_max_axis = (norm_axes[1] - 1) if not bool(norm_keepdims) \
                 and norm_axes[0] < norm_axes[1] else norm_axes[1]
             node_attr.update({'axes': [reduce_max_axis], 'opset_version': 13})
             NodeWrap(graph, norm).replace_obj('ReduceMax', node_attr)
@@ -331,7 +331,7 @@ def convert_to_onnx(graph):
                 elif node_obj.dtype_hint is not None:
                     dtype = node_obj.dtype_hint
                 if np.dtype(dtype) != inputs[0].dtype:
-                    new_node_attr.update({'to': to_type})
+                    new_node_attr.update({'to': dtype})
                 _remove_edges_if_const(node_name, in_edges[1:])
             elif pure_type == 'expand_dims':
                 if len(in_edges) >= 2 \

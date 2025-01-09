@@ -1375,7 +1375,7 @@ def remove_useless_reshape(graph):
                 remove_node_safely(graph, reshape)
 
 
-def convert_to_onnx(graph):
+def convert_to_onnx(graph, params):
     '''Convert the model to the onnx version.'''
     caffe_ops = CaffeOp.get_concrete_subclass_names()
     matches = extend_lists([single_node_matcher(graph, op_type)
@@ -1434,6 +1434,10 @@ def convert_to_onnx(graph):
                                     starts, node_name, in_port=1)
                     insert_constant(graph, node_name + '_ends',
                                     ends, node_name, in_port=2)
+                elif pure_type == 'DATA':
+                    if node_name in params['input_layouts'] and params['input_layouts'][node_name]:
+                        inp_layout = params['input_layouts'][node_name]
+                        new_node_attr.update({'layout': inp_layout})
                 elif pure_type == 'ELTWISE':
                     if any([c != 1.0 for c in node_obj.coeff]):
                         in_edges = graph.sorted_in_edges(

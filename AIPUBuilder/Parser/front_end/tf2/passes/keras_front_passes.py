@@ -1087,7 +1087,7 @@ def convert_softmax(graph):
         graph.remove_edges_from(in_edges[1:])
 
 
-def convert_to_onnx(graph):
+def convert_to_onnx(graph, params):
     '''Convert keras op to the onnx version.'''
     def warn_invalid_node(op_type, node_name):
         ERROR('[Parser]: Meets invalid Keras op(%s) for Node(%s) in convert_to_onnx!' %
@@ -1169,6 +1169,10 @@ def convert_to_onnx(graph):
                     insert_transpose(graph, src, node_name, in_attr, perm)
                     node_data_format = 'NHWC'
             new_node_attr.update({'shape': [0, -1]})
+        elif pure_type == 'InputLayer':
+            if node_name in params['input_layouts'] and params['input_layouts'][node_name]:
+                inp_layout = params['input_layouts'][node_name]
+                new_node_attr.update({'layout': inp_layout})
         elif pure_type == 'Permute':
             perm = [0] + list(node_obj.dims)
             new_node_attr.update({'perm': perm})
@@ -1257,7 +1261,7 @@ def process_keras_op_before_infer(graph):
     split_sum_or_max_or_min(graph, op_type_list=['TfKerasMultiply'])
 
 
-def process_keras_op_after_infer(graph):
+def process_keras_op_after_infer(graph, params):
     if not graph._attr['is_keras_model']:
         return
 
@@ -1270,4 +1274,4 @@ def process_keras_op_after_infer(graph):
     convert_softmax(graph)
     convert_seperable_conv(graph)
 
-    convert_to_onnx(graph)
+    convert_to_onnx(graph, params)

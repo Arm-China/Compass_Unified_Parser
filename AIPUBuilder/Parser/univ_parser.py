@@ -65,6 +65,8 @@ def univ_parser(params):
         else:
             params['force_fp_norm'] = False
 
+        params['input_layouts'] = multi_string_to_list(params['input_layout']) if 'input_layout' in params else []
+
         def _parse_npy(key_name):
             input_npy = {}
             if params.get(key_name, ''):
@@ -126,6 +128,18 @@ def univ_parser(params):
             else:
                 FATAL(
                     '[Parser]: Length of input_names should be equal to length of input_shapes! '
+                    'Please check config file!')
+
+        input_layout_cnt = len(params['input_layouts'])
+        if len(params['input_names']) == input_layout_cnt:
+            params['input_layouts'] = {
+                params['input_names'][i]: v for i, v in enumerate(params['input_layouts'])}
+        else:
+            if input_layout_cnt == 0:
+                params['input_layouts'] = {name: None for name in params['input_names']}
+            else:
+                FATAL(
+                    '[Parser]: Length of input_layout should be equal to length of input names! '
                     'Please check config file!')
 
         if len(params['input_names']) == 0 and len(params['input_shapes']) == 0 and 'input_dimensions' in params:

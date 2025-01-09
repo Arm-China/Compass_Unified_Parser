@@ -52,7 +52,7 @@ def front_process_caffe(graph, params):
 
         remove_detection_postprocess(graph)
         refinedet_postprocess(graph, params)
-        convert_to_onnx(graph)
+        convert_to_onnx(graph, params)
         infer(graph)
     else:
         WARN('[Parser]: Got empty graph in front_process_caffe!')

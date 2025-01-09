@@ -4495,7 +4495,7 @@ def merge_embedding_lookup_sparse_with_weights(graph):
         clear_redundant_nodes(graph)
 
 
-def convert_to_onnx(graph):
+def convert_to_onnx(graph, params):
     '''Convert the model to the onnx version.'''
     tf_ops = TfOp.get_concrete_subclass_names()
     matches = extend_lists([single_node_matcher(graph, op_type)
@@ -4703,6 +4703,13 @@ def convert_to_onnx(graph):
                         ERROR(
                             '[Parser]: Invalid TF Pad Node(%s) to convert to Onnx!' % node_name)
                         continue
+                elif pure_type in ('Placeholder',):
+                    if node_name in params['input_layouts'] and params['input_layouts'][node_name]:
+                        inp_layout = params['input_layouts'][node_name]
+                        new_node_attr.update({'layout': inp_layout})
+                    elif f'{node_name}:0' in params['input_layouts'] and params['input_layouts'][node_name + ':0']:
+                        inp_layout = params['input_layouts'][node_name + ':0']
+                        new_node_attr.update({'layout': inp_layout})
                 elif pure_type == 'Relu6':
                     new_node_attr.update({'min': 0., 'max': 6.})
                 elif pure_type == 'RightShift':

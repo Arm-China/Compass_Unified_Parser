@@ -529,6 +529,24 @@ class HardSwishOp(LayoutUnawareOp, OpHasOneOutPort, CommonOp):
 
 
 class InputOp(OpHasOneOutPort, InputLikeOp, CommonOp):
+    @classmethod
+    def attributes(cls):
+        return {
+            'layout': {
+                'type': AttrType.STRING,
+                'options': [
+                    'None', 'Flat', 'NCHW', 'NHWC', 'NCHWC4', 'NCHWC8', 'NCHWC16', 'NCHWC32',
+                    'NDHWC', 'NDCHWC16', 'NDCHWC32', 'NCDHWC16', 'NCDHWC32'
+                ],
+                'default': 'None'
+            }
+        }
+
+    def __init__(self, graph, attr_dict=None):
+        super(InputOp, self).__init__(graph, attr_dict)
+        self.update_attributes(InputOp, attr_dict)
+        assert self.check_required(), 'InputOp is missing a required parameter.'
+
     def infer_shape(self, input_tensor=None):
         super(InputOp, self).infer_shape()
         assert input_tensor is not None, 'input shape is empty in InputOp.'

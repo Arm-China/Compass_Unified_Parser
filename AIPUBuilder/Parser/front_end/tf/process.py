@@ -93,7 +93,7 @@ def front_process_tf(graph, params):
 
         infer(graph)
 
-        convert_to_onnx(graph)
+        convert_to_onnx(graph, params)
 
     else:
         WARN('[Parser]: Got empty graph for TF model %s in front_process_tf!' %
