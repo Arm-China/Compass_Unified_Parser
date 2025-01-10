@@ -10775,6 +10775,8 @@ def rename_single_mul_or_add_or_sub(graph):
                 graph.remove_edge(src, n, key=k)
                 remove_node_safely(graph, n)
             else:
+                if in_shapes[0] != in_shapes[1]:
+                    continue
 
                 output_shapes = n_obj.get_output_shapes()
                 if len(output_shapes) == 0 or output_shapes[0] is None:

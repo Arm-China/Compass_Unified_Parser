@@ -342,6 +342,25 @@ class ArmAdaptivePoolOp(OpHasMethod, OpHasOneOutPort, ArmOp):
         return ret
 
 
+class ArmAddOp(OpHasOneOutPort, ArmOp):
+    @classmethod
+    def cast_in_ports(cls):
+        return {0: ['float32', 'float16', 'int8', 'uint8'], 1: ['float32', 'float16', 'int8', 'uint8']}
+
+    @classmethod
+    def num_in_ports(cls):
+        return 2
+
+    def infer_shape(self):
+        super(ArmAddOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        input_dtypes = self.get_input_dtypes()
+        assert len(inputs) == 2 and len(input_dtypes) == 2, 'The number of inputs is invalid in AddOp.'
+        assert input_dtypes[0] == input_dtypes[1], 'The dtype of inputs should be the same in AddOp.'
+        out_tensor = np.add(*inputs)
+        self.set_out_tensor(out_tensor)
+
+
 class ArmAffineGridOp(OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
@@ -3486,6 +3505,25 @@ class ArmMomentsOp(OpHasMultipleOutPorts, OpHasAxis, ArmOp):
         self.set_out_tensor(out_tensors)
 
 
+class ArmMulOp(OpHasOneOutPort, ArmOp):
+    @classmethod
+    def cast_in_ports(cls):
+        return {0: ['float32', 'float16', 'int8', 'uint8'], 1: ['float32', 'float16', 'int8', 'uint8']}
+
+    @classmethod
+    def num_in_ports(cls):
+        return 2
+
+    def infer_shape(self):
+        super(ArmMulOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        input_dtypes = self.get_input_dtypes()
+        assert len(inputs) == 2 and len(input_dtypes) == 2, 'The number of inputs is invalid in MulOp.'
+        assert input_dtypes[0] == input_dtypes[1], 'The dtype of inputs should be the same in MulOp.'
+        out_tensor = np.multiply(*inputs)
+        self.set_out_tensor(out_tensor)
+
+
 class ArmMVNOp(OpHasOneOutPort, OpHasAxis, ArmOp):
     '''
     (X-EX)/sqrt(E(X-EX)^2)
@@ -5027,6 +5065,25 @@ class ArmSquaredDifferenceOp(OpNeedBroadcast, OpHasOneOutPort, LayoutUnawareOp, 
         super(ArmSquaredDifferenceOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor = np.power(np.subtract(*inputs), 2)
+        self.set_out_tensor(out_tensor)
+
+
+class ArmSubOp(OpHasOneOutPort, ArmOp):
+    @classmethod
+    def cast_in_ports(cls):
+        return {0: ['float32', 'float16', 'int8', 'uint8'], 1: ['float32', 'float16', 'int8', 'uint8']}
+
+    @classmethod
+    def num_in_ports(cls):
+        return 2
+
+    def infer_shape(self):
+        super(ArmSubOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        input_dtypes = self.get_input_dtypes()
+        assert len(inputs) == 2 and len(input_dtypes) == 2, 'The number of inputs is invalid in SubOp.'
+        assert input_dtypes[0] == input_dtypes[1], 'The dtype of inputs should be the same in SubOp.'
+        out_tensor = np.subtract(*inputs)
         self.set_out_tensor(out_tensor)
 
 

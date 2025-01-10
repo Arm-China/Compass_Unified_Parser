@@ -2737,8 +2737,9 @@ def rename_mul_add_max_min(graph):
                 elif in_shapes[0] is not None \
                         and None not in in_shapes[0] \
                         and in_shapes[1] is not None \
-                        and None not in in_shapes[1]:
-                    pass
+                        and None not in in_shapes[1] \
+                        and list(in_shapes[0]) != list(in_shapes[1]):
+                    meta_ret = False
                 else:
                     meta_ret = False
                     ERROR(
@@ -5743,17 +5744,17 @@ def back_passes(graph, params):
     rename_where(graph)
 
     simple_rename_list = [
-        'Abs', 'AccidentalHits', 'Acos', 'Acosh', 'AdaptivePool', 'AffineGrid', 'Asin',
+        'Abs', 'AccidentalHits', 'Acos', 'Acosh', 'AdaptivePool', 'Add', 'AffineGrid', 'Asin',
         'Asinh', 'Atan', 'Atanh', {'BatchGather': 'ArmGather'}, 'BitShift', 'BNLL',
         'Ceil', 'ChannelShuffle', 'Concat', {'Cos': 'ArmCosine'}, 'Cosh', 'CropAndResize',
         'CTCGreedyDecoder', 'DepthToSpace', 'DivMod', 'Erf', 'Exp', 'Filter', 'Floor',
         'FractionalPool', 'FullyConnected', 'Gather', 'GatherND', 'GatherElements', 'If', 'Input',
         {'InstanceNormalization': 'ArmInstanceNorm'}, 'InTopK', 'IsInf', 'IsNaN', 'Log', 'LogSoftmax',
         'Loop', 'LRN',
-        'MatMul', {'MeanVarianceNormalization': 'ArmMVN'}, 'Meshgrid', 'Mod', {'Neg': 'ArmNegative'},
+        'MatMul', {'MeanVarianceNormalization': 'ArmMVN'}, 'Meshgrid', 'Mod', 'Mul', {'Neg': 'ArmNegative'},
         'NonZero', 'NormalizedMoments', 'OverlapAdd', 'Pow', 'QueryRebatch', 'Reciprocal', 'Repeat',
         'ReverseSequence', 'Round', 'SegmentReduce', 'Sign', {'Sin': 'ArmSine'}, 'Sinh', 'SlotUpdate',
-        'Softmax', 'SpaceToDepth', 'SufficientStatistics', 'Split', 'Sqrt', 'Tan', 'Transpose',
+        'Softmax', 'SpaceToDepth', 'Sub', 'SufficientStatistics', 'Split', 'Sqrt', 'Tan', 'Transpose',
         'Trunc', 'Unique', 'ZeroFraction'
     ]
 
