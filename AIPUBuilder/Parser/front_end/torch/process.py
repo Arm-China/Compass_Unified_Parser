@@ -1428,9 +1428,6 @@ def convert_index_put(g, x, indices_list_value, values, accumulate=False):
         indices_list = helper._unpack_list(indices_list_value)
     else:
         indices_list = [indices_list_value]
-    if helper.is_caffe2_aten_fallback():
-        args = [x] + indices_list + [values, accumulate]
-        return g.at('index_put', *args)
 
     accumulate = helper._parse_arg(accumulate, 'b')
 
@@ -1584,8 +1581,6 @@ def convert_index_copy(g, self, dim, index, source):
 
 @helper.parse_args('v', 'i', 'v', 'v', 's')
 def scatter_helper(g, self, dim, index, src, reduction):
-    if helper.is_caffe2_aten_fallback():
-        return g.at('scatter', self, dim, index, src, overload_name='src')
     src_type = src.type().scalarType()
     src = helper._maybe_get_scalar(src)
     if helper._is_value(src):
@@ -1713,16 +1708,6 @@ def convert_index_fill(g, self, dim, index, value):
     if self_dim_rank is None:
         ERROR(
             'ONNX export does NOT support exporting index_add_() function while, the rank of self tensor or tensor to be added is unknown.')
-
-    if helper.is_caffe2_aten_fallback():
-        return g.at(
-            'index_fill',
-            self,
-            index,
-            value,
-            overload_name='int_Scalar',
-            dim_i=dim_value,
-        )
 
     expanded_index_shape, expanded_index = _index_fill_reshape_helper(
         g, self, dim, index
