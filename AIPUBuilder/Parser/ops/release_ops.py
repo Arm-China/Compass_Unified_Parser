@@ -345,7 +345,10 @@ class ArmAdaptivePoolOp(OpHasMethod, OpHasOneOutPort, ArmOp):
 class ArmAddOp(OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
-        return {0: ['float32', 'float16', 'int8', 'uint8'], 1: ['float32', 'float16', 'int8', 'uint8']}
+        return {
+            0: ['float32', 'float16', 'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32'],
+            1: ['float32', 'float16', 'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32']
+        }
 
     @classmethod
     def num_in_ports(cls):
@@ -1832,7 +1835,10 @@ class ArmDetectionOutputOp(OpHasMultipleOutPorts, ArmOp):
 class ArmDivOp(LayoutUnawareOp, OpHasDivisor, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
-        return {0: ['float32', 'float16', 'int8', 'uint8'], 1: ['float32', 'float16', 'int8', 'uint8']}
+        return {
+            0: ['float32', 'float16', 'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32'],
+            1: ['float32', 'float16', 'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32']
+        }
 
     @classmethod
     def num_in_ports(cls):
@@ -3508,7 +3514,10 @@ class ArmMomentsOp(OpHasMultipleOutPorts, OpHasAxis, ArmOp):
 class ArmMulOp(OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
-        return {0: ['float32', 'float16', 'int8', 'uint8'], 1: ['float32', 'float16', 'int8', 'uint8']}
+        return {
+            0: ['float32', 'float16', 'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32'],
+            1: ['float32', 'float16', 'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32']
+        }
 
     @classmethod
     def num_in_ports(cls):
@@ -5071,7 +5080,10 @@ class ArmSquaredDifferenceOp(OpNeedBroadcast, OpHasOneOutPort, LayoutUnawareOp, 
 class ArmSubOp(OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
-        return {0: ['float32', 'float16', 'int8', 'uint8'], 1: ['float32', 'float16', 'int8', 'uint8']}
+        return {
+            0: ['float32', 'float16', 'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32'],
+            1: ['float32', 'float16', 'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32']
+        }
 
     @classmethod
     def num_in_ports(cls):
@@ -5160,6 +5172,7 @@ class ArmTopKOp(OpHasAxis, OpHasMultipleOutPorts, ArmOp):
                 'axis': {'default': -1},
                 'sorted': {'type': AttrType.INT, 'options': [0, 1], 'default': 1},
                 'largest': {'type': AttrType.INT, 'options': [0, 1], 'default': 1},
+                'select_index': {'type': AttrType.STRING, 'options': ['first', 'last', 'random'], 'default': 'last'}
                 }
 
     def __init__(self, graph, attr_dict=None):
@@ -5185,6 +5198,8 @@ class ArmTopKOp(OpHasAxis, OpHasMultipleOutPorts, ArmOp):
             txt_file.write('k=%d\n' % self.k)
             txt_file.write('sorted=%s\n' % str(bool(self.sorted)).lower())
             txt_file.write('largest=%s\n' % str(bool(self.largest)).lower())
+            if self.select_index and self.select_index != 'last':
+                txt_file.write('select_index=%s\n' % str(self.select_index).lower())
         return ret
 
 

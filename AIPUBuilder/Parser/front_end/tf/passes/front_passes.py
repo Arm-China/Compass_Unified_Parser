@@ -772,7 +772,7 @@ def convert_topk(graph, op_type='TfTopKV2'):
         matched = True
         graph.remove_edges_from(in_edges[2:])
         topk_attr = topk_obj.copied_attr()
-        topk_attr.update({'opset_version': 11})
+        topk_attr.update({'opset_version': 11, 'select_index': 'first'})
         NodeWrap(graph, topk).replace_obj('TopK', topk_attr)
         if input_dtypes[1] != 'int64':
             k_src, _, k_in_attr = in_edges[1]

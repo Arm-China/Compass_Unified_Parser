@@ -2720,7 +2720,10 @@ class TopKOp(OpHasAxis, OpHasMultipleOutPorts, OnnxOp):
                 10: {'axis': {'default': -1}},
                 11: {'axis': {'default': -1},
                      'largest': {'type': AttrType.INT, 'options': [0, 1], 'default': 1},
-                     'sorted': {'type': AttrType.INT, 'options': [0, 1], 'default': 1}},
+                     'sorted': {'type': AttrType.INT, 'options': [0, 1], 'default': 1},
+                     'select_index': {'type': AttrType.STRING, 'options': ['first', 'last', 'random'],
+                                      'default': 'last'}
+                     },
                 }
 
     def __init__(self, graph, attr_dict=None):
