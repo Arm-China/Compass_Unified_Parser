@@ -1,5 +1,5 @@
-# Copyright © 2022 Arm Technology (China) Co. Ltd. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
+# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
 
 from AIPUBuilder.Parser.plugin_op import ParserOp
 from AIPUBuilder.Parser.plugin_loader import register_plugin, PluginType

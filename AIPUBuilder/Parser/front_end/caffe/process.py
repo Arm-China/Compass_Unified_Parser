@@ -1,18 +1,19 @@
-# Copyright © 2022 Arm Technology (China) Co. Ltd. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
+# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
 
 
 from .load import convert_caffe_to_graph
 from ...graph.graph_algo import infer, clear_redundant_nodes
 from ..onnx.passes.front_passes import fuse_weights_const
-from ..onnx.passes.common_passes import remove_useless_op, remove_redundant_reshape, apply_subgraph_plugin, record_output_tensors
+from ..onnx.passes.common_passes import remove_useless_op, remove_redundant_reshape, apply_subgraph_plugin, \
+    record_output_tensors, convert_to_const
 from .passes.front_passes import *
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
-def process_caffe(model_path, params):
+def process_caffe(graph, model_path, params):
     '''Do some preprocessing on the graph under the caffe framework.'''
-    graph = convert_caffe_to_graph(model_path, params)
+    graph = convert_caffe_to_graph(graph, model_path, params)
     record_output_tensors(graph)
     if graph is not None and len(graph) > 0:
         apply_subgraph_plugin(graph)
@@ -21,6 +22,7 @@ def process_caffe(model_path, params):
         fuse_weights_const(graph)
         clear_redundant_nodes(graph)
         infer(graph)
+        convert_to_const(graph, ['CaffeDUMMYDATA'])
 
         remove_redundant_reshape(graph, 'CaffeRESHAPE')
         remove_useless_reshape(graph)

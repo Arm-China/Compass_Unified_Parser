@@ -3,6 +3,8 @@
 # namespace: tflite
 
 import flatbuffers
+from flatbuffers.compat import import_numpy
+np = import_numpy()
 
 
 class LSHProjectionOptions(object):
@@ -14,6 +16,10 @@ class LSHProjectionOptions(object):
         x = LSHProjectionOptions()
         x.Init(buf, n + offset)
         return x
+
+    @classmethod
+    def LSHProjectionOptionsBufferHasIdentifier(cls, buf, offset, size_prefixed=False):
+        return flatbuffers.util.BufferHasIdentifier(buf, offset, b"\x54\x46\x4C\x33", size_prefixed=size_prefixed)
 
     # LSHProjectionOptions
     def Init(self, buf, pos):
@@ -28,8 +34,5 @@ class LSHProjectionOptions(object):
 
 
 def LSHProjectionOptionsStart(builder): builder.StartObject(1)
-def LSHProjectionOptionsAddType(
-    builder, type): builder.PrependInt8Slot(0, type, 0)
-
-
+def LSHProjectionOptionsAddType(builder, type): builder.PrependInt8Slot(0, type, 0)
 def LSHProjectionOptionsEnd(builder): return builder.EndObject()

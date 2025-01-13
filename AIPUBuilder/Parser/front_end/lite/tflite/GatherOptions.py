@@ -3,6 +3,8 @@
 # namespace: tflite
 
 import flatbuffers
+from flatbuffers.compat import import_numpy
+np = import_numpy()
 
 
 class GatherOptions(object):
@@ -14,6 +16,10 @@ class GatherOptions(object):
         x = GatherOptions()
         x.Init(buf, n + offset)
         return x
+
+    @classmethod
+    def GatherOptionsBufferHasIdentifier(cls, buf, offset, size_prefixed=False):
+        return flatbuffers.util.BufferHasIdentifier(buf, offset, b"\x54\x46\x4C\x33", size_prefixed=size_prefixed)
 
     # GatherOptions
     def Init(self, buf, pos):
@@ -36,8 +42,5 @@ class GatherOptions(object):
 
 def GatherOptionsStart(builder): builder.StartObject(2)
 def GatherOptionsAddAxis(builder, axis): builder.PrependInt32Slot(0, axis, 0)
-def GatherOptionsAddBatchDims(
-    builder, batchDims): builder.PrependInt32Slot(1, batchDims, 0)
-
-
+def GatherOptionsAddBatchDims(builder, batchDims): builder.PrependInt32Slot(1, batchDims, 0)
 def GatherOptionsEnd(builder): return builder.EndObject()

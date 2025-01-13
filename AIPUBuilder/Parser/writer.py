@@ -1,12 +1,12 @@
-# Copyright © 2022 Arm Technology (China) Co. Ltd. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
+# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
 
 
 import os
 from collections import OrderedDict
 from .graph.graph_algo import determined_sort
 from .graph.node_wrap import NodeWrap
-from .ops.op import ArmOp, OpHasWeights, OpHasBiases, BaseActivationOp, BaseQuantizeDequantizeOp
+from .ops.op import ArmOp, OpHasWeights, OpHasBiases, BaseActivationOp, BaseQuantizeDequantizeOp, BaseRnnOp, OpHasAnchors
 from .ops.release_ops import ArmActivationOp
 from .ops.common_ops import PluginOp
 from .common.utils import is_dir, list_list_to_string, string_list_to_string
@@ -28,8 +28,10 @@ def write_net_attrs(txt_file, attr):
 
 
 def serialize(graph, params):
-    '''Serialize graph and write to IR txt and IR bin.'''
+    '''Serialize graph and write to IR txt and IR bin.
+    Return True/False for serializing status and also txt path and bin path.'''
     ret = True
+    txt_path, bin_path = '', ''
     model_name = params['model_name'] \
         if params.get('model_name') \
         else os.path.splitext(os.path.basename(params['tflite_file']))[0]
@@ -41,20 +43,7 @@ def serialize(graph, params):
         bin_path = os.path.join(output_dir, model_name + '.bin')
 
         arm_op_types = ArmOp.get_concrete_subclass_names()
-        sorted_list = determined_sort(graph, graph._attr['output_names'])
-        main_input = None
-        for i, n in enumerate(sorted_list):
-            node_obj = NodeWrap(graph, n)['object']
-            if node_obj is None:
-                ERROR(
-                    '[Parser]: Node (%s) has invalid op that cannot be written to IR in serialize!' % n)
-                continue
-            if node_obj.type == 'ArmInput' and len(node_obj.get_output_shapes()[0]) > 2 and i != 0:
-                main_input = n
-                break
-        if main_input:
-            sorted_list.remove(main_input)
-            sorted_list.insert(0, main_input)
+        sorted_list = determined_sort(graph, graph._attr['output_names'], sort_input=True)
 
         net_attr = OrderedDict()
         net_attr['model_name'] = model_name
@@ -65,10 +54,9 @@ def serialize(graph, params):
         net_attr['model_bin'] = './' + os.path.basename(bin_path)
 
         input_names = params['input_names']
-        if any([i not in graph.nodes or graph.nodes[i].op != 'ArmInput' for i in input_names]) or len(input_names) == 0:
+        if any([i not in graph.nodes or graph.nodes[i]['op'] != 'ArmInput' for i in input_names]) or len(input_names) == 0:
             WARN('[Parser]: the input node(s) has changed or not set, please check the IR to confirm the input tensors order.')
-            input_names = [
-                graph.nodes[n].key for n in graph.nodes if graph.nodes[n].op == 'ArmInput']
+            input_names = [n for n in graph.nodes if graph.nodes[n]['op'] == 'ArmInput']
         input_objs = [NodeWrap(graph, name)['object'] for name in input_names]
         input_tops = [obj.get_outputs_info() for obj in input_objs]
         input_tops_names = [t[0][0] for t in input_tops]
@@ -127,6 +115,9 @@ def serialize(graph, params):
                         writing_node = n
                         op_obj = NodeWrap(graph, n)['object']
                         if op_obj is not None:
+                            op_obj.write_top_range(bin_file)
+                            op_obj.write_top_scale_zp(bin_file)
+
                             if isinstance(op_obj, OpHasWeights):
                                 if not op_obj.write_weights(bin_file):
                                     ret = False
@@ -135,11 +126,19 @@ def serialize(graph, params):
                                 if not op_obj.write_biases(bin_file):
                                     ret = False
                                     break
+                            if isinstance(op_obj, OpHasAnchors):
+                                if not op_obj.write_anchors(bin_file):
+                                    ret = False
+                                    break
                             if isinstance(op_obj, (BaseActivationOp, ArmActivationOp)):
                                 if not op_obj.write_negative_slope(bin_file):
                                     ret = False
                                     break
                             if isinstance(op_obj, BaseQuantizeDequantizeOp):
+                                if not op_obj.write_scale_zp(bin_file):
+                                    ret = False
+                                    break
+                            if isinstance(op_obj, BaseRnnOp):
                                 if not op_obj.write_scale_zp(bin_file):
                                     ret = False
                                     break
@@ -162,4 +161,46 @@ def serialize(graph, params):
     else:
         ERROR('[Parser]: Meets invalid output dir in serialize!')
         ret = False
+    return ret, txt_path, bin_path
+
+
+def show_in_out_map(graph, params):
+    '''Show the mapping of inputs from cfg and input tensors from IR, and also
+    the mappings of outputs from cfg and output tensors from IR.
+    '''
+    ret = True
+    input_tensor_map = params.get('input_tensor_map', {})
+    for input_name_from_cfg, input_node_name in input_tensor_map.items():
+        if input_node_name is None:
+            input_node_name = input_name_from_cfg
+        if input_node_name not in graph.nodes:
+            INFO('[Parser]: Input %s from cfg is removed!' % input_name_from_cfg)
+            continue
+        output_info = NodeWrap(graph, input_node_name)['object'].get_outputs_info()
+        if len(output_info) > 0 and len(output_info[0]) > 0:
+            input_tensor_name = output_info[0][0]
+            INFO('[Parser]: Input %s from cfg is shown as tensor %s in IR!' %
+                 (input_name_from_cfg, input_tensor_name))
+        else:
+            ERROR('[Parser]: Meets invalid input node (%s) in serialize!' % input_node_name)
+            ret = False
+
+    output_tensor_map = params.get('output_tensor_map', {})
+    for output_name_from_cfg, out_node_names in output_tensor_map.items():
+        output_name_from_ir = []
+        for out_node_name in out_node_names:
+            if out_node_name not in graph.nodes:
+                continue
+            input_info = NodeWrap(graph, out_node_name)['object'].get_inputs_info()
+            if len(input_info) > 0 and len(input_info[0]) > 0:
+                output_name_from_ir.append(input_info[0][0])
+            else:
+                ERROR('[Parser]: Meets invalid Out node (%s) in serialize!' % out_node_name)
+                ret = False
+        if len(output_name_from_ir) > 0:
+            output_name_str = ', '.join(output_name_from_ir)
+            INFO('[Parser]: Output %s from cfg is shown as tensor %s in IR!' %
+                 (output_name_from_cfg, output_name_str))
+        else:
+            INFO('[Parser]: Output %s from cfg is removed/replaced by other tensors!' % output_name_from_cfg)
     return ret

@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
+
+
 import numpy as np
 
 import tensorflow.compat.v1 as tf
@@ -29,11 +33,10 @@ input_shapes = [[10, 20], [3, 5, 10]]
 feed_dict = dict()
 
 for input_shape in input_shapes:
+    # Generate input data
+    feed_dict.clear()
+    feed_dict['X:0'] = (np.random.ranf(input_shape) * 100).astype(np.int64)
     for seed in (5, 0):
-        # Generate input data
-        feed_dict.clear()
-        feed_dict['X:0'] = (np.random.ranf(input_shape) * 100).astype(np.int64)
-
         model_name = '-'.join([TEST_NAME, str(len(input_shape)), str(seed)])
         model_path = model_name + '.pb'
         # Create model

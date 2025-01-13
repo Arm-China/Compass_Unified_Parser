@@ -3,6 +3,8 @@
 # namespace: tflite
 
 import flatbuffers
+from flatbuffers.compat import import_numpy
+np = import_numpy()
 
 
 class CastOptions(object):
@@ -14,6 +16,10 @@ class CastOptions(object):
         x = CastOptions()
         x.Init(buf, n + offset)
         return x
+
+    @classmethod
+    def CastOptionsBufferHasIdentifier(cls, buf, offset, size_prefixed=False):
+        return flatbuffers.util.BufferHasIdentifier(buf, offset, b"\x54\x46\x4C\x33", size_prefixed=size_prefixed)
 
     # CastOptions
     def Init(self, buf, pos):
@@ -35,12 +41,6 @@ class CastOptions(object):
 
 
 def CastOptionsStart(builder): builder.StartObject(2)
-
-
-def CastOptionsAddInDataType(
-    builder, inDataType): builder.PrependInt8Slot(0, inDataType, 0)
-def CastOptionsAddOutDataType(
-    builder, outDataType): builder.PrependInt8Slot(1, outDataType, 0)
-
-
+def CastOptionsAddInDataType(builder, inDataType): builder.PrependInt8Slot(0, inDataType, 0)
+def CastOptionsAddOutDataType(builder, outDataType): builder.PrependInt8Slot(1, outDataType, 0)
 def CastOptionsEnd(builder): return builder.EndObject()

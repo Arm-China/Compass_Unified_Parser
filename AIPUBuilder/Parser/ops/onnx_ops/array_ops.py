@@ -1,12 +1,12 @@
-# Copyright © 2022 Arm Technology (China) Co. Ltd. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
+# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
 
 
 import torch
 import tensorflow as tf
 import sys
 from ..op import *
-from ...front_end.onnx.buffer import onnx_tensor_np_mapping
+from ...front_end.onnx.buffer import ONNX_NP_TENSOR_MAP
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 from ...common.defs import TYPE_MIN, TYPE_MAX, INT_MIN
 
@@ -28,6 +28,8 @@ class BitShiftOp(OpNeedBroadcast, OpHasOneOutPort, OnnxOp):
         if inputs[0].dtype == 'uint64':
             WARN(
                 '[Parser]: input dtype will be converted to uint32 with possible loss of precision!')
+        # Extend onnx BitShift to support both unsigned and signed inputs.
+        # opset 11 only supports BitShift with unsigned inputs, but numpy and torch supports unsigned and signed inputs.
         if self.direction == 'LEFT':
             out_tensor = np.left_shift(inputs[0], inputs[1])
         else:
@@ -35,13 +37,14 @@ class BitShiftOp(OpNeedBroadcast, OpHasOneOutPort, OnnxOp):
         self.set_out_tensor(out_tensor)
 
 
-class CastOp(OpHasOneOutPort, OnnxOp):
+class CastOp(OpHasOneOutPort, LayoutUnawareOp, SameShapeOp, OnnxOp):
     @classmethod
     def attributes(cls):
         return {1: {'to': {'type': AttrType.STRING, 'required': True}},
                 6: {'to': {'type': AttrType.INT, 'required': True}},
                 9: {'to': {'type': AttrType.INT, 'required': True}},
                 13: {'to': {'type': AttrType.INT, 'required': True}},
+                19: {'to': {'type': AttrType.INT, 'required': True}, 'saturate': {'type': AttrType.BOOL, 'default': True}}
                 }
 
     def __init__(self, graph, attr_dict=None):
@@ -57,8 +60,16 @@ class CastOp(OpHasOneOutPort, OnnxOp):
                 if cur_ver == 1:
                     ret = self._attr[item].value
                 else:
-                    ret = np.dtype(
-                        onnx_tensor_np_mapping[self._attr[item].value][1]).name
+                    ret = np.dtype(ONNX_NP_TENSOR_MAP[self._attr[item].value][1]).name
+            elif item == 'saturate':
+                if cur_ver < 19:
+                    ret = False
+                    if item in self.__dict__['_attr']:
+                        self.__dict__['_attr'][item].value = ret
+                    else:
+                        self.__dict__['_attr'][item] = Attribute(item, {'type': AttrType.BOOL, 'value': ret})
+                else:
+                    ret = bool(self._attr[item].value)
         except:
             ret = None
         if ret is None:
@@ -69,6 +80,70 @@ class CastOp(OpHasOneOutPort, OnnxOp):
         super(CastOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor = inputs[0].astype(np.dtype(self.to))
+        self.set_out_tensor(out_tensor)
+
+
+class CenterCropPadOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
+    @classmethod
+    def attributes(cls):
+        return {18: {'axes': {'required': False}}}
+
+    def __init__(self, graph, attr_dict=None):
+        super(CenterCropPadOp, self).__init__(graph, attr_dict)
+        self.update_attributes(CenterCropPadOp, attr_dict)
+        assert self.check_required(), 'CenterCropPadOp is missing a required parameter.'
+
+    def __getattr__(self, item):
+        ret = None
+        try:
+            if item == 'axes':
+                ret = self.__dict__['_attr'][item].value
+                if ret is None:
+                    inputs = self.get_input_tensors()
+                    ret = list(range(len(inputs[0].shape)))
+                    self.__dict__['_attr'][item].value = ret
+        except:
+            ret = None
+        if ret is None:
+            ret = super(CenterCropPadOp, self).__getattr__(item)
+        return ret
+
+    @staticmethod
+    def get_shape_and_crop_pad_slices(input_shape, new_shape_at_axes, axes):
+        '''Return new shape, slice object of crop and pad calculated basing on input_shape,
+        new_shape_at_axes and axes.
+        '''
+        new_shape = copy.deepcopy(input_shape)
+        pad_slices = [slice(0, None)] * len(input_shape)
+        crop_slices = copy.deepcopy(pad_slices)
+        for axis, shape in zip(axes, new_shape_at_axes):
+            if input_shape[axis] == shape:
+                continue
+            elif input_shape[axis] > shape:  # need slice
+                new_shape[axis] = shape
+                begin = (input_shape[axis] - shape) // 2
+                end = begin + shape
+                crop_slices[axis] = slice(begin, end)
+            else:  # input_shape[axis] < shape, need pad
+                new_shape[axis] = shape
+                begin = (shape - input_shape[axis]) // 2
+                end = begin + input_shape[axis]
+                pad_slices[axis] = slice(begin, end)
+        return (new_shape, crop_slices, pad_slices)
+
+    def infer_shape(self):
+        super(CenterCropPadOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        assert len(inputs) == 2, 'CenterCropPadOp expects 2 inputs, but got %d' % len(inputs)
+        input_data = inputs[0]
+        new_shape_at_axes = inputs[1].tolist()
+        original_input_shape = list(input_data.shape)
+        self.axes = OpHasAxis.make_axes_non_negative(self.axes, len(original_input_shape))
+        new_shape, crop_slices, pad_slices = self.get_shape_and_crop_pad_slices(
+            original_input_shape, new_shape_at_axes, self.axes)
+        cropped = input_data[tuple(crop_slices)]
+        out_tensor = np.zeros(new_shape, dtype=inputs[0].dtype)
+        out_tensor[tuple(pad_slices)] = cropped
         self.set_out_tensor(out_tensor)
 
 
@@ -145,8 +220,7 @@ class ConstantOp(OpHasOneOutPort, ConstLikeOp, OnnxOp):
 
     def infer_shape(self):
         super(ConstantOp, self).infer_shape()
-        out_tensor = self.value.copy()
-        self.set_out_tensor(out_tensor)
+        self.set_out_tensor(self.value)
 
     def __getattr__(self, item):
         ret = None
@@ -156,11 +230,14 @@ class ConstantOp(OpHasOneOutPort, ConstLikeOp, OnnxOp):
                 if cur_ver in (1, 9):
                     return self._attr['value'].value
                 elif cur_ver in (11, 12, 13):
-                    values = np.asarray([self._attr[k].value for k, _ in type(
-                        self).attributes()[cur_ver].items() if self._attr[k].value is not None])
+                    keys = [k for k in type(
+                        self).attributes()[cur_ver].keys() if self._attr[k].value is not None]
                     assert len(
-                        values) == 1, 'The length of value is invalid in ConstantOp.'
-                    return values[0]
+                        keys) == 1, 'Meets invalid value in ConstantOp (%s)!' % self.name
+                    value = np.asarray(self._attr[keys[0]].value)
+                    if keys[0] in ('value_float', 'value_floats'):
+                        value = value.astype(np.float32)
+                    return value
                 else:
                     ERROR('[Parser]: Unsupported op version [%s] for %s!' %
                           (cur_ver, type(self).__name__))
@@ -377,8 +454,20 @@ class GatherOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
         super(GatherOp, self).infer_shape()
         inputs = self.get_input_tensors()
         indices = inputs[1]
-        out_tensor = np.take(inputs[0], np.array(
-            indices, np.int32), axis=self.axis)
+        try:
+            out_tensor = np.take(inputs[0], np.array(
+                indices, np.int32), axis=self.axis)
+        except:
+            in_consts = self.sorted_in_consts()
+            if len(in_consts) == 2 \
+                    or (len(in_consts) == 1 and in_consts[0][1] == 1):
+                # if exception met when const indices, that's error
+                ERROR('[Parser]: Meets invalid indices input of Gather Op (%s) in infer_shape!' % self.name)
+                out_tensor = None
+            else:
+                WARN('[Parser]: Random indices of Gather Op (%s) are replaced by zeros indices in infer_shape!' % self.name)
+                indices = np.zeros_like(indices, dtype=np.int32)
+                out_tensor = np.take(inputs[0], indices, axis=self.axis)
         self.set_out_tensor(out_tensor)
 
 
@@ -467,8 +556,8 @@ class GatherNDOp(OpHasOneOutPort, OnnxOp):
                 try:
                     out_data.append(reshaped_data[(batch_dim,) + gather_index])
                 except:
-                    out_data.append(np.zeros_like(
-                        reshaped_data[batch_dim, 0], inputs[0].dtype))
+                    gather_index = tuple(np.zeros_like(reshaped_indices[batch_dim][outer_dim]))
+                    out_data.append(reshaped_data[(batch_dim,) + gather_index])
         out_tensor = np.asarray(
             out_data, dtype=inputs[0].dtype).reshape(output_shape)
         self.set_out_tensor(out_tensor)
@@ -542,7 +631,9 @@ class PadOp(OpHasOneOutPort, OnnxOp):
                     'value': {'type': AttrType.FLOAT, 'default': 0.0}
                     },
                 11: {'mode': {'type': AttrType.STRING, 'default': 'constant', 'options': ['constant', 'reflect', 'edge', 'symmetric']}},
-                13: {'mode': {'type': AttrType.STRING, 'default': 'constant', 'options': ['constant', 'reflect', 'edge', 'symmetric']}}
+                13: {'mode': {'type': AttrType.STRING, 'default': 'constant', 'options': ['constant', 'reflect', 'edge', 'symmetric']}},
+                18: {'mode': {'type': AttrType.STRING, 'default': 'constant', 'options': ['constant', 'reflect', 'edge', 'symmetric']}},
+                19: {'mode': {'type': AttrType.STRING, 'default': 'constant', 'options': ['constant', 'reflect', 'edge', 'symmetric', 'wrap']}},
                 }
 
     def __init__(self, graph, attr_dict=None):
@@ -560,6 +651,14 @@ class PadOp(OpHasOneOutPort, OnnxOp):
                 elif cur_ver >= 11:
                     inputs = self.get_input_tensors()
                     ret = inputs[1].flatten().tolist()
+                    if cur_ver >= 18 and len(inputs) > 3 and inputs[3] is not None and len(inputs[3]) > 0:
+                        axes = inputs[3].tolist()
+                        input_length = len(inputs[0].shape)
+                        new_pads = np.zeros([input_length * 2], np.int64)
+                        positive_axes = [(axis + input_length) if axis < 0 else axis for axis in axes]
+                        complete_idx = positive_axes + [(axis + input_length) for axis in positive_axes]
+                        np.put(new_pads, complete_idx, np.array(ret[:(len(axes) * 2)]))
+                        ret = new_pads.tolist()
             elif item == 'value':
                 if cur_ver <= 2:
                     ret = self.__dict__['_attr'][item].value
@@ -585,15 +684,24 @@ class PadOp(OpHasOneOutPort, OnnxOp):
             pads = self.pads
             const_value = self.value
         else:
-            pads = inputs[1].flatten().tolist()
+            pads = self.pads
             const_value = 0 if len(inputs) <= 2 or (
                 len(inputs) > 2 and inputs[2] is None) else np.asscalar(inputs[2].flatten())
-        if self.mode in ('reflect', 'symmetric'):
+        negative_pads = [pad if pad < 0 else None for pad in pads]
+        if all(pad is None for pad in negative_pads):
+            sliced_input = inputs[0]
+        else:
+            input_length = len(inputs[0].shape)
+            slice_obj = [slice(-begin if begin is not None else None, end, 1)
+                         for begin, end in zip(negative_pads[:input_length], negative_pads[input_length:])]
+            sliced_input = inputs[0][tuple(slice_obj)]
+            pads = [pad if pad >= 0 else 0 for pad in pads]
+        if self.mode in ('reflect', 'edge', 'symmetric', 'wrap'):
             pads = np.reshape(np.array(pads, np.int32), (2, -1))
             pads = np.transpose(pads)
-            out_tensor = np.pad(inputs[0], pads, mode=self.mode)
+            out_tensor = np.pad(sliced_input, pads, mode=self.mode)
         else:
-            torch_input = torch.from_numpy(inputs[0])
+            torch_input = torch.from_numpy(sliced_input)
             out_tensor = torch.nn.functional.pad(torch_input,
                                                  OpHasPaddingStrides.onnx_to_torch(
                                                      pads),
@@ -631,7 +739,7 @@ class RangeOp(OpHasOneOutPort, ConstLikeOp, OnnxOp):
         if any(val is None for val in [self.start, self.limit, self.delta]):
             out_tensor = None
         else:
-            out_tensor = np.arange(self.start, self.limit, self.delta)
+            out_tensor = np.arange(self.start, self.limit, self.delta).astype(self.start.dtype)
         self.set_out_tensor(out_tensor)
 
     def __getattr__(self, item):
@@ -770,11 +878,30 @@ class ReverseSequenceOp(OpHasOneOutPort, OnnxOp):
 
 
 class ScatterNDOp(OpHasOneOutPort, OnnxOp):
+    @staticmethod
+    def scatternd(data, indices, updates, reduction='none', inplace=False):
+        out_data = data if inplace else copy.deepcopy(data)
+        indices_len = indices.shape[-1]
+        reshaped_indices = np.reshape(indices, [-1, indices_len])
+        reshaped_updates = np.reshape(updates, [-1] + list(data.shape[indices_len:]))
+        if reduction == 'add':
+            np.add.at(out_data, tuple(reshaped_indices.transpose()), reshaped_updates)
+        elif reduction == 'mul':
+            np.multiply.at(out_data, tuple(reshaped_indices.transpose()), reshaped_updates)
+        elif reduction == 'min':
+            np.minimum.at(out_data, tuple(reshaped_indices.transpose()), reshaped_updates)
+        elif reduction == 'max':
+            np.maximum.at(out_data, tuple(reshaped_indices.transpose()), reshaped_updates)
+        elif reduction == 'none':
+            out_data[tuple(reshaped_indices.transpose())] = reshaped_updates
+        return out_data
+
     @classmethod
     def attributes(cls):
         return {11: {},
                 13: {},
-                16: {'reduction': {'type': AttrType.STRING, 'options': ['none', 'mul', 'add'], 'default': 'none'}}
+                16: {'reduction': {'type': AttrType.STRING, 'options': ['none', 'mul', 'add'], 'default': 'none'}},
+                18: {'reduction': {'type': AttrType.STRING, 'options': ['none', 'mul', 'add', 'max', 'min'], 'default': 'none'}},
                 }
 
     def __init__(self, graph, attr_dict=None):
@@ -803,7 +930,7 @@ class ScatterNDOp(OpHasOneOutPort, OnnxOp):
         if item == 'reduction':
             try:
                 assert value in [
-                    'none', 'mul', 'add'], 'ScatterNDOp __setattr__ has an invalid value.'
+                    'none', 'mul', 'add', 'max', 'min'], 'ScatterNDOp __setattr__ has an invalid value.'
                 cur_ver = self.__dict__['_attr']['cur_version'].value
                 if cur_ver < 16:
                     assert value == 'none', 'ScatterNDOp __setattr__ has an invalid value.'
@@ -821,16 +948,9 @@ class ScatterNDOp(OpHasOneOutPort, OnnxOp):
         super(ScatterNDOp, self).infer_shape()
         inputs = self.get_input_tensors()
         data, indices, updates = inputs
-        out_tensor = np.copy(data)
-        update_indices = indices.shape[:-1]
-        for idx in np.ndindex(update_indices):
-            index = tuple(indices[idx])
-            if self.reduction == 'mul':
-                out_tensor[index] *= updates[idx]
-            elif self.reduction == 'add':
-                out_tensor[index] += updates[idx]
-            else:
-                out_tensor[index] = updates[idx]
+        const_inputs = self.sorted_in_consts()
+        inplace = True if all(in_port != 0 for _, in_port, _ in const_inputs) else False
+        out_tensor = ScatterNDOp.scatternd(data, indices, updates, reduction=self.reduction, inplace=inplace)
         self.set_out_tensor(out_tensor)
 
 
@@ -864,8 +984,12 @@ class ScatterElementsOp(OpHasOneOutPort, OpHasAxis, OnnxOp):
     def attributes(cls):
         return {11: {'axis': {'type': AttrType.INT, 'default': 0}},
                 13: {'axis': {'type': AttrType.INT, 'default': 0}},
+                # TODO: in order to support torch index_reduce, expand 'reduction' ['none', 'mul', 'add'] to ['none', 'mul', 'add', 'max', 'min'].
+                # will remove after torch suppport converting onnx model to onnx opset 18.
                 16: {'axis': {'type': AttrType.INT, 'default': 0},
-                     'reduction': {'type': AttrType.STRING, 'options': ['none', 'mul', 'add'], 'default': 'none'}}
+                     'reduction': {'type': AttrType.STRING, 'options': ['none', 'mul', 'add', 'max', 'min'], 'default': 'none'}},
+                18: {'axis': {'type': AttrType.INT, 'default': 0},
+                     'reduction': {'type': AttrType.STRING, 'options': ['none', 'mul', 'add', 'max', 'min'], 'default': 'none'}},
                 }
 
     def __init__(self, graph, attr_dict=None):
@@ -894,17 +1018,20 @@ class ScatterElementsOp(OpHasOneOutPort, OpHasAxis, OnnxOp):
         super(ScatterElementsOp, self).infer_shape()
         inputs = self.get_input_tensors()
         data, indices, updates = inputs
-        data_torch = torch.from_numpy(data)
+        # data_torch = torch.from_numpy(data)  # data_torch and data share the same memory
+        data_torch = torch.from_numpy(np.array(data))
         indices = GatherElementsOp.make_indices_non_negative(
             indices, inputs[0].shape[self.axis])
         index_torch = torch.from_numpy(np.array(indices).astype(np.int64))
-        update_torch = torch.from_numpy(updates)
+        update_torch = torch.from_numpy(np.array(updates).astype(data.dtype))
         if self.reduction == 'none':
             out_tensor = torch.Tensor.scatter_(
-                data_torch, src=update_torch, dim=self.axis, index=index_torch).numpy()
+                data_torch, src=update_torch, dim=self.axis, index=index_torch).numpy()  # in place operation
         else:
-            out_tensor = torch.Tensor.scatter_(
-                data_torch, src=update_torch, dim=self.axis, index=index_torch, reduce=self.reduction).numpy()
+            onnx_reduction_map = {'mul': 'prod', 'add': 'sum', 'max': 'amax', 'min': 'amin'}
+            assert self.reduction in onnx_reduction_map, 'Meets invalid reduction %s in infer_shape of ScatterElementsOp!' % self.reduction
+            out_tensor = torch.Tensor.scatter_reduce(
+                data_torch, src=update_torch, dim=self.axis, index=index_torch, reduce=onnx_reduction_map[self.reduction]).numpy()
         self.set_out_tensor(out_tensor)
 
 
@@ -924,9 +1051,9 @@ class ShapeOp(OpHasOneOutPort, ConstLikeOp, OnnxOp):
 
     def infer_shape(self):
         super(ShapeOp, self).infer_shape()
-        inputs = self.get_input_tensors()
-        if inputs and inputs[0] is not None:
-            shape = inputs[0].shape
+        input_shapes = self.get_input_shapes()
+        if input_shapes and input_shapes[0] is not None:
+            shape = input_shapes[0]
             if self.cur_version >= 15:
                 rank = len(shape)
                 true_end = rank
@@ -946,7 +1073,7 @@ class ShapeOp(OpHasOneOutPort, ConstLikeOp, OnnxOp):
                 if need_slicing:
                     shape = shape[true_start: true_end] if (
                         true_end - true_start) >= 0 else []
-            out_tensor = np.array(shape, np.int32)
+            out_tensor = np.array(shape, np.int64)
         else:
             out_tensor = None
         self.set_out_tensor(out_tensor)
@@ -1036,7 +1163,7 @@ class SliceOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
                     else:
                         inputs = self.get_input_tensors()
                         ret = np.array(inputs[3]).tolist() if len(
-                            inputs) > 3 else list(range(len(inputs[0].shape)))
+                            inputs) > 3 else list(range(len(self.get_input_shapes()[0])))
                 elif item in ('starts', 'ends'):
                     if cur_ver == 1:
                         ret = self.__dict__['_attr'][item].value
@@ -1048,11 +1175,12 @@ class SliceOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
                             ret = np.array(inputs[2]).tolist()
                 elif item == 'steps':
                     inputs = self.get_input_tensors()
+                    input_shapes = self.get_input_shapes()
                     if cur_ver == 1:
-                        ret = [1] * len(inputs[0].shape)
+                        ret = [1] * len(input_shapes[0])
                     else:
                         ret = np.array(inputs[4]).tolist() if len(
-                            inputs) > 4 else [1] * len(inputs[0].shape)
+                            inputs) > 4 else [1] * len(input_shapes[0])
             except:
                 ret = None
         return ret
@@ -1149,11 +1277,15 @@ class SliceOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
             self.cur_version = max_ver
 
         in_edges = self._graph.sorted_in_edges(self.name, keys=True, data=True)
+        # return if any one of starts/ends/axes/steps is not const
+        if any(in_attr.get('tensor', None) is not None and not in_attr['tensor'].is_const for _, _, _, in_attr in in_edges[1:]):
+            return
+
         if len(in_edges) >= 2:
             src, _, k, in_attr = in_edges[1]
             if in_attr.get('tensor', None) is None \
-                    or in_attr['tensor'].value is None \
-                    or np.array(in_attr['tensor'].value).tolist() != self.starts:
+                    or (in_attr['tensor'].is_const
+                        and (in_attr['tensor'].value is None or np.array(in_attr['tensor'].value).tolist() != self.starts)):
                 self._graph.remove_edge(src, self.name, key=k)
                 insert_constant(self._graph, self.name + '_starts',
                                 np.array(self.starts, np.int32), self.name, in_port=1)
@@ -1161,8 +1293,8 @@ class SliceOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
         if len(in_edges) >= 3:
             src, _, k, in_attr = in_edges[2]
             if in_attr.get('tensor', None) is None \
-                    or in_attr['tensor'].value is None \
-                    or np.array(in_attr['tensor'].value).tolist() != self.ends:
+                    or (in_attr['tensor'].is_const
+                        and (in_attr['tensor'].value is None or np.array(in_attr['tensor'].value).tolist() != self.ends)):
                 self._graph.remove_edge(src, self.name, key=k)
                 insert_constant(self._graph, self.name + '_ends',
                                 np.array(self.ends, np.int32), self.name, in_port=2)
@@ -1173,8 +1305,8 @@ class SliceOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
         else:
             src, _, k, in_attr = in_edges[3]
             if in_attr.get('tensor', None) is None \
-                    or in_attr['tensor'].value is None \
-                    or np.array(in_attr['tensor'].value).tolist() != self.axes:
+                    or (in_attr['tensor'].is_const
+                        and (in_attr['tensor'].value is None or np.array(in_attr['tensor'].value).tolist() != self.axes)):
                 self._graph.remove_edge(src, self.name, key=k)
                 insert_constant(self._graph, self.name + '_axes',
                                 np.array(self.axes, np.int32), self.name, in_port=3)
@@ -1185,8 +1317,8 @@ class SliceOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
         else:
             src, _, k, in_attr = in_edges[4]
             if in_attr.get('tensor', None) is None \
-                    or in_attr['tensor'].value is None \
-                    or np.array(in_attr['tensor'].value).tolist() != self.steps:
+                    or (in_attr['tensor'].is_const
+                        and (in_attr['tensor'].value is None or np.array(in_attr['tensor'].value).tolist() != self.steps)):
                 self._graph.remove_edge(src, self.name, key=k)
                 insert_constant(self._graph, self.name + '_steps',
                                 np.array(self.steps, np.int32), self.name, in_port=4)
@@ -1240,6 +1372,9 @@ class SplitOp(OpHasAxis, OpHasMultipleOutPorts, OnnxOp):
                      'split': {'type': AttrType.INTS, 'required': False}
                      },
                 13: {'axis': {'type': AttrType.INT, 'default': 0},
+                     },
+                18: {'axis': {'type': AttrType.INT, 'default': 0},
+                     'num_outputs': {'type': AttrType.INT, 'default': None},
                      }}
 
     def __init__(self, graph, attr_dict=None):
@@ -1260,8 +1395,16 @@ class SplitOp(OpHasAxis, OpHasMultipleOutPorts, OnnxOp):
                     if len(inputs) == 2:
                         ret = np.array(inputs[1]).tolist()
                     else:
-                        ret = [inputs[0].shape[self.axis] //
-                               len(self.get_out_ports())] * len(self.get_out_ports())
+                        split_size = inputs[0].shape[self.axis]
+                        if self.cur_version >= 18:
+                            size = int(np.ceil(split_size / self.num_outputs))
+                            remainder = split_size % size
+                            ret = [size] * self.num_outputs
+                            if remainder != 0:
+                                ret[-1] = remainder
+                        else:
+                            ret = [split_size //
+                                   len(self.get_out_ports())] * len(self.get_out_ports())
                     if self.cur_version < 13:
                         self.__dict__['_attr'][item].value = ret
                     else:
@@ -1280,6 +1423,9 @@ class SplitOp(OpHasAxis, OpHasMultipleOutPorts, OnnxOp):
         if cur_ver == 1:
             assert len(inputs) in (
                 1, 2), 'The length of input is invalid in SplitOp.'
+        elif cur_ver >= 18:
+            assert (len(inputs) == 2 and self.num_outputs is None) or (len(inputs) == 1 and self.num_outputs is not None), \
+                'Either the second input split or attribute num_outputs should be specified in SplitOp.'
         else:
             assert len(
                 inputs) >= 1, 'The length of input is invalid in SplitOp.'
@@ -1392,6 +1538,43 @@ class TransposeOp(OpHasOneOutPort, OnnxOp):
         inputs = self.get_input_tensors()
         out_tensor = np.transpose(
             inputs[0], axes=self.perm if self.perm else None)
+        self.set_out_tensor(out_tensor)
+
+
+class TriluOp(OpHasOneOutPort, OnnxOp):
+    @classmethod
+    def attributes(cls):
+        return {14: {'upper': {'type': AttrType.BOOL, 'default': True, 'required': False}},
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(TriluOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TriluOp, attr_dict)
+        assert self.check_required(), 'TriluOp is missing a required parameter.'
+
+    def __getattr__(self, item):
+        ret = None
+        try:
+            if item == 'k':
+                try:
+                    inputs = self.get_input_tensors()
+                    ret = int(inputs[1])
+                except:
+                    ret = 0
+                self.__dict__['_attr'][item] = Attribute(item, {'type': AttrType.INT, 'value': ret})
+        except:
+            ret = None
+        if ret is None:
+            ret = super(TriluOp, self).__getattr__(item)
+        return ret
+
+    def infer_shape(self):
+        super(TriluOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        if self.upper:
+            out_tensor = torch.triu(torch.from_numpy(inputs[0]), diagonal=self.k).numpy()
+        else:
+            out_tensor = torch.tril(torch.from_numpy(inputs[0]), diagonal=self.k).numpy()
         self.set_out_tensor(out_tensor)
 
 

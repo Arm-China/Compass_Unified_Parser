@@ -3,6 +3,8 @@
 # namespace: tflite
 
 import flatbuffers
+from flatbuffers.compat import import_numpy
+np = import_numpy()
 
 
 class SplitVOptions(object):
@@ -14,6 +16,10 @@ class SplitVOptions(object):
         x = SplitVOptions()
         x.Init(buf, n + offset)
         return x
+
+    @classmethod
+    def SplitVOptionsBufferHasIdentifier(cls, buf, offset, size_prefixed=False):
+        return flatbuffers.util.BufferHasIdentifier(buf, offset, b"\x54\x46\x4C\x33", size_prefixed=size_prefixed)
 
     # SplitVOptions
     def Init(self, buf, pos):
@@ -28,8 +34,5 @@ class SplitVOptions(object):
 
 
 def SplitVOptionsStart(builder): builder.StartObject(1)
-def SplitVOptionsAddNumSplits(
-    builder, numSplits): builder.PrependInt32Slot(0, numSplits, 0)
-
-
+def SplitVOptionsAddNumSplits(builder, numSplits): builder.PrependInt32Slot(0, numSplits, 0)
 def SplitVOptionsEnd(builder): return builder.EndObject()

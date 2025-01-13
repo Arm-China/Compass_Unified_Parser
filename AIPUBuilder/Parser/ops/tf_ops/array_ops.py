@@ -1,5 +1,5 @@
-# Copyright © 2022 Arm Technology (China) Co. Ltd. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
+# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
 
 
 import tensorflow as tf
@@ -45,7 +45,7 @@ class TfCastOp(OpHasOneOutPort, TfOp):
 
     @property
     def correspond_onnx_op(self):
-        return {'type': 'Cast', 'version': 1}
+        return {'type': 'Cast', 'version': 19}
 
 
 class TfConcatV2Op(OpHasAxis, OpHasOneOutPort, TfHasN):
@@ -107,8 +107,7 @@ class TfConstOp(OpHasOneOutPort, ConstLikeOp, TfOp):
 
     def infer_shape(self):
         super(TfConstOp, self).infer_shape()
-        out_tensor = self.value.copy()
-        self.set_out_tensor(out_tensor)
+        self.set_out_tensor(self.value)
 
     @property
     def correspond_onnx_op(self):
@@ -381,6 +380,30 @@ class TfIdentityNOp(OpHasVariableOutPorts, TfOp):
         self.set_out_tensor(out_tensor_list)
 
 
+class TfListDiffOp(OpHasVariableOutPorts, TfOp):
+    @classmethod
+    def attributes(cls):
+        return {1: {'out_idx': {'type': AttrType.STRING, 'default': 'int32'}}
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfListDiffOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfListDiffOp, attr_dict)
+        assert self.check_required(), 'TfListDiffOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(TfListDiffOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensors = tf.raw_ops.ListDiff(
+            x=inputs[0],
+            y=inputs[1],
+            out_idx=self.out_idx
+        )
+        out_tensors = list(map(out_tensors.__getitem__, self.get_out_ports()))
+        out_tensors = [out.numpy() for out in out_tensors]
+        self.set_out_tensor(out_tensors)
+
+
 class TfMirrorPadOp(OpHasOneOutPort, TfOp):
     @classmethod
     def attributes(cls):
@@ -409,8 +432,9 @@ class TfOneHotOp(OpHasAxis, OpHasOneOutPort, TfOp):
     @classmethod
     def attributes(cls):
         return {1: {'axis': {'default': -1},
-                    'on_value': {'type': AttrType.FLOAT, 'default': 1},
-                    'off_value': {'type': AttrType.FLOAT, 'default': 0},
+                    'on_value': {'type': AttrType.TENSOR, 'default': 1},
+                    'off_value': {'type': AttrType.TENSOR, 'default': 0},
+                    'TI': {'type': AttrType.STRING, 'default': None},
                     }
                 }
 
@@ -425,13 +449,13 @@ class TfOneHotOp(OpHasAxis, OpHasOneOutPort, TfOp):
             if item == 'on_value':
                 inputs = self.get_input_tensors()
                 if len(inputs) >= 2:
-                    ret = float(inputs[2].item())
+                    ret = inputs[2].astype(self.TI).item(0) if self.TI else inputs[2].item(0)
                     self.__dict__['_attr'][item].value = ret
 
             elif item == 'off_value':
                 inputs = self.get_input_tensors()
                 if len(inputs) >= 3:
-                    ret = float(inputs[3].item())
+                    ret = inputs[3].astype(self.TI).item(0) if self.TI else inputs[3].item(0)
                     self.__dict__['_attr'][item].value = ret
         except:
             ret = None
@@ -751,8 +775,7 @@ class TfSpaceToBatchNDOp(OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfSpaceToBatchNDOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        assert len(inputs) >= 3 and len(inputs[0].shape) in (
-            3, 4), 'The length of inputs and the shape of inputs are invalid in TfSpaceToBatchNDOp.'
+        assert len(inputs) >= 3, 'The length of inputs and the shape of inputs are invalid in TfSpaceToBatchNDOp.'
         out_tensor = tf.space_to_batch_nd(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 

@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
+
+
 import numpy as np
 
 import tensorflow.compat.v1 as tf
@@ -26,19 +30,20 @@ def create_instancenorm_model(pb_file_path, input_size, axis, scale, center):
 
 
 TEST_NAME = 'instancenorm'
-input_shape = [2, 180, 224, 3]
+input_shapes = [[2, 40, 50, 10, 5], [2, 180, 224, 3], ]
 feed_dict = dict()
-# Generate input data
-feed_dict['X:0'] = np.random.randint(-100, 200, input_shape).astype(np.float32)
+for input_shape in input_shapes:
+    # Generate input data
+    feed_dict['X:0'] = np.random.randint(-100, 200, input_shape).astype(np.float32)
 
-for axis in (-1, 2):
-    for scale in (False, True):
-        for center in (True, ):
-            model_name = '-'.join([TEST_NAME, str(axis), str(scale), str(center)])
-            model_path = model_name + '.pb'
-            # Create model
-            create_instancenorm_model(model_path, input_shape, axis, scale, center)
+    for axis in (-1, 2):
+        for scale in (False, True):
+            for center in (True, ):
+                model_name = '-'.join([TEST_NAME, str(axis), str(scale), str(center)])
+                model_path = model_name + '.pb'
+                # Create model
+                create_instancenorm_model(model_path, input_shape, axis, scale, center)
 
-            exit_status = run_parser(
-                model_path, feed_dict, verify=True, expected_keywords=['InstanceNorm'])
-            assert exit_status
+                exit_status = run_parser(
+                    model_path, feed_dict, verify=True, expected_keywords=['InstanceNorm'])
+                assert exit_status

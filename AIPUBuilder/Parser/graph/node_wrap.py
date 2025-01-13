@@ -1,5 +1,5 @@
-# Copyright © 2022 Arm Technology (China) Co. Ltd. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
+# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
 
 
 from ..ops.op import Op
@@ -13,20 +13,21 @@ class NodeWrap(object):
         self._name = node_name
 
     def __setitem__(self, key, value):
-        self._graph.nodes[self._name]._attr[key] = value
+        self._graph.nodes[self._name][key] = value
         if key == 'object' and isinstance(value, Op):
-            self._graph.nodes[self._name]._attr['op'] = value.type
+            self._graph.nodes[self._name]['op'] = value.type
 
     def __getitem__(self, key):
         if self._name not in self._graph.nodes:
             return None
         else:
-            return self._graph.nodes[self._name]._attr[key] if key in self._graph.nodes[self._name]._attr else None
+            return self._graph.nodes[self._name].get(key, None)
 
     def __delitem__(self, key):
-        del self._graph.nodes[self._name]._attr[key]
+        if key in self._graph.nodes[self._name]:
+            del self._graph.nodes[self._name][key]
         if key == 'object':
-            self._graph.nodes[self._name]._attr['op'] = None
+            self._graph.nodes[self._name]['op'] = None
 
     def replace_obj(self, new_op_type, attr_dict):
         new_obj = op_factory(self._graph, new_op_type, attr_dict)

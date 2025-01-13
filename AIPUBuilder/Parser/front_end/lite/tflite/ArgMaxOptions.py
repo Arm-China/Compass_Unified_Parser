@@ -3,6 +3,8 @@
 # namespace: tflite
 
 import flatbuffers
+from flatbuffers.compat import import_numpy
+np = import_numpy()
 
 
 class ArgMaxOptions(object):
@@ -14,6 +16,10 @@ class ArgMaxOptions(object):
         x = ArgMaxOptions()
         x.Init(buf, n + offset)
         return x
+
+    @classmethod
+    def ArgMaxOptionsBufferHasIdentifier(cls, buf, offset, size_prefixed=False):
+        return flatbuffers.util.BufferHasIdentifier(buf, offset, b"\x54\x46\x4C\x33", size_prefixed=size_prefixed)
 
     # ArgMaxOptions
     def Init(self, buf, pos):
@@ -28,8 +34,5 @@ class ArgMaxOptions(object):
 
 
 def ArgMaxOptionsStart(builder): builder.StartObject(1)
-def ArgMaxOptionsAddOutputType(
-    builder, outputType): builder.PrependInt8Slot(0, outputType, 0)
-
-
+def ArgMaxOptionsAddOutputType(builder, outputType): builder.PrependInt8Slot(0, outputType, 0)
 def ArgMaxOptionsEnd(builder): return builder.EndObject()

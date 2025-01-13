@@ -1,13 +1,41 @@
-# Copyright © 2022 Arm Technology (China) Co. Ltd. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
+# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
 
 
 import torch
 import tensorflow as tf
+from itertools import product
+from functools import partial
 from ..op import *
-from ..release_ops import ArmDepthwiseConvOp
 from ...common.defs import FLOAT_EQUAL
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
+
+
+class AffineGridOp(OpHasOneOutPort, OnnxOp):
+    @classmethod
+    def attributes(cls):
+        return {20: {'align_corners': {'type': AttrType.BOOL, 'default': False}},
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(AffineGridOp, self).__init__(graph, attr_dict)
+        self.update_attributes(AffineGridOp, attr_dict)
+        assert self.check_required(), 'AffineGridOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(AffineGridOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        assert len(inputs) >= 2 and inputs[1].ndim == 1, \
+            'Meets invalid inputs of AffineGridOp(%s) in infer_shape!' % self.name
+        theta = torch.from_numpy(inputs[0].astype(np.float32))
+        if self.data_format == 'NCHW':
+            size = inputs[1].tolist()
+        else:
+            size = [inputs[1][0], inputs[1][-1]] + inputs[1][1:-1].tolist()
+        out_tensor = torch.nn.functional.affine_grid(theta,
+                                                     size=size,
+                                                     align_corners=self.align_corners).numpy()
+        self.set_out_tensor(out_tensor.astype(inputs[0].dtype))
 
 
 class AveragePoolOp(BaseOnnxPoolOp, OpHasOneOutPort):
@@ -22,6 +50,10 @@ class AveragePoolOp(BaseOnnxPoolOp, OpHasOneOutPort):
                      'kernel_shape': {'required': True},
                      },
                 11: {'ceil_mode': {'type': AttrType.INT, 'default': 0},
+                     'count_include_pad': {'type': AttrType.INT, 'default': 0},
+                     'kernel_shape': {'required': True},
+                     },
+                19: {'ceil_mode': {'type': AttrType.INT, 'default': 0},
                      'count_include_pad': {'type': AttrType.INT, 'default': 0},
                      'kernel_shape': {'required': True},
                      },
@@ -144,10 +176,24 @@ class BatchNormalizationOp(LayoutConcernedOp, OpHasVariableOutPorts, OnnxOp):
         super(BatchNormalizationOp, self).infer_shape()
         # X, scale, B, mean, var
         inputs = self.get_input_tensors()
+        assert len(inputs) >= 5 and inputs[0].ndim >= 2, \
+            'Meets invalid inputs of BatchNormalizationOp(%s) in infer_shape!' % self.name
+        input_dtype = inputs[0].dtype
+        mean_var_dtype = inputs[3].dtype
+        inputs = [inp.astype(np.float32) for inp in inputs]
         is_training = self.training_mode
         if is_training:
+            reshape_dim = None
+            if inputs[0].ndim not in (4, 5):
+                if self.data_format.startswith('NC'):
+                    reshape_dim = list(inputs[0].shape[:2]) + [int(np.prod(inputs[0].shape[2:])), 1]
+                else:
+                    reshape_dim = [1, 1, int(np.prod(inputs[0].shape[:-1])), inputs[0].shape[-1]]
+                inp = np.reshape(inputs[0], reshape_dim)
+            else:
+                inp = inputs[0]
             out_list = tf.compat.v1.nn.fused_batch_norm(
-                x=inputs[0],
+                x=inp,
                 scale=inputs[1],
                 offset=inputs[2],
                 mean=inputs[3],
@@ -158,13 +204,18 @@ class BatchNormalizationOp(LayoutConcernedOp, OpHasVariableOutPorts, OnnxOp):
                 exponential_avg_factor=1.0
             )
             out_tensor_list = [o.numpy() for o in out_list]
+            if reshape_dim is not None:
+                out_tensor_list[0] = np.reshape(out_tensor_list[0], inputs[0].shape)
+            out_tensor_list[0] = out_tensor_list[0].astype(input_dtype)
+            out_tensor_list[1] = out_tensor_list[1].astype(mean_var_dtype)
+            out_tensor_list[2] = out_tensor_list[2].astype(mean_var_dtype)
         else:
             if self.data_format[0] == 'N' and self.data_format[-1] == 'C':
                 out_tensor = tf.nn.batch_normalization(inputs[0],
                                                        inputs[3],
                                                        inputs[4],
-                                                       inputs[1],
                                                        inputs[2],
+                                                       inputs[1],
                                                        variance_epsilon=self.epsilon).numpy()
                 out_tensor_list = [out_tensor]
             else:
@@ -181,6 +232,7 @@ class BatchNormalizationOp(LayoutConcernedOp, OpHasVariableOutPorts, OnnxOp):
                     biases = np.reshape(biases, reshape_dim)
                 out_tensor = inputs[0] * weights + biases
                 out_tensor_list = [out_tensor]
+            out_tensor_list[0] = out_tensor_list[0].astype(input_dtype)
         self.set_out_tensor(out_tensor_list)
 
 
@@ -203,6 +255,33 @@ class CeluOp(LayoutUnawareOp, BaseActivationOp, OnnxOp):
         self.set_out_tensor(out_tensor)
 
 
+class Col2ImOp(OpHasPaddingStrides, OpHasOneOutPort, OnnxOp):
+    @classmethod
+    def attributes(cls):
+        return {18: {}}
+
+    def __init__(self, graph, attr_dict=None):
+        super(Col2ImOp, self).__init__(graph, attr_dict)
+        self.update_attributes(Col2ImOp, attr_dict)
+        assert self.check_required(), 'Col2ImOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(Col2ImOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        assert len(inputs) == 3, 'Col2ImOp expects 3 inputs, but got %d' % len(inputs)
+        # Implementation: https://github.com/onnx/onnx/blob/main/onnx/reference/ops/op_col2im.py
+        input_shape = list(inputs[0].shape)
+        batch = input_shape[0]
+        image_shape = inputs[1].tolist()
+        block_shape = inputs[2].tolist()
+        if not self.kernel_shape:
+            self.kernel_shape = block_shape
+        channels = input_shape[1] // int(np.prod(block_shape))
+        out_shape = [batch, channels] + image_shape
+        out_tensor = np.random.ranf(size=out_shape).astype(inputs[0].dtype)
+        self.set_out_tensor(out_tensor)
+
+
 class ConvOp(BaseConvOp, OnnxOp):
     @classmethod
     def attributes(cls):
@@ -222,14 +301,30 @@ class ConvOp(BaseConvOp, OnnxOp):
     def infer_shape(self):
         super(ConvOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        if self.biases is None:
-            self.biases = np.zeros(self.num_output, np.float32)
-        if self.weights.shape[1] * self.group != (inputs[0].shape[-1] if self.data_format == 'NHWC' else inputs[0].shape[1]):
+        input_dtype = inputs[0].dtype
+        if self.weights is not None:
+            w = self.weights
+        elif self.weights is None and len(inputs) >= 2:
+            w = inputs[1]
+        else:
+            w = None
+            ERROR('[Parser]: Meets invalid weights for Conv (%s)!' % self.name)
+
+        if w.shape[1] * self.group != (inputs[0].shape[-1] if self.data_format == 'NHWC' else inputs[0].shape[1]):
             ERROR(
                 '[Parser]: Meets invalid weights shape or input shape for Conv (%s)!' % self.name)
+
+        if self.num_output is None:
+            self.num_output = w.shape[0]
+
         if self.kernel_shape is None:
-            self.kernel_shape = list(self.weights.shape[2:])
+            self.kernel_shape = list(w.shape[2:])
+
+        if self.biases is None and self.weights is not None and len(inputs) < 3:
+            self.biases = np.zeros(self.num_output, np.float32)
+
         if self.data_format == 'NHWC':
+            # from ..release_ops import ArmDepthwiseConvOp
             # inp = tf.pad(inputs[0], self.tf_pads) if self.auto_pad == 'NOTSET' else inputs[0]
             # if self.group == 1:
             #     conv_func = tf.nn.conv2d if is_2d else tf.nn.conv1d
@@ -268,7 +363,7 @@ class ConvOp(BaseConvOp, OnnxOp):
                                                  dilations=self.dilations,
                                                  data_format='NHWC')
             out_shape = [inputs[0].shape[0]] + out_shape + [self.num_output]
-            out_tensor = np.random.ranf(size=out_shape).astype(np.float32)
+            out_tensor = np.random.ranf(size=out_shape).astype(input_dtype)
 
         else:
             out_shape = BaseConvOp.cal_out_shape(inputs[0].shape[2:],
@@ -279,7 +374,7 @@ class ConvOp(BaseConvOp, OnnxOp):
                                                  dilations=self.dilations,
                                                  data_format='NCHW')
             out_shape = [inputs[0].shape[0], self.num_output] + out_shape
-            out_tensor = np.random.ranf(size=out_shape).astype(np.float32)
+            out_tensor = np.random.ranf(size=out_shape).astype(input_dtype)
 
         if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
             self.pads, _ = OpHasPaddingStrides.cal_pads(
@@ -403,19 +498,94 @@ class ConvTransposeOp(BaseDeconvOp, OnnxOp):
             # The number of channels in the output should be equal to W.shape[1] * group
             out_shape = [inputs[0].shape[0],
                          self.num_output] + self.output_shape
-        out_tensor = np.random.ranf(size=out_shape).astype(np.float32)
+        out_tensor = np.random.ranf(size=out_shape).astype(inputs[0].dtype)
+        self.set_out_tensor(out_tensor)
+
+
+class DeformConvOp(BaseConvOp, OnnxOp):
+    @classmethod
+    def attributes(cls):
+        return {19: {'offset_group': {'type': AttrType.INT, 'default': 1}},
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(DeformConvOp, self).__init__(graph, attr_dict)
+        self.update_attributes(DeformConvOp, attr_dict)
+        assert self.check_required(), 'DeformConvOp is missing a required parameter.'
+
+    @staticmethod
+    def gen_offset_base(weights_shape, offset_shape, kernel_shape, strides, dilations, pads, offset_group):
+        '''Calculate coordinates of sampling points within kernel.
+        '''
+        n = offset_shape[0]
+        oc = weights_shape[0]
+        oh, ow = offset_shape[-2:]
+        kh, kw = kernel_shape
+        sth, stw = strides
+        dh, dw = dilations
+        kh_new, kw_new = (kh - 1) * dh + 1, (kw - 1) * dw + 1
+        bh, bw = -pads[0], -pads[1]
+
+        kernel_pos_w, kernel_pos_h = np.meshgrid(np.arange(0, kw_new, dw), np.arange(0, kh_new, dh))
+        kernel_pos = np.stack([kernel_pos_h, kernel_pos_w], axis=2)  # shape: [kh, kw, 2]
+
+        kernel_offset = np.zeros([oh, ow, kh, kw, 2], dtype=np.int64)
+        for i in range(oh):
+            h_coord = bh + sth * i
+            for j in range(ow):
+                w_coord = bw + stw * j
+                kernel_offset[i, j] = kernel_pos[:, :] + [h_coord, w_coord]
+
+        # reshape from [oh, ow, kh, kw, 2] to [oh, ow, kh*kw, 2]
+        kernel_offset = np.reshape(kernel_offset, [oh, ow, kh * kw, 2])
+        kernel_offset = np.transpose(kernel_offset, [2, 3, 0, 1])  # shape: [kh*kw, 2, oh, ow]
+        kernel_offset = np.tile(kernel_offset, [int(n * offset_group), 1, 1, 1]
+                                )  # shape: [n*offset_group*kh*kw, 2, oh, ow]
+
+        return kernel_offset
+
+    def infer_shape(self):
+        super(DeformConvOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        assert len(inputs) >= 3, 'Expects at least 3 inputs for DeformConvOp but got %d' % len(inputs)
+        input_dim = len(inputs[0].shape)
+        in_c = inputs[0].shape[-1] if self.data_format == 'NHWC' else inputs[0].shape[1]
+        self.weights = inputs[1]
+        if self.weights.shape[1] * self.group != in_c:
+            ERROR(
+                '[Parser]: Meets invalid weights shape or input shape for DeformConvOp (%s)!' % self.name)
+        self.num_output = self.weights.shape[0]
+        self.biases = inputs[3] if (len(inputs) > 3 and inputs[3]
+                                    is not None and inputs[3].size > 0) else np.zeros(self.num_output, np.float32)
+        if self.kernel_shape is None:
+            self.kernel_shape = list(self.weights.shape[2:])
+        batch = inputs[0].shape[0]
+        if self.data_format == 'NHWC':
+            out_shape = [batch] + list(inputs[2].shape[1:-1]) + [self.num_output]
+        else:
+            out_shape = [batch, self.num_output] + list(inputs[2].shape[2:])
+        out_tensor = np.random.ranf(size=out_shape).astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
 
 class DropoutOp(OpHasVariableOutPorts, OnnxOp):
     @classmethod
     def attributes(cls):
-        return {1: {'is_test': {'type': AttrType.INT, 'default': 0}},
-                6: {'is_test': {'type': AttrType.INT, 'default': 0}},
-                7: {},
-                10: {},
-                12: {'training_mode': {'type': AttrType.INT, 'default': 0}},
-                13: {'training_mode': {'type': AttrType.INT, 'default': 0}},
+        return {1: {'consumed_inputs': {'type': AttrType.INTS},
+                    'is_test': {'type': AttrType.BOOL, 'default': False},
+                    'ratio': {'type': AttrType.FLOAT, 'default': 0.5}
+                    },
+                6: {'is_test': {'type': AttrType.BOOL, 'default': False},
+                    'ratio': {'type': AttrType.FLOAT, 'default': 0.5}
+                    },
+                7: {'ratio': {'type': AttrType.FLOAT, 'default': 0.5}
+                    },
+                10: {'ratio': {'type': AttrType.FLOAT, 'default': 0.5}
+                     },
+                12: {'seed': {'type': AttrType.INT, 'default': 0, 'required': False}
+                     },
+                13: {'seed': {'type': AttrType.INT, 'default': 0, 'required': False}
+                     }
                 }
 
     def __init__(self, graph, attr_dict=None):
@@ -428,30 +598,46 @@ class DropoutOp(OpHasVariableOutPorts, OnnxOp):
         try:
             if item == 'is_test':
                 if self.cur_version <= 6:
-                    ret = bool(self.__dict__['_attr'][item].value)
+                    ret = self.__dict__['_attr'][item].value
                 else:
-                    if self.cur_version >= 12:
-                        ret = not(
-                            bool(self.__dict__['_attr']['training_mode'].value))
-                    else:
-                        ret = True
-                    self.__dict__['_attr'][item] = Attribute(
-                        item, {'type': AttrType.INT, 'value': int(ret)})
+                    ret = None
+                    self.__dict__['_attr'][item] = Attribute(item, {'type': AttrType.BOOL, 'value': ret})
             elif item == 'training_mode':
-                if self.cur_version >= 12:
-                    input_tensors = self.get_input_tensors()
-                    if len(input_tensors) >= 3:
-                        ret = bool(input_tensors[2].item())
-                    else:
-                        ret = bool(self.__dict__['_attr'][item].value)
+                if self.cur_version <= 6:
+                    ret = not self.__dict__['_attr']['is_test'].value
+                elif 6 < self.cur_version < 12:
+                    ret = False
                 else:
-                    if self.cur_version <= 6:
-                        ret = not(
-                            bool(self.__dict__['_attr']['is_test'].value))
+                    input_tensors = self.get_input_tensors()
+                    if len(input_tensors) >= 3 and input_tensors[2] is not None:
+                        training_mode_tensor = np.array(input_tensors[2])
+                        if training_mode_tensor.size == 1:
+                            ret = bool(training_mode_tensor)
+                        else:
+                            ret = None
                     else:
                         ret = False
-                    self.__dict__['_attr'][item] = Attribute(
-                        item, {'type': AttrType.INT, 'value': int(ret)})
+                self.__dict__['_attr'][item] = Attribute(item, {'type': AttrType.BOOL, 'value': ret})
+            elif item == 'ratio':
+                if self.cur_version < 12:
+                    ret = self.__dict__['_attr'][item].value
+                else:
+                    input_tensors = self.get_input_tensors()
+                    if len(input_tensors) >= 2 and input_tensors[1] is not None:
+                        ratio_tensor = np.array(input_tensors[1])
+                        if ratio_tensor.size == 1 and (0.0 <= ratio_tensor < 1.0):
+                            ret = ratio_tensor
+                        else:
+                            ret = None
+                    else:
+                        ret = np.array(0.5, np.float32)
+                    self.__dict__['_attr'][item] = Attribute(item, {'type': AttrType.FLOAT, 'value': ret})
+            elif item == 'seed':
+                if self.cur_version < 12:
+                    ret = 0
+                    self.__dict__['_attr'][item] = Attribute(item, {'type': AttrType.INT, 'value': ret})
+                else:
+                    ret = self.__dict__['_attr'][item].value
         except:
             ret = None
         if ret is None:
@@ -460,18 +646,27 @@ class DropoutOp(OpHasVariableOutPorts, OnnxOp):
 
     def infer_shape(self):
         super(DropoutOp, self).infer_shape()
+        if self.training_mode and not FLOAT_EQUAL(self.ratio, 0.0):
+            WARN('[Parser]: Dropout (%s) does not support training mode!' % self.name)
         inputs = self.get_input_tensors()
         in_shape = inputs[0].shape
-        if self.cur_version >= 12:
-            mask_value = np.tile(True, in_shape)
+        if FLOAT_EQUAL(self.ratio, 0.0) or (self.training_mode in (None, False)):
+            output = inputs[0]
+            if len(self.get_out_ports()) == 2:
+                mask = np.tile(True, in_shape)
+                if self.cur_version < 10:
+                    mask = mask.astype(inputs[0].dtype)
+                self.set_out_tensor([output, mask])
+            else:
+                self.set_out_tensor([output])
         else:
-            mask_value = np.tile(False, in_shape)
-        if bool(self.training_mode):
-            WARN('[Parser]: Dropout (%s) does not support training mode!' % self.name)
-        if 1 not in self.get_out_ports() or (self.cur_version < 7 and bool(self.is_test)):
-            self.set_out_tensor([inputs[0]])
-        else:
-            self.set_out_tensor([inputs[0], mask_value])
+            rng = np.random.default_rng(self.seed)
+            uniform = rng.uniform(0.0, 1.0, in_shape)
+            mask = uniform >= self.ratio
+            output = mask.astype(np.array(self.ratio).dtype) * inputs[0] / (1.0 - self.ratio)
+            if self.cur_version < 10:
+                mask = mask.astype(inputs[0].dtype)
+            self.set_out_tensor([output, mask])
 
     def convert_version(self):
         max_ver = type(self).max_ver()
@@ -482,35 +677,44 @@ class DropoutOp(OpHasVariableOutPorts, OnnxOp):
                 '[Parser]: Meets invalid Dropout Node (%s) in convert_version!' % self.name)
             return
 
-        out_edges = self._graph.sorted_out_edges(
-            self.name, keys=True, data=True)
-        if cur_ver < 7:
-            for _, dst, k, out_attr in out_edges:
-                if out_attr['src_out_port'] == 1:
-                    self._graph.remove_edge(self.name, dst, key=k)
-            return
-
-        from ...graph.graph_algo import get_valid_node_name
-        from ...graph.node_wrap import NodeWrap
-        in_edges = self._graph.sorted_in_edges(self.name)
-        in_shape = self.get_input_shapes()[0]
-        mask = get_valid_node_name(self._graph, self.name + '_mask')
-        mask_value = np.tile(True if cur_ver >= 12 else False, in_shape)
-        mask_used = False
-        for _, dst, k, out_attr in out_edges:
-            if out_attr['src_out_port'] == 1:
-                mask_used = True
-                self._graph.remove_edge(self.name, dst, key=k)
-                new_attr = copy.deepcopy(out_attr)
-                new_attr.update(
-                    {'src_out_port': 0, 'tensor': Tensor(value=mask_value)})
-                self._graph.add_edge(mask, dst, **new_attr)
-        self._graph.remove_edges_from(in_edges[1:])
-        if mask_used:
-            mask_attr = {'name': mask, 'value': mask_value, 'opset_version': 9}
-            NodeWrap(self._graph, mask).replace_obj('Constant', mask_attr)
+        in_edges = self._graph.sorted_in_edges(self.name, data=True)
+        assert len(in_edges) >= 1
+        if len(in_edges) < 2:
+            from ...front_end.onnx.passes.common_passes import insert_constant
+            insert_constant(self._graph, self.name + '_ratio', np.array(self.ratio), self.name, in_port=1)
+            insert_constant(self._graph, self.name + '_training_mode',
+                            np.array(self.training_mode), self.name, in_port=2)
+        elif len(in_edges) < 3:
+            from ...front_end.onnx.passes.common_passes import insert_constant
+            insert_constant(self._graph, self.name + '_training_mode',
+                            np.array(self.training_mode), self.name, in_port=2)
+        if cur_ver < 10 and len(self.get_out_ports()) == 2:
+            from ...front_end.onnx.passes.common_passes import insert_cast_after
+            post_cast = insert_cast_after(self._graph, self.name, 'bool',
+                                          in_edges[0][2]['tensor'].get_dtype(), out_port=1)
         if cur_ver < max_ver:
             self.cur_version = max_ver
+
+
+class GeluOp(BaseActivationOp, OnnxOp):
+    @classmethod
+    def attributes(cls):
+        return {20: {'approximate': {'type': AttrType.STRING, 'default': 'none', 'options': ['none', 'tanh']}},
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(GeluOp, self).__init__(graph, attr_dict)
+        self.update_attributes(GeluOp, attr_dict)
+        assert self.check_required(), 'GeluOp is missing a required parameter.'
+        self.activations = 'GELU'
+
+    def infer_shape(self):
+        super(GeluOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        input_tensor = torch.tensor(inputs[0], dtype=torch.float32)
+        out_tensor = torch.nn.functional.gelu(input_tensor,
+                                              approximate=self.approximate).numpy().astype(inputs[0].dtype)
+        self.set_out_tensor(out_tensor)
 
 
 class GlobalAveragePoolOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
@@ -585,8 +789,12 @@ class GlobalMaxPoolOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
 class GridSampleOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
     @classmethod
     def attributes(cls):
-        return {16: {'align_corners': {'type': AttrType.INT, 'default': 0, 'options': [0, 1]},
+        return {16: {'align_corners': {'type': AttrType.BOOL, 'default': False},
                      'mode': {'type': AttrType.STRING, 'default': 'bilinear', 'options': ['bilinear', 'nearest', 'bicubic']},
+                     'padding_mode': {'type': AttrType.STRING, 'default': 'zeros', 'options': ['zeros', 'border', 'reflection']}
+                     },
+                20: {'align_corners': {'type': AttrType.BOOL, 'default': False},
+                     'mode': {'type': AttrType.STRING, 'default': 'linear', 'options': ['linear', 'nearest', 'cubic']},
                      'padding_mode': {'type': AttrType.STRING, 'default': 'zeros', 'options': ['zeros', 'border', 'reflection']}
                      },
                 }
@@ -596,23 +804,267 @@ class GridSampleOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
         self.update_attributes(GridSampleOp, attr_dict)
         assert self.check_required(), 'GridSampleOp is missing a required parameter.'
 
+    @staticmethod
+    def denormalize(n, length, align_corners):
+        if align_corners:
+            x = (n + 1) / 2.0 * (length - 1)
+        else:
+            x = ((n + 1) * length - 1) / 2.0
+        return x
+
+    @staticmethod
+    def denormalize_coordinates(n, dims, align_corners):
+        assert len(n) == len(dims)
+        return GridSampleOp.denormalize(np.array(n), np.array(dims), align_corners)
+
+    @staticmethod
+    def get_all_coords(data):
+        x = [range(shape) for shape in data.shape]
+        return list(product(*x))
+
+    @staticmethod
+    def reflect(x, x_min, x_max):
+        rng = x_max - x_min
+        if x >= x_min and x <= x_max:
+            return x
+        dx = (x_min - x) if x < x_min else (x - x_max)
+        n = int(dx / rng)
+        r = dx - n * rng
+        if n % 2 == 0:
+            x = (x_min + r) if x < x_min else (x_max - r)
+        else:
+            x = (x_max - r) if x < x_min else (x_min + r)
+        return x
+
+    @staticmethod
+    def pixel_at_array(i, array, border, padding_mode):
+        assert array.ndim == 1
+        d = array.shape[0]
+        if padding_mode == 'zeros':
+            pixel = array[i] if (i >= 0 and i < d) else 0
+        elif padding_mode == 'border':
+            i = np.clip(i, 0, d - 1)
+            pixel = array[i]
+        else:  # reflection
+            i = int(GridSampleOp.reflect(i, border[0], border[1]))
+            pixel = array[i]
+        return pixel
+
+    @staticmethod
+    def pixel_at_ndarray(x, ndarray, border, padding_mode):
+        num_dims = ndarray.ndim
+        if num_dims == 1:
+            return GridSampleOp.pixel_at_array(x[0], ndarray, border, padding_mode)
+        i = x[0]
+        d = ndarray.shape[0]
+        if padding_mode == 'zeros':
+            ndarray = ndarray[i] if (i >= 0 and i < d) else np.zeros_like(ndarray[0])
+        elif padding_mode == 'border':
+            i = np.clip(i, 0, d - 1)
+            ndarray = ndarray[i]
+        else:  # reflection
+            i = int(GridSampleOp.reflect(i, border[0], border[num_dims]))
+            ndarray = ndarray[i]
+        border = list(border[1:num_dims]) + list(border[1 + num_dims: 2 * num_dims])
+        return GridSampleOp.pixel_at_ndarray(x[1:], ndarray, border, padding_mode)
+
+    @staticmethod
+    def prepare_border(dims, align_corners):
+        num_dims = len(dims)
+        borders = np.zeros(num_dims * 2)
+        if align_corners:
+            # borders[:num_dims] = 0.0
+            borders[num_dims:] = np.array(dims) - 1.0
+        else:
+            borders[:num_dims] = -0.5
+            borders[num_dims:] = np.array(dims) - 0.5
+        return borders
+
+    @staticmethod
+    def get_linear_coeffs(x):
+        x = abs(x)
+        return [1 - x, x]
+
+    @staticmethod
+    def get_cubic_interpolate_1d_with_x(data, x, border, padding_mode):
+        from .math_ops import ResizeOp
+        x_0 = int(np.floor(x))
+        x_1 = x_0 + 1
+        x_2 = x_0 + 2
+        x_minus_1 = x_0 - 1
+        coeffs = ResizeOp.get_cubic_coeffs(x - x_0)
+        v = [GridSampleOp.pixel_at_array(i, data, border, padding_mode) for i in [x_minus_1, x_0, x_1, x_2]]
+        return coeffs @ np.array(v)
+
+    @staticmethod
+    def linear_interpolation_1d_with_x(data, x, border, padding_mode):
+        x_0 = int(np.floor(x))
+        x_1 = x_0 + 1
+        coeffs = GridSampleOp.get_linear_coeffs(x - x_0)
+        v = [GridSampleOp.pixel_at_array(i, data, border, padding_mode) for i in [x_0, x_1]]
+        return coeffs @ np.array(v)
+
+    @staticmethod
+    def linear_interpolation_nd_with_x(x, data, border, padding_mode):
+        num_dims = data.ndim
+        if num_dims == 1:
+            return GridSampleOp.linear_interpolation_1d_with_x(data, x[0], border, padding_mode)
+        border_i = list(border[1: num_dims]) + list(border[1 + num_dims: 2 * num_dims])
+        data_shape_0 = data.shape[0]
+        res = [GridSampleOp.linear_interpolation_nd_with_x(
+            x[1:], data[i], border_i, padding_mode) for i in range(data_shape_0)]
+        res = np.array(res)
+        return GridSampleOp.linear_interpolation_1d_with_x(res, x[0], [border[0], border[num_dims]], padding_mode)
+
+    @staticmethod
+    def cubic_interpolation_nd_with_x(x, data, border, padding_mode):
+        num_dims = data.ndim
+        if num_dims == 1:
+            return GridSampleOp.get_cubic_interpolate_1d_with_x(data, x[0], border, padding_mode)
+        border_i = list(border[1: num_dims]) + list(border[1 + num_dims: 2 * num_dims])
+        data_shape_0 = data.shape[0]
+        res = [GridSampleOp.cubic_interpolation_nd_with_x(
+            x[1:], data[i], border_i, padding_mode) for i in range(data_shape_0)]
+        res = np.array(res)
+        return GridSampleOp.get_cubic_interpolate_1d_with_x(res, x[0], [border[0], border[num_dims]], padding_mode)
+
+    @staticmethod
+    def apply_padding(x, border, padding_mode, dims):
+        num_dims = len(dims)
+        for i, v in enumerate(x):
+            x_min, x_max = border[i], border[i + num_dims]
+            if v < x_min or v > x_max:
+                x[i] = np.clip(v, 0, dims[i] - 1) if padding_mode == 'border' else GridSampleOp.reflect(v, x_min, x_max)
+        return x
+
+    @staticmethod
+    def grid_sample(X, grid, mode, padding_mode, align_corners):
+        # X must be in NCHW data format
+        x_dims = X.shape
+        N, C = x_dims[:2]
+        grid_spatial_shape = list(grid.shape[1:-1])
+        y_dims = [N, C] + grid_spatial_shape
+        Y = np.empty(y_dims, dtype=X.dtype)
+
+        for n in range(N):
+            grid_data = grid[n]
+            for c in range(C):
+                X_data = X[n, c]
+                dims = x_dims[2:]
+                num_dims = len(dims)
+                border = GridSampleOp.prepare_border(dims, align_corners)
+                all_coords = GridSampleOp.get_all_coords(Y[n, c])
+                x_list = []
+                for ox in all_coords:
+                    nx = grid_data[tuple(ox)][::-1]
+                    x = GridSampleOp.denormalize_coordinates(nx, dims, align_corners)
+                    x_list.append(x)
+                if mode == 'nearest':
+                    x_list = [np.rint(x) for x in x_list]
+                x_list = map(partial(GridSampleOp.apply_padding, border=border,
+                             padding_mode=padding_mode, dims=dims), x_list)
+                if mode == 'nearest':
+                    x_list = [x.astype(np.int32) for x in list(x_list)]
+                    output = list(map(partial(GridSampleOp.pixel_at_ndarray, ndarray=X_data,
+                                  border=border, padding_mode=padding_mode), x_list))
+                elif mode in ('linear', 'bilinear'):
+                    output = list(map(partial(GridSampleOp.linear_interpolation_nd_with_x,
+                                  data=X_data, border=border, padding_mode=padding_mode), x_list))
+                else:  # cubic, bicubic
+                    output = list(map(partial(GridSampleOp.cubic_interpolation_nd_with_x,
+                                  data=X_data, border=border, padding_mode=padding_mode), x_list))
+                Y[n, c] = np.reshape(output, grid_spatial_shape)
+        return Y
+
     def infer_shape(self):
         super(GridSampleOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        if self.cur_version == 16 and len(inputs[0].shape) != 4:
+        input_rank = len(inputs[0].shape)
+        if self.cur_version == 16 and input_rank != 4:
             ERROR('[Parser]: GridSampleOp (%s) only supports spatial (4-D) inputs in Op version [%s]!' %
                   (self.name, self.cur_version))
-        input_tensor = np.transpose(
-            inputs[0], [0, 3, 1, 2]) if self.data_format == 'NHWC' else inputs[0]
-        out_tensor = torch.nn.functional.grid_sample(torch.from_numpy(input_tensor),
-                                                     torch.from_numpy(
-                                                         inputs[1]),
-                                                     mode=self.mode,
-                                                     padding_mode=self.padding_mode,
-                                                     align_corners=bool(self.align_corners)).numpy()
-        # .astype(inputs[0].dtype)
+        spatial_output_shape = list(inputs[1].shape[1:-1])
+        inp = inputs[0].astype(np.float32) if inputs[0].dtype != np.float32 else inputs[0]
+        perm = None
+        if self.data_format == 'NHWC':
+            perm = [0, input_rank - 1] + list(range(1, input_rank - 1))
+        input_tensor = np.transpose(inp, perm) if perm is not None else inp
+        is_cubic = self.mode.endswith('cubic')
+        if (is_cubic and input_rank == 4) or (not is_cubic and input_rank in (4, 5)):
+            # torch.nn.functional.grid_sample only supports 4-D and 5-D inputs(not bicubic)
+            modes_map = {'linear': 'bilinear', 'cubic': 'bicubic'}
+            mode = modes_map.get(self.mode, self.mode)
+            out_tensor = torch.nn.functional.grid_sample(torch.from_numpy(input_tensor),
+                                                         torch.from_numpy(
+                inputs[1].astype(np.float32)),
+                mode=mode,
+                padding_mode=self.padding_mode,
+                align_corners=self.align_corners).numpy()
+        else:
+            if self.is_all_inputs_const():
+                # from onnx.reference.ops._op_list import GridSample
+                # modes_map = {'bilinear': 'linear', 'bicubic': 'cubic'}
+                # mode = modes_map.get(self.mode, self.mode)
+                # out_tensor = GridSample.eval(inputs[0].astype(np.float32), inputs[1].astype(np.float32),
+                #                              mode=mode, padding_mode=self.padding_mode,
+                #                              align_corners=self.align_corners)
+                out_tensor = self.grid_sample(input_tensor, inputs[1].astype(np.float32),
+                                              self.mode, self.padding_mode, self.align_corners)
+            else:
+                out_tensor = np.random.ranf(list(input_tensor.shape[:2]) + spatial_output_shape)
         out_tensor = np.transpose(
-            out_tensor, [0, 2, 3, 1]) if self.data_format == 'NHWC' else out_tensor
+            out_tensor, Op.cal_inverse_perm(perm)) if perm is not None else out_tensor
+        out_tensor = out_tensor.astype(inputs[0].dtype)
+        self.set_out_tensor(out_tensor)
+
+    def convert_version(self):
+        max_ver = type(self).max_ver()
+        cur_ver = self.cur_version
+        if cur_ver < max_ver:
+            if self.mode == 'bilinear':
+                self.mode = 'linear'
+            elif self.mode == 'bicubic':
+                self.mode = 'cubic'
+
+
+class GroupNormalizationOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
+    @classmethod
+    def attributes(cls):
+        return {18: {'epsilon': {'type': AttrType.FLOAT, 'default': 1e-5},
+                     'num_groups': {'type': AttrType.INTS, 'required': True},
+                     },
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(GroupNormalizationOp, self).__init__(graph, attr_dict)
+        self.update_attributes(GroupNormalizationOp, attr_dict)
+        assert self.check_required(), 'GroupNormalizationOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(GroupNormalizationOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        assert len(inputs) == 3, 'GroupNormalizationOp expects 3 inputs, but got %d' % len(inputs)
+        input_dim = len(inputs[0].shape)
+        pre_perm = None
+        if self.data_format.startswith('NC'):
+            input_tensor = inputs[0]
+            channel_axis = 1
+        else:
+            pre_perm = [0, input_dim - 1] + list(range(1, input_dim - 1))
+            input_tensor = np.transpose(inputs[0], pre_perm)
+            channel_axis = -1
+        channels = inputs[0].shape[channel_axis]
+        channel_num_per_group = channels / self.num_groups
+        scale = np.repeat(inputs[1], channel_num_per_group, axis=0)
+        bias = np.repeat(inputs[2], channel_num_per_group, axis=0)
+        weight_bias_shape = [-1] + [1] * (input_dim - 2)
+        weights = np.reshape(scale, weight_bias_shape)
+        biases = np.reshape(bias, weight_bias_shape)
+
+        groupnorm = torch.nn.GroupNorm(self.num_groups, channels, self.epsilon)
+        out_tensor = groupnorm(torch.from_numpy(input_tensor)).detach().numpy() * weights + biases
+        if pre_perm is not None:
+            out_tensor = np.transpose(out_tensor, Op.cal_inverse_perm(pre_perm))
         self.set_out_tensor(out_tensor)
 
 
@@ -794,9 +1246,9 @@ class GRUOp(BaseRnnOp, OpHasBiases, OpHasWeights, OnnxOp):
             batch_size, self.time_steps, self.input_size = inputs[0].shape
             init_shape = (batch_size, num_directions, self.hidden_size)
         W, R = inputs[1:3]
-        B = inputs[3] if len(inputs) > 3 else np.zeros(
+        B = inputs[3] if (len(inputs) > 3 and inputs[3] is not None) else np.zeros(
             (num_directions, 6 * self.hidden_size)).astype(inputs[0].dtype)
-        if len(inputs) == 6:
+        if len(inputs) == 6 and inputs[-1] is not None:
             initial_h = inputs[-1]
         else:
             initial_h = np.zeros(init_shape).astype(inputs[0].dtype)
@@ -804,10 +1256,12 @@ class GRUOp(BaseRnnOp, OpHasBiases, OpHasWeights, OnnxOp):
         weights_list = GRUOp.extract_weights(
             W, B, R, self.hidden_size, num_directions, self.linear_before_reset)
         Y = []
+        Y_h = []
         for b in range(batch_size):
             cur_input = inputs[0][:, b,
                                   :] if not self.layout else inputs[0][b, :, :]
             batch_out = []
+            hidden_batch_out = []
             for n in range(num_directions):
                 direction_out = []
                 init_state = initial_h[n, b,
@@ -815,6 +1269,7 @@ class GRUOp(BaseRnnOp, OpHasBiases, OpHasWeights, OnnxOp):
                 if n == 1:
                     cur_input = tf.reverse(
                         cur_input, axis=np.array([0], np.int64))
+                gru_cell = None
                 for s in range(self.time_steps):
                     x = cur_input[s, :]
                     '''
@@ -828,23 +1283,28 @@ class GRUOp(BaseRnnOp, OpHasBiases, OpHasWeights, OnnxOp):
                         size=(self.hidden_size,)).astype(np.float32)
                     direction_out.append(gru_cell)
                 direction_out = tf.stack(direction_out, axis=0)
+                hidden_batch_out.append(gru_cell)
                 if n == 1:
                     direction_out = tf.reverse(
                         direction_out, axis=np.array([0], np.int64))
                 batch_out.append(direction_out)
             batch_out = tf.stack(batch_out, axis=0)
             Y.append(batch_out)
+            hidden_batch_out = tf.stack(hidden_batch_out, axis=0)
+            Y_h.append(hidden_batch_out)
 
-        '''[batch_size, num_directions, seq_length, hidden_size]'''
+        ''' [batch_size, num_directions, seq_length, hidden_size]'''
         Y = tf.stack(Y, axis=0)
+        ''' [batch_size, num_directions, hidden_size]'''
+        Y_h = tf.stack(Y_h, axis=0)
         if self.layout:
             ''' [batch_size, seq_length, num_directions, hidden_size]'''
             Y = tf.transpose(Y, perm=[0, 2, 1, 3]).numpy()
-            Y_h = Y[:, -1, :, :]
         else:
             ''' [seq_length, num_directions, batch_size, hidden_size]'''
             Y = tf.transpose(Y, perm=[2, 1, 0, 3]).numpy()
-            Y_h = Y[-1, :, :, :]
+            ''' [num_directions, batch_size, hidden_size]'''
+            Y_h = tf.transpose(Y_h, perm=[1, 0, 2]).numpy()
 
         if not self.linear_before_reset:
             self.weights = np.stack([np.concatenate(
@@ -921,9 +1381,13 @@ class InstanceNormalizationOp(OpHasBiases, OpHasWeights, LayoutConcernedOp, OpHa
     def attributes(cls):
         return {1: {'consumed_inputs': {'type': AttrType.INTS},
                     'epsilon': {'type': AttrType.FLOAT, 'default': 1e-5},
+                    'eps_scale': {'type': AttrType.FLOAT, 'default': None},
+                    'eps_zp': {'type': AttrType.FLOAT, 'default': None},
                     'non_channel_axes': {'type': AttrType.INTS, 'default': None}
                     },
                 6: {'epsilon': {'type': AttrType.FLOAT, 'default': 1e-5},
+                    'eps_scale': {'type': AttrType.FLOAT, 'default': None},
+                    'eps_zp': {'type': AttrType.FLOAT, 'default': None},
                     'non_channel_axes': {'type': AttrType.INTS, 'default': None}
                     },
                 }
@@ -950,7 +1414,70 @@ class InstanceNormalizationOp(OpHasBiases, OpHasWeights, LayoutConcernedOp, OpHa
         normalized = (inputs[0] - mean) * ngamma
         out_tensor = np.reshape(self.weights, reshape_dim) * \
             normalized + np.reshape(self.biases, reshape_dim)
-        self.set_out_tensor(out_tensor)
+        self.set_out_tensor(out_tensor.astype(inputs[0].dtype))
+
+
+class LayerNormalizationOp(OpHasAxis, OpHasVariableOutPorts, OnnxOp):
+    @classmethod
+    def attributes(cls):
+        return {17: {'epsilon': {'type': AttrType.FLOAT, 'required': True, 'default': 1e-5},
+                     'axis': {'default': -1},
+                     'stash_type': {'type': AttrType.BOOL, 'default': True}}
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(LayerNormalizationOp, self).__init__(graph, attr_dict)
+        self.update_attributes(LayerNormalizationOp, attr_dict)
+        assert self.check_required(), 'LayerNormalizationOp is missing a required parameter.'
+
+    def __getattr__(self, item):
+        ret = None
+        if item == 'axes':
+            ret = self.__dict__['_attr'][item].value
+            if ret is None and self.axis is not None:
+                input_length = len(self.get_input_shapes()[0])
+                start_axis = (self.axis + input_length) if self.axis < 0 else self.axis
+                ret = [axis for axis in range(input_length) if axis >= start_axis]
+                self.__dict__['_attr'][item].value = ret
+        if ret is None:
+            ret = super(LayerNormalizationOp, self).__getattr__(item)
+        return ret
+
+    def infer_shape(self):
+        super(LayerNormalizationOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        assert len(inputs) in (2, 3), 'LayerNormalizationOp expects 2 or 3 inputs, but got %d' % len(inputs)
+        input_length = len(inputs[0].shape)
+        input_dtype = inputs[0].dtype
+        self.axes = OpHasAxis.make_axes_non_negative(self.axes, input_length)
+        inp = np.array(inputs[0], np.float32) if self.stash_type else inputs[0]
+        mean = np.mean(inp, axis=tuple(self.axes), keepdims=True)
+        variance = np.var(inp, axis=tuple(self.axes), keepdims=True)
+        ngamma = 1.0 / ((variance + self.epsilon) ** 0.5)
+        normalized = (inputs[0] - mean) * ngamma
+        if self.stash_type:
+            normalized = np.array(normalized, inputs[0].dtype)
+        weights = OpHasAxis.expand_to(inputs[1], self.axes, input_length)
+        if len(inputs) == 3:
+            biases = OpHasAxis.expand_to(inputs[2], self.axes, input_length)
+        else:
+            biases = np.zeros_like(weights)
+        out_tensors = [np.array(normalized * weights + biases, dtype=input_dtype)]
+        out_ports = self.get_out_ports()
+        if 1 in out_ports:
+            out_tensors.append(np.array(mean, np.float32))
+        if 2 in out_ports:
+            out_tensors.append(np.array(ngamma, np.float32))
+        self.set_out_tensor(out_tensors)
+
+    def convert_version(self):
+        from ...front_end.onnx.passes.common_passes import insert_constant
+        input_shapes = self.get_input_shapes()
+        assert len(input_shapes) >= 2, 'Meets invalid inputs of LayerNormalizationOp(%s) in convert_version!' % self.name
+        if len(input_shapes) == 2:
+            np_dtype_str = self.get_inputs_info()[2][1]
+            bias = np.zeros(input_shapes[1], dtype=getattr(np, np_dtype_str))
+            insert_constant(self._graph, self.name + '_bias', bias, self.name, in_port=2)
 
 
 class LeakyReluOp(BaseReluOp, OnnxOp):
@@ -987,7 +1514,10 @@ class LpPoolOp(BaseOnnxPoolOp, OpHasOneOutPort):
                     },
                 11: {'kernel_shape': {'type': AttrType.INTS, 'required': True},
                      'p': {'type': AttrType.INT, 'default': '2'}
-                     }
+                     },
+                18: {'kernel_shape': {'type': AttrType.INTS, 'required': True},
+                     'p': {'type': AttrType.INT, 'default': '2'}
+                     },
                 }
 
     def __init__(self, graph, attr_dict=None):
@@ -1001,7 +1531,7 @@ class LpPoolOp(BaseOnnxPoolOp, OpHasOneOutPort):
         in_shape = inputs[0].shape[1:-1] if self.data_format == 'NHWC' \
             else inputs[0].shape[2:]
         out_shape = BaseOnnxPoolOp.cal_out_shape(
-            in_shape, self.pads, self.strides, self.kernel_shape, self.auto_pad)
+            in_shape, self.pads, self.strides, self.kernel_shape, self.auto_pad, self.dilations, ceil_mode=self.ceil_mode)
         out_tensor_shape = list(inputs[0].shape[0:1]) + out_shape + list(inputs[0].shape[-1:]) \
             if self.data_format == 'NHWC' \
             else list(inputs[0].shape[0:2]) + out_shape
@@ -1049,13 +1579,19 @@ class LRNOp(OpHasMethod, LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
             '''
         else:
             input_tensor = inputs[0]
+        input_dtype = input_tensor.dtype
+        if input_dtype != np.float32:
+            input_tensor = np.array(input_tensor, dtype=np.float32)
         input_tensor = torch.from_numpy(input_tensor)
+        # torch.nn.LocalResponseNorm doesn't support int input
         lrn = torch.nn.LocalResponseNorm(
             self.size, self.alpha, self.beta, self.bias)
         out_tensor = lrn(input_tensor).numpy()
         if self.data_format == 'NHWC':
             out_tensor = np.transpose(
                 out_tensor, [0] + list(range(2, input_dim)) + [1])
+        if input_dtype != np.float32:
+            out_tensor = np.array(out_tensor, dtype=input_dtype)
         self.set_out_tensor(out_tensor)
 
 
@@ -1167,6 +1703,7 @@ class LSTMOp(BaseRnnOp, OpHasBiases, OpHasWeights, OnnxOp):
         super(LSTMOp, self).infer_shape()
         inputs = self.get_input_tensors()
         num_directions = 2 if self.direction == 'bidirectional' else 1
+        input_dtype = inputs[0].dtype
         if not self.layout:
             self.time_steps, batch_size, self.input_size = inputs[0].shape
             init_shape = (num_directions, batch_size, self.hidden_size)
@@ -1174,16 +1711,16 @@ class LSTMOp(BaseRnnOp, OpHasBiases, OpHasWeights, OnnxOp):
             batch_size, self.time_steps, self.input_size = inputs[0].shape
             init_shape = (batch_size, num_directions, self.hidden_size)
         W, R = inputs[1:3]
-        B = inputs[3] if len(inputs) >= 4 else np.zeros(
-            (num_directions, 8 * self.hidden_size), dtype=np.float32)
+        B = inputs[3] if (len(inputs) >= 4 and inputs[3] is not None) else np.zeros(
+            (num_directions, 8 * self.hidden_size), dtype=input_dtype)
         sequence_lens = inputs[4] if (len(inputs) >= 5 and inputs[4] is not None) else (
             np.ones((batch_size,), dtype=np.int32) * self.time_steps)
-        initial_h = inputs[5] if len(inputs) >= 6 else np.zeros(
-            init_shape, dtype=np.float32)
-        initial_c = inputs[6] if len(inputs) >= 7 else np.zeros(
-            init_shape, dtype=np.float32)
-        p = inputs[7] if len(inputs) == 8 else np.zeros(
-            (num_directions, 3 * self.hidden_size), dtype=np.float32)
+        initial_h = inputs[5] if (len(inputs) >= 6 and inputs[5] is not None) else np.zeros(
+            init_shape, dtype=input_dtype)
+        initial_c = inputs[6] if (len(inputs) >= 7 and inputs[6] is not None) else np.zeros(
+            init_shape, dtype=input_dtype)
+        p = inputs[7] if (len(inputs) == 8 and inputs[7] is not None) else np.zeros(
+            (num_directions, 3 * self.hidden_size), dtype=input_dtype)
 
         weights_list = LSTMOp.extract_weights(
             W, B, R, self.hidden_size, num_directions)
@@ -1230,9 +1767,9 @@ class LSTMOp(BaseRnnOp, OpHasBiases, OpHasWeights, OnnxOp):
                 '''
 
                 output_gate_res = np.random.ranf(
-                    (batch_size, self.hidden_size)).astype(np.float32)
+                    (batch_size, self.hidden_size)).astype(input_dtype)
                 input_add_forget = np.random.ranf(
-                    (batch_size, self.hidden_size)).astype(np.float32)
+                    (batch_size, self.hidden_size)).astype(input_dtype)
 
                 direction_out.append(output_gate_res)
                 if s == self.time_steps - 1:
@@ -1279,6 +1816,18 @@ class LSTMOp(BaseRnnOp, OpHasBiases, OpHasWeights, OnnxOp):
         self.set_out_tensor(out_tensors)
 
     def convert_version(self):
+        def _need_insert_constant(in_edges, port):
+            if len(in_edges) <= port:
+                return True
+            if len(in_edges[port]) > 3 \
+                    and in_edges[port][3]['tensor'] is not None \
+                    and in_edges[port][3]['tensor'].is_const \
+                    and in_edges[port][3]['tensor'].value is None:
+                src, _, k = in_edges[port][:3]
+                self._graph.remove_edge(src, self.name, key=k)
+                return True
+            return False
+
         max_ver = type(self).max_ver()
         cur_ver = self.cur_version
         if cur_ver < max_ver:
@@ -1295,30 +1844,31 @@ class LSTMOp(BaseRnnOp, OpHasBiases, OpHasWeights, OnnxOp):
             self.cur_version = max_ver
 
         from ...front_end.onnx.passes.common_passes import insert_constant
-        in_edges = self._graph.sorted_in_edges(self.name, data=True)
+        input_dtype = self.get_input_dtypes()[0]
+        in_edges = self._graph.sorted_in_edges(self.name, keys=True, data=True)
         num_directions = 2 if self.direction == 'bidirectional' else 1
-        batch_size = in_edges[0][2]['tensor'].shape[0] if self.layout else in_edges[0][2]['tensor'].shape[1]
+        batch_size = in_edges[0][3]['tensor'].shape[0] if self.layout else in_edges[0][3]['tensor'].shape[1]
         initial_state_shape = [batch_size, num_directions, self.hidden_size] \
             if self.layout \
             else [num_directions, batch_size, self.hidden_size]
-        if len(in_edges) <= 7:
-            P = np.zeros((num_directions, 3 * self.hidden_size), np.float32)
+        if _need_insert_constant(in_edges, 7):
+            P = np.zeros((num_directions, 3 * self.hidden_size), input_dtype)
             insert_constant(self._graph, self.name +
                             '_P', P, self.name, in_port=7)
-        if len(in_edges) <= 6:
-            initial_c = np.zeros(initial_state_shape, np.float32)
+        if _need_insert_constant(in_edges, 6):
+            initial_c = np.zeros(initial_state_shape, input_dtype)
             insert_constant(self._graph, self.name + '_initial_c',
                             initial_c, self.name, in_port=6)
-        if len(in_edges) <= 5:
-            initial_h = np.zeros(initial_state_shape, np.float32)
+        if _need_insert_constant(in_edges, 5):
+            initial_h = np.zeros(initial_state_shape, input_dtype)
             insert_constant(self._graph, self.name + '_initial_h',
                             initial_h, self.name, in_port=5)
-        if len(in_edges) <= 4:
+        if _need_insert_constant(in_edges, 4):
             sequence_lens = np.array([self.time_steps] * batch_size, np.int32)
             insert_constant(self._graph, self.name + '_sequence_lens',
                             sequence_lens, self.name, in_port=4)
-        if len(in_edges) <= 3:
-            B = np.zeros((num_directions, 8 * self.hidden_size), np.float32)
+        if _need_insert_constant(in_edges, 3):
+            B = np.zeros((num_directions, 8 * self.hidden_size), input_dtype)
             insert_constant(self._graph, self.name +
                             '_B', B, self.name, in_port=3)
 
@@ -1522,7 +2072,7 @@ class PReluOp(OpNeedUniBroadcast, BaseReluOp, OnnxOp):
             self.negative_slope = inputs[1].astype(np.float32)
         broad_casted = OpNeedUniBroadcast.broad_cast(
             [inputs[0], self.negative_slope])
-        out_tensor = self.cal_activation(*broad_casted)
+        out_tensor = self.cal_activation(*broad_casted).astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
 

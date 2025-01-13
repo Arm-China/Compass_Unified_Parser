@@ -1,5 +1,5 @@
-# Copyright © 2022 Arm Technology (China) Co. Ltd. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
+# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
 
 
 import numpy as np
@@ -174,7 +174,6 @@ def convert_lstm(graph):
         lstm = m['target']
         lstm_obj = NodeWrap(graph, lstm)['object']
         in_edges = graph.sorted_in_edges(lstm, data=True)
-        out_edges = graph.sorted_out_edges(lstm, data=True)
         if lstm_obj is not None:
             out_ports = lstm_obj.get_out_ports()
             if lstm_obj.expose_hidden:
@@ -187,11 +186,16 @@ def convert_lstm(graph):
                     WARN(
                         '[Parser]: Only supports 2 inputs and 1 out edge of CaffeLSTM(%s) when expose_hidden is False in convert_lstm!' % lstm)
                     continue
+            _, _, cond_in_attr = in_edges[1]
+            if cond_in_attr['tensor'] is None \
+                    or cond_in_attr['tensor'].value is None \
+                    or not cond_in_attr['tensor'].is_const \
+                    or not FLOAT_EQUAL(cond_in_attr['tensor'].value, 1):
+                WARN('[Parser]: Only supports cond==ones of CaffeLSTM(%s) in convert_lstm! Will treat cond as ones!' % lstm)
             matched = True
             input_shapes = lstm_obj.get_input_shapes()
             hidden_size = lstm_obj.num_output
             src, _, in_attr = in_edges[0]
-            _, dst, out_attr = out_edges[0]
             graph.remove_edges_from(in_edges[1:])
 
             if len(input_shapes[0]) > 3:
@@ -238,8 +242,10 @@ def convert_lstm(graph):
                 new_init_c_attr['dst_in_port'] = 6
                 graph.add_edge(init_c, lstm, **new_init_c_attr)
 
-            post_reshape = insert_reshape(graph, lstm, dst, out_attr, dim=[
-                                          time_steps, batch_size, hidden_size], data_format='NHWC')
+            new_dim = [time_steps, batch_size, hidden_size]
+            old_dim = [time_steps, 1, batch_size, hidden_size]
+            post_reshape = insert_reshape_after(graph, lstm, new_dim, old_dim)
+
             if lstm in graph._attr['output_names']:
                 index = graph._attr['output_names'].index(lstm)
                 if not lstm_obj.expose_hidden:
@@ -279,6 +285,21 @@ def convert_pool(graph):
                 if all(int(p) == 0 for p in pool_obj.pads) \
                         and pool_obj.pad_h == 0 \
                         and pool_obj.pad_w == 0:
+                    count_include_pad = 0
+                elif any(int(s) != 1 for s in pool_obj.strides):
+                    pad_node = get_valid_node_name(graph, pool + '_pre_pad')
+                    pool_in_edges = graph.sorted_in_edges(pool, data=True)
+                    if len(pool_in_edges) < 1:
+                        ERROR('[Parser]: Meets invalid inputs of CaffePOOLING (%s) in convert_pool!' % pool)
+                        continue
+                    src, _, in_attr = pool_in_edges[0]
+                    graph.remove_edges_from(pool_in_edges)
+                    graph.add_edge(src, pad_node, **in_attr)
+                    graph.add_edge(pad_node, pool)
+                    paddings = [0, 0] + pool_obj.pads[:2] + [0, 0] + pool_obj.pads[2:]
+                    pad_attr = {'name': pad_node, 'opset_version': 1, 'paddings': paddings, 'data_format': 'NCHW'}
+                    NodeWrap(graph, pad_node).replace_obj('Pad', pad_attr)
+                    new_node_attr.update({'pads': [0] * len(pool_obj.pads)})
                     count_include_pad = 0
                 else:
                     count_include_pad = 1
@@ -544,10 +565,19 @@ def convert_upsample(graph):
             graph.add_edge(cast_to_int, upsample, **
                            {'src_out_port': 0, 'dst_in_port': 1})
 
-            n, c, h, w = input_shapes[0]
-            offset = np.reshape(np.arange(0, n), (n, 1, 1, 1)) * c * h * w + \
-                np.reshape(np.arange(0, c), (c, 1, 1)) * h * w
-            offset = np.tile(offset, [1, 1, h, w]).astype(np.float32)
+            n, c, in_h, in_w = input_shapes[0]
+            # Rename upsample to maxunpool in onnx
+            if upsample_obj.upsample_h and upsample_obj.upsample_w:
+                output_shape = np.array([n, c, upsample_obj.upsample_h,
+                                         upsample_obj.upsample_w]).astype(np.int64)
+            else:
+                output_shape = np.array([n, c, in_h * upsample_obj.scale,
+                                         in_w * upsample_obj.scale]).astype(np.int64)
+
+            out_h, out_w = output_shape[2:]
+            offset = np.reshape(np.arange(0, n), (n, 1, 1, 1)) * c * out_h * out_w + \
+                np.reshape(np.arange(0, c), (c, 1, 1)) * out_h * out_w
+            offset = np.tile(offset, [1, 1, in_h, in_w]).astype(np.float32)
             insert_constant(graph, add + '_oprand',
                             offset, add, in_port=1)
 
@@ -556,13 +586,6 @@ def convert_upsample(graph):
             NodeWrap(graph, cast_to_int).replace_obj(
                 'Cast', {'name': cast_to_int, 'opset_version': 1, 'to': 'int32'})
 
-            # Rename upsample to maxunpool in onnx
-            if upsample_obj.upsample_h and upsample_obj.upsample_w:
-                output_shape = np.array([n, c, upsample_obj.upsample_h,
-                                         upsample_obj.upsample_w]).astype(np.int64)
-            else:
-                output_shape = np.array([n, c, h * upsample_obj.scale,
-                                         w * upsample_obj.scale]).astype(np.int64)
             insert_constant(graph, upsample + '_output_shape',
                             output_shape, upsample, in_port=2)
 
@@ -1454,6 +1477,7 @@ def convert_to_onnx(graph):
                     input_shape = node_obj.get_input_shapes()[0]
                     insert_constant(graph, node_name + '_sizes',
                                     np.array(input_shape[:-2] + [node_obj.height, node_obj.width], np.int64), node_name, in_port=3)
+                    new_node_attr.update({'coordinate_transformation_mode': 'align_corners'})
                 elif pure_type == 'LRN':
                     if 'k' in new_node_attr:
                         new_node_attr.update({'bias': new_node_attr['k']})

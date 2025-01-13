@@ -3,6 +3,8 @@
 # namespace: tflite
 
 import flatbuffers
+from flatbuffers.compat import import_numpy
+np = import_numpy()
 
 
 class SoftmaxOptions(object):
@@ -14,6 +16,10 @@ class SoftmaxOptions(object):
         x = SoftmaxOptions()
         x.Init(buf, n + offset)
         return x
+
+    @classmethod
+    def SoftmaxOptionsBufferHasIdentifier(cls, buf, offset, size_prefixed=False):
+        return flatbuffers.util.BufferHasIdentifier(buf, offset, b"\x54\x46\x4C\x33", size_prefixed=size_prefixed)
 
     # SoftmaxOptions
     def Init(self, buf, pos):
@@ -28,8 +34,5 @@ class SoftmaxOptions(object):
 
 
 def SoftmaxOptionsStart(builder): builder.StartObject(1)
-def SoftmaxOptionsAddBeta(
-    builder, beta): builder.PrependFloat32Slot(0, beta, 0.0)
-
-
+def SoftmaxOptionsAddBeta(builder, beta): builder.PrependFloat32Slot(0, beta, 0.0)
 def SoftmaxOptionsEnd(builder): return builder.EndObject()

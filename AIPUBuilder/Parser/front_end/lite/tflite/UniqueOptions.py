@@ -3,6 +3,8 @@
 # namespace: tflite
 
 import flatbuffers
+from flatbuffers.compat import import_numpy
+np = import_numpy()
 
 
 class UniqueOptions(object):
@@ -14,6 +16,10 @@ class UniqueOptions(object):
         x = UniqueOptions()
         x.Init(buf, n + offset)
         return x
+
+    @classmethod
+    def UniqueOptionsBufferHasIdentifier(cls, buf, offset, size_prefixed=False):
+        return flatbuffers.util.BufferHasIdentifier(buf, offset, b"\x54\x46\x4C\x33", size_prefixed=size_prefixed)
 
     # UniqueOptions
     def Init(self, buf, pos):
@@ -28,8 +34,5 @@ class UniqueOptions(object):
 
 
 def UniqueOptionsStart(builder): builder.StartObject(1)
-def UniqueOptionsAddIdxOutType(
-    builder, idxOutType): builder.PrependInt8Slot(0, idxOutType, 2)
-
-
+def UniqueOptionsAddIdxOutType(builder, idxOutType): builder.PrependInt8Slot(0, idxOutType, 2)
 def UniqueOptionsEnd(builder): return builder.EndObject()

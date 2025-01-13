@@ -1,5 +1,5 @@
-# Copyright © 2022 Arm Technology (China) Co. Ltd. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
+# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
 
 
 # cython: language_level=3
@@ -10,11 +10,16 @@ import sys
 import os
 import logging
 import traceback
+try:
+    from AIPUBuilder import __release__
+except ImportError:
+    __release__ = True
 
 __all__ = [
     'LOGGER',
     'INFO',
     'WARN',
+    'WARN_EXCEPTION',
     'DEBUG',
     'ERROR',
     'FATAL',
@@ -50,6 +55,9 @@ class CUPLogger():
         if not msg.startswith(self.header):
             msg = self.header + msg
         return msg
+
+    def show_as_is(self, msg, *args, **kwargs):
+        self.logger.info(msg % args)
 
     def info(self, msg, *args, **kwargs):
         self.logger.info(self._info_msg + (self.apply_header(msg) % args))
@@ -90,15 +98,28 @@ def WARN(msg, *args, **kwargs):
     LOGGER.warning(msg, *args, **kwargs)
 
 
+def WARN_EXCEPTION(msg, *args, **kwargs):
+    if __release__:
+        WARN(msg, *args, **kwargs)
+    else:
+        ERROR(msg, *args, **kwargs)
+
+
 def ERROR(msg, *args, **kwargs):
     LOGGER.error(msg, *args, **kwargs)
+    exc = traceback.format_exc().replace('%', '%%')
+    if exc != 'NoneType: None\n':
+        LOGGER.show_as_is(exc)
+    else:
+        stacks = traceback.format_stack(limit=2)
+        LOGGER.show_as_is('Error comes from: \n' + stacks[0].replace('%', '%%'))
 
 
 def FATAL(msg, *args, **kwargs):
     LOGGER.fatal(msg, *args, **kwargs)
-    exc = traceback.format_exc()
+    exc = traceback.format_exc().replace('%', '%%')
     if exc != 'NoneType: None\n':
-        LOGGER.fatal(exc)
+        LOGGER.show_as_is(exc)
     LOGGER.error('Parser Failed!')
     sys.exit(-1)
 
@@ -111,6 +132,8 @@ def get_error_count():
 def init_logging(verbose, logfile=None):
     if verbose:
         logging_level = logging.DEBUG
+        lib_logger = logging.getLogger('onnxscript')
+        lib_logger.setLevel(logging.ERROR)
     else:
         logging_level = logging.INFO
     log_format = '%(message)s'

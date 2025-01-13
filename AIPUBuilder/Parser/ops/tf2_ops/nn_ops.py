@@ -1,11 +1,11 @@
-# Copyright © 2022 Arm Technology (China) Co. Ltd. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
+# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
 
 
 import tensorflow as tf
 from ..op import *
 from ..tf_ops.math_ops import TfSoftsignOp
-from ..tf_ops.nn_ops import TfSeluOp, TfRelu6Op
+from ..tf_ops.nn_ops import TfSeluOp, TfReluOp, TfRelu6Op
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 from ...common.defs import FLOAT_EQUAL
 
@@ -291,7 +291,46 @@ class TfgeluOp(ActivationOnlyOp, Tf2Op):
 
     @property
     def correspond_onnx_op(self):
-        return {'type': 'Gelu', 'version': 1}
+        return {'type': 'Gelu', 'version': 20}
+
+
+class Tfleaky_reluOp(ActivationOnlyOp, Tf2Op):
+    @classmethod
+    def attributes(cls):
+        return {2: {'alpha': {'type': AttrType.FLOAT, 'default': 0.2},
+                    }}
+
+    def __init__(self, graph, attr_dict=None):
+        super(Tfleaky_reluOp, self).__init__(graph, attr_dict)
+        self.update_attributes(Tfleaky_reluOp, attr_dict)
+        assert self.check_required(), 'Tfleaky_reluOp is missing a required parameter.'
+        self.activations = 'LEAKYRELU'
+
+    def __getattr__(self, item):
+        ret = None
+        try:
+            if item == 'alpha':
+                inputs = self.get_input_tensors()
+                if len(inputs) >= 2:
+                    ret = inputs[1].item()
+                    self.__dict__['_attr'][item].value = ret
+                else:
+                    ret = self.__dict__['_attr'][item].value
+        except:
+            ret = None
+        if ret is None:
+            ret = super(Tfleaky_reluOp, self).__getattr__(item)
+        return ret
+
+    def infer_shape(self):
+        super(Tfleaky_reluOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = tf.nn.leaky_relu(inputs[0], self.alpha).numpy()
+        self.set_out_tensor(out_tensor)
+
+    @property
+    def correspond_onnx_op(self):
+        return {'type': 'LeakyRelu', 'version': 6}
 
 
 class Tflocal_response_normalizationOp(OpHasOneOutPort, Tf2Op):
@@ -430,6 +469,10 @@ class Tfmax_pool_with_argmaxOp(Tf2HasPaddingStrides, OpHasMultipleOutPorts):
                                                  include_batch_in_index=self.include_batch_in_index)
         out_tensors = [t.numpy() for t in out_tensors]
         self.set_out_tensor(out_tensors)
+
+
+class TfreluOp(TfReluOp, Tf2Op):
+    pass
 
 
 class Tfrelu6Op(TfRelu6Op, Tf2Op):

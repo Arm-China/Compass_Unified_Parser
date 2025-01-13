@@ -1,5 +1,5 @@
-# Copyright © 2022 Arm Technology (China) Co. Ltd. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
+# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
 
 
 import numpy as np
@@ -12,7 +12,7 @@ from ....common.utils import extend_lists
 from ....graph.node_wrap import NodeWrap
 from ....graph.graph_algo import *
 from ....graph.pattern_match import matched_patterns, single_node_matcher, two_nodes_matcher
-from .common_passes import remove_useless_op, insert_transpose, insert_constant, insert_gather, \
+from .common_passes import remove_useless_op, insert_transpose, insert_transpose_after, insert_constant, insert_gather, \
     remove_redundant_transpose
 
 
@@ -34,8 +34,9 @@ def decompose_abnormal_reshape(graph, changed_nodes):
                 intermediate_shape = []
                 pre_4d_node = None
                 cur_node = node_name
-                while graph.pred[cur_node]:
-                    cur_node = graph.pred[cur_node][0]
+                pred = graph.predecessor
+                while pred[cur_node]:
+                    cur_node = pred[cur_node][0]
                     cur_obj = NodeWrap(graph, cur_node)['object']
                     if cur_obj is not None:
                         cur_out_shapes = cur_obj.get_output_shapes()
@@ -81,7 +82,7 @@ def insert_transpose_for_layoutconcern(graph):
         current_op_types = current_op_types.union(
             set(fr.get_concrete_subclass_names()))
     layout_types = list(set(LayoutConcernedOp.get_concrete_subclass_names(
-    )).intersection(current_op_types))
+    )).intersection(current_op_types).difference(['Col2Im']))
     layout_types = sorted(layout_types)
     matches = extend_lists([single_node_matcher(graph, type_name)
                             for type_name in layout_types])
@@ -101,13 +102,10 @@ def insert_transpose_for_layoutconcern(graph):
                     and len(output_shape) >= 2:
                 input_dim = len(input_shape)
                 pre_trans_perm = [0] + list(range(2, input_dim)) + [1]
-                post_trans_perm = [0, input_dim - 1] + \
-                    list(range(1, input_dim - 1))
+                post_trans_perm = Op.cal_inverse_perm(pre_trans_perm)
                 in_edges = graph.sorted_in_edges(node, data=True)
-                out_edges = graph.sorted_out_edges(
-                    node, keys=True, data=True)
                 src, _, in_attr = in_edges[0]
-                insert_transpose(graph, src, node, in_attr, pre_trans_perm)
+                insert_transpose(graph, src, node, in_attr, pre_trans_perm, quantize=node_obj.quantize)
 
                 post_trans_list = []
                 if node_obj.type != 'GenerateProposals':
@@ -115,31 +113,12 @@ def insert_transpose_for_layoutconcern(graph):
                     for p in out_ports:
                         if (node_obj.type == 'BatchNormalization' or node_obj.type == 'TfFusedBatchNormV3') and p > 0:
                             continue
-                        candidate_name = node + \
-                            '_post_transpose' if len(
-                                out_ports) == 1 else node + '_post_transpose_port_' + str(p)
-                        post_trans = get_valid_node_name(
-                            graph, candidate_name)
-                        node_port_tensor = None
-                        for _, dst, k, out_attr in out_edges:
-                            if out_attr['src_out_port'] == p:
-                                graph.remove_edge(node, dst, key=k)
-                                new_out_attr = copy.deepcopy(out_attr)
-                                new_out_attr['src_out_port'] = 0
-                                graph.add_edge(
-                                    post_trans, dst, **new_out_attr)
-                                if out_attr['tensor'].value is not None:
-                                    node_port_tensor = np.transpose(out_attr['tensor'].value, [
-                                                                    post_trans_perm.index(i) for i in range(len(post_trans_perm))])
-                        graph.add_edge(
-                            node, post_trans, **{'src_out_port': p, 'dst_in_port': 0, 'tensor': Tensor(value=node_port_tensor)})
-                        post_trans_attr = node_obj.copied_attr()
-                        post_trans_attr.update({'name': post_trans,
-                                                'opset_version': 1,
-                                                'data_format': 'NHWC',
-                                                'perm': post_trans_perm})
-                        NodeWrap(graph, post_trans).replace_obj(
-                            'Transpose', post_trans_attr)
+                        post_trans = insert_transpose_after(
+                            graph, node, post_trans_perm, port=p, quantize=node_obj.quantize)
+                        if post_trans is None:
+                            ERROR(
+                                '[Parser]: Meets Error for Node (%s) in insert_transpose_for_layoutconcern!' % node)
+                            continue
                         post_trans_list.append(post_trans)
 
                     if node_obj.type == 'MaxPool' and len(out_ports) == 2:
@@ -203,7 +182,6 @@ def insert_transpose_for_layoutconcern(graph):
                             'Add', {'name': add, 'opset_version': 7})
                         NodeWrap(graph, cast_to_int).replace_obj(
                             'Cast', {'name': cast_to_int, 'opset_version': 13, 'to': 6})
-
                 else:
                     post_trans_list.append(node)
 
@@ -218,12 +196,12 @@ def insert_transpose_for_layoutconcern(graph):
                             if in_attr['dst_in_port'] == 0:
                                 continue
                             insert_transpose(
-                                graph, src, node, in_attr, pre_trans_perm)
+                                graph, src, node, in_attr, pre_trans_perm, quantize=node_obj.quantize)
                 elif node_obj.type == 'MaxUnpool':
                     if len(in_edges) == 3 and len(input_shape) >= 3:
                         indices, _, in_attr_1 = in_edges[1]
                         insert_transpose(
-                            graph, indices, node, in_attr_1, pre_trans_perm)
+                            graph, indices, node, in_attr_1, pre_trans_perm, quantize=node_obj.quantize)
                         out_shape, _, in_attr_2 = in_edges[2]
                         insert_gather(graph,
                                       out_shape,
@@ -236,7 +214,7 @@ def insert_transpose_for_layoutconcern(graph):
                             '[Parser]: Meets invalid MaxUnpool Node (%s) in insert_transpose_for_layoutconcern!' % node)
                 elif node_obj.type == 'Resize':
                     input_tensors = node_obj.get_input_tensors()
-                    dim = len(input_tensors[0].shape)
+                    dim = len(input_shape)
                     indices = np.array(
                         [0] + list(range(2, dim)) + [1] if dim > 1 else [0], np.int32)
                     if node_obj.scales is not None and node_obj.scales.size == indices.size:
@@ -265,10 +243,13 @@ def insert_transpose_for_layoutconcern(graph):
                     if len(in_edges) >= 2:
                         src2, _, in_attr2 = in_edges[1]
                         insert_transpose(
-                            graph, src2, node, in_attr2, [0, 2, 3, 1])
+                            graph, src2, node, in_attr2, [0, 2, 3, 1], quantize=node_obj.quantize)
                     else:
                         ERROR('[Parser]: Meets invalid %s Op (%s) in insert_transpose_for_layoutconcern!' % (
                             node_obj.type, node))
+                elif node_obj.type == 'InstanceNormalization':
+                    node_obj.non_channel_axes = list(
+                        range(1, len(input_shape) - 1))
                 if node in graph._attr['output_names'] and post_trans_list and node not in post_trans_list:
                     index = graph._attr['output_names'].index(node)
                     graph._attr['output_names'][index] = post_trans_list[0]
@@ -285,7 +266,7 @@ def insert_transpose_for_layoutconcern(graph):
 
 
 def nhwc_for_other(graph):
-    ops = ['CTCGreedyDecoder', 'Pad']
+    ops = ['AffineGrid', 'CTCGreedyDecoder', 'Pad']
     matches = [single_node_matcher(graph, op_type) for op_type in ops]
     matches = extend_lists(matches)
     for m in matches:
@@ -298,7 +279,15 @@ def nhwc_for_other(graph):
                     in_shapes = node_obj.get_input_shapes()
                     if len(in_edges) >= 2 and len(in_shapes[0]) == 3:
                         src, _, in_attr = in_edges[0]
-                        insert_transpose(graph, src, node, in_attr, [1, 0, 2])
+                        insert_transpose(graph, src, node, in_attr, [1, 0, 2], quantize=node_obj.quantize)
+                elif node_obj.type == 'AffineGrid':
+                    in_edges = graph.sorted_in_edges(node, data=True)
+                    in_shapes = node_obj.get_input_shapes()
+                    if len(in_edges) >= 2 and len(in_shapes[1]) == 1 and in_shapes[1][0] is not None:
+                        src, _, in_attr = in_edges[1]
+                        insert_gather(graph, src, node,
+                                      np.array([0] + list(range(2, in_shapes[1][0])) + [1], np.int32),
+                                      edge_attr=in_attr)
                 node_obj.data_format = 'NHWC'
         else:
             ERROR('[Parser]: Meets invalid Op (%s) in nhwc_for_other!' % node)

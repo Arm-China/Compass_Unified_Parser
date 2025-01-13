@@ -1,5 +1,5 @@
-# Copyright © 2022 Arm Technology (China) Co. Ltd. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
+# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
 
 
 import numpy as np
@@ -774,6 +774,22 @@ class TfKerasInputLayerOp(OpHasOneOutPort, InputLikeOp, KerasOp):
         return {'type': 'Input', 'version': 1}
 
 
+class TfKerasLambdaOp(OpHasVariableOutPorts, KerasOp):
+    @classmethod
+    def attributes(cls):
+        return {2: {'subgraph_nodes': {'type': AttrType.UNDEFINED, 'default': None},
+                    'subgraph_output_names': {'type': AttrType.STRINGS, 'default': []}},
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(TfKerasLambdaOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TfKerasLambdaOp, attr_dict)
+        assert self.check_required(), 'TfKerasLambdaOp is missing a required parameter.'
+
+    def infer_shape(self, input_tensor=None):
+        super(TfKerasLambdaOp, self).infer_shape()
+
+
 class TfKerasLayerNormalizationOp(KerasNormalizationOp):
     def infer_shape(self):
         super(TfKerasLayerNormalizationOp, self).infer_shape()
@@ -790,7 +806,7 @@ class TfKerasLayerNormalizationOp(KerasNormalizationOp):
 
     @property
     def correspond_onnx_op(self):
-        return {'type': 'LayerNorm', 'version': 1}
+        return {'type': 'LayerNormalization', 'version': 17}
 
 
 class TfKerasLeakyReLUOp(OpHasOneOutPort, KerasOp):

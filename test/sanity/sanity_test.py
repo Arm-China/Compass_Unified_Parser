@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
+
+
 #!/usr/bin/env python3
 # -*- coding: UTF-8 -*-
 from job_mamanger import JobManager
@@ -8,107 +12,84 @@ import configparser
 
 WORKING_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_DIR = "/project/ai/zhouyi_compass/Model"
-fast_test = os.path.abspath(os.path.join(WORKING_DIR, "fast_paser_test.py"))
+fast_test = os.path.abspath(os.path.join(WORKING_DIR, "fast_parser_test.py"))
 jm = JobManager()
 print("Parser sanity test working in %s" % WORKING_DIR)
 TF_BENCHMARK = {
     '1_13': [
-        'resnet_v1_50',
-        'alexnet',
-        'mobilenet_v2',
-        'inception_v3',
-        'inception_v4', 'resnet_v1_101',
-        'vgg_16',
-        'shufflenet_v2',
-        'deeplab_v3',
-        'fcn',
-        'yolo_v2_416',
-        'mobilenet_v2_ssd',
-        'wavenet',
-        'deepspeech_v2'
     ],
     '1_15': [
-        'resnet_v1_50',
-        'alexnet',
-        'mobilenet_v2',
+        'deeplab_v3',
+        'gru_l',
         'inception_v3',
         'inception_v4',
-        'resnet_v1_101',
-        'vgg_16',
-        'shufflenet_v2',
-        'deeplab_v3',
-        'fcn',
-        'yolo_v2_416',
-        'mobilenet_v2_ssd',
-        'gru_l',
-        'wavenet',
-        'deepspeech_v2',
-        'unet',
-        'transformer_mini',
-        'efficientnet_b5',
-        'espcn',
-        'faster_rcnn',
         'maskrcnn',
-        'facenet'
+        'mobilenet_v2',
+        'mobilenet_v2_ssd',
+        'resnet_v1_50',
+        'resnet_v2_50',
+        'shufflenet_v2',
+        'transformer_mini',
+        # 'transformer_official',
+        'wavenet',
+        'yolo_v2_416',
     ],
+    '2_6': [
+        'efficientnet_b5',  # SavedModel
+        'inception_v3',     # keras
+        'mobilenet_v2',     # hdf5
+        'resnet_v2_50',     # h5
+    ]
 }
 
 TFLITE_BENCHMARK = {
     '1_13': [
-        'inception_v3',
-        'inception_v4',
-        'mobilenet_v2',
-        'resnet_v1_50',
-        'resnet_v1_101',
-        'shufflenet_v2',
-        'deeplab_v3',
-        'mobilenet_v1_ssd',
     ],
     '1_15': [
-        'espcn',
-        'alexnet',
-        'vgg_16',
-        'mobilenet_v3'
+        'mobilenet_v1_ssd'
     ],
 }
 
 ONNX_BENCHMARK = {
     '1_6': [
-        'alexnet',
-        'inception_v3',
-        'inception_v4',
-        'mobilenet_v2',
-        'resnet_v1_50',
-        'resnet_v1_101', 'vgg_16',
-        'fcn',
-        'deeplab_v3',
-        'yolo_v2_416',
-        'mobilenet_v2_ssd',
+        # 'swin_transformer',  will cost ~40+ mins
+        'unet_3d',
+        'vision_transformer',
         'yolo_v3_tiny',
-        'kws_gru',
-        'wavenet',
-        'deepspeech_v2',
-        'shufflenet_v2',
-        'unet_3d'
+        'yolo_v4',
+        'yolo_v5',
     ]
 }
 
 CAFFE_BENCHMARK = {
     '1_0': [
+        'faster_rcnn',
         'inception_v3',
         'inception_v4',
         'mobilenet_v2',
-        'resnet_v1_50',
-        'resnet_v1_101',
-        'vgg_16',
-        'shufflenet_v2',
-        'fcn',
-        'erfnet',
+        'mobilenet_v2_ssd',
+        'mtcnn_o',
+        'mtcnn_p',
+        'mtcnn_r',
         'peleenet',
+        'resnet_v1_50',
+        'shufflenet_v2',
         'yolo_v2_416',
         'yolo_v3',
-        'faster_rcnn',
-        'mobilenet_v2_ssd'
+    ]
+}
+
+TORCH_BENCHMARK = {
+    '1_12': [
+        'alexnet',
+        'deeplab_v3',
+        'efficientnet_b5',
+        'fcn',
+        'resnet_v1_50',
+        'shufflenet_v2',
+        'swin_transformer_tiny_224',
+        'vgg_16',
+        'ViT_B_16',
     ]
 }
 
@@ -157,6 +138,10 @@ for k, models in ONNX_BENCHMARK.items():
 for k, models in CAFFE_BENCHMARK.items():
     for m in models:
         SANITY_MODELS.append(f"caffe-{k}-{m}")
+
+for k, models in TORCH_BENCHMARK.items():
+    for m in models:
+        SANITY_MODELS.append(f"torch-{k}-{m}")
 
 for k, models in AIB_MODELS.items():
     for m in models:

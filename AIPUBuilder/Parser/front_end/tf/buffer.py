@@ -1,5 +1,5 @@
-# Copyright © 2022 Arm Technology (China) Co. Ltd. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
+# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
 
 
 import numpy as np
@@ -108,10 +108,13 @@ def parse_tensor(tensor_pb):
     else:
         value = np.array(tf_types_convert_mapping[dtype][2](
             tensor_pb), dtype=tf_types_convert_mapping[dtype][1])
-        try:
-            value = np.broadcast_to(value, shape=shape).copy()
-        except:
-            value = np.reshape(value, shape)
+        if len(value) == 0:
+            value = np.zeros(shape, value.dtype)
+        else:
+            try:
+                value = np.broadcast_to(value, shape=shape).copy()
+            except:
+                value = np.reshape(value, shape)
         return value
 
 
@@ -143,8 +146,8 @@ def parse_node_attr(node_attr):
         except Exception as e:
             WARN('[Parser]: Reading TF attr (%s) meets error (%s) in parse_node_attr!' % (
                 k, str(e)))
-        DEBUG('[Parser]: Reading TF node info: key: (%s) ,value: (%s)!' %
-              (str(k), str(value)))
+        # DEBUG('[Parser]: Reading TF node info: key: (%s) ,value: (%s)!' %
+        #       (str(k), str(value)))
     return ret
 
 
@@ -160,7 +163,7 @@ def get_node_content(node_proto):
 
 def get_op_content(operation):
     ret = get_node_content(operation.node_def)
-    output = [(out.name, out.shape.as_list() if out.shape.dims is not None else [])
+    output = [(out.name, out.shape.as_list() if out.shape.dims is not None else None)
               for out in operation.outputs]
     ret.update({'output': output})
     return ret

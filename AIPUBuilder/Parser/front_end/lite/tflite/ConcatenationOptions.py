@@ -3,6 +3,8 @@
 # namespace: tflite
 
 import flatbuffers
+from flatbuffers.compat import import_numpy
+np = import_numpy()
 
 
 class ConcatenationOptions(object):
@@ -14,6 +16,10 @@ class ConcatenationOptions(object):
         x = ConcatenationOptions()
         x.Init(buf, n + offset)
         return x
+
+    @classmethod
+    def ConcatenationOptionsBufferHasIdentifier(cls, buf, offset, size_prefixed=False):
+        return flatbuffers.util.BufferHasIdentifier(buf, offset, b"\x54\x46\x4C\x33", size_prefixed=size_prefixed)
 
     # ConcatenationOptions
     def Init(self, buf, pos):
@@ -35,10 +41,7 @@ class ConcatenationOptions(object):
 
 
 def ConcatenationOptionsStart(builder): builder.StartObject(2)
-
-
-def ConcatenationOptionsAddAxis(
-    builder, axis): builder.PrependInt32Slot(0, axis, 0)
+def ConcatenationOptionsAddAxis(builder, axis): builder.PrependInt32Slot(0, axis, 0)
 def ConcatenationOptionsAddFusedActivationFunction(
     builder, fusedActivationFunction): builder.PrependInt8Slot(1, fusedActivationFunction, 0)
 

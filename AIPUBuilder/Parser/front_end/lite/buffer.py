@@ -1,5 +1,5 @@
-# Copyright © 2022 Arm Technology (China) Co. Ltd. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
+# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
 
 
 import inspect
@@ -8,6 +8,7 @@ import re
 from collections import OrderedDict
 from ...common.utils import is_file
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
+
 from .tflite.Model import Model
 from .tflite.Operator import Operator
 from .tflite.BuiltinOptions import BuiltinOptions
@@ -20,10 +21,17 @@ from .tflite.AddNOptions import AddNOptions
 from .tflite.AddOptions import AddOptions
 from .tflite.ArgMaxOptions import ArgMaxOptions
 from .tflite.ArgMinOptions import ArgMinOptions
+from .tflite.AssignVariableOptions import AssignVariableOptions
+from .tflite.ATan2Options import ATan2Options
 from .tflite.BatchMatMulOptions import BatchMatMulOptions
 from .tflite.BatchToSpaceNDOptions import BatchToSpaceNDOptions
 from .tflite.BidirectionalSequenceLSTMOptions import BidirectionalSequenceLSTMOptions
 from .tflite.BidirectionalSequenceRNNOptions import BidirectionalSequenceRNNOptions
+from .tflite.BitcastOptions import BitcastOptions
+from .tflite.BitwiseXorOptions import BitwiseXorOptions
+from .tflite.BroadcastToOptions import BroadcastToOptions
+from .tflite.BucketizeOptions import BucketizeOptions
+from .tflite.CallOnceOptions import CallOnceOptions
 from .tflite.CallOptions import CallOptions
 from .tflite.CastOptions import CastOptions
 from .tflite.ConcatEmbeddingsOptions import ConcatEmbeddingsOptions
@@ -32,6 +40,7 @@ from .tflite.Conv2DOptions import Conv2DOptions
 from .tflite.Conv3DOptions import Conv3DOptions
 from .tflite.CosOptions import CosOptions
 from .tflite.CumsumOptions import CumsumOptions
+from .tflite.CustomQuantization import CustomQuantization
 from .tflite.DensifyOptions import DensifyOptions
 from .tflite.DepthToSpaceOptions import DepthToSpaceOptions
 from .tflite.DepthwiseConv2DOptions import DepthwiseConv2DOptions
@@ -48,7 +57,13 @@ from .tflite.FloorModOptions import FloorModOptions
 from .tflite.FullyConnectedOptions import FullyConnectedOptions
 from .tflite.GatherNdOptions import GatherNdOptions
 from .tflite.GatherOptions import GatherOptions
+from .tflite.GeluOptions import GeluOptions
+from .tflite.GreaterEqualOptions import GreaterEqualOptions
+from .tflite.GreaterOptions import GreaterOptions
 from .tflite.HardSwishOptions import HardSwishOptions
+from .tflite.HashtableFindOptions import HashtableFindOptions
+from .tflite.HashtableImportOptions import HashtableImportOptions
+from .tflite.HashtableSizeOptions import HashtableSizeOptions
 from .tflite.IfOptions import IfOptions
 from .tflite.L2NormOptions import L2NormOptions
 from .tflite.LeakyReluOptions import LeakyReluOptions
@@ -81,14 +96,18 @@ from .tflite.PadV2Options import PadV2Options
 from .tflite.Pool2DOptions import Pool2DOptions
 from .tflite.PowOptions import PowOptions
 from .tflite.QuantizeOptions import QuantizeOptions
+from .tflite.RandomOptions import RandomOptions
 from .tflite.RangeOptions import RangeOptions
 from .tflite.RankOptions import RankOptions
+from .tflite.ReadVariableOptions import ReadVariableOptions
 from .tflite.ReducerOptions import ReducerOptions
 from .tflite.ReshapeOptions import ReshapeOptions
 from .tflite.ResizeBilinearOptions import ResizeBilinearOptions
 from .tflite.ResizeNearestNeighborOptions import ResizeNearestNeighborOptions
 from .tflite.ReverseSequenceOptions import ReverseSequenceOptions
 from .tflite.ReverseV2Options import ReverseV2Options
+from .tflite.Rfft2dOptions import Rfft2dOptions
+from .tflite.RightShiftOptions import RightShiftOptions
 from .tflite.RNNOptions import RNNOptions
 from .tflite.ScatterNdOptions import ScatterNdOptions
 from .tflite.SegmentSumOptions import SegmentSumOptions
@@ -96,11 +115,12 @@ from .tflite.SelectOptions import SelectOptions
 from .tflite.SelectV2Options import SelectV2Options
 from .tflite.SequenceRNNOptions import SequenceRNNOptions
 from .tflite.ShapeOptions import ShapeOptions
+from .tflite.SignOptions import SignOptions
 from .tflite.SkipGramOptions import SkipGramOptions
 from .tflite.SliceOptions import SliceOptions
 from .tflite.SoftmaxOptions import SoftmaxOptions
-from .tflite.SpaceToDepthOptions import SpaceToDepthOptions
 from .tflite.SpaceToBatchNDOptions import SpaceToBatchNDOptions
+from .tflite.SpaceToDepthOptions import SpaceToDepthOptions
 from .tflite.SparseToDenseOptions import SparseToDenseOptions
 from .tflite.SplitOptions import SplitOptions
 from .tflite.SplitVOptions import SplitVOptions
@@ -117,6 +137,10 @@ from .tflite.TransposeOptions import TransposeOptions
 from .tflite.UnidirectionalSequenceLSTMOptions import UnidirectionalSequenceLSTMOptions
 from .tflite.UniqueOptions import UniqueOptions
 from .tflite.UnpackOptions import UnpackOptions
+from .tflite.UnsortedSegmentMaxOptions import UnsortedSegmentMaxOptions
+from .tflite.UnsortedSegmentMinOptions import UnsortedSegmentMinOptions
+from .tflite.UnsortedSegmentProdOptions import UnsortedSegmentProdOptions
+from .tflite.UnsortedSegmentSumOptions import UnsortedSegmentSumOptions
 from .tflite.WhereOptions import WhereOptions
 from .tflite.WhileOptions import WhileOptions
 from .tflite.ZerosLikeOptions import ZerosLikeOptions
@@ -155,7 +179,8 @@ tensor_type_map = {
     12: np.uint64,
     13: lambda x: x,
     14: lambda x: x,
-    15: np.uint32
+    15: np.uint32,
+    16: np.uint16
 }
 
 
@@ -197,7 +222,10 @@ def parse_operator(operator, tflite_model, buffer):
                               opcode.DeprecatedBuiltinCode())
     else:
         builtin_op_code = opcode.BuiltinCode()
-    builtin_op_type = get_class_variables_map(BuiltinOperator)[builtin_op_code]
+    opcode_optype_maps = get_class_variables_map(BuiltinOperator)
+    assert builtin_op_code in opcode_optype_maps, \
+        'Op builtin_code (%d) out of range in parse_operator.' % builtin_op_code
+    builtin_op_type = opcode_optype_maps[builtin_op_code]
     builtin_op_version = opcode.Version()
 
     is_tf_op = False
@@ -260,7 +288,7 @@ def parse_operator(operator, tflite_model, buffer):
     return ret
 
 
-def parse_quantization_info(quant_info):
+def parse_quantization_info(quant_info, tensor_dtype=None):
     ret = OrderedDict()
     if quant_info is not None and quant_info.Details() is None:
         info_names = ['Scale', 'ZeroPoint', 'Min', 'Max']
@@ -274,10 +302,17 @@ def parse_quantization_info(quant_info):
                 elif str(value.dtype) == 'int64':
                     value = value.astype(np.int32)
                 ret.update({name: value})
+        if tensor_dtype is not None \
+                and np.issubdtype(tensor_dtype, np.integer) \
+                and 'Min' not in ret and 'Max' not in ret \
+                and 'Scale' in ret and 'ZeroPoint' in ret:
+            min_value = (np.iinfo(tensor_dtype).min - ret['ZeroPoint']) * ret['Scale']
+            max_value = (np.iinfo(tensor_dtype).max - ret['ZeroPoint']) * ret['Scale']
+            ret.update({'Min': min_value.astype(np.float32), 'Max': max_value.astype(np.float32)})
     return ret
 
 
-def parse_tensor(tensor_info, tflite_model, quantize=False):
+def parse_tensor(tensor_info, tflite_model):
     tensor, is_const, linear_type = tensor_info
     buffer_index = tensor.Buffer()
     assert 0 <= buffer_index < tflite_model.BuffersLength(
@@ -293,38 +328,47 @@ def parse_tensor(tensor_info, tflite_model, quantize=False):
     except:
         parsed_data = np.empty(data_shape, dtype=data_type)
 
-    quant_info_dict = parse_quantization_info(tensor.Quantization())
-    if quant_info_dict:
-        if is_const:
-            if not quantize:
-                if linear_type == 'DEPTHWISE_CONV_2D':
-                    scale = quant_info_dict['Scale']
-                    zp = quant_info_dict['ZeroPoint']
-                else:
-                    expand_dims = len(parsed_data.shape) - \
-                        len(quant_info_dict['Scale'].shape)
-                    new_scale_zp_shape = list(
-                        quant_info_dict['Scale'].shape) + [1 for _ in range(expand_dims)]
-                    scale = np.reshape(
-                        quant_info_dict['Scale'], newshape=new_scale_zp_shape)
-                    zp = np.reshape(
-                        quant_info_dict['ZeroPoint'], newshape=new_scale_zp_shape)
-                parsed_data = (parsed_data - zp) * scale
-        else:
-            if 'ZeroPoint' in quant_info_dict and 'Scale' in quant_info_dict:
-                parsed_data = (
-                    parsed_data - quant_info_dict['ZeroPoint']) * quant_info_dict['Scale']
-        if parsed_data.dtype == np.float64:
-            parsed_data = parsed_data.astype(np.float32)
-
+    quantize = False
+    quant_info_dict = parse_quantization_info(tensor.Quantization(), data_type)
+    if quant_info_dict and 'ZeroPoint' in quant_info_dict and 'Scale' in quant_info_dict:
+        quantize = True
     ret = {'name': tensor.Name().decode('utf-8'),
            'data': parsed_data,
            'is_const': is_const,
-           'dtype': str(data_type.__name__)
+           'dtype': str(data_type.__name__),
+           'linear_type': linear_type,
+           'quantize': quantize,
            }
     if quant_info_dict:
         ret.update({'quant_info': quant_info_dict})
     return ret
+
+
+def dequantize_tensor_data(tensor_info, quantized):
+    if 'quant_info' in tensor_info and 'ZeroPoint' in tensor_info['quant_info'] and 'Scale' in tensor_info['quant_info']:
+        tensor_data = tensor_info['data']
+        quant_info = tensor_info['quant_info']
+        if tensor_info['is_const']:
+            if not quantized:
+                if tensor_info['linear_type'] == 'DEPTHWISE_CONV_2D':
+                    scale = quant_info['Scale']
+                    zp = quant_info['ZeroPoint']
+                else:
+                    expand_dims = len(tensor_data.shape) - len(quant_info['Scale'].shape)
+                    new_scale_zp_shape = list(quant_info['Scale'].shape) + [1] * expand_dims
+                    scale = np.reshape(
+                        quant_info['Scale'], newshape=new_scale_zp_shape)
+                    zp = np.reshape(
+                        quant_info['ZeroPoint'], newshape=new_scale_zp_shape)
+                tensor_data = (tensor_data - zp) * scale
+        else:
+            tensor_data = (tensor_data - quant_info['ZeroPoint']) * quant_info['Scale']
+        if tensor_data.dtype == np.float64:
+            tensor_data = tensor_data.astype(np.float32)
+        tensor_info['data'] = tensor_data
+    if not quantized:
+        tensor_info['quantize'] = False
+    return tensor_info
 
 
 def get_act_info_from_tensor(tensor_dict):

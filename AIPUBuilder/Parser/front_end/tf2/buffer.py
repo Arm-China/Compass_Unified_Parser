@@ -1,11 +1,13 @@
-# Copyright © 2022 Arm Technology (China) Co. Ltd. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
+# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
 
 
 import copy
+import os
+
 import numpy as np
 import tensorflow as tf
-from tensorflow.keras import backend as K
+import tensorflow.compat.v1 as tfv1
 from collections import OrderedDict
 from ...common.defs import FLOAT_EQUAL
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
@@ -73,6 +75,15 @@ def get_node_attr(layer):
             ret.update(layer_config)
     except Exception as e:
         DEBUG('[Parser]: Fail to get config for layer (%s) because %s' % (layer.name, str(e)))
+
+    if type(layer).__name__ == 'Lambda':
+        from ..tf.load import get_possible_outputs, parse_graph_def
+        graph_def = get_lambda_graph_def(layer)
+        output_names = get_possible_outputs(graph_def)
+        params = {'input_names': [], 'input_shapes': {},
+                  'output_names': output_names}
+        ret.update({'subgraph_nodes': parse_graph_def(graph_def, params)[0],
+                    'subgraph_output_names': output_names})
 
     for key in layer.__dir__():
         if key.startswith('_'):
@@ -146,11 +157,20 @@ def get_node_type(layer):
 
 def get_node_input(layer, input_info_dict):
     assert isinstance(input_info_dict, dict), 'Expect input_info_dict to be a dict!'
-    arg_pos_dict = layer._call_fn_arg_positions
-    arg_defaults_dict = layer._call_fn_arg_defaults
-
     if not input_info_dict:
         return []
+
+    arg_pos_dict = getattr(layer, '_call_fn_arg_positions', {})
+    arg_defaults_dict = getattr(layer, '_call_fn_arg_defaults', {})
+    if not arg_pos_dict:
+        call_spec = getattr(layer, '_call_spec')
+        if call_spec is not None:
+            arg_pos_dict = call_spec.arg_positions
+            defaults = call_spec.full_argspec.defaults
+            if defaults is not None:
+                keys = reversed(call_spec.full_argspec.args)
+                values = reversed(defaults)
+                arg_defaults_dict = {k: v for k, v in zip(keys, values)}
 
     if not arg_pos_dict:
         return [value for _, value in input_info_dict.items()]
@@ -164,6 +184,7 @@ def get_node_input(layer, input_info_dict):
             if isinstance(input_tensors, (list, tuple)):
                 if len(input_tensors) == 0:
                     continue
+                input_tensors_name = [tensor.name for tensor in input_tensors]
             else:
                 if not tf.is_tensor(input_tensors):
                     continue
@@ -171,9 +192,10 @@ def get_node_input(layer, input_info_dict):
                     input_info = input_info_dict['_CONSTANT_VALUE']
                     node_input_info.append(input_info)
                     continue
+                input_tensors_name = [input_tensors.name]
             inbound_layers = layer.inbound_nodes[arg_pos].inbound_layers
             inbound_layers = inbound_layers if isinstance(inbound_layers, (list, tuple)) else [inbound_layers]
-            inbound_nodes = [node.name for node in inbound_layers]
+            inbound_nodes = [node.name for node in inbound_layers][:len(input_tensors_name)]
             for node_name in inbound_nodes:
                 if node_name in input_info_dict:
                     input_info = input_info_dict[node_name]
@@ -212,10 +234,31 @@ def get_const_node_content(node_name, const_value):
     return ret
 
 
+def get_lambda_graph_def(layer):
+    def _get_input_tensor(layer_input):
+        input_shape = list(layer_input.shape)
+        input_dtype = layer_input.dtype.as_numpy_dtype
+        func_input = np.random.ranf(input_shape).astype(input_dtype)
+        return func_input
+
+    lambda_func = tf.function(layer)
+    layer_input = layer.input
+    if isinstance(layer_input, (list, tuple)):
+        func_input = []
+        for inp in layer_input:
+            func_input.append(_get_input_tensor(inp))
+    else:
+        func_input = _get_input_tensor(layer_input)
+    tfv1.reset_default_graph()
+    graph_def = lambda_func.get_concrete_function(func_input).graph.as_graph_def()
+    return graph_def
+
+
 def get_node_content(layer):
-    layer_outputs = layer.output if isinstance(layer.output, (list, tuple)) else [layer.output]
+    layer_outputs = layer.output if isinstance(
+        layer.output, (list, tuple)) else [layer.output]
     output_name_shape = [(out.name, out.shape.as_list() if out.shape is not None else [])
-                         for out in layer_outputs]
+                         for out in layer_outputs if hasattr(out, 'shape')]
     DEBUG('layer: %s, output: %s' % (layer.name, str(output_name_shape)))
     node_type, opcode_version = get_node_type(layer)
     ret = {'name': layer.name,
@@ -232,16 +275,14 @@ def get_nodes_content(layers, model_configs):
     inputs_info_dict = get_nodes_input_and_attr(model_configs)
     nodes_content = []
     for layer in layers:
-        # if hasattr(layer, 'layers'):
-        #     nodes_content.extend(get_nodes_content(layer.layers, exp_input_names))
-        #     continue
         node_content = get_node_content(layer)
         input_info_dict = inputs_info_dict.get(layer.name, {})
         node_input_info = get_node_input(layer, input_info_dict)
         node_content.update({
             'input': [(name, src_out_port, control_edge) for name, src_out_port, control_edge, _, _ in node_input_info]})
         nodes_content.append(node_content)
-        const_nodes = [(name, value) for name, _, _, is_const, value in node_input_info if is_const]
+        const_nodes = [(name, value) for name, _, _, is_const,
+                       value in node_input_info if is_const]
         for name, value in const_nodes:
             nodes_content.append(get_const_node_content(name, value))
     return nodes_content
@@ -252,8 +293,7 @@ def parse_keras(model_path, params):
     nodes_dict, tensors, np_tensors = OrderedDict(), OrderedDict(), OrderedDict()
     input_shapes = params['input_shapes'].copy()
     try:
-        load_options = tf.saved_model.LoadOptions(allow_partial_checkpoint=True)
-        model = tf.keras.models.load_model(model_path, compile=False, options=load_options)
+        model = tf.keras.models.load_model(model_path, compile=False)
     except Exception as e:
         WARN('[Parser]: Reading saved model/h5 file (%s) meets error (%s)!' %
              (model_path, str(e)))
@@ -302,15 +342,18 @@ def parse_keras(model_path, params):
         else:
             outputs.append(layer.output)
     try:
+        from tensorflow.keras import backend as K
         functors = K.function([model.input], outputs)
         outputs_value = functors(feed_model_inputs)
     except Exception as e:
         outputs_value = [None] * len(outputs)
         DEBUG('Fail to get outputs of tensors: %s' % str(e))
+    outputs = (out for out in outputs if hasattr(out, 'shape'))
     for out, out_value in zip(outputs, outputs_value):
         tensors.update({out.name: out})
         if out_value is None:
-            out_value = np.random.ranf(out.shape.as_list()).astype(out.dtype.name)
+            out_value = np.random.ranf(
+                out.shape.as_list()).astype(out.dtype.name)
         np_tensors.update({out.name: np.array(out_value)})
 
     return nodes, nodes_dict, tensors, np_tensors, input_shapes

@@ -3,6 +3,8 @@
 # namespace: tflite
 
 import flatbuffers
+from flatbuffers.compat import import_numpy
+np = import_numpy()
 
 
 class IfOptions(object):
@@ -14,6 +16,10 @@ class IfOptions(object):
         x = IfOptions()
         x.Init(buf, n + offset)
         return x
+
+    @classmethod
+    def IfOptionsBufferHasIdentifier(cls, buf, offset, size_prefixed=False):
+        return flatbuffers.util.BufferHasIdentifier(buf, offset, b"\x54\x46\x4C\x33", size_prefixed=size_prefixed)
 
     # IfOptions
     def Init(self, buf, pos):
@@ -35,12 +41,6 @@ class IfOptions(object):
 
 
 def IfOptionsStart(builder): builder.StartObject(2)
-
-
-def IfOptionsAddThenSubgraphIndex(
-    builder, thenSubgraphIndex): builder.PrependInt32Slot(0, thenSubgraphIndex, 0)
-def IfOptionsAddElseSubgraphIndex(
-    builder, elseSubgraphIndex): builder.PrependInt32Slot(1, elseSubgraphIndex, 0)
-
-
+def IfOptionsAddThenSubgraphIndex(builder, thenSubgraphIndex): builder.PrependInt32Slot(0, thenSubgraphIndex, 0)
+def IfOptionsAddElseSubgraphIndex(builder, elseSubgraphIndex): builder.PrependInt32Slot(1, elseSubgraphIndex, 0)
 def IfOptionsEnd(builder): return builder.EndObject()

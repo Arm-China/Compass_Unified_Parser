@@ -3,6 +3,8 @@
 # namespace: tflite
 
 import flatbuffers
+from flatbuffers.compat import import_numpy
+np = import_numpy()
 
 
 class DepthToSpaceOptions(object):
@@ -14,6 +16,10 @@ class DepthToSpaceOptions(object):
         x = DepthToSpaceOptions()
         x.Init(buf, n + offset)
         return x
+
+    @classmethod
+    def DepthToSpaceOptionsBufferHasIdentifier(cls, buf, offset, size_prefixed=False):
+        return flatbuffers.util.BufferHasIdentifier(buf, offset, b"\x54\x46\x4C\x33", size_prefixed=size_prefixed)
 
     # DepthToSpaceOptions
     def Init(self, buf, pos):
@@ -28,8 +34,5 @@ class DepthToSpaceOptions(object):
 
 
 def DepthToSpaceOptionsStart(builder): builder.StartObject(1)
-def DepthToSpaceOptionsAddBlockSize(
-    builder, blockSize): builder.PrependInt32Slot(0, blockSize, 0)
-
-
+def DepthToSpaceOptionsAddBlockSize(builder, blockSize): builder.PrependInt32Slot(0, blockSize, 0)
 def DepthToSpaceOptionsEnd(builder): return builder.EndObject()

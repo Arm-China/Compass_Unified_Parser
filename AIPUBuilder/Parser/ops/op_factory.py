@@ -1,8 +1,9 @@
-# Copyright © 2022 Arm Technology (China) Co. Ltd. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
+# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
 
 
 from .onnx_ops.array_ops import *
+from .onnx_ops.contrib_ops import *
 from .onnx_ops.control_ops import *
 from .onnx_ops.detection_ops import *
 from .onnx_ops.logic_ops import *

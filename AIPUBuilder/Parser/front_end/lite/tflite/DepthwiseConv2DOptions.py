@@ -3,6 +3,8 @@
 # namespace: tflite
 
 import flatbuffers
+from flatbuffers.compat import import_numpy
+np = import_numpy()
 
 
 class DepthwiseConv2DOptions(object):
@@ -14,6 +16,10 @@ class DepthwiseConv2DOptions(object):
         x = DepthwiseConv2DOptions()
         x.Init(buf, n + offset)
         return x
+
+    @classmethod
+    def DepthwiseConv2DOptionsBufferHasIdentifier(cls, buf, offset, size_prefixed=False):
+        return flatbuffers.util.BufferHasIdentifier(buf, offset, b"\x54\x46\x4C\x33", size_prefixed=size_prefixed)
 
     # DepthwiseConv2DOptions
     def Init(self, buf, pos):
@@ -42,64 +48,42 @@ class DepthwiseConv2DOptions(object):
 
     # DepthwiseConv2DOptions
     def DepthMultiplier(self):
-        o = flatbuffers.number_types.UOffsetTFlags.py_type(
-            self._tab.Offset(10))
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(10))
         if o != 0:
             return self._tab.Get(flatbuffers.number_types.Int32Flags, o + self._tab.Pos)
         return 0
 
     # DepthwiseConv2DOptions
     def FusedActivationFunction(self):
-        o = flatbuffers.number_types.UOffsetTFlags.py_type(
-            self._tab.Offset(12))
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(12))
         if o != 0:
             return self._tab.Get(flatbuffers.number_types.Int8Flags, o + self._tab.Pos)
         return 0
 
     # DepthwiseConv2DOptions
     def DilationWFactor(self):
-        o = flatbuffers.number_types.UOffsetTFlags.py_type(
-            self._tab.Offset(14))
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(14))
         if o != 0:
             return self._tab.Get(flatbuffers.number_types.Int32Flags, o + self._tab.Pos)
         return 1
 
     # DepthwiseConv2DOptions
     def DilationHFactor(self):
-        o = flatbuffers.number_types.UOffsetTFlags.py_type(
-            self._tab.Offset(16))
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(16))
         if o != 0:
             return self._tab.Get(flatbuffers.number_types.Int32Flags, o + self._tab.Pos)
         return 1
 
 
 def DepthwiseConv2DOptionsStart(builder): builder.StartObject(7)
-
-
-def DepthwiseConv2DOptionsAddPadding(
-    builder, padding): builder.PrependInt8Slot(0, padding, 0)
-
-
-def DepthwiseConv2DOptionsAddStrideW(
-    builder, strideW): builder.PrependInt32Slot(1, strideW, 0)
-
-
-def DepthwiseConv2DOptionsAddStrideH(
-    builder, strideH): builder.PrependInt32Slot(2, strideH, 0)
-
-
-def DepthwiseConv2DOptionsAddDepthMultiplier(
-    builder, depthMultiplier): builder.PrependInt32Slot(3, depthMultiplier, 0)
-
-
+def DepthwiseConv2DOptionsAddPadding(builder, padding): builder.PrependInt8Slot(0, padding, 0)
+def DepthwiseConv2DOptionsAddStrideW(builder, strideW): builder.PrependInt32Slot(1, strideW, 0)
+def DepthwiseConv2DOptionsAddStrideH(builder, strideH): builder.PrependInt32Slot(2, strideH, 0)
+def DepthwiseConv2DOptionsAddDepthMultiplier(builder, depthMultiplier): builder.PrependInt32Slot(3, depthMultiplier, 0)
 def DepthwiseConv2DOptionsAddFusedActivationFunction(
     builder, fusedActivationFunction): builder.PrependInt8Slot(4, fusedActivationFunction, 0)
 
 
-def DepthwiseConv2DOptionsAddDilationWFactor(
-    builder, dilationWFactor): builder.PrependInt32Slot(5, dilationWFactor, 1)
-def DepthwiseConv2DOptionsAddDilationHFactor(
-    builder, dilationHFactor): builder.PrependInt32Slot(6, dilationHFactor, 1)
-
-
+def DepthwiseConv2DOptionsAddDilationWFactor(builder, dilationWFactor): builder.PrependInt32Slot(5, dilationWFactor, 1)
+def DepthwiseConv2DOptionsAddDilationHFactor(builder, dilationHFactor): builder.PrependInt32Slot(6, dilationHFactor, 1)
 def DepthwiseConv2DOptionsEnd(builder): return builder.EndObject()

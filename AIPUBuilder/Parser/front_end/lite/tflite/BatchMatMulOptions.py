@@ -3,6 +3,8 @@
 # namespace: tflite
 
 import flatbuffers
+from flatbuffers.compat import import_numpy
+np = import_numpy()
 
 
 class BatchMatMulOptions(object):
@@ -14,6 +16,10 @@ class BatchMatMulOptions(object):
         x = BatchMatMulOptions()
         x.Init(buf, n + offset)
         return x
+
+    @classmethod
+    def BatchMatMulOptionsBufferHasIdentifier(cls, buf, offset, size_prefixed=False):
+        return flatbuffers.util.BufferHasIdentifier(buf, offset, b"\x54\x46\x4C\x33", size_prefixed=size_prefixed)
 
     # BatchMatMulOptions
     def Init(self, buf, pos):
@@ -42,14 +48,8 @@ class BatchMatMulOptions(object):
 
 
 def BatchMatMulOptionsStart(builder): builder.StartObject(3)
-
-
-def BatchMatMulOptionsAddAdjX(
-    builder, adjX): builder.PrependBoolSlot(0, adjX, 0)
-
-
-def BatchMatMulOptionsAddAdjY(
-    builder, adjY): builder.PrependBoolSlot(1, adjY, 0)
+def BatchMatMulOptionsAddAdjX(builder, adjX): builder.PrependBoolSlot(0, adjX, 0)
+def BatchMatMulOptionsAddAdjY(builder, adjY): builder.PrependBoolSlot(1, adjY, 0)
 def BatchMatMulOptionsAddAsymmetricQuantizeInputs(
     builder, asymmetricQuantizeInputs): builder.PrependBoolSlot(2, asymmetricQuantizeInputs, 0)
 

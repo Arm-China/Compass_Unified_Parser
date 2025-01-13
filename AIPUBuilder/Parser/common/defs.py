@@ -1,5 +1,5 @@
-# Copyright © 2022 Arm Technology (China) Co. Ltd. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
+# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
 
 
 import sys
@@ -20,7 +20,13 @@ def FLOAT_EQUAL(x, y): return np.all(
     (np.abs(x - y)) < (np.finfo(np.float32).resolution))
 
 
+def FLOAT64_EQUAL(x, y): return np.all(
+    (np.abs(x - y)) < (np.finfo(np.float64).resolution))
+
+
 def TYPE_MIN(x):
+    if isinstance(x, str):
+        x = np.dtype(x)
     if np.issubdtype(x, np.integer):
         return np.iinfo(x).min
     else:
@@ -28,6 +34,8 @@ def TYPE_MIN(x):
 
 
 def TYPE_MAX(x):
+    if isinstance(x, str):
+        x = np.dtype(x)
     if np.issubdtype(x, np.integer):
         return np.iinfo(x).max
     else:
@@ -59,7 +67,10 @@ def get_opset_version(version_number):
         '1.10': 15,
         '1.11': 16,
         '1.12': 17,
-        '1.13': 18
+        '1.13': 18,
+        '1.14': 19,
+        '1.15': 20,
+        '1.16': 21,
     }
     version_str = '%1.2f' % float(version_number)
     versions = sorted(
@@ -128,20 +139,41 @@ class Tensor(object):
                 'is_const': False,
                 'min_max': tuple(),
                 'scale_zp': tuple(),
-                'dtype': None
+                'activation_quantization_axis': None,
+                'dtype': None,
                 }
 
     def __init__(self, **kwargs):
         super(Tensor, self).__init__()
         for attr in Tensor.DEFAULTS.keys():
-            setattr(self, attr, kwargs.get(
-                attr, copy.deepcopy(Tensor.DEFAULTS[attr])))
+            setattr(self, attr, kwargs.get(attr, Tensor.DEFAULTS[attr]))
         st = getattr(self, 'supported_types', [])
         if getattr(self, 'value') is not None:
             setattr(self, 'shape', getattr(self, 'value').shape)
             if getattr(self, 'value').dtype.name not in st:
                 st.append(getattr(self, 'value').dtype.name)
                 setattr(self, 'supported_types', st)
+
+    def get_dtype(self):
+        value = getattr(self, 'value')
+        if value is not None:
+            ret = str(value.dtype)
+            if ret == 'object':
+                ret = None
+            return ret
+        else:
+            dtype = getattr(self, 'dtype')
+            if dtype is not None:
+                return str(dtype)
+            else:
+                return None
+
+    def get_shape(self):
+        value = getattr(self, 'value')
+        if value is not None:
+            return value.shape
+        else:
+            return getattr(self, 'shape')
 
 
 @unique

@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
+
+
 import importlib
 import pkgutil
 import functools
@@ -59,7 +63,12 @@ def register_plugin(type=PluginType.Parser, version=0):
                             if hasattr(cls, '_subgraph_type') and cls._subgraph_type == 'named_subgraph':
                                 # for named plugin, the add a prefix for register optype
                                 PARSER_OP_DICT['.named_subgraph.' + optype] = cls
-                                pass
+                            elif hasattr(cls, 'input_nodes') and cls.input_nodes is not None:
+                                preprocess_optype = '.preprocess.' + optype
+                                if preprocess_optype in PARSER_OP_DICT:
+                                    WARN(
+                                        'Plugin with op_type %s is overriden by class %s!' % (optype, cls.__name__))
+                                PARSER_OP_DICT[preprocess_optype] = cls
                     PARSER_OP_DICT[optype] = cls
                     PARSER_OP_DICT[optype.upper()] = cls
             else:

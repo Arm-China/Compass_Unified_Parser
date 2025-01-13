@@ -1,5 +1,5 @@
-# Copyright © 2022 Arm Technology (China) Co. Ltd. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
+# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
 
 
 import re
@@ -264,7 +264,7 @@ def convert_to_onnx(graph):
         if _tensors_are_const(edges):
             graph.remove_edges_from(edges)
         else:
-            ERROR('[Parser]: Meet non-const tensors of Node (%s) in remove_edges_if_const' % node_name)
+            WARN('[Parser]: Meets unsupported non-const tensors of Node (%s) in remove_edges_if_const' % node_name)
 
     tf2_ops = Tf2Op.get_concrete_subclass_names()
     keras_ops = KerasOp.get_concrete_subclass_names()
@@ -318,7 +318,7 @@ def convert_to_onnx(graph):
                 new_node_attr.update({'keepdims': 0})
             elif pure_type == 'cast':
                 _remove_edges_if_const(node_name, in_edges[1:])
-                new_node_attr.update({'to': node_obj.dtype})
+                new_node_attr.update({'to': node_obj.dtype, 'saturate': False})
             elif pure_type == 'concat':
                 _remove_edges_if_const(node_name, in_edges[-2:])
             elif pure_type in ('conv2d', 'cumsum', 'cumprod', 'gather', 'gather_nd', 'top_k'):
@@ -395,9 +395,10 @@ def convert_to_onnx(graph):
                 size = node_obj.depth_radius * 2 + 1
                 alpha = node_obj.alpha * size
                 new_node_attr.update({'size': size, 'alpha': alpha})
-            elif pure_type in ('log_softmax', 'reduce_all', 'reduce_any', 'reduce_logsumexp', 'reduce_max',
+            elif pure_type in ('leaky_relu', 'log_softmax', 'overlap_and_add',
+                               'reduce_all', 'reduce_any', 'reduce_logsumexp', 'reduce_max',
                                'reduce_mean', 'reduce_min', 'reduce_prod', 'reduce_sum', 'reduce_variance',
-                               'split'):
+                               'relu', 'split'):
                 _remove_edges_if_const(node_name, in_edges[1:])
             elif pure_type == 'right_shift':
                 new_node_attr.update({'direction': 'RIGHT'})
@@ -405,6 +406,9 @@ def convert_to_onnx(graph):
             elif pure_type == 'relu6':
                 new_node_attr.update({'min': 0., 'max': 6.})
                 graph.remove_edges_from(in_edges[1:])
+            elif pure_type == 'repeat':
+                new_node_attr.update({'axis': node_obj.axis})
+                _remove_edges_if_const(node_name, in_edges[2:])
             elif pure_type == 'segment_sum':
                 new_node_attr.update({'method': 'SUM'})
                 graph.remove_edges_from(in_edges[-1:])

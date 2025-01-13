@@ -1,5 +1,5 @@
-# Copyright © 2022 Arm Technology (China) Co. Ltd. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
+# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
 
 
 import tensorflow as tf
@@ -82,8 +82,11 @@ class TfBiasAddOp(LayoutConcernedOp, OpHasOneOutPort, TfOp):
     def infer_shape(self):
         super(TfBiasAddOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.nn.bias_add(
-            *inputs, data_format=self.data_format).numpy()
+        if self.data_format.startswith('NC'):
+            bias = np.reshape(inputs[1], [-1] + [1] * (len(inputs[0].shape) - 2))
+        else:
+            bias = inputs[1]
+        out_tensor = inputs[0] + bias
         self.set_out_tensor(out_tensor)
 
     @property
@@ -141,23 +144,26 @@ class TfConv2DOp(TfHasPaddingStrides, OpHasWeights, OpHasOneOutPort):
             assert isinstance(
                 self.weights, np.ndarray), 'TfConv2DOp only supports constant filter'
             self.kernel_shape = self.weights.shape[0:2]
-        if self.auto_pad == 'VALID':
-            padding = 'VALID'
-        elif self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
-            padding = 'SAME'
+
+        if self.auto_pad == 'NOTSET':
+            padding = np.reshape(np.array(self.explicit_paddings), (4, 2)).tolist()
         else:
-            padding = np.reshape(
-                np.array(self.explicit_paddings), (4, 2)).tolist()
-            if self.data_format == 'NCHW':
-                padding = padding[0:1] + padding[2:4] + padding[1:2]
-        inp = np.transpose(inputs[0], [0, 2, 3, 1]
-                           ) if self.data_format == 'NCHW' else inputs[0]
-        out_tensor = tf.nn.conv2d(inp,
-                                  self.weights,
-                                  strides=self.strides,
-                                  padding=padding,
-                                  dilations=self.dilations,
-                                  data_format='NHWC').numpy()
+            padding = [[0, 0] for _ in range(len(inputs[0].shape))]
+        if self.data_format == 'NHWC':
+            inp = inputs[0]
+        else:
+            inp = np.transpose(inputs[0], [0, 2, 3, 1])
+            padding = padding[0:1] + padding[2:4] + padding[1:2]
+        spatial_padding = (np.transpose(np.array(padding))[:, 1:-1]).flatten().tolist()
+        out_shape = BaseConvOp.cal_out_shape(inp.shape[1:-1],
+                                             spatial_padding,
+                                             self.strides,
+                                             self.kernel_shape,
+                                             self.auto_pad,
+                                             dilations=self.dilations,
+                                             data_format='NHWC')
+        full_out_shape = [inputs[0].shape[0]] + out_shape + [self.weights.shape[-1]]
+        out_tensor = np.random.ranf(size=full_out_shape).astype(np.float32)
         if self.data_format == 'NCHW':
             out_tensor = np.transpose(out_tensor, [0, 3, 1, 2])
         self.set_out_tensor(out_tensor)
@@ -550,10 +556,13 @@ class TfFusedBatchNormOp(LayoutConcernedOp, OpHasVariableOutPorts, TfOp):
     def infer_shape(self):
         super(TfFusedBatchNormOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_list = tf.compat.v1.nn.fused_batch_norm(*inputs,
-                                                    epsilon=self.epsilon,
-                                                    data_format=self.data_format,
-                                                    is_training=self.is_training)
+        assert len(inputs) == 5, 'TfFusedBatchNormOp expects 5 inputs, but got %d.' % len(inputs)
+        out_list = tf.raw_ops.FusedBatchNorm(x=inputs[0], scale=inputs[1], offset=inputs[2],
+                                             mean=inputs[3], variance=inputs[4],
+                                             epsilon=self.epsilon,
+                                             exponential_avg_factor=self.exponential_avg_factor,
+                                             data_format=self.data_format,
+                                             is_training=self.is_training)
         out_tensor_list = [o.numpy() for o in out_list]
         self.set_out_tensor(out_tensor_list)
 
@@ -566,7 +575,7 @@ class TfFusedBatchNormV3Op(LayoutConcernedOp, OpHasVariableOutPorts, TfOp):
     @classmethod
     def attributes(cls):
         return {1: {'epsilon': {'type': AttrType.FLOAT, 'default': 1e-4},
-                    'is_training': {'type': AttrType.INT, 'default': 1},
+                    'is_training': {'type': AttrType.BOOL, 'default': True},
                     'exponential_avg_factor': {'type': AttrType.FLOAT, 'default': 1}
                     }
                 }
@@ -579,11 +588,32 @@ class TfFusedBatchNormV3Op(LayoutConcernedOp, OpHasVariableOutPorts, TfOp):
     def infer_shape(self):
         super(TfFusedBatchNormV3Op, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_list = tf.compat.v1.nn.fused_batch_norm(*inputs,
-                                                    epsilon=self.epsilon,
-                                                    data_format=self.data_format,
-                                                    is_training=self.is_training)
-        out_tensor_list = [o.numpy() for o in out_list]
+        assert len(inputs) == 5, 'TfFusedBatchNormV3Op expects 5 inputs, but got %d.' % len(inputs)
+        if self.is_training:
+            # mean & var must be empty
+            if any([0 in x.shape for x in inputs[:3]]):
+                return
+            out_list = tf.raw_ops.FusedBatchNormV3(x=inputs[0], scale=inputs[1], offset=inputs[2],
+                                                   mean=inputs[3], variance=inputs[4],
+                                                   epsilon=self.epsilon,
+                                                   data_format=self.data_format,
+                                                   is_training=self.is_training)
+            out_tensor_list = [o.numpy() for o in out_list]
+        else:
+            if any([0 in x.shape for x in inputs]):
+                return
+            scale_type = inputs[1].dtype
+            scale_shape = inputs[1].shape
+            scale, offset, mean, variance = inputs[1:5]
+            if self.data_format.startswith('NC'):
+                spatial_dims = len(inputs[0].shape) - 2
+                scale = np.rehsape(scale, [-1] + [1] * spatial_dims)
+                offset = np.rehsape(offset, [-1] + [1] * spatial_dims)
+                mean = np.rehsape(mean, [-1] + [1] * spatial_dims)
+                variance = np.rehsape(variance, [-1] + [1] * spatial_dims)
+            y = (inputs[0] - mean) / np.sqrt(variance + self.epsilon) * scale + offset
+            random_out = np.random.ranf(scale_shape).astype(scale_type)
+            out_tensor_list = [y] + [random_out] * 5
         self.set_out_tensor(out_tensor_list)
 
     @property
@@ -790,12 +820,12 @@ class TfRelu6Op(BaseReluOp, TfOp):
         super(TfRelu6Op, self).__init__(graph, attr_dict)
         self.update_attributes(TfRelu6Op, attr_dict)
         assert self.check_required(), 'TfRelu6Op is missing a required parameter.'
-        self.activations = 'CLIP'
+        self.activations = 'RELU6'
 
     def infer_shape(self):
         super(TfRelu6Op, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.nn.relu6(inputs[0]).numpy()
+        out_tensor = self.cal_activation(inputs[0])
         self.set_out_tensor(out_tensor)
 
     @property
@@ -833,7 +863,7 @@ class TfSoftmaxOp(OpHasAxis, OpHasOneOutPort, TfOp):
 
     @property
     def correspond_onnx_op(self):
-        return {'type': 'Softmax', 'version': 11}
+        return {'type': 'Softmax', 'version': 13}
 
 
 class TfSpaceToDepthOp(LayoutConcernedOp, OpHasOneOutPort, TfOp):

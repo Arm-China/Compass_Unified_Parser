@@ -1,5 +1,5 @@
-# Copyright © 2022 Arm Technology (China) Co. Ltd. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
+# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
 
 
 import copy
@@ -111,13 +111,10 @@ def convert_attr_to_onnx(attr_dict):
     return new_attr
 
 
-def convert_caffe_to_graph(model_path, params):
+def convert_caffe_to_graph(graph, model_path, params):
     '''Parse the caffe model into a graph structure.'''
 
     from ...plugin_loader import PARSER_OP_DICT
-    if not params.get('model_name', ''):
-        params['model_name'] = 'caffe_model'
-    graph = Graph(name=params['model_name'])
     graph._attr['framework'] = Framework.CAFFE
     graph._attr['output_tensor_names'] = params.get('output_tensor_names', [])
 
@@ -308,7 +305,7 @@ def convert_caffe_to_graph(model_path, params):
                     i for i in graph._attr['output_names'] if i is not None]
             else:
                 node_names = [n for n in graph.nodes]
-                succ = graph.succ
+                succ = graph.successor
                 for n in node_names:
                     if len(succ[n]) == 0:
                         graph._attr['output_names'].append(n)
@@ -319,7 +316,7 @@ def convert_caffe_to_graph(model_path, params):
             for out_name in graph._attr['output_names']:
                 out_layer = layer_map[out_name]
                 out_edges = graph.sorted_out_edges(out_name)
-                graph.remove_edges_from(out_edges)
+                noop_node_names = []
                 for i, top in enumerate(out_layer.get('top', [])):
                     noop_node_name = get_valid_node_name(
                         graph, out_name + '_noop_' + str(i))
@@ -328,6 +325,11 @@ def convert_caffe_to_graph(model_path, params):
                     graph.add_edge(out_name, noop_node_name, **out_edge_attr)
                     NodeWrap(graph, noop_node_name).replace_obj(
                         'Out', {'name': noop_node_name})
+                    noop_node_names.append(noop_node_name)
+                    if top in params.get('output_tensor_map', {}):
+                        params['output_tensor_map'][top] = [noop_node_name]
+                if out_name in params.get('output_tensor_map', {}) and len(params['output_tensor_map'][out_name]) == 0:
+                    params['output_tensor_map'][out_name] = noop_node_names
 
             # set out tensor names
             for out_name in graph._attr['output_tensor_names'][:]:

@@ -1,5 +1,5 @@
-# Copyright © 2022 Arm Technology (China) Co. Ltd. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
+# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
 
 import numpy as np
 
@@ -41,5 +41,6 @@ for crop_is_zero in (False, True, ):
 
     # Run tests with parser and compare result with runtime
     exit_status = run_parser(
-        model_path, feed_dict, model_type='tflite', verify=True)
+        model_path, feed_dict, model_type='tflite', verify=True,
+        expected_keywords=['layer_type=BatchToSpace'])
     assert exit_status

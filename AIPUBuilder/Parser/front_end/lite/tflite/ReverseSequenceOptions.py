@@ -3,6 +3,8 @@
 # namespace: tflite
 
 import flatbuffers
+from flatbuffers.compat import import_numpy
+np = import_numpy()
 
 
 class ReverseSequenceOptions(object):
@@ -14,6 +16,10 @@ class ReverseSequenceOptions(object):
         x = ReverseSequenceOptions()
         x.Init(buf, n + offset)
         return x
+
+    @classmethod
+    def ReverseSequenceOptionsBufferHasIdentifier(cls, buf, offset, size_prefixed=False):
+        return flatbuffers.util.BufferHasIdentifier(buf, offset, b"\x54\x46\x4C\x33", size_prefixed=size_prefixed)
 
     # ReverseSequenceOptions
     def Init(self, buf, pos):
@@ -35,12 +41,6 @@ class ReverseSequenceOptions(object):
 
 
 def ReverseSequenceOptionsStart(builder): builder.StartObject(2)
-
-
-def ReverseSequenceOptionsAddSeqDim(
-    builder, seqDim): builder.PrependInt32Slot(0, seqDim, 0)
-def ReverseSequenceOptionsAddBatchDim(
-    builder, batchDim): builder.PrependInt32Slot(1, batchDim, 0)
-
-
+def ReverseSequenceOptionsAddSeqDim(builder, seqDim): builder.PrependInt32Slot(0, seqDim, 0)
+def ReverseSequenceOptionsAddBatchDim(builder, batchDim): builder.PrependInt32Slot(1, batchDim, 0)
 def ReverseSequenceOptionsEnd(builder): return builder.EndObject()

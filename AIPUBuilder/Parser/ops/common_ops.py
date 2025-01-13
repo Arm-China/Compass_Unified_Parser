@@ -1,5 +1,5 @@
-# Copyright © 2022 Arm Technology (China) Co. Ltd. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
+# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
 
 
 import tensorflow as tf
@@ -28,6 +28,45 @@ class AccidentalHitsOp(OpHasMultipleOutPorts, CommonOp):
         output_ids = get_random_array([num_hits], 'int32')
         output_effective_len = get_random_array([1], 'int32')
         self.set_out_tensor([output_indices, output_ids, output_effective_len])
+
+
+class AdaptivePoolOp(LayoutConcernedOp, OpHasMethod, OpHasOneOutPort, CommonOp):
+    @classmethod
+    def attributes(cls):
+        return {'output_size': {'type': AttrType.INTS, 'required': True},
+                'method': {'options': ['AVG', 'MAX'], 'required': True}}
+
+    def __init__(self, graph, attr_dict=None):
+        super(AdaptivePoolOp, self).__init__(graph, attr_dict)
+        self.update_attributes(AdaptivePoolOp, attr_dict)
+        assert self.check_required(), 'AdaptivePoolOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(AdaptivePoolOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        input_dim = len(inputs[0].shape)
+        assert len(inputs) == 1 and input_dim in (3, 4, 5), 'The input is invalid in AdaptivePoolOp.'
+        if self.data_format.startswith('NC'):
+            perm = None
+            input_tensor = inputs[0]
+        else:
+            perm = [0, (input_dim - 1)] + list(range(1, input_dim - 1))
+            input_tensor = np.transpose(inputs[0], perm)
+        if input_dim == 3:
+            m = torch.nn.AdaptiveAvgPool1d(tuple(self.output_size)) if self.method == 'AVG' \
+                else torch.nn.AdaptiveMaxPool1d(tuple(self.output_size))
+        elif input_dim == 4:
+            m = torch.nn.AdaptiveAvgPool2d(tuple(self.output_size)) if self.method == 'AVG' \
+                else torch.nn.AdaptiveMaxPool2d(tuple(self.output_size))
+        else:  # input_dim == 5
+            m = torch.nn.AdaptiveAvgPool3d(tuple(self.output_size)) if self.method == 'AVG' \
+                else torch.nn.AdaptiveMaxPool3d(tuple(self.output_size))
+        input_dtype = input_tensor.dtype
+        # torch adaptive_avg_pool/adaptive_max_pool doesn't support int input
+        out_tensor = m(torch.from_numpy(input_tensor.astype(np.float32))).numpy()
+        if perm is not None:
+            out_tensor = np.transpose(out_tensor, Op.cal_inverse_perm(perm))
+        self.set_out_tensor(out_tensor.astype(input_dtype))
 
 
 class BatchGatherOp(OpHasAxis, OpHasOneOutPort, CommonOp):
@@ -144,12 +183,17 @@ class ChannelShuffleOp(LayoutConcernedOp, OpHasMultipleOutPorts, CommonOp):
     def infer_shape(self):
         super(ChannelShuffleOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        inp = np.transpose(inputs[0], (0, 3, 1, 2)
-                           ) if self.data_format == 'NHWC' else inputs[0]
+        pre_perm = None
+        if self.data_format == 'NHWC':
+            max_dim = len(inputs[0].shape) - 1
+            pre_perm = [0, max_dim] + list(range(1, max_dim))
+            inp = np.transpose(inputs[0], pre_perm)
+        else:
+            inp = inputs[0]
         out_tensor = torch.nn.functional.channel_shuffle(
             torch.from_numpy(inp), self.group).numpy()
-        if self.data_format == 'NHWC':
-            out_tensor = np.transpose(out_tensor, (0, 2, 3, 1))
+        if pre_perm is not None:
+            out_tensor = np.transpose(out_tensor, Op.cal_inverse_perm(pre_perm))
             out_tensors = np.split(out_tensor, self.splits, axis=-1)
         else:
             out_tensors = np.split(out_tensor, self.splits, axis=1)
@@ -225,6 +269,37 @@ class DilationOp(OpHasPaddingStrides, OpHasWeights, OpHasOneOutPort, LayoutConce
         if self.data_format == 'NCHW':
             out_tensor = np.transpose(out_tensor, [0, 3, 1, 2])
         self.set_out_tensor(out_tensor)
+
+
+class DivModOp(OpNeedBroadcast, LayoutUnawareOp, OpHasMultipleOutPorts, CommonOp):
+    @classmethod
+    def attributes(cls):
+        return {'mode': {'type': AttrType.STRING, 'default': 'floor', 'options': ['trunc', 'floor']}}
+
+    def __init__(self, graph, attr_dict=None):
+        super(DivModOp, self).__init__(graph, attr_dict)
+        self.update_attributes(DivModOp, attr_dict)
+        assert self.check_required(), 'DivModOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(DivModOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        assert len(inputs) == 2, 'Expects 2 inputs for ArmDivMod op (%s), but got %d' % (self.name, len(inputs))
+        if np.any(inputs[1] == 0):
+            in_consts = self.sorted_in_consts()
+            if len(in_consts) == 2 \
+                    or (len(in_consts) == 1 and in_consts[0][1] == 1):
+                ERROR('[Parser]: Meets invalid second input of DivMod Op (%s) in infer_shape!' % self.name)
+                out0, out1 = None, None
+            else:
+                WARN('[Parser]: The second input of DivMod Op (%s) is replaced by ones in infer_shape!' % self.name)
+                second_input = np.ones_like(inputs[1])
+                out0, out1 = np.divmod(inputs[0], second_input)
+        else:
+            out0 = torch.div(torch.tensor(inputs[0].astype(np.int64)), torch.tensor(inputs[1].astype(np.int64)),
+                             rounding_mode=self.mode).numpy().astype(inputs[0].dtype)
+            out1 = (inputs[0] - out0 * inputs[1])
+        self.set_out_tensor([out0, out1])
 
 
 class DummyOp(OpHasOneOutPort, ConstLikeOp, CommonOp):
@@ -355,33 +430,7 @@ class FullyConnectedOp(BaseLinearOp, CommonOp):
             inp = inputs[0]
         out_tensor = (tf.matmul(inp, np.transpose(self.weights, axes=type(self).perm_onnx_to_tf()))
                       + self.biases
-                      ).numpy()
-        self.set_out_tensor(out_tensor)
-
-
-class GeluOp(BaseActivationOp, CommonOp):
-    @classmethod
-    def attributes(cls):
-        return {'approximate': {'type': AttrType.STRING, 'default': 'none', 'options': ['none', 'tanh']},
-                }
-
-    def __init__(self, graph, attr_dict=None):
-        super(GeluOp, self).__init__(graph, attr_dict)
-        self.update_attributes(GeluOp, attr_dict)
-        assert self.check_required(), 'GeluOp is missing a required parameter.'
-        self.activations = 'GELU'
-
-    def infer_shape(self):
-        super(GeluOp, self).infer_shape()
-        inputs = self.get_input_tensors()
-        if self.approximate == 'tanh':
-            out = 0.5 * (inputs[0]) * (1.0 + tf.math.tanh(inputs[0]
-                                                          * 0.7978845608 * (1.0 + 0.044715 * inputs[0] * inputs[0])))
-            out_tensor = out.numpy().astype(np.float32)
-        else:
-            out_tensor = 0.5 * \
-                (inputs[0]) * (1.0 + (inputs[0] * 0.7978845608 *
-                                      (1.0 + 0.044715 * inputs[0] * inputs[0])))
+                      ).numpy().astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
 
@@ -429,7 +478,7 @@ class HardSwishOp(LayoutUnawareOp, OpHasOneOutPort, CommonOp):
     def infer_shape(self):
         super(HardSwishOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = (inputs[0] * tf.nn.relu6(inputs[0] + 3) / 6).numpy()
+        out_tensor = (inputs[0] * tf.nn.relu6(inputs[0] + 3) / 6).numpy().astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
 
@@ -461,31 +510,6 @@ class InTopKOp(LayoutUnawareOp, OpHasOneOutPort, CommonOp):
         self.set_out_tensor(out_tensor)
 
 
-class LayerNormOp(OpHasAxis, OpHasBiases, OpHasWeights, OpHasOneOutPort, CommonOp):
-    @classmethod
-    def attributes(cls):
-        return {'epsilon': {'type': AttrType.FLOAT, 'required': True, 'default': 1e-5}}
-
-    def __init__(self, graph, attr_dict=None):
-        super(LayerNormOp, self).__init__(graph, attr_dict)
-        self.update_attributes(LayerNormOp, attr_dict)
-        assert self.check_required(), 'LayerNormOp is missing a required parameter.'
-
-    def infer_shape(self):
-        super(LayerNormOp, self).infer_shape()
-        inputs = self.get_input_tensors()
-        mean = np.mean(inputs[0], axis=tuple(self.axes), keepdims=True)
-        variance = np.var(inputs[0], axis=tuple(self.axes), keepdims=True)
-        ngamma = 1.0 / ((variance + self.epsilon) ** 0.5)
-        out_tensor = (inputs[0] - mean) * ngamma
-        axes = OpHasAxis.make_axes_non_negative(
-            self.axes, len(inputs[0].shape))
-        weights = OpHasAxis.expand_to(self.weights, axes, len(inputs[0].shape))
-        biases = OpHasAxis.expand_to(self.biases, axes, len(inputs[0].shape))
-        out_tensor = out_tensor * weights + biases
-        self.set_out_tensor(out_tensor)
-
-
 class MeshgridOp(OpHasMultipleOutPorts, CommonOp):
     @classmethod
     def attributes(cls):
@@ -504,11 +528,37 @@ class MeshgridOp(OpHasMultipleOutPorts, CommonOp):
         self.set_out_tensor(out_tensors)
 
 
-class MishOp(LayoutUnawareOp, OpHasOneOutPort, CommonOp):
+class MMCVModulatedDeformConv2dOp(BaseConvOp, OnnxOp):
+    @classmethod
+    def attributes(cls):
+        return {1: {'stride': {'type': AttrType.INTS, 'required': True},
+                    'dilation': {'type': AttrType.INTS, 'required': True},
+                    'padding': {'type': AttrType.INTS, 'required': True},
+                    'groups': {'type': AttrType.INT, 'default': 1},
+                    'deform_groups': {'type': AttrType.INT, 'default': 1}},
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(MMCVModulatedDeformConv2dOp, self).__init__(graph, attr_dict)
+        self.update_attributes(MMCVModulatedDeformConv2dOp, attr_dict)
+        assert self.check_required(), 'MMCVModulatedDeformConv2dOp is missing a required parameter.'
+        self.group = self.groups
+        assert len(self.padding) in (2, 4), 'Expects the length of padding is 2 or 4, but got %d' % len(self.padding)
+        self.pads = self.padding * 2 if len(self.padding) == 2 else self.padding
+        self.dilations = self.dilation
+        self.strides = self.stride
+
     def infer_shape(self):
-        super(MishOp, self).infer_shape()
-        inputs = self.get_input_tensors()
-        out_tensor = inputs[0] * np.tanh(np.log(np.exp(inputs[0]) + 1))
+        super(MMCVModulatedDeformConv2dOp, self).infer_shape()
+        inputs = self.get_input_tensors()  # input, offset, mask, weight, bias(optional)
+        assert len(inputs) >= 4, 'Expects at least 4 inputs for MMCVModulatedDeformConv2dOp but got %d' % len(inputs)
+        batch = inputs[0].shape[0]
+        num_output = inputs[3].shape[0]
+        if self.data_format == 'NHWC':
+            out_shape = [batch] + list(inputs[1].shape[1:-1]) + [num_output]
+        else:
+            out_shape = [batch, num_output] + list(inputs[1].shape[2:])
+        out_tensor = np.random.ranf(size=out_shape).astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
 
@@ -553,6 +603,58 @@ class OutOp(OpHasOneOutPort, CommonOp):
         super(OutOp, self).infer_shape()
 
 
+class OverlapAddOp(OpHasOneOutPort, CommonOp):
+    @classmethod
+    def attributes(cls):
+        return {'frame_step': {'type': AttrType.INT}
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(OverlapAddOp, self).__init__(graph, attr_dict)
+        self.update_attributes(OverlapAddOp, attr_dict)
+        assert self.check_required(), 'OverlapAddOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(OverlapAddOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        assert len(inputs[0].shape) >= 2, 'The rank of OverlapAddOp inp0 must be at least 2., but got %d' % len(
+            inputs[0].shape)
+        out_tensor = tf.signal.overlap_and_add(
+            signal=inputs[0], frame_step=self.frame_step).numpy()
+        self.set_out_tensor(out_tensor)
+
+
+class RepeatOp(OpHasAxis, OpHasOneOutPort, CommonOp):
+    @classmethod
+    def attributes(cls):
+        return {'max_dim': {'type': AttrType.INT, 'default': None}}
+
+    def __init__(self, graph, attr_dict=None):
+        super(RepeatOp, self).__init__(graph, attr_dict)
+        self.update_attributes(RepeatOp, attr_dict)
+        assert self.check_required(), 'RepeatOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(RepeatOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        assert len(inputs) == 2, 'RepeatOp expects 2 inputs, but got %d' % len(inputs)
+        out_tensor = np.repeat(inputs[0], inputs[1].tolist(), self.axis)
+        if self.axis is not None:
+            out_shape = list(out_tensor.shape)
+            if self.max_dim is None:
+                self.max_dim = out_tensor.shape[self.axis]
+            elif out_shape[self.axis] > self.max_dim:
+                obj = tuple(slice(0, e if i != self.axis else self.max_dim)
+                            for (i, e) in enumerate(out_shape))
+                out_tensor = out_tensor[obj]
+            elif out_shape[self.axis] < self.max_dim:
+                zeros_shape = copy.deepcopy(out_shape)
+                zeros_shape[self.axis] = self.max_dim - out_shape[self.axis]
+                zeros = np.zeros(zeros_shape, inputs[0].dtype)
+                out_tensor = np.concatenate([out_tensor, zeros], axis=self.axis)
+        self.set_out_tensor(out_tensor)
+
+
 class PluginOp(OpHasVariableOutPorts, CommonOp):
     @classmethod
     def num_in_ports(cls):
@@ -563,7 +665,7 @@ class PluginOp(OpHasVariableOutPorts, CommonOp):
         self._type = 'Plugin' + attr_dict.get('type', 'Plugin')
         self.constants = {}
         self.constants_offset_dict = {}
-        self.shape_infered = False
+        self.out_tensors = attr_dict.get('out_tensors', [])  # record output tensors
         fw = graph._attr['framework'].name
         try:
             plugin_type = PARSER_OP_DICT[re.sub(
@@ -575,6 +677,8 @@ class PluginOp(OpHasVariableOutPorts, CommonOp):
             self._plugin = plugin_type(fw, attr_dict)
             if nest_input is not None:
                 self._plugin._nest_inputs = nest_input
+            if self._plugin is not None:
+                self.constants = getattr(self._plugin, 'constants', {})
         except Exception as e:
             self._plugin = None
             ERROR('[Parser]: Creating plugin type (%s) meets error %s! ' %
@@ -602,9 +706,17 @@ class PluginOp(OpHasVariableOutPorts, CommonOp):
         in_edges = self._graph.sorted_in_edges(self.name)
         self._graph.remove_edges_from([edge for idx, edge in enumerate(in_edges) if idx in remove_edge_indexes])
 
-    def infer_shape(self):
+    def infer_shape(self, final=False):
         # Do infer_shape only once for plugin
-        if self.shape_infered:
+        if len(self.out_tensors) > 0:
+            if final:
+                for i, t in enumerate(self.out_tensors):
+                    if isinstance(t, np.ndarray) and hasattr(t, 'dtype'):
+                        if t.dtype == np.int64:
+                            self.out_tensors[i] = t.astype(np.int32)
+                        elif t.dtype == np.float64:
+                            self.out_tensors[i] = t.astype(np.float32)
+            self.set_out_tensor(self.out_tensors)
             return
         super(PluginOp, self).infer_shape()
         inputs = self.get_input_tensors()
@@ -619,6 +731,13 @@ class PluginOp(OpHasVariableOutPorts, CommonOp):
             try:
                 DEBUG('[Parser]: Call plugin infer_shape!')
                 out_tensors = self._plugin.infer_shape(inputs)
+                if final:
+                    for i, t in enumerate(out_tensors):
+                        if isinstance(t, np.ndarray) and hasattr(t, 'dtype'):
+                            if t.dtype == np.int64:
+                                out_tensors[i] = t.astype(np.int32)
+                            elif t.dtype == np.float64:
+                                out_tensors[i] = t.astype(np.float32)
             except Exception as e:
                 ERROR('[Parser]: plugin type (%s) infer shape meets error %s! ' %
                       (self.type, str(e)))
@@ -632,7 +751,7 @@ class PluginOp(OpHasVariableOutPorts, CommonOp):
         else:
             ERROR('[Parser]: Invalid Plugin op (%s) for infer_shape!' % self.name)
         self.set_out_tensor(out_tensors)
-        self.shape_infered = True
+        self.out_tensors = out_tensors
         # self.constants could be used in self._plugin.infer_shape, so check constants here
         self.constants = getattr(self._plugin, 'constants', {})
         if not all((isinstance(key, str) and isinstance(val, np.ndarray))
@@ -718,6 +837,21 @@ class ReduceAllOp(OpHasAxis, OpHasOneOutPort, CommonOp):
         self.update_attributes(ReduceAllOp, attr_dict)
         assert self.check_required(), 'ReduceAllOp is missing a required parameter.'
 
+    def __getattr__(self, item):
+        ret = None
+        try:
+            if item == 'axes':
+                inputs = self.get_input_tensors()
+                if len(inputs) > 1:
+                    ret = inputs[1].tolist() if inputs[1].size > 0 else None
+                    if ret is not None:
+                        self.__dict__['_attr'][item].value = ret
+        except:
+            ret = None
+        if ret is None:
+            ret = super(ReduceAllOp, self).__getattr__(item)
+        return ret
+
     def infer_shape(self):
         super(ReduceAllOp, self).infer_shape()
         inputs = self.get_input_tensors()
@@ -737,6 +871,21 @@ class ReduceAnyOp(OpHasAxis, OpHasOneOutPort, CommonOp):
         super(ReduceAnyOp, self).__init__(graph, attr_dict)
         self.update_attributes(ReduceAnyOp, attr_dict)
         assert self.check_required(), 'ReduceAnyOp is missing a required parameter.'
+
+    def __getattr__(self, item):
+        ret = None
+        try:
+            if item == 'axes':
+                inputs = self.get_input_tensors()
+                if len(inputs) > 1:
+                    ret = inputs[1].tolist() if inputs[1].size > 0 else None
+                    if ret is not None:
+                        self.__dict__['_attr'][item].value = ret
+        except:
+            ret = None
+        if ret is None:
+            ret = super(ReduceAnyOp, self).__getattr__(item)
+        return ret
 
     def infer_shape(self):
         super(ReduceAnyOp, self).infer_shape()
@@ -781,24 +930,6 @@ class ReduceVarianceOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
         self.set_out_tensor(out_tensor)
 
 
-class SwishOp(OpHasOneOutPort, CommonOp):
-    @classmethod
-    def attributes(cls):
-        return {'alpha': {'type': AttrType.FLOAT, 'default': 1}
-                }
-
-    def __init__(self, graph, attr_dict=None):
-        super(SwishOp, self).__init__(graph, attr_dict)
-        self.update_attributes(SwishOp, attr_dict)
-        assert self.check_required(), 'SwishOp is missing a required parameter.'
-
-    def infer_shape(self):
-        super(SwishOp, self).infer_shape()
-        inputs = self.get_input_tensors()
-        out_tensor = (inputs[0]) * tf.sigmoid(self.alpha * inputs[0]).numpy()
-        self.set_out_tensor(out_tensor)
-
-
 class RollOp(OpHasAxis, OpHasOneOutPort, CommonOp):
 
     @staticmethod
@@ -815,13 +946,13 @@ class RollOp(OpHasAxis, OpHasOneOutPort, CommonOp):
         start1 = np.zeros((axis_value + 1)).astype(np.int32).tolist()
         start1[-1] = slice_num
         end1 = np.array([roll_shape[i]
-                        for i in range(0, axis_value + 1)]).tolist()
+                         for i in range(0, axis_value + 1)]).tolist()
         steps1 = np.ones((axis_value + 1)).astype(np.int32).tolist()
         axes1 = np.arange(axis_value + 1).astype(np.int32).tolist()
 
         start2 = np.zeros((axis_value + 1)).astype(np.int32).tolist()
         end2 = np.array([roll_shape[i]
-                        for i in range(0, axis_value + 1)]).tolist()
+                         for i in range(0, axis_value + 1)]).tolist()
         end2[-1] = slice_num
         steps2 = np.ones((axis_value + 1)).astype(np.int32).tolist()
         axes2 = np.arange(axis_value + 1).astype(np.int32).tolist()
@@ -874,7 +1005,54 @@ class SiluOp(LayoutUnawareOp, ActivationOnlyOp, CommonOp):
     def infer_shape(self):
         super(SiluOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = (inputs[0]) * tf.sigmoid(inputs[0]).numpy()
+        out_tensor = (inputs[0]) * tf.sigmoid(inputs[0].astype(np.float32)).numpy()
+        self.set_out_tensor(out_tensor.astype(inputs[0].dtype))
+
+
+class SufficientStatisticsOp(OpHasAxis, OpHasMultipleOutPorts, CommonOp):
+    def __init__(self, graph, attr_dict=None):
+        super(SufficientStatisticsOp, self).__init__(graph, attr_dict)
+        self.update_attributes(SufficientStatisticsOp, attr_dict)
+        assert self.check_required(), 'SufficientStatisticsOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(SufficientStatisticsOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor_list = tf.nn.sufficient_statistics(
+            inputs[0], self.axes, shift=inputs[1], keepdims=True)
+        out_tensor_list = [ot.numpy() for ot in out_tensor_list[1:3]]
+        self.set_out_tensor(out_tensor_list)
+
+
+class SwishOp(OpHasOneOutPort, CommonOp):
+    @classmethod
+    def attributes(cls):
+        return {'alpha': {'type': AttrType.FLOAT, 'default': 1}
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(SwishOp, self).__init__(graph, attr_dict)
+        self.update_attributes(SwishOp, attr_dict)
+        assert self.check_required(), 'SwishOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(SwishOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = (inputs[0]) * tf.sigmoid(self.alpha * inputs[0]).numpy()
+        self.set_out_tensor(out_tensor)
+
+
+class TruncOp(LayoutUnawareOp, OpHasOneOutPort, CommonOp):
+    def __init__(self, graph, attr_dict=None):
+        super(TruncOp, self).__init__(graph, attr_dict)
+        self.update_attributes(TruncOp, attr_dict)
+        assert self.check_required(), 'TruncOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(TruncOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        torch_input = torch.from_numpy(inputs[0])
+        out_tensor = torch.trunc(torch_input).numpy()
         self.set_out_tensor(out_tensor)
 
 

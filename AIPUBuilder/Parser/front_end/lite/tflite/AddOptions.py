@@ -3,6 +3,8 @@
 # namespace: tflite
 
 import flatbuffers
+from flatbuffers.compat import import_numpy
+np = import_numpy()
 
 
 class AddOptions(object):
@@ -14,6 +16,10 @@ class AddOptions(object):
         x = AddOptions()
         x.Init(buf, n + offset)
         return x
+
+    @classmethod
+    def AddOptionsBufferHasIdentifier(cls, buf, offset, size_prefixed=False):
+        return flatbuffers.util.BufferHasIdentifier(buf, offset, b"\x54\x46\x4C\x33", size_prefixed=size_prefixed)
 
     # AddOptions
     def Init(self, buf, pos):
@@ -35,12 +41,9 @@ class AddOptions(object):
 
 
 def AddOptionsStart(builder): builder.StartObject(2)
-
-
 def AddOptionsAddFusedActivationFunction(
     builder, fusedActivationFunction): builder.PrependInt8Slot(0, fusedActivationFunction, 0)
-def AddOptionsAddPotScaleInt16(
-    builder, potScaleInt16): builder.PrependBoolSlot(1, potScaleInt16, 1)
 
 
+def AddOptionsAddPotScaleInt16(builder, potScaleInt16): builder.PrependBoolSlot(1, potScaleInt16, 1)
 def AddOptionsEnd(builder): return builder.EndObject()

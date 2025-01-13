@@ -117,3 +117,16 @@ class BuiltinOptions(object):
     VarHandleOptions = 111
     ReadVariableOptions = 112
     AssignVariableOptions = 113
+    RandomOptions = 114
+    BucketizeOptions = 115
+    GeluOptions = 116
+    DynamicUpdateSliceOptions = 117
+    UnsortedSegmentProdOptions = 118
+    UnsortedSegmentMaxOptions = 119
+    UnsortedSegmentMinOptions = 120
+    UnsortedSegmentSumOptions = 121
+    ATan2Options = 122
+    SignOptions = 123
+    BitcastOptions = 124
+    BitwiseXorOptions = 125
+    RightShiftOptions = 126

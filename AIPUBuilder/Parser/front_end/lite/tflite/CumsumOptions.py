@@ -3,6 +3,8 @@
 # namespace: tflite
 
 import flatbuffers
+from flatbuffers.compat import import_numpy
+np = import_numpy()
 
 
 class CumsumOptions(object):
@@ -14,6 +16,10 @@ class CumsumOptions(object):
         x = CumsumOptions()
         x.Init(buf, n + offset)
         return x
+
+    @classmethod
+    def CumsumOptionsBufferHasIdentifier(cls, buf, offset, size_prefixed=False):
+        return flatbuffers.util.BufferHasIdentifier(buf, offset, b"\x54\x46\x4C\x33", size_prefixed=size_prefixed)
 
     # CumsumOptions
     def Init(self, buf, pos):
@@ -35,12 +41,6 @@ class CumsumOptions(object):
 
 
 def CumsumOptionsStart(builder): builder.StartObject(2)
-
-
-def CumsumOptionsAddExclusive(
-    builder, exclusive): builder.PrependBoolSlot(0, exclusive, 0)
-def CumsumOptionsAddReverse(
-    builder, reverse): builder.PrependBoolSlot(1, reverse, 0)
-
-
+def CumsumOptionsAddExclusive(builder, exclusive): builder.PrependBoolSlot(0, exclusive, 0)
+def CumsumOptionsAddReverse(builder, reverse): builder.PrependBoolSlot(1, reverse, 0)
 def CumsumOptionsEnd(builder): return builder.EndObject()

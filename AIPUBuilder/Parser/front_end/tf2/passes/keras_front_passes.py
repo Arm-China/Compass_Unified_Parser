@@ -1,5 +1,5 @@
-# Copyright © 2022 Arm Technology (China) Co. Ltd. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
+# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
 
 
 import numpy as np
@@ -68,11 +68,11 @@ def convert_batchnorm(graph):
                 or None in input_shapes[0]:
             continue
 
-        m_v_index = int(batchnorm_obj.scale)+int(batchnorm_obj.center)
+        m_v_index = int(batchnorm_obj.scale) + int(batchnorm_obj.center)
         mean_value = batchnorm_obj.weights_list[m_v_index] if m_v_index < len(
             batchnorm_obj.weights_list) else np.zeros_like(batchnorm_obj.weights, np.float32)
-        var_value = batchnorm_obj.weights_list[m_v_index+1] if m_v_index < (len(
-            batchnorm_obj.weights_list)-1) else np.ones_like(batchnorm_obj.biases, np.float32)
+        var_value = batchnorm_obj.weights_list[m_v_index + 1] if m_v_index < (len(
+            batchnorm_obj.weights_list) - 1) else np.ones_like(batchnorm_obj.biases, np.float32)
 
         graph.remove_edges_from(in_edges[1:])
         insert_constant(graph, batchnorm + '_scale',
@@ -144,7 +144,7 @@ def convert_bidirectional(graph):
             graph.add_edge(backward_node, backward_rev)
             seq_len = np.array([time_steps] * batch_size, np.int32)
             insert_constant(graph, backward_rev + '_seq_len', seq_len, backward_rev, in_port=1)
-            rev_seq_attr = {'name': backward_rev, 'time_axis': time_dim, 'batch_axis': 1-time_dim,
+            rev_seq_attr = {'name': backward_rev, 'time_axis': time_dim, 'batch_axis': 1 - time_dim,
                             'opset_version': 10}
             NodeWrap(graph, backward_rev).replace_obj('ReverseSequence', rev_seq_attr)
         # output_info_list save new output node and new src_out_port
@@ -373,7 +373,7 @@ def convert_gru_lstm(graph):
             seq_len = np.array([seq_length] * batch_size, np.int32)
             insert_constant(graph, rev + '_seq_len', seq_len, rev, in_port=1)
             time_axis = 0 if rnn_obj.time_major else 1
-            rev_seq_attr = {'name': rev, 'time_axis': time_axis, 'batch_axis': 1-time_axis,
+            rev_seq_attr = {'name': rev, 'time_axis': time_axis, 'batch_axis': 1 - time_axis,
                             'opset_version': 10}
             NodeWrap(graph, rev).replace_obj('ReverseSequence', rev_seq_attr)
 
@@ -431,6 +431,130 @@ def convert_gru_lstm(graph):
         NodeWrap(graph, rnn).replace_obj(dst_onnx_type, rnn_attr)
 
 
+def decompose_lambda(graph):
+    matched = False
+    matches = single_node_matcher(graph, 'TfKerasLambda')
+    for m in matches:
+        lamb = m['target']
+        lamb_obj = NodeWrap(graph, lamb)['object']
+        in_edges = graph.sorted_in_edges(lamb, data=True)
+        if lamb_obj is None or len(in_edges) < 3:
+            ERROR('[Parser]: Meets invalid op(%s) in decompose_lambda!' % lamb)
+            continue
+        training_tensor = in_edges[-1][2]['tensor']
+        if training_tensor is None or not training_tensor.is_const \
+                or training_tensor.value.size != 1 \
+                or training_tensor.value.item() not in (None, False):
+            WARN('[Parser]: Meets unsupported training input of TfKerasLambda op(%s) in decompose_lambda!' % lamb)
+            continue
+        mask_tensor = in_edges[-2][2]['tensor']
+        if mask_tensor is None or not mask_tensor.is_const \
+                or mask_tensor.value.size != 1 \
+                or mask_tensor.value.item() not in (None, False):
+            WARN('[Parser]: Meets unsupported mask input of TfKerasLambda op(%s) in decompose_lambda!' % lamb)
+            continue
+        inputs_num = len(in_edges) - 2
+        out_edges = graph.sorted_out_edges(lamb, data=True)
+        out_ports = lamb_obj.get_out_ports()
+        subgraph_output_names = lamb_obj.subgraph_output_names
+        if len(out_edges) < 1 or out_ports > list(range(len(subgraph_output_names))):
+            continue
+        subgraph_nodes = lamb_obj.subgraph_nodes
+        if not subgraph_nodes or not subgraph_output_names:
+            continue
+        matched = True
+        inputs_count = 0
+        node_prefix = lamb + '_'  # to avoid duplicate node name
+        nodes_outputs = {n['name']: n['output'] for n in subgraph_nodes}
+        for n in subgraph_nodes:
+            node_name = node_prefix + n['name']
+            graph.add_node(node_name)
+            attr_dict = n.get('attr', {})
+            node_type = n['type']
+            for in_port, (src_name, src_out_port, is_control) in enumerate(n.get('input', [])):
+                if is_control:
+                    continue
+                tensor_name, tensor_shape = '', tuple()
+                if src_name in nodes_outputs \
+                        and len(nodes_outputs[src_name]) > src_out_port \
+                        and len(nodes_outputs[src_name][src_out_port]) == 2:
+                    tensor_name, tensor_shape = nodes_outputs[src_name][src_out_port]
+                    tensor_shape = [] if tensor_shape is None else tensor_shape
+                edge_tensor = Tensor(name=node_prefix + tensor_name, shape=tensor_shape)
+                if node_type == 'Const' and attr_dict.get('value', None) is not None:
+                    edge_tensor.value = np.array(attr_dict['value'])
+                    edge_tensor.is_const = True
+                graph.add_edge(node_prefix + src_name, node_name,
+                               **{'src_out_port': src_out_port, 'dst_in_port': in_port,
+                                  'tensor': edge_tensor})
+            if node_type == 'Placeholder':
+                assert inputs_num > inputs_count, 'Meets invalid inputs of TfKerasLambda op(%s) in decompose_lambda!' % lamb
+                src, _, in_attr = in_edges[inputs_count]
+                identity_in_attr = copy.deepcopy(in_attr)
+                identity_in_attr.update({'dst_in_port': 0})
+                graph.add_edge(src, node_name, **identity_in_attr)
+                node_type = 'Identity'
+                inputs_count = inputs_count + 1
+            attr_dict.update({'name': node_name, 'opcode_version': n.get('opcode_version', 1)})
+            NodeWrap(graph, node_name).replace_obj('Tf' + node_type, attr_dict)
+        graph.remove_edges_from(in_edges + out_edges)
+        for _, dst, out_attr in out_edges:
+            src = node_prefix + subgraph_output_names[out_attr['src_out_port']]
+            new_out_attr = copy.deepcopy(out_attr)
+            # The output node of subgraph is Identity so src_out_port is 0
+            new_out_attr.update({'src_out_port': 0})
+            graph.add_edge(src, dst, **new_out_attr)
+        if lamb in graph._attr['output_names']:
+            index = graph._attr['output_names'].index(lamb)
+            graph._attr['output_names'].pop(index)
+            for out_name in subgraph_output_names:
+                graph._attr['output_names'].insert(index, node_prefix + out_name)
+                index = index + 1
+    if matched:
+        clear_redundant_nodes(graph)
+
+
+def convert_layernorm(graph):
+    '''Convert keras LayerNormalization to onnx LayerNormalization. Insert transpose before and after it
+    if axes is not continuous from the last dimension.
+    '''
+    matches = single_node_matcher(graph, 'TfKerasLayerNormalization')
+    for m in matches:
+        layernorm = m['target']
+        layernorm_obj = NodeWrap(graph, layernorm)['object']
+        in_edges = graph.sorted_in_edges(layernorm, data=True)
+        out_edges = graph.sorted_out_edges(layernorm, data=True)
+        if layernorm_obj is None or len(in_edges) < 1 or len(out_edges) < 1:
+            ERROR('[Parser]: Meets invalid LayerNormalization Node(%s) in convert_layernorm!' % layernorm)
+            continue
+        in_shapes = layernorm_obj.get_input_shapes()
+        if len(in_shapes) < 1 or in_shapes[0] is None:
+            ERROR('[Parser]: Meets invalid input shape of KerasLayerNormalization Node(%s) in convert_layernorm!' % layernorm)
+            continue
+        in_shape_len = len(in_shapes[0])
+        ln_axes = OpHasAxis.make_axes_non_negative(layernorm_obj.axes, in_shape_len)
+        non_ln_axes = [axis for axis in range(in_shape_len) if axis not in ln_axes]
+        pre_perm = non_ln_axes + ln_axes
+        if pre_perm != list(range(in_shape_len)):
+            updated_axes = list(range(len(non_ln_axes), in_shape_len))
+            src, _, in_attr = in_edges[0]
+            insert_transpose(graph, src, layernorm, in_attr, pre_perm, type='ArmTranspose')
+            post_perm = Op.cal_inverse_perm(pre_perm)
+            post_trans = insert_transpose_after(graph, layernorm, post_perm, type='ArmTranspose')
+            if layernorm in graph._attr['output_names']:
+                index = graph._attr['output_names'].index(layernorm)
+                graph._attr['output_names'][index] = post_trans
+        else:
+            updated_axes = ln_axes
+
+        insert_constant(graph, layernorm + '_scale', layernorm_obj.weights, layernorm, in_port=1)
+        insert_constant(graph, layernorm + '_bias', layernorm_obj.biases, layernorm, in_port=2)
+
+        layernorm_attr = layernorm_obj.copied_attr()
+        layernorm_attr.update({'opset_version': 17, 'axis': updated_axes[0], 'axes': updated_axes})
+        NodeWrap(graph, layernorm).replace_obj('LayerNormalization', layernorm_attr)
+
+
 def convert_normalization(graph):
     '''
     Convert TfKerasNormalization op to sub(x-mean) + mul(*1/sqrt(var)); if mean and var are None or
@@ -465,7 +589,7 @@ def convert_normalization(graph):
             if in_attr['tensor'] is not None and in_attr['tensor'].value is not None:
                 sub_out_attr['tensor'].value = in_attr['tensor'].value - mean
             graph.add_edge(sub, norm, **sub_out_attr)
-            mul_value = np.array(1 / np.sqrt(variance))
+            mul_value = np.array(1 / np.maximum(np.sqrt(variance), 1e-7))
             insert_constant(graph, norm + '_mul', mul_value, norm, in_port=1)
 
             NodeWrap(graph, sub).replace_obj('Sub', {'name': sub, 'opset_version': 13})
@@ -603,7 +727,7 @@ def convert_rescaling(graph):
 
 def convert_resizing(graph):
     matches = single_node_matcher(graph, ['TfKerasResizing', 'TfKerasUpSampling1D',
-                                  'TfKerasUpSampling2D', 'TfKerasUpSampling3D'])
+                                          'TfKerasUpSampling2D', 'TfKerasUpSampling3D'])
     for m in matches:
         resize = m['target']
         resize_obj = NodeWrap(graph, resize)['object']
@@ -731,17 +855,32 @@ def convert_seperable_conv(graph):
     for m in matches:
         sep_conv = m['target']
         sep_conv_obj = NodeWrap(graph, sep_conv)['object']
+        in_edges = graph.sorted_in_edges(sep_conv, data=True)
         out_edges = graph.sorted_out_edges(sep_conv, data=True)
-        if sep_conv_obj is None or len(out_edges) < 1 or len(sep_conv_obj.weights_list) < 2:
+        if sep_conv_obj is None or len(in_edges) < 1 or len(out_edges) < 1 or len(sep_conv_obj.weights_list) < 2:
             ERROR('[Parser]: Meets invalid Op (%s) in convert_seperable_conv!' % sep_conv)
             continue
+        if in_edges[0][2]['tensor'].is_const:
+            continue
+
         graph.remove_edges_from(out_edges)
+        data_format = 'NCHW' if sep_conv_obj.data_format.startswith('NC') else 'NHWC'
+        pointwise_weights = sep_conv_obj.weights_list[1]
 
         pointwise_conv = get_valid_node_name(graph, sep_conv + '_pointwise_conv')
-        graph.add_edge(sep_conv, pointwise_conv)
+        depthwise_conv_out_attr = copy.deepcopy(out_edges[0][2])
+        depthwise_conv_out_attr.update({'dst_in_port': 0})
+        if depthwise_conv_out_attr['tensor'] is not None:
+            depthwise_conv_out_attr['tensor'].value = None
+            shape = list(depthwise_conv_out_attr['tensor'].shape)
+            if data_format == 'NHWC':
+                depthwise_conv_out_attr['tensor'].shape = tuple(shape[:-1] + [pointwise_weights.shape[-2]])
+            else:
+                depthwise_conv_out_attr['tensor'].shape = tuple([shape[0], pointwise_weights.shape[-2]] + shape[2:])
+        graph.add_edge(sep_conv, pointwise_conv, **depthwise_conv_out_attr)
         for _, dst, out_attr in out_edges:
             graph.add_edge(pointwise_conv, dst, **out_attr)
-        pointwise_weights = sep_conv_obj.weights_list[1]
+
         if sep_conv_obj.type == 'TfKerasSeparableConv1D':
             weights_perm = [2, 1, 0]
             kernel_shape = [1]
@@ -751,7 +890,6 @@ def convert_seperable_conv(graph):
             kernel_shape = [1, 1]
             strides = [1, 1]
         new_pointwise_weights = np.transpose(pointwise_weights, weights_perm)
-        data_format = 'NCHW' if sep_conv_obj.data_format.startswith('NC') else 'NHWC'
         pointwise_conv_attr = {'name': pointwise_conv, 'weights': new_pointwise_weights,
                                'auto_pad': 'VALID', 'kernel_shape': kernel_shape, 'strides': strides,
                                'biases': sep_conv_obj.biases, 'data_format': data_format, 'opset_version': 1}
@@ -759,7 +897,7 @@ def convert_seperable_conv(graph):
 
         depthwise_weights = sep_conv_obj.weights_list[0]
         new_depthwise_weights = np.reshape(depthwise_weights, list(
-            depthwise_weights.shape[:-2]) + [-1, depthwise_weights.shape[-2]//sep_conv_obj.group])
+            depthwise_weights.shape[:-2]) + [-1, depthwise_weights.shape[-2] // sep_conv_obj.group])
         new_depthwise_weights = np.transpose(new_depthwise_weights, sep_conv_obj.perm_tf_to_onnx())
         depthwise_conv_attr = sep_conv_obj.copied_attr()
         depthwise_conv_attr.update({'weights': new_depthwise_weights, 'biases': None, 'opset_version': 1})
@@ -767,6 +905,74 @@ def convert_seperable_conv(graph):
         if sep_conv in graph._attr['output_names']:
             index = graph._attr['output_names'].index(sep_conv)
             graph._attr['output_names'][index] = pointwise_conv
+
+
+def convert_sufficient_statistics(graph):
+    matched = False
+    matches = single_node_matcher(graph, 'Tfsufficient_statistics')
+    for m in matches:
+        ss_name = m['target']
+        ss_obj = NodeWrap(graph, ss_name)['object']
+        in_edges = graph.sorted_in_edges(ss_name, data=True)
+        out_edges = graph.sorted_out_edges(ss_name, data=True)
+        input_tensors = ss_obj.get_input_tensors()
+        out_ports = ss_obj.get_out_ports()
+
+        if ss_obj is None \
+                or len(in_edges) != 6\
+                or len(input_tensors) != 6:
+            ERROR(
+                '[Parser]: invalid sufficient_statistics Node(%s) in rename_sufficient_statistics!' % ss_name)
+            continue
+
+        matched = True
+
+        graph.remove_edges_from(in_edges[1:])
+        inp3_src, _, inp3_attr = in_edges[2]
+        inp3_attr.update({'dst_in_port': 1})
+        graph.add_edge(inp3_src, ss_name, **inp3_attr)
+
+        if np.any(input_tensors[2] == np.array(None))\
+                or (input_tensors[2].ndim == 1 and input_tensors[2].size == 0):
+            inp1_data = np.zeros(input_tensors[0].shape).astype(input_tensors[0].dtype)
+            graph.remove_edges_from(in_edges[1:])
+            insert_constant(graph, ss_name + '_inp1',
+                            inp1_data, ss_name, in_port=1)
+
+        graph.remove_edges_from(out_edges)
+        for src, dst, attr in out_edges:
+            if attr['src_out_port'] == 0 or attr['src_out_port'] == 3:
+                if dst in graph._attr['output_names']:
+                    index = graph._attr['output_names'].index(dst)
+                    graph._attr['output_names'].pop(index)
+            if attr['src_out_port'] == 1:
+                attr.update({'src_out_port': 0})
+                graph.add_edge(src, dst, **attr)
+            if attr['src_out_port'] == 2:
+                attr.update({'src_out_port': 1})
+                graph.add_edge(src, dst, **attr)
+
+        if not ss_obj.keepdims:
+            out_shape = ss_obj.get_output_shapes()[0]
+            post_reshapes = []
+            for out_port in ss_obj.get_out_ports():
+                reshape = insert_reshape_after(graph,
+                                               ss_name,
+                                               out_shape,
+                                               out_port=out_port,
+                                               type='Reshape')
+                post_reshapes.append(reshape)
+            if ss_name in graph._attr['output_names'] and post_reshapes:
+                index = graph._attr['output_names'].index(ss_name)
+                graph._attr['output_names'].pop(index)
+                for reshape in post_reshapes:
+                    graph._attr['output_names'].append(reshape)
+
+        ss_attr = ss_obj.copied_attr()
+        NodeWrap(graph, ss_name).replace_obj(
+            'SufficientStatistics', ss_attr)
+    if matched:
+        clear_redundant_nodes(graph)
 
 
 def convert_softmax(graph):
@@ -884,7 +1090,7 @@ def convert_to_onnx(graph):
                 # Tf fliter:[f_h,f_w,in_channel,channel_multiper]
                 # onnx fliter:[out_channel,in_channel/group,f_h,f_w]
                 new_weights = np.reshape(node_obj.weights, list(
-                    node_obj.weights.shape[:2]) + [-1, node_obj.weights.shape[2]//node_obj.group])
+                    node_obj.weights.shape[:2]) + [-1, node_obj.weights.shape[2] // node_obj.group])
             else:
                 new_weights = node_obj.weights
 
@@ -906,11 +1112,11 @@ def convert_to_onnx(graph):
             end_crops = cropping[:, 1].tolist()
             if node_data_format == 'NCHW':
                 slice_starts = [0, 0] + begin_crops
-                end_crops = [input_shape[2+idx] if end == 0 else -end for idx, end in enumerate(end_crops)]
+                end_crops = [input_shape[2 + idx] if end == 0 else -end for idx, end in enumerate(end_crops)]
                 slice_ends = input_shape[:2] + end_crops
             else:
                 slice_starts = [0] + begin_crops + [0]
-                end_crops = [input_shape[1+idx] if end == 0 else -end for idx, end in enumerate(end_crops)]
+                end_crops = [input_shape[1 + idx] if end == 0 else -end for idx, end in enumerate(end_crops)]
                 slice_ends = input_shape[:1] + end_crops + input_shape[-1:]
             new_node_attr.update({'starts': slice_starts, 'ends': slice_ends})
         elif pure_type == 'Flatten':
@@ -1000,11 +1206,11 @@ def process_keras_op_before_infer(graph):
     convert_rescaling(graph)
     convert_resizing(graph)
     convert_activations(graph)
+    decompose_lambda(graph)
 
     from ...lite.passes.front_passes import split_op_has_activation
     split_op_has_activation(graph, is_tf_op=True)
     convert_dense(graph)
-    convert_seperable_conv(graph)
     multidirectional_broadcasting(graph)
 
     from ...onnx.passes.middle_passes import split_sum_or_max_or_min
@@ -1018,7 +1224,9 @@ def process_keras_op_after_infer(graph):
     remove_useless_op(graph, ['TfKerasDropout'])
 
     convert_batchnorm(graph)
+    convert_layernorm(graph)
     convert_global_pooling(graph)
     convert_softmax(graph)
+    convert_seperable_conv(graph)
 
     convert_to_onnx(graph)

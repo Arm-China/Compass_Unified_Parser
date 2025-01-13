@@ -3,6 +3,8 @@
 # namespace: tflite
 
 import flatbuffers
+from flatbuffers.compat import import_numpy
+np = import_numpy()
 
 
 class QuantizationParameters(object):
@@ -14,6 +16,10 @@ class QuantizationParameters(object):
         x = QuantizationParameters()
         x.Init(buf, n + offset)
         return x
+
+    @classmethod
+    def QuantizationParametersBufferHasIdentifier(cls, buf, offset, size_prefixed=False):
+        return flatbuffers.util.BufferHasIdentifier(buf, offset, b"\x54\x46\x4C\x33", size_prefixed=size_prefixed)
 
     # QuantizationParameters
     def Init(self, buf, pos):
@@ -42,6 +48,11 @@ class QuantizationParameters(object):
         return 0
 
     # QuantizationParameters
+    def MinIsNone(self):
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(4))
+        return o == 0
+
+    # QuantizationParameters
     def Max(self, j):
         o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(6))
         if o != 0:
@@ -62,6 +73,11 @@ class QuantizationParameters(object):
         if o != 0:
             return self._tab.VectorLen(o)
         return 0
+
+    # QuantizationParameters
+    def MaxIsNone(self):
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(6))
+        return o == 0
 
     # QuantizationParameters
     def Scale(self, j):
@@ -86,9 +102,13 @@ class QuantizationParameters(object):
         return 0
 
     # QuantizationParameters
+    def ScaleIsNone(self):
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(8))
+        return o == 0
+
+    # QuantizationParameters
     def ZeroPoint(self, j):
-        o = flatbuffers.number_types.UOffsetTFlags.py_type(
-            self._tab.Offset(10))
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(10))
         if o != 0:
             a = self._tab.Vector(o)
             return self._tab.Get(flatbuffers.number_types.Int64Flags, a + flatbuffers.number_types.UOffsetTFlags.py_type(j * 8))
@@ -96,32 +116,33 @@ class QuantizationParameters(object):
 
     # QuantizationParameters
     def ZeroPointAsNumpy(self):
-        o = flatbuffers.number_types.UOffsetTFlags.py_type(
-            self._tab.Offset(10))
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(10))
         if o != 0:
             return self._tab.GetVectorAsNumpy(flatbuffers.number_types.Int64Flags, o)
         return 0
 
     # QuantizationParameters
     def ZeroPointLength(self):
-        o = flatbuffers.number_types.UOffsetTFlags.py_type(
-            self._tab.Offset(10))
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(10))
         if o != 0:
             return self._tab.VectorLen(o)
         return 0
 
     # QuantizationParameters
+    def ZeroPointIsNone(self):
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(10))
+        return o == 0
+
+    # QuantizationParameters
     def DetailsType(self):
-        o = flatbuffers.number_types.UOffsetTFlags.py_type(
-            self._tab.Offset(12))
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(12))
         if o != 0:
             return self._tab.Get(flatbuffers.number_types.Uint8Flags, o + self._tab.Pos)
         return 0
 
     # QuantizationParameters
     def Details(self):
-        o = flatbuffers.number_types.UOffsetTFlags.py_type(
-            self._tab.Offset(14))
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(14))
         if o != 0:
             from flatbuffers.table import Table
             obj = Table(bytearray(), 0)
@@ -131,50 +152,34 @@ class QuantizationParameters(object):
 
     # QuantizationParameters
     def QuantizedDimension(self):
-        o = flatbuffers.number_types.UOffsetTFlags.py_type(
-            self._tab.Offset(16))
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(16))
         if o != 0:
             return self._tab.Get(flatbuffers.number_types.Int32Flags, o + self._tab.Pos)
         return 0
 
 
 def QuantizationParametersStart(builder): builder.StartObject(7)
-
-
 def QuantizationParametersAddMin(builder, min): builder.PrependUOffsetTRelativeSlot(
     0, flatbuffers.number_types.UOffsetTFlags.py_type(min), 0)
 
 
-def QuantizationParametersStartMinVector(
-    builder, numElems): return builder.StartVector(4, numElems, 4)
-
-
+def QuantizationParametersStartMinVector(builder, numElems): return builder.StartVector(4, numElems, 4)
 def QuantizationParametersAddMax(builder, max): builder.PrependUOffsetTRelativeSlot(
     1, flatbuffers.number_types.UOffsetTFlags.py_type(max), 0)
 
 
-def QuantizationParametersStartMaxVector(
-    builder, numElems): return builder.StartVector(4, numElems, 4)
-
-
+def QuantizationParametersStartMaxVector(builder, numElems): return builder.StartVector(4, numElems, 4)
 def QuantizationParametersAddScale(builder, scale): builder.PrependUOffsetTRelativeSlot(
     2, flatbuffers.number_types.UOffsetTFlags.py_type(scale), 0)
 
 
-def QuantizationParametersStartScaleVector(
-    builder, numElems): return builder.StartVector(4, numElems, 4)
-
-
+def QuantizationParametersStartScaleVector(builder, numElems): return builder.StartVector(4, numElems, 4)
 def QuantizationParametersAddZeroPoint(builder, zeroPoint): builder.PrependUOffsetTRelativeSlot(
     3, flatbuffers.number_types.UOffsetTFlags.py_type(zeroPoint), 0)
 
 
-def QuantizationParametersStartZeroPointVector(
-    builder, numElems): return builder.StartVector(8, numElems, 8)
-
-
-def QuantizationParametersAddDetailsType(
-    builder, detailsType): builder.PrependUint8Slot(4, detailsType, 0)
+def QuantizationParametersStartZeroPointVector(builder, numElems): return builder.StartVector(8, numElems, 8)
+def QuantizationParametersAddDetailsType(builder, detailsType): builder.PrependUint8Slot(4, detailsType, 0)
 
 
 def QuantizationParametersAddDetails(builder, details): builder.PrependUOffsetTRelativeSlot(

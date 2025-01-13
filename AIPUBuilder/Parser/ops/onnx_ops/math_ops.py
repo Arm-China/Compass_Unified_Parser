@@ -1,11 +1,12 @@
-# Copyright © 2022 Arm Technology (China) Co. Ltd. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
+# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
 
 
 import math
 import torch
 import tensorflow as tf
 import numpy as np
+from dataclasses import dataclass
 from ..op import *
 from ...common.defs import FLOAT_MIN, FLOAT_MAX, FLOAT_EQUAL, TYPE_MIN, TYPE_MAX
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
@@ -83,6 +84,9 @@ class AddOp(OpNeedBroadcast, OpHasAxis, OpHasOneOutPort, OnnxOp):
     def infer_shape(self):
         super(AddOp, self).infer_shape()
         inputs = self.get_input_tensors()
+        input_dtypes = self.get_input_dtypes()
+        assert len(inputs) == 2 and len(input_dtypes) == 2, 'The number of inputs is invalid in AddOp.'
+        assert input_dtypes[0] == input_dtypes[1], 'The dtype of inputs should be the same in AddOp.'
         cur_ver = self.cur_version
         if cur_ver <= 6:
             if self.broadcast:
@@ -208,7 +212,7 @@ class AtanhOp(LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
         super(AtanhOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor = np.arctanh(*inputs)
-        self.set_out_tensor(out_tensor)
+        self.set_out_tensor(out_tensor.astype(inputs[0].dtype))
 
 
 class AtanOp(LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
@@ -242,6 +246,23 @@ class BitwiseAndOp(OpHasOneOutPort, OnnxOp):
         super(BitwiseAndOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor = tf.bitwise.bitwise_and(*inputs).numpy()
+        self.set_out_tensor(out_tensor)
+
+
+class BitwiseNotOp(OpHasOneOutPort, OnnxOp):
+    @classmethod
+    def attributes(cls):
+        return {18: {}}
+
+    def __init__(self, graph, attr_dict=None):
+        super(BitwiseNotOp, self).__init__(graph, attr_dict)
+        self.update_attributes(BitwiseNotOp, attr_dict)
+        assert self.check_required(), 'BitwiseNotOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(BitwiseNotOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = tf.bitwise.invert(*inputs).numpy()
         self.set_out_tensor(out_tensor)
 
 
@@ -324,12 +345,20 @@ class ClipOp(LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
                     inputs = self.get_input_tensors()
                     if item == 'min':
                         ret = inputs[1] if len(inputs) >= 2 else None
-                        if ret is None:
+                        if ret is None and inputs[0] is not None:
                             ret = TYPE_MIN(inputs[0].dtype)
+                            if item in self.__dict__['_attr']:
+                                self.__dict__['_attr'][item].value = ret
+                            else:
+                                self.__dict__['_attr'][item] = Attribute(item, {'type': AttrType.TENSOR, 'value': ret})
                     else:
                         ret = inputs[2] if len(inputs) >= 3 else None
-                        if ret is None:
+                        if ret is None and inputs[0] is not None:
                             ret = TYPE_MAX(inputs[0].dtype)
+                            if item in self.__dict__['_attr']:
+                                self.__dict__['_attr'][item].value = ret
+                            else:
+                                self.__dict__['_attr'][item] = Attribute(item, {'type': AttrType.TENSOR, 'value': ret})
         except:
             ret = None
         if ret is None:
@@ -340,16 +369,7 @@ class ClipOp(LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
         super(ClipOp, self).infer_shape()
         inputs = self.get_input_tensors()
         dtype = inputs[0].dtype
-        if self.cur_version <= 6:
-            out_tensor = np.clip(inputs[0], self.min, self.max).astype(dtype)
-        else:
-            min_v = inputs[1] if len(inputs) >= 2 else None
-            max_v = inputs[2] if len(inputs) >= 3 else None
-            if min_v is None:
-                min_v = TYPE_MIN(inputs[0].dtype)
-            if min_v is None:
-                max_v = TYPE_MAX(inputs[0].dtype)
-            out_tensor = np.clip(inputs[0], min_v, max_v).astype(dtype)
+        out_tensor = np.clip(inputs[0], self.min, self.max).astype(dtype)
         self.set_out_tensor(out_tensor)
 
     def convert_version(self):
@@ -358,19 +378,7 @@ class ClipOp(LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
         if cur_ver < max_ver:
             from ...front_end.onnx.passes.common_passes import insert_constant
             in_edges = self._graph.sorted_in_edges(self.name)
-            inputs = self.get_input_tensors()
-            min_val, max_val = None, None
-            if cur_ver <= 6:
-                min_val, max_val = self.min, self.max
-            else:
-                if len(inputs) == 2:
-                    min_val = inputs[1]
-                elif len(inputs) == 3:
-                    min_val, max_val = inputs[1], inputs[2]
-            if min_val is None:
-                min_val = TYPE_MIN(inputs[0].dtype)
-            if max_val is None:
-                max_val = TYPE_MAX(inputs[0].dtype)
+            min_val, max_val = self.min, self.max
             self._graph.remove_edges_from(in_edges[1:])
             insert_constant(self._graph, self.name + '_min',
                             np.array(min_val), self.name, in_port=1)
@@ -417,9 +425,9 @@ class CumSumOp(OpHasOneOutPort, OpHasAxis, OnnxOp):
     @classmethod
     def attributes(cls):
         return {11: {'exclusive': {'type': AttrType.INT, 'default': 0, 'options': [0, 1]},
-                'reverse': {'type': AttrType.INT, 'default': 0, 'options': [0, 1]}},
+                     'reverse': {'type': AttrType.INT, 'default': 0, 'options': [0, 1]}},
                 14: {'exclusive': {'type': AttrType.INT, 'default': 0, 'options': [0, 1]},
-                'reverse': {'type': AttrType.INT, 'default': 0, 'options': [0, 1]}},
+                     'reverse': {'type': AttrType.INT, 'default': 0, 'options': [0, 1]}},
                 }
 
     def __init__(self, graph, attr_dict=None):
@@ -478,6 +486,9 @@ class DivOp(OpNeedBroadcast, OpHasOneOutPort, OnnxOp):
     def infer_shape(self):
         super(DivOp, self).infer_shape()
         inputs = self.get_input_tensors()
+        input_dtypes = self.get_input_dtypes()
+        assert len(inputs) == 2 and len(input_dtypes) == 2, 'The number of inputs is invalid in DivOp.'
+        assert input_dtypes[0] == input_dtypes[1], 'The dtype of inputs should be the same in DivOp.'
         cur_ver = self.cur_version
         if cur_ver <= 6:
             if self.broadcast:
@@ -513,9 +524,8 @@ class EinsumOp(OpHasOneOutPort, OnnxOp):
     def infer_shape(self):
         super(EinsumOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        assert len(inputs) == 2, 'Currently only two inputs are supported.'
-        out_tensor = torch.einsum(self.equation, torch.from_numpy(
-            inputs[0]), torch.from_numpy(inputs[1])).numpy()
+        # assert len(inputs) == 2, 'Currently only two inputs are supported.'
+        out_tensor = np.einsum(self.equation, *inputs)
         self.set_out_tensor(out_tensor)
 
 
@@ -646,7 +656,7 @@ class GemmOp(OpHasOneOutPort, OnnxOp):
         out_tensor = self.alpha * np.matmul(A, B)
         if len(C.shape) == 1 and C.shape[0] != out_tensor.shape[-1]:
             C = np.reshape(C, (-1, 1))
-        out_tensor = out_tensor + self.beta * C
+        out_tensor = (out_tensor + self.beta * C).astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
 
@@ -686,7 +696,7 @@ class HardSigmoidOp(LayoutUnawareOp, BaseActivationOp, OnnxOp):
         inputs = self.get_input_tensors()
         out_tensor = np.maximum(self.clip_min,
                                 np.minimum(self.clip_max,
-                                           self.alpha * inputs[0] + self.beta))
+                                           self.alpha * inputs[0] + self.beta)).astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
 
@@ -735,11 +745,12 @@ class HardmaxOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
             if cur_ver < 13:
                 from ...front_end.onnx.passes.common_passes import insert_reshape, insert_reshape_after
                 in_edges = self._graph.sorted_in_edges(self.name, data=True)
-                inputs = self.get_input_tensors()
+                input_shapes = self.get_input_shapes()
                 if len(in_edges) == 1 \
-                        and len(inputs) == 1 \
-                        and inputs[0] is not None:
-                    input_shape = inputs[0].shape
+                        and len(input_shapes) == 1 \
+                        and input_shapes[0] is not None \
+                        and all(d is not None for d in input_shapes[0]):
+                    input_shape = input_shapes[0]
                     if self.axis < 0:
                         self.axis += len(input_shape)
                     pre_dim = [-1, 1] \
@@ -817,11 +828,12 @@ class LogSoftmaxOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
             if cur_ver < 13:
                 from ...front_end.onnx.passes.common_passes import insert_constant, insert_reshape, insert_reshape_after
                 in_edges = self._graph.sorted_in_edges(self.name, data=True)
-                inputs = self.get_input_tensors()
+                input_shapes = self.get_input_shapes()
                 if len(in_edges) == 1 \
-                        and len(inputs) == 1 \
-                        and inputs[0] is not None:
-                    input_shape = inputs[0].shape
+                        and len(input_shapes) == 1 \
+                        and input_shapes[0] is not None \
+                        and all(d is not None for d in input_shapes[0]):
+                    input_shape = input_shapes[0]
                     if self.axis < 0:
                         self.axis += len(input_shape)
                     if len(input_shape) != 2 or self.axis != 1:
@@ -1024,6 +1036,23 @@ class MinOp(OpNeedBroadcast, LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
         self.set_out_tensor(out_tensor)
 
 
+class MishOp(LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
+    @classmethod
+    def attributes(cls):
+        return {18: {}, }
+
+    def __init__(self, graph, attr_dict=None):
+        super(MishOp, self).__init__(graph, attr_dict)
+        self.update_attributes(MishOp, attr_dict)
+        assert self.check_required(), 'MishOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(MishOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        out_tensor = inputs[0] * np.tanh(np.log(np.exp(inputs[0]) + 1))
+        self.set_out_tensor(out_tensor)
+
+
 class ModOp(OpNeedBroadcast, LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
     @classmethod
     def attributes(cls):
@@ -1065,7 +1094,9 @@ class MulOp(OpNeedBroadcast, OpHasAxis, OpHasOneOutPort, OnnxOp):
     def infer_shape(self):
         super(MulOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        assert len(inputs) == 2, 'The number of inputs is invalid in MulOp.'
+        input_dtypes = self.get_input_dtypes()
+        assert len(inputs) == 2 and len(input_dtypes) == 2, 'The number of inputs is invalid in MulOp.'
+        assert input_dtypes[0] == input_dtypes[1], 'The dtype of inputs should be the same in MulOp.'
         cur_ver = self.cur_version
         if cur_ver <= 6:
             if self.broadcast:
@@ -1117,7 +1148,7 @@ class NegOp(LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
         self.set_out_tensor(out_tensor)
 
 
-class NonZeroOp(LayoutUnawareOp, ConstLikeOp, OpHasOneOutPort, OnnxOp):
+class NonZeroOp(LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
     @classmethod
     def attributes(cls):
         return {9: {},
@@ -1131,7 +1162,12 @@ class NonZeroOp(LayoutUnawareOp, ConstLikeOp, OpHasOneOutPort, OnnxOp):
     def infer_shape(self):
         super(NonZeroOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = np.array(np.nonzero(inputs[0]), dtype=np.int64)
+        if self.is_all_inputs_const():
+            inp = inputs[0]
+        else:
+            WARN('[Parser]: Meets unsupported non-const input of NonZero Op (%s) in infer_shape!' % self.name)
+            inp = np.ones_like(inputs[0])
+        out_tensor = np.array(np.nonzero(inp), dtype=np.int64)
         self.set_out_tensor(out_tensor)
 
 
@@ -1166,8 +1202,7 @@ class PowOp(OpNeedBroadcast, OpHasAxis, OpHasOneOutPort, OnnxOp):
             out_tensor = np.power(inputs[0], second_input)
         else:
             out_tensor = np.power(*inputs)
-        if out_tensor.dtype == 'float64':
-            out_tensor = out_tensor.astype(np.float32)
+        out_tensor = out_tensor.astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
     def __getattr__(self, item):
@@ -1246,6 +1281,49 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
                      'nearest_mode': {'type': AttrType.STRING,
                                       'default': 'round_prefer_floor',
                                       'options': ['simple', 'round_prefer_floor', 'round_prefer_ceil', 'floor', 'ceil']},
+                     },
+                18: {'antialias': {'type': AttrType.BOOL, 'default': False},
+                     'axes': {'type': AttrType.INTS, 'default': None},
+                     'coordinate_transformation_mode': {'type': AttrType.STRING,
+                                                        'default': 'half_pixel',
+                                                        'options': ['half_pixel',
+                                                                    'pytorch_half_pixel',
+                                                                    'align_corners',
+                                                                    'asymmetric',
+                                                                    'tf_crop_and_resize']
+                                                        },
+                     'cubic_coeff_a': {'type': AttrType.FLOAT, 'default': -0.75},
+                     'exclude_outside': {'type': AttrType.INT, 'default': 0},
+                     'extrapolation_value': {'type': AttrType.FLOAT, 'default': 0.0},
+                     'keep_aspect_ratio_policy': {'type': AttrType.STRING,
+                                                  'default': 'stretch',
+                                                  'options': ['stretch', 'not_larger', 'not_smaller']},
+                     'mode': {'type': AttrType.STRING, 'default': 'nearest', 'options': ['nearest', 'linear', 'cubic']},
+                     'nearest_mode': {'type': AttrType.STRING,
+                                      'default': 'round_prefer_floor',
+                                      'options': ['simple', 'round_prefer_floor', 'round_prefer_ceil', 'floor', 'ceil']},
+                     },
+                19: {'antialias': {'type': AttrType.BOOL, 'default': False},
+                     'axes': {'type': AttrType.INTS, 'default': None},
+                     'coordinate_transformation_mode': {'type': AttrType.STRING,
+                                                        'default': 'half_pixel',
+                                                        'options': ['half_pixel',
+                                                                    'half_pixel_symmetric',
+                                                                    'pytorch_half_pixel',
+                                                                    'align_corners',
+                                                                    'asymmetric',
+                                                                    'tf_crop_and_resize']
+                                                        },
+                     'cubic_coeff_a': {'type': AttrType.FLOAT, 'default': -0.75},
+                     'exclude_outside': {'type': AttrType.INT, 'default': 0},
+                     'extrapolation_value': {'type': AttrType.FLOAT, 'default': 0.0},
+                     'keep_aspect_ratio_policy': {'type': AttrType.STRING,
+                                                  'default': 'stretch',
+                                                  'options': ['stretch', 'not_larger', 'not_smaller']},
+                     'mode': {'type': AttrType.STRING, 'default': 'nearest', 'options': ['nearest', 'linear', 'cubic']},
+                     'nearest_mode': {'type': AttrType.STRING,
+                                      'default': 'round_prefer_floor',
+                                      'options': ['simple', 'round_prefer_floor', 'round_prefer_ceil', 'floor', 'ceil']},
                      }
                 }
 
@@ -1255,6 +1333,41 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
                 'trilinear': 'linear',
                 'cubic': 'cubic',
                 }
+
+    @dataclass(eq=False)
+    class _FilterParamsBaseAntiAlias:
+        bound = []
+        out_of_bound_idx = []
+        window_size = 2
+        weight_coefficents = None
+
+    @dataclass
+    class _FilterParamsAntiAlias:
+        dim_x: object
+        dim_y: object
+        dim_z: object
+
+        def __init__(self, mode, cubic_coeff_a=-0.75):
+            self.mode = mode
+            self.support_size = 4.0 if mode == 'bicubic' else 2.0
+            self.cubic_coeff_a = cubic_coeff_a
+
+        def filter(self, x):
+            if self.mode in ('bilinear', 'trilinear'):
+                x = -x if x < 0.0 else x
+                x = (1.0 - x) if x < 1.0 else 0.0
+                return x
+            if self.mode == 'bicubic':
+                x = -x if x < 0.0 else x
+                if x < 1.0:
+                    x = ((self.cubic_coeff_a + 2.0) * x - (self.cubic_coeff_a + 3.0)) * x * x + 1
+                    return x
+                if x < 2.0:
+                    x = (((x - 5.0) * x + 8.0) * x - 4.0) * self.cubic_coeff_a
+                    return x
+                return 0.0
+            ERROR('[Parser]: Meets invalid mode %s in _FilterParamsAntiAlias of ResizeOp!' % self.mode)
+            return None
 
     def __init__(self, graph, attr_dict=None):
         super(ResizeOp, self).__init__(graph, attr_dict)
@@ -1266,15 +1379,32 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
             ret = super(ResizeOp, self).__getattr__(item)
         except:
             ret = None
-        if ret is None and item in ('roi', 'scales', 'sizes', 'coordinate_transformation_mode', 'extrapolation_value'):
+        if ret is None and item in ('roi', 'scales', 'sizes', 'coordinate_transformation_mode', 'extrapolation_value',
+                                    'antialias', 'axes', 'keep_aspect_ratio_policy'):
             try:
                 cur_ver = self.__dict__['_attr']['cur_version'].value
                 if item == 'roi':
                     inputs = self.get_input_tensors()
                     if cur_ver >= 11:
                         try:
-                            ret = np.array(inputs[1], np.float32)
+                            ret = self.__dict__['_attr'][item].value
                         except:
+                            ret = None
+                        try:
+                            if ret is None and (inputs[1] is not None and inputs[1].size != 0):
+                                ret = np.array(inputs[1], np.float32)
+                                axes = self.axes
+                                if cur_ver >= 18 and axes is not None:
+                                    input_length = len(inputs[0].shape)
+                                    new_roi = np.array([0] * input_length + [1] * input_length, np.float32)
+                                    complete_idx = axes + [(axis + input_length) for axis in axes]
+                                    np.put(new_roi, complete_idx, np.array(ret[:(len(axes) * 2)]))
+                                    ret = new_roi
+                                    self.__dict__['_attr'][item] = Attribute(
+                                        item, {'type': AttrType.TENSOR, 'value': ret})
+                        except:
+                            pass
+                        if ret is None:
                             ret = np.array([], np.float32)
                 elif item == 'scales':
                     inputs = self.get_input_tensors()
@@ -1282,18 +1412,48 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
                         ret = np.array(inputs[1], np.float32)
                     else:
                         try:
-                            ret = np.array(inputs[2], np.float32)
+                            ret = self.__dict__['_attr'][item].value
                         except:
                             ret = None
+                        try:
+                            if ret is None and (inputs[2] is not None and inputs[2].size != 0):
+                                ret = np.array(inputs[2], np.float32)
+                                axes = self.axes
+                                if cur_ver >= 18 and axes is not None:
+                                    input_length = len(inputs[0].shape)
+                                    new_scales = np.ones([input_length], np.float32)
+                                    np.put(new_scales, axes, ret)
+                                    ret = new_scales
+                                    self.__dict__['_attr'][item] = Attribute(
+                                        item, {'type': AttrType.TENSOR, 'value': ret})
+                        except:
+                            pass
+                        if ret is None:
+                            ret = np.array([], np.float32)
                 elif item == 'sizes':
                     inputs = self.get_input_tensors()
                     if cur_ver == 10:
                         ret = None
                     else:
                         try:
-                            ret = np.array(inputs[3], np.int64)
+                            ret = self.__dict__['_attr'][item].value
                         except:
                             ret = None
+                        try:
+                            if ret is None and (inputs[3] is not None and inputs[3].size != 0):
+                                ret = np.array(inputs[3], np.int64)
+                                axes = self.axes
+                                if cur_ver >= 18 and axes is not None:
+                                    input_length = len(inputs[0].shape)
+                                    new_sizes = np.array(inputs[0].shape, np.int64)
+                                    np.put(new_sizes, axes, ret)
+                                    ret = new_sizes
+                                    self.__dict__['_attr'][item] = Attribute(
+                                        item, {'type': AttrType.TENSOR, 'value': ret})
+                        except:
+                            pass
+                    if ret is None:
+                        ret = np.array([], np.int64)
                 elif item == 'coordinate_transformation_mode':
                     if cur_ver == 10:
                         ret = 'asymmetric'
@@ -1306,6 +1466,30 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
                         ret = 0.0
                         self.__dict__['_attr'][item] = Attribute(
                             item, {'type': AttrType.FLOAT, 'value': ret})
+                elif item == 'antialias':
+                    if cur_ver >= 18:
+                        ret = self.__dict__['_attr'][item].value
+                    else:
+                        ret = False
+                        if item not in self.__dict__['_attr']:
+                            self.__dict__['_attr'][item] = Attribute(
+                                item, {'type': AttrType.BOOL, 'value': ret})
+                        else:
+                            self.__dict__['_attr'][item].value = ret
+                elif item == 'axes':
+                    if cur_ver >= 18:
+                        ret = self.__dict__['_attr'][item].value
+                        if ret is not None:
+                            input_length = len(self.get_input_shapes()[0])
+                            ret = [(axis + input_length) if axis < 0 else axis for axis in ret]
+                            self.__dict__['_attr'][item].value = ret
+                    else:
+                        ret = None
+                elif item == 'keep_aspect_ratio_policy':
+                    if cur_ver >= 18:
+                        ret = self.__dict__['_attr'][item].value
+                    else:
+                        ret = 'stretch'
             except:
                 ret = None
         return ret
@@ -1329,7 +1513,7 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
             super(ResizeOp, self).__setattr__(item, value)
 
     @staticmethod
-    def get_nearest_pixel(nearest_mode, x_original, is_down_sample):
+    def get_nearest_pixel(nearest_mode, x_original, is_down_sample=False):
         # Use around to avoid errors between onnx runtime and this implementation because
         # most decimal fractions can't be represented exactly as a float, for example
         # 25.00000031370866 is used to represent 25. Then, we will get unexpected ceil
@@ -1370,6 +1554,12 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
                     (x_resized * (roi_end - roi_start) * (length_original - 1)) / (length_resized - 1)
             else:
                 ret = 0.5 * (roi_start + roi_end) * (length_original - 1)
+        elif coordinate_transform_mode == 'half_pixel_symmetric':
+            out = x_scale * length_original
+            adjustment = length_resized / out
+            center = length_original / 2.
+            offset = center * (1 - adjustment)
+            ret = offset + (x_resized + 0.5) / x_scale - 0.5
         else:  # half_pixel
             ret = ((x_resized + 0.5) / x_scale) - 0.5
         return ret
@@ -1391,8 +1581,8 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
     @staticmethod
     def get_data_for_coordinate(data, data_idx, input_height, input_width, is_nchw=True):
         height_idx, width_idx = data_idx[2:4] if is_nchw else data_idx[1:3]
-        valid_height_idx = np.clip(height_idx, 0, input_height-1)
-        valid_width_idx = np.clip(width_idx, 0, input_width-1)
+        valid_height_idx = np.clip(height_idx, 0, input_height - 1)
+        valid_width_idx = np.clip(width_idx, 0, input_width - 1)
         if is_nchw:
             new_data_idx = data_idx[:2] + [valid_height_idx, valid_width_idx]
         else:
@@ -1419,7 +1609,7 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
                     roi_index = 1 if is_nchw else 2
                 else:
                     roi_index = 0 if is_nchw else 1
-                roi_start_index = roi.size / 2 - (roi_index + 1)
+                roi_start_index = int(roi.size / 2 - (roi_index + 1))
                 roi_end_index = roi.size - (roi_index + 1)
                 roi_start_value = roi[roi_start_index]
                 roi_end_value = roi[roi_end_index]
@@ -1439,7 +1629,7 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
                 original_list.append(inp)
                 inp = max(0, min(inp, (current_input_size - 1)))
                 inp_1 = min(int(inp), current_input_size - 1)
-                inp_2 = min(inp_1+1, current_input_size - 1)
+                inp_2 = min(inp_1 + 1, current_input_size - 1)
                 d_1 = 0.5 if inp_1 == inp_2 else abs(inp - inp_1)
                 d_2 = 0.5 if inp_1 == inp_2 else abs(inp - inp_2)
                 d1_list.append(d_1)
@@ -1452,7 +1642,7 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
             inp1_lists.append(inp1_list)
             inp2_lists.append(inp2_list)
         ret_dict.update({'original': original_lists, 'd1': d1_lists,
-                        'd2': d2_lists, 'in1': inp1_lists, 'in2': inp2_lists})
+                         'd2': d2_lists, 'in1': inp1_lists, 'in2': inp2_lists})
         return ret_dict
 
     @staticmethod
@@ -1479,14 +1669,233 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
             for in_idx in itertools.product(list(range(1, 3)), repeat=spatial_len):
                 in_names = ['in1' if idx == 1 else 'in2' for idx in in_idx]
                 d_names = ['d1' if idx == 2 else 'd2' for idx in in_idx]
-                data_idx = ele_idx[:2] + tuple([init_dict[in_names[idx]][idx][ele_idx[idx+2]]
+                data_idx = ele_idx[:2] + tuple([init_dict[in_names[idx]][idx][ele_idx[idx + 2]]
                                                 for idx in range(spatial_len)])
                 in_x = x_data[data_idx]
-                ret = ret + np.prod([init_dict[d_names[idx]][idx][ele_idx[idx+2]] for idx in range(spatial_len)]) * in_x
+                ret = ret + np.prod([init_dict[d_names[idx]][idx][ele_idx[idx + 2]]
+                                     for idx in range(spatial_len)]) * in_x
             y_data[ele_idx] = ret
         if pre_perm is not None:
             y_data = np.transpose(y_data, Op.cal_inverse_perm(pre_perm))
         return y_data.astype(x_data.dtype)
+
+    @staticmethod
+    def setup_upsample_filter_antialias(p, input_h_w_c, output_h_w_c, scale_h_w_c, roi, coordinate_transform_mode,
+                                        exclude_outside, is_nchw=True):
+        def _compute_weight_coefficients(p, input_size, output_size, rindex, param_base, rscale):
+            scale = 1.0 / rscale
+            support = (p.support_size * 0.5) * (scale if scale >= 1.0 else 1.0)
+            window_size = int(np.ceil(support)) * 2 + 1
+            scale_data = np.zeros([output_size, window_size], dtype=np.float32)
+            xmin, xmax = 0, 0
+            inv_scale = (1.0 / scale) if scale >= 1.0 else 1.0
+
+            if roi is None or not roi:
+                roi_start, roi_end = None, None
+            else:
+                roi_start = (roi.size() / 2 - (rindex + 1))
+                roi_end = roi.size() - (rindex + 1)
+
+            param_base.out_of_bound_idx = []
+            param_base.bound = []
+            param_base.weight_coefficents = scale_data
+            for y in range(output_size):
+                center = 0.5 + (float(y) if FLOAT_EQUAL(scale, 1.0)
+                                else ResizeOp.get_original_coordinate(coordinate_transform_mode, y, rscale,
+                                                                      output_size, input_size, roi_start, roi_end))
+                if (center - 0.5 < 0) or (center - 0.5 > input_size - 1):
+                    param_base.out_of_bound_idx.append(y)
+                total_weight = 0.0
+
+                xmin_real = int(np.floor(center - support + 0.5))
+                xmax_real = int(np.floor(center + support + 0.5))
+                xmin_cut = max(xmin_real, 0)
+                xmax_cut = min(xmax_real, input_size)
+
+                xmin = xmin_cut if exclude_outside else xmin_real
+                xmax = xmax_cut if exclude_outside else xmax_real
+                param_base.bound.extend([xmin_cut, xmax_cut])
+
+                xmax = xmax - xmin
+                for x in range(0, xmax):
+                    w = p.filter((x + xmin - center + 0.5) * inv_scale)
+                    scale_data[y, x] = w
+                    total_weight = total_weight + w
+
+                if not exclude_outside:
+                    neg_xsize = -xmin if xmin < 0 else 0
+                    scale_data[y, neg_xsize] += np.sum(scale_data[y, :neg_xsize])
+
+                    bound_xsize = (xmax + xmin - input_size) if (xmax + xmin > input_size) else 0
+                    scale_data[y, xmax - bound_xsize - 1] += np.sum(scale_data[y, (xmax - bound_xsize):xmax])
+
+                    if neg_xsize > 0 or bound_xsize > 0:
+                        xdiff_cut = xmax_cut - xmin_cut
+                        scale_data[y, :xdiff_cut] = scale_data[y, neg_xsize:(xdiff_cut + neg_xsize)]
+
+                total_weight_inv = 1.0 if FLOAT_EQUAL(total_weight, 0) else 1.0 / total_weight
+                scale_data[y, :(xmax_cut - xmin_cut)] *= total_weight_inv
+            param_base.weight_coefficents = scale_data
+            return window_size
+
+        if is_nchw:
+            width_rindex, height_rindex, channel_rindex = 0, 1, 2
+        else:
+            width_rindex, height_rindex, channel_rindex = 1, 2, 2
+        p.dim_x.window_size = _compute_weight_coefficients(
+            p, input_h_w_c[1], output_h_w_c[1], width_rindex, p.dim_x, scale_h_w_c[1])
+        p.dim_y.window_size = _compute_weight_coefficients(
+            p, input_h_w_c[0], output_h_w_c[0], height_rindex, p.dim_y, scale_h_w_c[0])
+        if len(input_h_w_c) == 3:
+            p.dim_z.window_size = _compute_weight_coefficients(
+                p, input_h_w_c[2], output_h_w_c[2], channel_rindex, p.dim_z, scale_h_w_c[2])
+
+    @staticmethod
+    def compute_interpolation_at_level(num_channels, input_height, input_width, output_height, output_width,
+                                       Xdata, Ydata, p_dim, level, input_depth=None, output_depth=None):
+        if level == 1:
+            if output_width == input_width:
+                min_height = min(input_height, output_height)
+                Ydata[:, :min_height, :output_width] = Xdata[:, :min_height, :output_width]
+                return
+            for c in range(num_channels):
+                for y in range(output_height):
+                    idx = 0
+                    for x in range(output_width):
+                        xmin, xmax = p_dim.bound[idx: idx + 2]
+                        idx = idx + 2
+                        outputs = [(Xdata[c, y, _x] * p_dim.weight_coefficents[x, i])
+                                   for i, _x in enumerate(list(range(xmin, xmax)))]
+                        Ydata[c, y, x] = np.sum(outputs)
+        elif level == 2:
+            if output_height == input_height:
+                min_width = min(input_width, output_width)
+                Ydata[:, :output_height, :min_width] = Xdata[:, :output_height, :min_width]
+                return
+            for c in range(num_channels):
+                idx = 0
+                for y in range(output_height):
+                    ymin, ymax = p_dim.bound[idx: idx + 2]
+                    idx = idx + 2
+                    for x in range(output_width):
+                        outputs = [(Xdata[c, _y, x] * p_dim.weight_coefficents[y, i])
+                                   for i, _y in enumerate(list(range(ymin, ymax)))]
+                        Ydata[c, y, x] = np.sum(outputs)
+        elif level == 3:
+            if output_depth == input_depth:
+                min_height = min(input_height, output_height)
+                min_width = min(input_width, output_width)
+                Ydata[:, :output_depth, :min_height, :min_width] = Xdata[:, :output_depth, :min_height, :min_width]
+                return
+            for c in range(num_channels):
+                idx = 0
+                for d in range(output_depth):
+                    zmin, zmax = p_dim.bound[idx: idx + 2]
+                    idx = idx + 2
+                    for y in range(output_height):
+                        for x in range(output_width):
+                            outputs = [(Xdata[c, _z, y, x] * p_dim.weight_coefficents[d, i])
+                                       for i, _z in enumerate(list(range(zmin, zmax)))]
+                            Ydata[c, d, y, x] = np.sum(outputs)
+
+    @staticmethod
+    def handle_extrapolation(batch_size, num_channels, output_height, output_width, output_depth, extrapolation_value, Ydata, p):
+        reshape_dim = None
+        if len(Ydata.shape) == 4:
+            reshape_dim = [batch_size, num_channels, 1] + [output_height, output_width]
+            Ydata = np.reshape(Ydata, reshape_dim)
+        if len(p.dim_x.out_of_bound_idx) > 0:
+            Ydata[:, :, :, :, tuple(p.dim_x.out_of_bound_idx)] = extrapolation_value
+        if len(p.dim_y.out_of_bound_idx) > 0:
+            Ydata[:, :, :, tuple(p.dim_y.out_of_bound_idx)] = extrapolation_value
+        if len(p.dim_z.out_of_bound_idx) > 0:
+            Ydata[:, :, tuple(p.dim_z.out_of_bound_idx)] = extrapolation_value
+        if reshape_dim is not None:
+            Ydata = np.reshape(Ydata, [batch_size, num_channels, output_height, output_width])
+
+    @staticmethod
+    def upsample_base_antialias(p, batch_size, num_channels, input_height, input_width, output_height, output_width,
+                                use_extrapolation, extrapolation_value, Xdata, Ydata, input_depth=None, output_depth=None):
+        if input_depth is None and output_depth is None:
+            image_temp_buffer = np.zeros([num_channels, input_height, output_width], dtype=Xdata.dtype)
+        else:
+            assert input_depth is not None, 'Meets invalid input_depth in upsample_base_antialias!'
+            image_temp_buffer = np.zeros([num_channels, input_depth, input_height, output_width], dtype=Xdata.dtype)
+        for n in range(batch_size):
+            ResizeOp.compute_interpolation_at_level(num_channels, input_height, input_width, input_height, output_width,
+                                                    Xdata[n], image_temp_buffer, p.dim_x, 1)
+            ResizeOp.compute_interpolation_at_level(num_channels, input_height, output_width, output_height, output_width,
+                                                    image_temp_buffer, Ydata[n], p.dim_y, 2)
+        if use_extrapolation:
+            ResizeOp.handle_extrapolation(batch_size, num_channels, output_height,
+                                          output_width, 1, extrapolation_value, Ydata, p)
+
+    @staticmethod
+    def upsample_bilinear_antialias(x_data, output_spatial_sizes, spatial_scales, roi,
+                                    coordinate_transform_mode, extrapolation_value,
+                                    exclude_outside, is_nchw=True):
+        if not is_nchw:
+            x_data = np.transpose(x_data, [0, 3, 1, 2])
+        batch_size, num_channels, input_height, input_width = x_data.shape
+        output_height, output_width = output_spatial_sizes
+        y_data = np.zeros([batch_size, num_channels] + output_spatial_sizes, dtype=x_data.dtype)
+
+        p = ResizeOp._FilterParamsAntiAlias('bilinear')
+        p.dim_x = ResizeOp._FilterParamsBaseAntiAlias()
+        p.dim_y = ResizeOp._FilterParamsBaseAntiAlias()
+        p.dim_z = ResizeOp._FilterParamsBaseAntiAlias()
+        ResizeOp.setup_upsample_filter_antialias(p, [input_height, input_width], output_spatial_sizes, spatial_scales,
+                                                 roi, coordinate_transform_mode, exclude_outside, is_nchw=True)
+
+        use_extrapolation = (coordinate_transform_mode == 'tf_crop_and_resize')
+        ResizeOp.upsample_base_antialias(p, batch_size, num_channels, input_height, input_width, output_height, output_width,
+                                         use_extrapolation, extrapolation_value, x_data, y_data)
+
+        if not is_nchw:
+            y_data = np.transpose(y_data, [0, 2, 3, 1])
+        return y_data
+
+    @staticmethod
+    def upsample_trilinear_antialias(x_data, output_spatial_sizes, spatial_scales, roi,
+                                     coordinate_transform_mode, extrapolation_value,
+                                     exclude_outside, is_nchw=True):
+        if not is_nchw:
+            x_data = np.transpose(x_data, [0, 4, 1, 2, 3])
+        batch_size, num_channels, input_depth, input_height, input_width = x_data.shape
+        output_depth, output_height, output_width = output_spatial_sizes
+        depth_scale, height_scale, width_scale = spatial_scales
+        y_data = np.zeros([batch_size, num_channels * output_depth] + output_spatial_sizes[1:], dtype=x_data.dtype)
+
+        p = ResizeOp._FilterParamsAntiAlias('trilinear')
+        p.dim_x = ResizeOp._FilterParamsBaseAntiAlias()
+        p.dim_y = ResizeOp._FilterParamsBaseAntiAlias()
+        p.dim_z = ResizeOp._FilterParamsBaseAntiAlias()
+        ResizeOp.setup_upsample_filter_antialias(p, [input_height, input_width, input_depth],
+                                                 [output_height, output_width, output_depth],
+                                                 [height_scale, width_scale, depth_scale],
+                                                 roi, coordinate_transform_mode, exclude_outside, is_nchw=True)
+
+        x_reshaped = np.reshape(x_data, [batch_size, -1, input_height, input_width])
+        image_temp_buffer = np.zeros([batch_size, num_channels * input_depth,
+                                      output_height, output_width], dtype=x_data.dtype)
+        use_extrapolation = (coordinate_transform_mode == 'tf_crop_and_resize')
+        ResizeOp.upsample_base_antialias(p, batch_size, num_channels * input_depth, input_height, input_width, output_height, output_width,
+                                         False, extrapolation_value, x_reshaped, image_temp_buffer)
+        y_data = np.reshape(y_data, [batch_size, num_channels] + output_spatial_sizes)
+
+        for n in range(batch_size):
+            ResizeOp.compute_interpolation_at_level(num_channels, output_height, output_width, output_height, output_width,
+                                                    np.reshape(image_temp_buffer[n], [
+                                                               num_channels, input_depth, output_height, output_width]),
+                                                    y_data[n], p.dim_z, 3, input_depth, output_depth)
+
+        if use_extrapolation:
+            ResizeOp.handle_extrapolation(batch_size, num_channels, output_height,
+                                          output_width, output_depth, extrapolation_value, y_data, p)
+
+        if not is_nchw:
+            y_data = np.transpose(y_data, [0, 2, 3, 4, 1])
+        return y_data
 
     @staticmethod
     def upsample_nearest(x_data, output_spatial_sizes, spatial_scales, roi=None,
@@ -1499,8 +1908,8 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
         input_shape = list(x_data.shape)
         n_dim = len(input_shape)
         input_dim_factor = [1] * n_dim
-        for dim_idx in reversed(range(n_dim-1)):
-            input_dim_factor[dim_idx] = input_dim_factor[dim_idx+1] * input_shape[dim_idx+1]
+        for dim_idx in reversed(range(n_dim - 1)):
+            input_dim_factor[dim_idx] = input_dim_factor[dim_idx + 1] * input_shape[dim_idx + 1]
         if is_nchw:
             full_scales = [1, 1] + spatial_scales
             output_shape = input_shape[:2] + output_spatial_sizes
@@ -1567,13 +1976,13 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
             data = np.transpose(data, [0, 3, 1, 2])
             data_idx = [data_idx[0], data_idx[-1]] + data_idx[1:-1]
         n, c, y, x = data_idx
-        grid_start_pos = y * input_width + (x-1)
+        grid_start_pos = y * input_width + (x - 1)
         if grid_start_pos in cache:
             return cache[grid_start_pos]
 
         result = 0.0
         for i, j in zip(range(4), range(-1, 3)):
-            orig_data = ResizeOp.get_data_for_coordinate(data, [n, c, y, x+j], input_height, input_width)
+            orig_data = ResizeOp.get_data_for_coordinate(data, [n, c, y, x + j], input_height, input_width)
             result = result + coeff_array[i] / coeff_sum * orig_data
 
         cache.update({grid_start_pos: result})
@@ -1583,12 +1992,9 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
     def upsample_cubic(x_data, output_spatial_sizes, spatial_scales, roi=None,
                        coordinate_transform_mode='asymmetric', cubic_coeff_a=-0.75,
                        exclude_outside=False, extrapolation_value=0.0, is_nchw=True):
-        input_shape = list(x_data.shape)
-        if len(input_shape) != 4:
-            ERROR('[Parser]: Resize op only supports cubic mode with 4d input, but got %dd!' % len(input_shape))
-            return None
         if not is_nchw:
             x_data = np.transpose(x_data, [0, 3, 1, 2])
+        input_shape = list(x_data.shape)
         cubic_coeffs = {}
         coeff_to_1Dinterpolation_map = {}
         original_lists = []
@@ -1679,15 +2085,59 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
             y_data = np.transpose(y_data, [0, 2, 3, 1])
         return y_data.astype(x_data.dtype)
 
+    @staticmethod
+    def upsample_cubic_antialias(x_data, output_spatial_sizes, spatial_scales, roi=None,
+                                 coordinate_transform_mode='asymmetric', cubic_coeff_a=-0.75,
+                                 exclude_outside=False, extrapolation_value=0.0, is_nchw=True):
+        if not is_nchw:
+            x_data = np.transpose(x_data, [0, 3, 1, 2])
+        batch_size, num_channels = x_data.shape[:2]
+        input_height, input_width = x_data.shape[2:]
+        output_height, output_width = output_spatial_sizes
+        height_scale, width_scale = spatial_scales
+        y_data = np.zeros([batch_size, num_channels, output_height, output_width], dtype=x_data.dtype)
+
+        p = ResizeOp._FilterParamsAntiAlias('bicubic', cubic_coeff_a)
+        p.dim_x = ResizeOp._FilterParamsBaseAntiAlias()
+        p.dim_y = ResizeOp._FilterParamsBaseAntiAlias()
+        ResizeOp.setup_upsample_filter_antialias(p, [input_height, input_width], output_spatial_sizes, spatial_scales,
+                                                 roi, coordinate_transform_mode, exclude_outside, is_nchw=True)
+        use_extrapolation = (coordinate_transform_mode == 'tf_crop_and_resize')
+        ResizeOp.upsample_base_antialias(p, batch_size, num_channels, input_height, input_width, output_height, output_width,
+                                         use_extrapolation, extrapolation_value, x_data, y_data)
+        if not is_nchw:
+            y_data = np.transpose(y_data, [0, 2, 3, 1])
+        return y_data
+
     def infer_shape(self):
         super(ResizeOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        if not np.all(self.scales) and not np.all(self.sizes):
+        if (self.scales is None or self.scales.size == 0) \
+                and (self.sizes is None or self.sizes.size == 0):
             ERROR('[Parser]: At least one of scales and sizes of Resize Op (%s) should be valid!' % (
                 self.name))
         input_dim_np = np.array(inputs[0].shape, np.float32)
-        if self.scales is None or self.scales.size == 0 or not np.all(self.scales):
+        if self.scales is None or self.scales.size == 0:
+            if self.keep_aspect_ratio_policy in ('not_larger', 'not_smaller'):
+                axes = self.axes
+                axes = list(range(len(input_dim_np))) if axes is None else axes
+                if self.keep_aspect_ratio_policy == 'not_larger':
+                    min_max_fn = min
+                    scale_in_policy = np.finfo(np.float32).max
+                else:
+                    min_max_fn = max
+                    scale_in_policy = np.finfo(np.float32).min
+                for axis in axes:
+                    scale_in_policy = min_max_fn(self.sizes[axis] / input_dim_np[axis], scale_in_policy)
+                # For non-resizable axes (those not specified in axes), the output size will be equal to the input size.
+                adjusted_out_size = copy.deepcopy(input_dim_np)
+                for axis in axes:
+                    adjusted_out_size[axis] = int(ResizeOp.get_nearest_pixel(
+                        'round_prefer_ceil', scale_in_policy * input_dim_np[axis]))
+                self.sizes = adjusted_out_size
+                self.keep_aspect_ratio_policy = 'stretch'  # void sizes being updated again
             self.scales = np.array(self.sizes, np.float32) / input_dim_np
+
         if self.cur_version == 10:
             out_shape = np.floor(
                 input_dim_np * self.scales).astype(np.int64).tolist()
@@ -1703,28 +2153,47 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
                             (np.reshape(self.roi, (2, -1))
                              [1, :] - np.reshape(self.roi, (2, -1))[0, :])
                 out_shape = np.floor(base_shape).astype(np.int64).tolist()
+
         if self.is_all_inputs_const():
             if FLOAT_EQUAL(inputs[0], 0):
                 out_tensor = np.zeros(out_shape).astype(inputs[0].dtype)
             else:
                 assert self.mode in ResizeOp.MODE_MAP, \
-                    'Meet unsupported mode (%s) of Resize Op (%s) in infer_shape' % (mode, self.name)
+                    'Meet unsupported mode (%s) of Resize Op (%s) in infer_shape' % (self.mode, self.name)
                 mode = ResizeOp.MODE_MAP[self.mode]
                 is_nchw = (self.data_format == 'NCHW')
                 out_spatial_shape = out_shape[2:] if is_nchw else out_shape[1:-1]
                 spatial_scales = list(self.scales[2:]) if is_nchw else list(self.scales[1:-1])
+                if len(inputs[0].shape) == 3:
+                    inp = np.expand_dims(inputs[0], axis=2) if is_nchw else np.expand_dims(inputs[0], axis=1)
+                    out_spatial_shape.insert(0, 1)
+                    spatial_scales.insert(0, 1.)
+                else:
+                    inp = inputs[0]
                 if mode == 'linear':
-                    out_tensor = ResizeOp.upsample_linear(inputs[0], out_spatial_shape, spatial_scales, self.roi,
-                                                          self.coordinate_transformation_mode, is_nchw)
+                    if self.antialias:
+                        func = ResizeOp.upsample_trilinear_antialias if len(
+                            out_spatial_shape) == 3 else ResizeOp.upsample_bilinear_antialias
+                        out_tensor = func(inp, out_spatial_shape, spatial_scales, self.roi,
+                                          self.coordinate_transformation_mode, self.extrapolation_value,
+                                          self.exclude_outside, is_nchw)
+                    else:
+                        out_tensor = ResizeOp.upsample_linear(inp, out_spatial_shape, spatial_scales, self.roi,
+                                                              self.coordinate_transformation_mode, is_nchw)
                 elif mode == 'nearest':
-                    out_tensor = ResizeOp.upsample_nearest(inputs[0], out_spatial_shape, spatial_scales, self.roi,
+                    out_tensor = ResizeOp.upsample_nearest(inp, out_spatial_shape, spatial_scales, self.roi,
                                                            self.coordinate_transformation_mode, self.nearest_mode,
                                                            self.extrapolation_value, is_nchw)
                 else:  # mode == 'cubic'
                     assert self.cur_version > 10, 'Mode cubic in Resize Op (%s) is not supported until opset 11' % self.name
-                    out_tensor = ResizeOp.upsample_cubic(inputs[0], out_spatial_shape, spatial_scales, self.roi,
-                                                         self.coordinate_transformation_mode, self.cubic_coeff_a,
-                                                         self.exclude_outside, self.extrapolation_value, is_nchw)
+                    assert len(input_dim_np) == 4, 'Resize op only supports cubic mode with 4d input, but got %dd!' % \
+                        len(input_dim_np)
+                    func = ResizeOp.upsample_cubic_antialias if self.antialias else ResizeOp.upsample_cubic
+                    out_tensor = func(inp, out_spatial_shape, spatial_scales, self.roi,
+                                      self.coordinate_transformation_mode, self.cubic_coeff_a,
+                                      self.exclude_outside, self.extrapolation_value, is_nchw)
+                if len(inputs[0].shape) == 3:
+                    out_tensor = np.squeeze(out_tensor, axis=2) if is_nchw else np.squeeze(out_tensor, axis=1)
         else:
             # Still use random output here to speedup parsing if inputs are non-const
             out_tensor = np.random.ranf(out_shape).astype(inputs[0].dtype)
@@ -1756,36 +2225,39 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
                             np.array([], np.float32), self.name, in_port=1)
         else:
             src, _, k, in_attr = in_edges[1]
+            roi = self.roi
             if in_attr.get('tensor', None) is None \
                     or in_attr['tensor'].value is None \
-                    or np.any(np.array(in_attr['tensor'].value) != self.roi):
-                insert_constant(self._graph, self.name + '_roi',
-                                np.array(self.roi, np.float32), self.name, in_port=1)
+                    or np.any(np.array(in_attr['tensor'].value) != roi):
                 self._graph.remove_edge(src, self.name, key=k)
+                insert_constant(self._graph, self.name + '_roi',
+                                np.array(roi, np.float32), self.name, in_port=1)
 
         if len(in_edges) < 3:
             insert_constant(self._graph, self.name + '_scales', np.array(
                 self.scales if self.scales is not None else [], np.float32), self.name, in_port=2)
         else:
             src, _, k, in_attr = in_edges[2]
+            scales = self.scales
             if in_attr.get('tensor', None) is None \
                     or in_attr['tensor'].value is None \
-                    or np.any(np.array(in_attr['tensor'].value) != self.scales):
+                    or np.any(np.array(in_attr['tensor'].value) != scales):
                 self._graph.remove_edge(src, self.name, key=k)
                 insert_constant(self._graph, self.name + '_scales', np.array(
-                    self.scales if self.scales is not None else [], np.float32), self.name, in_port=2)
+                    scales if scales is not None else [], np.float32), self.name, in_port=2)
 
         if len(in_edges) < 4:
             insert_constant(self._graph, self.name + '_sizes', np.array(
                 self.sizes if self.sizes is not None else [], np.int64), self.name, in_port=3)
         else:
             src, _, k, in_attr = in_edges[3]
+            sizes = self.sizes
             if in_attr.get('tensor', None) is None \
                     or in_attr['tensor'].value is None \
-                    or np.any(np.array(in_attr['tensor'].value) != self.sizes):
+                    or np.any(np.array(in_attr['tensor'].value) != sizes):
                 self._graph.remove_edge(src, self.name, key=k)
                 insert_constant(self._graph, self.name + '_sizes', np.array(
-                    self.sizes if self.sizes is not None else [], np.int64), self.name, in_port=3)
+                    sizes if sizes is not None else [], np.int64), self.name, in_port=3)
 
 
 class RoundOp(LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
@@ -1873,7 +2345,11 @@ class SigmoidOp(LayoutUnawareOp, BaseActivationOp, OnnxOp):
     def infer_shape(self):
         super(SigmoidOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.sigmoid(inputs[0]).numpy()
+        input_dtype = str(inputs[0].dtype)
+        inp = inputs[0].astype(np.float32) if input_dtype != 'float32' else inputs[0]
+        out_tensor = tf.sigmoid(inp).numpy()
+        if input_dtype != 'float32':
+            out_tensor = out_tensor.astype(input_dtype)
         self.set_out_tensor(out_tensor)
 
 
@@ -1944,9 +2420,52 @@ class SoftmaxOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
     def infer_shape(self):
         super(SoftmaxOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = torch.nn.functional.softmax(
-            torch.from_numpy(inputs[0]), dim=self.axis).numpy()
-        self.set_out_tensor(out_tensor)
+        if self.cur_version < 13:
+            input_shape = inputs[0].shape
+            inner_dim = [-1, 1] \
+                if self.axis == 0 \
+                else [int(np.prod(input_shape[:self.axis])), int(np.prod(input_shape[self.axis:]))]
+            # torch softmax not implemented for 'Half'
+            inp = np.reshape(inputs[0], inner_dim).astype(np.float32)
+            out_tensor = torch.nn.functional.softmax(
+                torch.from_numpy(inp), dim=0 if self.axis == 0 else -1).numpy()
+            out_tensor = np.reshape(out_tensor, input_shape)
+        else:
+            inp = np.array(inputs[0], dtype=np.float32)
+            out_tensor = torch.nn.functional.softmax(
+                torch.from_numpy(inp), dim=self.axis).numpy()
+        self.set_out_tensor(out_tensor.astype(inputs[0].dtype))
+
+    def convert_version(self):
+        max_ver = type(self).max_ver()
+        cur_ver = self.cur_version
+        if cur_ver < 13:
+            in_edges = self._graph.sorted_in_edges(self.name, data=True)
+            input_shapes = self.get_input_shapes()
+            if len(in_edges) != 1 \
+                    or len(input_shapes) != 1 \
+                    or input_shapes[0] is None \
+                    or any(d is None for d in input_shapes[0]):
+                ERROR('[Parser}: Meets invalid Softmax (%s) in convert_version!' % self.name)
+                return
+            input_shape = input_shapes[0]
+            if self.axis < 0:
+                self.axis += len(input_shape)
+            if self.axis != len(input_shape) - 1:
+                from ...front_end.onnx.passes.common_passes import insert_reshape, insert_reshape_after
+                pre_dim = [-1, 1] \
+                    if self.axis == 0 \
+                    else [int(np.prod(input_shape[:self.axis])), int(np.prod(input_shape[self.axis:]))]
+                post_dim = list(input_shape)
+                if self.axis > 1:
+                    self.axis = 1
+                src, _, in_attr = in_edges[0]
+                insert_reshape(self._graph, src, self.name, in_attr, pre_dim)
+                post_reshape = insert_reshape_after(self._graph, self.name, post_dim)
+                if self.name in self._graph._attr['output_names']:
+                    index = self._graph._attr['output_names'].index(self.name)
+                    self._graph._attr['output_names'][index] = post_reshape
+        self.cur_version = max_ver
 
 
 class SoftplusOp(LayoutUnawareOp, BaseActivationOp, OnnxOp):
@@ -2001,7 +2520,7 @@ class SqrtOp(LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
         super(SqrtOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor = np.sqrt(inputs[0])
-        self.set_out_tensor(out_tensor)
+        self.set_out_tensor(out_tensor.astype(inputs[0].dtype))
 
 
 class SubOp(OpNeedBroadcast, OpHasAxis, OpHasOneOutPort, OnnxOp):
@@ -2023,6 +2542,9 @@ class SubOp(OpNeedBroadcast, OpHasAxis, OpHasOneOutPort, OnnxOp):
     def infer_shape(self):
         super(SubOp, self).infer_shape()
         inputs = self.get_input_tensors()
+        input_dtypes = self.get_input_dtypes()
+        assert len(inputs) == 2 and len(input_dtypes) == 2, 'The number of inputs is invalid in SubOp.'
+        assert input_dtypes[0] == input_dtypes[1], 'The dtype of inputs should be the same in SubOp.'
         cur_ver = self.cur_version
         if cur_ver <= 6:
             if self.broadcast:
@@ -2090,8 +2612,8 @@ class TanhOp(LayoutUnawareOp, BaseActivationOp, OnnxOp):
     def infer_shape(self):
         super(TanhOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.tanh(inputs[0]).numpy()
-        self.set_out_tensor(out_tensor)
+        out_tensor = tf.tanh(inputs[0].astype(np.float32)).numpy()
+        self.set_out_tensor(out_tensor.astype(inputs[0].dtype))
 
 
 class TanOp(LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
@@ -2150,17 +2672,15 @@ class TopKOp(OpHasAxis, OpHasMultipleOutPorts, OnnxOp):
     def infer_shape(self):
         super(TopKOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        if inputs[0].dtype == bool:
-            inputs[0] = inputs[0].astype(np.int32)
-        input_tensor = torch.from_numpy(inputs[0])
+        input_tensor = torch.from_numpy(inputs[0].astype(np.float64))
         cur_ver = self.cur_version
         k = self.k if cur_ver == 1 else int(inputs[1])
         largest = bool(self.largest) if cur_ver >= 11 else True
         need_sorted = bool(self.sorted) if cur_ver >= 11 else True
         out_tensor_list = torch.topk(
             input_tensor, k, dim=self.axis, largest=largest, sorted=need_sorted)
-        out_tensor_list = [ot.numpy() if i == 0 else ot.numpy().astype(
-            np.int32) for (i, ot) in enumerate(out_tensor_list)]
+        out_tensor_list = [ot.numpy().astype(inputs[0].dtype) if i == 0 else ot.numpy().astype(
+            np.int64) for (i, ot) in enumerate(out_tensor_list)]
         self.set_out_tensor(out_tensor_list)
 
 

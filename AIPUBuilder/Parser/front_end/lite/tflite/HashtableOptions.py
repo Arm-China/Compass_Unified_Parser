@@ -3,6 +3,8 @@
 # namespace: tflite
 
 import flatbuffers
+from flatbuffers.compat import import_numpy
+np = import_numpy()
 
 
 class HashtableOptions(object):
@@ -14,6 +16,10 @@ class HashtableOptions(object):
         x = HashtableOptions()
         x.Init(buf, n + offset)
         return x
+
+    @classmethod
+    def HashtableOptionsBufferHasIdentifier(cls, buf, offset, size_prefixed=False):
+        return flatbuffers.util.BufferHasIdentifier(buf, offset, b"\x54\x46\x4C\x33", size_prefixed=size_prefixed)
 
     # HashtableOptions
     def Init(self, buf, pos):
@@ -42,16 +48,7 @@ class HashtableOptions(object):
 
 
 def HashtableOptionsStart(builder): builder.StartObject(3)
-
-
-def HashtableOptionsAddTableId(
-    builder, tableId): builder.PrependInt32Slot(0, tableId, 0)
-
-
-def HashtableOptionsAddKeyDtype(
-    builder, keyDtype): builder.PrependInt8Slot(1, keyDtype, 0)
-def HashtableOptionsAddValueDtype(
-    builder, valueDtype): builder.PrependInt8Slot(2, valueDtype, 0)
-
-
+def HashtableOptionsAddTableId(builder, tableId): builder.PrependInt32Slot(0, tableId, 0)
+def HashtableOptionsAddKeyDtype(builder, keyDtype): builder.PrependInt8Slot(1, keyDtype, 0)
+def HashtableOptionsAddValueDtype(builder, valueDtype): builder.PrependInt8Slot(2, valueDtype, 0)
 def HashtableOptionsEnd(builder): return builder.EndObject()

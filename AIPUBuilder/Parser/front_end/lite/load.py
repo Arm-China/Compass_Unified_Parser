@@ -1,20 +1,23 @@
-# Copyright © 2022 Arm Technology (China) Co. Ltd. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
+# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
 
 
-import onnx
-import numpy as np
 import copy
 import re
 from collections import defaultdict, OrderedDict
 from functools import partial
+import threading
+import onnx
+import numpy as np
+import tensorflow as tf
 from ...graph.graph import Graph
 from ...graph.node_wrap import NodeWrap
 from ...graph.graph_algo import get_valid_node_name, clear_redundant_nodes
 from ...common.defs import Framework, get_opset_version, Tensor
 from ...common.utils import get_version, extend_lists
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
-from .buffer import read_tflite_model, parse_operator, parse_tensor, get_act_info_from_tensor
+from .buffer import read_tflite_model, parse_operator, parse_tensor, dequantize_tensor_data, get_act_info_from_tensor
+from .passes.front_passes import remove_useless_dequantize
 
 
 def convert_attr_to_onnx(attr_dict):
@@ -25,6 +28,9 @@ def convert_attr_to_onnx(attr_dict):
             new_attr.pop(k)
         elif k == 'Alpha':
             new_attr.update({'alpha': v})
+            new_attr.pop(k)
+        elif k == 'Approximate':
+            new_attr.update({'approximate': v})
             new_attr.pop(k)
         elif k == 'AsymmetricQuantizeInputs':
             new_attr.update({'asymmetric_quantize_inputs': int(v)})
@@ -183,17 +189,45 @@ def convert_attr_to_onnx(attr_dict):
     return new_attr
 
 
-def convert_tflite_to_graph(model_path, params):
+def update_tensor(tflite_path, tensor_table):
+    def _worker(path, table, stop_event):
+        while True:
+            if stop_event.isSet():
+                return table
+            try:
+                interpreter = tf.lite.Interpreter(model_path=path, experimental_preserve_all_tensors=True)
+                interpreter.allocate_tensors()
+                interpreter.invoke()
+                tensors = interpreter.get_tensor_details()
+                for t in tensors:
+                    idx = t['index']
+                    if 0 <= idx < len(table):
+                        if not np.all(np.equal(t['shape'], table[idx]['data'].shape)):
+                            table[idx]['data'] = interpreter.get_tensor(idx)
+            except:
+                pass
+            break
+        return table
+
+    e = threading.Event()
+    thread = threading.Thread(target=_worker, args=(tflite_path, tensor_table, e), daemon=True)
+    thread.start()
+    thread.join(3)
+    if thread.is_alive():
+        e.set()
+    return tensor_table
+
+
+def convert_tflite_to_graph(graph, model_path, params):
     '''Parse the tflite model into a graph structure.'''
 
     from ...plugin_loader import PARSER_OP_DICT
-    graph = Graph(name=params.get('model_name', ''))
     graph._attr['framework'] = Framework.TFLITE
     graph._attr['output_tensor_names'] = params.get('output_tensor_names', [])
-    quantize = True \
-        if params.get('compat_quantized_model', 'false').lower() == 'true' \
+    force_float = True \
+        if ((params.get('force_float_ir', 'false').lower() == 'true')
+            or (params.get('compat_quantized_model', 'true').lower() == 'false')) \
         else False
-    graph._attr['quantize'] = quantize
 
     try:
         ret, model, buffer = read_tflite_model(model_path)
@@ -223,8 +257,8 @@ def convert_tflite_to_graph(model_path, params):
                     net_outputs + extend_lists([op_info['outputs'] for op_info in parsed_operators_table]))
                 tensors_table = [(tensor, ti not in non_const_tensor_ids, linear_weights_tensor_id.get(
                     ti, '')) for ti, tensor in enumerate(tensors_table)]
-                parsed_tensors_table = list(
-                    map(partial(parse_tensor, tflite_model=model, quantize=quantize), tensors_table))
+                parsed_tensors_table = list(map(partial(parse_tensor, tflite_model=model), tensors_table))
+                parsed_tensors_table = update_tensor(model_path, parsed_tensors_table)
 
                 tensor_name_count = defaultdict(int)
                 for in_tensor_id in non_const_tensor_ids:
@@ -243,27 +277,45 @@ def convert_tflite_to_graph(model_path, params):
 
                 # const sharing exits in tflite
                 const_tensor_count = defaultdict(int)
+
+                if force_float:
+                    graph_is_quantized = False
+                else:
+                    if all(not parsed_tensors_table[out_id].get('quantize', False)
+                           for op in parsed_operators_table
+                           for out_id in op.get('outputs', []) if op['type'] not in ['Input', 'CAST']):
+                        graph_is_quantized = False
+                    else:
+                        graph_is_quantized = True
+                parsed_tensors_table = list(
+                    map(partial(dequantize_tensor_data, quantized=graph_is_quantized), parsed_tensors_table))
+
                 for op_id, op_info in enumerate(parsed_operators_table):
                     node_name = parsed_tensors_table[op_info['outputs'][0]]['name']
                     node_name = get_valid_node_name(graph, node_name)
                     graph.add_node(node_name)
+                    detect_quantize = False
                     for o in op_info.get('outputs', []):
                         out_tensor_op_name_map.update(
                             {parsed_tensors_table[o]['name']: node_name})
+                        detect_quantize = detect_quantize or parsed_tensors_table[o]['quantize']
                     if op_info['type'] == 'Input':
                         op_type = op_info['type']
                         for out in op_info['outputs']:
                             if out not in net_inputs:
                                 net_inputs.append(out)
                     else:
+                        if op_info['type'] in ('DEQUANTIZE', 'QUANTIZE'):
+                            detect_quantize = True
                         op_type = ('Tf' if op_info['is_tf_op'] else 'Lite') + op_info['type']
+                    quantize = False if not graph_is_quantized else detect_quantize
                     attr_dict = copy.deepcopy(op_info['attr'])
                     attr_dict.update(
                         {'name': node_name, 'data_format': 'NHWC', 'quantize': quantize})
                     if re.search(r'Lite', op_type):
                         attr_dict.update(
                             {'opcode_version': op_info['opcode_version']})
-                    if not quantize:
+                    if not graph_is_quantized:
                         activation = get_act_info_from_tensor(
                             parsed_tensors_table[op_info['outputs'][0]])
                         if activation and attr_dict.get('FusedActivationFunction', 'NONE') == 'NONE':
@@ -292,7 +344,7 @@ def convert_tflite_to_graph(model_path, params):
                             pre_node_name = parsed_tensors_table[pre_op_info['outputs'][0]]['name']
                             src_out_port = pre_op_info['outputs'].index(
                                 in_tensor_id)
-                            edge_tensor = Tensor(shape=in_tensor['data'].shape)
+                            edge_tensor = Tensor(name=in_tensor['name'], shape=in_tensor['data'].shape)
                             edge_tensor.value = in_tensor['data']
                             if 'quant_info' in in_tensor:
                                 if 'Max' in in_tensor['quant_info'] \
@@ -312,18 +364,21 @@ def convert_tflite_to_graph(model_path, params):
                             graph.add_edge(
                                 pre_node_name, node_name, **edge_attr)
                         else:
-                            const_name = parsed_tensors_table[in_tensor_id]['name']
-                            const_tensor_count[const_name] += 1
-                            if const_tensor_count[const_name] > 1:
-                                const_name = const_name + '_' + str(in_tensor_id) + '_' + \
-                                    str(const_tensor_count[const_name] - 1)
+                            in_tensor_name = parsed_tensors_table[in_tensor_id]['name']
+                            const_tensor_count[in_tensor_name] += 1
+                            if const_tensor_count[in_tensor_name] > 1:
+                                const_name = in_tensor_name + '_' + str(in_tensor_id) + '_' + \
+                                    str(const_tensor_count[in_tensor_name] - 1)
+                            else:
+                                const_name = in_tensor_name
                             const_name = get_valid_node_name(graph, const_name)
                             assert not graph.has_node(
                                 const_name), ('The const node(%s) already exist, cannot add node into graph in convert_tflite_to_graph.' % const_name)
                             const_tensor = parsed_tensors_table[in_tensor_id]
+
                             edge_attr = {'src_out_port': 0,
                                          'dst_in_port': in_port,
-                                         'tensor': Tensor(value=const_tensor['data'], is_const=True)
+                                         'tensor': Tensor(name=in_tensor_name, value=const_tensor['data'], is_const=True)
                                          }
                             if 'quant_info' in const_tensor:
                                 if 'Max' in const_tensor['quant_info'] \
@@ -343,9 +398,10 @@ def convert_tflite_to_graph(model_path, params):
                                                     'value': const_tensor['data'],
                                                     'data_format': 'NHWC',
                                                     'opset_version': opset_version,
-                                                    'quantize': quantize
+                                                    'quantize': const_tensor['quantize'],
                                                     }
                                                    )
+                graph._attr['quantize'] = graph_is_quantized
 
                 if ret:
                     input_tensors = OrderedDict()
@@ -355,14 +411,18 @@ def convert_tflite_to_graph(model_path, params):
                         shape = list(
                             net_in_tensor.shape) if net_in_tensor.shape else []
                         if net_in_name in params['input_shapes'] \
+                                and params['input_shapes'][net_in_name] is not None \
                                 and shape != params['input_shapes'][net_in_name]:
                             new_shape = params['input_shapes'][net_in_name]
                             WARN('Original model expects input shape of input %s to be %s. '
                                  'Now reset it to %s basing on config file!' % (net_in_name, str(shape), str(new_shape)))
                             shape = new_shape
-                        if str(net_in_tensor.dtype).find('int') != -1:
-                            net_in_tensor = np.zeros(
-                                shape, net_in_tensor.dtype)
+                        if graph_is_quantized:
+                            net_in_dtype = parsed_tensors_table[net_in].get('dtype', str(net_in_tensor.dtype))
+                        else:
+                            net_in_dtype = str(net_in_tensor.dtype)
+                        if net_in_dtype.find('int') != -1:
+                            net_in_tensor = np.zeros(shape, net_in_dtype)
                         else:
                             net_in_tensor = (np.random.ranf(
                                 size=shape) * 100).astype(net_in_tensor.dtype)
@@ -374,17 +434,26 @@ def convert_tflite_to_graph(model_path, params):
                     # add output node into graph
                     output_names = []
                     for output_index, output_tensor_id in enumerate(net_outputs):
+                        if output_tensor_id < 0 \
+                                or output_tensor_id >= len(parsed_tensors_table) \
+                                or output_tensor_id not in out_tensor_operator_map:
+                            DEBUG('[Parser]: Meets invalid output tensor id(%d) in convert_tflite_to_graph!' %
+                                  output_tensor_id)
+                            continue
                         out_tensor = parsed_tensors_table[output_tensor_id]
+                        out_tensor_name = out_tensor['name']
                         out_op_id = out_tensor_operator_map[output_tensor_id]
                         out_op_info = parsed_operators_table[out_op_id]
                         out_node_name = parsed_tensors_table[out_op_info['outputs'][0]]['name']
-                        noop_node_name = parsed_tensors_table[output_tensor_id]['name'] + '_noop_' + str(
+                        noop_node_name = out_tensor_name + '_noop_' + str(
                             output_index)
                         assert graph.has_node(out_node_name) and not graph.has_node(
                             noop_node_name), 'The output node does not exist, cannot add output node into graph in convert_tflite_to_graph.'
                         graph.add_node(noop_node_name)
                         noop_node = NodeWrap(graph, noop_node_name)
                         noop_node.replace_obj('Out', {'name': noop_node_name})
+                        if out_tensor_name in params.get('output_tensor_map', {}):
+                            params['output_tensor_map'][out_tensor_name] = [noop_node_name]
 
                         src_out_port = out_op_info['outputs'].index(
                             output_tensor_id)
@@ -426,7 +495,7 @@ def convert_tflite_to_graph(model_path, params):
                                     '[Parser]: Output name (%s) is neither a node name nor a tensor name! Please check config file!' % n)
                         if not names:
                             WARN(
-                                ['Parser: Cannot get valid output names from config file! Will use parsed node names instead!'])
+                                '[Parser]: Cannot get valid output names from config file! Will use parsed node names instead!')
                             graph._attr['output_names'] = copy.deepcopy(
                                 output_names)
                         else:
@@ -450,13 +519,13 @@ def convert_tflite_to_graph(model_path, params):
 
                     for name in graph._attr['output_names']:
                         if graph.has_node(name):
-                            if not graph.succ[name] \
-                                    or all([graph.get_node(succ)._attr['op'] != 'Out' for succ in graph.succ[name]]):
+                            node_successors = graph.children(name)
+                            if not node_successors \
+                                    or all([graph.nodes[succ]['op'] != 'Out' for succ in node_successors]):
                                 out_edges = graph.sorted_out_edges(
                                     name, data=True)
                                 try:
-                                    out_ports = graph.get_node(
-                                        name)._attr['object'].get_out_ports()
+                                    out_ports = graph.nodes[name]['object'].get_out_ports()
                                 except:
                                     out_ports = []
                                 for p in out_ports:
@@ -471,13 +540,18 @@ def convert_tflite_to_graph(model_path, params):
                                         name, out_name, **{'src_out_port': p, 'dst_in_port': 0, 'tensor': tensor})
                                     NodeWrap(graph, out_name).replace_obj(
                                         'Out', {'name': out_name})
+                                    if tensor is not None and tensor.name in params.get('output_tensor_map', {}):
+                                        params['output_tensor_map'][tensor.name] = [out_name]
 
                     clear_redundant_nodes(graph)
+
+                    if not graph._attr['quantize']:
+                        remove_useless_dequantize(graph)
             else:
                 ERROR('Onnx version is too low, needs updating!')
     except Exception as e:
         ret = False
-        WARN('[Parser]: Read Tflite %s meets error in convert_tflite_to_graph! %s' % (
+        ERROR('[Parser]: Read Tflite %s meets error in convert_tflite_to_graph! %s' % (
             model_path, str(e)))
     if not ret:
         graph.clear()

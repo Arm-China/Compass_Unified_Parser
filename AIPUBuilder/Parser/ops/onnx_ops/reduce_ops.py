@@ -1,16 +1,17 @@
-# Copyright © 2022 Arm Technology (China) Co. Ltd. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
+# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
 
 
 from ..op import *
 
 
-class ReduceL1Op(OpHasAxis, OpHasOneOutPort, OnnxOp):
+class ReduceL1Op(OnnxReduceOp):
     @classmethod
     def attributes(cls):
-        return {1: {'keepdims': {'default': 1}},
-                11: {'keepdims': {'default': 1}},
-                13: {'keepdims': {'default': 1}}
+        return {1: {},
+                11: {},
+                13: {},
+                18: {},
                 }
 
     def __init__(self, graph, attr_dict=None):
@@ -18,22 +19,21 @@ class ReduceL1Op(OpHasAxis, OpHasOneOutPort, OnnxOp):
         self.update_attributes(ReduceL1Op, attr_dict)
         assert self.check_required(), 'ReduceL1Op is missing a required parameter.'
 
+    @classmethod
+    def ufunc(cls):
+        return lambda x, y, z: np.sum(np.abs(x), axis=y, keepdims=z)
+
     def infer_shape(self):
         super(ReduceL1Op, self).infer_shape()
-        inputs = self.get_input_tensors()
-        if self.axes is None:
-            self.axes = list(range(len(inputs[0].shape)))
-        out_tensor = np.sum(np.abs(inputs[0]), axis=tuple(
-            self.axes), keepdims=bool(self.keepdims))
-        self.set_out_tensor(out_tensor)
 
 
-class ReduceL2Op(OpHasAxis, OpHasOneOutPort, OnnxOp):
+class ReduceL2Op(OnnxReduceOp):
     @classmethod
     def attributes(cls):
-        return {1: {'keepdims': {'default': 1}},
-                11: {'keepdims': {'default': 1}},
-                13: {'keepdims': {'default': 1}}
+        return {1: {},
+                11: {},
+                13: {},
+                18: {},
                 }
 
     def __init__(self, graph, attr_dict=None):
@@ -41,22 +41,21 @@ class ReduceL2Op(OpHasAxis, OpHasOneOutPort, OnnxOp):
         self.update_attributes(ReduceL2Op, attr_dict)
         assert self.check_required(), 'ReduceL2Op is missing a required parameter.'
 
+    @classmethod
+    def ufunc(cls):
+        return lambda x, y, z: np.sqrt(np.sum(np.square(x), axis=y, keepdims=z))
+
     def infer_shape(self):
         super(ReduceL2Op, self).infer_shape()
-        inputs = self.get_input_tensors()
-        if self.axes is None:
-            self.axes = list(range(len(inputs[0].shape)))
-        out_tensor = np.sqrt(
-            np.sum(np.square(inputs[0]), axis=tuple(self.axes), keepdims=bool(self.keepdims)))
-        self.set_out_tensor(out_tensor)
 
 
-class ReduceLogSumOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
+class ReduceLogSumOp(OnnxReduceOp):
     @classmethod
     def attributes(cls):
-        return {1: {'keepdims': {'type': AttrType.INT, 'default': 1}},
-                11: {'keepdims': {'type': AttrType.INT, 'default': 1}},
-                13: {'keepdims': {'type': AttrType.INT, 'default': 1}}
+        return {1: {},
+                11: {},
+                13: {},
+                18: {},
                 }
 
     def __init__(self, graph, attr_dict=None):
@@ -64,21 +63,21 @@ class ReduceLogSumOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
         self.update_attributes(ReduceLogSumOp, attr_dict)
         assert self.check_required(), 'ReduceLogSumOp is missing a required parameter.'
 
+    @classmethod
+    def ufunc(cls):
+        return lambda x, y, z: np.log(np.sum(x, axis=y, keepdims=z))
+
     def infer_shape(self):
         super(ReduceLogSumOp, self).infer_shape()
-        inputs = self.get_input_tensors()
-        if self.axes is None:
-            self.axes = list(range(len(inputs[0].shape)))
-        out_tensor = np.log(np.sum(inputs[0], axis=tuple(self.axes), keepdims=self.keepdims))
-        self.set_out_tensor(out_tensor)
 
 
-class ReduceLogSumExpOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
+class ReduceLogSumExpOp(OnnxReduceOp):
     @classmethod
     def attributes(cls):
-        return {1: {'keepdims': {'type': AttrType.INT, 'default': 1}},
-                11: {'keepdims': {'type': AttrType.INT, 'default': 1}},
-                13: {'keepdims': {'type': AttrType.INT, 'default': 1}}
+        return {1: {},
+                11: {},
+                13: {},
+                18: {},
                 }
 
     def __init__(self, graph, attr_dict=None):
@@ -86,22 +85,22 @@ class ReduceLogSumExpOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
         self.update_attributes(ReduceLogSumExpOp, attr_dict)
         assert self.check_required(), 'ReduceLogSumExpOp is missing a required parameter.'
 
+    @classmethod
+    def ufunc(cls):
+        return lambda x, y, z: np.log(np.sum(np.exp(x), axis=y, keepdims=z))
+
     def infer_shape(self):
         super(ReduceLogSumExpOp, self).infer_shape()
-        inputs = self.get_input_tensors()
-        if self.axes is None:
-            self.axes = list(range(len(inputs[0].shape)))
-        out_tensor = np.log(np.sum(np.exp(inputs[0]), axis=tuple(self.axes), keepdims=self.keepdims))
-        self.set_out_tensor(out_tensor)
 
 
-class ReduceMaxOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
+class ReduceMaxOp(OnnxReduceOp):
     @classmethod
     def attributes(cls):
-        return {1: {'keepdims': {'default': 1}},
-                11: {'keepdims': {'default': 1}},
-                12: {'keepdims': {'default': 1}},
-                13: {'keepdims': {'default': 1}}
+        return {1: {},
+                11: {},
+                12: {},
+                13: {},
+                18: {},
                 }
 
     def __init__(self, graph, attr_dict=None):
@@ -109,22 +108,22 @@ class ReduceMaxOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
         self.update_attributes(ReduceMaxOp, attr_dict)
         assert self.check_required(), 'ReduceMaxOp is missing a required parameter.'
 
+    @classmethod
+    def ufunc(cls):
+        return lambda x, y, z: np.maximum.reduce(x, axis=y, keepdims=z)
+
     def infer_shape(self):
         super(ReduceMaxOp, self).infer_shape()
-        inputs = self.get_input_tensors()
-        if self.axes is None:
-            self.axes = list(range(len(inputs[0].shape)))
-        out_tensor = np.maximum.reduce(
-            inputs[0], axis=tuple(self.axes), keepdims=self.keepdims)
-        self.set_out_tensor(out_tensor)
 
 
-class ReduceMeanOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
+class ReduceMeanOp(OnnxReduceOp):
     @classmethod
     def attributes(cls):
         return {1: {},
                 # Accepted axes range is [-r, r-1] where r = rank(data)
                 11: {},
+                13: {},
+                18: {},
                 }
 
     def __init__(self, graph, attr_dict=None):
@@ -132,23 +131,22 @@ class ReduceMeanOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
         self.update_attributes(ReduceMeanOp, attr_dict)
         assert self.check_required(), 'ReduceMeanOp is missing a required parameter.'
 
+    @classmethod
+    def ufunc(cls):
+        return lambda x, y, z: np.mean(x, axis=y, keepdims=z)
+
     def infer_shape(self):
         super(ReduceMeanOp, self).infer_shape()
-        inputs = self.get_input_tensors()
-        if self.axes is None:
-            self.axes = list(range(len(inputs[0].shape)))
-        out_tensor = np.mean(inputs[0], axis=tuple(
-            self.axes), keepdims=self.keepdims)
-        self.set_out_tensor(out_tensor)
 
 
-class ReduceMinOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
+class ReduceMinOp(OnnxReduceOp):
     @classmethod
     def attributes(cls):
-        return {1: {'keepdims': {'default': 1}},
-                11: {'keepdims': {'default': 1}},
-                12: {'keepdims': {'default': 1}},
-                13: {'keepdims': {'default': 1}}
+        return {1: {},
+                11: {},
+                12: {},
+                13: {},
+                18: {},
                 }
 
     def __init__(self, graph, attr_dict=None):
@@ -156,22 +154,21 @@ class ReduceMinOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
         self.update_attributes(ReduceMinOp, attr_dict)
         assert self.check_required(), 'ReduceMinOp is missing a required parameter.'
 
+    @classmethod
+    def ufunc(cls):
+        return lambda x, y, z: np.minimum.reduce(x, axis=y, keepdims=z)
+
     def infer_shape(self):
         super(ReduceMinOp, self).infer_shape()
-        inputs = self.get_input_tensors()
-        if self.axes is None:
-            self.axes = list(range(len(inputs[0].shape)))
-        out_tensor = np.minimum.reduce(
-            inputs[0], axis=tuple(self.axes), keepdims=self.keepdims)
-        self.set_out_tensor(out_tensor)
 
 
-class ReduceProdOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
+class ReduceProdOp(OnnxReduceOp):
     @classmethod
     def attributes(cls):
-        return {1: {'keepdims': {'default': 1}},
-                11: {'keepdims': {'default': 1}},
-                13: {'keepdims': {'default': 1}}
+        return {1: {},
+                11: {},
+                13: {},
+                18: {},
                 }
 
     def __init__(self, graph, attr_dict=None):
@@ -179,23 +176,20 @@ class ReduceProdOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
         self.update_attributes(ReduceProdOp, attr_dict)
         assert self.check_required(), 'ReduceProdOp is missing a required parameter.'
 
+    @classmethod
+    def ufunc(cls):
+        return lambda x, y, z: np.prod(x, axis=y, keepdims=z)
+
     def infer_shape(self):
         super(ReduceProdOp, self).infer_shape()
-        inputs = self.get_input_tensors()
-        if self.axes is None:
-            self.axes = list(range(len(inputs[0].shape)))
-        out_tensor = np.prod(inputs[0], axis=tuple(
-            self.axes), keepdims=self.keepdims)
-        self.set_out_tensor(out_tensor)
 
 
-class ReduceSumOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
+class ReduceSumOp(OnnxReduceOp):
     @classmethod
     def attributes(cls):
         return {1: {},
                 11: {},
-                13: {'keepdims': {'default': 1},
-                     'noop_with_empty_axes': {'type': AttrType.INT, 'default': 0}}
+                13: {},
                 }
 
     def __init__(self, graph, attr_dict=None):
@@ -203,45 +197,21 @@ class ReduceSumOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
         self.update_attributes(ReduceSumOp, attr_dict)
         assert self.check_required(), 'ReduceSumOp is missing a required parameter.'
 
-    def __getattr__(self, item):
-        ret = None
-        try:
-            cur_ver = self.__dict__['_attr']['cur_version'].value
-            if item == 'noop_with_empty_axes':
-                if cur_ver < 13:
-                    ret = False
-                else:
-                    ret = bool(self.__dict__['_attr'][item].value)
-        except:
-            ret = None
-        if ret is None:
-            ret = super(OpHasAxis, self).__getattr__(item)
-        return ret
+    @classmethod
+    def ufunc(cls):
+        return lambda x, y, z: np.sum(x, axis=y, keepdims=z)
 
     def infer_shape(self):
         super(ReduceSumOp, self).infer_shape()
-        inputs = self.get_input_tensors()
-        cur_ver = self.cur_version
-        if cur_ver >= 13 and len(inputs) == 1 and self.noop_with_empty_axes:
-            self.keepdims = True
-            out_tensor = inputs[0]
-        else:
-            if len(inputs) == 2:
-                self.axes = inputs[1].tolist() if np.ndim(
-                    inputs[1]) != 0 else [int(inputs[1])]
-            if self.axes is None:
-                self.axes = list(range(len(inputs[0].shape)))
-            out_tensor = np.sum(inputs[0], axis=tuple(
-                self.axes), keepdims=self.keepdims)
-        self.set_out_tensor(out_tensor)
 
 
-class ReduceSumSquareOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
+class ReduceSumSquareOp(OnnxReduceOp):
     @classmethod
     def attributes(cls):
-        return {1: {'keepdims': {'type': AttrType.INT, 'default': 1}},
-                11: {'keepdims': {'type': AttrType.INT, 'default': 1}},
-                13: {'keepdims': {'type': AttrType.INT, 'default': 1}}
+        return {1: {},
+                11: {},
+                13: {},
+                18: {},
                 }
 
     def __init__(self, graph, attr_dict=None):
@@ -249,11 +219,9 @@ class ReduceSumSquareOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
         self.update_attributes(ReduceSumSquareOp, attr_dict)
         assert self.check_required(), 'ReduceSumSquareOp is missing a required parameter.'
 
+    @classmethod
+    def ufunc(cls):
+        return lambda x, y, z: np.sum(np.square(x), axis=y, keepdims=z)
+
     def infer_shape(self):
         super(ReduceSumSquareOp, self).infer_shape()
-        inputs = self.get_input_tensors()
-        if self.axes is None:
-            self.axes = list(range(len(inputs[0].shape)))
-        out_tensor = np.sum(np.square(inputs[0]), axis=tuple(
-            self.axes), keepdims=self.keepdims)
-        self.set_out_tensor(out_tensor)

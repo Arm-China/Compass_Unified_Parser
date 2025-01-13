@@ -3,6 +3,8 @@
 # namespace: tflite
 
 import flatbuffers
+from flatbuffers.compat import import_numpy
+np = import_numpy()
 
 
 class CallOnceOptions(object):
@@ -14,6 +16,10 @@ class CallOnceOptions(object):
         x = CallOnceOptions()
         x.Init(buf, n + offset)
         return x
+
+    @classmethod
+    def CallOnceOptionsBufferHasIdentifier(cls, buf, offset, size_prefixed=False):
+        return flatbuffers.util.BufferHasIdentifier(buf, offset, b"\x54\x46\x4C\x33", size_prefixed=size_prefixed)
 
     # CallOnceOptions
     def Init(self, buf, pos):
@@ -28,8 +34,5 @@ class CallOnceOptions(object):
 
 
 def CallOnceOptionsStart(builder): builder.StartObject(1)
-def CallOnceOptionsAddInitSubgraphIndex(
-    builder, initSubgraphIndex): builder.PrependInt32Slot(0, initSubgraphIndex, 0)
-
-
+def CallOnceOptionsAddInitSubgraphIndex(builder, initSubgraphIndex): builder.PrependInt32Slot(0, initSubgraphIndex, 0)
 def CallOnceOptionsEnd(builder): return builder.EndObject()

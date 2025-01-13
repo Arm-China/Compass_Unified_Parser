@@ -3,6 +3,8 @@
 # namespace: tflite
 
 import flatbuffers
+from flatbuffers.compat import import_numpy
+np = import_numpy()
 
 
 class SubGraph(object):
@@ -14,6 +16,10 @@ class SubGraph(object):
         x = SubGraph()
         x.Init(buf, n + offset)
         return x
+
+    @classmethod
+    def SubGraphBufferHasIdentifier(cls, buf, offset, size_prefixed=False):
+        return flatbuffers.util.BufferHasIdentifier(buf, offset, b"\x54\x46\x4C\x33", size_prefixed=size_prefixed)
 
     # SubGraph
     def Init(self, buf, pos):
@@ -40,6 +46,11 @@ class SubGraph(object):
         return 0
 
     # SubGraph
+    def TensorsIsNone(self):
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(4))
+        return o == 0
+
+    # SubGraph
     def Inputs(self, j):
         o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(6))
         if o != 0:
@@ -60,6 +71,11 @@ class SubGraph(object):
         if o != 0:
             return self._tab.VectorLen(o)
         return 0
+
+    # SubGraph
+    def InputsIsNone(self):
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(6))
+        return o == 0
 
     # SubGraph
     def Outputs(self, j):
@@ -84,9 +100,13 @@ class SubGraph(object):
         return 0
 
     # SubGraph
+    def OutputsIsNone(self):
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(8))
+        return o == 0
+
+    # SubGraph
     def Operators(self, j):
-        o = flatbuffers.number_types.UOffsetTFlags.py_type(
-            self._tab.Offset(10))
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(10))
         if o != 0:
             x = self._tab.Vector(o)
             x += flatbuffers.number_types.UOffsetTFlags.py_type(j) * 4
@@ -99,54 +119,45 @@ class SubGraph(object):
 
     # SubGraph
     def OperatorsLength(self):
-        o = flatbuffers.number_types.UOffsetTFlags.py_type(
-            self._tab.Offset(10))
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(10))
         if o != 0:
             return self._tab.VectorLen(o)
         return 0
 
     # SubGraph
+    def OperatorsIsNone(self):
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(10))
+        return o == 0
+
+    # SubGraph
     def Name(self):
-        o = flatbuffers.number_types.UOffsetTFlags.py_type(
-            self._tab.Offset(12))
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(12))
         if o != 0:
             return self._tab.String(o + self._tab.Pos)
         return None
 
 
 def SubGraphStart(builder): builder.StartObject(5)
-
-
 def SubGraphAddTensors(builder, tensors): builder.PrependUOffsetTRelativeSlot(
     0, flatbuffers.number_types.UOffsetTFlags.py_type(tensors), 0)
 
 
-def SubGraphStartTensorsVector(
-    builder, numElems): return builder.StartVector(4, numElems, 4)
-
-
+def SubGraphStartTensorsVector(builder, numElems): return builder.StartVector(4, numElems, 4)
 def SubGraphAddInputs(builder, inputs): builder.PrependUOffsetTRelativeSlot(
     1, flatbuffers.number_types.UOffsetTFlags.py_type(inputs), 0)
 
 
-def SubGraphStartInputsVector(
-    builder, numElems): return builder.StartVector(4, numElems, 4)
-
-
+def SubGraphStartInputsVector(builder, numElems): return builder.StartVector(4, numElems, 4)
 def SubGraphAddOutputs(builder, outputs): builder.PrependUOffsetTRelativeSlot(
     2, flatbuffers.number_types.UOffsetTFlags.py_type(outputs), 0)
 
 
-def SubGraphStartOutputsVector(
-    builder, numElems): return builder.StartVector(4, numElems, 4)
-
-
+def SubGraphStartOutputsVector(builder, numElems): return builder.StartVector(4, numElems, 4)
 def SubGraphAddOperators(builder, operators): builder.PrependUOffsetTRelativeSlot(
     3, flatbuffers.number_types.UOffsetTFlags.py_type(operators), 0)
 
 
-def SubGraphStartOperatorsVector(
-    builder, numElems): return builder.StartVector(4, numElems, 4)
+def SubGraphStartOperatorsVector(builder, numElems): return builder.StartVector(4, numElems, 4)
 def SubGraphAddName(builder, name): builder.PrependUOffsetTRelativeSlot(
     4, flatbuffers.number_types.UOffsetTFlags.py_type(name), 0)
 

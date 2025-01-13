@@ -1,5 +1,5 @@
-# Copyright © 2022 Arm Technology (China) Co. Ltd. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
+# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
 
 
 import abc
@@ -9,11 +9,12 @@ import copy
 from functools import reduce
 from collections import OrderedDict, defaultdict
 from collections.abc import Iterable
+import itertools
 import numpy as np
 import torch
 import tensorflow as tf
 from ..common.defs import TensorType, Tensor, AttrType, Attribute, Framework, FLOAT_EQUAL
-from ..logger import INFO, DEBUG, WARN, ERROR, FATAL
+from ..logger import INFO, DEBUG, WARN, ERROR, FATAL, WARN_EXCEPTION
 from ..common.utils import num_list_to_string, string_list_to_string, extend_lists
 
 
@@ -144,12 +145,23 @@ class Op(abc.ABC):
     def attributes(cls):
         '''return attributes of OP class.'''
         return {'name': {'type': AttrType.STRING, 'default': '', 'required': True},
+                'in_subgraph': {'type': AttrType.BOOL, 'default': False},
                 'data_format': {'type': AttrType.STRING,
                                 'default': 'NHWC',
                                 'options': ['NWC', 'NCW', 'NHWC', 'NCHW', 'NDHWC', 'NCDHW', 'NCHW_VECT_C'],
                                 'required': True},
                 'cur_version': {'type': AttrType.INT, 'default': 0, 'required': False},
-                'quantize': {'type': AttrType.BOOL, 'default': False, 'options': [0, 1, False, True]}
+                'quantize': {'type': AttrType.BOOL, 'default': False, 'options': [0, 1, False, True]},
+                'activation_quantization_axis': {'type': AttrType.INTS, 'default': None},
+                'top_scales': {'type': AttrType.TENSORS, 'default': []},
+                'top_scales_offset': {'type': AttrType.INTS, 'default': []},
+                'top_scales_list': {'type': AttrType.TENSORS, 'default': []},
+                'top_zps': {'type': AttrType.TENSORS, 'default': []},
+                'top_zps_offset': {'type': AttrType.INTS, 'default': []},
+                'top_zps_list': {'type': AttrType.TENSORS, 'default': []},
+                'top_ranges': {'type': AttrType.TENSORS, 'default': []},
+                'top_ranges_offset': {'type': AttrType.INTS, 'default': []},
+                'top_ranges_list': {'type': AttrType.TENSORS, 'default': []},
                 }
 
     @classmethod
@@ -309,6 +321,18 @@ class Op(abc.ABC):
                     return False
         return True
 
+    def clear_unused_tensor(self, is_input_const=False):
+        if 'tensor_counter' in self._graph._attr and not is_input_const:
+            for src, _, in_d in self._graph.sorted_in_edges(self.name, data=True):
+                cur_tensor_hash = hash(in_d['tensor'])
+                if self._graph._attr['tensor_counter'][cur_tensor_hash] > 0:
+                    self._graph._attr['tensor_counter'][cur_tensor_hash] -= 1
+                if self._graph._attr['tensor_counter'][cur_tensor_hash] == 0:
+                    if not isinstance(self._graph.nodes[src]['object'], (InputLikeOp, ConstLikeOp)) \
+                            and in_d['tensor'] is not None \
+                            and not in_d['tensor'].is_const:
+                        in_d['tensor'].value = None
+
     @abc.abstractmethod
     def infer_shape(self):
         '''An abstract method for shape inference.'''
@@ -355,28 +379,106 @@ class Op(abc.ABC):
                 top_type_str = string_list_to_string(top_info[2] if len(top_info) >= 3 else [])
             txt_file.write('layer_top_type=[%s]\n' % top_type_str)
 
-            if len(top_info) >= 4:
-                if all('min_max' in info for info in top_info[3]):
-                    min_max_list = [info['min_max'] for info in top_info[3]]
-                    range_str = string_list_to_string(min_max_list)
-                    if range_str:
-                        txt_file.write('layer_top_range=[%s]\n' % range_str)
+            if len(top_info) >= 4 \
+                    and len(self.top_ranges_list) == len(top_info[3]):  # ranges write to txt
+                ranges_value = string_list_to_string(
+                    [str(r).replace(' ', '') if r is not None else 'NONE' for r in self.top_ranges_list])
+                txt_file.write('layer_top_range=[%s]\n' % ranges_value)
+            elif len(top_info) >= 4 \
+                    and len(self.top_ranges) == len(top_info[3]) \
+                    and len(self.top_ranges_offset) == len(top_info[3]):  # ranges write to bin
+                ranges_offset = string_list_to_string(
+                    [str(offset) if offset is not None else 'NONE' for offset in self.top_ranges_offset])
+                ranges_shape = [str(list(r.shape)) if r is not None else 'NONE' for r in self.top_ranges]
+                ranges_shape = string_list_to_string([re.sub(r' ', '', shape) for shape in ranges_shape])
+                ranges_type = string_list_to_string(
+                    [str(r.dtype) if r is not None else 'NONE' for r in self.top_ranges])
+                ranges_size = string_list_to_string(
+                    [str(r.size * r.dtype.itemsize) if r is not None else '0' for r in self.top_ranges])
 
-            if self._graph._attr.get('quantize', False) \
-                    and len(top_info) >= 4 \
-                    and all('scale_zp' in info for info in top_info[3]):
-                scale_list = [info['scale_zp'][0].tolist() for info in top_info[3]]
-                scale_str = ','.join(['[' + num_list_to_string(s) + ']' for s in scale_list])
-                zp_list = [info['scale_zp'][1].tolist() for info in top_info[3]]
-                zp_str = ','.join(['[' + num_list_to_string(z) + ']' for z in zp_list])
-                if scale_str:
-                    txt_file.write('layer_top_scale=[%s]\n' % scale_str)
-                if zp_str:
-                    txt_file.write('layer_top_zp=[%s]\n' % zp_str)
+                txt_file.write('layer_top_range_offset=[%s]\n' % ranges_offset)
+                txt_file.write('layer_top_range_shape=[%s]\n' % ranges_shape)
+                txt_file.write('layer_top_range_type=[%s]\n' % ranges_type)
+                txt_file.write('layer_top_range_size=[%s]\n' % ranges_size)
 
+            if self._graph._attr.get('quantize', False) and len(top_info) >= 4:
+                if len(self.top_scales_list) == len(top_info[3]) \
+                        and len(self.top_zps_list) == len(top_info[3]):
+                    scales_str = ','.join([num_list_to_string(s) for s in self.top_scales_list])
+                    zps_str = ','.join([num_list_to_string(s) for s in self.top_zps_list])
+
+                    txt_file.write('layer_top_scale=[%s]\n' % scales_str)
+                    txt_file.write('layer_top_zp=[%s]\n' % zps_str)
+                elif len(self.top_scales) == len(top_info[3]) \
+                        and len(self.top_scales_offset) == len(top_info[3]) \
+                        and len(self.top_zps) == len(top_info[3]) \
+                        and len(self.top_zps_offset) == len(top_info[3]):
+
+                    scales_offset = string_list_to_string(
+                        [str(offset) if offset is not None else 'NONE' for offset in self.top_scales_offset])
+                    scales_shape = [str(list(s.shape)) if s is not None else 'NONE' for s in self.top_scales]
+                    scales_shape = string_list_to_string([re.sub(r' ', '', shape) for shape in scales_shape])
+                    scales_type = string_list_to_string(
+                        [str(s.dtype) if s is not None else 'NONE' for s in self.top_scales])
+                    scales_size = string_list_to_string(
+                        [str(s.size * s.dtype.itemsize) if s is not None else '0' for s in self.top_scales])
+
+                    zps_offset = string_list_to_string(
+                        [str(offset) if offset is not None else 'NONE' for offset in self.top_zps_offset])
+                    zps_shape = [str(list(z.shape)) if z is not None else 'NONE' for z in self.top_zps]
+                    zps_shape = string_list_to_string([re.sub(r' ', '', shape) for shape in zps_shape])
+                    zps_type = string_list_to_string([str(z.dtype) if z is not None else 'NONE' for z in self.top_zps])
+                    zps_size = string_list_to_string(
+                        [str(z.size * z.dtype.itemsize) if z is not None else '0' for z in self.top_zps])
+
+                    txt_file.write('layer_top_scale_offset=[%s]\n' % scales_offset)
+                    txt_file.write('layer_top_scale_shape=[%s]\n' % scales_shape)
+                    txt_file.write('layer_top_scale_type=[%s]\n' % scales_type)
+                    txt_file.write('layer_top_scale_size=[%s]\n' % scales_size)
+
+                    txt_file.write('layer_top_zp_offset=[%s]\n' % zps_offset)
+                    txt_file.write('layer_top_zp_shape=[%s]\n' % zps_shape)
+                    txt_file.write('layer_top_zp_type=[%s]\n' % zps_type)
+                    txt_file.write('layer_top_zp_size=[%s]\n' % zps_size)
+                if self.quantize and self.activation_quantization_axis is not None \
+                        and len(self.activation_quantization_axis) == len(top_info[3]):
+                    activation_quantization_axis = [
+                        str(axis) if axis is not None else 'NONE' for axis in self.activation_quantization_axis]
+                    activation_quantization_axis = string_list_to_string(activation_quantization_axis)
+                    txt_file.write('activation_quantization_axis=[%s]\n' % activation_quantization_axis)
         else:
             FATAL(
                 '[Parser]: Invalid file to write properties for Node(%s) in write_attrs!' % (self.name))
+        return ret
+
+    def write_top_range(self, bin_file):
+        ret = True
+        if not bin_file.closed and bin_file.mode == 'wb':
+            if len(self.top_ranges) > 0 \
+                    and len(self.top_ranges) == len(self.top_ranges_offset):
+                for r, r_offset in zip(self.top_ranges, self.top_ranges_offset):
+                    if r_offset >= 0:
+                        Op.numpy_to_bin(bin_file, r, r_offset, self.name)
+        else:
+            FATAL('[Parser]: Invalid file to write range for Node(%s) in write_top_range!' % self.name)
+        return ret
+
+    def write_top_scale_zp(self, bin_file):
+        ret = True
+        if not bin_file.closed and bin_file.mode == 'wb':
+            if self._graph._attr.get('quantize', False) \
+                    and len(self.top_scales) > 0 \
+                    and len(self.top_scales) == len(self.top_scales_offset) \
+                    and len(self.top_scales) == len(self.top_zps) \
+                    and len(self.top_scales) == len(self.top_zps_offset):
+                for scale, scale_offset in zip(self.top_scales, self.top_scales_offset):
+                    if scale_offset != -1:
+                        Op.numpy_to_bin(bin_file, scale, scale_offset, self.name)
+                for zp, zp_offset in zip(self.top_zps, self.top_zps_offset):
+                    if zp_offset != -1:
+                        Op.numpy_to_bin(bin_file, zp, zp_offset, self.name)
+        else:
+            FATAL('[Parser]: Invalid file to write scale/zp for Node(%s) in write_top_scale_zp!' % self.name)
         return ret
 
     def get_input_tensors(self):
@@ -401,6 +503,9 @@ class Op(abc.ABC):
         '''Determine whether all inputs are constant nodes.'''
         if isinstance(self, ConstLikeOp):
             return True
+        elif self.name in self._graph._attr['input_tensors'] \
+                and self._graph._attr['input_tensors'][self.name].is_const:
+            return True
         else:
             is_const_list = [d['tensor'].is_const for _, _, _, d in self._graph.sorted_in_edges(
                 self.name, keys=True, data=True)]
@@ -418,8 +523,13 @@ class Op(abc.ABC):
     def get_input_shapes(self):
         '''Returns the shape of all inputs to this op.'''
         try:
-            return [list(d['tensor'].value.shape) if d['tensor'].value is not None else d['tensor'].shape
-                    for _, _, _, d in self._graph.sorted_in_edges(self.name, keys=True, data=True)]
+            ret = []
+            for _, _, _, d in self._graph.sorted_in_edges(self.name, keys=True, data=True):
+                try:
+                    ret.append(list(d['tensor'].get_shape()))
+                except:
+                    ret.append(None)
+            return ret
         except Exception as e:
             ERROR('[Parser]: Node(%s) get_input_shapes meets error: %s' %
                   (self.name, str(e)))
@@ -428,10 +538,44 @@ class Op(abc.ABC):
     def get_output_shapes(self):
         '''Returns the shape of all outputs to this op.'''
         try:
-            return [list(d['tensor'].value.shape) if d['tensor'].value is not None else None
-                    for _, _, _, d in self._graph.sorted_out_edges(self.name, keys=True, data=True)]
+            ret = []
+            for _, _, _, d in self._graph.sorted_out_edges(self.name, keys=True, data=True):
+                try:
+                    ret.append(list(d['tensor'].get_shape()))
+                except:
+                    ret.append(None)
+            return ret
         except Exception as e:
             ERROR('[Parser]: Node(%s) get_output_shapes meets error:%s' %
+                  (self.name, str(e)))
+            return []
+
+    def get_input_dtypes(self):
+        try:
+            ret = []
+            for _, _, _, d in self._graph.sorted_in_edges(self.name, keys=True, data=True):
+                try:
+                    ret.append(d['tensor'].get_dtype())
+                except:
+                    ret.append(None)
+            return ret
+        except Exception as e:
+            ERROR('[Parser]: Node(%s) get_input_dtypes meets error: %s' %
+                  (self.name, str(e)))
+            return []
+
+    def get_output_dtypes(self):
+        '''Returns the shape of all outputs to this op.'''
+        try:
+            ret = []
+            for _, _, _, d in self._graph.sorted_out_edges(self.name, keys=True, data=True):
+                try:
+                    ret.append(d['tensor'].get_dtype())
+                except:
+                    ret.append(None)
+            return ret
+        except Exception as e:
+            ERROR('[Parser]: Node(%s) get_output_dtypes meets error:%s' %
                   (self.name, str(e)))
             return []
 
@@ -439,9 +583,11 @@ class Op(abc.ABC):
         '''Sort the contents of the constant node in the order of name, attr, and value.'''
         ret = []
         for u, _, in_attr in self._graph.sorted_in_edges(self.name, data=True):
-            obj = self._graph.nodes[u]._attr.get('object', None)
+            obj = self._graph.nodes[u].get('object', None)
             if obj is not None and obj.type in ('Constant', 'TfConst', 'Tfconstant'):
                 ret.append((u, in_attr['dst_in_port'], obj.value))
+            elif in_attr.get('tensor', None) is not None and in_attr['tensor'].is_const:
+                ret.append((u, in_attr['dst_in_port'], in_attr['tensor'].value))
         return ret
 
     def get_in_ports(self):
@@ -461,16 +607,15 @@ class Op(abc.ABC):
         ret = []
         quantize = self._graph._attr.get('quantize', False)
         for u, v, k, d in self._graph.sorted_in_edges(self.name, keys=True, data=True):
-            pred_node_obj = self._graph.nodes[u]._attr.get('object', None)
+            pred_node_obj = self._graph.nodes[u].get('object', None)
             if pred_node_obj is not None:
                 if u in self._graph._attr.get('duplicate_name', {}):
                     u = self._graph._attr['duplicate_name'][u]
-                pre_name_suffix = '' if isinstance(
-                    pred_node_obj, OpHasOneOutPort) else '_' + str(d['src_out_port'])
+                pre_name_suffix = '_' + str(d['src_out_port'])
                 info_dict = OrderedDict()
                 if len(d['tensor'].min_max) == 2:
-                    min_max_str = '[%f,%f]' % (float(d['tensor'].min_max[0]), float(d['tensor'].min_max[1]))
-                    info_dict.update({'min_max': min_max_str})
+                    min_max = np.array(d['tensor'].min_max, dtype=np.float32)
+                    info_dict.update({'min_max': min_max})
                 dtype = ''
                 if quantize:
                     if len(d['tensor'].scale_zp) == 2:
@@ -479,11 +624,17 @@ class Op(abc.ABC):
                     if d['tensor'].dtype is not None:
                         dtype = d['tensor'].dtype
                         info_dict.update({'dtype': str(d['tensor'].dtype)})
-                shape = ''
-                if d['tensor'].value is not None:
-                    if not dtype:
-                        dtype = str(d['tensor'].value.dtype)
-                    shape = re.sub(r' ', '', str(list(d['tensor'].value.shape)))
+                if not dtype:
+                    dtype = d['tensor'].get_dtype()
+                if dtype is None:
+                    dtype = ''
+
+                shape = d['tensor'].get_shape()
+                if shape is None:
+                    shape = ''
+                else:
+                    shape = str(list(shape))
+                shape = re.sub(r' ', '', shape)
                 ret.append((u + pre_name_suffix, shape, dtype, info_dict))
         if ret:
             ret = list(zip(*ret))
@@ -495,16 +646,15 @@ class Op(abc.ABC):
         quantize = self._graph._attr.get('quantize', False)
         info = OrderedDict()
         for u, v, k, d in self._graph.sorted_out_edges(self.name, keys=True, data=True):
-            name_suffix = '' if isinstance(
-                self, OpHasOneOutPort) else '_' + str(d['src_out_port'])
+            name_suffix = '_' + str(d['src_out_port'])
             info_value = []
             if u in self._graph._attr.get('duplicate_name', {}):
                 u = self._graph._attr['duplicate_name'][u]
-            if (d['tensor'].value is not None and d['tensor'].value.size > 0) \
-                    or (d['tensor'].shape is not None and len(d['tensor'].shape) > 0):
-                tensor_shape = list(d['tensor'].value.shape)
+
+            if d['tensor'].get_shape() is not None:
+                tensor_shape = list(d['tensor'].get_shape())
                 info_value = [re.sub(r' ', '', str(tensor_shape)),
-                              str(d['tensor'].value.dtype),
+                              d['tensor'].get_dtype(),
                               OrderedDict()]
             else:
                 tensor_shape = []
@@ -512,13 +662,15 @@ class Op(abc.ABC):
                       self.name)
                 info_value = [re.sub(r' ', '', str(tensor_shape)), '', OrderedDict()]
             if len(d['tensor'].min_max) == 2:
-                min_max_str = '[%f,%f]' % (float(d['tensor'].min_max[0]), float(d['tensor'].min_max[1]))
-                info_value[2].update({'min_max': min_max_str})
-            if quantize and d['tensor'].dtype is not None:
-                info_value[2].update({'dtype': str(d['tensor'].dtype)})
-            if quantize and len(d['tensor'].scale_zp) == 2:
-                scale_zp = (np.array(d['tensor'].scale_zp[0]), np.array(d['tensor'].scale_zp[1]))
-                info_value[2].update({'scale_zp': scale_zp})
+                min_max = np.array(d['tensor'].min_max, dtype=np.float32)
+                info_value[2].update({'min_max': min_max})
+            if quantize:
+                if d['tensor'].dtype is not None:
+                    info_value[2].update({'dtype': str(d['tensor'].dtype)})
+                if len(d['tensor'].scale_zp) == 2:
+                    scale_zp = (np.array(d['tensor'].scale_zp[0]), np.array(d['tensor'].scale_zp[1]))
+                    info_value[2].update({'scale_zp': scale_zp})
+                info_value[2].update({'activation_quantization_axis': d['tensor'].activation_quantization_axis})
             info.update({u + name_suffix: info_value})
         if len(info) > 0:
             ret = [(k, *v) for k, v in info.items()]
@@ -550,8 +702,13 @@ class OpHasOneOutPort(Op):
                     if tensor_data is not None:
                         d['tensor'].shape = d['tensor'].value.shape
                         d['tensor'].is_const = is_const
+                        if not self.quantize or d['tensor'].dtype is None:
+                            d['tensor'].dtype = str(d['tensor'].value.dtype)
                 else:
                     d['tensor'] = Tensor(value=tensor_data)
+
+            self.clear_unused_tensor(is_const)
+
         except KeyError as e:
             ERROR('[Parser]: Node(%s) meets key error in set_out_tensor (%s)!' %
                   (self.name, str(e)))
@@ -599,8 +756,13 @@ class OpHasMultipleOutPorts(Op):
                             if t is not None:
                                 d['tensor'].shape = d['tensor'].value.shape
                                 d['tensor'].is_const = is_const
+                                if not self.quantize or d['tensor'].dtype is None:
+                                    d['tensor'].dtype = str(d['tensor'].value.dtype)
                         else:
                             d['tensor'] = Tensor(value=t, is_const=is_const)
+
+            self.clear_unused_tensor(is_const)
+
         except KeyError as e:
             ERROR('[Parser]: Node(%s) meets key error in set_out_tensor (%s)!' %
                   (self.name, str(e)))
@@ -647,6 +809,8 @@ class OpHasVariableOutPorts(Op):
                             d['src_out_port'])]
                         d['tensor'].shape = d['tensor'].value.shape
                         d['tensor'].is_const = is_const
+                        if not self.quantize or d['tensor'].dtype is None:
+                            d['tensor'].dtype = str(d['tensor'].value.dtype)
                     else:
                         d['tensor'] = Tensor(
                             value=tensor_data_list[out_ports.index(d['src_out_port'])])
@@ -656,8 +820,13 @@ class OpHasVariableOutPorts(Op):
                         d['tensor'].value = tensor_data_list[0]
                         d['tensor'].shape = d['tensor'].value.shape
                         d['tensor'].is_const = is_const
+                        if not self.quantize or d['tensor'].dtype is None:
+                            d['tensor'].dtype = str(d['tensor'].value.dtype)
                     else:
                         d['tensor'] = Tensor(value=tensor_data_list[0])
+
+            self.clear_unused_tensor(is_const)
+
         except KeyError as e:
             ERROR('[Parser]: Node(%s) meets key error in set_out_tensor (%s)! ' %
                   (self.name, str(e)))
@@ -720,18 +889,24 @@ class OpHasAxis(Op):
                 }
 
     @staticmethod
-    def align_axes(tensor, axes, exp_shape):
+    def align_axes(tensor, axes, input_shape):
         '''Check whether the shape of tensor in axes is 1 or can be broadcast to exp_shape.
         Return None if cannot get tensor with shape exp_shape.'''
         # Make axes a sorted list and make sure it has the same length as exp_shape
         axes = axes if isinstance(axes, (list, np.ndarray)) else [axes]
         axes = sorted(axes)
-        assert len(axes) == len(
-            exp_shape), 'Invalid exp_shape %s in align_axes' % str(exp_shape)
+        exp_shape = [input_shape[axis] for axis in axes]
+        max_dim = len(input_shape)
         # For scalar and valid 1d tensor, broadcast to exp_shape
         in_shape = tensor.shape
         if len(in_shape) in (0, 1) and (tensor.size == 1 or in_shape[0] in (1, exp_shape[-1])):
             return np.broadcast_to(tensor, exp_shape)
+        # Reshape tensor to max_dim
+        len_diff = max_dim - len(in_shape)
+        if len_diff < 0:
+            return None
+        in_shape = [1] * len_diff + list(in_shape)
+        tensor = np.reshape(tensor, in_shape)
         # Reset axes if tensor has same length as axes and axes are contiguous
         if len(in_shape) == len(axes) \
                 and not any(diff != 1 for diff in np.diff(axes)):
@@ -891,6 +1066,14 @@ class LayoutUnawareOp(Op):
     pass
 
 
+class SameShapeOp(Op):
+    '''
+    Class SameShapeOp inherited from OP.
+    The OP's output shape is same with input shape, such as math ops, must inherit from this class.
+    '''
+    pass
+
+
 class OpHasPaddingStrides(LayoutConcernedOp):
     """
     Class OpHasPaddingStrides inherited from LayoutConcernedOp class.
@@ -913,13 +1096,13 @@ class OpHasPaddingStrides(LayoutConcernedOp):
             fc:             [output_channel, input_channel]
 
         ONNX:  (M x C/group x kH x kW)
-            conv:           [out_channels, in_channels, filter_height, filter_width]
+            conv:           [out_channels, in_channels/group, filter_height, filter_width]
             conv1d:         [out_channels, in_channels, filter_width]
             depthwise conv: [in/out_channels, channel_multiplier, filter_height, filter_width]
             deconv:         [in_channels, output_channels, filter_height, filter_width]
             fc:             [output_channel, input_channel]
 
-        torch: conv         [out_channels, in_channels, filter_height, filter_width]
+        torch: conv         [out_channels, in_channels/group, filter_height, filter_width]
             depthwise conv: [in_channels(out), channel_multiplier, filter_height, filter_width]
 
         caffe: conv         [out_channels, in_channels, filter_height, filter_width]
@@ -1028,8 +1211,7 @@ class OpHasPaddingStrides(LayoutConcernedOp):
             elif item == 'pads':
                 ret = self.__dict__['_attr'][item].value
                 if not ret:
-                    ret = [0, 0] * len(self.__dict__['_attr']
-                                       ['kernel_shape'].value)
+                    ret = [0, 0] * len(self.kernel_shape)
                     self.__dict__['_attr'][item].value = ret
         except:
             ret = None
@@ -1112,10 +1294,13 @@ class OpHasWeights(Op):
         '''return attributes of OpHasWeights class.'''
         return {'weights': {'type': AttrType.TENSOR, 'default': None},
                 'weights_offset': {'type': AttrType.INT, 'default': -1},
-                'weights_min_max': {'type': AttrType.FLOATS, 'default': []},
-                'weights_scale_zp': {'type': AttrType.TENSORS, 'default': [np.array([1.0]), np.array([0])]},
+                'weights_range': {'type': AttrType.TENSOR, 'default': None},
+                'weights_range_offset': {'type': AttrType.INT, 'default': -1},
+                'weights_range_list': {'type': AttrType.TENSORS, 'default': []},
+                'weights_scale_zp': {'type': AttrType.TENSORS, 'default': [np.array([1.0]).astype(np.float32), np.array([0]).astype(np.int32)]},
                 'weights_scale_offset': {'type': AttrType.INT, 'default': -1},
-                'weights_zp_offset': {'type': AttrType.INT, 'default': -1}
+                'weights_zp_offset': {'type': AttrType.INT, 'default': -1},
+                'weights_scale_zp_list': {'type': AttrType.TENSORS, 'default': []},
                 }
 
     @classmethod
@@ -1177,24 +1362,33 @@ class OpHasWeights(Op):
                            (self.weights.size * self.weights.dtype.itemsize))
             txt_file.write('weights_shape=[%s]\n' % num_list_to_string(
                 list(self.weights.shape)))
-            if self.weights_min_max:
-                txt_file.write('weights_range=[%s]\n' % num_list_to_string(
-                    [float(np.min(m) if i == 0 else np.max(m)) for i, m in enumerate(self.weights_min_max)]))
+            if len(self.weights_range_list) == 2:
+                txt_file.write('weights_range=[%s]\n' % num_list_to_string(self.weights_range_list))
+            elif self.weights_range is not None:
+                txt_file.write('weights_range_type=%s\n' % str(self.weights_range.dtype))
+                txt_file.write('weights_range_offset=%d\n' % self.weights_range_offset)
+                txt_file.write('weights_range_size=%d\n' % (
+                    self.weights_range.size * self.weights_range.dtype.itemsize))
+                txt_file.write('weights_range_shape=[%s]\n' % num_list_to_string(
+                    list(self.weights_range.shape)))
             if self._graph._attr.get('quantize', False) \
-                    and np.issubdtype(self.weights.dtype, np.integer) \
-                    and len(self.weights_scale_zp) == 2:
-                txt_file.write('weights_scale_type=%s\n' % str(self.weights_scale_zp[0].dtype))
-                txt_file.write('weights_scale_offset=%d\n' % self.weights_scale_offset)
-                txt_file.write('weights_scale_size=%d\n' %
-                               (self.weights_scale_zp[0].size * self.weights_scale_zp[0].dtype.itemsize))
-                txt_file.write('weights_scale_shape=[%s]\n' % num_list_to_string(
-                    list(self.weights_scale_zp[0].shape)))
-                txt_file.write('weights_zp_type=%s\n' % str(self.weights_scale_zp[1].dtype))
-                txt_file.write('weights_zp_offset=%d\n' % self.weights_zp_offset)
-                txt_file.write('weights_zp_size=%d\n' %
-                               (self.weights_scale_zp[1].size * self.weights_scale_zp[1].dtype.itemsize))
-                txt_file.write('weights_zp_shape=[%s]\n' % num_list_to_string(
-                    list(self.weights_scale_zp[1].shape)))
+                    and np.issubdtype(self.weights.dtype, np.integer):
+                if len(self.weights_scale_zp_list) == 2:
+                    txt_file.write('weights_scale=%s\n' % str(self.weights_scale_zp_list[0]))
+                    txt_file.write('weights_zp=%s\n' % str(self.weights_scale_zp_list[1]))
+                elif len(self.weights_scale_zp) == 2:
+                    txt_file.write('weights_scale_type=%s\n' % str(self.weights_scale_zp[0].dtype))
+                    txt_file.write('weights_scale_offset=%d\n' % self.weights_scale_offset)
+                    txt_file.write('weights_scale_size=%d\n' %
+                                   (self.weights_scale_zp[0].size * self.weights_scale_zp[0].dtype.itemsize))
+                    txt_file.write('weights_scale_shape=[%s]\n' % num_list_to_string(
+                        list(self.weights_scale_zp[0].shape)))
+                    txt_file.write('weights_zp_type=%s\n' % str(self.weights_scale_zp[1].dtype))
+                    txt_file.write('weights_zp_offset=%d\n' % self.weights_zp_offset)
+                    txt_file.write('weights_zp_size=%d\n' %
+                                   (self.weights_scale_zp[1].size * self.weights_scale_zp[1].dtype.itemsize))
+                    txt_file.write('weights_zp_shape=[%s]\n' % num_list_to_string(
+                        list(self.weights_scale_zp[1].shape)))
         return ret
 
     def write_weights(self, bin_file):
@@ -1203,6 +1397,8 @@ class OpHasWeights(Op):
         if not bin_file.closed and bin_file.mode == 'wb':
             if self.weights is not None and self.weights_offset >= 0:
                 Op.numpy_to_bin(bin_file, self.weights, self.weights_offset, self.name)
+                if self.weights_range is not None and self.weights_range_offset >= 0:
+                    Op.numpy_to_bin(bin_file, self.weights_range, self.weights_range_offset, self.name)
                 if self._graph._attr.get('quantize', False) \
                         and np.issubdtype(self.weights.dtype, np.integer) \
                         and len(self.weights_scale_zp) == 2:
@@ -1229,9 +1425,13 @@ class OpHasBiases(Op):
         '''return attributes of OpHasBiases class.'''
         return {'biases': {'type': AttrType.TENSOR, 'default': None},
                 'biases_offset': {'type': AttrType.INT, 'default': -1},
-                'biases_scale_zp': {'type': AttrType.TENSORS, 'default': [np.array([1.0]), np.array([0])]},
+                'biases_range': {'type': AttrType.TENSOR, 'default': None},
+                'biases_range_offset': {'type': AttrType.INT, 'default': -1},
+                'biases_range_list': {'type': AttrType.TENSORS, 'default': []},
+                'biases_scale_zp': {'type': AttrType.TENSORS, 'default': [np.array([1.0]).astype(np.float32), np.array([0]).astype(np.int32)]},
                 'biases_scale_offset': {'type': AttrType.INT, 'default': -1},
-                'biases_zp_offset': {'type': AttrType.INT, 'default': -1}
+                'biases_zp_offset': {'type': AttrType.INT, 'default': -1},
+                'biases_scale_zp_list': {'type': AttrType.TENSORS, 'default': []},
                 }
 
     def __init__(self, graph, attr_dict=None):
@@ -1248,21 +1448,33 @@ class OpHasBiases(Op):
                            (self.biases.size * self.biases.dtype.itemsize))
             txt_file.write('biases_shape=[%s]\n' %
                            num_list_to_string(list(self.biases.shape)))
+            if len(self.biases_range_list) == 2:
+                txt_file.write('biases_range=[%s]\n' % num_list_to_string(self.biases_range_list))
+            elif self.biases_range is not None:
+                txt_file.write('biases_range_type=%s\n' % str(self.biases_range.dtype))
+                txt_file.write('biases_range_offset=%d\n' % self.biases_range_offset)
+                txt_file.write('biases_range_size=%d\n' % (
+                    self.biases_range.size * self.biases_range.dtype.itemsize))
+                txt_file.write('biases_range_shape=[%s]\n' % num_list_to_string(
+                    list(self.biases_range.shape)))
             if self._graph._attr.get('quantize', False) \
-                    and np.issubdtype(self.biases.dtype, np.integer) \
-                    and len(self.biases_scale_zp) == 2:
-                txt_file.write('biases_scale_type=%s\n' % str(self.biases_scale_zp[0].dtype))
-                txt_file.write('biases_scale_offset=%d\n' % self.biases_scale_offset)
-                txt_file.write('biases_scale_size=%d\n' %
-                               (self.biases_scale_zp[0].size * self.biases_scale_zp[0].dtype.itemsize))
-                txt_file.write('biases_scale_shape=[%s]\n' % num_list_to_string(
-                    list(self.biases_scale_zp[0].shape)))
-                txt_file.write('biases_zp_type=%s\n' % str(self.biases_scale_zp[1].dtype))
-                txt_file.write('biases_zp_offset=%d\n' % self.biases_zp_offset)
-                txt_file.write('biases_zp_size=%d\n' %
-                               (self.biases_scale_zp[1].size * self.biases_scale_zp[1].dtype.itemsize))
-                txt_file.write('biases_zp_shape=[%s]\n' % num_list_to_string(
-                    list(self.biases_scale_zp[1].shape)))
+                    and np.issubdtype(self.biases.dtype, np.integer):
+                if len(self.biases_scale_zp_list) == 2:
+                    txt_file.write('biases_scale=%s\n' % str(self.biases_scale_zp_list[0]))
+                    txt_file.write('biases_zp=%s\n' % str(self.biases_scale_zp_list[1]))
+                elif len(self.biases_scale_zp) == 2:
+                    txt_file.write('biases_scale_type=%s\n' % str(self.biases_scale_zp[0].dtype))
+                    txt_file.write('biases_scale_offset=%d\n' % self.biases_scale_offset)
+                    txt_file.write('biases_scale_size=%d\n' %
+                                   (self.biases_scale_zp[0].size * self.biases_scale_zp[0].dtype.itemsize))
+                    txt_file.write('biases_scale_shape=[%s]\n' % num_list_to_string(
+                        list(self.biases_scale_zp[0].shape)))
+                    txt_file.write('biases_zp_type=%s\n' % str(self.biases_scale_zp[1].dtype))
+                    txt_file.write('biases_zp_offset=%d\n' % self.biases_zp_offset)
+                    txt_file.write('biases_zp_size=%d\n' %
+                                   (self.biases_scale_zp[1].size * self.biases_scale_zp[1].dtype.itemsize))
+                    txt_file.write('biases_zp_shape=[%s]\n' % num_list_to_string(
+                        list(self.biases_scale_zp[1].shape)))
         return ret
 
     def write_biases(self, bin_file):
@@ -1271,6 +1483,8 @@ class OpHasBiases(Op):
         if not bin_file.closed and bin_file.mode == 'wb':
             if self.biases is not None and self.biases_offset >= 0:
                 Op.numpy_to_bin(bin_file, self.biases, self.biases_offset, self.name)
+                if self.biases_range is not None and self.biases_range_offset >= 0:
+                    Op.numpy_to_bin(bin_file, self.biases_range, self.biases_range_offset, self.name)
                 if self._graph._attr.get('quantize', False) \
                         and np.issubdtype(self.biases.dtype, np.integer) \
                         and len(self.biases_scale_zp) == 2:
@@ -1280,6 +1494,98 @@ class OpHasBiases(Op):
                         Op.numpy_to_bin(bin_file, self.biases_scale_zp[1], self.biases_zp_offset, self.name)
         else:
             FATAL('[Parser]: Invalid file to write biases for Node(%s) in write_biases!' %
+                  (self.name))
+        return ret
+
+
+class OpHasAnchors(Op):
+    '''
+    Class OpHasAnchors inherited from OP.
+    Some OPs with anchors parameter must inherit this class, such as Proposals, DecodeBox, etc.
+    '''
+    @classmethod
+    def attributes(cls):
+        '''return attributes of OpHasWeights class.'''
+        return {'anchors': {'type': AttrType.TENSOR, 'default': None},
+                'xcenter': {'type': AttrType.TENSOR, 'default': None},
+                'xcenter_offset': {'type': AttrType.INT, 'default': -1},
+                'ycenter': {'type': AttrType.TENSOR, 'default': None},
+                'ycenter_offset': {'type': AttrType.INT, 'default': -1},
+                'ha': {'type': AttrType.TENSOR, 'default': None},
+                'ha_offset': {'type': AttrType.INT, 'default': -1},
+                'wa': {'type': AttrType.TENSOR, 'default': None},
+                'wa_offset': {'type': AttrType.INT, 'default': -1},
+                }
+
+    @staticmethod
+    def convert_to_center_coordinate(anchors, return_list=False):
+        # Convert from [y1, x1, y2, x2] to [y_center, x_center, height, width]
+        if len(anchors.shape) != 2 or anchors.shape[1] != 4:
+            ERROR('[Parser]: Meet invalid anchor shape in convert_to_center_coordinate!')
+            return anchors
+        y_min, x_min, y_max, x_max = anchors[:,
+                                             0], anchors[:, 1], anchors[:, 2], anchors[:, 3]
+        height = y_max - y_min
+        y_center = y_min + 0.5 * height
+        width = x_max - x_min
+        x_center = x_min + 0.5 * width
+        if not return_list:
+            center_points = np.stack([y_center, x_center, height, width], axis=1)
+            return center_points
+        return y_center, x_center, height, width
+
+    def __init__(self, graph, attr_dict=None):
+        super(OpHasAnchors, self).__init__(graph, attr_dict)
+        self.update_attributes(OpHasAnchors, attr_dict)
+
+    def write_attrs(self, txt_file):
+        '''Write the required attr in IR.'''
+        ret = super(OpHasAnchors, self).write_attrs(txt_file)
+        if ret and self.xcenter is not None and self.ycenter is not None \
+                and self.ha is not None and self.wa is not None:
+            txt_file.write('xcenter_type=%s\n' % str(self.xcenter.dtype))
+            txt_file.write('xcenter_offset=%d\n' % self.xcenter_offset)
+            txt_file.write('xcenter_size=%d\n' %
+                           (self.xcenter.size * self.xcenter.dtype.itemsize))
+            txt_file.write('xcenter_shape=[%s]\n' % num_list_to_string(
+                list(self.xcenter.shape)))
+
+            txt_file.write('ycenter_type=%s\n' % str(self.ycenter.dtype))
+            txt_file.write('ycenter_offset=%d\n' % self.ycenter_offset)
+            txt_file.write('ycenter_size=%d\n' %
+                           (self.ycenter.size * self.ycenter.dtype.itemsize))
+            txt_file.write('ycenter_shape=[%s]\n' % num_list_to_string(
+                list(self.ycenter.shape)))
+
+            txt_file.write('ha_type=%s\n' % str(self.ha.dtype))
+            txt_file.write('ha_offset=%d\n' % self.ha_offset)
+            txt_file.write('ha_size=%d\n' %
+                           (self.ha.size * self.ha.dtype.itemsize))
+            txt_file.write('ha_shape=[%s]\n' % num_list_to_string(
+                list(self.ha.shape)))
+
+            txt_file.write('wa_type=%s\n' % str(self.wa.dtype))
+            txt_file.write('wa_offset=%d\n' % self.wa_offset)
+            txt_file.write('wa_size=%d\n' %
+                           (self.wa.size * self.wa.dtype.itemsize))
+            txt_file.write('wa_shape=[%s]\n' % num_list_to_string(
+                list(self.wa.shape)))
+        return ret
+
+    def write_anchors(self, bin_file):
+        '''Write the anchors attr in IR bin file.'''
+        ret = True
+        if not bin_file.closed and bin_file.mode == 'wb':
+            if self.xcenter is not None and self.xcenter_offset >= 0:
+                Op.numpy_to_bin(bin_file, self.xcenter, self.xcenter_offset, self.name)
+            if self.ycenter is not None and self.ycenter_offset >= 0:
+                Op.numpy_to_bin(bin_file, self.ycenter, self.ycenter_offset, self.name)
+            if self.ha is not None and self.ha_offset >= 0:
+                Op.numpy_to_bin(bin_file, self.ha, self.ha_offset, self.name)
+            if self.wa is not None and self.wa_offset >= 0:
+                Op.numpy_to_bin(bin_file, self.wa, self.wa_offset, self.name)
+        else:
+            FATAL('[Parser]: Invalid file to write anchors for Node(%s) in write_anchors!' %
                   (self.name))
         return ret
 
@@ -1353,6 +1659,8 @@ class BaseConvOp(OpHasPaddingStrides, BaseLinearOp, LayoutConcernedOp):
         '''Calculate the output shape of the OP according to in_shape, pads, strides, kernel_shape, auto_pad and other parameters.'''
         if dilations is None:
             dilations = [1] * len(kernel_shape)
+        if pads is None:
+            pads = [0] * len(in_shape)
         params = [in_shape, strides, kernel_shape, dilations]
         in_shape, strides, kernel_shape, dilations = [
             np.array(p, np.int64) for p in params]
@@ -1517,6 +1825,9 @@ class BaseActivationOp(OpHasOneOutPort):
                                 },
                 'negative_slope': {'type': AttrType.TENSOR},
                 'negative_slope_offset': {'type': AttrType.INT, 'default': -1},
+                'negative_slope_range': {'type': AttrType.TENSOR, 'default': None},
+                'negative_slope_range_offset': {'type': AttrType.INT, 'default': -1},
+                'negative_slope_range_list': {'type': AttrType.TENSORS, 'default': []},
                 'clip_min': {'type': AttrType.FLOAT, 'default': None},
                 'clip_max': {'type': AttrType.FLOAT, 'default': None}
                 }
@@ -1553,6 +1864,16 @@ class BaseActivationOp(OpHasOneOutPort):
                             self.negative_slope.size * self.negative_slope.dtype.itemsize))
                         txt_file.write('negative_slope_shape=[%s]\n' % num_list_to_string(
                             list(self.negative_slope.shape)))
+                        if len(self.negative_slope_range_list) == 2:
+                            txt_file.write('negative_slope_range=[%s]\n' %
+                                           num_list_to_string(self.negative_slope_range_list))
+                        elif self.negative_slope_range is not None:
+                            txt_file.write('negative_slope_range_type=%s\n' % str(self.negative_slope_range.dtype))
+                            txt_file.write('negative_slope_range_offset=%d\n' % self.negative_slope_range_offset)
+                            txt_file.write('negative_slope_range_size=%d\n' % (
+                                self.negative_slope_range.size * self.negative_slope_range.dtype.itemsize))
+                            txt_file.write('negative_slope_range_shape=[%s]\n' % num_list_to_string(
+                                list(self.negative_slope_range.shape)))
                     if self.activations == 'SELU':
                         txt_file.write('alpha=%s\n' % str(self.alpha))
                         txt_file.write('gamma=%s\n' % str(self.gamma))
@@ -1570,16 +1891,11 @@ class BaseActivationOp(OpHasOneOutPort):
             if self.negative_slope is not None \
                     and np.ndim(self.negative_slope) > 0 \
                     and self.negative_slope_offset >= 0:
-                start = bin_file.tell()
-                assert start == self.negative_slope_offset, 'negative_slope offset not match! layer name: %s, %d' % (
-                    self.name, self.negative_slope_offset)
-                self.negative_slope.tofile(bin_file)
-                end = bin_file.tell()
-                if not (self.negative_slope.dtype.itemsize * int(np.prod(self.negative_slope.shape)) == end - start):
-                    ERROR(
-                        '[Parser]: Node(%s) write negative_slope to bin error in write_negative_slope!' % self.name)
-            else:
-                pass
+                Op.numpy_to_bin(bin_file, self.negative_slope, self.negative_slope_offset, self.name)
+            if self.negative_slope_range is not None \
+                    and np.ndim(self.negative_slope_range) > 0 \
+                    and self.negative_slope_range_offset >= 0:
+                Op.numpy_to_bin(bin_file, self.negative_slope_range, self.negative_slope_range_offset, self.name)
         else:
             FATAL(
                 '[Parser]: Invalid file to write negative_slope for Node(%s) in write_negative_slope!' % self.name)
@@ -1649,15 +1965,22 @@ class BaseActivationOp(OpHasOneOutPort):
         )['activations']['options'], 'act is not in the parameters of BaseActivationOp.'
         if not isinstance(tensor, np.ndarray):
             tensor = np.asarray(tensor)
+        if len(self._graph.parents(self.name)) > 0 \
+                and len(self._graph.children(self._graph.parents(self.name)[0])) == 1:
+            in_place = True
+        else:
+            in_place = False
         torch_tensor = torch.from_numpy(tensor)
         if act == 'RELU':
-            ret = torch.nn.functional.relu(torch_tensor, inplace=False).numpy()
+            ret = torch.nn.functional.relu(torch_tensor, inplace=in_place).numpy()
         elif act == 'RELU6':
-            ret = torch.nn.functional.relu6(
-                torch_tensor, inplace=False).numpy()
+            ret = torch.nn.functional.relu6(torch_tensor, inplace=in_place).numpy()
         elif act == 'LEAKYRELU':
-            ret = torch.nn.functional.leaky_relu(torch_tensor, negative_slope=float(
-                self.negative_slope), inplace=False).numpy()
+            # torch.nn.functional.leaky_relu only implemented for float/double in cpu
+            float_torch_tensor = torch.from_numpy(np.array(tensor, dtype=np.float32))
+            ret = torch.nn.functional.leaky_relu(float_torch_tensor,
+                                                 negative_slope=float(self.negative_slope),
+                                                 inplace=in_place).numpy().astype(tensor.dtype)
         elif act == 'PRELU':
             if weights is None:
                 weights = self.negative_slope
@@ -1696,7 +2019,7 @@ class BaseActivationOp(OpHasOneOutPort):
             # activations: (onnx op type, onnx opset version)
             'ELU': ('Elu', 6),
             'EXPONENTIAL': ('Exp', 13),
-            'GELU': ('Gelu', 1),
+            'GELU': ('Gelu', 20),
             'HARD_SIGMOID': ('HardSigmoid', 6),
             'LEAKYRELU': ('LeakyRelu', 6),
             'LOG_SOFTMAX': ('LogSoftmax', 13),
@@ -1759,7 +2082,12 @@ class BaseRnnOp(OpHasMethod, OpHasVariableOutPorts):
             'activations': {'type': AttrType.STRINGS, 'required': False, 'default': []},
             'method': {'required': False, 'default': 'Y', 'options': ['Y', 'C', 'H', 'YH', 'YC', 'CH', 'YCH']},
             'forget_bias': {'type': AttrType.INT, 'required': False, 'default': None},
-            'forget_bias_scale_zp': {'type': AttrType.FLOATS, 'required': False, 'default': [np.array([1.0]), np.array([0])]},
+            'forget_bias_scale_zp': {'type': AttrType.TENSORS, 'required': False, 'default': None},
+            'activations_scale': {'type': AttrType.TENSOR, 'required': False, 'default': None},
+            'activations_scale_offset': {'type': AttrType.INT, 'default': -1},
+            'activations_zp': {'type': AttrType.TENSOR, 'required': False, 'default': None},
+            'activations_zp_offset': {'type': AttrType.INT, 'default': -1},
+            'activations_scale_zp_list': {'type': AttrType.TENSORS, 'default': []},
         }
 
     def __init__(self, graph, attr_dict=None):
@@ -1780,16 +2108,49 @@ class BaseRnnOp(OpHasMethod, OpHasVariableOutPorts):
                 txt_file.write('activations=[%s]\n' %
                                string_list_to_string(self.activations))
             txt_file.write('direction=%s\n' % self.direction)
-            if self.quantize \
-                    and self.forget_bias is not None \
-                    and len(self.forget_bias_scale_zp) == 2:
+            if self.forget_bias is not None:
                 txt_file.write('forget_bias=%d\n' % int(self.forget_bias))
-                forget_bias_scale = np.array(self.forget_bias_scale_zp[0]).tolist()
-                forget_bias_zp = np.array(self.forget_bias_scale_zp[1]).tolist()
-                txt_file.write('forget_bias_scale=[%s]\n' %
-                               num_list_to_string(forget_bias_scale))
-                txt_file.write('forget_bias_zp=[%s]\n' %
-                               num_list_to_string(forget_bias_zp))
+            if self.quantize:
+                if self.forget_bias_scale_zp is not None \
+                        and len(self.forget_bias_scale_zp) == 2:
+                    forget_bias_scale = np.array(self.forget_bias_scale_zp[0]).tolist()
+                    forget_bias_zp = np.array(self.forget_bias_scale_zp[1]).tolist()
+                    txt_file.write('forget_bias_scale=[%s]\n' %
+                                   num_list_to_string(forget_bias_scale))
+                    txt_file.write('forget_bias_zp=[%s]\n' %
+                                   num_list_to_string(forget_bias_zp))
+                if len(self.activations_scale_zp_list) == 2:
+                    txt_file.write('activations_scale=%s\n' % str(self.activations_scale_zp_list[0]))
+                    txt_file.write('activations_zp=%s\n' % str(self.activations_scale_zp_list[1]))
+                elif self.activations_scale is not None \
+                        and self.activations_zp is not None:
+                    activations_scale = self.activations_scale
+                    activations_zp = self.activations_zp
+                    txt_file.write('activations_scale_type=%s\n' % str(activations_scale.dtype))
+                    txt_file.write('activations_scale_offset=%d\n' % self.activations_scale_offset)
+                    txt_file.write('activations_scale_size=%d\n' %
+                                   (activations_scale.size * activations_scale.dtype.itemsize))
+                    txt_file.write('activations_scale_shape=[%s]\n' % num_list_to_string(list(activations_scale.shape)))
+                    txt_file.write('activations_zp_type=%s\n' % str(activations_zp.dtype))
+                    txt_file.write('activations_zp_offset=%d\n' % self.activations_zp_offset)
+                    txt_file.write('activations_zp_size=%d\n' % (activations_zp.size * activations_zp.dtype.itemsize))
+                    txt_file.write('activations_zp_shape=[%s]\n' % num_list_to_string(list(activations_zp.shape)))
+        return ret
+
+    def write_scale_zp(self, bin_file):
+        ret = True
+        if not self.quantize:
+            return ret
+        if not bin_file.closed and bin_file.mode == 'wb':
+            if self.activations_scale is not None and self.activations_scale_offset >= 0 \
+                    and self.activations_zp is not None and self.activations_zp_offset >= 0:
+                Op.numpy_to_bin(bin_file, self.activations_scale, self.activations_scale_offset, self.name)
+                Op.numpy_to_bin(bin_file, self.activations_zp, self.activations_zp_offset, self.name)
+            else:
+                ERROR('[Parser]: Invalid scale/zp for Node %s in write_scale_zp!' % self.name)
+        else:
+            FATAL('[Parser]: Invalid file to write scale/zp for Node(%s) in write_scale_zp!' %
+                  (self.name))
         return ret
 
 
@@ -1859,80 +2220,76 @@ class ConstLikeOp(Op):
 class OpNeedBroadcast(Op):
     '''
     Class OpNeedBroadcast inherited from Op class.
-    Ops need brocast must inherit ConstLikeOp.
+    Ops need broadcast must inherit OpNeedBroadcast.
     '''
     @staticmethod
     def cal_reshape_and_tile(input_shapes, match_from_left=False):
         '''We implement brocast by adding reshape and tile, and this function calculates the parameters of reshape and tile.'''
         ret = []
-        if len(input_shapes) >= 2:
-            max_rank = max([len(s) for s in input_shapes])
-            max_dims_array = np.array(
-                [list(s) for s in input_shapes if len(s) == max_rank])
-            if max_dims_array.size > 0:
-                max_dims = np.max(max_dims_array, axis=0,
-                                  keepdims=False).tolist()
-            else:
-                max_dims = []
-            new_dims_dict = {}
-            for r in range(max_rank - 1, 0, -1):
-                for idx, s in enumerate(input_shapes):
-                    if len(s) == r and len(s) < len(max_dims):
-                        dim_diff = len(max_dims) - len(s)
-                        range_list = list(range(0, dim_diff + 1)) if match_from_left \
-                            else list(range(dim_diff, -1, -1))
-                        offset = -1
-                        for o in range_list:
-                            if all([sd == max_d for sd, max_d in zip(s, max_dims[o:])]):
-                                offset = o
-                                break
-                            if all([sd == max_d or sd == 1 for sd, max_d in zip(s, max_dims[o:])]):
-                                offset = o
-                                break
-                            if all([sd == 1 or max_d == 1 for sd, max_d in zip(s, max_dims[o:])]):
-                                offset = o
-                                break
-                            if all([sd == max_d or sd == 1 or max_d == 1 for sd, max_d in zip(s, max_dims[o:])]):
-                                offset = o
-                                break
-                        if offset == -1:
-                            ERROR(
-                                '[Parser]: Meets invalid input shape for broadcasting in cal_reshape_and_tile!')
-                            break
-                        else:
-                            cur_full_dim = [1] * offset + \
-                                list(s) + [1] * (dim_diff - offset)
-                            new_dims_dict.update({idx: cur_full_dim})
-                            max_dims = np.max(
-                                np.array([cur_full_dim, max_dims]), axis=0, keepdims=False).tolist()
+        assert len(input_shapes) >= 2 and all(s is not None for shape in input_shapes for s in shape)
 
-            reshape_dims, reps = [], []
-            for i, in_shape in enumerate(input_shapes):
-                if len(in_shape) == 0:
-                    reshape_dims.append([1] * max_rank)
-                elif len(in_shape) == max_rank:
-                    reshape_dims.append(list(in_shape))
-                elif i in new_dims_dict:
-                    reshape_dims.append(new_dims_dict[i])
-                else:
-                    ERROR('[Parser]: Meets error when calculating broadcast!')
-                    break
-
-            max_dims = np.max(np.array([list(s) for s in reshape_dims if len(
-                s) == max_rank]), axis=0, keepdims=False).tolist()
-            reps = [(np.array(max_dims) // np.array(dim)).tolist()
-                    for dim in reshape_dims]
-
-            for i, s in enumerate(input_shapes):
-                meta_ret = {'reshape': None, 'tile': None}
-                if list(s) != reshape_dims[i]:
-                    meta_ret.update({'reshape': reshape_dims[i]})
-                if any([r != 1 for r in reps[i]]):
-                    meta_ret.update({'tile': reps[i]})
-                ret.append(meta_ret)
+        max_rank = max([len(s) for s in input_shapes])
+        max_dims_array = np.array(
+            [list(s) for s in input_shapes if len(s) == max_rank])
+        if max_dims_array.size > 0:
+            max_dims = np.max(max_dims_array, axis=0,
+                              keepdims=False).tolist()
         else:
-            WARN(
-                '[Parser]: Only broadcast when inputs number greater or equal to 2 in cal_reshape_and_tile!')
+            max_dims = []
+        new_dims_dict = {}
+        for r in range(max_rank - 1, 0, -1):
+            for idx, s in enumerate(input_shapes):
+                if len(s) == r and len(s) < len(max_dims):
+                    dim_diff = len(max_dims) - len(s)
+                    range_list = list(range(0, dim_diff + 1)) if match_from_left \
+                        else list(range(dim_diff, -1, -1))
+                    offset = -1
+                    for o in range_list:
+                        if all([sd == max_d for sd, max_d in zip(s, max_dims[o:])]):
+                            offset = o
+                            break
+                        if all([sd == max_d or sd == 1 for sd, max_d in zip(s, max_dims[o:])]):
+                            offset = o
+                            break
+                        if all([sd == 1 or max_d == 1 for sd, max_d in zip(s, max_dims[o:])]):
+                            offset = o
+                            break
+                        if all([sd == max_d or sd == 1 or max_d == 1 for sd, max_d in zip(s, max_dims[o:])]):
+                            offset = o
+                            break
+                    if offset == -1:
+                        raise Exception(
+                            '[Parser]: Meets invalid input shape for broadcasting in cal_reshape_and_tile!')
+                    else:
+                        cur_full_dim = [1] * offset + \
+                            list(s) + [1] * (dim_diff - offset)
+                        new_dims_dict.update({idx: cur_full_dim})
+                        max_dims = np.max(
+                            np.array([cur_full_dim, max_dims]), axis=0, keepdims=False).tolist()
+
+        reshape_dims, reps = [], []
+        for i, in_shape in enumerate(input_shapes):
+            if len(in_shape) == 0:
+                reshape_dims.append([1] * max_rank)
+            elif len(in_shape) == max_rank:
+                reshape_dims.append(list(in_shape))
+            elif i in new_dims_dict:
+                reshape_dims.append(new_dims_dict[i])
+            else:
+                raise Exception('[Parser]: Meets error when calculating broadcast!')
+
+        max_dims = np.max(np.array([list(s) for s in reshape_dims if len(
+            s) == max_rank]), axis=0, keepdims=False).tolist()
+        reps = [(np.array(max_dims) // np.array(dim)).tolist()
+                for dim in reshape_dims]
+
+        for i, s in enumerate(input_shapes):
+            meta_ret = {'reshape': None, 'tile': None}
+            if list(s) != reshape_dims[i]:
+                meta_ret.update({'reshape': reshape_dims[i]})
+            if any([r != 1 for r in reps[i]]):
+                meta_ret.update({'tile': reps[i]})
+            ret.append(meta_ret)
         return ret
 
     @staticmethod
@@ -1941,7 +2298,10 @@ class OpNeedBroadcast(Op):
         ret = copy.deepcopy(inputs)
         if len(inputs) >= 2:
             input_shapes = [s.shape for s in inputs]
-            reshape_tile = OpNeedBroadcast.cal_reshape_and_tile(input_shapes)
+            try:
+                reshape_tile = OpNeedBroadcast.cal_reshape_and_tile(input_shapes)
+            except:
+                reshape_tile = []
             if len(reshape_tile) == len(ret):
                 for i, inp in enumerate(zip(ret, reshape_tile)):
                     value, params = inp
@@ -1971,61 +2331,25 @@ class OpNeedBroadcast(Op):
 class OpNeedUniBroadcast(Op):
     '''
     Class OpNeedBroadcast inherited from Op class.
-    Unidirectional broadcast means that input1 can broadcast to input2, but input2 cannot brocast to input1.
-    Ops need unidirectional brocast must inherit ConstLikeOp.
+    Unidirectional broadcast means that input1 can broadcast to input2, but input2 cannot broadcast to input1.
+    Ops need unidirectional broadcast must inherit OpNeedUniBroadcast.
     '''
     @staticmethod
-    def cal_reshape_and_tile(input_shapes):
+    def cal_reshape_and_tile(input_shapes, match_from_left=False):
         '''We implement brocast by adding reshape and tile, and this function calculates the parameters of reshape and tile.'''
         ret = []
         if len(input_shapes) >= 2:
-            max_rank = max(len(input_shapes[0]), 1)
-            max_dims_array = np.array(
-                [list(s) for s in input_shapes[0:1] if len(s) == max_rank])
-            if max_dims_array.size > 0:
-                max_dims = np.max(max_dims_array, axis=0,
-                                  keepdims=False).tolist()
-            else:
-                max_dims = []
+            reshape_and_tile_list = OpNeedBroadcast.cal_reshape_and_tile(input_shapes, match_from_left)
 
-            reshape_dims, reps = [], []
-            for i, in_shape in enumerate(input_shapes[1:]):
-                if len(in_shape) == 0:
-                    reshape_dims.append([1] * max_rank)
-                elif len(in_shape) == max_rank:
-                    reshape_dims.append(list(in_shape))
+            for idx, meta_ret in enumerate(reshape_and_tile_list):
+                reshape = meta_ret.get('reshape', None)
+                tile = meta_ret.get('tile', None)
+                if idx == 0:
+                    if reshape is not None or tile is not None:
+                        ERROR('[Parser]: Meets error when calculating broadcast in OpNeedUniBroadcast!')
+                        return ret
                 else:
-                    found_index = -1
-                    cur_index = 0
-                    for si, s in enumerate(in_shape):
-                        if s == 1:
-                            continue
-                        else:
-                            if s in max_dims:
-                                index = max_dims.index(s)
-                                found_index = index
-                                cur_index = si
-                                break
-                    if found_index != -1:
-                        new_dim = [1] * (found_index - cur_index) + list(in_shape) + [1] * (
-                            max_rank - len(in_shape) - (found_index - cur_index))
-                    else:
-                        new_dim = list(in_shape) + \
-                            [1] * (max_rank - len(in_shape))
-                    if len(new_dim) > max_rank:
-                        ERROR('[Parser]: Meets error when calculating broadcast!')
-                    reshape_dims.append(new_dim)
-
-            reps = [(np.array(max_dims) // np.array(dim)).tolist()
-                    for dim in reshape_dims]
-
-            for i, s in enumerate(input_shapes[1:]):
-                meta_ret = {'reshape': None, 'tile': None}
-                if list(s) != reshape_dims[i]:
-                    meta_ret.update({'reshape': reshape_dims[i]})
-                if any([r != 1 for r in reps[i]]):
-                    meta_ret.update({'tile': reps[i]})
-                ret.append(meta_ret)
+                    ret.append({'reshape': reshape, 'tile': tile})
         else:
             WARN('[Parser]: Only broadcast when inputs number greater or equal to 2!')
         return ret
@@ -2105,6 +2429,70 @@ class OnnxOp(Op):
         pass
 
 
+class OnnxReduceOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
+    '''
+    Class OnnxReduceOp inherited from OpHasAxis, OpHasOneOutPort, OnnxOp class.
+    All reduce ops under the onnx framework must inherit OnnxReduceOp.
+    '''
+    @classmethod
+    def ufunc(cls):
+        '''ufunc of OnnxReduceOp should be a lambda function without keyword arguments.'''
+        return None
+
+    @classmethod
+    def attributes(cls):
+        '''return attributes of OnnxReduceOp class.'''
+        return {'keepdims': {'default': 1},
+                'noop_with_empty_axes': {'type': AttrType.BOOL, 'default': False}
+                }
+
+    def __init__(self, graph, attr_dict=None):
+        super(OnnxReduceOp, self).__init__(graph, attr_dict)
+        self.update_attributes(OnnxReduceOp, attr_dict)
+        assert self.check_required(), 'OnnxReduceOp is missing a required parameter.'
+
+    def __getattr__(self, item):
+        ret = None
+        try:
+            cur_ver = self.__dict__['_attr']['cur_version'].value
+            if item == 'axes':
+                if cur_ver >= 18 or (self.type == 'ReduceSum' and cur_ver >= 13):
+                    inputs = self.get_input_tensors()
+                    if len(inputs) > 1:
+                        ret = inputs[1].tolist() if inputs[1].size > 0 else None
+                        if ret is not None:
+                            self.__dict__['_attr'][item].value = ret
+                else:
+                    ret = self.__dict__['_attr'][item].value
+            elif item == 'noop_with_empty_axes':
+                if cur_ver >= 18 or (self.type == 'ReduceSum' and cur_ver >= 13):
+                    ret = self.__dict__['_attr'][item].value
+                else:
+                    ret = False
+        except:
+            ret = None
+        if ret is None:
+            ret = super(OnnxReduceOp, self).__getattr__(item)
+        return ret
+
+    @abc.abstractmethod
+    def infer_shape(self):
+        '''An abstract method for shape inference.'''
+        super(OnnxReduceOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        if self.axes is None and self.noop_with_empty_axes:
+            out_tensor = inputs[0]
+        else:
+            if self.axes is None:
+                self.axes = list(range(len(inputs[0].shape)))
+            out_tensor = type(self).ufunc()(
+                inputs[0], tuple(self.axes), self.keepdims)
+            if self.type in ('ReduceL1', 'ReduceL2', 'ReduceLogSum', 'ReduceLogSumExp',
+                             'ReduceMean', 'ReduceProd', 'ReduceSum', 'ReduceSumSquare'):
+                out_tensor = out_tensor.astype(inputs[0].dtype)
+        self.set_out_tensor(out_tensor)
+
+
 class BaseOnnxPoolOp(OpHasPaddingStrides, OnnxOp):
     '''
     Class BaseOnnxPoolOp inherited from OpHasPaddingStrides,OnnxOp class.
@@ -2136,6 +2524,81 @@ class BaseOnnxPoolOp(OpHasPaddingStrides, OnnxOp):
         else:
             out_shape = np.ceil(in_shape / strides)
         return out_shape.astype(np.int64).tolist()
+
+    @staticmethod
+    def pool(padded_input, in_shape, kernel_shape, strides, out_shape, pooling_method,
+             pads, dilations=None, count_include_pad=0, p=1):
+        def lp_pool_p(x, p_value=p):
+            y = 0
+            for v in np.nditer(x):
+                y += abs(v) ** p_value
+            return y ** (1.0 / p_value)
+
+        spatial_size = len(in_shape) - 2
+        y = np.zeros([in_shape[0], in_shape[1], *list(out_shape)], dtype=padded_input.dtype)
+        if dilations is None:
+            dilations = np.ones([spatial_size], dtype=np.int64)
+        if pads is None:
+            pads = np.zeros([spatial_size * 2], dtype=np.int64)
+        elif len(pads) == 1:
+            pads = pads * spatial_size * 2
+        strides = strides or [1] * spatial_size
+
+        for shape in itertools.product(
+                range(in_shape[0]),
+                range(in_shape[1]),
+                *[
+                    range(
+                        int(
+                            (
+                                in_shape[i + 2]
+                                + pads[i]
+                                + pads[i + spatial_size]
+                                - (1 + (kernel_shape[i] - 1) * dilations[i])
+                            )
+                            / strides[i]
+                            + 1
+                        )
+                    )
+                    for i in range(spatial_size)
+                ],
+        ):
+            window = padded_input[shape[0], shape[1]]
+            window_vals = np.array(
+                [
+                    window[i]
+                    for i in list(
+                        itertools.product(
+                            *[
+                                range(
+                                    strides[i] * shape[i + 2],
+                                    strides[i] * shape[i + 2]
+                                    + (1 + (kernel_shape[i] - 1) * dilations[i]),
+                                    dilations[i],
+                                )
+                                for i in range(spatial_size)
+                            ]
+                        )
+                    )
+                ]
+            )
+            if pooling_method == "AVG":
+                f = np.average
+            elif pooling_method == "MAX":
+                f = np.max
+            elif pooling_method == "LPPOOL":
+                f = lp_pool_p
+            else:
+                ERROR(
+                    f'[Parser]: Pooling type {pooling_method} does not support. Should be AVG, MAX'
+                )
+                return y
+
+            if count_include_pad == 1 and (pooling_method in {'AVG', 'LPPOOL'}):
+                y[shape] = f(window_vals)
+            else:
+                y[shape] = f(window_vals[np.where(~np.isnan(window_vals))])
+        return y
 
     @classmethod
     def attributes(cls):
@@ -2196,7 +2659,7 @@ class TfliteOp(Op):
         super(TfliteOp, self).__init__(graph, attr_dict)
         self.update_attributes(TfliteOp, attr_dict)
         if self.opcode_version not in type(self).attributes():
-            WARN('[Parser]: Node(%s) Opcode Version %d is not implemented for %s! But will try to proceed.' % (
+            WARN_EXCEPTION('[Parser]: Node(%s) Opcode Version %d is not implemented for %s! But will try to proceed.' % (
                 self.name, self.opcode_version, type(self).__name__))
 
     @property
@@ -2253,6 +2716,8 @@ class TfliteReduceOp(OpHasAxis, OpHasOneOutPort, TfliteOp):
         inputs = self.get_input_tensors()
         out_tensor = type(self).ufunc()(
             inputs[0], axis=tuple(self.axes), keepdims=self.keepdims)
+        if self.type == 'LiteREDUCE_PROD':
+            out_tensor = out_tensor.astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
 
@@ -3255,3 +3720,10 @@ class ArmOp(Op):
     @classmethod
     def num_in_ports(cls):
         return 1
+
+    @abc.abstractmethod
+    def infer_shape(self):
+        super(ArmOp, self).infer_shape()
+        input_dtypes = self.get_input_dtypes()
+        if any('64' in type_str for type_str in input_dtypes):
+            ERROR('[Parser]: Meets 64 bits inputs for %sOp(%s) in infer_shape!' % (self.type, self.name))

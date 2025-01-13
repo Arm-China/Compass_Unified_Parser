@@ -3,6 +3,8 @@
 # namespace: tflite
 
 import flatbuffers
+from flatbuffers.compat import import_numpy
+np = import_numpy()
 
 
 class ArgMinOptions(object):
@@ -14,6 +16,10 @@ class ArgMinOptions(object):
         x = ArgMinOptions()
         x.Init(buf, n + offset)
         return x
+
+    @classmethod
+    def ArgMinOptionsBufferHasIdentifier(cls, buf, offset, size_prefixed=False):
+        return flatbuffers.util.BufferHasIdentifier(buf, offset, b"\x54\x46\x4C\x33", size_prefixed=size_prefixed)
 
     # ArgMinOptions
     def Init(self, buf, pos):
@@ -28,8 +34,5 @@ class ArgMinOptions(object):
 
 
 def ArgMinOptionsStart(builder): builder.StartObject(1)
-def ArgMinOptionsAddOutputType(
-    builder, outputType): builder.PrependInt8Slot(0, outputType, 0)
-
-
+def ArgMinOptionsAddOutputType(builder, outputType): builder.PrependInt8Slot(0, outputType, 0)
 def ArgMinOptionsEnd(builder): return builder.EndObject()

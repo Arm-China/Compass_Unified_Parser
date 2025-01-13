@@ -1,10 +1,14 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
+
+
 import numpy as np
 import onnx
 from utils.run import run_parser
 from onnx import TensorProto, helper
 
 
-def create_fuse_const_model(onnx_path, resize_input_size, pow_input_shape, mode, version=11):
+def create_fuse_const_model(onnx_path, resize_input_size, pow_input_shape, mode, antialias, version=19):
     ''' Create onnx model for fuse_const op.
     '''
     X = helper.make_tensor_value_info('X', TensorProto.FLOAT, pow_input_shape)
@@ -36,13 +40,17 @@ def create_fuse_const_model(onnx_path, resize_input_size, pow_input_shape, mode,
             )
         )
         input_nodes.append(const_node)
+    args = {}
+    if version == 19:
+        args['antialias'] = antialias
     resize_node = helper.make_node(
         'Resize',
         inputs=['const_x', 'roi', 'scales', 'sizes'],
         outputs=['Y0'],
         coordinate_transformation_mode='pytorch_half_pixel',
         mode=mode,
-        nearest_mode='round_prefer_ceil'
+        nearest_mode='round_prefer_ceil',
+        **args,
     )
     pow_node = helper.make_node(
         'Pow',
@@ -63,26 +71,31 @@ def create_fuse_const_model(onnx_path, resize_input_size, pow_input_shape, mode,
 
 
 OP_NAME = 'fuse_const'
-resize_input_shapes = [[3, 10, 15], [1, 7, 24, 24], [2, 5, 16, 17, 18]]
-pow_input_shapes = [[3, 10, 19], [1, 7, 32, 32], [2, 5, 26, 27, 28]]
+resize_input_shapes = [[1, 7, 24, 24], [2, 3, 6, 7, 8], ]  # [3, 10, 15],
+pow_input_shapes = [[1, 7, 32, 32], [2, 3, 8, 5, 10], ]  # [3, 10, 19],
 
 # Generate input data
 feed_dict = dict()
 
-for version in (11, 13):
+for version in (19, 11, 13):
     for resize_input_shape, pow_input_shape in zip(resize_input_shapes, pow_input_shapes):
         for mode in ('cubic', 'linear', 'nearest'):
-            if mode == 'cubic' and len(resize_input_shape) != 4:
-                # onnx Resize only supports 4d cubic
-                continue
-            model_name = '-'.join([OP_NAME, str(version), str(len(pow_input_shape)), mode])
-            model_path = model_name + '.onnx'
-            # Set feed_dict
-            feed_dict.clear()
-            feed_dict['X'] = np.random.ranf(pow_input_shape).astype(np.float32)
-            # Create model
-            create_fuse_const_model(model_path, resize_input_shape, pow_input_shape, mode, version)
+            for antialias in (1, 0):
+                if antialias == 1:
+                    if version != 19 or mode == 'nearest':
+                        # only opset 19 with mode cubic/linear support antialias
+                        continue
+                if mode == 'cubic' and len(resize_input_shape) != 4:
+                    # onnx Resize only supports 4d cubic
+                    continue
+                model_name = '-'.join([OP_NAME, str(version), str(len(pow_input_shape)), mode, str(antialias)])
+                model_path = model_name + '.onnx'
+                # Set feed_dict
+                feed_dict.clear()
+                feed_dict['X'] = np.random.ranf(pow_input_shape).astype(np.float32)
+                # Create model
+                create_fuse_const_model(model_path, resize_input_shape, pow_input_shape, mode, antialias, version)
 
-            # Run tests with parser and compare result with runtime
-            exit_status = run_parser(model_path, feed_dict, verify=True)
-            assert exit_status
+                # Run tests with parser and compare result with runtime
+                exit_status = run_parser(model_path, feed_dict, verify=True)
+                assert exit_status

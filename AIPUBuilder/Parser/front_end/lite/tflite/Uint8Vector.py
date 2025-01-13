@@ -3,6 +3,8 @@
 # namespace: tflite
 
 import flatbuffers
+from flatbuffers.compat import import_numpy
+np = import_numpy()
 
 
 class Uint8Vector(object):
@@ -14,6 +16,10 @@ class Uint8Vector(object):
         x = Uint8Vector()
         x.Init(buf, n + offset)
         return x
+
+    @classmethod
+    def Uint8VectorBufferHasIdentifier(cls, buf, offset, size_prefixed=False):
+        return flatbuffers.util.BufferHasIdentifier(buf, offset, b"\x54\x46\x4C\x33", size_prefixed=size_prefixed)
 
     # Uint8Vector
     def Init(self, buf, pos):
@@ -41,14 +47,16 @@ class Uint8Vector(object):
             return self._tab.VectorLen(o)
         return 0
 
+    # Uint8Vector
+    def ValuesIsNone(self):
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(4))
+        return o == 0
+
 
 def Uint8VectorStart(builder): builder.StartObject(1)
-
-
 def Uint8VectorAddValues(builder, values): builder.PrependUOffsetTRelativeSlot(
     0, flatbuffers.number_types.UOffsetTFlags.py_type(values), 0)
-def Uint8VectorStartValuesVector(
-    builder, numElems): return builder.StartVector(1, numElems, 1)
 
 
+def Uint8VectorStartValuesVector(builder, numElems): return builder.StartVector(1, numElems, 1)
 def Uint8VectorEnd(builder): return builder.EndObject()

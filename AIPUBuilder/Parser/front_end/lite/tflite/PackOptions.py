@@ -3,6 +3,8 @@
 # namespace: tflite
 
 import flatbuffers
+from flatbuffers.compat import import_numpy
+np = import_numpy()
 
 
 class PackOptions(object):
@@ -14,6 +16,10 @@ class PackOptions(object):
         x = PackOptions()
         x.Init(buf, n + offset)
         return x
+
+    @classmethod
+    def PackOptionsBufferHasIdentifier(cls, buf, offset, size_prefixed=False):
+        return flatbuffers.util.BufferHasIdentifier(buf, offset, b"\x54\x46\x4C\x33", size_prefixed=size_prefixed)
 
     # PackOptions
     def Init(self, buf, pos):
@@ -35,9 +41,6 @@ class PackOptions(object):
 
 
 def PackOptionsStart(builder): builder.StartObject(2)
-def PackOptionsAddValuesCount(
-    builder, valuesCount): builder.PrependInt32Slot(0, valuesCount, 0)
-
-
+def PackOptionsAddValuesCount(builder, valuesCount): builder.PrependInt32Slot(0, valuesCount, 0)
 def PackOptionsAddAxis(builder, axis): builder.PrependInt32Slot(1, axis, 0)
 def PackOptionsEnd(builder): return builder.EndObject()

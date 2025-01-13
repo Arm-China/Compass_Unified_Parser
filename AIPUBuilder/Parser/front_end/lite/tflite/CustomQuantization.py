@@ -3,6 +3,8 @@
 # namespace: tflite
 
 import flatbuffers
+from flatbuffers.compat import import_numpy
+np = import_numpy()
 
 
 class CustomQuantization(object):
@@ -14,6 +16,10 @@ class CustomQuantization(object):
         x = CustomQuantization()
         x.Init(buf, n + offset)
         return x
+
+    @classmethod
+    def CustomQuantizationBufferHasIdentifier(cls, buf, offset, size_prefixed=False):
+        return flatbuffers.util.BufferHasIdentifier(buf, offset, b"\x54\x46\x4C\x33", size_prefixed=size_prefixed)
 
     # CustomQuantization
     def Init(self, buf, pos):
@@ -41,14 +47,16 @@ class CustomQuantization(object):
             return self._tab.VectorLen(o)
         return 0
 
+    # CustomQuantization
+    def CustomIsNone(self):
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(4))
+        return o == 0
+
 
 def CustomQuantizationStart(builder): builder.StartObject(1)
-
-
 def CustomQuantizationAddCustom(builder, custom): builder.PrependUOffsetTRelativeSlot(
     0, flatbuffers.number_types.UOffsetTFlags.py_type(custom), 0)
-def CustomQuantizationStartCustomVector(
-    builder, numElems): return builder.StartVector(1, numElems, 1)
 
 
+def CustomQuantizationStartCustomVector(builder, numElems): return builder.StartVector(1, numElems, 1)
 def CustomQuantizationEnd(builder): return builder.EndObject()

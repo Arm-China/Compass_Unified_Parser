@@ -1,5 +1,5 @@
-# Copyright © 2022 Arm Technology (China) Co. Ltd. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
+# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
 
 
 from collections.abc import Iterable
@@ -9,12 +9,13 @@ import sys
 import numpy as np
 import os
 import re
-try:
-    from .caffe_pb2 import *
-except TypeError:
-    from caffe.proto.caffe_pb2 import *
 from ...common.utils import is_file
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
+try:
+    from .caffe_pb2 import *
+except TypeError as e:
+    WARN('[Parser]: Fail to import caffe_pb2 because %s' % str(e))
+    from caffe.proto.caffe_pb2 import *
 
 
 def replace_caffe_pb(file_path):
