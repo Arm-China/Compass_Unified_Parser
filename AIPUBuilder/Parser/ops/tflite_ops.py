@@ -1421,7 +1421,7 @@ class LiteLOG_SOFTMAXOp(OpHasOneOutPort, TfliteOp):
 class LiteMAXIMUMOp(OpHasOneOutPort, TfliteOp):
     @classmethod
     def attributes(cls):
-        return {1: {}, 2: {}}
+        return {1: {}, 2: {}, 3: {}, 4: {}}
 
     def __init__(self, graph, attr_dict=None):
         super(LiteMAXIMUMOp, self).__init__(graph, attr_dict)
