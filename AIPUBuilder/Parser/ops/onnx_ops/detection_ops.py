@@ -161,12 +161,12 @@ class NonMaxSuppressionOp(OpHasOneOutPort, OnnxOp):
                 if item == 'max_output_boxes_per_class':
                     box_shape = inputs[0].shape
                     score_shape = inputs[1].shape
-                    ret = min(int(np.asscalar(inputs[2])),
+                    ret = min(int(inputs[2].item()),
                               box_shape[0] * box_shape[1] * score_shape[1])
                 elif item == 'iou_threshold':
-                    ret = float(np.asscalar(inputs[3]))
+                    ret = float(inputs[3].item())
                 elif item == 'score_threshold':
-                    ret = float(np.asscalar(inputs[4]))
+                    ret = float(inputs[4].item())
                 self.__dict__['_attr'][item].value = ret
             except:
                 ret = None

@@ -1675,13 +1675,13 @@ class LiteNON_MAX_SUPPRESSION_V4Op(OpHasMultipleOutPorts, TfliteOp):
             inputs = self.get_input_tensors()
             try:
                 if item == 'max_output_size':
-                    ret = int(np.asscalar(inputs[2]))
+                    ret = int(inputs[2].item())
                 elif item == 'iou_threshold':
-                    ret = float(np.asscalar(inputs[3]))
+                    ret = float(inputs[3].item())
                 elif item == 'score_threshold':
-                    ret = float(np.asscalar(inputs[4]))
+                    ret = float(inputs[4].item())
                 elif item == 'soft_nms_sigma':
-                    ret = float(np.asscalar(inputs[5]))
+                    ret = float(inputs[5].item())
                 self.__dict__['_attr'][item].value = ret
             except:
                 ret = None

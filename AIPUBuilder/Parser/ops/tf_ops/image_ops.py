@@ -92,7 +92,7 @@ class TfNonMaxSuppressionV3Op(OpHasOneOutPort, TfOp):
         assert len(
             inputs) >= 5, 'The length of inputs is invalid in TfNonMaxSuppressionV3Op.'
         self.max_output_size, self.iou_threshold, self.score_threshold = [
-            np.asscalar(inp) for inp in inputs[2:5]]
+            inp.item() for inp in inputs[2:5]]
         # Do not use tf.image.non_max_suppression because the actual output shape is different
         # with the inferred output shape.
         pad_to_max_output_size = False if self.is_all_inputs_const() else True
@@ -126,7 +126,7 @@ class TfNonMaxSuppressionV4Op(OpHasMultipleOutPorts, TfOp):
         assert len(
             inputs) == 5, 'The length of inputs is invalid in TfNonMaxSuppressionV4Op.'
         self.max_output_size, self.iou_threshold, self.score_threshold = [
-            np.asscalar(inp) for inp in inputs[2:5]]
+            inp.item() for inp in inputs[2:5]]
         pad_to_max_output_size = self.pad_to_max_output_size
         if not self.is_all_inputs_const():
             if self.pad_to_max_output_size:
@@ -166,7 +166,7 @@ class TfNonMaxSuppressionV5Op(OpHasMultipleOutPorts, TfOp):
         assert len(
             inputs) >= 6, 'The length of inputs is invalid in TfNonMaxSuppressionV5Op.'
         self.max_output_size, self.iou_threshold, self.score_threshold, self.soft_nms_sigma = [
-            np.asscalar(inp) for inp in inputs[2:6]]
+            inp.item() for inp in inputs[2:6]]
         pad_to_max_output_size = bool(self.pad_to_max_output_size)
         if not self.is_all_inputs_const():
             if pad_to_max_output_size:

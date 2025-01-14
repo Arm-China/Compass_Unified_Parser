@@ -664,7 +664,7 @@ class PadOp(OpHasOneOutPort, OnnxOp):
                 elif cur_ver >= 11:
                     inputs = self.get_input_tensors()
                     ret = 0 if len(inputs) <= 2 or (
-                        len(inputs) > 2 and inputs[2] is None) else np.asscalar(inputs[2].flatten())
+                        len(inputs) > 2 and inputs[2] is None) else inputs[2].flatten().item()
         except:
             ret = None
         if ret is None:
@@ -685,7 +685,7 @@ class PadOp(OpHasOneOutPort, OnnxOp):
         else:
             pads = self.pads
             const_value = 0 if len(inputs) <= 2 or (
-                len(inputs) > 2 and inputs[2] is None) else np.asscalar(inputs[2].flatten())
+                len(inputs) > 2 and inputs[2] is None) else inputs[2].flatten().item()
         negative_pads = [pad if pad < 0 else None for pad in pads]
         if all(pad is None for pad in negative_pads):
             sliced_input = inputs[0]
