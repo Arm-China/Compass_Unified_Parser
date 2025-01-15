@@ -1504,6 +1504,9 @@ def merge_rcnn(graph, params):
     graph.remove_edges_from(split_in_edges)
     split_in_attr = {'src_out_port': 0, 'dst_in_port': 0}
     graph.add_edge(roi_concat, ret_boxes_split, **split_in_attr)
+    if len(split_in_edges) > 1:
+        splits_in_attr = {'src_out_port': 0, 'dst_in_port': 1}
+        graph.add_edge(split_in_edges[1][0], ret_boxes_split, **splits_in_attr)
     insert_reshape(graph, roi_concat, ret_boxes_split, split_in_attr, [-1, 4])
 
     graph._attr['output_names'].clear()
