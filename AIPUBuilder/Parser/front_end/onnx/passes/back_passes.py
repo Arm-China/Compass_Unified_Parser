@@ -4329,40 +4329,42 @@ def remove_const(graph):
                 not node_obj.in_subgraph:
             const_out_edges = graph.sorted_out_edges(node_name, data=True)
             if len(const_out_edges) >= 1 and node_obj.type == 'Constant':
-                const_child = const_out_edges[0][1]
-                const_child_obj = NodeWrap(graph, const_child)['object']
-                if const_child_obj is not None:
-                    if isinstance(const_child_obj, (ArmOp, )):
-                        in_port = const_out_edges[0][2]['dst_in_port']
-                        op_in_ports_num = type(const_child_obj).num_in_ports()
-                        if op_in_ports_num < 0 or (op_in_ports_num >= 0 and in_port < op_in_ports_num):
+                for out_edge in const_out_edges:
+                    const_child = out_edge[1]
+                    const_child_obj = NodeWrap(graph, const_child)['object']
+                    if const_child_obj is not None:
+                        if isinstance(const_child_obj, (ArmOp, )):
+                            in_port = out_edge[2]['dst_in_port']
+                            op_in_ports_num = type(const_child_obj).num_in_ports()
+                            if op_in_ports_num < 0 or (op_in_ports_num >= 0 and in_port < op_in_ports_num):
+                                const_attr = node_obj.copied_attr()
+                                const_attr.update({'weights': node_obj.value})
+                                if node_obj.quantize and out_edge[2]['tensor'].scale_zp:
+                                    const_attr.update({'weights_scale_zp': list(out_edge[2]['tensor'].scale_zp)})
+                                NodeWrap(graph, node_name).replace_obj(
+                                    'ArmConstant', const_attr)
+                            else:
+                                graph.remove_edge(node_name, const_child)
+                        elif len(const_out_edges) == 1 and const_child_obj.type == 'Out' \
+                                and (node_name not in graph._attr['output_names']
+                                     or len(graph._attr['output_names']) > 1):
+                            removing_const.append(node_name)
+                            if node_name in graph._attr['output_names']:
+                                WARN(
+                                    '[Parser]: Remove isolated Constant Node(%s) from output in remove_const!' % node_name)
+                                graph._attr['output_names'].remove(node_name)
+                            if const_child_obj.name in graph._attr['output_nodes']:
+                                graph._attr['output_nodes'].remove(const_child_obj.name)
+                        else:
                             const_attr = node_obj.copied_attr()
                             const_attr.update({'weights': node_obj.value})
-                            if node_obj.quantize and const_out_edges[0][2]['tensor'].scale_zp:
-                                const_attr.update({'weights_scale_zp': list(const_out_edges[0][2]['tensor'].scale_zp)})
+                            if node_obj.quantize and out_edge[2]['tensor'].scale_zp:
+                                const_attr.update({'weights_scale_zp': list(out_edge[2]['tensor'].scale_zp)})
                             NodeWrap(graph, node_name).replace_obj(
                                 'ArmConstant', const_attr)
-                        else:
-                            removing_const.append(node_name)
-                    elif len(const_out_edges) == 1 and const_child_obj.type == 'Out' \
-                            and (node_name not in graph._attr['output_names']
-                                 or len(graph._attr['output_names']) > 1):
-                        removing_const.append(node_name)
-                        if node_name in graph._attr['output_names']:
-                            WARN('[Parser]: Remove isolated Constant Node(%s) from output in remove_const!' % node_name)
-                            graph._attr['output_names'].remove(node_name)
-                        if const_child_obj.name in graph._attr['output_nodes']:
-                            graph._attr['output_nodes'].remove(const_child_obj.name)
                     else:
-                        const_attr = node_obj.copied_attr()
-                        const_attr.update({'weights': node_obj.value})
-                        if node_obj.quantize and const_out_edges[0][2]['tensor'].scale_zp:
-                            const_attr.update({'weights_scale_zp': list(const_out_edges[0][2]['tensor'].scale_zp)})
-                        NodeWrap(graph, node_name).replace_obj(
-                            'ArmConstant', const_attr)
-                else:
-                    ERROR('[Parser]: Meets invalid Constant Node(%s) in remove_const!' %
-                          const_child)
+                        ERROR('[Parser]: Meets invalid Constant Node(%s) in remove_const!' %
+                              const_child)
             else:
                 removing_const.append(node_name)
     graph.remove_nodes_from(removing_const)
@@ -5706,20 +5708,20 @@ def back_passes(graph, params):
 
     rename_argminmax(graph)
     rename_bitwise(graph)
-    rename_cum(graph)
     rename_bn(graph)
     rename_cast(graph)
     rename_col2im(graph)
     rename_compress(graph)
     rename_constant(graph)
     rename_conv(graph)
+    rename_cum(graph)
     rename_dilation_erosion(graph)
     rename_div(graph)
     rename_gemm(graph)
     rename_generate_proposals(graph)
     rename_gridsample(graph)
-    rename_layernorm(graph)
     rename_groupnorm(graph)
+    rename_layernorm(graph)
     rename_logical(graph)
     rename_matmulinteger(graph)
     rename_maxunpool(graph)
