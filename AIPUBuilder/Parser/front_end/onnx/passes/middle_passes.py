@@ -2223,7 +2223,7 @@ def _decompose_const_loop(graph, params):
             graph.remove_edges_from(loop_in_edges)
 
             loop_cnt = loop_obj.real_loop_cnt
-            last_loop_res = OrderedDict()
+            loop_res = OrderedDict()
             sub_main_node_map = {}
             for i in range(loop_cnt):
                 for n in sub_graph_nodes:
@@ -2281,7 +2281,7 @@ def _decompose_const_loop(graph, params):
                                     if inp_idx == 0:
                                         graph.add_edge(sub_main_node_map[src], main_g_node_name, **in_attr)
                                     else:
-                                        graph.add_edge(last_loop_res[inp_idx - 1], main_g_node_name, **in_attr)
+                                        graph.add_edge(loop_res[i - 1][inp_idx - 1], main_g_node_name, **in_attr)
                             elif src_obj.type == 'DummyInput':
                                 assert graph.has_node(src), f'{src} is DummyInput but not in main graph.'
                                 in_attr = copy.deepcopy(n_in_attr)
@@ -2304,7 +2304,10 @@ def _decompose_const_loop(graph, params):
                         # 1+N+K
                         out_idx = loop_obj.body._attr['output_names'].index(n)
                         if out_idx < 1 + N:
-                            last_loop_res[out_idx] = sub_main_node_map[n]
+                            if i in loop_res:
+                                loop_res[i][out_idx] = sub_main_node_map[n]
+                            else:
+                                loop_res[i] = {out_idx: sub_main_node_map[n]}
                         else:
                             scan_outs_name = list(k_carried_dict.keys())[out_idx - 1 - N]
                             k_carried_dict[scan_outs_name].append(sub_main_node_map[n])
@@ -2316,7 +2319,7 @@ def _decompose_const_loop(graph, params):
                 _, dst, out_edge = loop_out_edges[i]
                 out_attr = copy.deepcopy(out_edge)
                 out_attr['src_out_port'] = 0
-                graph.add_edge(last_loop_res[i + 1], dst, **out_attr)
+                graph.add_edge(loop_res[loop_cnt - 1][i + 1], dst, **out_attr)
             for i in range(K):
                 scan_outs_name = list(k_carried_dict.keys())[i]
                 graph.add_node(scan_outs_name)
@@ -2342,7 +2345,7 @@ def _decompose_const_loop(graph, params):
                 # N+K outputs
                 graph._attr['output_names'].pop(index)
                 for i in range(N):
-                    loop_outputs.append(last_loop_res[i + 1])
+                    loop_outputs.append(loop_res[loop_cnt - 1][i + 1])
                 for i in range(K):
                     loop_outputs.append(list(k_carried_dict.keys())[i])
                 graph._attr['output_names'][index:index] = loop_outputs
@@ -2410,6 +2413,10 @@ def decompose_const_if_loop(graph, params):
 
         matched_if = check_decompose_const_if(graph)
         matched_loop = check_decompose_const_loop(graph)
+
+    if cnt > 0:
+        from ....graph.graph_algo import infer
+        infer(graph)
 
     if cnt >= 50:
         ERROR('[Parser]More than 50 times in decompose_const_if_loop, maybe in dead loop, Please double check!!!')
