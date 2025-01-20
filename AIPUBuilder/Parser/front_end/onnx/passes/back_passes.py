@@ -29,7 +29,7 @@ from ....plugin_loader import PARSER_OP_DICT
 
 def adjust_5d_to_4d(graph):
     matches = [single_node_matcher(graph, type_name) for type_name in (
-        'ArmActivation', 'ArmBatchNorm', 'ArmDiv', 'ArmInstanceNorm', 'ArmLRN', 'ArmMatMul', 'ArmSlice')]
+        'ArmActivation', 'ArmBatchNorm', 'ArmInstanceNorm', 'ArmLRN', 'ArmMatMul', 'ArmSlice')]
     matches = extend_lists(matches)
     for m in matches:
         node_name = m['target']
