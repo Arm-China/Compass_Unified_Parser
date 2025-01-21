@@ -6320,14 +6320,101 @@ def merge_query_rebatch(graph):
                                    ('scc5', 'sc5', {'src_out_port': 0, 'dst_in_port': 1}),
                                    ('r5', 'sc5', {'src_out_port': 0, 'dst_in_port': 2}),
                                ])
+    matches_2 = matched_patterns(graph,
+                                 nodes=[
+                                     ('gc00', {'op': 'Constant', 'unique': False}),
+                                     ('g00', {'op': 'Gather'}),
+
+                                     ('g0', {'op': 'Gather'}),
+                                     ('r0', {'op': 'Reshape'}),
+                                     ('scc0', {'op': 'Constant', 'unique': False}),
+                                     ('sccc0', {'op': 'Constant', 'unique': False}),
+                                     ('sc0', {'op': 'ScatterND'}),
+
+                                     ('g1', {'op': 'Gather'}),
+                                     ('r1', {'op': 'Reshape'}),
+                                     ('scc1', {'op': 'Constant', 'unique': False}),
+                                     ('sc1', {'op': 'ScatterND'}),
+
+                                     ('g2', {'op': 'Gather'}),
+                                     ('r2', {'op': 'Reshape'}),
+                                     ('scc2', {'op': 'Constant', 'unique': False}),
+                                     ('sc2', {'op': 'ScatterND'}),
+
+                                     ('g3', {'op': 'Gather'}),
+                                     ('r3', {'op': 'Reshape'}),
+                                     ('scc3', {'op': 'Constant', 'unique': False}),
+                                     ('sc3', {'op': 'ScatterND'}),
+
+                                     ('g4', {'op': 'Gather'}),
+                                     ('r4', {'op': 'Reshape'}),
+                                     ('scc4', {'op': 'Constant', 'unique': False}),
+                                     ('sc4', {'op': 'ScatterND'}),
+
+                                     ('g5', {'op': 'Gather'}),
+                                     ('r5', {'op': 'Reshape'}),
+                                     ('scc5', {'op': 'Constant', 'unique': False}),
+                                     ('sc5', {'op': 'ScatterND'}),
+                                 ],
+                                 edges=[
+                                     ('gc00', 'g00', {'src_out_port': 0, 'dst_in_port': 1}),
+                                     ('g00', 'g0', {'src_out_port': 0, 'dst_in_port': 0}),
+
+                                     ('g0', 'r0', {'src_out_port': 0, 'dst_in_port': 0}),
+
+                                     ('scc0', 'sc0', {'src_out_port': 0, 'dst_in_port': 0}),
+                                     ('sccc0', 'sc0', {'src_out_port': 0, 'dst_in_port': 1}),
+                                     ('r0', 'sc0', {'src_out_port': 0, 'dst_in_port': 2}),
+
+                                     ('g00', 'g1', {'src_out_port': 0, 'dst_in_port': 0}),
+
+                                     ('g1', 'r1', {'src_out_port': 0, 'dst_in_port': 0}),
+
+                                     ('sc0', 'sc1', {'src_out_port': 0, 'dst_in_port': 0}),
+                                     ('scc1', 'sc1', {'src_out_port': 0, 'dst_in_port': 1}),
+                                     ('r1', 'sc1', {'src_out_port': 0, 'dst_in_port': 2}),
+
+                                     ('g00', 'g2', {'src_out_port': 0, 'dst_in_port': 0}),
+
+                                     ('g2', 'r2', {'src_out_port': 0, 'dst_in_port': 0}),
+
+                                     ('sc1', 'sc2', {'src_out_port': 0, 'dst_in_port': 0}),
+                                     ('scc2', 'sc2', {'src_out_port': 0, 'dst_in_port': 1}),
+                                     ('r2', 'sc2', {'src_out_port': 0, 'dst_in_port': 2}),
+
+                                     ('g00', 'g3', {'src_out_port': 0, 'dst_in_port': 0}),
+
+                                     ('g3', 'r3', {'src_out_port': 0, 'dst_in_port': 0}),
+
+                                     ('sc2', 'sc3', {'src_out_port': 0, 'dst_in_port': 0}),
+                                     ('scc3', 'sc3', {'src_out_port': 0, 'dst_in_port': 1}),
+                                     ('r3', 'sc3', {'src_out_port': 0, 'dst_in_port': 2}),
+
+                                     ('g00', 'g4', {'src_out_port': 0, 'dst_in_port': 0}),
+
+                                     ('g4', 'r4', {'src_out_port': 0, 'dst_in_port': 0}),
+
+                                     ('sc3', 'sc4', {'src_out_port': 0, 'dst_in_port': 0}),
+                                     ('scc4', 'sc4', {'src_out_port': 0, 'dst_in_port': 1}),
+                                     ('r4', 'sc4', {'src_out_port': 0, 'dst_in_port': 2}),
+
+                                     ('g00', 'g5', {'src_out_port': 0, 'dst_in_port': 0}),
+
+                                     ('g5', 'r5', {'src_out_port': 0, 'dst_in_port': 0}),
+
+                                     ('sc4', 'sc5', {'src_out_port': 0, 'dst_in_port': 0}),
+                                     ('scc5', 'sc5', {'src_out_port': 0, 'dst_in_port': 1}),
+                                     ('r5', 'sc5', {'src_out_port': 0, 'dst_in_port': 2}),
+                                 ])
+    matches += matches_2
     for m in matches:
         node_list = ['gc00', 'g00',
-                     'g0', 'e0', 'r0', 'scc0', 'sccc0', 'sc0',
-                     'g1', 'e1', 'r1', 'scc1', 'sc1',
-                     'g2', 'e2', 'r2', 'scc2', 'sc2',
-                     'g3', 'e3', 'r3', 'scc3', 'sc3',
-                     'g4', 'e4', 'r4', 'scc4', 'sc4',
-                     'g5', 'e5', 'r5', 'scc5', 'sc5',
+                     'g0', 'r0', 'scc0', 'sccc0', 'sc0',
+                     'g1', 'r1', 'scc1', 'sc1',
+                     'g2', 'r2', 'scc2', 'sc2',
+                     'g3', 'r3', 'scc3', 'sc3',
+                     'g4', 'r4', 'scc4', 'sc4',
+                     'g5', 'r5', 'scc5', 'sc5',
                      ]
         for n in node_list:
             n_obj = NodeWrap(graph, m[n])['object']
@@ -6336,19 +6423,20 @@ def merge_query_rebatch(graph):
                     f'[Parser]: Meets invalid node({m[n]}) in merge_query_rebatch!')
                 continue
 
-        expand_reshape_const_in = True
-        for i in range(6):
-            expand_in_edges = graph.sorted_in_edges(m[f'e{i}'], data=True)
-            if not expand_in_edges[1][-1]['tensor'].is_const:
-                expand_reshape_const_in = False
-                break
-            reshape_in_edges = graph.sorted_in_edges(m[f'r{i}'], data=True)
-            if not reshape_in_edges[1][-1]['tensor'].is_const:
-                expand_reshape_const_in = False
-                break
+        if 'e0' in m:
+            expand_reshape_const_in = True
+            for i in range(6):
+                expand_in_edges = graph.sorted_in_edges(m[f'e{i}'], data=True)
+                if not expand_in_edges[1][-1]['tensor'].is_const:
+                    expand_reshape_const_in = False
+                    break
+                reshape_in_edges = graph.sorted_in_edges(m[f'r{i}'], data=True)
+                if not reshape_in_edges[1][-1]['tensor'].is_const:
+                    expand_reshape_const_in = False
+                    break
 
-        if not expand_reshape_const_in:
-            continue
+            if not expand_reshape_const_in:
+                continue
 
         sc0_input_shapes = NodeWrap(graph, m['sc0'])['object'].get_input_shapes()
         g00_input_shapes = NodeWrap(graph, m['g00'])['object'].get_input_shapes()
