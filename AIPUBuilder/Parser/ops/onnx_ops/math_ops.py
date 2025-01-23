@@ -2247,10 +2247,26 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
                     assert self.cur_version > 10, 'Mode cubic in Resize Op (%s) is not supported until opset 11' % self.name
                     assert len(input_dim_np) == 4, 'Resize op only supports cubic mode with 4d input, but got %dd!' % \
                         len(input_dim_np)
-                    func = ResizeOp.upsample_cubic_antialias if self.antialias else ResizeOp.upsample_cubic
-                    out_tensor = func(inp, out_spatial_shape, spatial_scales, self.roi,
-                                      self.coordinate_transformation_mode, self.cubic_coeff_a,
-                                      self.exclude_outside, self.extrapolation_value, is_nchw)
+                    if self.cubic_coeff_a == -0.75 and \
+                        (self.coordinate_transformation_mode == 'pytorch_half_pixel' or
+                         (self.coordinate_transformation_mode == 'half_pixel'
+                          and out_spatial_shape[0] > 1 and out_spatial_shape[1] > 1)):
+                        if self.sizes is not None and self.sizes.size > 0:
+                            out_tensor = torch.nn.functional.interpolate(torch.tensor(inp),
+                                                                         size=tuple(out_spatial_shape),
+                                                                         mode='bicubic',
+                                                                         antialias=self.antialias).cpu().numpy()
+                        else:
+                            scale_factor = tuple(self.scales[2:]) if is_nchw else tuple(self.scales[1:-1])
+                            out_tensor = torch.nn.functional.interpolate(torch.tensor(inp),
+                                                                         scale_factor=scale_factor,
+                                                                         mode='bicubic',
+                                                                         antialias=self.antialias).cpu().numpy()
+                    else:
+                        func = ResizeOp.upsample_cubic_antialias if self.antialias else ResizeOp.upsample_cubic
+                        out_tensor = func(inp, out_spatial_shape, spatial_scales, self.roi,
+                                          self.coordinate_transformation_mode, self.cubic_coeff_a,
+                                          self.exclude_outside, self.extrapolation_value, is_nchw)
                 if len(inputs[0].shape) == 3:
                     out_tensor = np.squeeze(out_tensor, axis=2) if is_nchw else np.squeeze(out_tensor, axis=1)
         else:

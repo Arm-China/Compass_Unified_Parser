@@ -116,10 +116,10 @@ def clear_redundant_nodes(g, outputs=None):
             if node_obj is not None and \
                     node_obj.depend_nodes and \
                     any([a in valid_nodes for a in node_obj.depend_nodes]):
-                if n not in valid_nodes:
-                    valid_nodes.append(n)
-                if n not in g._attr['subgraph_depends_nodes']:
+                if n not in g._attr['subgraph_depends_nodes'] and n not in valid_nodes:
                     g._attr['subgraph_depends_nodes'].append(n)
+        if g._attr['subgraph_depends_nodes']:
+            valid_nodes = determined_sort(g, output_names + g._attr['subgraph_depends_nodes'])
         removing_nodes = set(g.nodes).difference(valid_nodes)
         valid_out_nodes = []
         for n in removing_nodes:
@@ -143,7 +143,6 @@ def clear_redundant_nodes(g, outputs=None):
                                              len(pred[n]) == 1 and
                                              pred[n][0] in g._attr['input_tensors'])):
                 valid_out_nodes.append(n)
-
         removing_nodes = set(removing_nodes).difference(valid_out_nodes)
         g.remove_nodes_from(removing_nodes)
         if 'subgraphs' in g._attr and len(g._attr['subgraphs']) > 0:

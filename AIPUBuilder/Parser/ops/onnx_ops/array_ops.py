@@ -1091,7 +1091,7 @@ class SizeOp(OpHasOneOutPort, ConstLikeOp, OnnxOp):
     def infer_shape(self):
         super(SizeOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = np.array(inputs[0].size).astype(np.int32)
+        out_tensor = np.array(inputs[0].size)
         self.set_out_tensor(out_tensor)
 
 
