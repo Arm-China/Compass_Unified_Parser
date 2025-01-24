@@ -10983,6 +10983,37 @@ def rename_single_mul_or_add_or_sub(graph, params):
         clear_redundant_nodes(graph)
 
 
+def convert_div_to_mul(graph):
+    matched = False
+    matches = matched_patterns(graph,
+                               nodes=[
+                                   ('div', {'op': 'Div'}),
+                                   ('const', {'op': 'Constant'}),
+                               ],
+                               edges=[
+                                   ('const', 'div', {'dst_in_port': 1}),
+                               ])
+    for m in matches:
+        div = m['div']
+        const = m['const']
+        div_obj = NodeWrap(graph, div)['object']
+        const_obj = NodeWrap(graph, const)['object']
+        if div_obj is None or const_obj is None:
+            ERROR('[Parser]: Meets invalid Nodes in convert_div_to_mul!')
+            continue
+        if div_obj.quantize:
+            continue
+        matched = True
+        new_const_value = np.array(np.reciprocal(const_obj.value))
+        graph.remove_edge(const, div)
+
+        insert_constant(graph, div + '_new_const', new_const_value, div, in_port=1)
+        NodeWrap(graph, div).replace_obj(
+            'Mul', {'name': div, 'opset_version': 7})
+    if matched:
+        clear_redundant_nodes(graph)
+
+
 def remove_sub_add_pair(graph):
     matches_1 = matched_patterns(graph,
                                  nodes=[
@@ -12592,6 +12623,7 @@ def middle_passes(graph, params):
     convert_1d_conv(graph)
     convert_reducemean_to_avgpool(graph)
     convert_1d_pooling(graph)
+    convert_div_to_mul(graph)
 
     decompose_pack(graph)
     remove_useless_op(graph, ['ChannelShuffle', 'Concat', 'Split', 'Slice'])
