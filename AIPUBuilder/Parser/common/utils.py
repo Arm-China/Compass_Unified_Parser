@@ -14,6 +14,11 @@ def is_file(file_path):
 
 
 def is_dir(dir_path):
+    if not os.path.exists(dir_path):
+        try:
+            os.makedirs(dir_path)
+        except PermissionError:
+            ERROR('[Parser]: Cannot Access this dir path: %s' % dir_path)
     return True if (dir_path and os.path.isdir(dir_path)) else False
 
 
