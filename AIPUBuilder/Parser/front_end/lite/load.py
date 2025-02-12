@@ -250,8 +250,9 @@ def convert_tflite_to_graph(graph, model_path, params):
                     map(partial(parse_operator, tflite_model=model, buffer=buffer), operators_table))
                 for single_input in net_inputs:
                     inp_attr = {}
-                    if single_input in params['input_layouts'] and params['input_layouts'][single_input]:
-                        inp_attr.update({'layout': params['input_layouts'][single_input]})
+                    tensor_name = tensors_table[single_input].Name().decode('utf-8')
+                    if tensor_name in params['input_layouts'] and params['input_layouts'][tensor_name]:
+                        inp_attr.update({'layout': params['input_layouts'][tensor_name]})
                     parsed_operators_table.insert(
                         0, {'type': 'Input', 'attr': inp_attr, 'inputs': [], 'outputs': [single_input]})
                 linear_weights_tensor_id = {
