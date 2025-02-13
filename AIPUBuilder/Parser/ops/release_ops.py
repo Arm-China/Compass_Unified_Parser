@@ -342,7 +342,7 @@ class ArmAdaptivePoolOp(OpHasMethod, OpHasOneOutPort, ArmOp):
         return ret
 
 
-class ArmAddOp(OpHasOneOutPort, ArmOp):
+class ArmAddOp(BaseActivationOp, ArmOp):
     @classmethod
     def cast_in_ports(cls):
         return {
@@ -3511,7 +3511,7 @@ class ArmMomentsOp(OpHasMultipleOutPorts, OpHasAxis, ArmOp):
         self.set_out_tensor(out_tensors)
 
 
-class ArmMulOp(OpHasOneOutPort, ArmOp):
+class ArmMulOp(BaseActivationOp, ArmOp):
     @classmethod
     def cast_in_ports(cls):
         return {
@@ -5077,7 +5077,7 @@ class ArmSquaredDifferenceOp(OpNeedBroadcast, OpHasOneOutPort, LayoutUnawareOp, 
         self.set_out_tensor(out_tensor)
 
 
-class ArmSubOp(OpHasOneOutPort, ArmOp):
+class ArmSubOp(BaseActivationOp, ArmOp):
     @classmethod
     def cast_in_ports(cls):
         return {

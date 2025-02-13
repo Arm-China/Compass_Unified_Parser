@@ -3414,6 +3414,9 @@ def fuse_relu(graph):
         ops_has_relu_list, relu_ops_list)
     for op_type, relu_type in fuse_relu_combinations:
         matched = False
+        # Compass lib now only support fuse Relu for Add/Sub/Mul
+        if op_type in ['ArmAdd', 'ArmSub', 'ArmMul'] and relu_type not in ['Relu']:
+            continue
         matches1 = matched_patterns(graph,
                                     nodes=[
                                         ('linear', {'op': op_type}),
