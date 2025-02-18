@@ -816,157 +816,6 @@ def convert_square_diff(graph, op_type='TfSquaredDifference'):
 
 
 def convert_scatternd(graph, op_type='TfScatterNd'):
-    # TODO: Check whether this pass is still needed and can be replaced with pass convert_scatternd2.
-    if op_type not in ('TfScatterNd', 'LiteSCATTER_ND'):
-        ERROR('[Parser]: Meets invalid Op type (%s) in convert_scatternd!' % op_type)
-        return
-    matches = matched_patterns(graph,
-                               nodes=[
-                                   ('indices', {
-                                    'op': ['Constant', 'TfConst']}),
-                                   ('update', {}),
-                                   ('shape', {'op': ['Constant', 'TfConst']}),
-                                   ('scatter_nd', {'op': op_type})
-                               ],
-                               edges=[
-                                   ('indices', 'scatter_nd', {
-                                    'src_out_port': 0, 'dst_in_port': 0}),
-                                   ('update', 'scatter_nd', {
-                                       'src_out_port': 0, 'dst_in_port': 1}),
-                                   ('shape', 'scatter_nd', {
-                                    'src_out_port': 0, 'dst_in_port': 2})
-                               ])
-    matched = False
-    for m in matches:
-        names = ['shape', 'scatter_nd', 'indices', 'update']
-        node_objs = {n: NodeWrap(graph, m[n])['object'] for n in names}
-        data_obj = node_objs['shape']
-        indices_obj = node_objs['indices']
-        indices_name = m['indices']
-        scatter_nd_obj = node_objs['scatter_nd']
-        scatter_nd = m['scatter_nd']
-        in_edges = graph.sorted_in_edges(scatter_nd, data=True)
-        out_edge = graph.sorted_out_edges(scatter_nd, data=True)
-        if data_obj is not None \
-                and indices_obj is not None \
-                and scatter_nd_obj is not None \
-                and len(in_edges) == 3:
-            matched = True
-            indices = indices_obj.value
-            updates = in_edges[1][2]['tensor'].value
-
-            outer_dims = len(indices.shape) - 1
-            indices_nd = indices.shape[-1]
-            slice_size = int(np.prod(updates.shape[outer_dims:]))
-            out_shape = data_obj.value
-
-            output_flat_size = int(np.prod(out_shape[:indices_nd]))
-            remain_flat_size = output_flat_size
-            dims_to_count = [0] * indices_nd
-            for i in range(indices_nd):
-                dims_to_count[i] = remain_flat_size // out_shape[i]
-                remain_flat_size = dims_to_count[i]
-
-            indices_reshape_dim = [-1, indices_nd]
-            updates_reshape_dim = [-1, slice_size]
-            reshaped_indices = np.reshape(indices, indices_reshape_dim)
-            unique_indices, _ = np.unique(
-                reshaped_indices, return_index=True, axis=0)
-
-            if len(unique_indices) < len(reshaped_indices):
-                indices_valid_out_shape = out_shape[:indices.shape[-1]]
-                appending_indices = np.expand_dims(
-                    np.array(indices_valid_out_shape) - 1, 0)
-                reshaped_indices = np.concatenate(
-                    [reshaped_indices, appending_indices], axis=0)
-                ref_indices = np.sum(reshaped_indices *
-                                     np.array(dims_to_count), axis=1)
-                sorted_indices = np.argsort(ref_indices)
-                gathered_ref_indices = np.take(
-                    ref_indices, sorted_indices, axis=0)
-                gather_id = np.array(sorted_indices).astype(np.int32)
-
-                updates_reshape = get_valid_node_name(
-                    graph, scatter_nd + '_updates_reshape')
-                concat = get_valid_node_name(graph, scatter_nd + '_concat')
-                post_segmentsum = get_valid_node_name(
-                    graph, concat + '_segmentsum')
-                update_gather = get_valid_node_name(
-                    graph, post_segmentsum + '_gather')
-                post_reshape = get_valid_node_name(
-                    graph, update_gather + '_post_reshape')
-
-                for src, _, in_attr in in_edges:
-                    if in_attr['dst_in_port'] == 0 or in_attr['dst_in_port'] == 2:
-                        graph.remove_edge(src, scatter_nd)
-                    elif in_attr['dst_in_port'] == 1:
-                        graph.remove_edge(src, scatter_nd)
-                        graph.add_edge(src, updates_reshape, **
-                                       {'src_out_port': in_attr['src_out_port'], 'dst_in_port': 0})
-                graph.add_edge(updates_reshape, concat, **
-                               {'src_out_port': 0, 'dst_in_port': 0})
-                graph.add_edge(concat, update_gather, **
-                               {'src_out_port': 0, 'dst_in_port': 0})
-                graph.add_edge(update_gather, post_segmentsum, **
-                               {'src_out_port': 0, 'dst_in_port': 0})
-                graph.add_edge(post_segmentsum, post_reshape, **
-                               {'src_out_port': 0, 'dst_in_port': 0})
-                for _, dst, out_attr in out_edge:
-                    graph.remove_edge(scatter_nd, dst)
-                    graph.add_edge(post_reshape, dst, **out_attr)
-
-                insert_constant(graph, updates_reshape + '_indices', np.array(updates_reshape_dim),
-                                updates_reshape, in_port=1, data_format='NHWC')
-                insert_constant(graph, concat + '_data', np.zeros(
-                    (1, slice_size), updates.dtype), concat, in_port=1, data_format='NHWC')
-                insert_constant(graph, update_gather + '_indices', gather_id,
-                                update_gather, in_port=1, data_format='NHWC')
-                insert_constant(graph, post_segmentsum + '_segment_ids', np.array(
-                    gathered_ref_indices).astype(np.int32), post_segmentsum, in_port=1, data_format='NHWC')
-                insert_constant(graph, post_reshape + '_indices', out_shape,
-                                post_reshape, in_port=1, data_format='NHWC')
-
-                NodeWrap(graph, updates_reshape).replace_obj(
-                    'Reshape', {'name': updates_reshape, 'shape': np.array(updates_reshape_dim)})
-                NodeWrap(graph, concat).replace_obj(
-                    'Concat', {'name': concat, 'opset_version': 11, 'axis': 0})
-                NodeWrap(graph, post_segmentsum).replace_obj(
-                    'SegmentReduce', {'name': post_segmentsum, 'method': 'SUM'})
-                NodeWrap(graph, update_gather).replace_obj(
-                    'Gather', {'name': update_gather})
-                NodeWrap(graph, post_reshape).replace_obj(
-                    'Reshape', {'name': post_reshape, 'shape': out_shape})
-
-                if scatter_nd in graph._attr['output_names']:
-                    index = graph._attr['output_names'].index(scatter_nd)
-                    graph._attr['output_names'].remove(scatter_nd)
-                    graph._attr['output_names'].insert(index, post_reshape)
-
-            else:
-                for src, _, in_attr in in_edges:
-                    graph.remove_edge(src, scatter_nd)
-                    if in_attr['dst_in_port'] == 1:
-                        new_in_attr = copy.deepcopy(in_attr)
-                        new_in_attr['dst_in_port'] = 2
-                        graph.add_edge(src, scatter_nd, **new_in_attr)
-                    elif in_attr['dst_in_port'] == 0:
-                        new_in_attr = copy.deepcopy(in_attr)
-                        new_in_attr['dst_in_port'] = 1
-                        graph.add_edge(src, scatter_nd, **new_in_attr)
-                data = np.zeros(
-                    data_obj.value, dtype=in_edges[1][2]['tensor'].value.dtype)
-                insert_constant(graph, scatter_nd + '_data', data,
-                                scatter_nd, in_port=0, data_format='NHWC')
-                scatter_nd_attr = scatter_nd_obj.copied_attr()
-                scatter_nd_attr.update(
-                    {'reduction': 'add', 'opset_version': scatter_nd_obj.correspond_onnx_op['version']})
-                NodeWrap(graph, scatter_nd).replace_obj(
-                    scatter_nd_obj.correspond_onnx_op['type'], scatter_nd_attr)
-    if matched:
-        clear_redundant_nodes(graph)
-
-
-def convert_scatternd2(graph, op_type='TfScatterNd'):
     ''' Convert ScatterNd whose indices input is not constant to onnx ScatterND with reduction=add.
     '''
     if op_type not in ('TfScatterNd', 'LiteSCATTER_ND'):
@@ -978,14 +827,14 @@ def convert_scatternd2(graph, op_type='TfScatterNd'):
         scatternd_obj = NodeWrap(graph, scatternd)['object']
         scatternd_in_edges = graph.sorted_in_edges(scatternd, data=True)
         if scatternd_obj is None or len(scatternd_in_edges) < 3:
-            ERROR('[Parser]: Meets invalid %s Node(%s) in convert_scatternd2!' % (op_type, scatternd))
+            ERROR('[Parser]: Meets invalid %s Node(%s) in convert_scatternd!' % (op_type, scatternd))
             continue
         indices, _, indices_in_attr = scatternd_in_edges[0]
         updates, _, updates_in_attr = scatternd_in_edges[1]
         shape, _, shape_in_attr = scatternd_in_edges[2]
         if shape_in_attr['tensor'] is None or not shape_in_attr['tensor'].is_const \
                 or shape_in_attr['tensor'].value is None:
-            WARN('[Parser]: Meets unsupported non-const shape input of Node(%s) in convert_scatternd2!' % scatternd)
+            WARN('[Parser]: Meets unsupported non-const shape input of Node(%s) in convert_scatternd!' % scatternd)
             continue
         if updates_in_attr['tensor'] is None or updates_in_attr['tensor'].value is None:
             continue
