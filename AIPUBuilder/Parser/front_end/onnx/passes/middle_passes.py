@@ -1526,7 +1526,7 @@ def convert_special_matmul_to_fc(graph):
             weights = np.transpose(w_obj.value)
             graph.remove_edge(w, matmul)
             matmul_attr = matmul_obj.copied_attr()
-            if graph._attr.get('quantize', False):
+            if matmul_obj.quantize:
                 biases = np.zeros([weights.shape[0]], np.int32)
                 biases_scale = np.ones([weights.shape[0]], np.float32)
                 biases_zp = np.zeros([weights.shape[0]], np.int32)
