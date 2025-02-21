@@ -6,6 +6,75 @@ from ..op import *
 import numpy as np
 
 
+class MultiHeadAttentionMsOp(OpHasVariableOutPorts, OnnxOp):
+    @classmethod
+    def attributes(cls):
+        return {
+            1: {
+                'mask_filter_value': {
+                    'type': AttrType.FLOAT, 'default': -10000.0
+                },
+                'num_heads': {
+                    'type': AttrType.INT, 'required': True
+                },
+                'scale': {
+                    'type': AttrType.FLOAT,
+                },
+                'unidirectional': {
+                    'type': AttrType.INT, 'default': 0
+                },
+            }
+        }
+
+    def __init__(self, graph, attr_dict=None):
+        super(MultiHeadAttentionMsOp, self).__init__(graph, attr_dict)
+        self.update_attributes(MultiHeadAttentionMsOp, attr_dict)
+        assert self.check_required(), 'MultiHeadAttentionMsOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(MultiHeadAttentionMsOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        assert len(inputs) <= 8, f'MultiHeadAttentionMsOp should have 1~8 inputs, but got {len(inputs)}'
+
+        query = inputs[0]
+        self.head_dim = query.shape[-1] // self.num_heads
+        key = inputs[1] if len(inputs) > 1 else None
+        value = inputs[2] if len(inputs) > 2 else None
+        bias = inputs[3] if len(inputs) > 3 else None
+        key_padding_mask = inputs[4] if len(inputs) > 4 else None
+        attention_bias = inputs[5] if len(inputs) > 5 else None
+        past_key = inputs[6] if len(inputs) > 6 else None
+        past_value = inputs[7] if len(inputs) > 7 else None
+
+        # TODO, add infer if bias/key_padding_mask/past_key/past_value is not None
+        # TODO, add present_key/value output
+        def split_heads(x):
+            x = x.reshape(x.shape[0], -1, self.num_heads, self.head_dim)
+            return x.transpose(0, 2, 1, 3)
+
+        def concat_heads(x):
+            x = np.transpose(x, [0, 2, 1, 3])
+            return x.reshape(x.shape[0], -1, self.num_heads * self.head_dim)
+
+        q_split = split_heads(query)
+        k_split = split_heads(key)
+        qk_matmul = np.matmul(q_split, np.transpose(k_split, [0, 1, 3, 2]))
+        scores = qk_matmul * self.scale
+        attention_out = scores + attention_bias
+        attention = torch.softmax(torch.tensor(attention_out), dim=-1)
+        v_split = split_heads(value)
+        output = np.matmul(attention.cpu().numpy(), v_split)
+
+        # concat heads
+        out_tensors = [concat_heads(output)]
+        out_ports = self.get_out_ports()
+        # if 1 in out_ports:
+        #     out_tensors.append(np.array(std_var, np.float32))
+        # if 2 in out_ports:
+        #     out_tensors.append(np.array(std_var, np.float32))
+        self.set_out_tensor(out_tensors)
+
+
 class QGemmMsOp(OpHasOneOutPort, OnnxOp):
     @classmethod
     def attributes(cls):
@@ -407,3 +476,150 @@ class QLinearSigmoidMsOp(OpHasOneOutPort, OnnxOp):
         out_tensor = np.clip(np.around(float_y / self.Y_scale) + self.Y_zero_point,
                              out_min, out_max).astype(self.Y_zero_point.dtype)
         self.set_out_tensor(out_tensor)
+
+
+class RotaryEmbeddingMsOp(OpHasOneOutPort, OnnxOp):
+    @classmethod
+    def attributes(cls):
+        return {
+            1: {
+                'interleaved': {
+                    'type': AttrType.INT, 'default': 0
+                },
+                'is_packed_batching': {
+                    'type': AttrType.INT, 'default': 0
+                },
+                'num_heads': {
+                    'type': AttrType.INT, 'default': 0
+                },
+                'rotary_embedding_dim': {
+                    'type': AttrType.INT, 'default': 0
+                },
+                'scale': {
+                    'type': AttrType.FLOAT, 'default': 1.0
+                },
+            }
+        }
+
+    def __init__(self, graph, attr_dict=None):
+        super(RotaryEmbeddingMsOp, self).__init__(graph, attr_dict)
+        self.update_attributes(RotaryEmbeddingMsOp, attr_dict)
+        assert self.check_required(), 'RotaryEmbeddingMsOp is missing a required parameter.'
+
+    def __getattr__(self, item):
+        try:
+            ret = self.__dict__['_attr'][item].value
+        except:
+            ret = None
+        try:
+            if ret is None:
+                input_names = ['input', 'position_ids', 'cos_cache', 'sin_cache']
+                if item in input_names:
+                    item_idx = input_names.index(item)
+                    inputs = self.get_input_tensors()
+                    if len(inputs) > item_idx:
+                        ret = inputs[item_idx]
+                        if 'cache' in item:
+                            ret = np.array(ret)
+                        self.__dict__['_attr'][item] = Attribute(item, {'type': AttrType.TENSOR, 'value': ret})
+        except:
+            ret = None
+        if ret is None:
+            ret = super(RotaryEmbeddingMsOp, self).__getattr__(item)
+        return ret
+
+    def infer_shape(self):
+        super(RotaryEmbeddingMsOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        assert len(
+            inputs) == 4, f'Expected 4 inputs of RotaryEmbeddingMsOp op ({self.name}), but got {len(inputs)} inputs'
+        assert len(inputs[0].shape) in (
+            3, 4), f'Input x is expected to be 3 or 4 dimensional, but got {len(inputs[0].shape)}'
+        assert len(inputs[1].shape) in (
+            0, 1, 2), f'Input position_ids is expected to be 0, 1 or 2 dimensional, but got {len(inputs[1].shape)}'
+        assert len(inputs[2].shape) == 2 and len(inputs[3].shape) == 2, \
+            f'Input cos_cache/sin_cache is expected to be 2 dimensional, but got {len(inputs[2].shape)}/{len(inputs[3].shape)}'
+        if self.rotary_embedding_dim > 0 and self.num_heads == 0:
+            ERROR('[Parser]: num_heads must be provided if rotary_embedding_dim > 0 in (%s).' % self.name)
+
+        bs = inputs[0].shape[0]
+        seq_len = inputs[0].shape[1]
+        hidden_size = inputs[0].shape[2]
+
+        if len(inputs[0].shape) == 4:
+            seq_len = inputs[0].shape[2]
+            hidden_size = inputs[0].shape[1] * inputs[0].shape[3]
+        max_seq_len = self.cos_cache.shape[0]
+        head_size = self.cos_cache.shape[1] * 2 if self.rotary_embedding_dim == 0 else hidden_size // self.num_heads
+        if self.rotary_embedding_dim > 0 and self.rotary_embedding_dim > head_size:
+            ERROR('[Parser]: rotary_embedding_dim must be less than or equal to head_size in %s.' % self.name)
+
+        if self.is_packed_batching == 0 and seq_len > max_seq_len:
+            ERROR('[Parser]: Updating cos_cache and sin_cache in RotaryEmbedding is not currently supported')
+        if self.interleaved == 1:
+            raise NotImplementedError('interleaved still not supported yet.')
+        postion_ids = inputs[1]
+        input = inputs[0].reshape(bs, seq_len, -1, head_size)
+        cos_cache = np.repeat(self.cos_cache, 2, axis=-1)
+        sin_cache = np.repeat(self.sin_cache, 2, axis=-1)
+        cos_emb = np.expand_dims(np.take(cos_cache, np.array(
+            postion_ids, np.int32), axis=0), axis=2)
+        cos_mul = input * np.tile(cos_emb, reps=(1, 1, int(input.shape[2]), 1))
+
+        rotate_input = np.concatenate([np.negative(input[..., head_size // 2:]),
+                                       input[..., : head_size // 2]], axis=-1)
+
+        sin_emb = np.expand_dims(np.take(sin_cache, np.array(postion_ids, np.int32), axis=0), axis=2)
+        sin_mul = rotate_input * np.tile(sin_emb, reps=(1, 1, int(input.shape[2]), 1))
+        out_tensor = np.reshape((cos_mul + sin_mul), (bs, seq_len, -1)).astype(input.dtype)
+        self.set_out_tensor(out_tensor)
+
+
+class SkipSimplifiedLayerNormalizationMsOp(OpHasVariableOutPorts, OnnxOp):
+    @classmethod
+    def attributes(cls):
+        return {
+            1: {
+                'epsilon': {
+                    'type': AttrType.FLOAT, 'required': True
+                },
+            }
+        }
+
+    def __init__(self, graph, attr_dict=None):
+        super(SkipSimplifiedLayerNormalizationMsOp, self).__init__(graph, attr_dict)
+        self.update_attributes(SkipSimplifiedLayerNormalizationMsOp, attr_dict)
+        assert self.check_required(), 'SkipSimplifiedLayerNormalizationMsOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(SkipSimplifiedLayerNormalizationMsOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        assert len(inputs) in (
+            3, 4), f'SkipSimplifiedLayerNormalizationMsOp should have 3 or 4 inputs, but got {len(inputs)}'
+
+        input, skip, gamma = inputs[:3]
+        inp_skip_bias_sum = input + skip
+        if len(inputs) == 4:
+            bias = inputs[3]
+            inp_skip_bias_sum += bias
+
+        # RMSNorm
+        inp_skip_bias_sum = inp_skip_bias_sum.astype(np.float32)
+        square = np.power(inp_skip_bias_sum, 2)
+        mean = np.mean(square, axis=(-1, ), keepdims=True)
+        variance = np.var(square, axis=(-1, ), keepdims=True)
+        normalized = inp_skip_bias_sum / np.sqrt(mean + self.epsilon)
+        normalized = normalized.astype(input.dtype)
+        axes = OpHasAxis.make_axes_non_negative(
+            [-1], len(inp_skip_bias_sum.shape))
+        weights = OpHasAxis.expand_to(gamma, axes, len(inp_skip_bias_sum.shape))
+        rms_output = (normalized * weights).astype(input.dtype)
+        out_ports = self.get_out_ports()
+        output_tensors = [rms_output]
+        if 1 in out_ports:
+            output_tensors.append(mean.astype(np.float32))
+        if 2 in out_ports:
+            output_tensors.append(variance.astype(np.float32))
+        if 3 in out_ports:
+            output_tensors.append(inp_skip_bias_sum.astype(input.dtype))
+        self.set_out_tensor(output_tensors)

@@ -21,7 +21,7 @@ from ....ops.onnx_ops.array_ops import ReshapeOp, CenterCropPadOp
 from ....ops.onnx_ops.nn_ops import DeformConvOp
 from .common_passes import fuse_const, remove_useless_op, remove_node_safely, insert_reshape, insert_reshape_after, \
     insert_cast, insert_constant, insert_slice, insert_slice_after, insert_tile, insert_transpose, \
-    insert_transpose_after, \
+    insert_transpose_after, insert_gather, \
     remove_redundant_reshape, remove_redundant_transpose, insert_cast_sub_mul_for_quant, \
     insert_mul_add_cast_after_for_dequant, \
     insert_repeat, convert_to_const, insert_cast_after, merge_same_op_at_out_port, convert_multi_outputs_to_const
@@ -1526,7 +1526,7 @@ def convert_special_matmul_to_fc(graph):
             weights = np.transpose(w_obj.value)
             graph.remove_edge(w, matmul)
             matmul_attr = matmul_obj.copied_attr()
-            if graph._attr.get('quantize', False):
+            if matmul_obj.quantize:
                 biases = np.zeros([weights.shape[0]], np.int32)
                 biases_scale = np.ones([weights.shape[0]], np.float32)
                 biases_zp = np.zeros([weights.shape[0]], np.int32)
@@ -6777,6 +6777,355 @@ def merge_slot_update(graph):
                                               {'name': m['sc5'], 'opset_version': 1})
     if matched:
         clear_redundant_nodes(graph)
+
+
+def convert_simplified_layernorm(graph):
+    matches = single_node_matcher(graph, 'SimplifiedLayerNormalization')
+    for m in matches:
+        simple_ln = m['target']
+        simple_ln_obj = NodeWrap(graph, simple_ln)['object']
+        if simple_ln_obj is None:
+            ERROR(
+                '[Parser]: Meets invalid SimplifiedLayerNormalization node(%s) in convert_simplified_layernorm!' % simple_ln)
+            continue
+        if simple_ln_obj.quantize:
+            continue
+        sim_ln_in_edges = graph.sorted_in_edges(simple_ln, data=True)
+        sim_ln_out_edges = graph.sorted_out_edges(simple_ln, data=True)
+        outports = simple_ln_obj.get_out_ports()
+        if len(outports) > 1:
+            ERROR('[Parser]: outputs > 1 of SimplifiedLayerNormalization node(%s) not support yet!' % simple_ln)
+            continue
+        if len(sim_ln_in_edges) == 2 and NodeWrap(graph, sim_ln_in_edges[1][0])['object'].type == 'Constant':
+            input_shapes = simple_ln_obj.get_input_shapes()
+            norm_axes = OpHasAxis.make_axes_non_negative(simple_ln_obj.axes, len(input_shapes[0]))
+            weights = OpHasAxis.align_axes(NodeWrap(graph, sim_ln_in_edges[1][0])['object'].value,
+                                           norm_axes, input_shapes[0])
+            if weights is None:
+                continue
+            epsilon = simple_ln_obj.epsilon
+            graph.remove_edges_from(sim_ln_in_edges[1:])
+            rms_norm_attr = simple_ln_obj.copied_attr()
+            rms_norm_attr.update({'axes': norm_axes, 'weights': weights, 'epsilon': epsilon})
+            NodeWrap(graph, simple_ln).replace_obj('ArmRMSNorm', rms_norm_attr)
+            clear_redundant_nodes(graph)
+        else:
+            ERROR('[Parser]: non-const scale of SimplifiedLayerNormalization node(%s) not support yet!' % simple_ln)
+
+
+def convert_rotary_embedding(graph):
+    matches = single_node_matcher(graph, 'RotaryEmbeddingMs')
+    for m in matches:
+        embd = m['target']
+        embd_obj = NodeWrap(graph, embd)['object']
+        if embd_obj is None:
+            ERROR(
+                '[Parser]: Meets invalid RotaryEmbeddingMs node(%s) in convert_rotary_embedding!' % embd)
+            continue
+        if embd_obj.quantize:
+            continue
+        embd_in_edges = graph.sorted_in_edges(embd, data=True)
+        embd_out_edges = graph.sorted_out_edges(embd, data=True)
+        if len(embd_in_edges) == 4 and \
+                NodeWrap(graph, embd_in_edges[2][0])['object'].type == 'Constant' and \
+                NodeWrap(graph, embd_in_edges[3][0])['object'].type == 'Constant':
+            input = embd_in_edges[0][0]
+            position_ids = embd_in_edges[1][0]
+            cos_cache = embd_in_edges[2][0]
+            sin_cache = embd_in_edges[3][0]
+            input_shapes = embd_obj.get_input_shapes()
+            bs, seq_len, hidden_size = input_shapes[0][:3]
+            if len(input_shapes[0]) == 4:
+                seq_len = input_shapes[0][2]
+                hidden_size = input_shapes[0][1] * input_shapes[0][3]
+            max_seq_len = embd_obj.cos_cache.shape[0]
+            head_size = embd_obj.cos_cache.shape[1] * \
+                2 if embd_obj.rotary_embedding_dim == 0 else hidden_size // embd_obj.num_heads
+            num_heads = int(np.prod(input_shapes[0])) // (bs * seq_len * head_size)
+            rs0 = insert_reshape(graph, input, embd, embd_in_edges[0][-1], [bs, seq_len, num_heads, head_size])
+            # tile cos_cache & sin_cache
+            tile_cos = insert_tile(graph, cos_cache, embd, embd_in_edges[2][-1], [1, 2])
+            tile_sin = insert_tile(graph, sin_cache, embd, embd_in_edges[3][-1], [1, 2])
+
+            # get cos embedding
+            tile_cos_out_edges = graph.sorted_out_edges(tile_cos, data=True)
+            gather_cos = insert_gather(graph, tile_cos, embd, position_ids, axis=0, edge_attr=tile_cos_out_edges[0][-1])
+            gather_cos_out_edges = graph.sorted_out_edges(gather_cos, data=True)
+            gather_cos_output_shape = list(gather_cos_out_edges[0][-1]['tensor'].shape)
+            gather_cos_output_shape.insert(2, 1)
+            rs_cos = insert_reshape(graph, gather_cos, embd, gather_cos_out_edges[0][-1], gather_cos_output_shape)
+            cos_mul = get_valid_node_name(graph, rs_cos + '_post_mul')
+            graph.add_node(cos_mul)
+            cos_mul_attr = {'name': cos_mul, 'opset_version': 13}
+            graph.add_edge(rs_cos, cos_mul, **{'src_out_port': 0, 'dst_in_port': 1,
+                                               'tensor': Tensor(shape=gather_cos_output_shape)})
+            graph.add_edge(rs0, cos_mul, **{'src_out_port': 0, 'dst_in_port': 0,
+                                            'tensor': Tensor(shape=(bs, seq_len, num_heads, head_size))})
+            NodeWrap(graph, cos_mul).replace_obj('Mul', cos_mul_attr)
+
+            # crop input & concat
+            inp_crop0 = get_valid_node_name(graph, rs0 + '_post_slice')
+            graph.add_node(inp_crop0)
+            inp_crop0_attr = {'name': inp_crop0, 'opset_version': 1,
+                              'axes': [-1], 'starts': [head_size // 2], 'ends': [head_size]}
+            graph.add_edge(rs0, inp_crop0, **{'src_out_port': 0, 'dst_in_port': 0,
+                                              'tensor': Tensor(shape=(bs, seq_len, num_heads, head_size))})
+            NodeWrap(graph, inp_crop0).replace_obj('Slice', inp_crop0_attr)
+
+            neg = get_valid_node_name(graph, inp_crop0 + '_post_neg')
+            graph.add_node(neg)
+            neg_attr = {'name': neg, 'opset_version': 13}
+            graph.add_edge(inp_crop0, neg, **{'src_out_port': 0, 'dst_in_port': 0,
+                                              'tensor': Tensor(shape=(bs, seq_len, num_heads, head_size // 2))})
+            NodeWrap(graph, neg).replace_obj('Neg', neg_attr)
+
+            inp_crop1 = get_valid_node_name(graph, rs0 + '_post_slice')
+            graph.add_node(inp_crop1)
+            inp_crop1_attr = {'name': inp_crop1, 'opset_version': 1, 'axes': [-1], 'ends': [head_size // 2],
+                              'starts': [0]}
+            graph.add_edge(rs0, inp_crop1, **{'src_out_port': 0, 'dst_in_port': 0,
+                                              'tensor': Tensor(shape=(bs, seq_len, num_heads, head_size))})
+            NodeWrap(graph, inp_crop1).replace_obj('Slice', inp_crop1_attr)
+
+            concat = get_valid_node_name(graph, rs0 + '_post_concat')
+            graph.add_node(concat)
+            concat_attr = {'name': concat, 'opset_version': 13, 'axis': -1}
+            graph.add_edge(neg, concat, **{'src_out_port': 0, 'dst_in_port': 0,
+                                           'tensor': Tensor(shape=(bs, seq_len, num_heads, head_size // 2))})
+            graph.add_edge(inp_crop1, concat, **{'src_out_port': 0, 'dst_in_port': 1,
+                                                 'tensor': Tensor(shape=(bs, seq_len, num_heads, head_size // 2))})
+            NodeWrap(graph, concat).replace_obj('Concat', concat_attr)
+
+            # get sin embedding
+            tile_sin_out_edges = graph.sorted_out_edges(tile_sin, data=True)
+            gather_sin = insert_gather(graph, tile_sin, embd, position_ids, axis=0, edge_attr=tile_sin_out_edges[0][-1])
+            gather_sin_out_edges = graph.sorted_out_edges(gather_sin, data=True)
+            gather_sin_output_shape = list(gather_sin_out_edges[0][-1]['tensor'].shape)
+            gather_sin_output_shape.insert(2, 1)
+            rs_sin = insert_reshape(graph, gather_sin, embd, gather_sin_out_edges[0][-1], gather_sin_output_shape)
+            sin_mul = get_valid_node_name(graph, rs_sin + '_post_mul')
+            graph.add_node(sin_mul)
+            sin_mul_attr = {'name': sin_mul, 'opset_version': 13}
+            graph.add_edge(rs_sin, sin_mul, **{'src_out_port': 0, 'dst_in_port': 1})
+            graph.add_edge(concat, sin_mul, **{'src_out_port': 0, 'dst_in_port': 0})
+            NodeWrap(graph, sin_mul).replace_obj('Mul', sin_mul_attr)
+
+            # Add cos_mul & sin_mul
+            add = get_valid_node_name(graph, embd + '_post_add')
+            graph.add_node(add)
+            add_attr = {'name': add, 'opset_version': 13}
+            graph.add_edge(sin_mul, add, **{'src_out_port': 0, 'dst_in_port': 1})
+            graph.add_edge(cos_mul, add, **{'src_out_port': 0, 'dst_in_port': 0})
+            NodeWrap(graph, add).replace_obj('Add', add_attr)
+
+            rs1 = insert_reshape(graph, add, embd, {'src_out_port': 0, 'dst_in_port': 0}, input_shapes[0])
+            graph.remove_edges_from(embd_in_edges)
+            graph.remove_edges_from(embd_out_edges)
+
+            for _, dst, out_attr in embd_out_edges:
+                tmp_out_attr = copy.deepcopy(out_attr)
+                tmp_out_attr.update({'src_out_port': 0})
+                graph.add_edge(rs1, dst, **tmp_out_attr)
+
+            clear_redundant_nodes(graph)
+        else:
+            ERROR(
+                '[Parser]: non-const cos_cache/sin_cache of RotaryEmbeddingMs node(%s) not support yet!' % embd)
+
+
+def convert_mha(graph):
+    matches = single_node_matcher(graph, 'MultiHeadAttentionMs')
+    for m in matches:
+        mha = m['target']
+        mha_obj = NodeWrap(graph, mha)['object']
+        if mha_obj is None:
+            ERROR(
+                '[Parser]: Meets invalid MultiHeadAttentionMs node(%s) in convert_mha!' % mha)
+            continue
+        if mha_obj.quantize:
+            continue
+        mha_in_edges = graph.sorted_in_edges(mha, data=True)
+        mha_out_edges = graph.sorted_out_edges(mha, data=True)
+        outports = mha_obj.get_out_ports()
+        # TODO, support more cases of MHA
+        if len(outports) > 1:
+            ERROR(
+                '[Parser]: outputs > 1 of MultiHeadAttentionMs node(%s) not support yet!' % mha)
+            continue
+        input_shapes = mha_obj.get_input_shapes()
+        input_dtypes = mha_obj.get_input_dtypes()
+        q_shape = input_shapes[0]
+        if len(q_shape) != 3:
+            ERROR(
+                '[Parser]: Only support 3-dims(batch_size, seq_len, hidden_size) of query in MHA node(%s)' % mha)
+            continue
+        head_dim = q_shape[-1] // mha_obj.num_heads
+        bs, seq_len = q_shape[:2]
+        query = mha_in_edges[0][0]
+        key = mha_in_edges[1][0]
+        value = mha_in_edges[2][0]
+        attention_bias = mha_in_edges[5][0]
+
+        # split query
+        rs_q = insert_reshape(graph, query, mha, mha_in_edges[0][-1], [bs, seq_len, mha_obj.num_heads, head_dim])
+        rs_q_in_attr = copy.deepcopy(mha_in_edges[0][-1])
+        rs_q_in_attr['tensor'].shape = [bs, seq_len, mha_obj.num_heads, head_dim]
+        trans_q = insert_transpose(graph, rs_q, mha, rs_q_in_attr, perm=[0, 2, 1, 3])
+
+        # split key
+        rs_k = insert_reshape(graph, key, mha, mha_in_edges[1][-1], [bs, seq_len, mha_obj.num_heads, head_dim])
+        rs_k_in_attr = copy.deepcopy(mha_in_edges[1][-1])
+        rs_k_in_attr['tensor'].shape = [bs, seq_len, mha_obj.num_heads, head_dim]
+        trans_k = insert_transpose(graph, rs_k, mha, rs_k_in_attr, perm=[0, 2, 3, 1])
+
+        trans_q_out_shape = [rs_q_in_attr['tensor'].shape[axis] for axis in [0, 2, 1, 3]]
+        trans_k_out_shape = [rs_k_in_attr['tensor'].shape[axis] for axis in [0, 2, 3, 1]]
+
+        # split_q @ split_k
+        matmul = get_valid_node_name(graph, mha + '_matmul')
+        graph.add_node(matmul)
+        matmul_attr = {'name': matmul, 'opset_version': 13}
+        graph.add_edge(trans_q, matmul, **{'src_out_port': 0, 'dst_in_port': 0,
+                                           'tensor': Tensor(shape=tuple(trans_q_out_shape))})
+        graph.add_edge(trans_k, matmul, **{'src_out_port': 0, 'dst_in_port': 1,
+                                           'tensor': Tensor(shape=tuple(trans_k_out_shape))})
+        NodeWrap(graph, matmul).replace_obj('MatMul', matmul_attr)
+
+        matmul_out_shape = trans_q_out_shape[:-1] + trans_k_out_shape[-1:]
+
+        # scores
+        mul = get_valid_node_name(graph, mha + '_mul')
+        graph.add_node(mul)
+        mul_attr = {'name': mul, 'opset_version': 13}
+        graph.add_edge(matmul, mul, **{'src_out_port': 0, 'dst_in_port': 0,
+                                       'tensor': Tensor(shape=tuple(matmul_out_shape))})
+        insert_constant(graph, mha + '_scale', np.array(mha_obj.scale, dtype=input_dtypes[0]), mul, in_port=1)
+        NodeWrap(graph, mul).replace_obj('Mul', mul_attr)
+
+        add = get_valid_node_name(graph, mha + '_add')
+        graph.add_node(add)
+        add_attr = {'name': add, 'opset_version': 13}
+        graph.add_edge(mul, add, **{'src_out_port': 0, 'dst_in_port': 0,
+                                    'tensor': Tensor(shape=tuple(matmul_out_shape))})
+        graph.add_edge(attention_bias, add, **{'src_out_port': 0, 'dst_in_port': 1})
+        NodeWrap(graph, add).replace_obj('Add', add_attr)
+
+        # Softmax
+        softmax = get_valid_node_name(graph, mha + '_softmax')
+        graph.add_node(softmax)
+        softmax_attr = {'name': softmax, 'opset_version': 13, 'axis': -1}
+        graph.add_edge(add, softmax, **{'src_out_port': 0, 'dst_in_port': 0})
+        NodeWrap(graph, softmax).replace_obj('Softmax', softmax_attr)
+
+        # split value
+        rs_v = insert_reshape(graph, value, mha, mha_in_edges[2][-1], [bs, seq_len, mha_obj.num_heads, head_dim])
+        rs_v_in_attr = copy.deepcopy(mha_in_edges[2][-1])
+        rs_v_in_attr['tensor'].shape = [bs, seq_len, mha_obj.num_heads, head_dim]
+        trans_v = insert_transpose(graph, rs_v, mha, rs_v_in_attr, perm=[0, 2, 1, 3])
+
+        trans_v_out_shape = [rs_v_in_attr['tensor'].shape[axis] for axis in [0, 2, 1, 3]]
+
+        matmul_v = get_valid_node_name(graph, mha + '_matmul_v')
+        graph.add_node(matmul_v)
+        matmul_v_attr = {'name': matmul_v, 'opset_version': 13}
+        graph.add_edge(softmax, matmul_v, **{'src_out_port': 0, 'dst_in_port': 0,
+                                             'tensor': Tensor(shape=tuple(matmul_out_shape))})
+        graph.add_edge(trans_v, matmul_v, **{'src_out_port': 0, 'dst_in_port': 1,
+                                             'tensor': Tensor(shape=tuple(trans_v_out_shape))})
+        NodeWrap(graph, matmul_v).replace_obj('MatMul', matmul_v_attr)
+
+        matmul_v_out_shape = matmul_out_shape[:-1] + trans_v_out_shape[-1:]
+
+        # concat heads
+        trans_out_in_attr = copy.deepcopy(mha_in_edges[2][-1])
+        trans_out_in_attr['tensor'].shape = matmul_v_out_shape
+        trans_out = insert_transpose(graph, matmul_v, mha, trans_out_in_attr, perm=[0, 2, 1, 3])
+        rs_out_in_attr = copy.deepcopy(mha_in_edges[2][-1])
+        rs_out_in_attr['tensor'].shape = [matmul_v_out_shape[axis] for axis in [0, 2, 1, 3]]
+        rs_out = insert_reshape(graph, trans_out, mha, rs_out_in_attr, q_shape)
+        graph.remove_edges_from(mha_in_edges)
+        graph.remove_edges_from(mha_out_edges)
+
+        for _, dst, out_attr in mha_out_edges:
+            tmp_out_attr = copy.deepcopy(out_attr)
+            tmp_out_attr.update({'src_out_port': 0})
+            graph.add_edge(rs_out, dst, **tmp_out_attr)
+
+        clear_redundant_nodes(graph)
+
+
+def convert_skip_simplified_layernorm(graph):
+    matches = single_node_matcher(graph, 'SkipSimplifiedLayerNormalizationMs')
+    for m in matches:
+        skip_simple_ln = m['target']
+        skip_simple_ln_obj = NodeWrap(graph, skip_simple_ln)['object']
+        if skip_simple_ln_obj is None:
+            ERROR(
+                '[Parser]: Meets invalid SkipSimplifiedLayerNormalizationMs node(%s) in convert_skip_simplified_layernorm!' % skip_simple_ln)
+            continue
+        if skip_simple_ln_obj.quantize:
+            continue
+        ln_in_edges = graph.sorted_in_edges(skip_simple_ln, data=True)
+        ln_out_edges = graph.sorted_out_edges(skip_simple_ln, data=True)
+        outports = skip_simple_ln_obj.get_out_ports()
+        inports = skip_simple_ln_obj.get_in_ports()
+        if len(outports) > 2:
+            ERROR('[Parser]: outputs > 2 of SkipSimplifiedLayerNormalizationMs node(%s) not support yet!' % skip_simple_ln)
+            continue
+        if len(ln_in_edges) in (3, 4) and NodeWrap(graph, ln_in_edges[2][0])['object'].type == 'Constant':
+            input_shapes = skip_simple_ln_obj.get_input_shapes()
+            norm_axes = OpHasAxis.make_axes_non_negative([-1], len(input_shapes[0]))
+            weights = OpHasAxis.align_axes(NodeWrap(graph, ln_in_edges[2][0])['object'].value,
+                                           norm_axes, input_shapes[0])
+            if weights is None:
+                continue
+            epsilon = skip_simple_ln_obj.epsilon
+            rms_norm_attr = skip_simple_ln_obj.copied_attr()
+            rms_norm_attr.update({'axes': norm_axes, 'weights': weights, 'epsilon': epsilon})
+            NodeWrap(graph, skip_simple_ln).replace_obj('ArmRMSNorm', rms_norm_attr)
+
+            graph.remove_edges_from(ln_in_edges)
+            graph.remove_edges_from(ln_out_edges)
+
+            input = ln_in_edges[0][0]
+            skip = ln_in_edges[1][0]
+            if 3 in inports:
+                bias = ln_in_edges[3][0]
+            else:
+                bias = None
+
+            add = get_valid_node_name(graph, skip_simple_ln + '_add')
+            graph.add_node(add)
+            add_attr = {'name': add, 'opset_version': 13}
+            graph.add_edge(input, add, **ln_in_edges[0][-1])
+            graph.add_edge(skip, add, **ln_in_edges[1][-1])
+            NodeWrap(graph, add).replace_obj('Add', add_attr)
+            if bias is not None:
+                add_bias = get_valid_node_name(graph, skip_simple_ln + '_add')
+                graph.add_node(add_bias)
+                add_bias_attr = {'name': add_bias, 'opset_version': 13}
+                graph.add_edge(add, add_bias, **{'src_out_port': 0, 'dst_in_port': 0})
+                graph.add_edge(bias, add_bias, **ln_in_edges[3][-1])
+                NodeWrap(graph, add_bias).replace_obj('Add', add_bias_attr)
+                graph.add_edge(add_bias, skip_simple_ln, **{'src_out_port': 0, 'dst_in_port': 0})
+            else:
+                graph.add_edge(add, skip_simple_ln, **{'src_out_port': 0, 'dst_in_port': 0})
+
+            for _, dst, out_attr in ln_out_edges:
+                tmp_out_attr = copy.deepcopy(out_attr)
+                out_port = tmp_out_attr['src_out_port']
+                if out_port == 0:
+                    graph.add_edge(skip_simple_ln, dst, **tmp_out_attr)
+                elif out_port == 3:
+                    tmp_out_attr.update({'src_out_port': 0})
+                    out_name = add if bias is None else add_bias
+                    graph.add_edge(out_name, dst, **tmp_out_attr)
+                else:
+                    raise NotImplementedError('mean/var output still not support!')
+
+            clear_redundant_nodes(graph)
+        else:
+            ERROR('[Parser]: non-const gamma of SkipSimplifiedLayerNormalizationMs node(%s) not support yet!' % skip_simple_ln)
 
 
 def merge_q_ln(graph):
@@ -12478,6 +12827,12 @@ def middle_passes(graph, params):
 
     merge_query_rebatch(graph)
     merge_slot_update(graph)
+
+    # LLM related contributed ops
+    convert_simplified_layernorm(graph)
+    convert_rotary_embedding(graph)
+    convert_mha(graph)
+    convert_skip_simplified_layernorm(graph)
 
     # merge_q_ln(graph)
     merge_q_ln_partial(graph)

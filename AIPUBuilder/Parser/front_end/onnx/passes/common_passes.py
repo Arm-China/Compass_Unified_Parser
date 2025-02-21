@@ -506,6 +506,7 @@ def remove_redundant_reshape(graph, type='Reshape'):
         reshape_1_in_shapes = reshape_1_obj.get_input_shapes()
         reshape_2_out_shapes = reshape_2_obj.get_output_shapes()
         reshape_1_edges = graph.sorted_in_edges(reshape_1, data=True)
+        reshape_2_edges = graph.sorted_in_edges(reshape_2, data=True)
         reshape_1_out_edges = graph.sorted_out_edges(reshape_1, data=True)
         reshape_2_out_edges = graph.sorted_out_edges(reshape_2, data=True)
         if len(reshape_1_in_shapes) >= 1 \
@@ -513,6 +514,10 @@ def remove_redundant_reshape(graph, type='Reshape'):
                 and reshape_1 not in graph._attr['output_names']:
             if len(reshape_1_out_edges) == 1:
                 remove_node_safely(graph, reshape_1)
+                if type == 'Reshape' and len(reshape_2_edges) == 2:
+                    graph.remove_edges_from(reshape_2_edges[1:])
+                    reshape_2_obj.cur_version = 1
+                    reshape_2_obj.shape = reshape_2_out_shapes[0]
                 if reshape_1_in_shapes[0] == reshape_2_out_shapes[0]:
                     src, _, in_attr = reshape_1_edges[0]
                     graph.remove_edges_from(reshape_1_edges)
@@ -1033,13 +1038,25 @@ def insert_gather(graph, src, dst, indices, axis=0, edge_attr=None, key=None, ty
         gather_in_attr = copy.deepcopy(edge_attr)
         gather_in_attr.update({'dst_in_port': 0})
         graph.add_edge(src, gather, **gather_in_attr)
-        insert_constant(graph, gather + '_indices', indices,
-                        gather, in_port=1, data_format='NHWC')
+        if isinstance(indices, str):
+            # FIXME, indices's output port != 0
+            assert graph.has_node(indices), f'{indices} not in graph.'
+            graph.add_edge(indices, gather, **{'src_out_port': 0, 'dst_in_port': 1})
+        else:
+            insert_constant(graph, gather + '_indices', indices,
+                            gather, in_port=1, data_format='NHWC')
         gather_out_attr = {'src_out_port': 0,
                            'dst_in_port': edge_attr['dst_in_port']}
-        if edge_attr and edge_attr.get('tensor', None) is not None and getattr(edge_attr['tensor'], 'value', None) is not None:
-            out_tensor = np.take(edge_attr['tensor'].value, indices, axis=axis)
-            gather_out_attr.update({'tensor': Tensor(value=out_tensor)})
+        if edge_attr and \
+                edge_attr.get('tensor', None) is not None and \
+                getattr(edge_attr['tensor'], 'value', None) is not None:
+            if isinstance(indices, str):
+                idx_shape = NodeWrap(graph, indices)['object'].get_output_shapes()[0]
+                out_tensor = np.take(edge_attr['tensor'].value, np.zeros(idx_shape, dtype=np.int64), axis=axis)
+                gather_out_attr.update({'tensor': Tensor(shape=out_tensor.shape)})
+            else:
+                out_tensor = np.take(edge_attr['tensor'].value, indices, axis=axis)
+                gather_out_attr.update({'tensor': Tensor(value=out_tensor)})
         graph.add_edge(gather, dst, **gather_out_attr)
         gather_attr = {'name': gather, 'axis': axis}
         if type == 'Gather':
@@ -1322,6 +1339,7 @@ def insert_tile(graph, src, dst, in_attr, reps, key=None, type='Tile', data_form
         tensor = dst_in_attr['tensor']
         if tensor.value is not None:
             tensor.value = np.tile(dst_in_attr['tensor'].value, reps.tolist())
+            tensor.shape = tensor.value.shape
         else:
             tensor_shape = tensor.get_shape()
             if tensor_shape is not None and None not in tensor_shape:
