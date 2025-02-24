@@ -2267,11 +2267,16 @@ class ArmFullyConnectedOp(BaseActivationOp, BaseLinearOp, ArmOp):
             inp = inputs[0].astype(np.float32)
         else:
             inp = inputs[0]
-        out_tensor = (tf.matmul(inp,
-                                np.transpose(self.weights, axes=type(
-                                    self).perm_onnx_to_tf())
-                                ) + self.biases).numpy()
-        out_tensor = self.cal_activation(out_tensor).astype(inputs[0].dtype)
+        a_shape = list(inp.shape)
+        b_shape = list(np.transpose(self.weights, axes=type(
+                                    self).perm_onnx_to_tf()).shape)
+        out_shape = [a_shape[0], b_shape[1]]
+        out_tensor = np.random.ranf(tuple(out_shape)).astype(inputs[0].dtype)
+        # out_tensor = (tf.matmul(inp,
+        #                         np.transpose(self.weights, axes=type(
+        #                             self).perm_onnx_to_tf())
+        #                         ) + self.biases).numpy()
+        # out_tensor = self.cal_activation(out_tensor).astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
 
@@ -3266,7 +3271,19 @@ class ArmMatMulOp(OpHasOneOutPort, ArmOp):
             inputs[0], (0, 1, 3, 2))
         B = inputs[1] if not bool(self.trans_b) else np.transpose(
             inputs[1], (0, 1, 3, 2))
-        out_tensor = np.matmul(A, B)
+        #out_tensor = np.matmul(A, B)
+        a_shape = list(A.shape)
+        b_shape = list(B.shape)
+        out_shape = []
+        max_dim = 4
+        for i in range(max_dim):
+            if i < max_dim - 2:
+                out_shape.append(max(a_shape[i], b_shape[i]))
+            elif i == max_dim - 2:
+                out_shape.append(a_shape[i])
+            else:
+                out_shape.append(b_shape[i])
+        out_tensor = np.random.ranf(tuple(out_shape)).astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
     def write_attrs(self, txt_file):

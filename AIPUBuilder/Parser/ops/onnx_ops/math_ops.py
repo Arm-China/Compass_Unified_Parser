@@ -959,7 +959,29 @@ class MatMulOp(OpHasOneOutPort, OnnxOp):
     def infer_shape(self):
         super(MatMulOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = np.matmul(*inputs)
+        if self.is_all_inputs_const():
+            out_tensor = np.matmul(*inputs)
+        else:
+            a_shape = list(inputs[0].shape)
+            b_shape = list(inputs[1].shape)
+            a_dim = len(a_shape)
+            b_dim = len(b_shape)
+            max_dim = max(a_dim, b_dim)
+            if a_dim < max_dim:
+                for i in range(max_dim - a_dim):
+                    a_shape.insert(0, 1)
+            if b_dim < max_dim:
+                for i in range(max_dim - b_dim):
+                    b_shape.insert(0, 1)
+            out_shape = []
+            for i in range(max_dim):
+                if i < max_dim - 2:
+                    out_shape.append(max(a_shape[i], b_shape[i]))
+                elif i == max_dim - 2:
+                    out_shape.append(a_shape[i])
+                else:
+                    out_shape.append(b_shape[i])
+            out_tensor = np.random.ranf(tuple(out_shape)).astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
 

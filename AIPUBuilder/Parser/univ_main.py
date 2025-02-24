@@ -5,6 +5,7 @@ import os
 import sys
 import argparse
 import configparser
+import time
 from .logger import *
 
 
@@ -126,6 +127,7 @@ optional arguments in Common section of <net.cfg>:
     init_logging(verbose, logfile)
 
     exit_code = 0
+    t1 = time.time()
 
     if options.cfg and len(options.cfg) != 0:
         config = configparser.ConfigParser()
@@ -174,5 +176,8 @@ optional arguments in Common section of <net.cfg>:
         else:
             exit_code = -1
             ERROR('Common section is required in config file.')
+
+    t2 = time.time()
+    INFO(f'[Parser]: Parser cost {(t2 - t1):.2f} seconds.')
 
     return exit_code
