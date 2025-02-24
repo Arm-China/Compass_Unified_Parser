@@ -4301,7 +4301,7 @@ class ArmReciprocalOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
     def infer_shape(self):
         super(ArmReciprocalOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = np.reciprocal(inputs[0]).astype(np.float32)
+        out_tensor = np.reciprocal(inputs[0])
         self.set_out_tensor(out_tensor)
 
 
