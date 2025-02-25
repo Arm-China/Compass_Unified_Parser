@@ -967,20 +967,24 @@ class MatMulOp(OpHasOneOutPort, OnnxOp):
             a_dim = len(a_shape)
             b_dim = len(b_shape)
             max_dim = max(a_dim, b_dim)
-            if a_dim < max_dim:
-                for i in range(max_dim - a_dim):
-                    a_shape.insert(0, 1)
-            if b_dim < max_dim:
-                for i in range(max_dim - b_dim):
-                    b_shape.insert(0, 1)
             out_shape = []
-            for i in range(max_dim):
-                if i < max_dim - 2:
-                    out_shape.append(max(a_shape[i], b_shape[i]))
-                elif i == max_dim - 2:
-                    out_shape.append(a_shape[i])
-                else:
-                    out_shape.append(b_shape[i])
+            if max_dim != 1:
+                if a_dim < max_dim:
+                    for i in range(max_dim - a_dim):
+                        a_shape.insert(0, 1)
+                if b_dim < max_dim:
+                    for i in range(max_dim - b_dim):
+                        b_shape.insert(0, 1)
+
+                assert a_shape[-1] == b_shape[-2], (f'MatMulOp({self.name}) shape error, '
+                                                    f'input shape is: {inputs[0].shape}, {inputs[1].shape}!')
+                for i in range(max_dim):
+                    if i < max_dim - 2:
+                        out_shape.append(max(a_shape[i], b_shape[i]))
+                    elif i == max_dim - 2:
+                        out_shape.append(a_shape[i])
+                    else:
+                        out_shape.append(b_shape[i])
             out_tensor = np.random.ranf(tuple(out_shape)).astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 

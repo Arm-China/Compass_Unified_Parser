@@ -2029,6 +2029,46 @@ def convert_special_transpose(graph):
                 '[Parser]: Meets invalid Transpose Op(%s) in convert_special_transpose!' % transpose)
 
 
+def remove_special_transpose(graph):
+    matches = matched_patterns(graph,
+                               nodes=[
+                                   ('trans', {'op': 'Transpose'}),
+                                   ('reshape', {'op': 'Reshape'}),
+                               ],
+                               edges=[
+                                   ('trans', 'reshape', {'dst_in_port': 0}),
+                               ]
+                               )
+    for m in matches:
+        trans, rs = m['trans'], m['reshape']
+        transpose_obj = NodeWrap(graph, trans)['object']
+        reshape_obj = NodeWrap(graph, rs)['object']
+        if trans in graph._attr['output_names']:
+            continue
+        if transpose_obj is not None and \
+                reshape_obj is not None:
+            trans_in_edges = graph.sorted_in_edges(trans, data=True)
+            trans_out_edges = graph.sorted_out_edges(trans, data=True)
+            if len(trans_in_edges) < 1 or len(trans_out_edges) != 1:
+                continue
+            input_shapes = transpose_obj.get_input_shapes()
+            perm = transpose_obj.perm
+            if input_shapes is not None and \
+                    None not in input_shapes and \
+                    all([None not in shape for shape in input_shapes]):
+                no_change_perm = list(range(len(input_shapes[0])))
+                diff_values = [v1 for i, (v1, v2) in enumerate(zip(perm, no_change_perm)) if v1 != v2]
+                tmp_cnt = 0
+                for axis in diff_values:
+                    if input_shapes[0][axis] != 1:
+                        tmp_cnt += 1
+                if tmp_cnt <= 1:
+                    remove_node_safely(graph, trans)
+        else:
+            ERROR(
+                '[Parser]: Meets invalid Transpose Op(%s) in remove_special_transpose!' % trans)
+
+
 def _decompose_const_if(graph, params):
     matched = False
     matches = single_node_matcher(graph, 'If')
@@ -4100,7 +4140,10 @@ def merge_channel_shuffle(graph):
                 if reshape1_in_shape is not None \
                         and reshape1_out_shape is not None \
                         and len(reshape1_out_shape) > 2:
-                    need_insert_reshape = False
+                    need_insert_front_reshape = False
+                    need_insert_after_reshape = False
+                    if reshape1_in_shape != reshape2_out_shape:
+                        need_insert_after_reshape = True
                     if (len(reshape1_in_shape) == len(reshape1_out_shape) or len(reshape1_in_shape) + 1 == len(
                             reshape1_out_shape)) \
                             and (int(np.prod(reshape1_out_shape[-2:])) == reshape1_in_shape[-1]
@@ -4111,7 +4154,7 @@ def merge_channel_shuffle(graph):
                             and (reshape1_out_shape[-2:] == reshape1_in_shape[-2:]
                                  if transpose_obj.data_format == 'NHWC'
                                  else reshape1_out_shape[1:3] == reshape1_in_shape[1:3]):
-                        need_insert_reshape = True
+                        need_insert_front_reshape = True
                     else:
                         continue
 
@@ -4125,7 +4168,7 @@ def merge_channel_shuffle(graph):
                         splits = 1
                         in_edges = graph.sorted_in_edges(reshape1, data=True)
                         src, _, in_attr = in_edges[0]
-                        if need_insert_reshape:
+                        if need_insert_front_reshape:
                             insert_reshape(graph, src, reshape1,
                                            in_attr, reshape2_out_shape,
                                            quantize=reshape1_obj.quantize)
@@ -4141,6 +4184,16 @@ def merge_channel_shuffle(graph):
                         cs_attr.update({'group': group, 'splits': splits})
                         NodeWrap(graph, reshape2).replace_obj(
                             'ChannelShuffle', cs_attr)
+
+                        if need_insert_after_reshape:
+                            out_edges = graph.sorted_out_edges(reshape2, data=True)
+                            _, dst, out_attr = out_edges[0]
+                            after_rs = insert_reshape(graph, reshape2, dst,
+                                                      out_attr, reshape2_out_shape,
+                                                      quantize=reshape2_obj.quantize)
+                            if reshape2 in graph._attr['output_names']:
+                                index = graph._attr['output_names'].index(reshape2)
+                                graph._attr['output_names'][index] = after_rs
         else:
             ERROR('[Parser]]: Meets invalid Op in merge_channel_shuffle!')
     if matched:
@@ -12989,6 +13042,7 @@ def middle_passes(graph, params):
     rearrange_linear_reshape_relu(graph)
     rearrange_linear_concat_relu(graph)
     convert_special_transpose(graph)
+    remove_special_transpose(graph)
     merge_meshgrid(graph)
 
     convert_einsum(graph)

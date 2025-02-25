@@ -474,9 +474,16 @@ class FullyConnectedOp(BaseLinearOp, CommonOp):
             inp = inputs[0].astype(np.float32)
         else:
             inp = inputs[0]
-        out_tensor = (tf.matmul(inp, np.transpose(self.weights, axes=type(self).perm_onnx_to_tf()))
-                      + self.biases
-                      ).numpy().astype(inputs[0].dtype)
+        if self.is_all_inputs_const():
+            out_tensor = (tf.matmul(inp, np.transpose(self.weights, axes=type(self).perm_onnx_to_tf()))
+                          + self.biases
+                          ).numpy().astype(inputs[0].dtype)
+        else:
+            a_shape = list(inp.shape)
+            b_shape = list(np.transpose(self.weights, axes=type(
+                self).perm_onnx_to_tf()).shape)
+            out_shape = [a_shape[0], b_shape[1]]
+            out_tensor = np.random.ranf(tuple(out_shape)).astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
 

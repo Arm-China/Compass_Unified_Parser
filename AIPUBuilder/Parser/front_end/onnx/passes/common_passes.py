@@ -216,8 +216,14 @@ def remove_useless_op(graph, op_type_list):
                 else:
                     continue
             elif op_type == 'ChannelShuffle':
-                if node_obj.group == 1 and node_obj.splits == 1:
-                    removing_nodes.append(node_name)
+                input_shape = node_obj.get_input_shapes()[0]
+                if node_obj.splits == 1:
+                    if node_obj.group == 1:
+                        removing_nodes.append(node_name)
+                    elif input_shape and None not in input_shape:
+                        ic = input_shape[-1] if node_obj.data_format == 'NHWC' else input_shape[1]
+                        if node_obj.group == ic:
+                            removing_nodes.append(node_name)
             elif op_type in ('Concat', 'Sum'):
                 in_edges = graph.sorted_in_edges(node_name)
                 if len(in_edges) <= 1:
