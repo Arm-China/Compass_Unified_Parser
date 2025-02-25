@@ -65,7 +65,7 @@ class AcoshOp(LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
         self.set_out_tensor(out_tensor)
 
 
-class AddOp(OpNeedBroadcast, OpHasAxis, OpHasOneOutPort, OnnxOp):
+class AddOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
     @classmethod
     def attributes(cls):
         return {1: {'axis': {'type': AttrType.INT},
@@ -465,7 +465,7 @@ class CumSumOp(OpHasOneOutPort, OpHasAxis, OnnxOp):
         self.set_out_tensor(out_tensor)
 
 
-class DivOp(OpNeedBroadcast, OpHasDivisor, OpHasOneOutPort, OnnxOp):
+class DivOp(OpHasDivisor, OpHasOneOutPort, OnnxOp):
     @classmethod
     def attributes(cls):
         return {1: {'axis': {'type': AttrType.INT},
@@ -1161,7 +1161,7 @@ class ModOp(OpNeedBroadcast, LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
         self.set_out_tensor(out_tensor)
 
 
-class MulOp(OpNeedBroadcast, OpHasAxis, OpHasOneOutPort, OnnxOp):
+class MulOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
     @classmethod
     def attributes(cls):
         return {1: {'consumed_inputs': {'type': AttrType.INTS},
@@ -2629,7 +2629,7 @@ class SqrtOp(LayoutUnawareOp, OpHasOneOutPort, OpHasNonZeroInput, OnnxOp):
         self.set_out_tensor(out_tensor.astype(inputs[0].dtype))
 
 
-class SubOp(OpNeedBroadcast, OpHasAxis, OpHasOneOutPort, OnnxOp):
+class SubOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
     @classmethod
     def attributes(cls):
         return {1: {'axis': {'type': AttrType.INT},

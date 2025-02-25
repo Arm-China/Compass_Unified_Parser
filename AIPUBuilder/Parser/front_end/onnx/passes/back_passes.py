@@ -2710,7 +2710,7 @@ def rename_moments(graph):
                     '[Parser]: Meets invalid Moments Node(%s) in rename_moments!' % moments)
 
 
-def rename_mul_add_max_min(graph, params):
+def rename_mul_add_max_min(graph):
     for op_type in ['Mul', 'Add', 'Sub', 'Max', 'Min']:
         matches = single_node_matcher(graph, op_type)
         for m in matches:
@@ -2739,8 +2739,7 @@ def rename_mul_add_max_min(graph, params):
                         and in_shapes[1] is not None \
                         and None not in in_shapes[1] \
                         and list(in_shapes[0]) != list(in_shapes[1]):
-                    if not params.get('force_eltwise', False):
-                        meta_ret = False
+                    meta_ret = False
                 else:
                     meta_ret = False
                     ERROR(
@@ -5729,7 +5728,7 @@ def back_passes(graph, params):
     merge_squared_diff(graph)
     merge_square(graph)
     merge_square2(graph)
-    multidirectional_broadcasting(graph, params)
+    multidirectional_broadcasting(graph)
     remove_special_where(graph)
     split_mean(graph)
     split_sum_or_max_or_min(graph)
@@ -5770,7 +5769,7 @@ def back_passes(graph, params):
     rename_matmulinteger(graph)
     rename_maxunpool(graph)
     rename_moments(graph)
-    rename_mul_add_max_min(graph, params)
+    rename_mul_add_max_min(graph)
     rename_normalization(graph)
     rename_onehot(graph)
     rename_pad(graph)

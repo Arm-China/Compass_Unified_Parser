@@ -7529,12 +7529,8 @@ def merge_q_gelu(graph):
         clear_redundant_nodes(graph)
 
 
-def multidirectional_broadcasting(graph, params):
+def multidirectional_broadcasting(graph):
     op_type_list = OpNeedBroadcast.get_concrete_subclass_names()
-    if not params.get('force_eltwise', False):
-        math_list = ['Add', 'Sub', 'Mul', 'Div']
-        tmp_list = list(set(op_type_list) - set(math_list))
-        op_type_list = tmp_list[:]
     for op_type in op_type_list:
         matches = single_node_matcher(graph, op_type)
         for m in matches:
@@ -11181,7 +11177,7 @@ def remove_redundant_mul(graph):
         clear_redundant_nodes(graph)
 
 
-def rename_single_mul_or_add_or_sub(graph, params):
+def rename_single_mul_or_add_or_sub(graph):
     matched = False
     mas = ['Mul', 'Div', 'Add', 'Sub']
     mas_matches = [single_node_matcher(graph, op_type) for op_type in mas]
@@ -11236,12 +11232,11 @@ def rename_single_mul_or_add_or_sub(graph, params):
                 graph.remove_edge(src, n, key=k)
                 remove_node_safely(graph, n)
             else:
-                if not params.get('force_eltwise', False):
-                    parent_node_type = NodeWrap(graph, in_edges[main_input_port][0])['object'].type
-                    linear_op_list = list(set(BaseLinearOp.get_concrete_subclass_names()).intersection(
-                        OnnxOp.get_concrete_subclass_names())) + ['FullyConnected']
-                    if in_shapes[0] != in_shapes[1] and parent_node_type not in linear_op_list:
-                        continue
+                parent_node_type = NodeWrap(graph, in_edges[main_input_port][0])['object'].type
+                linear_op_list = list(set(BaseLinearOp.get_concrete_subclass_names()).intersection(
+                    OnnxOp.get_concrete_subclass_names())) + ['FullyConnected']
+                if in_shapes[0] != in_shapes[1] and parent_node_type not in linear_op_list:
+                    continue
 
                 output_shapes = n_obj.get_output_shapes()
                 if len(output_shapes) == 0 or output_shapes[0] is None:
@@ -12991,7 +12986,7 @@ def middle_passes(graph, params):
         convert_gather_to_slice(graph)
     rearrange_matmul_reshape_bias(graph)
     fuse_bias(graph)
-    rename_single_mul_or_add_or_sub(graph, params)
+    rename_single_mul_or_add_or_sub(graph)
     rearrange_fc_reshape_bn(graph)
     fuse_pad(graph)
     fuse_linear_bn(graph)

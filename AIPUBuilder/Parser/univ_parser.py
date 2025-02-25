@@ -65,14 +65,6 @@ def univ_parser(params):
         else:
             params['force_fp_norm'] = False
 
-        if 'force_eltwise' in params:
-            force_eltwise = str(params['force_eltwise']).lower() == 'true'
-            if force_eltwise:
-                WARN('[Parser]: force eltwise is enabled, broadcast add/sub/mul/div will be tiled to eltwise!')
-            params['force_eltwise'] = force_eltwise
-        else:
-            params['force_eltwise'] = False
-
         params['input_layouts'] = multi_string_to_list(params['input_layout']) if 'input_layout' in params else []
 
         def _parse_npy(key_name):
