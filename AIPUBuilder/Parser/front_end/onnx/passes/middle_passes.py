@@ -11869,13 +11869,18 @@ def split_conv_transpose(graph):
                 conv_trans_obj.output_padding + [0]
         new_spatial_output_shape = (np.array(ori_spatial_output_shape) + np.multiply(
             np.array(conv_trans_obj.strides) - 1, conv_trans_obj.output_padding)).tolist()
-        # new_output_shape = ori_output_shape[:2] + new_spatial_output_shape
 
         src, _, in_attr = in_edges[0]
+        input_shape = in_attr['tensor'].shape
+        padded_shape = []
+        for i, s in enumerate(input_shape):
+            padded_shape.append(s + full_pads[i] + full_pads[i + spatial_rank + 2])
         graph.remove_edges_from(in_edges)
         pre_pad = get_valid_node_name(graph, conv_trans + '_pre_pad')
         graph.add_edge(src, pre_pad, **in_attr)
-        graph.add_edge(pre_pad, conv_trans)
+        deconv_in_attr = copy.deepcopy(in_attr)
+        deconv_in_attr['tensor'] = Tensor(shape=tuple(padded_shape))
+        graph.add_edge(pre_pad, conv_trans, **deconv_in_attr)
         pad_attr = {'name': pre_pad,
                     'opset_version': 2,
                     'pads': full_pads,
@@ -11885,8 +11890,10 @@ def split_conv_transpose(graph):
         if ori_spatial_output_shape != new_spatial_output_shape:
             begin = [0] * (2 + spatial_rank)
             size = ori_output_shape
+            new_output_shape = ori_output_shape[:2] + new_spatial_output_shape if data_format == 'NCHW' else (
+                ori_output_shape[:1] + new_spatial_output_shape + ori_output_shape[-1:])
             post_slice = insert_slice_after(
-                graph, conv_trans, begin, size, data_format=data_format)
+                graph, conv_trans, begin, size, slice_before_shape=new_output_shape, data_format=data_format)
             if conv_trans in graph._attr['output_names']:
                 index = graph._attr['output_names'].index(conv_trans)
                 graph._attr['output_names'][index] = post_slice

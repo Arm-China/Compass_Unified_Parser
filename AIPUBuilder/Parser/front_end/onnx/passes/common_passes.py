@@ -1280,7 +1280,7 @@ def insert_slice(graph, src, dst, in_attr, begin, size, key=None, type='Slice', 
     return ret
 
 
-def insert_slice_after(graph, src, begin, size, out_port=0, type='Slice', data_format='NHWC'):
+def insert_slice_after(graph, src, begin, size, slice_before_shape, out_port=0, type='Slice', data_format='NHWC'):
     ret = None
     if not (graph.has_node(src) and begin and size and type in ('Slice', 'ArmSlice')):
         ERROR('[Parser]: Invalid params for insert_slice_after!')
@@ -1310,7 +1310,7 @@ def insert_slice_after(graph, src, begin, size, out_port=0, type='Slice', data_f
                            })
     NodeWrap(graph, slice_name).replace_obj(type, slice_attr)
 
-    src_out_attr = {'src_out_port': out_port, 'dst_in_port': 0}
+    src_out_attr = {'src_out_port': out_port, 'dst_in_port': 0, 'tensor': Tensor(shape=slice_before_shape)}
     out_edges = graph.sorted_out_edges(src, data=True)
     for _, dst, out_attr in out_edges:
         if out_attr.get('src_out_port', 0) != out_port:
