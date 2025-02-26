@@ -4324,6 +4324,46 @@ def remove_redundant_reshape_transpose(graph):
         clear_redundant_nodes(graph)
 
 
+def remove_special_transpose(graph):
+    matches = matched_patterns(graph,
+                               nodes=[
+                                   ('trans', {'op': 'ArmTranspose'}),
+                                   ('reshape', {'op': 'ArmReshape'}),
+                               ],
+                               edges=[
+                                   ('trans', 'reshape', {'dst_in_port': 0}),
+                               ]
+                               )
+    for m in matches:
+        trans, rs = m['trans'], m['reshape']
+        transpose_obj = NodeWrap(graph, trans)['object']
+        reshape_obj = NodeWrap(graph, rs)['object']
+        if trans in graph._attr['output_names']:
+            continue
+        if transpose_obj is not None and \
+                reshape_obj is not None:
+            trans_in_edges = graph.sorted_in_edges(trans, data=True)
+            trans_out_edges = graph.sorted_out_edges(trans, data=True)
+            if len(trans_in_edges) < 1 or len(trans_out_edges) != 1:
+                continue
+            input_shapes = transpose_obj.get_input_shapes()
+            perm = transpose_obj.perm
+            if input_shapes is not None and \
+                    None not in input_shapes and \
+                    all([None not in shape for shape in input_shapes]):
+                no_change_perm = list(range(len(input_shapes[0])))
+                diff_values = [v1 for i, (v1, v2) in enumerate(zip(perm, no_change_perm)) if v1 != v2]
+                tmp_cnt = 0
+                for axis in diff_values:
+                    if input_shapes[0][axis] != 1:
+                        tmp_cnt += 1
+                if tmp_cnt <= 1:
+                    remove_node_safely(graph, trans)
+        else:
+            ERROR(
+                '[Parser]: Meets invalid Transpose Op(%s) in remove_special_transpose!' % trans)
+
+
 def remove_const(graph):
     removing_const = []
     for node_name in graph.nodes:
@@ -5782,6 +5822,7 @@ def back_passes(graph, params):
     merge_s2b_pool_b2s(graph)
 
     remove_redundant_bn(graph)
+    remove_special_transpose(graph)
     sink_transpose_through_special_reshape(graph)
     sink_quantize_through_concat(graph)
     remove_redundant_reshape_transpose(graph)
