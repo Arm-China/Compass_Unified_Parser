@@ -101,7 +101,7 @@ class ArmActivationOp(LayoutUnawareOp, OpHasMethod, OpHasOneOutPort, ArmOp):
                 'approximate': {'type': AttrType.STRINGS, 'default': 'none'},
                 }
 
-    METHOD = {'CELU': lambda x, alpha: tf.math.maximum(0.0, x) + tf.math.minimum(0.0, alpha * (tf.exp(x / alpha) - 1.0)),
+    METHOD = {'CELU': lambda x, alpha: torch.nn.functional.celu(x, alpha=alpha),
               'CLIP': lambda x, v1, v2: tf.clip_by_value(x, v1, v2),
               'ELU': tf.nn.elu,
               'GELU': lambda x: (x),
@@ -136,7 +136,8 @@ class ArmActivationOp(LayoutUnawareOp, OpHasMethod, OpHasOneOutPort, ArmOp):
         inputs = self.get_input_tensors()
         if self.method == 'CELU':
             inp = inputs[0].astype(np.float32) if np.issubdtype(inputs[0].dtype, np.integer) else inputs[0]
-            out_tensor = func(inp, self.alpha).numpy().astype(inputs[0].dtype)
+            inp = torch.tensor(inp)
+            out_tensor = func(inp, self.alpha).cpu().numpy().astype(inputs[0].dtype)
         elif self.method == 'CLIP':
             out_tensor = func(inputs[0], self.clip_min, self.clip_max).numpy().astype(inputs[0].dtype)
         elif self.method == 'GELU':
