@@ -238,11 +238,11 @@ class RoiAlignOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
         if self.data_format == 'NHWC':
             channels = inputs[0].shape[-1]
             out_tensor = np.random.ranf(
-                (rois, self.output_height, self.output_width, channels)).astype(np.float32)
+                (rois, self.output_height, self.output_width, channels)).astype(inputs[0].dtype)
         else:
             channels = inputs[0].shape[1]
             out_tensor = np.random.ranf(
-                (rois, channels, self.output_height, self.output_width)).astype(np.float32)
+                (rois, channels, self.output_height, self.output_width)).astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
     def convert_version(self):
