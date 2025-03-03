@@ -11,6 +11,7 @@ import onnx
 import torch
 import torch.nn as nn
 import torch.onnx.symbolic_helper as helper
+from torch.onnx import _type_utils
 from torch.onnx import symbolic_opset9 as opset9
 from multiprocessing import Process
 from .utils import get_tuple_from_tensor_type, quantized_args, quantize_helper, quantize_helper_multi, \
@@ -296,8 +297,61 @@ def convert_constant_chunk(g, input, chunks, dim):
 
 @quantized_args(True, False, False)
 def convert_clamp(g, x, min_val, max_val):
-    from torch.onnx.symbolic_opset11 import clamp
-    return clamp(g, x, min_val, max_val)
+    from torch.onnx.symbolic_opset11 import clamp_max, clamp_min
+
+    def _cast_if_not_none(tensor, dtype):
+        if tensor is not None and not helper._is_none(tensor):
+            return g.op(
+                "Cast",
+                tensor,
+                to_i=dtype.onnx_type(),
+            )
+        else:
+            return tensor
+
+    scalar_type = _type_utils.JitScalarType.from_value(
+        x, _type_utils.JitScalarType.UNDEFINED
+    )
+    if scalar_type != _type_utils.JitScalarType.UNDEFINED:
+        _min_val = _cast_if_not_none(min_val, scalar_type)
+        _max_val = _cast_if_not_none(max_val, scalar_type)
+    else:
+        _min_val = min_val
+        _max_val = max_val
+
+    if helper._is_none(_min_val):
+        return clamp_max(g, x, _max_val)
+    elif helper._is_none(_max_val):
+        return clamp_min(g, x, _min_val)
+    else:
+        if helper._get_tensor_rank(min_val) == 0 and helper._get_tensor_rank(max_val) == 0:
+            min_t = helper._parse_arg(min_val, 't')
+            max_t = helper._parse_arg(max_val, 't')
+            if min_t > max_t:
+                x_rank = helper._get_tensor_rank(x)
+                if x_rank:
+                    inp_shape = g.op("Shape", x)
+                    inp_value = g.op(
+                        "Constant",
+                        value_t=torch.tensor(max_t, dtype=scalar_type.dtype()),
+                    )
+                    new_shape = g.op(
+                        "Constant",
+                        value_t=torch.tensor([1] * x_rank, dtype=torch.int64),
+                    )
+                    reshape_inp = g.op("Reshape", inp_value, new_shape)
+                    return g.op("Tile", reshape_inp, inp_shape)
+                else:
+                    return g.op(
+                        "Constant",
+                        value_t=torch.tensor(max_t, dtype=scalar_type.dtype()),
+                    )
+            else:
+                return helper._op_with_optional_float_cast(
+                    g, "Clip", x, _min_val, _max_val, opset_before=12
+                )
+        else:
+            return clamp_max(g, clamp_min(g, x, _min_val), _max_val)
 
 
 @helper.parse_args('v', 'is', 'is', 'is', 'is', 'is')
