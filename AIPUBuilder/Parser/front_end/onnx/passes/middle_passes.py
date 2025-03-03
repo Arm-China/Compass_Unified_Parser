@@ -9017,90 +9017,6 @@ def merge_ln6(graph):
         clear_redundant_nodes(graph)
 
 
-def merge_ln7(graph):
-    matched = False
-    matches = matched_patterns(graph,
-                               nodes=[
-                                   ('mean_1', {'op': 'ReduceMean'}),
-                                   ('sub', {'op': 'Sub'}),
-                                   ('pow', {'op': 'Pow'}),
-                                   ('pow_y', {'op': 'Constant', 'unique': False}),
-                                   ('mean_2', {'op': 'ReduceMean'}),
-                                   ('add_1', {'op': 'Add'}),
-                                   ('sqrt', {'op': 'Sqrt'}),
-                                   ('div', {'op': 'Div'}),
-                                   ('eps', {'op': 'Constant', 'unique': False}),
-                               ],
-                               edges=[
-                                   ('mean_1', 'sub', {
-                                       'src_out_port': 0, 'dst_in_port': 1}),
-                                   ('sub', 'pow'),
-                                   ('pow', 'mean_2'),
-                                   ('mean_2', 'add_1'),
-                                   ('add_1', 'sqrt'),
-                                   ('sqrt', 'div', {
-                                       'src_out_port': 0, 'dst_in_port': 1}),
-                                   ('sub', 'div'),
-                                   ('pow_y', 'pow', {
-                                       'src_out_port': 0, 'dst_in_port': 1}),
-                                   ('eps', 'add_1'),
-                               ]
-                               )
-    for m in matches:
-        key_names = ['mean_1', 'sub', 'pow', 'pow_y',
-                     'mean_2', 'add_1', 'sqrt', 'div', 'eps']
-        node_objs = {k: NodeWrap(graph, m[k])['object'] for k in key_names}
-        if all(obj is not None for obj in node_objs.values()):
-            mean_1_in_edges = graph.sorted_in_edges(m['mean_1'], data=True)
-            sub_in_edges = graph.sorted_in_edges(m['sub'], data=True)
-            if len(mean_1_in_edges) < 1 \
-                    or len(sub_in_edges) != 2 \
-                    or mean_1_in_edges[0][0] != sub_in_edges[0][0] \
-                    or mean_1_in_edges[0][2]['src_out_port'] != sub_in_edges[0][2]['src_out_port']:
-                continue
-            input_shape = mean_1_in_edges[0][2]['tensor'].get_shape()
-            if input_shape is None or any(s is None for s in input_shape):
-                continue
-            input_dtype = mean_1_in_edges[0][2]['tensor'].dtype
-            if node_objs['mean_1'].axes != node_objs['mean_2'].axes \
-                    or FLOAT_EQUAL(node_objs['pow_y'].value, 2.0) is False:
-                continue
-
-            div_in_edges = graph.sorted_in_edges(m['div'], data=True)
-            axes = OpHasAxis.make_axes_non_negative(
-                node_objs['mean_1'].axes, len(input_shape))
-            axes = sorted(axes)
-            weight = np.ones(1, dtype=input_dtype)
-            bias = np.zeros(1, dtype=input_dtype)
-            weight = OpHasAxis.align_axes(weight, axes, input_shape)
-            bias = OpHasAxis.align_axes(bias, axes, input_shape)
-            if weight is None or bias is None:
-                continue
-            if node_objs['eps'].value is None \
-                    or (node_objs['eps'].value.size > 1 and np.any(
-                        node_objs['eps'].value.flatten()[0] != node_objs['eps'].value)):
-                continue
-
-            matched = True
-            if node_objs['eps'].value.size == 1:
-                eps = float(node_objs['eps'].value)
-            else:
-                eps = float(node_objs['eps'].value.flatten()[0])
-            inp, _, in_attr = mean_1_in_edges[0]
-            graph.remove_edges_from(div_in_edges)
-            graph.add_edge(inp, m['div'], **in_attr)
-            ln_attr = node_objs['div'].copied_attr()
-            ln_attr.update({'epsilon': eps, 'opset_version': 17,
-                            'axes': node_objs['mean_2'].axes})
-            NodeWrap(graph, m['div']).replace_obj('LayerNormalization', ln_attr)
-            insert_constant(graph, m['div'] + '_scale', weight, m['div'], in_port=1)
-            insert_constant(graph, m['div'] + '_bias', bias, m['div'], in_port=2)
-        else:
-            ERROR('[Parser]: Meets invalid nodes in merge_ln7!')
-    if matched:
-        clear_redundant_nodes(graph)
-
-
 def merge_ln_reshape(graph):
     matched = False
     matches = matched_patterns(graph,
@@ -9498,6 +9414,74 @@ def merge_mvn2(graph):
                                   nodes=[
                                       ('inp', {}),
                                       ('mean_1', {'op': 'ReduceMean'}),
+                                      ('sub', {'op': 'Sub'}),
+                                      ('pow', {'op': 'Pow'}),
+                                      ('pow_y', {'op': 'Constant'}),
+                                      ('mean_2', {'op': 'ReduceMean'}),
+                                      ('add_1', {'op': 'Add'}),
+                                      ('epsilon', {'op': 'Constant'}),
+                                      ('sqrt', {'op': 'Sqrt'}),
+                                      ('div', {'op': 'Div'}),
+                                  ],
+                                  edges=[
+                                      ('inp', 'mean_1'),
+                                      ('mean_1', 'sub', {
+                                          'src_out_port': 0, 'dst_in_port': 1}),
+                                      ('inp', 'sub'),
+                                      ('sub', 'pow'),
+                                      ('pow_y', 'pow', {
+                                          'src_out_port': 0, 'dst_in_port': 1}),
+                                      ('pow', 'mean_2'),
+                                      ('mean_2', 'add_1'),
+                                      ('epsilon', 'add_1', {
+                                          'src_out_port': 0, 'dst_in_port': 1}),
+                                      ('add_1', 'sqrt'),
+                                      ('sqrt', 'div', {
+                                          'src_out_port': 0, 'dst_in_port': 1}),
+                                      ('sub', 'div', {
+                                          'src_out_port': 0, 'dst_in_port': 0}),
+                                  ])
+    for m in ln_matches:
+        objs_dict = {m[name]: NodeWrap(graph, m[name])['object'] for name in [
+            'inp', 'mean_1', 'mean_2', 'sub', 'pow_y', 'epsilon', 'div']}
+        if all([graph.has_node(n) for n in objs_dict.keys()]) and all([v is not None for v in objs_dict.values()]):
+            pow_y_value = objs_dict[m['pow_y']].value
+            eps_value = objs_dict[m['epsilon']].value
+            axes = objs_dict[m['mean_1']].axes
+            if pow_y_value is not None and eps_value is not None and FLOAT_EQUAL(pow_y_value, 2) and \
+                    objs_dict[m['mean_1']].keepdims and objs_dict[m['mean_2']].keepdims and \
+                    objs_dict[m['mean_1']].axes == objs_dict[m['mean_2']].axes:
+                matched = True
+                eps_value = float(eps_value)
+                inp, mean_1, sub, div = [m[name] for name in [
+                    'inp', 'mean_1', 'sub', 'div']]
+                mean_1_in_edges = graph.sorted_in_edges(mean_1, data=True)
+                div_in_edges = graph.sorted_in_edges(div)
+                _, _, in_attr = mean_1_in_edges[0]
+                graph.remove_edge(inp, mean_1)
+                graph.remove_edge(inp, sub)
+                graph.remove_edges_from(div_in_edges)
+                graph.add_edge(inp, div, **in_attr)
+
+                ln_attr = objs_dict[div].copied_attr()
+                ln_attr.update({'axes': axes,
+                                'epsilon': eps_value,
+                                'opset_version': 13
+                                })
+                NodeWrap(graph, div).replace_obj(
+                    'MeanVarianceNormalization', ln_attr)
+        else:
+            ERROR('[Parser]: Meets invalid nodes in merge_mvn2!')
+    if matched:
+        clear_redundant_nodes(graph)
+
+
+def merge_mvn3(graph):
+    matched = False
+    ln_matches = matched_patterns(graph,
+                                  nodes=[
+                                      ('inp', {}),
+                                      ('mean_1', {'op': 'ReduceMean'}),
                                       ('sub_1', {'op': 'Sub'}),
                                       ('pow', {'op': 'Pow'}),
                                       ('pow_y', {'op': 'Constant'}),
@@ -9573,12 +9557,12 @@ def merge_mvn2(graph):
                 NodeWrap(graph, add_2).replace_obj(
                     'MeanVarianceNormalization', ln_attr)
         else:
-            ERROR('[Parser]: Meets invalid nodes in merge_mvn2!')
+            ERROR('[Parser]: Meets invalid nodes in merge_mvn3!')
     if matched:
         clear_redundant_nodes(graph)
 
 
-def merge_mvn3(graph):
+def merge_mvn4(graph):
     matched = False
     matches = matched_patterns(graph,
                                nodes=[
@@ -9630,7 +9614,7 @@ def merge_mvn3(graph):
         obj_dict = {k: NodeWrap(graph, m[k])['object']
                     for k in names_check_valid}
         if any([obj is None for obj in obj_dict.values()]):
-            ERROR('[Parser]: Meets invalid Node in merge_mvn3!')
+            ERROR('[Parser]: Meets invalid Node in merge_mvn4!')
             continue
         if any([len(graph.sorted_out_edges(m[name])) != 1 for name in names_check_out_edge_1]):
             continue
@@ -9640,7 +9624,7 @@ def merge_mvn3(graph):
             continue
         if len(graph.sorted_in_edges(m['trans_1'])) < 1:
             ERROR(
-                '[Parser]: Got invalid input edges of Transpose(%s) in merge_mvn3!' % m['trans_1'])
+                '[Parser]: Got invalid input edges of Transpose(%s) in merge_mvn4!' % m['trans_1'])
             continue
         if obj_dict['trans_1'].perm != [0, 2, 3, 1] \
                 or obj_dict['trans_2'].perm != [0, 3, 1, 2]:
@@ -9651,7 +9635,7 @@ def merge_mvn3(graph):
                 or obj_dict['mean_1'].get_input_shapes()[0] is None \
                 or len(obj_dict['mean_1'].get_input_shapes()[0]) != 4:
             ERROR(
-                '[Parser]: Got invalid input shape of Mean(%s) in merge_mvn3!' % m['mean_1'])
+                '[Parser]: Got invalid input shape of Mean(%s) in merge_mvn4!' % m['mean_1'])
             continue
         if len(obj_dict['add_1'].sorted_in_consts()) != 1 \
                 or obj_dict['add_1'].sorted_in_consts()[0][2] is None \
@@ -9665,7 +9649,6 @@ def merge_mvn3(graph):
         matched = True
         trans1_in_edges = graph.sorted_in_edges(m['trans_1'], data=True)
         trans2_in_edges = graph.sorted_in_edges(m['trans_2'])
-        trans2_out_edges = graph.sorted_out_edges(m['trans_2'], data=True)
         src, _, in_attr = trans1_in_edges[0]
         graph.remove_edges_from(trans1_in_edges + trans2_in_edges)
         graph.add_edge(src, m['trans_2'], **in_attr)
@@ -13001,10 +12984,10 @@ def middle_passes(graph, params):
     merge_ln3(graph)
     merge_ln5(graph)
     merge_ln6(graph)
-    merge_ln7(graph)
     merge_mvn(graph)
     merge_mvn2(graph)
     merge_mvn3(graph)
+    merge_mvn4(graph)
     merge_gn(graph)
     merge_gn2(graph)
     merge_gn3(graph)
