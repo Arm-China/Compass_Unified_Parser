@@ -970,7 +970,8 @@ class MatMulOp(OpHasOneOutPort, OnnxOp):
             out_shape = []
             if max_dim != 1:
                 if a_dim == 1:
-                    out_shape = b_shape[1:]
+                    out_shape = b_shape[:]
+                    del out_shape[-2]
                 elif b_dim == 1:
                     out_shape = a_shape[:-1]
                 else:
