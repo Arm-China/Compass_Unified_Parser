@@ -53,3 +53,31 @@ class SequenceConstructOp(OpHasOneOutPort, OnnxOp):
 
     def infer_shape(self):
         super(SequenceConstructOp, self).infer_shape()
+
+
+class SequenceEmptyOp(OpHasOneOutPort, OnnxOp):
+    @classmethod
+    def attributes(cls):
+        return {11: {}}
+
+    def __init__(self, graph, attr_dict=None):
+        super(SequenceEmptyOp, self).__init__(graph, attr_dict)
+        self.update_attributes(SequenceEmptyOp, attr_dict)
+        assert self.check_required(), 'SequenceEmptyOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(SequenceEmptyOp, self).infer_shape()
+
+
+class SequenceInsertOp(OpHasOneOutPort, OnnxOp):
+    @classmethod
+    def attributes(cls):
+        return {11: {}}
+
+    def __init__(self, graph, attr_dict=None):
+        super(SequenceInsertOp, self).__init__(graph, attr_dict)
+        self.update_attributes(SequenceInsertOp, attr_dict)
+        assert self.check_required(), 'SequenceInsertOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(SequenceInsertOp, self).infer_shape()

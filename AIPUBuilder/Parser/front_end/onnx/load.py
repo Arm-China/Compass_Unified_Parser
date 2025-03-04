@@ -75,36 +75,46 @@ def build_subgraph(current_node_name,
     sub_graph._attr['parent_graph'] = parent_graph
 
     for single_input in inputs:
-        if single_input['name'] not in const_names:
-            nodes.insert(0, {'name': single_input['name'],
+        inp_tensor_name = single_input['name']
+        if inp_tensor_name not in const_names:
+            nodes.insert(0, {'name': inp_tensor_name,
                              'out_port': 0,
                              'type': 'Input',
                              'input': [],
-                             'output': [{'name': single_input['name'], 'out_port': 0}]}
+                             'output': [{'name': inp_tensor_name, 'out_port': 0}]}
                          )
-            input_shape = single_input['type']['tensor_type']['shape'].tolist()
-            if 0 in input_shape:
-                WARN('[Parser]: Shape 0 found in Input node(%s), please check subgraph(%s)!'
-                     % (single_input['name'], subgraph_name))
+            if 'tensor_type' in single_input['type']:
+                input_shape = single_input['type']['tensor_type']['shape'].tolist()
+                if 0 in input_shape:
+                    WARN('[Parser]: Shape 0 found in Input node(%s), please check subgraph(%s)!'
+                         % (inp_tensor_name, subgraph_name))
 
-            input_type = np.dtype(
-                single_input['type']['tensor_type']['elem_type'])
-            if input_type.name in ('int32', 'int64'):
-                input_tensor = np.zeros(shape=input_shape).astype(input_type)
-            elif input_type.name in ('float32', 'float64',):
-                input_tensor = np.random.ranf(size=input_shape).astype(input_type)
-            elif input_type.name == 'bool':
-                input_tensor = np.random.randint(
-                    0, 2, size=input_shape).astype(bool)
+                input_type = np.dtype(
+                    single_input['type']['tensor_type']['elem_type'])
+                if input_type.name in ('int32', 'int64'):
+                    input_tensor = np.zeros(shape=input_shape).astype(input_type)
+                elif input_type.name in ('float32', 'float64',):
+                    input_tensor = np.random.ranf(size=input_shape).astype(input_type)
+                elif input_type.name == 'bool':
+                    input_tensor = np.random.randint(
+                        0, 2, size=input_shape).astype(bool)
+                else:
+                    input_tensor = np.random.ranf(
+                        size=input_shape).astype(input_type)
+                is_const = False
+
+                sub_graph._attr['input_tensors'].update({
+                    inp_tensor_name: Tensor(
+                        name=inp_tensor_name, value=input_tensor, is_const=is_const)
+                })
+            elif 'sequence_type' in single_input['type']:
+                input_tensor = np.empty(shape=(0, ))
+                sub_graph._attr['input_tensors'].update({
+                    inp_tensor_name: Tensor(
+                        name=inp_tensor_name, value=input_tensor, is_const=False)
+                })
             else:
-                input_tensor = np.random.ranf(
-                    size=input_shape).astype(input_type)
-            is_const = False
-
-            sub_graph._attr['input_tensors'].update({
-                single_input['name']: Tensor(
-                    name=single_input['name'], value=input_tensor, is_const=is_const)
-            })
+                raise NotImplementedError(f'Still not support for this input: {inp_tensor_name}')
 
     for c in consts:
         c_name = get_valid_node_name(sub_graph, c['name'], nodes_names)  # const tensor name maybe same with node
