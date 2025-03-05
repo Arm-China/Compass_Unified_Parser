@@ -4350,13 +4350,19 @@ def remove_special_transpose(graph):
             if input_shapes is not None and \
                     None not in input_shapes and \
                     all([None not in shape for shape in input_shapes]):
-                no_change_perm = list(range(len(input_shapes[0])))
-                diff_values = [v1 for i, (v1, v2) in enumerate(zip(perm, no_change_perm)) if v1 != v2]
-                tmp_cnt = 0
-                for axis in diff_values:
-                    if input_shapes[0][axis] != 1:
-                        tmp_cnt += 1
-                if tmp_cnt <= 1:
+
+                def check_transpose(inp_shape, trans_perm):
+                    for i, axis in enumerate(trans_perm):
+                        if i != axis and inp_shape[i] != 1:
+                            new_idx = trans_perm.index(i)
+                            cross_axes = list(range(i + 1, new_idx + 1)) if i < new_idx else list(range(new_idx, i))
+                            for _axis in cross_axes:
+                                if inp_shape[_axis] != 1:
+                                    return False
+                    return True
+
+                matched = check_transpose(input_shapes[0], perm)
+                if matched:
                     remove_node_safely(graph, trans)
         else:
             ERROR(
