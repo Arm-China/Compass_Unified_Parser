@@ -1073,104 +1073,194 @@ def convert_einsum(graph):
                         graph._attr['output_names'][index] = post_reshape
                 elif len(add_list[1]) >= 2 and len(add_list[0]) >= 2 \
                         and out_term[-2] in add_list[0][-2:] and out_term[-1] in add_list[1][-2:]:
-                    ele_0 = add_list[0][-2] if add_list[0][-1] == out_term[-2] else add_list[0][-1]
-                    ele_1 = add_list[1][-2] if add_list[1][-1] == out_term[-1] else add_list[1][-1]
-                    if ele_0 == ele_1:  # convert to MatMul
-                        trans_a = 0 if out_term[-2] == add_list[0][-2] else 1
-                        trans_b = 0 if out_term[-1] == add_list[1][-1] else 1
-                        in_shapes = einsum_obj.get_input_shapes()
-
-                        if len(in_shapes[0]) != len(in_shapes[1]):
-                            # insert reshape & tile
-                            if len(in_shapes[0]) > len(in_shapes[1]):
-                                reshape_shape = [1] * (len(in_shapes[0]) - 2) + in_shapes[1][-2:]
-                                tile_reps = [1] * len(in_shapes[0])
-                                for i, s0 in enumerate(in_shapes[0][:-2]):
-                                    for j, s1 in enumerate(in_shapes[1][:-2]):
-                                        if s0 != s1:
-                                            continue
-                                        if i == j:
-                                            reshape_shape[i] = s1
-                                reshape0 = insert_reshape(graph, in_edges[1][0], einsum, in_edges[1][-1], reshape_shape,
-                                                          quantize=einsum_obj.quantize)
-
-                                for i, s in enumerate(in_shapes[0][:-2]):
-                                    if s != reshape_shape[i]:
-                                        tile_reps[i] = s
-                                _, _, reshape0_out_attr = graph.sorted_out_edges(reshape0, data=True)[0]
-                                insert_tile(graph, reshape0, einsum, reshape0_out_attr, tile_reps,
-                                            quantize=einsum_obj.quantize)
-                            else:
-                                reshape_shape = [1] * (len(in_shapes[1]) - 2) + in_shapes[0][-2:]
-                                tile_reps = [1] * len(in_shapes[1])
-                                for i, s1 in enumerate(in_shapes[1][:-2]):
-                                    for j, s0 in enumerate(in_shapes[0][:-2]):
-                                        if s0 != s1:
-                                            continue
-                                        if i == j:
-                                            reshape_shape[i] = s0
-                                reshape0 = insert_reshape(graph, in_edges[0][0], einsum, in_edges[0][-1], reshape_shape,
-                                                          quantize=einsum_obj.quantize)
-                                for i, s in enumerate(in_shapes[1][:-2]):
-                                    if s != reshape_shape[i]:
-                                        tile_reps[i] = s
-                                _, _, reshape0_out_attr = graph.sorted_out_edges(reshape0, data=True)[0]
-                                insert_tile(graph, reshape0, einsum, reshape0_out_attr, tile_reps,
-                                            quantize=einsum_obj.quantize)
-
-                        in_edges = graph.sorted_in_edges(einsum, data=True)
-
-                        if trans_a == 1:
-                            ein_src0, _, ein_in_attr0 = in_edges[0]
-                            erc_src0_dim = len(in_shapes[0])
-                            perm = list(range(erc_src0_dim - 2)) + [(erc_src0_dim - 1), (erc_src0_dim - 2)]
-                            insert_transpose(graph, ein_src0, einsum, ein_in_attr0, perm,
-                                             quantize=einsum_obj.quantize)
-                        if trans_b == 1:
-                            ein_src1, _, ein_in_attr1 = in_edges[1]
-                            erc_src1_dim = len(in_shapes[1])
-                            perm = list(range(erc_src1_dim - 2)) + [(erc_src1_dim - 1), (erc_src1_dim - 2)]
-                            insert_transpose(graph, ein_src1, einsum, ein_in_attr1, perm,
-                                             quantize=einsum_obj.quantize)
-
-                        matmul_attr = einsum_obj.copied_attr()
-                        matmul_attr.update({'opset_version': 13})
-                        NodeWrap(graph, einsum).replace_obj(
-                            'MatMul', matmul_attr)
-
-                        if add_list[0][:-2] == add_list[1][:-2] and add_list[0][:-2] != '...' and \
-                                add_list[0][:-2] != out_term[:-2]:
-                            # need reduce sum
-                            axes = []
-                            origin_list = add_list[0][:-2]
-                            dst_list = out_term[:-2]
-                            for axis, v in enumerate(origin_list):
-                                if v not in dst_list:
-                                    axes.append(axis)
-                            out_edges = graph.sorted_out_edges(einsum, data=True)
-                            reduce_sum = get_valid_node_name(graph, f'{einsum}_ReduceSum')
-                            graph.add_node(reduce_sum)
-                            reduce_sum_attr = einsum_obj.copied_attr()
-                            reduce_sum_attr.update({'name': reduce_sum, 'opset_version': 11, 'keepdims': 0,
-                                                    'axes': axes})
-                            NodeWrap(graph, reduce_sum).replace_obj('ReduceSum', reduce_sum_attr)
-
-                            for src, dst, out_attr in out_edges:
-                                graph.remove_edge(src, dst)
-                                new_out_attr = copy.deepcopy(out_attr)
-                                new_out_attr['src_out_port'] = 0
-                                graph.add_edge(reduce_sum, dst, **new_out_attr)
-
-                            in_shapes = einsum_obj.get_input_shapes()
-                            graph.add_edge(einsum, reduce_sum, **{'src_out_port': 0, 'dst_in_port': 0,
-                                                                  'tensor': Tensor(
-                                                                      shape=in_shapes[0][:-1] + [in_shapes[1][-1]])})
-
-                            if einsum in graph._attr['output_names']:
-                                index = graph._attr['output_names'].index(einsum)
-                                graph._attr['output_names'][index] = reduce_sum
+                    a_equ = list(add_list[0])
+                    b_equ = list(add_list[1])
+                    # find disappeared shape in out_term
+                    dis_shapes = set(add_list[0]) & set(add_list[1]) - set(out_term)
+                    dis_shape = None
+                    if len(dis_shapes) > 1:
+                        for s in list(dis_shapes):
+                            if s in a_equ[-2:] and s in b_equ[-2:]:
+                                dis_shape = s
+                    elif len(dis_shapes) == 1:
+                        dis_shape = list(dis_shapes)[0]
                     else:
                         _warn_unsupported(einsum, equation)
+                        continue
+
+                    if not dis_shape:
+                        _warn_unsupported(einsum, equation)
+                        continue
+                    idx_0 = a_equ.index(dis_shape)
+                    idx_1 = b_equ.index(dis_shape)
+                    in_edges = graph.sorted_in_edges(einsum, data=True)
+                    if idx_0 != len(a_equ) - 1:
+                        perm = list(range(len(a_equ)))
+                        perm[idx_0] = len(a_equ) - 1
+                        perm[-1] = idx_0
+                        tmp_equ = a_equ.copy()
+                        tmp_equ[idx_0] = a_equ[-1]
+                        tmp_equ[-1] = a_equ[idx_0]
+                        a_equ = tmp_equ
+                        ein_src0, _, ein_in_attr0 = in_edges[0]
+                        insert_transpose(graph, ein_src0, einsum, ein_in_attr0, perm,
+                                         quantize=einsum_obj.quantize)
+                    if idx_1 != len(b_equ) - 2:
+                        perm = list(range(len(b_equ)))
+                        perm[idx_1] = len(b_equ) - 2
+                        perm[-2] = idx_1
+                        tmp_equ = b_equ.copy()
+                        tmp_equ[idx_1] = b_equ[-2]
+                        tmp_equ[-2] = b_equ[idx_1]
+                        b_equ = tmp_equ
+                        ein_src1, _, ein_in_attr1 = in_edges[1]
+                        insert_transpose(graph, ein_src1, einsum, ein_in_attr1, perm,
+                                         quantize=einsum_obj.quantize)
+
+                    # bsht, bthd-> bshd ---> bsht, bhtd
+                    while a_equ[:-2] != b_equ[:-2]:
+                        if len(a_equ) != len(b_equ):
+                            in_edges = graph.sorted_in_edges(einsum, data=True)
+                            a_input_shape = list(in_edges[0][-1]['tensor'].shape)
+                            b_input_shape = list(in_edges[1][-1]['tensor'].shape)
+                            if len(a_equ) < len(b_equ):
+                                diff_idx = -1
+                                for i, (_a, _b) in enumerate(list(zip(a_equ, b_equ))):
+                                    if _a != _b:
+                                        diff_idx = i
+                                        break
+                                if diff_idx == -1:
+                                    a_input_shape.insert(-1, 1)
+                                    insert_reshape(graph, in_edges[0][0], einsum, in_edges[0][-1],
+                                                   a_input_shape,
+                                                   quantize=einsum_obj.quantize)
+                                    a_equ.insert(-1, 1)
+                                else:
+                                    a_input_shape.insert(diff_idx, 1)
+                                    reshape0 = insert_reshape(graph, in_edges[0][0], einsum, in_edges[0][-1],
+                                                              a_input_shape,
+                                                              quantize=einsum_obj.quantize)
+                                    if b_equ[diff_idx] == out_term[diff_idx]:
+                                        tile_reps = [1] * len(a_input_shape)
+                                        tile_reps[diff_idx] = b_input_shape[diff_idx]
+                                        _, _, reshape0_out_attr = graph.sorted_out_edges(reshape0, data=True)[0]
+                                        insert_tile(graph, reshape0, einsum, reshape0_out_attr, tile_reps,
+                                                    quantize=einsum_obj.quantize)
+                                        a_equ.insert(diff_idx, b_equ[diff_idx])
+                                    else:
+                                        a_equ.insert(diff_idx, 1)
+                            else:
+                                diff_idx = -1
+                                for i, (_a, _b) in enumerate(list(zip(a_equ, b_equ))):
+                                    if _a != _b:
+                                        diff_idx = i
+                                        break
+                                if diff_idx == -1:
+                                    b_input_shape.append(1)
+                                    insert_reshape(graph, in_edges[1][0], einsum, in_edges[1][-1],
+                                                   b_input_shape,
+                                                   quantize=einsum_obj.quantize)
+                                    b_equ.append(1)
+                                else:
+                                    b_input_shape.insert(diff_idx, 1)
+                                    reshape0 = insert_reshape(graph, in_edges[1][0], einsum, in_edges[1][-1],
+                                                              b_input_shape,
+                                                              quantize=einsum_obj.quantize)
+                                    if a_equ[diff_idx] == out_term[diff_idx]:
+                                        tile_reps = [1] * len(b_input_shape)
+                                        tile_reps[diff_idx] = a_input_shape[diff_idx]
+                                        _, _, reshape0_out_attr = graph.sorted_out_edges(reshape0, data=True)[0]
+                                        insert_tile(graph, reshape0, einsum, reshape0_out_attr, tile_reps,
+                                                    quantize=einsum_obj.quantize)
+                                        b_equ.insert(diff_idx, a_equ[diff_idx])
+                                    else:
+                                        b_equ.insert(diff_idx, 1)
+                        a_prefix = a_equ[:-2]
+                        b_prefix = b_equ[:-2]
+                        for i, (_a, _b) in enumerate(list(zip(a_prefix, b_prefix))):
+                            if _a != _b:
+                                out = out_term[i]
+                                in_edges = graph.sorted_in_edges(einsum, data=True)
+                                a_input_shape = list(in_edges[0][-1]['tensor'].shape)
+                                b_input_shape = list(in_edges[1][-1]['tensor'].shape)
+                                if _a == out:
+                                    b_input_shape.insert(i, 1)
+                                    tile_reps = [1] * len(b_input_shape)
+                                    tile_reps[i] = a_input_shape[i]
+
+                                    reshape0 = insert_reshape(graph, in_edges[1][0], einsum, in_edges[1][-1],
+                                                              b_input_shape,
+                                                              quantize=einsum_obj.quantize)
+                                    _, _, reshape0_out_attr = graph.sorted_out_edges(reshape0, data=True)[0]
+                                    insert_tile(graph, reshape0, einsum, reshape0_out_attr, tile_reps,
+                                                quantize=einsum_obj.quantize)
+                                    b_equ.insert(i, _a)
+                                elif _b == out:
+                                    a_input_shape.insert(i, 1)
+                                    tile_reps = [1] * len(a_input_shape)
+                                    tile_reps[i] = b_input_shape[i]
+
+                                    reshape0 = insert_reshape(graph, in_edges[0][0], einsum, in_edges[0][-1],
+                                                              a_input_shape,
+                                                              quantize=einsum_obj.quantize)
+                                    _, _, reshape0_out_attr = graph.sorted_out_edges(reshape0, data=True)[0]
+                                    insert_tile(graph, reshape0, einsum, reshape0_out_attr, tile_reps,
+                                                quantize=einsum_obj.quantize)
+                                    a_equ.insert(i, _b)
+                                else:
+                                    _warn_unsupported(einsum, equation)
+                    new_out_term = a_equ[:-1] + b_equ[-1:]
+                    if new_out_term != list(out_term) and list(set(new_out_term) - set(out_term)) == [1]:
+                        need_post_reshape = True
+                    else:
+                        need_post_reshape = False
+                    matmul_attr = einsum_obj.copied_attr()
+                    matmul_attr.update({'opset_version': 13})
+                    NodeWrap(graph, einsum).replace_obj('MatMul', matmul_attr)
+
+                    if need_post_reshape:
+                        in_edges = graph.sorted_in_edges(einsum, data=True)
+                        a_input_shape = list(in_edges[0][-1]['tensor'].shape)
+                        b_input_shape = list(in_edges[1][-1]['tensor'].shape)
+                        matmul_out_shape = a_input_shape[:-1] + b_input_shape[-1:]
+                        out_shape = einsum_obj.get_output_shapes()[0]
+                        post_reshape = insert_reshape_after(
+                            graph, einsum, out_shape, old_dim=matmul_out_shape, quantize=einsum_obj.quantize)
+                        if einsum in graph._attr['output_names']:
+                            index = graph._attr['output_names'].index(einsum)
+                            graph._attr['output_names'][index] = post_reshape
+
+                    if add_list[0][:-2] == add_list[1][:-2] and add_list[0][:-2] != '...' and \
+                            add_list[0][:-2] != out_term[:-2]:
+                        # need reduce sum
+                        axes = []
+                        origin_list = add_list[0][:-2]
+                        dst_list = out_term[:-2]
+                        for axis, v in enumerate(origin_list):
+                            if v not in dst_list:
+                                axes.append(axis)
+                        out_edges = graph.sorted_out_edges(einsum, data=True)
+                        reduce_sum = get_valid_node_name(graph, f'{einsum}_ReduceSum')
+                        graph.add_node(reduce_sum)
+                        reduce_sum_attr = einsum_obj.copied_attr()
+                        reduce_sum_attr.update({'name': reduce_sum, 'opset_version': 11, 'keepdims': 0,
+                                                'axes': axes})
+                        NodeWrap(graph, reduce_sum).replace_obj('ReduceSum', reduce_sum_attr)
+
+                        for src, dst, out_attr in out_edges:
+                            graph.remove_edge(src, dst)
+                            new_out_attr = copy.deepcopy(out_attr)
+                            new_out_attr['src_out_port'] = 0
+                            graph.add_edge(reduce_sum, dst, **new_out_attr)
+
+                        in_shapes = einsum_obj.get_input_shapes()
+                        graph.add_edge(einsum, reduce_sum, **{'src_out_port': 0, 'dst_in_port': 0,
+                                                              'tensor': Tensor(
+                                                                  shape=in_shapes[0][:-1] + [in_shapes[1][-1]])})
+
+                        if einsum in graph._attr['output_names']:
+                            index = graph._attr['output_names'].index(einsum)
+                            graph._attr['output_names'][index] = reduce_sum
                 elif len(add_list[1]) >= 2 and len(add_list[0]) >= 2 \
                         and len(add_list[0]) == len(add_list[1]) \
                         and len(set(add_list[0])) == len(set(add_list[1])) \
@@ -2308,7 +2398,8 @@ def _decompose_const_loop(graph, params):
                             src, dst, n_in_attr = in_e
                             src_obj = loop_obj.body.nodes[src]['object']
                             if src_obj.type == 'Input':
-                                assert src in loop_obj.body._attr['input_tensors'], f'{src} is Input but not in subgraph input tensors.'
+                                assert src in loop_obj.body._attr[
+                                    'input_tensors'], f'{src} is Input but not in subgraph input tensors.'
                                 inp_idx = list(loop_obj.body._attr['input_tensors'].keys()).index(src)
                                 if i == 0:
                                     if inp_idx == 0:
@@ -7125,7 +7216,8 @@ def convert_skip_simplified_layernorm(graph):
         outports = skip_simple_ln_obj.get_out_ports()
         inports = skip_simple_ln_obj.get_in_ports()
         if len(outports) > 2:
-            ERROR('[Parser]: outputs > 2 of SkipSimplifiedLayerNormalizationMs node(%s) not support yet!' % skip_simple_ln)
+            ERROR(
+                '[Parser]: outputs > 2 of SkipSimplifiedLayerNormalizationMs node(%s) not support yet!' % skip_simple_ln)
             continue
         if len(ln_in_edges) in (3, 4) and NodeWrap(graph, ln_in_edges[2][0])['object'].type == 'Constant':
             input_shapes = skip_simple_ln_obj.get_input_shapes()
@@ -7180,7 +7272,8 @@ def convert_skip_simplified_layernorm(graph):
 
             clear_redundant_nodes(graph)
         else:
-            ERROR('[Parser]: non-const gamma of SkipSimplifiedLayerNormalizationMs node(%s) not support yet!' % skip_simple_ln)
+            ERROR(
+                '[Parser]: non-const gamma of SkipSimplifiedLayerNormalizationMs node(%s) not support yet!' % skip_simple_ln)
 
 
 def merge_q_ln(graph):
@@ -10585,7 +10678,8 @@ def merge_rms_norm2(graph):
         pow_in_edges = graph.sorted_in_edges(m['pow'], data=True)
         div_in_edges = graph.sorted_in_edges(m['div'], data=True)
         if len(pow_in_edges) != 2 or len(div_in_edges) != 2:
-            ERROR('[Parser]: Meets invalid inputs of Pow(%s) or Div(%s) node in merge_rms_norm2!' % (m['pow'], m['div']))
+            ERROR(
+                '[Parser]: Meets invalid inputs of Pow(%s) or Div(%s) node in merge_rms_norm2!' % (m['pow'], m['div']))
             continue
         if node_objs['pow_y'].value != 2 or not node_objs['mean'].keepdims:
             continue
