@@ -1823,14 +1823,15 @@ def convert_torch_to_onnx(model_path, params):
                           training=torch.onnx.TrainingMode.PRESERVE,
                           custom_opsets=custom_opsets,
                           do_constant_folding=do_constant_folding)
-        try:
-            from onnxsim import simplify
-            sim_model, check = simplify(onnx_model_path, 1)
-            if check:
+
+        if params['use_onnxsim']:
+            try:
+                from onnxsim import simplify
+                sim_model, _ = simplify(onnx_model_path)
                 os.remove(onnx_model_path)
                 onnx.save(sim_model, onnx_model_path)
-        except:
-            WARN('[Parser]: Skip simplify onnx because error during onnxsim!')
+            except:
+                WARN('[Parser]: Skip simplify onnx because error during onnxsim!')
         return
 
     def _flatten_type(torch_type):

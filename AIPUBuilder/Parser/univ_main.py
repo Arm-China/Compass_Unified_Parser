@@ -112,6 +112,8 @@ optional arguments in Common section of <net.cfg>:
                         The cosine similarity and mean errors between outputs from optimizer forwarding
                         with float IR or quantized IR and outputs from runtime of the model's framework
                         will be shown if the file path is provided.
+    use_onnxsim         If use onnxsim(3rd onnx model simplify tool) to simplify the torch converted onnx model, 
+                        currently only works in torch model parsing. (default: True)
     ''')
     args.add_argument('-c', '--cfg', metavar='<net.cfg>',
                       type=str, required=True,

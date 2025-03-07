@@ -57,6 +57,12 @@ def univ_parser(params):
         else:
             params['ds_compat'] = False
 
+        if 'use_onnxsim' in params:
+            use_onnxsim = str(params['use_onnxsim']).lower() == 'true'
+            params['use_onnxsim'] = use_onnxsim
+        else:
+            params['use_onnxsim'] = True
+
         if 'force_fp_norm' in params:
             force_fp_norm = str(params['force_fp_norm']).lower() == 'true'
             if force_fp_norm:
