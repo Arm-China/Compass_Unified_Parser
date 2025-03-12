@@ -11263,38 +11263,82 @@ def rename_reshape_like(graph):
             graph.add_edge(const, name, **edge_attr)
 
 
-def remove_redundant_mul(graph):
+def remove_redundant_arithmetic(graph):
     if graph._attr.get('quantize', False):
         return
     matched = False
-    matches = matched_patterns(graph,
-                               nodes=[('const1', {'op': 'Constant'}),
-                                      ('mul1', {'op': 'Mul'}),
-                                      ('const2', {'op': 'Constant'}),
-                                      ('mul2', {'op': 'Mul'})],
-                               edges=[('const1', 'mul1'),
-                                      ('const2', 'mul2'),
-                                      ('mul1', 'mul2')])
+    matches0 = [matched_patterns(graph,
+                                 nodes=[('const1', {'op': 'Constant'}),
+                                        ('op1', {'op': op}),
+                                        ('const2', {'op': 'Constant'}),
+                                        ('op2', {'op': op})],
+                                 edges=[('const1', 'op1'),
+                                        ('const2', 'op2'),
+                                        ('op1', 'op2')]) for op in ['Add', 'Mul']]
+    matches1 = [matched_patterns(graph,
+                                 nodes=[('const1', {'op': 'Constant'}),
+                                        ('op1', {'op': op}),
+                                        ('reshape', {'op': 'Reshape'}),
+                                        ('const2', {'op': 'Constant'}),
+                                        ('op2', {'op': op})],
+                                 edges=[('const1', 'op1'),
+                                        ('op1', 'reshape'),
+                                        ('const2', 'op2'),
+                                        ('reshape', 'op2')]) for op in ['Add', 'Mul']]
+    matches = extend_lists(matches0)
+    matches += extend_lists(matches1)
     for m in matches:
-        key_names = ['const1', 'const2', 'mul1', 'mul2']
+        key_names = ['const1', 'const2', 'op1', 'op2']
         node_objs = {k: NodeWrap(graph, m[k])['object'] for k in key_names}
-        mul1_in_edges = graph.sorted_in_edges(m['mul1'], data=True)
-        mul2_in_edges = graph.sorted_in_edges(m['mul2'], data=True)
+        op1_in_edges = graph.sorted_in_edges(m['op1'], data=True)
+        op1_out_edges = graph.sorted_out_edges(m['op1'], data=True)
+        op2_in_edges = graph.sorted_in_edges(m['op2'], data=True)
+        op2_out_edges = graph.sorted_out_edges(m['op2'], data=True)
         if any(obj is None for obj in node_objs.values()) \
-                or len(mul1_in_edges) != 2 or len(mul2_in_edges) != 2:
-            ERROR('[Parser]: Meets invalid Nodes in remove_redundant_mul!')
+                or len(op1_in_edges) != 2 or len(op2_in_edges) != 2:
+            ERROR('[Parser]: Meets invalid Nodes in remove_redundant_arithmetic!')
             continue
-        src_to_mul1_edge = [(src, in_attr) for (src, _, in_attr) in mul1_in_edges if src != m['const1']]
-        if len(src_to_mul1_edge) < 1:
+        src_to_op1_edge = [(src, in_attr) for (src, _, in_attr) in op1_in_edges if src != m['const1']]
+        if len(src_to_op1_edge) < 1 or len(op1_out_edges) > 1:
             continue
-        matched = True
-        src, src_attr = src_to_mul1_edge[0]
-        new_const_value = np.array(node_objs['const1'].value * node_objs['const2'].value)
-        const_to_mul2_in_port = 1 - src_attr['dst_in_port']
+        op_type = node_objs['op1'].type
+        if op_type == 'Mul':
+            const2_array = (node_objs['const2'].value *
+                            np.ones(shape=op2_out_edges[0][-1]['tensor'].shape, dtype=node_objs['const2'].value.dtype))
+        else:
+            const2_array = (node_objs['const2'].value +
+                            np.zeros(shape=op2_out_edges[0][-1]['tensor'].shape, dtype=node_objs['const2'].value.dtype))
 
-        graph.remove_edges_from(mul2_in_edges)
-        graph.add_edge(src, m['mul2'], **src_attr)
-        insert_constant(graph, m['mul2'] + '_new_const', new_const_value, m['mul2'], in_port=const_to_mul2_in_port)
+        if 'reshape' in m:
+            has_reshape = True
+            rs_out_edges = graph.sorted_out_edges(m['reshape'], data=True)
+            const2_array = np.reshape(const2_array, op1_out_edges[0][-1]['tensor'].shape)
+            if len(rs_out_edges) > 1:
+                continue
+        else:
+            has_reshape = False
+        matched = True
+        src, src_attr = src_to_op1_edge[0]
+        if op_type == 'Mul':
+            new_const_value = np.array(const2_array * node_objs['const1'].value)
+        else:
+            new_const_value = np.array(const2_array + node_objs['const1'].value)
+
+        const_to_op2_in_port = 1 - src_attr['dst_in_port']
+
+        graph.remove_edge(m['const1'], m['op1'])
+        insert_constant(graph, m['op1'] + '_new_const', new_const_value, m['op1'], in_port=const_to_op2_in_port)
+        graph.remove_edges_from(op2_out_edges)
+
+        last_node_name = m['reshape'] if has_reshape else m['op1']
+
+        for _, dst, out_attr in op2_out_edges:
+            graph.add_edge(last_node_name, dst, **out_attr)
+
+        if m['op2'] in graph._attr['output_names']:
+            index = graph._attr['output_names'].index(m['op2'])
+            graph._attr['output_names'][index] = last_node_name
+
     if matched:
         clear_redundant_nodes(graph)
 
@@ -13101,7 +13145,6 @@ def middle_passes(graph, params):
 
     convert_gemm_to_fc(graph)
     convert_special_matmul_to_fc(graph)
-    remove_redundant_mul(graph)
     fuse_mul_add_or_sub(graph)
     merge_gather_slice(graph)
     remove_special_gather(graph)
@@ -13118,6 +13161,7 @@ def middle_passes(graph, params):
     convert_reducemean_to_avgpool(graph)
     convert_1d_pooling(graph)
     convert_div_to_mul(graph)
+    remove_redundant_arithmetic(graph)
 
     decompose_pack(graph)
     remove_useless_op(graph, ['ChannelShuffle', 'Concat', 'Split', 'Slice'])
