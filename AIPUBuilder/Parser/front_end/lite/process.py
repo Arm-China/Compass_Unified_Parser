@@ -23,6 +23,8 @@ def front_process_tflite(graph, params):
         infer(graph, partial=True)
         fuse_weights_const(graph)
 
+        remove_useless_op(
+            graph, ['LiteRESHAPE'])
         split_op_has_activation(graph)
 
         if graph._attr.get('quantize', False):
@@ -77,8 +79,6 @@ def front_process_tflite(graph, params):
 
         clear_redundant_nodes(graph)
         infer(graph)
-        remove_useless_op(
-            graph, ['LiteRESHAPE'])
         fuse_const(graph)
 
         if not graph._attr.get('quantize', False):

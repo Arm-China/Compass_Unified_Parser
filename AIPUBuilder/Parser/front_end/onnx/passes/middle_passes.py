@@ -1843,6 +1843,8 @@ def convert_special_pow(graph):
         power = m['target']
         pow_obj = NodeWrap(graph, power)['object']
         if pow_obj is not None:
+            if pow_obj.quantize:
+                continue
             in_edges = graph.sorted_in_edges(power, data=True)
             pow_y_obj = NodeWrap(graph, in_edges[1][0])['object']
             if pow_y_obj.type == 'Constant' and FLOAT_EQUAL(pow_y_obj.value, 0.5):
@@ -1864,6 +1866,8 @@ def convert_special_mul(graph):
         mul = m['target']
         mul_obj = NodeWrap(graph, mul)['object']
         if mul_obj is not None:
+            if mul_obj.quantize:
+                continue
             in_edges = graph.sorted_in_edges(mul, data=True)
             if len(in_edges) == 2 and in_edges[0][0] == in_edges[1][0]:
                 matched = True
@@ -8497,6 +8501,73 @@ def merge_l2norm2(graph):
         clear_redundant_nodes(graph)
 
 
+def merge_ln(graph):
+    matched = False
+    matches = matched_patterns(graph,
+                               nodes=[
+                                   ('inp', {}),
+                                   ('mean_1', {'op': 'ReduceMean'}),
+                                   ('sub', {'op': 'Sub'}),
+                                   ('mul_1', {'op': 'Mul'}),
+                                   ('div', {'op': 'Div'}),
+                                   ('mean_2', {'op': 'ReduceMean'}),
+                                   ('add_1', {'op': 'Add'}),
+                                   ('epsilon', {'op': 'Constant'}),
+                                   ('pow', {'op': 'Pow'}),
+                                   ('pow_y', {'op': 'Constant'}),
+                                   ('mul_2', {'op': 'Mul'}),
+                                   ('gamma', {'op': 'Constant'}),
+                                   ('add_2', {'op': 'Add'}),
+                                   ('beta', {'op': 'Constant'}),
+                               ],
+                               edges=[
+                                   ('inp', 'mean_1'),
+                                   ('inp', 'sub'),
+                                   ('mean_1', 'sub', {
+                                       'src_out_port': 0, 'dst_in_port': 1}),
+                                   ('sub', 'mul_1', {
+                                       'src_out_port': 0, 'dst_in_port': 0}),
+                                   ('sub', 'mul_1', {
+                                       'src_out_port': 0, 'dst_in_port': 1}),
+                                   ('sub', 'div'),
+                                   ('mul_1', 'mean_2'),
+                                   ('mean_2', 'add_1'),
+                                   ('epsilon', 'add_1'),
+                                   ('add_1', 'pow'),
+                                   ('pow_y', 'pow'),
+                                   ('pow', 'div'),
+                                   ('div', 'mul_2'),
+                                   ('gamma', 'mul_2'),
+                                   ('mul_2', 'add_2'),
+                                   ('beta', 'add_2'),
+                               ]
+                               )
+    for m in matches:
+        key_names = ['inp', 'sub', 'mean_1', 'add_2',
+                     'epsilon', 'pow_y', 'gamma', 'beta']
+        node_objs = {k: NodeWrap(graph, m[k])['object'] for k in key_names}
+        if all([obj is not None for obj in node_objs.values()]) and FLOAT_EQUAL(node_objs['pow_y'].value, 0.5):
+            matched = True
+            epsilon = float(node_objs['epsilon'].value)
+            gamma = node_objs['gamma'].value
+            beta = node_objs['beta'].value
+            mean_1_in_edges = graph.sorted_in_edges(m['mean_1'], data=True)
+            add_2_in_edges = graph.sorted_in_edges(m['add_2'])
+            _, _, in_attr = mean_1_in_edges[0]
+            graph.remove_edge(m['inp'], m['mean_1'])
+            graph.remove_edge(m['inp'], m['sub'])
+            graph.remove_edges_from(add_2_in_edges)
+            graph.add_edge(m['inp'], m['add_2'], **in_attr)
+            ln_attr = node_objs['add_2'].copied_attr()
+            ln_attr.update({'epsilon': epsilon, 'opset_version': 17,
+                            'axes': [-1]})
+            NodeWrap(graph, m['add_2']).replace_obj('LayerNormalization', ln_attr)
+            insert_constant(graph, m['add_2'] + '_scale', gamma, m['add_2'], in_port=1)
+            insert_constant(graph, m['add_2'] + '_bias', beta, m['add_2'], in_port=2)
+    if matched:
+        clear_redundant_nodes(graph)
+
+
 def merge_ln2(graph):
     matched = False
     ln_matches = matched_patterns(graph,
@@ -8774,7 +8845,7 @@ def merge_ln3(graph):
         clear_redundant_nodes(graph)
 
 
-def merge_ln(graph):
+def merge_ln4(graph):
     matched = False
     matches = matched_patterns(graph,
                                nodes=[
@@ -13120,6 +13191,7 @@ def middle_passes(graph, params):
     merge_ln(graph)
     merge_ln2(graph)
     merge_ln3(graph)
+    merge_ln4(graph)
     merge_ln5(graph)
     merge_ln6(graph)
     merge_mvn(graph)
