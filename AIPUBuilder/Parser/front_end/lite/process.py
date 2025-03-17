@@ -23,8 +23,10 @@ def front_process_tflite(graph, params):
         infer(graph, partial=True)
         fuse_weights_const(graph)
 
+        infer(graph)
         remove_useless_op(
             graph, ['LiteRESHAPE'])
+
         split_op_has_activation(graph)
 
         if graph._attr.get('quantize', False):
@@ -78,7 +80,6 @@ def front_process_tflite(graph, params):
         convert_special_uni_seq_lstm(graph)
 
         clear_redundant_nodes(graph)
-        infer(graph)
         fuse_const(graph)
 
         if not graph._attr.get('quantize', False):
@@ -109,6 +110,7 @@ def front_process_tflite(graph, params):
         convert_nms(graph, params)
 
         convert_to_onnx(graph)
+        infer(graph)
 
         # To support flex op in tflite model, need convert tf op to onnx as well.
         # FIXME: Other passes in tf front passes may be needed as well.
