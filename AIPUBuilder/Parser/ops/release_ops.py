@@ -4542,10 +4542,10 @@ class ArmResizeOp(OpHasMethod, OpHasOneOutPort, ArmOp):
                 size = [input_shape[0]] + self.sizes + [input_shape[-1]]
                 txt_file.write('size=[%s]\n' % list_list_to_string(size))
             else:
-                txt_file.write('ratio_x=%.8f\n' % self.factors[-1])
-                txt_file.write('ratio_y=%.8f\n' % self.factors[-2])
+                txt_file.write(f'ratio_x={self.factors[-1]}\n')
+                txt_file.write(f'ratio_y={self.factors[-2]}\n')
                 if len(self.factors) == 3:
-                    txt_file.write('ratio_z=%.8f\n' % self.factors[-3])
+                    txt_file.write(f'ratio_z={self.factors[-3]}\n')
             txt_file.write('mode=%s\n' % self.mode.upper())
             txt_file.write('antialias=%s\n' % str(bool(self.antialias)).lower())
             txt_file.write('exclude_outside=%s\n' % str(bool(self.exclude_outside)).lower())
