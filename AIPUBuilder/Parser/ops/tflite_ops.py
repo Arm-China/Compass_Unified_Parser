@@ -1037,23 +1037,33 @@ class LiteFULLY_CONNECTEDOp(BaseActivationOp, BaseLinearOp, TfliteOp):
     def infer_shape(self):
         super(LiteFULLY_CONNECTEDOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        if self.weights is not None:
-            last_out_dim = self.weights.shape[-2]
-            inp = np.reshape(inputs[0], (-1, self.weights.shape[-1]))
-            out_tensor = np.matmul(inp, np.transpose(
-                self.weights, axes=type(self).perm_lite_to_tf()))
+        filter_shape = self.weights.shape if self.weights is not None else inputs[1].shape
+        if self.is_all_inputs_const():
+            if self.weights is not None:
+                last_out_dim = self.weights.shape[-2]
+                inp = np.reshape(inputs[0], (-1, self.weights.shape[-1]))
+                out_tensor = np.matmul(inp, np.transpose(
+                    self.weights, axes=type(self).perm_lite_to_tf()))
+            else:
+                last_out_dim = inputs[1].shape[-2]
+                inp = np.reshape(inputs[0], (-1, inputs[1].shape[-1]))
+                out_tensor = np.matmul(inp, np.transpose(inputs[1]))
+            if self.biases is not None:
+                out_tensor = out_tensor + self.biases
+            out_tensor = self.cal_activation(out_tensor)
+            if self.keepdims:
+                assert inputs[0].shape[-1] == inp.shape[-1], 'input0 shape[-1] MUST be equal to filter shape[-1].'
+                out_shape = list(inputs[0].shape[:-1]) + [last_out_dim]
+            else:
+                out_shape = [-1, last_out_dim]
+            out_tensor = np.reshape(out_tensor, out_shape)
         else:
-            last_out_dim = inputs[1].shape[-2]
-            inp = np.reshape(inputs[0], (-1, inputs[1].shape[-1]))
-            out_tensor = np.matmul(inp, np.transpose(inputs[1]))
-        if self.biases is not None:
-            out_tensor = out_tensor + self.biases
-        out_tensor = self.cal_activation(out_tensor)
-        if self.keepdims:
-            out_shape = list(inputs[0].shape[:-1]) + [last_out_dim]
-        else:
-            out_shape = [int(np.prod(inputs[0].shape[:-1])), last_out_dim]
-        out_tensor = np.reshape(out_tensor, out_shape)
+            if self.keepdims:
+                assert inputs[0].shape[-1] == filter_shape[-1], 'input0 shape[-1] MUST be equal to filter shape[-1].'
+                out_shape = list(inputs[0].shape[:-1]) + [filter_shape[-2]]
+            else:
+                out_shape = [int(np.prod(inputs[0].shape)) // filter_shape[-1], filter_shape[-2]]
+            out_tensor = np.random.ranf(tuple(out_shape)).astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
 
