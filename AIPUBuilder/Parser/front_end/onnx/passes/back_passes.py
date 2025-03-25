@@ -2999,11 +2999,27 @@ def rename_resize(graph):
                     NodeWrap(graph, resize).replace_obj(
                         'ArmCropAndResize', crop_attr)
             else:
+                from decimal import Decimal
+
+                def increment_decimal_tail(num_str, decimals=None):
+                    d = Decimal(num_str)
+                    if decimals is None:
+                        decimals = abs(d.as_tuple().exponent)
+                    increment = Decimal('1') / (10 ** decimals)
+                    result = d + increment
+                    return result.normalize()
+
                 factors = resize_obj.scales.tolist()[1:-1]
                 try:
                     sizes = resize_obj.sizes.tolist()[1:-1]
                 except:
                     sizes = None
+
+                adjusted_factors = []
+                for i, factor in enumerate(factors):
+                    while int(input_shape[i + 1] * factor) < output_shape[i + 1]:
+                        factor = increment_decimal_tail(str(factor))
+                    adjusted_factors.append(factor)
                 graph.remove_edges_from(in_edges[1:])
                 mode = resize_obj.coordinate_transformation_mode
                 method = 'NEAREST' if resize_obj.mode == 'nearest' else 'BILINEAR'
@@ -3012,7 +3028,7 @@ def rename_resize(graph):
                         resize_obj.ori_keep_aspect_ratio_policy in ('not_larger', 'not_smaller'):
                     sizes = None
                     interp_attr.update({'keep_aspect_ratio_policy': resize_obj.ori_keep_aspect_ratio_policy})
-                interp_attr.update({'factors': factors,
+                interp_attr.update({'factors': adjusted_factors,
                                     'sizes': sizes,
                                     'method': method,
                                     'mode': mode})

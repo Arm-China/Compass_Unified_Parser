@@ -1584,7 +1584,7 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
 
     def __setattr__(self, item, value):
         if item in ('roi', 'scales', 'sizes'):
-            dtype = np.int64 if item == 'sizes' else np.float32
+            dtype = np.int64 if item == 'sizes' else np.float64
             try:
                 self.__dict__['_attr'][item].value = np.array(
                     value).astype(dtype)
