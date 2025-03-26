@@ -3477,6 +3477,12 @@ def fuse_relu(graph):
             op_has_relu_obj.update_activation(relu_attr)
             node_before_relu = op_has_relu if (not transpose) else transpose
             graph.remove_edge(node_before_relu, relu)
+            if op_has_relu_obj.quantize and relu_obj.quantize and transpose:
+                # update op_has_relu scale_zp
+                op_has_relu_out_edges = graph.sorted_out_edges(op_has_relu, data=True)
+                relu_scale_zp = graph.sorted_out_edges(relu, data=True)[0][-1]['tensor'].scale_zp
+                for _, _, out_attr in op_has_relu_out_edges:
+                    out_attr['tensor'].scale_zp = relu_scale_zp
             for _, dst, out_attr in graph.sorted_out_edges(relu, data=True):
                 graph.remove_edge(relu, dst)
                 graph.add_edge(node_before_relu, dst, **out_attr)
