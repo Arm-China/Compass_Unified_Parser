@@ -2752,7 +2752,7 @@ class LiteSQUAREOp(OpHasOneOutPort, TfliteOp):
     def infer_shape(self):
         super(LiteSQUAREOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.math.square(inputs[0])
+        out_tensor = tf.math.square(inputs[0]).numpy()
         self.set_out_tensor(out_tensor)
 
 
