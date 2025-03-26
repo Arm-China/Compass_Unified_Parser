@@ -26,6 +26,30 @@ onnx_source_map = {
 }
 
 
+def gen_input_tensor(name, shape, dtype, params):
+    if 0 in shape and name not in params.get('input_shapes', {}):
+        WARN('[Parser]: Shape 0 found in Input node(%s), please check config file!' %
+             name)
+
+    if name in params['input_npy']:
+        input_tensor = params['input_npy'][name]
+        is_const = True
+    else:
+        input_type = np.dtype(dtype)
+        if input_type.name in ('int32', 'int64'):
+            input_tensor = np.zeros(shape=shape).astype(input_type)
+        elif input_type.name in ('float32', 'float64',):
+            input_tensor = np.random.ranf(size=shape).astype(input_type)
+        elif input_type.name == 'bool':
+            input_tensor = np.random.randint(
+                0, 2, size=shape).astype(bool)
+        else:
+            input_tensor = np.random.ranf(
+                size=shape).astype(input_type)
+        is_const = False
+    return Tensor(name=name, value=input_tensor, is_const=is_const)
+
+
 def build_subgraph(current_node_name,
                    root_node_name,
                    key,
@@ -515,6 +539,10 @@ def convert_onnx_to_graph(graph, model_path, params):
                 inputs = g_content['inputs']
                 outputs = g_content['outputs']
                 nodes = g_content['nodes']
+                interm_infos = g_content['interm_infos']
+                interm_dict = {}
+                for info in interm_infos:
+                    interm_dict[info['name']] = info['type']
 
                 root_info = OrderedDict()
                 root_info.update({'graph': graph,
@@ -523,6 +551,21 @@ def convert_onnx_to_graph(graph, model_path, params):
                                   'nodes': nodes,
                                   })
                 graph._attr['input_tensors'] = OrderedDict()
+
+                custom_input_infos = {}
+                for inp_name in params.get('input_names', []):
+                    if 'input_shapes' in params:
+                        inp_shape = params['input_shapes'][inp_name]
+                    else:
+                        inp_shape = None
+                    if 'input_dtypes' in params:
+                        inp_dtype = params['input_dtypes'][inp_name]
+                    else:
+                        inp_dtype = None
+                    custom_input_infos.update({inp_name: {
+                        'node_name': inp_name,
+                        'shape': inp_shape,
+                        'dtype': inp_dtype}})
 
                 for single_input in inputs:
                     if single_input['name'] not in const_names:
@@ -535,6 +578,10 @@ def convert_onnx_to_graph(graph, model_path, params):
                                 params['input_layouts'][single_input['name']]:
                             input_attr.update({'layout': params['input_layouts'][single_input['name']]})
                         nodes.insert(0, input_attr)
+
+                        if single_input['name'] in custom_input_infos:
+                            del custom_input_infos[single_input['name']]
+
                         input_shape = single_input['type']['tensor_type']['shape'].tolist()
                         if 'input_shapes' in params and len(input_shape) >= 1:
                             name = single_input['name']
@@ -544,34 +591,16 @@ def convert_onnx_to_graph(graph, model_path, params):
                                     for inp in node.get('input', []):
                                         if name == inp.get('name', ''):
                                             name = node.get('name', name)
+                                            break
                             elif params['input_shapes'][name] is not None \
                                     and len(input_shape) == len(params['input_shapes'][name]):
                                 input_shape[:] = params['input_shapes'][name][:]
-                        if 0 in input_shape and single_input['name'] not in params.get('input_shapes', {}):
-                            WARN('[Parser]: Shape 0 found in Input node(%s), please check config file!' %
-                                 single_input['name'])
 
-                        if single_input['name'] in params['input_npy']:
-                            input_tensor = params['input_npy'][single_input['name']]
-                            is_const = True
-                        else:
-                            input_type = np.dtype(
-                                single_input['type']['tensor_type']['elem_type'])
-                            if input_type.name in ('int32', 'int64'):
-                                input_tensor = np.zeros(shape=input_shape).astype(input_type)
-                            elif input_type.name in ('float32', 'float64',):
-                                input_tensor = np.random.ranf(size=input_shape).astype(input_type)
-                            elif input_type.name == 'bool':
-                                input_tensor = np.random.randint(
-                                    0, 2, size=input_shape).astype(bool)
-                            else:
-                                input_tensor = np.random.ranf(
-                                    size=input_shape).astype(input_type)
-                            is_const = False
+                        inp_tensor = gen_input_tensor(single_input['name'], input_shape,
+                                                      single_input['type']['tensor_type']['elem_type'], params)
 
                         graph._attr['input_tensors'].update({
-                            single_input['name']: Tensor(
-                                name=single_input['name'], value=input_tensor, is_const=is_const)
+                            single_input['name']: inp_tensor
                         })
 
                 out_tensor_operator_map = {}
@@ -720,6 +749,30 @@ def convert_onnx_to_graph(graph, model_path, params):
                                 in_tensor_name, in_tensor_out_port)]
                             pre_op = nodes[pre_op_id]
                             pre_op_name = pre_op['name'] if pre_op['name'] else pre_op['output'][0]['name']
+                            if in_tensor_name in custom_input_infos:
+                                inp_info = custom_input_infos[in_tensor_name]
+                                custom_input_infos[in_tensor_name]['node_name'] = pre_op_name
+                                if inp_info['shape'] and inp_info['dtype']:
+                                    pass
+                                else:
+                                    if in_tensor_name in interm_dict:
+                                        tensor_info = interm_dict[in_tensor_name]
+                                        dtype = tensor_info['tensor_type']['elem_type']
+                                        shape = tensor_info['tensor_type']['shape'].tolist()
+                                        custom_input_infos[in_tensor_name]['dtype'] = dtype
+                                        custom_input_infos[in_tensor_name]['shape'] = shape
+                            elif op_name in custom_input_infos:
+                                inp_info = custom_input_infos[op_name]
+                                if inp_info['shape'] and inp_info['dtype']:
+                                    pass
+                                else:
+                                    out_tensor_name = node['output'][0]['name']
+                                    if out_tensor_name in interm_dict:
+                                        tensor_info = interm_dict[out_tensor_name]
+                                        dtype = tensor_info['tensor_type']['elem_type']
+                                        shape = tensor_info['tensor_type']['shape'].tolist()
+                                        custom_input_infos[op_name]['dtype'] = dtype
+                                        custom_input_infos[op_name]['shape'] = shape
                             if in_tensor_out_port == 0:
                                 in_tensor_out_port = [
                                     out_info['name'] for out_info in pre_op['output']].index(in_tensor_name)
@@ -928,31 +981,37 @@ def convert_onnx_to_graph(graph, model_path, params):
                 else:
                     if any(in_name not in graph._attr['input_tensors'] for in_name in params['input_names']):
                         for in_name in params['input_names']:
-                            if graph.has_node(in_name) \
-                                    and in_name not in graph._attr['input_tensors']:
-                                out_edges = graph.sorted_out_edges(in_name, data=True)
+                            in_node_name = custom_input_infos[in_name]['node_name']
+                            if graph.has_node(in_node_name) \
+                                    and in_node_name not in graph._attr['input_tensors']:
+                                out_edges = graph.sorted_out_edges(in_node_name, data=True)
                                 if len(out_edges) > 0:
-                                    in_edges = graph.sorted_in_edges(in_name)
+                                    in_edges = graph.sorted_in_edges(in_node_name)
                                     graph.remove_edges_from(in_edges)
-                                    obj = NodeWrap(graph, in_name)['object']
+                                    obj = NodeWrap(graph, in_node_name)['object']
                                     if obj is not None:
-                                        NodeWrap(graph, in_name).replace_obj('Input', obj.copied_attr())
+                                        NodeWrap(graph, in_node_name).replace_obj('Input', obj.copied_attr())
                                     else:
-                                        NodeWrap(graph, in_name).replace_obj('Input', {'name': in_name})
+                                        NodeWrap(graph, in_node_name).replace_obj('Input', {'name': in_node_name})
                                     if out_edges[0][2]['tensor'] is not None and out_edges[0][2][
                                             'tensor'].value is not None:
-                                        graph._attr['input_tensors'].update({in_name: out_edges[0][2]['tensor']})
+                                        graph._attr['input_tensors'].update({in_node_name: out_edges[0][2]['tensor']})
                                     else:
-                                        cur_shape = params['input_shapes'][in_name]
-                                        if cur_shape is None:
+                                        try:
+                                            inp_tensor = gen_input_tensor(in_node_name,
+                                                                          custom_input_infos[in_name]['shape'],
+                                                                          custom_input_infos[in_name]['dtype'], params)
+                                        except:
                                             ERROR(
                                                 '[Parser]: Shape of Input(%s) is unknown! Please provide input_shape in cfg file!' % in_name)
                                             continue
+                                        for out_edge in out_edges:
+                                            out_edge[2]['tensor'] = inp_tensor
                                         graph._attr['input_tensors'].update(
-                                            {in_name: Tensor(name=in_name,
-                                                             value=np.random.ranf(cur_shape).astype(np.float32))})
+                                            {in_node_name: inp_tensor})
                         graph._attr['input_tensors'] = OrderedDict(
                             {k: v for k, v in graph._attr['input_tensors'].items() if graph.has_node(k)})
+
                     clear_redundant_nodes(graph)
             else:
                 WARN('[Parser]: Meets empty graph in convert_onnx_to_graph!')

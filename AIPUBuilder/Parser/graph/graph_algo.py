@@ -104,20 +104,22 @@ def clear_redundant_nodes(g, outputs=None):
     output_names = outputs if outputs else (
         noop_names if noop_names else g._attr.get('output_names', []))
     subgraph_map = {}
+    graph_with_subgraph = 'subgraphs' in g._attr and len(g._attr['subgraphs']) > 0
     g._attr['subgraph_depends_nodes'] = []
-    if 'subgraphs' in g._attr and len(g._attr['subgraphs']) > 0:
+    if graph_with_subgraph:
         for k, v in g._attr['subgraphs'].items():
             for _k in v.keys():
                 subgraph_map[_k] = k
     if output_names:
         valid_nodes = determined_sort(g, output_names)
-        for n in g.nodes:
-            node_obj = NodeWrap(g, n)['object']
-            if node_obj is not None and \
-                    node_obj.depend_nodes and \
-                    any([a in valid_nodes for a in node_obj.depend_nodes]):
-                if n not in g._attr['subgraph_depends_nodes'] and n not in valid_nodes:
-                    g._attr['subgraph_depends_nodes'].append(n)
+        if graph_with_subgraph:
+            for n in g.nodes:
+                node_obj = NodeWrap(g, n)['object']
+                if node_obj is not None and \
+                        node_obj.depend_nodes and \
+                        any([a in valid_nodes for a in node_obj.depend_nodes]):
+                    if n not in g._attr['subgraph_depends_nodes'] and n not in valid_nodes:
+                        g._attr['subgraph_depends_nodes'].append(n)
         if g._attr['subgraph_depends_nodes']:
             valid_nodes = determined_sort(g, output_names + g._attr['subgraph_depends_nodes'])
         removing_nodes = set(g.nodes).difference(valid_nodes)
@@ -127,7 +129,7 @@ def clear_redundant_nodes(g, outputs=None):
                     len(pred[n]) == 1 and \
                     pred[n][0] not in removing_nodes:
                 if len(g.nodes[n]['object'].subgraphs) > 0:
-                    if 'subgraphs' in g._attr and len(g._attr['subgraphs']) > 0:
+                    if graph_with_subgraph:
                         for sub in g.nodes[n]['object'].subgraphs:
                             for k, v in g._attr['subgraphs'].items():
                                 if sub in v:
@@ -145,7 +147,7 @@ def clear_redundant_nodes(g, outputs=None):
                 valid_out_nodes.append(n)
         removing_nodes = set(removing_nodes).difference(valid_out_nodes)
         g.remove_nodes_from(removing_nodes)
-        if 'subgraphs' in g._attr and len(g._attr['subgraphs']) > 0:
+        if graph_with_subgraph:
             all_valid_nodes = valid_nodes
             for k, v in list(g._attr['subgraphs'].items()):
                 if k in removing_nodes:
