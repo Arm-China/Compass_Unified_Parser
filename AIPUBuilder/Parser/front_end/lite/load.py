@@ -246,11 +246,34 @@ def convert_tflite_to_graph(graph, model_path, params):
                 operators_table = [sub_graph.Operators(
                     i) for i in range(sub_graph.OperatorsLength())]
 
+                custom_input_infos = {}
+                for inp_name in params.get('input_names', []):
+                    if 'input_shapes' in params:
+                        inp_shape = params['input_shapes'][inp_name]
+                        if inp_shape:
+                            if 'input_dtypes' in params:
+                                inp_dtype = params['input_dtypes'][inp_name]
+                                if inp_dtype.find('int') != -1:
+                                    net_in_tensor = np.zeros(inp_shape, inp_dtype)
+                                else:
+                                    net_in_tensor = (np.random.ranf(
+                                        size=inp_shape) * 100).astype(inp_dtype)
+                            else:
+                                net_in_tensor = (np.random.ranf(
+                                    size=inp_shape) * 100).astype(np.float32)
+                            custom_input_infos[inp_name] = Tensor(name=inp_name, value=net_in_tensor)
+                        else:
+                            custom_input_infos[inp_name] = None
+                    else:
+                        custom_input_infos[inp_name] = None
+
                 parsed_operators_table = list(
                     map(partial(parse_operator, tflite_model=model, buffer=buffer), operators_table))
                 for single_input in net_inputs:
                     inp_attr = {}
                     tensor_name = tensors_table[single_input].Name().decode('utf-8')
+                    if tensor_name in custom_input_infos:
+                        del custom_input_infos[tensor_name]
                     if tensor_name in params['input_layouts'] and params['input_layouts'][tensor_name]:
                         inp_attr.update({'layout': params['input_layouts'][tensor_name]})
                     parsed_operators_table.insert(
@@ -366,6 +389,8 @@ def convert_tflite_to_graph(graph, model_path, params):
                                 edge_tensor.dtype = in_tensor['dtype']
                             edge_attr = {'src_out_port': src_out_port,
                                          'dst_in_port': in_port, 'tensor': edge_tensor}
+                            if pre_node_name in custom_input_infos:
+                                custom_input_infos[pre_node_name] = copy.deepcopy(edge_tensor)
                             assert graph.has_node(
                                 pre_node_name), 'The node does not exist, cannot add edge into graph in convert_tflite_to_graph.'
                             graph.add_edge(
@@ -549,6 +574,40 @@ def convert_tflite_to_graph(graph, model_path, params):
                                         'Out', {'name': out_name})
                                     if tensor is not None and tensor.name in params.get('output_tensor_map', {}):
                                         params['output_tensor_map'][tensor.name] = [out_name]
+
+                    if not graph._attr['output_names']:
+                        ERROR('[Parser]: Got no output names for graph, cannot proceed!')
+                    else:
+                        if any(in_name not in graph._attr['input_tensors'] for in_name in params['input_names']):
+                            for in_name in params['input_names']:
+                                if graph.has_node(in_name) \
+                                        and in_name not in graph._attr['input_tensors']:
+                                    out_edges = graph.sorted_out_edges(in_name, data=True)
+                                    if len(out_edges) > 0:
+                                        in_edges = graph.sorted_in_edges(in_name)
+                                        graph.remove_edges_from(in_edges)
+                                        obj = NodeWrap(graph, in_name)['object']
+                                        if obj is not None:
+                                            NodeWrap(graph, in_name).replace_obj('Input', obj.copied_attr())
+                                        else:
+                                            NodeWrap(graph, in_name).replace_obj('Input', {'name': in_name})
+                                        if out_edges[0][2]['tensor'] is not None and out_edges[0][2][
+                                                'tensor'].value is not None:
+                                            graph._attr['input_tensors'].update(
+                                                {in_name: out_edges[0][2]['tensor']})
+                                        else:
+                                            try:
+                                                inp_tensor = custom_input_infos[in_name]
+                                            except:
+                                                ERROR(
+                                                    '[Parser]: Shape of Input(%s) is unknown! Please provide input_shape in cfg file!' % in_name)
+                                                continue
+                                            for out_edge in out_edges:
+                                                out_edge[2]['tensor'] = inp_tensor
+                                            graph._attr['input_tensors'].update(
+                                                {in_name: inp_tensor})
+                            graph._attr['input_tensors'] = OrderedDict(
+                                {k: v for k, v in graph._attr['input_tensors'].items() if graph.has_node(k)})
 
                     clear_redundant_nodes(graph)
 
