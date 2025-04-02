@@ -10991,6 +10991,81 @@ def fuse_special_fc_reshape_transpose_div(graph):
         clear_redundant_nodes(graph)
 
 
+def lift_single_add_sub_mul_div(graph):
+    matched = False
+    matches0 = [matched_patterns(graph,
+                                 nodes=[
+                                     ('non_math_op', {'op': 'Reshape'}),
+                                     ('const', {'op': 'Constant'}),
+                                     ('math_op', {'op': math_op}),
+                                 ],
+                                 edges=[
+                                     ('non_math_op', 'math_op',),
+                                     ('const', 'math_op', )
+                                 ]) for math_op in ['Add', 'Sub', 'Mul', 'Div']]
+    matches1 = [matched_patterns(graph,
+                                 nodes=[
+                                     ('non_math_op', {'op': 'Transpose'}),
+                                     ('const', {'op': 'Constant'}),
+                                     ('math_op', {'op': math_op}),
+                                 ],
+                                 edges=[
+                                     ('non_math_op', 'math_op',),
+                                     ('const', 'math_op',)
+                                 ]) for math_op in ['Add', 'Sub', 'Mul', 'Div']]
+    matches = extend_lists(matches0) + extend_lists(matches1)
+    for m in matches:
+        non_math_op, const, math_op = m['non_math_op'], m['const'], m['math_op']
+        non_math_obj = NodeWrap(graph, non_math_op)['object']
+        const_obj = NodeWrap(graph, const)['object']
+        math_obj = NodeWrap(graph, math_op)['object']
+        if non_math_obj is None:
+            ERROR(
+                f'[Parser]: Meets invalid {non_math_obj.type} Op ({non_math_op}) in lift_single_add_sub_mul_div!')
+            continue
+        if math_obj is None:
+            ERROR(
+                f'[Parser]: Meets invalid {math_obj.type} Op ({math_op}) in lift_single_add_sub_mul_div!')
+            continue
+        if const_obj is None:
+            ERROR(
+                f'[Parser]: Meets invalid {const_obj.type} Op ({const}) in lift_single_add_sub_mul_div!')
+            continue
+        const_value = const_obj.value
+        if const_value.min() != const_value.max():
+            continue
+        non_math_in_edges = graph.sorted_in_edges(non_math_op, data=True)
+        non_math_out_edges = graph.sorted_out_edges(non_math_op, data=True)
+        math_in_edges = graph.sorted_in_edges(math_op, data=True)
+        math_out_edges = graph.sorted_out_edges(math_op, data=True)
+        if len(non_math_out_edges) != 1:
+            continue
+        if math_obj.type in ['Sub', 'Div']:
+            if math_in_edges[1][0] != const:
+                continue
+        matched = True
+        non_math_src = non_math_in_edges[0][0]
+        graph.remove_edge(non_math_src, non_math_op)
+        graph.remove_edges_from(non_math_out_edges)
+        graph.remove_edges_from(math_out_edges)
+
+        math_in_attr = copy.deepcopy(non_math_in_edges[0][-1])
+        math_in_attr['dst_in_port'] = non_math_out_edges[0][-1]['dst_in_port']
+        graph.add_edge(non_math_src, math_op, **math_in_attr)
+
+        non_math_in_attr = copy.deepcopy(non_math_in_edges[0][-1])
+        graph.add_edge(math_op, non_math_op, **non_math_in_attr)
+
+        for _, math_dst, math_out_attr in math_out_edges:
+            out_attr = copy.deepcopy(math_out_attr)
+            graph.add_edge(non_math_op, math_dst, **out_attr)
+        if math_op in graph._attr['output_names']:
+            index = graph._attr['output_names'].index(math_op)
+            graph._attr['output_names'][index] = non_math_op
+    if matched:
+        clear_redundant_nodes(graph)
+
+
 def rearrange_matmul_reshape_bias(graph):
     matmul_reshape_bias_matches = matched_patterns(graph,
                                                    nodes=[
@@ -13243,6 +13318,8 @@ def middle_passes(graph, params):
     fuse_gather_const_mul(graph)
     if not params.get('ds_compat', False):
         convert_gather_to_slice(graph)
+    for i in range(5):
+        lift_single_add_sub_mul_div(graph)
     rearrange_matmul_reshape_bias(graph)
     fuse_bias(graph)
     rename_single_mul_or_add_or_sub(graph)
