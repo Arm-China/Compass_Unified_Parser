@@ -281,8 +281,11 @@ def build_subgraph(current_node_name,
                             'name': n_name,
                             'target_graph': target_graph_name
                         })
-                        edge_attr = {'src_out_port': in_tensor_out_port, 'dst_in_port': in_port, 'tensor': Tensor(
-                            name=in_tensor_name, shape=cons_value.shape, is_const=True)}
+                        input_tensor = Tensor(
+                            name=in_tensor_name, shape=cons_value.shape, value=cons_value, is_const=True)
+                        edge_attr = {'src_out_port': in_tensor_out_port,
+                                     'dst_in_port': in_port,
+                                     'tensor': input_tensor}
                         sub_graph.add_edge(
                             n_name, op_name, **edge_attr)
             else:
@@ -454,6 +457,9 @@ def attr_value_converter(attr_dict, source, root_graph, root_node_name, a_nodes_
                     and attr_dict[key].get('tensor', None) is not None:
                 attr_dict.update({'value': attr_dict[key]['tensor']})
         elif key in ('then_branch', 'else_branch', 'body'):
+            if attr_dict['name'] not in root_graph._attr['subgraphs']:
+                root_graph._attr['subgraphs'][attr_dict['name']] = {}
+
             sub_graph = build_subgraph(attr_dict['name'],
                                        root_node_name,
                                        key,
@@ -462,10 +468,8 @@ def attr_value_converter(attr_dict, source, root_graph, root_node_name, a_nodes_
                                        parent_graph_info,
                                        a_nodes_info,
                                        attr_dict.get('opset_version', 1))
-            if attr_dict['name'] in root_graph._attr['subgraphs']:
-                root_graph._attr['subgraphs'][attr_dict['name']][sub_graph.name] = sub_graph
-            else:
-                root_graph._attr['subgraphs'][attr_dict['name']] = {sub_graph.name: sub_graph}
+
+            root_graph._attr['subgraphs'][attr_dict['name']][sub_graph.name] = sub_graph
             attr_dict.update({key: sub_graph})
 
 

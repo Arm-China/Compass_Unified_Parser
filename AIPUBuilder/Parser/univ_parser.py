@@ -258,7 +258,7 @@ def univ_parser(params):
                 process_graph(graph, params)
 
                 if 'subgraphs' in graph._attr and graph._attr['subgraphs']:
-                    for n_name, v in graph._attr['subgraphs'].items():
+                    for v in list(graph._attr['subgraphs'].values()):
                         for subgraph_name, subgraph in v.items():
                             front_process_graph(model_type, model_path, subgraph, params)
                             process_graph(subgraph, params)

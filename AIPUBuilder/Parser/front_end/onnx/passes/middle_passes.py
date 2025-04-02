@@ -8,6 +8,7 @@ import copy
 from functools import reduce
 from collections import OrderedDict
 from ....common.defs import Tensor, FLOAT_EQUAL, FLOAT64_EQUAL, TYPE_MAX
+from ....graph.graph import SubGraph
 from ....logger import INFO, DEBUG, WARN, ERROR, FATAL
 from ....common.utils import extend_lists, get_converted_dtype
 from ....graph.node_wrap import NodeWrap
@@ -2179,12 +2180,19 @@ def _decompose_const_if(graph, params):
             if_out_edges = graph.sorted_out_edges(if_name, data=True)
             keep_branch = if_obj.then_branch if condition else if_obj.else_branch
             remove_branch_name = if_obj.else_branch.name if condition else if_obj.then_branch.name
-            sub_main_node_map = {}
+            sub_parent_node_map = {}
             matched = True
 
-            if if_name in graph._attr['subgraphs'] and \
-                    remove_branch_name in graph._attr['subgraphs'][if_name]:
-                graph._attr['subgraphs'][if_name].pop(remove_branch_name)
+            is_subgraph = isinstance(graph, SubGraph)
+
+            if is_subgraph:
+                if if_name in graph._root._attr['subgraphs'] and \
+                        remove_branch_name in graph._root._attr['subgraphs'][if_name]:
+                    graph._root._attr['subgraphs'][if_name].pop(remove_branch_name)
+            else:
+                if if_name in graph._attr['subgraphs'] and \
+                        remove_branch_name in graph._attr['subgraphs'][if_name]:
+                    graph._attr['subgraphs'][if_name].pop(remove_branch_name)
 
             for n in keep_branch.nodes:
                 n_obj = keep_branch.nodes[n]['object']
@@ -2195,11 +2203,11 @@ def _decompose_const_if(graph, params):
                 if n_obj.type in ['Input', 'DummyInput']:
                     continue
                 elif n_obj.type == 'Constant':
-                    sub_main_node_map[n] = n
+                    sub_parent_node_map[n] = n
                     if not graph.has_node(n):
                         graph.add_node(n)
                         cur_obj_attr = n_obj.copied_attr()
-                        cur_obj_attr.update({'in_subgraph': False})
+                        cur_obj_attr.update({'in_subgraph': is_subgraph})
                         NodeWrap(graph, n).replace_obj('Constant', cur_obj_attr)
                 elif n_obj.type == 'Out':
                     o_port = n_in_edges[0][2]['src_out_port']
@@ -2208,35 +2216,43 @@ def _decompose_const_if(graph, params):
                             in_attr = copy.deepcopy(out_attr)
                             graph.add_edge(n_in_edges[0][0], dst, **in_attr)
                 else:
-                    main_g_node_name = get_valid_node_name(graph, n)
-                    graph.add_node(main_g_node_name)
-                    sub_main_node_map[n] = main_g_node_name
+                    parent_g_node_name = get_valid_node_name(graph, n)
+                    graph.add_node(parent_g_node_name)
+                    sub_parent_node_map[n] = parent_g_node_name
                     cur_obj_attr = n_obj.copied_attr()
-                    cur_obj_attr.update({'in_subgraph': False, 'name': main_g_node_name})
+                    cur_obj_attr.update({'in_subgraph': is_subgraph, 'name': parent_g_node_name})
                     if n_obj.type.startswith('Plugin'):
-                        NodeWrap(graph, main_g_node_name).replace_obj(n_obj.type[6:], cur_obj_attr)
+                        NodeWrap(graph, parent_g_node_name).replace_obj(n_obj.type[6:], cur_obj_attr)
                     else:
-                        NodeWrap(graph, main_g_node_name).replace_obj(n_obj.type, cur_obj_attr)
+                        NodeWrap(graph, parent_g_node_name).replace_obj(n_obj.type, cur_obj_attr)
                     for in_e in n_in_edges:
                         src, dst, n_in_attr = in_e
                         src_obj = keep_branch.nodes[src]['object']
                         if src_obj.type == 'DummyInput':
-                            assert graph.has_node(src), f'{src} is DummyInput but not in main graph.'
+                            if is_subgraph:
+                                assert graph._root.has_node(src), f'{src} is DummyInput but not in main graph.'
+                            else:
+                                assert graph.has_node(src), f'{src} is DummyInput but not in main graph.'
+                            if not graph.has_node(src) and is_subgraph:
+                                graph.add_node(src)
+                                sub_parent_node_map[src] = src
+                                cur_obj_attr = src_obj.copied_attr()
+                                cur_obj_attr.update({'in_subgraph': is_subgraph})
+                                NodeWrap(graph, src).replace_obj(src_obj.type, cur_obj_attr)
                             in_attr = copy.deepcopy(n_in_attr)
-                            graph.add_edge(src, main_g_node_name, **in_attr)
+                            graph.add_edge(src, parent_g_node_name, **in_attr)
                         elif src_obj.type == 'Constant':
                             if not graph.has_node(src):
                                 graph.add_node(src)
-                                sub_main_node_map[src] = src
+                                sub_parent_node_map[src] = src
                                 cur_obj_attr = src_obj.copied_attr()
-                                cur_obj_attr.update({'in_subgraph': False})
+                                cur_obj_attr.update({'in_subgraph': is_subgraph})
                                 NodeWrap(graph, src).replace_obj('Constant', cur_obj_attr)
-                            else:
-                                in_attr = copy.deepcopy(n_in_attr)
-                                graph.add_edge(src, main_g_node_name, **in_attr)
+                            in_attr = copy.deepcopy(n_in_attr)
+                            graph.add_edge(src, parent_g_node_name, **in_attr)
                         else:
                             in_attr = copy.deepcopy(n_in_attr)
-                            graph.add_edge(sub_main_node_map[src], main_g_node_name, **in_attr)
+                            graph.add_edge(sub_parent_node_map[src], parent_g_node_name, **in_attr)
 
             graph.remove_edges_from(if_in_edges)
             graph.remove_edges_from(if_out_edges)
@@ -2247,7 +2263,7 @@ def _decompose_const_if(graph, params):
                 for out in keep_branch._attr['output_names'][1:]:
                     index += 1
                     graph._attr['output_names'].insert(index, out)
-            if params.get('input_names', []):
+            if params.get('input_names', []) and not is_subgraph:
                 for inp in params['input_names'][:]:
                     _has_path = False
                     for out in graph._attr['output_names']:
@@ -2271,11 +2287,15 @@ def _decompose_const_if(graph, params):
                             graph._attr['input_tensors'].pop(key)
                         params['input_shapes'].pop(inp)
                         params['input_names'].remove(inp)
-            if params.get('output_names', []):
+            if params.get('output_names', []) and not is_subgraph:
                 params['output_names'] = graph._attr['output_names']
             # clear subgraph
-            if if_name in graph._attr['subgraphs']:
-                graph._attr['subgraphs'].pop(if_name)
+            if is_subgraph:
+                if if_name in graph._root._attr['subgraphs']:
+                    graph._root._attr['subgraphs'].pop(if_name)
+            else:
+                if if_name in graph._attr['subgraphs']:
+                    graph._attr['subgraphs'].pop(if_name)
     if matched:
         clear_redundant_nodes(graph)
 
@@ -8852,16 +8872,16 @@ def merge_ln4(graph):
                                    ('mean_1', {'op': 'ReduceMean'}),
                                    ('sub', {'op': 'Sub'}),
                                    ('pow', {'op': 'Pow'}),
-                                   ('pow_y', {'op': 'Constant', 'unique': False}),
+                                   ('pow_y', {'op': 'Constant'}),
                                    ('mean_2', {'op': 'ReduceMean'}),
                                    ('add_1', {'op': 'Add'}),
                                    ('sqrt', {'op': 'Sqrt'}),
                                    ('div', {'op': 'Div'}),
                                    ('mul', {'op': 'Mul'}),
                                    ('add_2', {'op': 'Add'}),
-                                   ('eps', {'op': 'Constant', 'unique': False}),
-                                   ('weight', {'op': 'Constant', 'unique': False}),
-                                   ('bias', {'op': 'Constant', 'unique': False}),
+                                   ('eps', {'op': 'Constant'}),
+                                   ('weight', {'op': 'Constant'}),
+                                   ('bias', {'op': 'Constant'}),
                                ],
                                edges=[
                                    ('mean_1', 'sub', {

@@ -234,11 +234,15 @@ def infer(graph, partial=False, chosen_list=None, final=False):
                             infer_data = graph._attr['input_tensors'][node_name].value
                         else:
                             if node_obj.type == 'DummyInput' and isinstance(graph, SubGraph):
-                                parent_node = graph._attr['parent_graph'].nodes[node_name]
-                                dummy_out_edges = graph._attr['parent_graph'].sorted_out_edges(
+                                from ..common.utils import get_target_graph
+                                target_g = get_target_graph(node_obj.target_graph, graph._root)
+                                parent_node = target_g.nodes[node_name]
+                                dummy_out_edges = target_g.sorted_out_edges(
                                     parent_node['object'].name,
                                     data=True)
                                 infer_data = dummy_out_edges[0][-1]['tensor'].value
+                                node_obj.infer_shape(infer_data, dummy_out_edges[0][-1]['tensor'].is_const)
+                                continue
                             else:
                                 log_func('[Parser]: Meet unsupported op type %s in Node(%s)!' %
                                          (node_obj.type, node_name))
