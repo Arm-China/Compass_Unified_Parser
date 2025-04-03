@@ -1747,34 +1747,6 @@ class ArmDeQuantizeOp(OpHasAxis, BaseQuantizeDequantizeOp, OpHasOneOutPort, ArmO
         self.set_out_tensor(out_tensor)
 
 
-class ArmDilationOp(OpHasPaddingStrides, OpHasWeights, OpHasOneOutPort, LayoutConcernedOp, ArmOp):
-    @classmethod
-    def attributes(cls):
-        return {'dilations': {'default': [1, 1, 1, 1]}
-                }
-
-    @classmethod
-    def cast_in_ports(cls):
-        return {0: ['float32', 'float16']}
-
-    def __init__(self, graph, attr_dict=None):
-        super(ArmDilationOp, self).__init__(graph, attr_dict)
-        self.update_attributes(ArmDilationOp, attr_dict)
-        assert self.check_required(), 'ArmDilationOp is missing a required parameter.'
-
-    def infer_shape(self):
-        super(ArmDilationOp, self).infer_shape()
-        inputs = self.get_input_tensors()
-        inp = tf.pad(inputs[0], self.tf_pads) if self.auto_pad == 'NOTSET' else inputs[0]
-        out_tensor = tf.nn.dilation2d(inp,
-                                      np.transpose(np.reshape(self.weights, self.weights.shape[:3]), [1, 2, 0]),
-                                      strides=[1] + self.strides + [1],
-                                      padding='VALID',
-                                      dilations=[1] + self.dilations + [1],
-                                      data_format='NHWC').numpy()
-        self.set_out_tensor(out_tensor)
-
-
 class ArmDetectionOutputOp(OpHasMultipleOutPorts, ArmOp):
     @classmethod
     def num_in_ports(cls):
@@ -1831,6 +1803,34 @@ class ArmDetectionOutputOp(OpHasMultipleOutPorts, ArmOp):
             if self.bbox_xform_clip is not None:
                 txt_file.write('bbox_xform_clip=%f\n' % self.bbox_xform_clip)
         return ret
+
+
+class ArmDilationOp(OpHasPaddingStrides, OpHasWeights, OpHasOneOutPort, LayoutConcernedOp, ArmOp):
+    @classmethod
+    def attributes(cls):
+        return {'dilations': {'default': [1, 1, 1, 1]}
+                }
+
+    @classmethod
+    def cast_in_ports(cls):
+        return {0: ['float32', 'float16']}
+
+    def __init__(self, graph, attr_dict=None):
+        super(ArmDilationOp, self).__init__(graph, attr_dict)
+        self.update_attributes(ArmDilationOp, attr_dict)
+        assert self.check_required(), 'ArmDilationOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(ArmDilationOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        inp = tf.pad(inputs[0], self.tf_pads) if self.auto_pad == 'NOTSET' else inputs[0]
+        out_tensor = tf.nn.dilation2d(inp,
+                                      np.transpose(np.reshape(self.weights, self.weights.shape[:3]), [1, 2, 0]),
+                                      strides=[1] + self.strides + [1],
+                                      padding='VALID',
+                                      dilations=[1] + self.dilations + [1],
+                                      data_format='NHWC').numpy()
+        self.set_out_tensor(out_tensor)
 
 
 class ArmDivOp(LayoutUnawareOp, OpHasDivisor, OpHasOneOutPort, ArmOp):
@@ -1897,6 +1897,17 @@ class ArmDivModOp(LayoutUnawareOp, OpHasDivisor, OpHasMultipleOutPorts, ArmOp):
         ret = super(ArmDivModOp, self).write_attrs(txt_file)
         if ret:
             txt_file.write('mode=%s\n' % self.mode.upper())
+
+
+class ArmDummyOp(LayoutUnawareOp, OpHasVariableOutPorts, ArmOp):
+    def __init__(self, graph, attr_dict=None):
+        super(ArmDummyOp, self).__init__(graph, attr_dict)
+
+    def infer_shape(self):
+        super(ArmDummyOp, self).infer_shape()
+        input_tensor = self.get_input_tensors()
+        out_tensor = input_tensor.copy()
+        self.set_out_tensor(out_tensor)
 
 
 class ArmEltwiseOp(LayoutUnawareOp, OpHasMethod, BaseActivationOp, ArmOp):
@@ -2797,7 +2808,7 @@ class ArmInputOp(OpHasOneOutPort, InputLikeOp, ArmOp):
 
     def infer_shape(self, input_tensor=None):
         super(ArmInputOp, self).infer_shape()
-        assert input_tensor is not None, 'input tensor is empty in ArmInputOp.'
+        assert input_tensor is not None, f'input tensor({self.name}) is empty in ArmInputOp.'
         out_tensor = input_tensor.copy()
         self.set_out_tensor(out_tensor)
 

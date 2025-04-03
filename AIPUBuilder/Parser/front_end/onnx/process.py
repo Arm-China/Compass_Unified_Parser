@@ -19,7 +19,7 @@ def front_process_onnx(graph, params):
 
         for i in range(2):
             remove_useless_op(
-                graph, ['Dummy', 'Transpose', 'Reshape', 'Upsample', 'Identity', 'Cast', 'Concat'])
+                graph, ['Blank', 'Transpose', 'Reshape', 'Upsample', 'Identity', 'Cast', 'Concat'])
 
         infer(graph, partial=True)
         merge_rcnn(graph, params)

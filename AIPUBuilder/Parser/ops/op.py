@@ -606,7 +606,7 @@ class Op(abc.ABC):
                     if d['tensor'].is_const:
                         ret.append(u)
                     else:
-                        if self._graph.has_node(u) and self._graph.nodes[u]['op'] in ['Dummy', 'ArmInput', 'Input']:
+                        if self._graph.has_node(u) and self._graph.nodes[u]['op'] in ['Blank', 'ArmInput', 'Input']:
                             ret.append(u)
                         else:
                             checked_ops.append(u)

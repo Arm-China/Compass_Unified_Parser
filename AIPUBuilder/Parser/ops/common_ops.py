@@ -100,6 +100,17 @@ class BatchGatherOp(OpHasAxis, OpHasOneOutPort, CommonOp):
         self.set_out_tensor(out_tensor)
 
 
+class BlankOp(OpHasOneOutPort, ConstLikeOp, CommonOp):
+    def __init__(self, graph, attr_dict=None):
+        super(BlankOp, self).__init__(graph, attr_dict)
+
+    def infer_shape(self, input_tensor=None):
+        super(BlankOp, self).infer_shape()
+        if input_tensor is not None:
+            out_tensor = input_tensor.copy()
+            self.set_out_tensor(out_tensor)
+
+
 class BNLLOp(OpHasOneOutPort, CommonOp):
     def infer_shape(self):
         super(BNLLOp, self).infer_shape()
@@ -304,15 +315,15 @@ class DivModOp(OpNeedBroadcast, LayoutUnawareOp, OpHasDivisor, OpHasMultipleOutP
         self.set_out_tensor([out0, out1])
 
 
-class DummyOp(OpHasOneOutPort, ConstLikeOp, CommonOp):
+class DummyOp(OpHasVariableOutPorts, CommonOp):
     def __init__(self, graph, attr_dict=None):
         super(DummyOp, self).__init__(graph, attr_dict)
 
-    def infer_shape(self, input_tensor=None):
+    def infer_shape(self):
         super(DummyOp, self).infer_shape()
-        if input_tensor is not None:
-            out_tensor = input_tensor.copy()
-            self.set_out_tensor(out_tensor)
+        input_tensor = self.get_input_tensors()
+        out_tensor = input_tensor.copy()
+        self.set_out_tensor(out_tensor)
 
 
 class DummyInputOp(OpHasOneOutPort, InputLikeOp, CommonOp):

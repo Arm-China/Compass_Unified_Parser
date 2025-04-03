@@ -4396,7 +4396,7 @@ def remove_const(graph):
     for node_name in graph.nodes:
         node = NodeWrap(graph, node_name)
         node_obj = node['object']
-        if node_obj is not None and node_obj.type in ('Constant', 'Dummy') and \
+        if node_obj is not None and node_obj.type in ('Constant', 'Blank') and \
                 not node_obj.in_subgraph:
             const_out_edges = graph.sorted_out_edges(node_name, data=True)
             if len(const_out_edges) >= 1 and node_obj.type == 'Constant':

@@ -360,9 +360,9 @@ def convert_tflite_to_graph(graph, model_path, params):
                             in_tensor_name = get_valid_node_name(
                                 graph, node_name + '_in_tensor_' + str(in_port))
                             graph.add_node(in_tensor_name)
-                            dummy_node = NodeWrap(graph, in_tensor_name)
-                            dummy_attr = {'name': in_tensor_name}
-                            dummy_node.replace_obj('Dummy', dummy_attr)
+                            blank_node = NodeWrap(graph, in_tensor_name)
+                            blank_attr = {'name': in_tensor_name}
+                            blank_node.replace_obj('Blank', blank_attr)
                             edge_attr = {'src_out_port': 0, 'dst_in_port': in_port, 'tensor': Tensor(
                                 name=in_tensor_name)}
                             graph.add_edge(

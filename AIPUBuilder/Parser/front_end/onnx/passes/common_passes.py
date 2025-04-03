@@ -215,6 +215,8 @@ def remove_useless_op(graph, op_type_list):
                     removing_nodes.append(node_name)
                 else:
                     continue
+            elif op_type == 'Blank':
+                removing_nodes.append(node_name)
             elif op_type == 'ChannelShuffle':
                 input_shape = node_obj.get_input_shapes()[0]
                 if node_obj.splits == 1:
@@ -228,7 +230,7 @@ def remove_useless_op(graph, op_type_list):
                 in_edges = graph.sorted_in_edges(node_name)
                 if len(in_edges) <= 1:
                     removing_nodes.append(node_name)
-            elif op_type in ('Dummy', 'Identity', 'DummyInput'):
+            elif op_type in ('Identity', 'DummyInput'):
                 if op_type == 'DummyInput' and isinstance(graph, SubGraph):
                     out_edges = graph.sorted_out_edges(node_name, data=True)
                     graph.remove_edges_from(out_edges)

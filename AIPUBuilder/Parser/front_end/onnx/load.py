@@ -712,12 +712,12 @@ def convert_onnx_to_graph(graph, model_path, params):
                             assert not graph.has_node(
                                 in_tensor_name), 'Node %s does not exist in convert_onnx_to_graph.' % (in_tensor_name)
                             graph.add_node(in_tensor_name)
-                            dummy_node = NodeWrap(graph, in_tensor_name)
-                            dummy_attr = {'name': in_tensor_name}
+                            blank_node = NodeWrap(graph, in_tensor_name)
+                            blank_attr = {'name': in_tensor_name}
                             if node_type == 'Loop':
                                 if in_port == 0:  # max-trip-count
                                     default_v = np.array(np.iinfo(np.int64).max, dtype=np.int64)
-                                    dummy_node.replace_obj('Constant', {
+                                    blank_node.replace_obj('Constant', {
                                         'name': in_tensor_name,
                                         'value': default_v,
                                         'data_format': params.get('input_data_format', 'NCHW'),
@@ -725,14 +725,14 @@ def convert_onnx_to_graph(graph, model_path, params):
                                     })
                                 elif in_port == 1:  # condition in
                                     default_v = np.array(True, dtype=bool)
-                                    dummy_node.replace_obj('Constant', {
+                                    blank_node.replace_obj('Constant', {
                                         'name': in_tensor_name,
                                         'value': default_v,
                                         'data_format': params.get('input_data_format', 'NCHW'),
                                         'opset_version': opset_ver
                                     })
                             else:
-                                dummy_node.replace_obj('Dummy', dummy_attr)
+                                blank_node.replace_obj('Blank', blank_attr)
                             edge_attr = {'src_out_port': in_tensor_out_port, 'dst_in_port': in_port, 'tensor': Tensor(
                                 name=in_tensor_name, is_const=True)}
                             graph.add_edge(
