@@ -11049,6 +11049,8 @@ def lift_single_add_sub_mul_div(graph):
                 out_t = np.reshape(np.ones(shape=non_math_in_edges[0][-1]['tensor'].shape,
                                            dtype=non_math_in_edges[0][-1]['tensor'].dtype) + const_value,
                                    non_math_obj.shape)
+                if list(out_t.shape) != list(math_out_edges[0][-1]['tensor'].shape):
+                    lift_ok = False
             except:
                 lift_ok = False
         else:
@@ -11056,6 +11058,8 @@ def lift_single_add_sub_mul_div(graph):
                 out_t = np.transpose(np.ones(shape=non_math_in_edges[0][-1]['tensor'].shape,
                                              dtype=non_math_in_edges[0][-1]['tensor'].dtype) + const_value,
                                      non_math_obj.perm)
+                if list(out_t.shape) != list(math_out_edges[0][-1]['tensor'].shape):
+                    lift_ok = False
             except:
                 lift_ok = False
         if not lift_ok:
@@ -13335,7 +13339,7 @@ def middle_passes(graph, params):
     fuse_gather_const_mul(graph)
     if not params.get('ds_compat', False):
         convert_gather_to_slice(graph)
-    for i in range(5):
+    for i in range(3):
         lift_single_add_sub_mul_div(graph)
     rearrange_matmul_reshape_bias(graph)
     fuse_bias(graph)
