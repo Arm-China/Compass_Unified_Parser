@@ -11043,6 +11043,23 @@ def lift_single_add_sub_mul_div(graph):
         if math_obj.type in ['Sub', 'Div']:
             if math_in_edges[1][0] != const:
                 continue
+        lift_ok = True
+        if non_math_obj.type == 'Reshape':
+            try:
+                out_t = np.reshape(np.ones(shape=non_math_in_edges[0][-1]['tensor'].shape,
+                                           dtype=non_math_in_edges[0][-1]['tensor'].dtype) + const_value,
+                                   non_math_obj.shape)
+            except:
+                lift_ok = False
+        else:
+            try:
+                out_t = np.transpose(np.ones(shape=non_math_in_edges[0][-1]['tensor'].shape,
+                                             dtype=non_math_in_edges[0][-1]['tensor'].dtype) + const_value,
+                                     non_math_obj.perm)
+            except:
+                lift_ok = False
+        if not lift_ok:
+            continue
         matched = True
         non_math_src = non_math_in_edges[0][0]
         graph.remove_edge(non_math_src, non_math_op)
