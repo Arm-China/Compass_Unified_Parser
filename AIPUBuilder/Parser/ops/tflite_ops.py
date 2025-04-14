@@ -1770,16 +1770,7 @@ class LiteONE_HOTOp(OpHasOneOutPort, TfliteOp):
         super(LiteONE_HOTOp, self).infer_shape()
         inputs = self.get_input_tensors()
         indices = inputs[0].astype(np.int64)
-        reps = [1] * (len(indices.shape) + 1)
-        depth = inputs[1]
-        reps[self.axis] = depth
-        values = inputs[2]
-        tiled_indices = np.tile(np.expand_dims(indices, axis=self.axis), reps)
-        out_tensor = (np.ones_like(tiled_indices) *
-                      values[1]).astype(values.dtype)
-        true_mask = np.logical_and(
-            tiled_indices >= -depth, tiled_indices < depth - 1)
-        out_tensor[true_mask] = values[0]
+        out_tensor = tf.one_hot(indices, inputs[1], on_value=inputs[2], off_value=inputs[3], axis=self.axis).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
