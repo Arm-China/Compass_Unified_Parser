@@ -2728,6 +2728,8 @@ class ArmIfOp(OpHasSubGraph, DynamicShapeOp, ArmOp):
     @classmethod
     def attributes(cls):
         return {
+            'then_branch_inputs_num': {'type': AttrType.INT, 'required': True},
+            'else_branch_inputs_num': {'type': AttrType.INT, 'required': True},
             'then_branch': {'type': AttrType.GRAPH, 'required': True},
             'else_branch': {'type': AttrType.GRAPH, 'required': True},
         }
@@ -2737,10 +2739,7 @@ class ArmIfOp(OpHasSubGraph, DynamicShapeOp, ArmOp):
         self.update_attributes(ArmIfOp, attr_dict)
         assert self.check_required(), 'ArmIfOp is missing a required parameter.'
 
-    def infer_shape(self):
-        super(ArmIfOp, self).infer_shape()
-        WARN(f'[Parser]: If({self.name}) condition is non-const, the infer shape is unreliable.')
-        if_cond = True
+    def forward(self, if_cond):
         # True: then branch, False: else branch
         from ..graph.graph_algo import determined_sort
         cur_sub_graph = self.then_branch if if_cond else self.else_branch
@@ -2773,11 +2772,30 @@ class ArmIfOp(OpHasSubGraph, DynamicShapeOp, ArmOp):
                         output_const_list.append(o_edges[out_port][-1]['tensor'].is_const)
                     else:
                         output_const_list.append(is_const)
-        self.set_out_tensor(output_list, all(output_const_list))
+        return output_list, output_const_list
+
+    def infer_shape(self):
+        super(ArmIfOp, self).infer_shape()
+        WARN(f'[Parser]: If({self.name}) condition is non-const, the infer shape is unreliable.')
+        true_out_list, true_out_const_list = self.forward(True)
+        false_out_list, false_out_const_list = self.forward(False)
+        output_list = []
+        for true_v, false_v in zip(true_out_list, false_out_list):
+            if true_v.dtype != false_v.dtype:
+                ERROR(
+                    f'[Parser]: If({self.name}) output dtype mismatch, {true_v.dtype} in then_branch and {false_v.dtype} in else_branch.')
+            else:
+                if true_v.size > false_v.size:
+                    output_list.append(true_v)
+                else:
+                    output_list.append(false_v)
+        self.set_out_tensor(output_list, False)
 
     def write_attrs(self, txt_file):
         ret = super(ArmIfOp, self).write_attrs(txt_file)
         if ret:
+            txt_file.write('then_branch_inputs_num=%d\n' % self.then_branch_inputs_num)
+            txt_file.write('else_branch_inputs_num=%d\n' % self.else_branch_inputs_num)
             txt_file.write('then_branch=%s\n' % self.then_branch.name)
             txt_file.write('else_branch=%s\n' % self.else_branch.name)
         return ret
@@ -3080,7 +3098,11 @@ class ArmLoopOp(OpHasSubGraph, DynamicShapeOp, ArmOp):
 
     @classmethod
     def attributes(cls):
-        return {'body': {'type': AttrType.GRAPH, 'required': True}}
+        return {
+            'N': {'type': AttrType.INT, 'required': True},
+            'K': {'type': AttrType.INT, 'required': True},
+            'body': {'type': AttrType.GRAPH, 'required': True},
+        }
 
     def __init__(self, graph, attr_dict=None):
         super(ArmLoopOp, self).__init__(graph, attr_dict)

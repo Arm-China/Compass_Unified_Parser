@@ -2467,6 +2467,29 @@ def rename_gridsample(graph):
             'ArmGridSample', gridsample_attr)
 
 
+def rename_if(graph):
+    matches = single_node_matcher(graph, 'If')
+    for m in matches:
+        if_node = m['target']
+        if_obj = NodeWrap(graph, if_node)['object']
+        if if_obj is None:
+            ERROR('[Parser]: Meets invalid If Node(%s) in rename_if!' % if_node)
+            continue
+        then_inputs = graph._attr['subgraph_depends'][if_node]['depend_nodes'][if_obj.then_branch.name]
+        else_inputs = graph._attr['subgraph_depends'][if_node]['depend_nodes'][if_obj.else_branch.name]
+        for i, inp in enumerate(then_inputs):
+            in_port = i + 1
+            graph.add_edge(inp, if_node, **{'src_out_port': 0, 'dst_in_port': in_port})
+        for i, inp in enumerate(else_inputs):
+            in_port = len(then_inputs) + 1 + i
+            graph.add_edge(inp, if_node, **{'src_out_port': 0, 'dst_in_port': in_port})
+        if_attr = if_obj.copied_attr()
+        if_attr['then_branch_inputs_num'] = len(then_inputs)
+        if_attr['else_branch_inputs_num'] = len(else_inputs)
+        NodeWrap(graph, if_node).replace_obj('ArmIf', if_attr)
+        clear_redundant_nodes(graph)
+
+
 def rename_layernorm(graph):
     matched = False
     matches = single_node_matcher(graph, 'LayerNormalization')
@@ -5792,6 +5815,7 @@ def back_passes(graph, params):
     rename_generate_proposals(graph)
     rename_gridsample(graph)
     rename_groupnorm(graph)
+    rename_if(graph)
     rename_layernorm(graph)
     rename_logical(graph)
     rename_matmulinteger(graph)
@@ -5821,9 +5845,9 @@ def back_passes(graph, params):
         'Asinh', 'Atan', 'Atanh', {'BatchGather': 'ArmGather'}, 'BitShift', 'BNLL',
         'Ceil', 'ChannelShuffle', 'Concat', {'Cos': 'ArmCosine'}, 'Cosh', 'CropAndResize',
         'CTCGreedyDecoder', 'DepthToSpace', 'DivMod', 'Erf', 'Exp', 'Filter', 'Floor',
-        'FractionalPool', 'FullyConnected', 'Gather', 'GatherND', 'GatherElements', 'If', 'Input',
+        'FractionalPool', 'FullyConnected', 'Gather', 'GatherND', 'GatherElements', 'Input',
         {'InstanceNormalization': 'ArmInstanceNorm'}, 'InTopK', 'IsInf', 'IsNaN', 'Log', 'LogSoftmax',
-        'Loop', 'LRN',
+        'LRN',
         'MatMul', {'MeanVarianceNormalization': 'ArmMVN'}, 'Meshgrid', 'Mod', 'Mul', {'Neg': 'ArmNegative'},
         'NonZero', 'NormalizedMoments', 'OverlapAdd', 'Pow', 'QueryRebatch', 'Reciprocal', 'Repeat',
         'ReverseSequence', 'Round', 'SegmentReduce', 'Sign', {'Sin': 'ArmSine'}, 'Sinh', 'SlotUpdate',

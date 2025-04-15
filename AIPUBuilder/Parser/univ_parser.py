@@ -57,6 +57,16 @@ def univ_parser(params):
         else:
             params['ds_compat'] = False
 
+        if 'loop_max_count' in params:
+            try:
+                loop_max_count = int(params['loop_max_count'])
+            except:
+                loop_max_count = 100
+            loop_max_count = loop_max_count if loop_max_count > 0 else 100
+            params['loop_max_count'] = loop_max_count
+        else:
+            params['loop_max_count'] = 100
+
         if 'use_onnxsim' in params:
             use_onnxsim = str(params['use_onnxsim']).lower() == 'true'
             params['use_onnxsim'] = use_onnxsim
@@ -220,49 +230,31 @@ def univ_parser(params):
                 from .front_end.onnx.passes.back_passes import trim_weights, assign_top_range_scale_zp
                 from .front_end.onnx.passes.common_passes import remove_useless_op, convert_dummyinput_to_input
                 from .graph.graph_algo import infer, has_path
-                from .graph.pattern_match import single_node_matcher
                 from .writer import serialize, show_in_out_map
                 from .misc import check_similarity
+                import networkx as nx
 
-                '''Check if it is a connected graph.'''
-                input_names = []
-                input_names_list = single_node_matcher(graph, 'Input')
-                for input_name in input_names_list:
-                    input_names.append(input_name['target'])
-                output_names = list(set(graph._attr.get('output_names', [])).difference(
-                    list(graph._attr.get('subgraph_output_names', []))))
-                for output_name in output_names:
-                    has_path_flag = False
-                    for input_name in input_names:
-                        if has_path(graph, input_name, output_name):
-                            has_path_flag = True
-                            break
-                        else:
-                            inp_obj = graph.nodes[input_name]['object']
-                            if len(inp_obj.subgraphs) > 0 and \
-                                    'subgraphs' in graph._attr and \
-                                    len(graph._attr['subgraphs']) > 0:
-                                for sub in inp_obj.subgraphs:
-                                    for k, v in graph._attr['subgraphs'].items():
-                                        if sub in v:
-                                            has_path_flag = True
-                                            break
-                    if has_path_flag is False and len(input_names) > 0:
-                        out_edges = graph.sorted_out_edges(output_name, data=True)
-                        if len(out_edges) > 0 and all((out_attr['tensor'] is not None and out_attr['tensor'].is_const) for _, _, out_attr in out_edges):
-                            WARN('[Parser]: Meets const node %s in outputs! It could be removed from graph!' % output_name)
-                        else:
-                            ERROR('[Parser]: Graph is not a connected one!')
-                            break
-
-                process_graph(graph, params)
+                '''Check if it is a DAG.'''
+                is_dag = nx.is_directed_acyclic_graph(graph)
+                if not is_dag:
+                    ERROR(f'[Parser]: Graph({graph.name}) is not DAG!')
 
                 if 'subgraphs' in graph._attr and graph._attr['subgraphs']:
                     for v in list(graph._attr['subgraphs'].values()):
                         for subgraph_name, subgraph in v.items():
                             front_process_graph(model_type, model_path, subgraph, params)
                             process_graph(subgraph, params)
+
+                process_graph(graph, params)
+
+                if 'subgraphs' in graph._attr and graph._attr['subgraphs']:
+                    for v in list(graph._attr['subgraphs'].values()):
+                        for subgraph_name, subgraph in v.items():
                             convert_dummyinput_to_input(subgraph)
+                            is_dag = nx.is_directed_acyclic_graph(subgraph)
+                            if not is_dag:
+                                ERROR(f'[Parser]: Graph({subgraph.name}) is not DAG!')
+                                break
 
                 txt_path, bin_path = '', ''
                 try:

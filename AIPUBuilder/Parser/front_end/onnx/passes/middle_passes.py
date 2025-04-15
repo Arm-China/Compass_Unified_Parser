@@ -2293,6 +2293,12 @@ def _decompose_const_if(graph, params):
             if is_subgraph:
                 if if_name in graph._root._attr['subgraphs']:
                     graph._root._attr['subgraphs'].pop(if_name)
+                if if_name in graph._root._attr['subgraph_depends']:
+                    if keep_branch.name in graph._root._attr['subgraph_depends'][if_name]['depend_nodes']:
+                        current_depends_node_info = graph._root._attr['subgraph_depends'][if_name]['depend_nodes'][keep_branch.name]
+                        parent_node_name = graph._attr['parent_node']
+                        graph._root._attr['subgraph_depends'][parent_node_name]['depend_nodes'][graph.name] = current_depends_node_info
+                        graph._root._attr['subgraph_depends'].pop(if_name)
             else:
                 if if_name in graph._attr['subgraphs']:
                     graph._attr['subgraphs'].pop(if_name)

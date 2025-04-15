@@ -249,9 +249,10 @@ class SubGraph(Graph):
     def __init__(self, **attr):
         super(SubGraph, self).__init__(**attr)
         self._root = None
-        self._attr = defaultdict(int)
+        self._attr = defaultdict(None)
         self._attr['framework'] = None
         self._attr['parent_graph'] = None
+        self._attr['parent_node'] = None
         self._attr['input_tensors'] = OrderedDict()
         self._attr['output_names'] = []
         self._attr['output_tensor_names'] = []

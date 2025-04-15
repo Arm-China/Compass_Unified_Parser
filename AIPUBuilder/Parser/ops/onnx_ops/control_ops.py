@@ -25,19 +25,10 @@ class IfOp(OpHasSubGraph, OnnxOp):
         self.update_attributes(IfOp, attr_dict)
         assert self.check_required(), 'IfOp is missing a required parameter.'
 
-    def infer_shape(self):
-        super(IfOp, self).infer_shape()
-        inputs = self.get_input_tensors()
-        in_edges = self._graph.sorted_in_edges(self.name, data=True)
-        if in_edges[0][2]['tensor'].is_const and \
-                in_edges[0][2]['tensor'].value is not None:
-            if_cond = bool(inputs[0].item())
-        else:
-            WARN(f'[Parser]: If({self.name}) condition is non-const, the infer shape is unreliable.')
-            if_cond = True
+    def forward(self, condition):
         # True: then branch, False: else branch
         from ...graph.graph_algo import determined_sort
-        cur_sub_graph = self.then_branch if if_cond else self.else_branch
+        cur_sub_graph = self.then_branch if condition else self.else_branch
         sub_nodes = determined_sort(cur_sub_graph, cur_sub_graph._attr['output_names'])
         output_list = []
         output_const_list = []
@@ -69,16 +60,51 @@ class IfOp(OpHasSubGraph, OnnxOp):
                         output_const_list.append(o_edges[out_port][-1]['tensor'].is_const)
                     else:
                         output_const_list.append(is_const)
-        self.set_out_tensor(output_list, all(output_const_list))
+        return output_list, output_const_list
+
+    def infer_shape(self):
+        super(IfOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        in_edges = self._graph.sorted_in_edges(self.name, data=True)
+        if in_edges[0][2]['tensor'].is_const and \
+                in_edges[0][2]['tensor'].value is not None:
+            if_cond = bool(inputs[0].item())
+            output_list, output_const_list = self.forward(if_cond)
+            self.set_out_tensor(output_list, all(output_const_list))
+        else:
+            WARN(f'[Parser]: If({self.name}) condition is non-const, the infer shape is unreliable.')
+            true_out_list, true_out_const_list = self.forward(True)
+            false_out_list, false_out_const_list = self.forward(False)
+            output_list = []
+            for true_v, false_v in zip(true_out_list, false_out_list):
+                if true_v.dtype != false_v.dtype:
+                    ERROR(
+                        f'[Parser]: If({self.name}) output dtype mismatch, {true_v.dtype} in then_branch and {false_v.dtype} in else_branch.')
+                else:
+                    if true_v.size > false_v.size:
+                        output_list.append(true_v)
+                    else:
+                        output_list.append(false_v)
+            self.set_out_tensor(output_list, False)
 
 
 class LoopOp(OpHasSubGraph, OnnxOp):
     @classmethod
     def attributes(cls):
-        return {1: {'body': {'type': AttrType.GRAPH, 'required': True}},
-                11: {'body': {'type': AttrType.GRAPH, 'required': True}},
-                13: {'body': {'type': AttrType.GRAPH, 'required': True}},
-                }
+        return {
+            1: {
+                'body': {'type': AttrType.GRAPH, 'required': True},
+                'default_max_count': {'type': AttrType.INT, 'required': True},
+            },
+            11: {
+                'body': {'type': AttrType.GRAPH, 'required': True},
+                'default_max_count': {'type': AttrType.INT, 'required': True}
+            },
+            13: {
+                'body': {'type': AttrType.GRAPH, 'required': True},
+                'default_max_count': {'type': AttrType.INT, 'required': True}
+            }
+        }
 
     def __init__(self, graph, attr_dict=None):
         super(LoopOp, self).__init__(graph, attr_dict)
@@ -107,7 +133,7 @@ class LoopOp(OpHasSubGraph, OnnxOp):
                 count_cond_is_const = True
             else:
                 WARN(f'[Parser]: Loop({self.name}) max_count/cond_in is non-const, the infer shape is unreliable.')
-                max_count, ori_cond_in = 2, True
+                max_count, ori_cond_in = self.default_max_count, True
                 count_cond_is_const = False
 
         cond_in = ori_cond_in

@@ -105,23 +105,29 @@ def clear_redundant_nodes(g, outputs=None):
         noop_names if noop_names else g._attr.get('output_names', []))
     subgraph_map = {}
     graph_with_subgraph = 'subgraphs' in g._attr and len(g._attr['subgraphs']) > 0
-    g._attr['subgraph_depends_nodes'] = []
+    subgraph_depends_nodes = []
+    if graph_with_subgraph and g._attr.get('subgraph_depends', {}):
+        for k, v in g._attr['subgraph_depends'].items():
+            for _v in v['depend_nodes'].values():
+                subgraph_depends_nodes.extend(_v)
+        subgraph_depends_nodes = list(set(subgraph_depends_nodes))
+    g._attr['subgraph_depends_nodes'] = subgraph_depends_nodes
     if graph_with_subgraph:
         for k, v in g._attr['subgraphs'].items():
             for _k in v.keys():
                 subgraph_map[_k] = k
     if output_names:
         valid_nodes = determined_sort(g, output_names)
-        if graph_with_subgraph:
-            for n in g.nodes:
-                node_obj = NodeWrap(g, n)['object']
-                if node_obj is not None and \
-                        node_obj.depend_nodes and \
-                        any([a in valid_nodes for a in node_obj.depend_nodes]):
-                    if n not in g._attr['subgraph_depends_nodes'] and n not in valid_nodes:
-                        g._attr['subgraph_depends_nodes'].append(n)
-        if g._attr['subgraph_depends_nodes']:
-            valid_nodes = determined_sort(g, output_names + g._attr['subgraph_depends_nodes'])
+        # if graph_with_subgraph:
+        #     for n in g.nodes:
+        #         node_obj = NodeWrap(g, n)['object']
+        #         if node_obj is not None and \
+        #                 node_obj.depend_nodes and \
+        #                 any([a in valid_nodes for a in node_obj.depend_nodes]):
+        #             if n not in g._attr['subgraph_depends_nodes'] and n not in valid_nodes:
+        #                 g._attr['subgraph_depends_nodes'].append(n)
+        if subgraph_depends_nodes:
+            valid_nodes = determined_sort(g, output_names + subgraph_depends_nodes)
         removing_nodes = set(g.nodes).difference(valid_nodes)
         valid_out_nodes = []
         for n in removing_nodes:
@@ -158,8 +164,8 @@ def clear_redundant_nodes(g, outputs=None):
             for k in list(g._attr['subgraphs'].keys()):
                 if k not in all_valid_nodes:
                     g._attr['subgraphs'].pop(k)
-        if g._attr['subgraph_depends_nodes']:
-            for dep_n in g._attr['subgraph_depends_nodes']:
+        if subgraph_depends_nodes:
+            for dep_n in subgraph_depends_nodes:
                 out_edges = g.sorted_out_edges(dep_n, data=True)
                 if not out_edges:
                     noop_node_name = get_valid_node_name(
