@@ -3416,7 +3416,7 @@ class ArmMaxRoiPoolOp(OpHasOneOutPort, ArmOp):
         roi_num = inputs[1].shape[0]
         channels = inputs[0].shape[-1]
         out_tensor = np.random.ranf(
-            (roi_num, *self.pooled_shape, channels)).astype(np.float32)
+            (roi_num, *self.pooled_shape, channels)).astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
     def write_attrs(self, txt_file):

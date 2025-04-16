@@ -183,7 +183,7 @@ class BatchNormalizationOp(LayoutConcernedOp, OpHasVariableOutPorts, OnnxOp):
         is_training = self.training_mode
         if is_training:
             reshape_dim = None
-            if inputs[0].ndim not in (4, 5):
+            if inputs[0].ndim != 4:
                 if self.data_format.startswith('NC'):
                     reshape_dim = list(inputs[0].shape[:2]) + [int(np.prod(inputs[0].shape[2:])), 1]
                 else:
@@ -2000,11 +2000,11 @@ class MaxRoiPoolOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
         if self.data_format == 'NHWC':
             channels = inputs[0].shape[-1]
             out_tensor = np.random.ranf(
-                (rois, *self.pooled_shape, channels)).astype(np.float32)
+                (rois, *self.pooled_shape, channels)).astype(inputs[0].dtype)
         else:
             channels = inputs[0].shape[1]
             out_tensor = np.random.ranf(
-                (rois, channels, *self.pooled_shape)).astype(np.float32)
+                (rois, channels, *self.pooled_shape)).astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
 
