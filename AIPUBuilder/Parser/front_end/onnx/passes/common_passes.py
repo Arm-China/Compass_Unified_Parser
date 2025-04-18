@@ -501,6 +501,53 @@ def remove_redundant_bn(graph, max_branches=6):
                 ERROR('[Parser]: Meets invalid BatchNorm Op in remove_redundant_bn!')
 
 
+def remove_redundant_slice(graph, max_try=2):
+    for j in range(max_try):
+        matched = False
+        matches = matched_patterns(graph,
+                                   nodes=[
+                                       ('s1', {'op': 'ArmSlice'}), ('s2', {'op': 'ArmSlice'})],
+                                   edges=[('s1', 's2')]
+                                   )
+        for m in matches:
+            s1, s2 = m['s1'], m['s2']
+            s1_obj = NodeWrap(graph, s1)['object']
+            s2_obj = NodeWrap(graph, s2)['object']
+            if s1_obj is None:
+                ERROR(
+                    '[Parser]: Meets invalid Slice Op (%s) in remove_redundant_slice!' % s1)
+                continue
+            if s2_obj is None:
+                ERROR(
+                    '[Parser]: Meets invalid Slice Op (%s) in remove_redundant_slice!' % s2)
+                continue
+            s1_out_edges = graph.sorted_out_edges(s1, data=True)
+            if len(s1_out_edges) != 1:
+                continue
+            matched = True
+            s1_in_edges = graph.sorted_in_edges(s1, data=True)
+            new_starts = []
+            new_ends = []
+            new_steps = []
+            for i in range(len(s1_obj.starts)):
+                new_starts.append(s1_obj.starts[i] + s2_obj.starts[i] * s1_obj.steps[i])
+                new_steps.append(s1_obj.steps[i] * s2_obj.steps[i])
+                temp_end = s1_obj.starts[i] + s2_obj.ends[i] * s1_obj.steps[i]
+                new_ends.append(min(temp_end, s1_obj.ends[i]))
+
+            s2_obj.starts = new_starts
+            s2_obj.ends = new_ends
+            s2_obj.steps = new_steps
+
+            graph.remove_edges_from(s1_in_edges)
+            graph.remove_edges_from(s1_out_edges)
+            src, _, in_attr = s1_in_edges[0]
+            graph.add_edge(src, s2, **in_attr)
+
+        if matched:
+            clear_redundant_nodes(graph)
+
+
 def remove_redundant_reshape(graph, type='Reshape'):
     matches = matched_patterns(graph,
                                nodes=[

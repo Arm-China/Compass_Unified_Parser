@@ -23,7 +23,7 @@ from .common_passes import remove_node_safely, insert_cast, insert_cast_after, i
     insert_reshape, insert_reshape_after, insert_constant, \
     insert_slice, insert_transpose, remove_redundant_bn, remove_redundant_reshape, remove_redundant_transpose, \
     remove_redundant_transpose2, remove_useless_op, fuse_const, insert_gather, remove_redundant_cast, \
-    insert_transpose_after, merge_same_op_at_out_port, remove_redundant_transpose_unaware
+    insert_transpose_after, merge_same_op_at_out_port, remove_redundant_transpose_unaware, remove_redundant_slice
 from ....plugin_loader import PARSER_OP_DICT
 
 
@@ -5873,6 +5873,7 @@ def back_passes(graph, params):
     merge_s2b_pool_b2s(graph)
 
     remove_redundant_bn(graph)
+    remove_redundant_slice(graph)
     remove_special_transpose(graph)
     sink_transpose_through_special_reshape(graph)
     sink_quantize_through_concat(graph)
