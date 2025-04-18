@@ -11070,15 +11070,19 @@ def lift_single_add_sub_mul_div(graph):
         graph.remove_edges_from(non_math_out_edges)
         graph.remove_edges_from(math_out_edges)
 
+        math_scale_zp = math_out_edges[0][-1]['tensor'].scale_zp
+
         math_in_attr = copy.deepcopy(non_math_in_edges[0][-1])
         math_in_attr['dst_in_port'] = non_math_out_edges[0][-1]['dst_in_port']
         graph.add_edge(non_math_src, math_op, **math_in_attr)
 
         non_math_in_attr = copy.deepcopy(non_math_in_edges[0][-1])
+        non_math_in_attr['tensor'].scale_zp = math_scale_zp
         graph.add_edge(math_op, non_math_op, **non_math_in_attr)
 
         for _, math_dst, math_out_attr in math_out_edges:
             out_attr = copy.deepcopy(math_out_attr)
+            out_attr['tensor'].scale_zp = math_scale_zp
             graph.add_edge(non_math_op, math_dst, **out_attr)
         if math_op in graph._attr['output_names']:
             index = graph._attr['output_names'].index(math_op)
