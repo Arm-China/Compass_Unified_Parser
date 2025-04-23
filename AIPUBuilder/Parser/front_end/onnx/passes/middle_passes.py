@@ -5,6 +5,7 @@
 import numpy as np
 import itertools
 import copy
+import networkx as nx
 from functools import reduce
 from collections import OrderedDict
 from ....common.defs import Tensor, FLOAT_EQUAL, FLOAT64_EQUAL, TYPE_MAX
@@ -2185,16 +2186,7 @@ def _decompose_const_if(graph, params):
 
             is_subgraph = isinstance(graph, SubGraph)
 
-            if is_subgraph:
-                if if_name in graph._root._attr['subgraphs'] and \
-                        remove_branch_name in graph._root._attr['subgraphs'][if_name]:
-                    graph._root._attr['subgraphs'][if_name].pop(remove_branch_name)
-            else:
-                if if_name in graph._attr['subgraphs'] and \
-                        remove_branch_name in graph._attr['subgraphs'][if_name]:
-                    graph._attr['subgraphs'][if_name].pop(remove_branch_name)
-
-            for n in keep_branch.nodes:
+            for n in list(nx.topological_sort(keep_branch)):
                 n_obj = keep_branch.nodes[n]['object']
                 if n_obj is None:
                     ERROR(
@@ -2294,14 +2286,32 @@ def _decompose_const_if(graph, params):
                 if if_name in graph._root._attr['subgraphs']:
                     graph._root._attr['subgraphs'].pop(if_name)
                 if if_name in graph._root._attr['subgraph_depends']:
-                    if keep_branch.name in graph._root._attr['subgraph_depends'][if_name]['depend_nodes']:
-                        current_depends_node_info = graph._root._attr['subgraph_depends'][if_name]['depend_nodes'][keep_branch.name]
+                    if keep_branch.name in graph._root._attr['subgraph_depends'][if_name]:
+                        current_depends_node_info = graph._root._attr['subgraph_depends'][if_name][keep_branch.name]
                         parent_node_name = graph._attr['parent_node']
-                        graph._root._attr['subgraph_depends'][parent_node_name]['depend_nodes'][graph.name] = current_depends_node_info
+                        graph._root._attr['subgraph_depends'][parent_node_name][graph.name] = current_depends_node_info
                         graph._root._attr['subgraph_depends'].pop(if_name)
             else:
+                removed_subgraphs = []
                 if if_name in graph._attr['subgraphs']:
+                    removed_subgraphs = [remove_branch_name]
                     graph._attr['subgraphs'].pop(if_name)
+                if removed_subgraphs:
+                    depends_nodes = []
+                    last_len = 0
+                    while True:
+                        for k, v in graph._attr['subgraphs'].items():
+                            for sg in list(v.values())[:1]:
+                                if sg._attr['parent_graph'].name in removed_subgraphs:
+                                    if k not in depends_nodes:
+                                        depends_nodes.append(k)
+                                    removed_subgraphs.append(sg.name)
+                        if len(depends_nodes) == last_len:
+                            break
+                        last_len = len(depends_nodes)
+                    for n in depends_nodes:
+                        graph._attr['subgraphs'].pop(n)
+
     if matched:
         clear_redundant_nodes(graph)
 
@@ -2332,11 +2342,6 @@ def _decompose_const_loop(graph, params):
                 k_carried_dict[scan_outs_name] = []
 
             if not condition:
-                # loop_out_ports = loop_obj.get_out_ports()
-                # # if any(p >= 2 for p in loop_out_ports) \
-                # #         or (1 in loop_out_ports and len(loop_in_edges) != 3):
-                # #     WARN('[Parser]: Meets unsupported Loop Node(%s) in decompose_const_loop!' % loop)
-                # #     continue
                 const_list = []
                 for i in range(K):
                     v_initial, _, v_initial_in_attr = loop_in_edges[2 + i]
@@ -2514,8 +2519,25 @@ def _decompose_const_loop(graph, params):
                 graph._attr['output_names'][index:index] = loop_outputs
 
             # clear subgraph
+            removed_subgraphs = []
             if loop in graph._attr['subgraphs']:
+                removed_subgraphs = [loop_obj.body.name]
                 graph._attr['subgraphs'].pop(loop)
+            if removed_subgraphs:
+                depends_nodes = []
+                last_len = 0
+                while True:
+                    for k, v in graph._attr['subgraphs'].items():
+                        for sg in list(v.values())[:1]:
+                            if sg._attr['parent_graph'].name in removed_subgraphs:
+                                if k not in depends_nodes:
+                                    depends_nodes.append(k)
+                                removed_subgraphs.append(sg.name)
+                    if len(depends_nodes) == last_len:
+                        break
+                    last_len = len(depends_nodes)
+                for n in depends_nodes:
+                    graph._attr['subgraphs'].pop(n)
 
     if matched:
         clear_redundant_nodes(graph)

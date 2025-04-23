@@ -168,7 +168,7 @@ class Graph(nx.MultiDiGraph):
 
     def dot(self):
         keys = list(self.nodes._nodes.keys())
-        ret = "digraph \"%s\" {\nnode [shape=record];\n" % self._attr["name"]
+        ret = "digraph \"%s\" {\nnode [shape=record];\n" % self.name
 
         for i, (n_name, n) in enumerate(self.nodes._nodes.items()):
             # n is a dictionary whose keys include 'op', 'unique' and 'object'.

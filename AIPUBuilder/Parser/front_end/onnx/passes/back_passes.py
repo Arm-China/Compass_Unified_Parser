@@ -7,6 +7,7 @@ import itertools
 from functools import reduce
 import copy
 from ....common.defs import Tensor, FLOAT_EQUAL, Framework
+from ....graph.graph import SubGraph
 from ....logger import INFO, DEBUG, WARN, ERROR, FATAL
 from ....common.utils import extend_lists, list_string_to_list, float_string_to_list, get_converted_dtype, get_closest_dtype
 from ....graph.node_wrap import NodeWrap
@@ -23,7 +24,8 @@ from .common_passes import remove_node_safely, insert_cast, insert_cast_after, i
     insert_reshape, insert_reshape_after, insert_constant, \
     insert_slice, insert_transpose, remove_redundant_bn, remove_redundant_reshape, remove_redundant_transpose, \
     remove_redundant_transpose2, remove_useless_op, fuse_const, insert_gather, remove_redundant_cast, \
-    insert_transpose_after, merge_same_op_at_out_port, remove_redundant_transpose_unaware, remove_redundant_slice
+    insert_transpose_after, merge_same_op_at_out_port, remove_redundant_transpose_unaware, remove_redundant_slice, \
+    insert_dummy
 from ....plugin_loader import PARSER_OP_DICT
 
 
@@ -2475,19 +2477,58 @@ def rename_if(graph):
         if if_obj is None:
             ERROR('[Parser]: Meets invalid If Node(%s) in rename_if!' % if_node)
             continue
-        then_inputs = graph._attr['subgraph_depends'][if_node]['depend_nodes'][if_obj.then_branch.name]
-        else_inputs = graph._attr['subgraph_depends'][if_node]['depend_nodes'][if_obj.else_branch.name]
-        for i, inp in enumerate(then_inputs):
-            in_port = i + 1
-            graph.add_edge(inp, if_node, **{'src_out_port': 0, 'dst_in_port': in_port})
-        for i, inp in enumerate(else_inputs):
-            in_port = len(then_inputs) + 1 + i
-            graph.add_edge(inp, if_node, **{'src_out_port': 0, 'dst_in_port': in_port})
+        then_inputs_num = 0
+        else_inputs_num = 0
+        sub_depends = graph._root._attr['subgraph_depends'] if isinstance(
+            graph, SubGraph) else graph._attr['subgraph_depends']
+        if if_node in sub_depends:
+            if if_obj.then_branch.name in sub_depends[if_node]:
+                then_inputs = sub_depends[if_node][if_obj.then_branch.name]
+                need_update = False
+                for inp in then_inputs:
+                    if not if_obj.then_branch.has_node(inp):
+                        need_update = True
+                        sub_depends[if_node][if_obj.then_branch.name].remove(inp)
+                if need_update:
+                    then_inputs = sub_depends[if_node][if_obj.then_branch.name]
+            else:
+                then_inputs = []
+            if if_obj.else_branch.name in sub_depends[if_node]:
+                else_inputs = sub_depends[if_node][if_obj.else_branch.name]
+                need_update = False
+                for inp in else_inputs:
+                    if not if_obj.else_branch.has_node(inp):
+                        need_update = True
+                        sub_depends[if_node][if_obj.else_branch.name].remove(inp)
+                if need_update:
+                    else_inputs = sub_depends[if_node][if_obj.else_branch.name]
+            else:
+                else_inputs = []
+            then_inputs_num = len(then_inputs)
+            else_inputs_num = len(else_inputs)
         if_attr = if_obj.copied_attr()
-        if_attr['then_branch_inputs_num'] = len(then_inputs)
-        if_attr['else_branch_inputs_num'] = len(else_inputs)
+        if_attr['then_branch_inputs_num'] = then_inputs_num
+        if_attr['else_branch_inputs_num'] = else_inputs_num
         NodeWrap(graph, if_node).replace_obj('ArmIf', if_attr)
         clear_redundant_nodes(graph)
+
+
+def rename_loop(graph):
+    matches = single_node_matcher(graph, 'Loop')
+    for m in matches:
+        loop_node = m['target']
+        loop_obj = NodeWrap(graph, loop_node)['object']
+        if loop_obj is None:
+            ERROR('[Parser]: Meets invalid Loop Node(%s) in rename_loop!' % loop_node)
+            continue
+        body_inputs_num = len(loop_obj.body._attr['input_tensors'])  # 2+N
+        body_outputs_num = len(loop_obj.body._attr['output_names'])  # 1+N+K
+        N = body_inputs_num - 2
+        K = body_outputs_num - 1 - N
+        loop_attr = loop_obj.copied_attr()
+        loop_attr['N'] = N
+        loop_attr['K'] = K
+        NodeWrap(graph, loop_node).replace_obj('ArmLoop', loop_attr)
 
 
 def rename_layernorm(graph):
@@ -4521,7 +4562,7 @@ def trim_weights(graph, init_offset=0):
         return np_data.astype(to_supported_dtype)
 
     nodes_list = determined_sort(graph,
-                                 graph._attr['subgraph_depends_nodes'] + graph._attr['output_names'],
+                                 graph._attr['output_names'],
                                  sort_input=True)
 
     offset = init_offset
@@ -5767,6 +5808,47 @@ def assign_top_range_scale_zp(graph):
         graph._attr['quantize'] = False
 
 
+def make_graph_connected(graph):
+    import networkx as nx
+    if nx.is_weakly_connected(graph):
+        return
+    input_names = []
+    input_names_list = single_node_matcher(graph, 'ArmInput')
+    for input_name in input_names_list:
+        input_names.append(input_name['target'])
+    output_names = list(graph._attr.get('output_names', []))
+    no_connected_inputs = []
+    if output_names:
+        for input_name in input_names:
+            for out_name in output_names:
+                if has_path(graph, input_name, out_name):
+                    continue
+                else:
+                    if input_name not in no_connected_inputs:
+                        no_connected_inputs.append(input_name)
+    out_edge = graph.sorted_out_edges(output_names[0], data=True)[0]
+    src, dst, out_attr = out_edge
+    dummy = insert_dummy(graph, src, dst, out_attr, 'ArmDummy')
+    in_port = 0
+    if no_connected_inputs:
+        for inp in no_connected_inputs:
+            if inp == src:
+                continue
+            inp_out_edge = graph.sorted_out_edges(inp, data=True)[0]
+            _, dst, inp_out_attr = inp_out_edge
+            graph.remove_edge(inp, dst)
+            in_attr = copy.deepcopy(inp_out_attr)
+            in_attr['dst_in_port'] = in_port + 1
+            graph.add_edge(inp, dummy, **in_attr)
+            dummy_out_attr = copy.deepcopy(inp_out_attr)
+            dummy_out_attr['src_out_port'] = in_port + 1
+            graph.add_edge(dummy, dst, **dummy_out_attr)
+            in_port += 1
+            if inp in graph._attr['output_names']:
+                index = graph._attr['output_names'].index(inp)
+                graph._attr['output_names'][index] = dummy
+
+
 def back_passes(graph, params):
     '''
     Pass is an optimization based on IR to remove redundant operators and perform hardware-friendly operator transformation.
@@ -5818,6 +5900,7 @@ def back_passes(graph, params):
     rename_if(graph)
     rename_layernorm(graph)
     rename_logical(graph)
+    rename_loop(graph)
     rename_matmulinteger(graph)
     rename_maxunpool(graph)
     rename_moments(graph)
@@ -5844,7 +5927,7 @@ def back_passes(graph, params):
         'Abs', 'AccidentalHits', 'Acos', 'Acosh', 'AdaptivePool', 'Add', 'AffineGrid', 'Asin',
         'Asinh', 'Atan', 'Atanh', {'BatchGather': 'ArmGather'}, 'BitShift', 'BNLL',
         'Ceil', 'ChannelShuffle', 'Concat', {'Cos': 'ArmCosine'}, 'Cosh', 'CropAndResize',
-        'CTCGreedyDecoder', 'DepthToSpace', 'DivMod', 'Erf', 'Exp', 'Filter', 'Floor',
+        'CTCGreedyDecoder', 'DepthToSpace', 'DivMod', 'Dummy', 'Erf', 'Exp', 'Filter', 'Floor',
         'FractionalPool', 'FullyConnected', 'Gather', 'GatherND', 'GatherElements', 'Input',
         {'InstanceNormalization': 'ArmInstanceNorm'}, 'InTopK', 'IsInf', 'IsNaN', 'Log', 'LogSoftmax',
         'LRN',
@@ -5927,4 +6010,5 @@ def back_passes(graph, params):
     merge_transpose_matmul_gemm(graph)
     insert_cast_if_must(graph)
     remove_redundant_cast(graph)
+    make_graph_connected(graph)
     insert_preprocess(graph)

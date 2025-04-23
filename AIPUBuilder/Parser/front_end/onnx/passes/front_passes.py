@@ -8,6 +8,7 @@ from networkx.algorithms import shortest_path_length
 from ....common.defs import Tensor
 from ....ops.op import Op, OpHasWeights, OpHasBiases, KerasOp, BaseDeconvOp, ConstLikeOp, OpHasOneOutPort
 from ....graph.node_wrap import NodeWrap
+from ....graph.graph import SubGraph
 from ....graph.pattern_match import matched_patterns, single_node_matcher, two_nodes_matcher
 from ....graph.graph_algo import get_valid_node_name, determined_sort
 from ....logger import INFO, DEBUG, WARN, ERROR, FATAL, WARN_EXCEPTION
@@ -196,7 +197,7 @@ def convert_mmcv_deform_conv(graph):
         deform_conv_obj = NodeWrap(graph, deform_conv)['object']
         in_edges = graph.sorted_in_edges(deform_conv, data=True)
         if deform_conv_obj is None or len(in_edges) < 4:
-            ERROR('[Parser]: Meets invalid MMCVModulatedDeformConv2d Op(%s) in convert_mmcv_deform_conv!' % deconv)
+            ERROR('[Parser]: Meets invalid MMCVModulatedDeformConv2d Op(%s) in convert_mmcv_deform_conv!' % deform_conv)
             continue
         graph.remove_edges_from(in_edges[1:])
         # inputs of MMCVModulatedDeformConv2d: input, offset, mask, weight, bias(optional)
@@ -1579,3 +1580,70 @@ def merge_rcnn(graph, params):
             graph._attr['output_names'].append(mask_expand)
 
     clear_redundant_nodes(graph)
+
+
+def convert_special_subgraph(graph):
+    '''
+    Make some special sub_graph as a connected graph
+    :param graph:
+    :return: graph
+    '''
+    if not isinstance(graph, SubGraph):
+        return
+    from ....graph.graph_algo import has_path
+    from .common_passes import insert_dummy
+    parent_node_obj = NodeWrap(graph._attr['parent_graph'], graph._attr['parent_node'])['object']
+    if parent_node_obj is not None:
+        if parent_node_obj.type in ('Loop', 'ArmLoop'):
+            input_names = []
+            input_names_list = single_node_matcher(graph, 'Input')
+            for input_name in input_names_list:
+                input_names.append(input_name['target'])
+            output_names = list(graph._attr.get('output_names', []))
+            body_inputs_num = len(graph._attr['input_tensors'])  # 2+N
+            body_outputs_num = len(output_names)  # 1+N+K
+            N = body_inputs_num - 2
+            K = body_outputs_num - 1 - N
+            no_connected_inputs = []
+            if output_names:
+                for input_name in input_names:
+                    for out_name in output_names:
+                        if has_path(graph, input_name, out_name):
+                            continue
+                        else:
+                            if input_name not in no_connected_inputs:
+                                no_connected_inputs.append(input_name)
+            if K > 0:
+                dummy_nodes = []
+                scan_out_names = output_names[-K:]
+                for scan_out in scan_out_names:
+                    in_edges = graph.sorted_in_edges(scan_out, data=True)
+                    src, _, in_attr = in_edges[0]
+                    dummy = insert_dummy(graph, src, scan_out, in_attr)
+                    dummy_nodes.append(dummy)
+                if no_connected_inputs:
+                    for i, inp in enumerate(no_connected_inputs):
+                        out_edge = graph.sorted_out_edges(inp, data=True)[0]
+                        _, dst, out_attr = out_edge
+                        graph.remove_edge(inp, dst)
+                        in_attr = copy.deepcopy(out_attr)
+                        in_attr['dst_in_port'] = i + 1
+                        graph.add_edge(inp, dummy_nodes[0], **in_attr)
+                        dummy_out_attr = copy.deepcopy(out_attr)
+                        dummy_out_attr['src_out_port'] = i + 1
+                        graph.add_edge(dummy_nodes[0], dst, **dummy_out_attr)
+            else:
+                out_edge = graph.sorted_out_edges(output_names[0], data=True)[0]
+                src, dst, out_attr = out_edge
+                dummy = insert_dummy(graph, src, dst, out_attr)
+                if no_connected_inputs:
+                    for i, inp in enumerate(no_connected_inputs):
+                        inp_out_edge = graph.sorted_out_edges(inp, data=True)[0]
+                        _, dst, inp_out_attr = inp_out_edge
+                        graph.remove_edge(inp, dst)
+                        in_attr = copy.deepcopy(inp_out_attr)
+                        in_attr['dst_in_port'] = i + 1
+                        graph.add_edge(inp, dummy, **in_attr)
+                        dummy_out_attr = copy.deepcopy(inp_out_attr)
+                        dummy_out_attr['src_out_port'] = i + 1
+                        graph.add_edge(dummy, dst, **dummy_out_attr)

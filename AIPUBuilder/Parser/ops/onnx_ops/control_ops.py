@@ -98,11 +98,11 @@ class LoopOp(OpHasSubGraph, OnnxOp):
             },
             11: {
                 'body': {'type': AttrType.GRAPH, 'required': True},
-                'default_max_count': {'type': AttrType.INT, 'required': True}
+                'default_max_count': {'type': AttrType.INT, 'required': True},
             },
             13: {
                 'body': {'type': AttrType.GRAPH, 'required': True},
-                'default_max_count': {'type': AttrType.INT, 'required': True}
+                'default_max_count': {'type': AttrType.INT, 'required': True},
             }
         }
 
@@ -123,7 +123,7 @@ class LoopOp(OpHasSubGraph, OnnxOp):
                 in_edges[0][2]['tensor'].value is not None and \
                 in_edges[1][2]['tensor'].is_const and \
                 in_edges[1][2]['tensor'].value is not None:
-            max_count, ori_cond_in = int(inputs[0]), bool(inputs[1])
+            max_count, ori_cond_in = min(int(inputs[0]), self.default_max_count), bool(inputs[1])
             count_cond_is_const = True
         else:
             if in_edges[1][2]['tensor'].is_const and \
@@ -161,7 +161,7 @@ class LoopOp(OpHasSubGraph, OnnxOp):
                     if sub_node_obj is None:
                         ERROR(f'[Parser]: Get Node Obj Failed in Loop Infer of Node: {n}.')
                     try:
-                        if sub_node_obj.type == 'Input':
+                        if sub_node_obj.type in ('Input', 'ArmInput'):
                             inp_idx = list(self.body._attr['input_tensors'].keys()).index(n)
                             if inp_idx == 0:
                                 out_tensor = np.array(loop_cnt, np.int64)
@@ -187,7 +187,7 @@ class LoopOp(OpHasSubGraph, OnnxOp):
                                 cond_out_root_input_const[n] = dummy_out_edges[0][-1]['tensor'].is_const
                             sub_node_obj.infer_shape(out_tensor, dummy_out_edges[0][-1]['tensor'].is_const)
                         else:
-                            if sub_node_obj.type == 'Constant' and n in cond_out_root_input_const:
+                            if sub_node_obj.type in ('Constant', 'ArmConstant') and n in cond_out_root_input_const:
                                 cond_out_root_input_const[n] = True
                             sub_node_obj.infer_shape()
                     except Exception as e:

@@ -114,7 +114,7 @@ def write_nodes_weights(bin_path, nodes_list, graph):
 
 def write_net(txt_path, bin_path, net_attr, graph):
     sorted_list = determined_sort(graph,
-                                  graph._attr['subgraph_depends_nodes'] + graph._attr['output_names'],
+                                  graph._attr['output_names'],
                                   sort_input=True)
     ret = write_nodes_attrs(txt_path, net_attr, sorted_list, graph)
 
@@ -164,7 +164,7 @@ def serialize(graph, params):
             os.remove(bin_path)
 
         sorted_list = determined_sort(graph,
-                                      graph._attr['subgraph_depends_nodes'] + graph._attr['output_names'],
+                                      graph._attr['output_names'],
                                       sort_input=True)
 
         net_attr = OrderedDict()

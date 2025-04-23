@@ -234,26 +234,22 @@ def univ_parser(params):
                 from .misc import check_similarity
                 import networkx as nx
 
-                '''Check if it is a DAG.'''
-                is_dag = nx.is_directed_acyclic_graph(graph)
-                if not is_dag:
-                    ERROR(f'[Parser]: Graph({graph.name}) is not DAG!')
+                process_graph(graph, params)
+
+                '''Check if it is a connected graph.'''
+                is_connected = nx.is_weakly_connected(graph)
+                if not is_connected:
+                    ERROR(f'[Parser]: Graph({graph.name}) is not connected!')
 
                 if 'subgraphs' in graph._attr and graph._attr['subgraphs']:
                     for v in list(graph._attr['subgraphs'].values()):
                         for subgraph_name, subgraph in v.items():
                             front_process_graph(model_type, model_path, subgraph, params)
                             process_graph(subgraph, params)
-
-                process_graph(graph, params)
-
-                if 'subgraphs' in graph._attr and graph._attr['subgraphs']:
-                    for v in list(graph._attr['subgraphs'].values()):
-                        for subgraph_name, subgraph in v.items():
                             convert_dummyinput_to_input(subgraph)
-                            is_dag = nx.is_directed_acyclic_graph(subgraph)
-                            if not is_dag:
-                                ERROR(f'[Parser]: Graph({subgraph.name}) is not DAG!')
+                            is_connected = nx.is_weakly_connected(subgraph)
+                            if not is_connected:
+                                ERROR(f'[Parser]: Graph({subgraph.name}) is not connected!')
                                 break
 
                 txt_path, bin_path = '', ''

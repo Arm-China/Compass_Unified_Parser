@@ -91,6 +91,7 @@ def convert_to_const(graph, op_type_name_list):
 
 def convert_dummyinput_to_input(graph):
     matches = single_node_matcher(graph, 'DummyInput')
+    input_tensors = {}
     for m in matches:
         node_name = m['target']
         if node_name in graph.nodes:
@@ -100,12 +101,21 @@ def convert_dummyinput_to_input(graph):
                     '[Parser]: Meets invalid Node (%s) in convert_dummyinput_to_input!' % node_name)
                 continue
             out_edges = graph.sorted_out_edges(node_name, data=True)
-            assert len(out_edges) == 1, 'DummyInput should only have 1 output.'
             out_tensor = out_edges[0][-1]['tensor']
             new_attr = node_obj.copied_attr()
             NodeWrap(graph, node_name).replace_obj(
                 'ArmInput', new_attr)
-            graph._attr['input_tensors'].update({out_tensor.name: out_tensor})
+            input_tensors.update({out_tensor.name: out_tensor})
+    if input_tensors:
+        if isinstance(graph, SubGraph):
+            for dpend_dict in list(graph._root._attr['subgraph_depends'].values()):
+                if graph.name in dpend_dict:
+                    depend_nodes = dpend_dict[graph.name]
+                    for depend_node in depend_nodes:
+                        if depend_node in input_tensors:
+                            graph._attr['input_tensors'].update({depend_node: input_tensors[depend_node]})
+        else:
+            graph._attr['input_tensors'].update(input_tensors)
 
 
 def convert_multi_outputs_to_const(graph, op_type_name_list):
@@ -1013,6 +1023,29 @@ def insert_constant(graph, name, value, dst, in_port=0, data_format='NCHW', cons
         graph.add_edge(const_name, dst, **edge_attr)
     else:
         ERROR('[Parser]: Invalid params for insert_constant (%s)!' % name)
+
+
+def insert_dummy(graph, src, dst, in_attr, dummpy_type='Dummy', quantize=False):
+    ret = None
+    if graph.has_node(src) and graph.has_node(dst):
+        if has_path(graph, src, dst):
+            graph.remove_edge(src, dst)
+        dummy = get_valid_node_name(graph, src + '_post_dummy')
+        graph.add_node(dummy)
+        dummy_attr = {'name': dummy, 'quantize': quantize}
+        NodeWrap(graph, dummy).replace_obj(dummpy_type, dummy_attr)
+
+        dummy_in_attr = copy.deepcopy(in_attr)
+        dummy_in_attr.update({'dst_in_port': 0})
+        graph.add_edge(src, dummy, **dummy_in_attr)
+
+        dummy_out_attr = copy.deepcopy(in_attr)
+        dummy_out_attr.update({'src_out_port': 0})
+        graph.add_edge(dummy, dst, **dummy_out_attr)
+        ret = dummy
+    else:
+        ERROR('[Parser]: Invalid params for insert_dummy!')
+    return ret
 
 
 def insert_dequant_quant(graph, src, dst, in_attr, op_type, key=None, data_format='NHWC'):
