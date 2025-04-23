@@ -407,7 +407,7 @@ class ArmAffineGridOp(OpHasOneOutPort, ArmOp):
 class ArmArgMinMaxOp(OpHasMethod, OpHasAxis, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
-        return {0: ['float32', 'float16', 'int8', 'uint8']}
+        return {0: ['float32', 'float16', 'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32']}
 
     @classmethod
     def attributes(cls):
@@ -2722,10 +2722,6 @@ class ArmGRUv3Op(BaseRnnOp, OpHasBiases, OpHasWeights, ArmOp):
 
 class ArmIfOp(OpHasSubGraph, DynamicShapeOp, ArmOp):
     @classmethod
-    def num_in_ports(cls):
-        return 0
-
-    @classmethod
     def attributes(cls):
         return {
             'then_branch_inputs_num': {'type': AttrType.INT, 'required': True},
@@ -3145,10 +3141,10 @@ class ArmLoopOp(OpHasSubGraph, DynamicShapeOp, ArmOp):
                     if sub_node_obj is None:
                         ERROR(f'[Parser]: Get Node Obj Failed in Loop Infer of Node: {n}.')
                     try:
-                        if sub_node_obj.type == 'Input':
+                        if sub_node_obj.type in ('Input', 'ArmInput'):
                             inp_idx = list(self.body._attr['input_tensors'].keys()).index(n)
                             if inp_idx == 0:
-                                out_tensor = np.array(loop_cnt, np.int64)
+                                out_tensor = np.array(loop_cnt, np.int32)
                             elif inp_idx == 1:
                                 out_tensor = np.array(cond_in, bool)
                             else:
@@ -3171,7 +3167,7 @@ class ArmLoopOp(OpHasSubGraph, DynamicShapeOp, ArmOp):
                                 cond_out_root_input_const[n] = dummy_out_edges[0][-1]['tensor'].is_const
                             sub_node_obj.infer_shape(out_tensor, dummy_out_edges[0][-1]['tensor'].is_const)
                         else:
-                            if sub_node_obj.type == 'Constant' and n in cond_out_root_input_const:
+                            if sub_node_obj.type in ('Constant', 'ArmConstant') and n in cond_out_root_input_const:
                                 cond_out_root_input_const[n] = True
                             sub_node_obj.infer_shape()
                     except Exception as e:
@@ -3215,6 +3211,8 @@ class ArmLoopOp(OpHasSubGraph, DynamicShapeOp, ArmOp):
     def write_attrs(self, txt_file):
         ret = super(ArmLoopOp, self).write_attrs(txt_file)
         if ret:
+            txt_file.write('N=%d\n' % self.N)
+            txt_file.write('K=%d\n' % self.K)
             txt_file.write('body=%s\n' % self.body.name)
         return ret
 
