@@ -1590,7 +1590,6 @@ def convert_special_subgraph(graph):
     '''
     if not isinstance(graph, SubGraph):
         return
-    from ....graph.graph_algo import has_path
     from .common_passes import insert_dummy
     parent_node_obj = NodeWrap(graph._attr['parent_graph'], graph._attr['parent_node'])['object']
     if parent_node_obj is not None:
@@ -1608,7 +1607,7 @@ def convert_special_subgraph(graph):
             if output_names:
                 for input_name in input_names:
                     for out_name in output_names:
-                        if has_path(graph, input_name, out_name):
+                        if graph.is_connected(input_name, out_name):
                             continue
                         else:
                             if input_name not in no_connected_inputs:

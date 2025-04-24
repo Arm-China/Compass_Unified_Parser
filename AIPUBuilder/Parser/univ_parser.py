@@ -236,10 +236,14 @@ def univ_parser(params):
 
                 process_graph(graph, params)
 
-                '''Check if it is a connected graph.'''
+                '''Check if it is a connected DAG graph.'''
                 is_connected = nx.is_weakly_connected(graph)
                 if not is_connected:
                     ERROR(f'[Parser]: Graph({graph.name}) is not connected!')
+
+                is_dag = nx.is_directed_acyclic_graph(graph)
+                if not is_dag:
+                    ERROR(f'[Parser]: Graph({graph.name}) is not DAG!')
 
                 if 'subgraphs' in graph._attr and graph._attr['subgraphs']:
                     for v in list(graph._attr['subgraphs'].values()):
@@ -251,6 +255,9 @@ def univ_parser(params):
                             if not is_connected:
                                 ERROR(f'[Parser]: Graph({subgraph.name}) is not connected!')
                                 break
+                            is_dag = nx.is_directed_acyclic_graph(subgraph)
+                            if not is_dag:
+                                ERROR(f'[Parser]: Graph({subgraph.name}) is not DAG!')
 
                 txt_path, bin_path = '', ''
                 try:

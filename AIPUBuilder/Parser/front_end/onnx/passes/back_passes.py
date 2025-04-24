@@ -5821,7 +5821,7 @@ def make_graph_connected(graph):
     if output_names:
         for input_name in input_names:
             for out_name in output_names:
-                if has_path(graph, input_name, out_name):
+                if graph.is_connected(input_name, out_name):
                     continue
                 else:
                     if input_name not in no_connected_inputs:

@@ -166,6 +166,15 @@ class Graph(nx.MultiDiGraph):
             except:
                 pass
 
+    def is_connected(self, u, v):
+        is_connect = False
+        weak_components = list(nx.weakly_connected_components(self))
+        for component in weak_components:
+            if u in component and v in component:
+                is_connect = True
+                break
+        return is_connect
+
     def dot(self):
         keys = list(self.nodes._nodes.keys())
         ret = "digraph \"%s\" {\nnode [shape=record];\n" % self.name
