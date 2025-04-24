@@ -3211,8 +3211,8 @@ class ArmLoopOp(OpHasSubGraph, DynamicShapeOp, ArmOp):
     def write_attrs(self, txt_file):
         ret = super(ArmLoopOp, self).write_attrs(txt_file)
         if ret:
-            txt_file.write('N=%d\n' % self.N)
-            txt_file.write('K=%d\n' % self.K)
+            txt_file.write('dependency_inputs_num=%d\n' % self.N)
+            txt_file.write('scan_outputs_num=%d\n' % self.K)
             txt_file.write('body=%s\n' % self.body.name)
         return ret
 
