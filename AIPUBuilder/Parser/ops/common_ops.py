@@ -645,6 +645,10 @@ class MMCVModulatedDeformConv2dOp(BaseConvOp, OnnxOp):
 
 
 class MomentsOp(OpHasMultipleOutPorts, OpHasAxis, CommonOp):
+    @classmethod
+    def attributes(cls):
+        return {'keepdims': {'type': AttrType.INT, 'options': [0, 1], 'default': 1}}
+
     def infer_shape(self):
         super(MomentsOp, self).infer_shape()
         inputs = self.get_input_tensors()

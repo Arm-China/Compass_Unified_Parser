@@ -3559,6 +3559,12 @@ class ArmMomentsOp(OpHasMultipleOutPorts, OpHasAxis, ArmOp):
         out_tensors = [out_tensor.numpy() for out_tensor in out_tensors]
         self.set_out_tensor(out_tensors)
 
+    def write_attrs(self, txt_file):
+        ret = super(ArmMomentsOp, self).write_attrs(txt_file)
+        if ret:
+            txt_file.write(f'keepdims={str(self.keepdims).lower()}\n')
+        return ret
+
 
 class ArmMulOp(BaseActivationOp, ArmOp):
     @classmethod
