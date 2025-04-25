@@ -2764,8 +2764,14 @@ class ThresholdedReluOp(BaseActivationOp, OnnxOp):
 class TopKOp(OpHasAxis, OpHasMultipleOutPorts, OnnxOp):
     @classmethod
     def attributes(cls):
-        return {1: {'axis': {'default': -1}, 'k': {'type': AttrType.INT, 'required': True}},
-                10: {'axis': {'default': -1}},
+        return {1: {'axis': {'default': -1}, 'k': {'type': AttrType.INT, 'required': True},
+                    'select_index': {'type': AttrType.STRING, 'options': ['first', 'last', 'random'],
+                                     'default': 'last'}
+                    },
+                10: {'axis': {'default': -1},
+                     'select_index': {'type': AttrType.STRING, 'options': ['first', 'last', 'random'],
+                                      'default': 'last'}
+                     },
                 11: {'axis': {'default': -1},
                      'largest': {'type': AttrType.INT, 'options': [0, 1], 'default': 1},
                      'sorted': {'type': AttrType.INT, 'options': [0, 1], 'default': 1},

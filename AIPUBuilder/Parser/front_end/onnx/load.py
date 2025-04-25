@@ -819,6 +819,8 @@ def convert_onnx_to_graph(graph, model_path, params):
                         graph.add_node(op_name)
                     if node_type == 'Loop':
                         op_attr['default_max_count'] = params.get('loop_max_count', 100)
+                    elif node_type == 'TopK':
+                        op_attr['select_index'] = 'first'
                     NodeWrap(graph, op_name).replace_obj(node_type, op_attr)
                     if op_name in graph._attr['node_in_subgraphs']:
                         op_obj = graph.nodes[op_name]['object']
