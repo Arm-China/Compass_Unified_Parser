@@ -73,14 +73,6 @@ def univ_parser(params):
         else:
             params['use_onnxsim'] = True
 
-        if 'force_fp_norm' in params:
-            force_fp_norm = str(params['force_fp_norm']).lower() == 'true'
-            if force_fp_norm:
-                WARN('[Parser]: force float norm is enabled, quant norm will be replaced with deq + fp_norm + quant!')
-            params['force_fp_norm'] = force_fp_norm
-        else:
-            params['force_fp_norm'] = False
-
         params['input_layouts'] = multi_string_to_list(params['input_layout']) if 'input_layout' in params else []
 
         def _parse_npy(key_name):

@@ -4080,8 +4080,6 @@ def convert_qsigmoid(graph):
 
 
 def convert_qnorm_to_float(graph):
-    if not graph._attr.get('quantize', False):
-        return
     from .common_passes import insert_dequant_quant
     matches = matched_patterns(graph,
                                nodes=[
@@ -4103,6 +4101,8 @@ def convert_qnorm_to_float(graph):
         if qnorm_obj is None:
             ERROR(f'[Parser]: Meets invalid QNorm node({qnorm}) in convert_qnorm_to_float!')
             continue
+        if not qnorm_obj.quantize:
+            return
         src, _, in_attr = in_edges[0]
         insert_dequant_quant(graph, src, qnorm, in_attr, 'DequantizeLinear')
 
@@ -13234,7 +13234,7 @@ def middle_passes(graph, params):
     convert_mha(graph)
     convert_skip_simplified_layernorm(graph)
 
-    # merge_q_ln(graph)
+    merge_q_ln(graph)
     merge_q_ln_partial(graph)
     merge_q_gelu(graph)
     convert_qadd(graph)
@@ -13246,8 +13246,7 @@ def middle_passes(graph, params):
     convert_qleakyrelu(graph)
     convert_qmatmul(graph)
     convert_qsigmoid(graph)
-    if params.get('force_fp_norm', False):
-        convert_qnorm_to_float(graph)
+    convert_qnorm_to_float(graph)
     convert_special_conv_to_mul(graph)
 
     convert_abnormal_reshape(graph)
