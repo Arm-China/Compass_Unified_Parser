@@ -1099,11 +1099,11 @@ def insert_dequant_quant(graph, src, dst, in_attr, op_type, key=None, data_forma
             out_tensor = copy.deepcopy(in_attr['tensor'])
             if op_type == 'DequantizeLinear':
                 out_tensor.dtype = 'float32'
+                out_tensor.min_max = ()
+                out_tensor.scale_zp = ()
             if in_attr['tensor'].value is not None:
                 if op_type == 'DequantizeLinear':
                     out_tensor.value = (in_attr['tensor'].value - zp) * scale.astype(np.float32)
-                    out_tensor.min_max = ()
-                    out_tensor.scale_zp = ()
                 else:
                     out_tensor.value = np.round(in_attr['tensor'].value / scale + zp).astype(zp.dtype)
                 out_tensor.shape = out_tensor.value.shape
