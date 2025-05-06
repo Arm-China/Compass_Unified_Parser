@@ -9,7 +9,7 @@ import tensorflow as tf
 import numpy as np
 from .op import *
 from ..common.defs import FLOAT_EQUAL
-from ..common.utils import list_list_to_string, get_random_array
+from ..common.utils import list_list_to_string, get_random_array, get_target_graph
 from ..logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
@@ -101,7 +101,7 @@ class ArmActivationOp(LayoutUnawareOp, OpHasMethod, OpHasOneOutPort, ArmOp):
                 'approximate': {'type': AttrType.STRINGS, 'default': 'none'},
                 }
 
-    METHOD = {'CELU': lambda x, alpha: tf.math.maximum(0.0, x) + tf.math.minimum(0.0, alpha * (tf.exp(x / alpha) - 1.0)),
+    METHOD = {'CELU': lambda x, alpha: torch.nn.functional.celu(x, alpha=alpha),
               'CLIP': lambda x, v1, v2: tf.clip_by_value(x, v1, v2),
               'ELU': tf.nn.elu,
               'GELU': lambda x: (x),
@@ -136,7 +136,8 @@ class ArmActivationOp(LayoutUnawareOp, OpHasMethod, OpHasOneOutPort, ArmOp):
         inputs = self.get_input_tensors()
         if self.method == 'CELU':
             inp = inputs[0].astype(np.float32) if np.issubdtype(inputs[0].dtype, np.integer) else inputs[0]
-            out_tensor = func(inp, self.alpha).numpy().astype(inputs[0].dtype)
+            inp = torch.tensor(inp)
+            out_tensor = func(inp, self.alpha).cpu().numpy().astype(inputs[0].dtype)
         elif self.method == 'CLIP':
             out_tensor = func(inputs[0], self.clip_min, self.clip_max).numpy().astype(inputs[0].dtype)
         elif self.method == 'GELU':
@@ -340,6 +341,28 @@ class ArmAdaptivePoolOp(OpHasMethod, OpHasOneOutPort, ArmOp):
         if ret:
             txt_file.write('output_size=[%s]\n' % list_list_to_string(self.output_size))
         return ret
+
+
+class ArmAddOp(BaseActivationOp, ArmOp):
+    @classmethod
+    def cast_in_ports(cls):
+        return {
+            0: ['float32', 'float16', 'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32'],
+            1: ['float32', 'float16', 'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32']
+        }
+
+    @classmethod
+    def num_in_ports(cls):
+        return 2
+
+    def infer_shape(self):
+        super(ArmAddOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        input_dtypes = self.get_input_dtypes()
+        assert len(inputs) == 2 and len(input_dtypes) == 2, 'The number of inputs is invalid in AddOp.'
+        assert input_dtypes[0] == input_dtypes[1], 'The dtype of inputs should be the same in AddOp.'
+        out_tensor = np.add(*inputs)
+        self.set_out_tensor(out_tensor)
 
 
 class ArmAffineGridOp(OpHasOneOutPort, ArmOp):
@@ -1724,34 +1747,6 @@ class ArmDeQuantizeOp(OpHasAxis, BaseQuantizeDequantizeOp, OpHasOneOutPort, ArmO
         self.set_out_tensor(out_tensor)
 
 
-class ArmDilationOp(OpHasPaddingStrides, OpHasWeights, OpHasOneOutPort, LayoutConcernedOp, ArmOp):
-    @classmethod
-    def attributes(cls):
-        return {'dilations': {'default': [1, 1, 1, 1]}
-                }
-
-    @classmethod
-    def cast_in_ports(cls):
-        return {0: ['float32', 'float16']}
-
-    def __init__(self, graph, attr_dict=None):
-        super(ArmDilationOp, self).__init__(graph, attr_dict)
-        self.update_attributes(ArmDilationOp, attr_dict)
-        assert self.check_required(), 'ArmDilationOp is missing a required parameter.'
-
-    def infer_shape(self):
-        super(ArmDilationOp, self).infer_shape()
-        inputs = self.get_input_tensors()
-        inp = tf.pad(inputs[0], self.tf_pads) if self.auto_pad == 'NOTSET' else inputs[0]
-        out_tensor = tf.nn.dilation2d(inp,
-                                      np.transpose(np.reshape(self.weights, self.weights.shape[:3]), [1, 2, 0]),
-                                      strides=[1] + self.strides + [1],
-                                      padding='VALID',
-                                      dilations=[1] + self.dilations + [1],
-                                      data_format='NHWC').numpy()
-        self.set_out_tensor(out_tensor)
-
-
 class ArmDetectionOutputOp(OpHasMultipleOutPorts, ArmOp):
     @classmethod
     def num_in_ports(cls):
@@ -1810,10 +1805,41 @@ class ArmDetectionOutputOp(OpHasMultipleOutPorts, ArmOp):
         return ret
 
 
+class ArmDilationOp(OpHasPaddingStrides, OpHasWeights, OpHasOneOutPort, LayoutConcernedOp, ArmOp):
+    @classmethod
+    def attributes(cls):
+        return {'dilations': {'default': [1, 1, 1, 1]}
+                }
+
+    @classmethod
+    def cast_in_ports(cls):
+        return {0: ['float32', 'float16']}
+
+    def __init__(self, graph, attr_dict=None):
+        super(ArmDilationOp, self).__init__(graph, attr_dict)
+        self.update_attributes(ArmDilationOp, attr_dict)
+        assert self.check_required(), 'ArmDilationOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(ArmDilationOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        inp = tf.pad(inputs[0], self.tf_pads) if self.auto_pad == 'NOTSET' else inputs[0]
+        out_tensor = tf.nn.dilation2d(inp,
+                                      np.transpose(np.reshape(self.weights, self.weights.shape[:3]), [1, 2, 0]),
+                                      strides=[1] + self.strides + [1],
+                                      padding='VALID',
+                                      dilations=[1] + self.dilations + [1],
+                                      data_format='NHWC').numpy()
+        self.set_out_tensor(out_tensor)
+
+
 class ArmDivOp(LayoutUnawareOp, OpHasDivisor, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
-        return {0: ['float32', 'float16', 'int8', 'uint8'], 1: ['float32', 'float16', 'int8', 'uint8']}
+        return {
+            0: ['float32', 'float16', 'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32'],
+            1: ['float32', 'float16', 'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32']
+        }
 
     @classmethod
     def num_in_ports(cls):
@@ -1871,6 +1897,17 @@ class ArmDivModOp(LayoutUnawareOp, OpHasDivisor, OpHasMultipleOutPorts, ArmOp):
         ret = super(ArmDivModOp, self).write_attrs(txt_file)
         if ret:
             txt_file.write('mode=%s\n' % self.mode.upper())
+
+
+class ArmDummyOp(LayoutUnawareOp, OpHasVariableOutPorts, ArmOp):
+    def __init__(self, graph, attr_dict=None):
+        super(ArmDummyOp, self).__init__(graph, attr_dict)
+
+    def infer_shape(self):
+        super(ArmDummyOp, self).infer_shape()
+        input_tensor = self.get_input_tensors()
+        out_tensor = input_tensor.copy()
+        self.set_out_tensor(out_tensor)
 
 
 class ArmEltwiseOp(LayoutUnawareOp, OpHasMethod, BaseActivationOp, ArmOp):
@@ -2242,11 +2279,16 @@ class ArmFullyConnectedOp(BaseActivationOp, BaseLinearOp, ArmOp):
             inp = inputs[0].astype(np.float32)
         else:
             inp = inputs[0]
-        out_tensor = (tf.matmul(inp,
-                                np.transpose(self.weights, axes=type(
-                                    self).perm_onnx_to_tf())
-                                ) + self.biases).numpy()
-        out_tensor = self.cal_activation(out_tensor).astype(inputs[0].dtype)
+        a_shape = list(inp.shape)
+        b_shape = list(np.transpose(self.weights, axes=type(
+                                    self).perm_onnx_to_tf()).shape)
+        out_shape = [a_shape[0], b_shape[1]]
+        out_tensor = np.random.ranf(tuple(out_shape)).astype(inputs[0].dtype)
+        # out_tensor = (tf.matmul(inp,
+        #                         np.transpose(self.weights, axes=type(
+        #                             self).perm_onnx_to_tf())
+        #                         ) + self.biases).numpy()
+        # out_tensor = self.cal_activation(out_tensor).astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
 
@@ -2710,10 +2752,10 @@ class ArmIfOp(OpHasSubGraph, DynamicShapeOp, ArmOp):
             if sub_node_obj is None:
                 ERROR(f'[Parser]: Get Node Obj Failed in If Infer of Node: {n}.')
             if sub_node_obj.type == 'DummyInput':
-                # input data from parent graph
-                parent_node = cur_sub_graph._attr['parent_graph'].nodes[n]
-                dummy_out_edges = cur_sub_graph._attr['parent_graph'].sorted_out_edges(parent_node['object'].name,
-                                                                                       data=True)
+                assert sub_node_obj.target_graph != '', 'Target graph not set for DummyInput.'
+                target_g = get_target_graph(sub_node_obj.target_graph, cur_sub_graph._root)
+                parent_node = target_g.nodes[n]
+                dummy_out_edges = target_g.sorted_out_edges(parent_node['object'].name, data=True)
                 out_tensor = dummy_out_edges[0][-1]['tensor'].value
                 sub_node_obj.infer_shape(out_tensor, dummy_out_edges[0][-1]['tensor'].is_const)
             else:
@@ -2724,9 +2766,13 @@ class ArmIfOp(OpHasSubGraph, DynamicShapeOp, ArmOp):
             for _, dst, out_attr in cur_sub_graph.sorted_out_edges(out, data=True):
                 if cur_sub_graph.nodes[dst]['object'].type == 'Out':
                     out_port = out_attr['src_out_port']
-                    out_tensor = cur_sub_graph.nodes[out]['object'].get_output_tensors()[out_port]
+                    o_edges = cur_sub_graph.sorted_out_edges(out, data=True)
+                    out_tensor = o_edges[out_port][-1]['tensor'].value
                     output_list.append(out_tensor)
-                    output_const_list.append(is_const)
+                    if isinstance(cur_sub_graph.nodes[out]['object'], OpHasSubGraph):
+                        output_const_list.append(o_edges[out_port][-1]['tensor'].is_const)
+                    else:
+                        output_const_list.append(is_const)
         self.set_out_tensor(output_list, all(output_const_list))
 
     def write_attrs(self, txt_file):
@@ -2739,14 +2785,39 @@ class ArmIfOp(OpHasSubGraph, DynamicShapeOp, ArmOp):
 
 class ArmInputOp(OpHasOneOutPort, InputLikeOp, ArmOp):
     @classmethod
+    def attributes(cls):
+        return {
+            'layout': {
+                'type': AttrType.STRING,
+                'options': [
+                    'None', 'Flat', 'NCHW', 'NHWC', 'NCHWC4', 'NCHWC8', 'NCHWC16', 'NCHWC32',
+                    'NDHWC', 'NDCHWC16', 'NDCHWC32', 'NCDHWC16', 'NCDHWC32'
+                ],
+                'default': 'None'
+            }
+        }
+
+    @classmethod
     def num_in_ports(cls):
         return 0
 
+    def __init__(self, graph, attr_dict=None):
+        super(ArmInputOp, self).__init__(graph, attr_dict)
+        self.update_attributes(ArmInputOp, attr_dict)
+        assert self.check_required(), 'ArmInputOp is missing a required parameter.'
+
     def infer_shape(self, input_tensor=None):
         super(ArmInputOp, self).infer_shape()
-        assert input_tensor is not None, 'input tensor is empty in ArmInputOp.'
+        assert input_tensor is not None, f'input tensor({self.name}) is empty in ArmInputOp.'
         out_tensor = input_tensor.copy()
         self.set_out_tensor(out_tensor)
+
+    def write_attrs(self, txt_file):
+        ret = super(ArmInputOp, self).write_attrs(txt_file)
+        if ret:
+            if self.layout and self.layout != 'None':
+                txt_file.write('layout=%s\n' % self.layout)
+        return ret
 
 
 class ArmInstanceNormOp(OpHasBiases, OpHasWeights, OpHasOneOutPort, ArmOp):
@@ -3002,6 +3073,130 @@ class ArmLogicalOp(LayoutUnawareOp, OpHasMethod, OpHasOneOutPort, ArmOp):
         self.set_out_tensor(out_tensor)
 
 
+class ArmLoopOp(OpHasSubGraph, DynamicShapeOp, ArmOp):
+    @classmethod
+    def num_in_ports(cls):
+        return -1
+
+    @classmethod
+    def attributes(cls):
+        return {'body': {'type': AttrType.GRAPH, 'required': True}}
+
+    def __init__(self, graph, attr_dict=None):
+        super(ArmLoopOp, self).__init__(graph, attr_dict)
+        self.update_attributes(ArmLoopOp, attr_dict)
+        assert self.check_required(), 'ArmLoopOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(ArmLoopOp, self).infer_shape()
+        # 2 + N inputs: max_count, cond_in, ...
+        inputs = self.get_input_tensors()
+        assert len(inputs) >= 2
+        in_edges = self._graph.sorted_in_edges(self.name, data=True)
+        out_edges = self._graph.sorted_out_edges(self.name)
+        WARN(f'[Parser]: Loop({self.name}) max_count/cond_in is non-const, the infer shape is unreliable.')
+        max_count, ori_cond_in = 2, True
+        count_cond_is_const = False
+
+        cond_in = ori_cond_in
+        body_inputs_num = len(self.body._attr['input_tensors'])  # 2+N
+        body_outputs_num = len(self.body._attr['output_names'])  # 1+N+K
+        N = body_inputs_num - 2
+        K = body_outputs_num - 1 - N
+        k_carried_away = [[] for i in range(K)]
+
+        from ..graph.graph_algo import determined_sort
+        sub_nodes = determined_sort(self.body, self.body._attr['output_names'])
+        loop_cnt = 0
+        last_output_list = []
+        last_output_const_list = []
+        cond_out_root_inputs = self.body.nodes[self.body._attr['output_names'][0]]['object'].get_root_inputs()
+        cond_out_root_input_const = {}
+        for inp in cond_out_root_inputs:
+            cond_out_root_input_const[inp] = False
+        for i in range(max_count):
+            if cond_in:
+                output_list = []
+                output_const_list = []
+                for n in sub_nodes:
+                    sub_node_obj = self.body.nodes[n]['object']
+                    if sub_node_obj is None:
+                        ERROR(f'[Parser]: Get Node Obj Failed in Loop Infer of Node: {n}.')
+                    try:
+                        if sub_node_obj.type == 'Input':
+                            inp_idx = list(self.body._attr['input_tensors'].keys()).index(n)
+                            if inp_idx == 0:
+                                out_tensor = np.array(loop_cnt, np.int64)
+                            elif inp_idx == 1:
+                                out_tensor = np.array(cond_in, bool)
+                            else:
+                                if loop_cnt == 0:
+                                    out_tensor = copy.deepcopy(inputs[inp_idx])
+                                else:
+                                    out_tensor = copy.deepcopy(last_output_list[inp_idx - 1])
+                            if n in cond_out_root_input_const:
+                                cond_out_root_input_const[n] = in_edges[inp_idx][-1]['tensor'].is_const
+                            sub_node_obj.infer_shape(out_tensor)
+                        elif sub_node_obj.type == 'DummyInput':
+                            assert sub_node_obj.target_graph != '', 'Target graph not set for DummyInput.'
+                            target_g = get_target_graph(sub_node_obj.target_graph, self.body._root)
+                            parent_node = target_g.nodes[n]
+                            dummy_out_edges = target_g.sorted_out_edges(parent_node['object'].name, data=True)
+                            if len(dummy_out_edges) == 0:
+                                ERROR(f'[Parser]: Get DummpyInput({n}) Out edges failed in Loop Node({self.name}).')
+                            out_tensor = dummy_out_edges[0][-1]['tensor'].value
+                            if n in cond_out_root_input_const:
+                                cond_out_root_input_const[n] = dummy_out_edges[0][-1]['tensor'].is_const
+                            sub_node_obj.infer_shape(out_tensor, dummy_out_edges[0][-1]['tensor'].is_const)
+                        else:
+                            if sub_node_obj.type == 'Constant' and n in cond_out_root_input_const:
+                                cond_out_root_input_const[n] = True
+                            sub_node_obj.infer_shape()
+                    except Exception as e:
+                        WARN_EXCEPTION(
+                            f'[Parser]: Infer of {sub_node_obj.type} Node({n}) in {self.name} meets issues: {str(e)}!')
+                loop_cnt += 1
+                # Loop body outputs: 1 + N + K
+                for out in self.body._attr['output_names']:
+                    is_const = self.body.nodes[out]['object'].is_all_inputs_const()
+                    for _, dst, out_attr in self.body.sorted_out_edges(out, data=True):
+                        if self.body.nodes[dst]['object'].type == 'Out':
+                            out_port = out_attr['src_out_port']
+                            out_tensor = self.body.nodes[out]['object'].get_output_tensors()[out_port]
+                            output_list.append(out_tensor)
+                            output_const_list.append(is_const)
+                last_output_list = output_list.copy()
+                last_output_const_list = output_const_list.copy()
+                cond_in = np.all(output_list[0])
+                if K > 0:
+                    for k in range(K):
+                        k_carried_away[k].append(output_list[k - K])
+            else:
+                break
+        if count_cond_is_const and all(list(cond_out_root_input_const.values())):
+            self.real_loop_cnt = loop_cnt
+        # Loop outputs: N + K
+        if ori_cond_in:
+            loop_output_list = last_output_list[1: 1 + N]
+            loop_output_list.extend([np.vstack(x) for x in k_carried_away])
+            loop_output_const_list = last_output_const_list[1: 1 + N]
+            for i in range(K):
+                loop_output_const_list.append(last_output_const_list[1 + N + i])
+        else:
+            loop_output_list = inputs[2:]
+            loop_output_const_list = [attr['tensor'].is_const for _, _, attr in in_edges[2:]]
+        while len(loop_output_list) < len(out_edges):
+            loop_output_list.append(np.array([]))
+            loop_output_const_list.append(False)
+        self.set_out_tensor(loop_output_list, all(loop_output_const_list))
+
+    def write_attrs(self, txt_file):
+        ret = super(ArmLoopOp, self).write_attrs(txt_file)
+        if ret:
+            txt_file.write('body=%s\n' % self.body.name)
+        return ret
+
+
 class ArmLRNOp(OpHasMethod, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
@@ -3088,7 +3283,19 @@ class ArmMatMulOp(OpHasOneOutPort, ArmOp):
             inputs[0], (0, 1, 3, 2))
         B = inputs[1] if not bool(self.trans_b) else np.transpose(
             inputs[1], (0, 1, 3, 2))
-        out_tensor = np.matmul(A, B)
+        #out_tensor = np.matmul(A, B)
+        a_shape = list(A.shape)
+        b_shape = list(B.shape)
+        out_shape = []
+        max_dim = 4
+        for i in range(max_dim):
+            if i < max_dim - 2:
+                out_shape.append(max(a_shape[i], b_shape[i]))
+            elif i == max_dim - 2:
+                out_shape.append(a_shape[i])
+            else:
+                out_shape.append(b_shape[i])
+        out_tensor = np.random.ranf(tuple(out_shape)).astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
     def write_attrs(self, txt_file):
@@ -3209,7 +3416,7 @@ class ArmMaxRoiPoolOp(OpHasOneOutPort, ArmOp):
         roi_num = inputs[1].shape[0]
         channels = inputs[0].shape[-1]
         out_tensor = np.random.ranf(
-            (roi_num, *self.pooled_shape, channels)).astype(np.float32)
+            (roi_num, *self.pooled_shape, channels)).astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
     def write_attrs(self, txt_file):
@@ -3331,6 +3538,28 @@ class ArmMomentsOp(OpHasMultipleOutPorts, OpHasAxis, ArmOp):
             inputs[0], self.axes, keepdims=self.keepdims)
         out_tensors = [out_tensor.numpy() for out_tensor in out_tensors]
         self.set_out_tensor(out_tensors)
+
+
+class ArmMulOp(BaseActivationOp, ArmOp):
+    @classmethod
+    def cast_in_ports(cls):
+        return {
+            0: ['float32', 'float16', 'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32'],
+            1: ['float32', 'float16', 'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32']
+        }
+
+    @classmethod
+    def num_in_ports(cls):
+        return 2
+
+    def infer_shape(self):
+        super(ArmMulOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        input_dtypes = self.get_input_dtypes()
+        assert len(inputs) == 2 and len(input_dtypes) == 2, 'The number of inputs is invalid in MulOp.'
+        assert input_dtypes[0] == input_dtypes[1], 'The dtype of inputs should be the same in MulOp.'
+        out_tensor = np.multiply(*inputs)
+        self.set_out_tensor(out_tensor)
 
 
 class ArmMVNOp(OpHasOneOutPort, OpHasAxis, ArmOp):
@@ -4084,7 +4313,7 @@ class ArmReciprocalOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
     def infer_shape(self):
         super(ArmReciprocalOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = np.reciprocal(inputs[0]).astype(np.float32)
+        out_tensor = np.reciprocal(inputs[0])
         self.set_out_tensor(out_tensor)
 
 
@@ -4324,10 +4553,10 @@ class ArmResizeOp(OpHasMethod, OpHasOneOutPort, ArmOp):
                 size = [input_shape[0]] + self.sizes + [input_shape[-1]]
                 txt_file.write('size=[%s]\n' % list_list_to_string(size))
             else:
-                txt_file.write('ratio_x=%.8f\n' % self.factors[-1])
-                txt_file.write('ratio_y=%.8f\n' % self.factors[-2])
+                txt_file.write(f'ratio_x={self.factors[-1]}\n')
+                txt_file.write(f'ratio_y={self.factors[-2]}\n')
                 if len(self.factors) == 3:
-                    txt_file.write('ratio_z=%.8f\n' % self.factors[-3])
+                    txt_file.write(f'ratio_z={self.factors[-3]}\n')
             txt_file.write('mode=%s\n' % self.mode.upper())
             txt_file.write('antialias=%s\n' % str(bool(self.antialias)).lower())
             txt_file.write('exclude_outside=%s\n' % str(bool(self.exclude_outside)).lower())
@@ -4437,7 +4666,7 @@ class ArmRoiAlignOp(OpHasMethod, OpHasOneOutPort, ArmOp):
         roi_num = inputs[1].shape[0]
         channels = inputs[0].shape[-1]
         out_tensor = np.random.ranf(
-            (roi_num, *self.pooled_shape, channels)).astype(np.float32)
+            (roi_num, *self.pooled_shape, channels)).astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
     def write_attrs(self, txt_file):
@@ -4462,7 +4691,7 @@ class ArmRoundOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
     def infer_shape(self):
         super(ArmRoundOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = np.round(inputs[0]).astype(np.float32)
+        out_tensor = np.round(inputs[0])
         self.set_out_tensor(out_tensor)
 
 
@@ -4877,6 +5106,28 @@ class ArmSquaredDifferenceOp(OpNeedBroadcast, OpHasOneOutPort, LayoutUnawareOp, 
         self.set_out_tensor(out_tensor)
 
 
+class ArmSubOp(BaseActivationOp, ArmOp):
+    @classmethod
+    def cast_in_ports(cls):
+        return {
+            0: ['float32', 'float16', 'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32'],
+            1: ['float32', 'float16', 'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32']
+        }
+
+    @classmethod
+    def num_in_ports(cls):
+        return 2
+
+    def infer_shape(self):
+        super(ArmSubOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        input_dtypes = self.get_input_dtypes()
+        assert len(inputs) == 2 and len(input_dtypes) == 2, 'The number of inputs is invalid in SubOp.'
+        assert input_dtypes[0] == input_dtypes[1], 'The dtype of inputs should be the same in SubOp.'
+        out_tensor = np.subtract(*inputs)
+        self.set_out_tensor(out_tensor)
+
+
 class ArmSufficientStatisticsOp(OpHasAxis, OpHasMultipleOutPorts, ArmOp):
     @classmethod
     def num_in_ports(cls):
@@ -4950,6 +5201,7 @@ class ArmTopKOp(OpHasAxis, OpHasMultipleOutPorts, ArmOp):
                 'axis': {'default': -1},
                 'sorted': {'type': AttrType.INT, 'options': [0, 1], 'default': 1},
                 'largest': {'type': AttrType.INT, 'options': [0, 1], 'default': 1},
+                'select_index': {'type': AttrType.STRING, 'options': ['first', 'last', 'random'], 'default': 'last'}
                 }
 
     def __init__(self, graph, attr_dict=None):
@@ -4975,6 +5227,8 @@ class ArmTopKOp(OpHasAxis, OpHasMultipleOutPorts, ArmOp):
             txt_file.write('k=%d\n' % self.k)
             txt_file.write('sorted=%s\n' % str(bool(self.sorted)).lower())
             txt_file.write('largest=%s\n' % str(bool(self.largest)).lower())
+            if self.select_index and self.select_index != 'last':
+                txt_file.write('select_index=%s\n' % str(self.select_index).lower())
         return ret
 
 

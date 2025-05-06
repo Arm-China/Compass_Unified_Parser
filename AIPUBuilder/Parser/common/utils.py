@@ -14,6 +14,11 @@ def is_file(file_path):
 
 
 def is_dir(dir_path):
+    if not os.path.exists(dir_path):
+        try:
+            os.makedirs(dir_path)
+        except PermissionError:
+            ERROR('[Parser]: Cannot Access this dir path: %s' % dir_path)
     return True if (dir_path and os.path.isdir(dir_path)) else False
 
 
@@ -26,6 +31,16 @@ def get_absolute_path(file_path):
 
 def get_file_name(file_path):
     return os.path.basename(file_path).split('.')[0]
+
+
+def get_target_graph(target_g_name, root_graph, parent_graph=None):
+    for _, v in root_graph._attr['subgraphs'].items():
+        if target_g_name in v:
+            return v[target_g_name]
+    if parent_graph is not None and target_g_name == parent_graph.name:
+        return parent_graph
+    else:
+        return root_graph
 
 
 def readable_file(path):
@@ -90,7 +105,7 @@ def list_string_to_list(list_string):
 
 # ['aa', 'bb'] to 'aa,bb'
 def string_list_to_string(string_list):
-    return reduce(lambda x, y: (x + ',' + y), string_list) if string_list else ''
+    return reduce(lambda x, y: (str(x) + ',' + str(y)), string_list) if string_list else ''
 
 
 # 'AA,BB' to ['AA','BB']

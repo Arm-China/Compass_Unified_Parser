@@ -175,9 +175,9 @@ class Graph(nx.MultiDiGraph):
             id_s = str(i)
             label = "node_%d [style=\"filled\",color=\"black\",fillcolor=\"%s\",label=\"{%s %s|%s" % (
                 keys.index(n_name), "white", id_s, n_name, n.get('op', ''))
-            in_tensor = [str(a["tensor"].shape)
+            in_tensor = [str(a["tensor"].shape) + str(a["tensor"].dtype)
                          for _, _, a in self.sorted_in_edges(n_name, data=True)]
-            out_tensor = [str(a["tensor"].shape)
+            out_tensor = [str(a["tensor"].shape) + str(a["tensor"].dtype)
                           for _, _, a in self.sorted_out_edges(n_name, data=True)]
             label += "|"
             if len(in_tensor):

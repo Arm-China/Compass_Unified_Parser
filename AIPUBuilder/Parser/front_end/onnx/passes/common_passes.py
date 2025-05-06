@@ -125,7 +125,12 @@ def convert_multi_outputs_to_const(graph, op_type_name_list):
                 in_edges = graph.sorted_in_edges(node_name)
                 graph.remove_edges_from(in_edges)
                 graph.remove_edges_from(out_edges)
-                for o_edge in out_edges:
+                if node_name in graph._attr['output_names']:
+                    idx = graph._attr['output_names'].index(node_name)
+                    graph._attr['output_names'].pop(idx)
+                else:
+                    idx = None
+                for i, o_edge in enumerate(out_edges):
                     if o_edge[2]['tensor'] is not None and o_edge[2]['tensor'].value is not None:
                         const_value = o_edge[2]['tensor'].value
                         const_node_name = get_valid_node_name(graph, node_name)
@@ -139,6 +144,8 @@ def convert_multi_outputs_to_const(graph, op_type_name_list):
                         _, dst, out_attr = o_edge
                         out_attr['src_out_port'] = 0
                         graph.add_edge(const_node_name, dst, **out_attr)
+                        if idx is not None:
+                            graph._attr['output_names'].insert(idx + i, const_node_name)
     clear_redundant_nodes(graph)
 
 
@@ -208,14 +215,22 @@ def remove_useless_op(graph, op_type_list):
                     removing_nodes.append(node_name)
                 else:
                     continue
+            elif op_type == 'Blank':
+                removing_nodes.append(node_name)
             elif op_type == 'ChannelShuffle':
-                if node_obj.group == 1 and node_obj.splits == 1:
-                    removing_nodes.append(node_name)
-            elif op_type == 'Concat':
+                input_shape = node_obj.get_input_shapes()[0]
+                if node_obj.splits == 1:
+                    if node_obj.group == 1:
+                        removing_nodes.append(node_name)
+                    elif input_shape and None not in input_shape:
+                        ic = input_shape[-1] if node_obj.data_format == 'NHWC' else input_shape[1]
+                        if node_obj.group == ic:
+                            removing_nodes.append(node_name)
+            elif op_type in ('Concat', 'Sum'):
                 in_edges = graph.sorted_in_edges(node_name)
                 if len(in_edges) <= 1:
                     removing_nodes.append(node_name)
-            elif op_type in ('Dummy', 'Identity', 'DummyInput'):
+            elif op_type in ('Identity', 'DummyInput'):
                 if op_type == 'DummyInput' and isinstance(graph, SubGraph):
                     out_edges = graph.sorted_out_edges(node_name, data=True)
                     graph.remove_edges_from(out_edges)
@@ -415,9 +430,15 @@ def remove_useless_op(graph, op_type_list):
                     src_node_obj.value = np.transpose(
                         src_node_obj.value, axes=perm)
                     removing_nodes.append(node_name)
-                elif trans_in_tensor_shape is not None and (list(range(len(trans_in_tensor_shape))) == perm or
-                                                            int(np.prod(trans_in_tensor_shape)) == 1):
-                    removing_nodes.append(node_name)
+                elif trans_in_tensor_shape is not None:
+                    no_change_perm = list(range(len(trans_in_tensor_shape)))
+                    if (no_change_perm == perm or
+                            int(np.prod(trans_in_tensor_shape)) == 1):
+                        removing_nodes.append(node_name)
+                    else:
+                        diff_values = [v1 for i, (v1, v2) in enumerate(zip(perm, no_change_perm)) if v1 != v2]
+                        if all([trans_in_tensor_shape[axis] == 1 for axis in diff_values]):
+                            removing_nodes.append(node_name)
                 elif perm and list(perm) == list(range(max(perm) + 1)):
                     removing_nodes.append(node_name)
             elif op_type == 'Upsample':
@@ -435,6 +456,8 @@ def remove_useless_op(graph, op_type_list):
                 pred_node_name = graph.sorted_in_edges(rn)[0][0]
                 if pred_node_name not in graph._attr['output_names']:
                     graph._attr['output_names'][index] = pred_node_name
+                else:
+                    graph._attr['output_names'].remove(rn)
             remove_node_safely(graph, rn)
 
 
@@ -489,15 +512,58 @@ def remove_redundant_reshape(graph, type='Reshape'):
         reshape_1_obj = NodeWrap(graph, reshape_1)['object']
         reshape_2_obj = NodeWrap(graph, reshape_2)['object']
         reshape_1_in_shapes = reshape_1_obj.get_input_shapes()
-        reshape_1_out_shapes = reshape_1_obj.get_output_shapes()
         reshape_2_out_shapes = reshape_2_obj.get_output_shapes()
-        # TODO: When removing nodes, should consider whether it is output.
-        # need to optimize other passes in the future.
+        reshape_1_edges = graph.sorted_in_edges(reshape_1, data=True)
+        reshape_2_edges = graph.sorted_in_edges(reshape_2, data=True)
+        reshape_1_out_edges = graph.sorted_out_edges(reshape_1, data=True)
+        reshape_2_out_edges = graph.sorted_out_edges(reshape_2, data=True)
         if len(reshape_1_in_shapes) >= 1 \
-                and len(reshape_1_out_shapes) == 1 \
                 and len(reshape_2_out_shapes) >= 1 \
                 and reshape_1 not in graph._attr['output_names']:
-            remove_node_safely(graph, reshape_1)
+            if len(reshape_1_out_edges) == 1:
+                remove_node_safely(graph, reshape_1)
+                if type == 'Reshape' and len(reshape_2_edges) == 2:
+                    graph.remove_edges_from(reshape_2_edges[1:])
+                    reshape_2_obj.cur_version = 1
+                    reshape_2_obj.shape = reshape_2_out_shapes[0]
+                if reshape_1_in_shapes[0] == reshape_2_out_shapes[0]:
+                    src, _, in_attr = reshape_1_edges[0]
+                    graph.remove_edges_from(reshape_1_edges)
+                    graph.remove_edges_from(reshape_2_out_edges)
+                    for _, dst, out_attr in reshape_2_out_edges:
+                        new_out_attr = copy.deepcopy(out_attr)
+                        new_out_attr['src_out_port'] = in_attr['src_out_port']
+                        graph.add_edge(src, dst, **new_out_attr)
+                    if reshape_2 in graph._attr['output_names']:
+                        index = graph._attr['output_names'].index(reshape_2)
+                        graph._attr['output_names'][index] = src
+                clear_redundant_nodes(graph)
+            elif len(reshape_1_out_edges) > 1:
+                reshape_1_out_node_objs = []
+                reshape_2_nodes = []
+                for src, dst, out_attr in reshape_1_out_edges:
+                    reshape_2_nodes.append(dst)
+                    reshape_1_out_node_objs.append(NodeWrap(graph, dst)['object'])
+                if all([rs2 in graph._attr['output_names'] for rs2 in reshape_2_nodes]):
+                    continue
+                if all([n_obj.type == type for n_obj in reshape_1_out_node_objs]):
+                    all_reshape_2_out_shapes = []
+                    for n_obj in reshape_1_out_node_objs:
+                        all_reshape_2_out_shapes.append(n_obj.get_output_shapes())
+                    if all([reshape_1_in_shapes[0] == out_shapes[0] for out_shapes in all_reshape_2_out_shapes]):
+                        src, _, in_attr = reshape_1_edges[0]
+                        graph.remove_edges_from(reshape_1_edges)
+                        for _, dst1, out_attr1 in reshape_1_out_edges:
+                            reshape_2_out_edges = graph.sorted_out_edges(dst1, data=True)
+                            graph.remove_edges_from(reshape_2_out_edges)
+                            for _, dst2, out_attr2 in reshape_2_out_edges:
+                                new_out_attr = copy.deepcopy(out_attr2)
+                                new_out_attr['src_out_port'] = in_attr['src_out_port']
+                                graph.add_edge(src, dst2, **new_out_attr)
+                            if dst1 in graph._attr['output_names']:
+                                index = graph._attr['output_names'].index(dst1)
+                                graph._attr['output_names'][index] = src
+                        clear_redundant_nodes(graph)
 
 
 def remove_redundant_transpose(graph):
@@ -902,6 +968,69 @@ def insert_constant(graph, name, value, dst, in_port=0, data_format='NCHW', cons
         ERROR('[Parser]: Invalid params for insert_constant (%s)!' % name)
 
 
+def insert_dequant_quant(graph, src, dst, in_attr, op_type, key=None, data_format='NHWC'):
+    ret = None
+    if graph.has_node(src) and graph.has_node(dst):
+        if has_path(graph, src, dst):
+            graph.remove_edge(src, dst, key=key)
+        op_postfix = 'dequantize' if op_type == 'DequantizeLinear' else 'quantize'
+        new_op = get_valid_node_name(graph, src + f'_post_{op_postfix}')
+        graph.add_node(new_op)
+        new_op_attr = {'name': new_op, 'opset_version': 13, 'quantize': True}
+
+        if in_attr['tensor'].scale_zp is None:
+            ERROR('[Parser]: No scale_zp info for insert_dequant_quant!')
+
+        scale, zp = in_attr['tensor'].scale_zp
+
+        scale = np.array(scale[0], dtype=np.float32)
+        zp = np.array(zp[0], dtype=in_attr['tensor'].dtype)
+
+        scale_const = get_valid_node_name(graph, new_op + '_scale')
+        graph.add_node(scale_const)
+        scale_attr = {'name': scale_const, 'value': scale,
+                      'data_format': data_format, 'opset_version': 9}
+        NodeWrap(graph, scale_const).replace_obj('Constant', scale_attr)
+        scale_const_edge_attr = {'src_out_port': 0, 'dst_in_port': 1,
+                                 'tensor': Tensor(value=scale, is_const=True)}
+        graph.add_edge(scale_const, new_op, **scale_const_edge_attr)
+
+        zp_const = get_valid_node_name(graph, new_op + '_zp')
+        graph.add_node(zp_const)
+        zp_attr = {'name': zp_const, 'value': zp,
+                   'data_format': data_format, 'opset_version': 9}
+        NodeWrap(graph, zp_const).replace_obj('Constant', zp_attr)
+        zp_const_edge_attr = {'src_out_port': 0, 'dst_in_port': 2,
+                              'tensor': Tensor(value=zp, is_const=True)}
+        graph.add_edge(zp_const, new_op, **zp_const_edge_attr)
+
+        NodeWrap(graph, new_op).replace_obj(op_type, new_op_attr)
+
+        new_op_in_attr = copy.deepcopy(in_attr)
+        new_op_in_attr.update({'dst_in_port': 0})
+        graph.add_edge(src, new_op, **new_op_in_attr)
+
+        new_op_out_attr = copy.deepcopy(in_attr)
+        out_tensor = Tensor()
+        if in_attr.get('tensor', None) is not None:
+            out_tensor = copy.deepcopy(in_attr['tensor'])
+            if in_attr['tensor'].value is not None:
+                if op_type == 'DequantizeLinear':
+                    out_tensor.value = (in_attr['tensor'].value - zp) * scale.astype(np.float32)
+                    out_tensor.min_max = ()
+                    out_tensor.scale_zp = ()
+                else:
+                    out_tensor.value = np.round(in_attr['tensor'].value / scale + zp).astype(zp.dtype)
+                out_tensor.shape = out_tensor.value.shape
+                out_tensor.dtype = str(out_tensor.value.dtype)
+        new_op_out_attr.update({'src_out_port': 0, 'tensor': out_tensor})
+        graph.add_edge(new_op, dst, **new_op_out_attr)
+        ret = new_op
+    else:
+        ERROR('[Parser]: Invalid params for insert_dequant_quant!')
+    return ret
+
+
 def insert_gather(graph, src, dst, indices, axis=0, edge_attr=None, key=None, type='Gather'):
     ret = None
     if edge_attr is None:
@@ -917,13 +1046,25 @@ def insert_gather(graph, src, dst, indices, axis=0, edge_attr=None, key=None, ty
         gather_in_attr = copy.deepcopy(edge_attr)
         gather_in_attr.update({'dst_in_port': 0})
         graph.add_edge(src, gather, **gather_in_attr)
-        insert_constant(graph, gather + '_indices', indices,
-                        gather, in_port=1, data_format='NHWC')
+        if isinstance(indices, str):
+            # FIXME, indices's output port != 0
+            assert graph.has_node(indices), f'{indices} not in graph.'
+            graph.add_edge(indices, gather, **{'src_out_port': 0, 'dst_in_port': 1})
+        else:
+            insert_constant(graph, gather + '_indices', indices,
+                            gather, in_port=1, data_format='NHWC')
         gather_out_attr = {'src_out_port': 0,
                            'dst_in_port': edge_attr['dst_in_port']}
-        if edge_attr and edge_attr.get('tensor', None) is not None and getattr(edge_attr['tensor'], 'value', None) is not None:
-            out_tensor = np.take(edge_attr['tensor'].value, indices, axis=axis)
-            gather_out_attr.update({'tensor': Tensor(value=out_tensor)})
+        if edge_attr and \
+                edge_attr.get('tensor', None) is not None and \
+                getattr(edge_attr['tensor'], 'value', None) is not None:
+            if isinstance(indices, str):
+                idx_shape = NodeWrap(graph, indices)['object'].get_output_shapes()[0]
+                out_tensor = np.take(edge_attr['tensor'].value, np.zeros(idx_shape, dtype=np.int64), axis=axis)
+                gather_out_attr.update({'tensor': Tensor(shape=out_tensor.shape)})
+            else:
+                out_tensor = np.take(edge_attr['tensor'].value, indices, axis=axis)
+                gather_out_attr.update({'tensor': Tensor(value=out_tensor)})
         graph.add_edge(gather, dst, **gather_out_attr)
         gather_attr = {'name': gather, 'axis': axis}
         if type == 'Gather':
@@ -1141,7 +1282,7 @@ def insert_slice(graph, src, dst, in_attr, begin, size, key=None, type='Slice', 
     return ret
 
 
-def insert_slice_after(graph, src, begin, size, out_port=0, type='Slice', data_format='NHWC'):
+def insert_slice_after(graph, src, begin, size, slice_before_shape, out_port=0, type='Slice', data_format='NHWC'):
     ret = None
     if not (graph.has_node(src) and begin and size and type in ('Slice', 'ArmSlice')):
         ERROR('[Parser]: Invalid params for insert_slice_after!')
@@ -1171,7 +1312,7 @@ def insert_slice_after(graph, src, begin, size, out_port=0, type='Slice', data_f
                            })
     NodeWrap(graph, slice_name).replace_obj(type, slice_attr)
 
-    src_out_attr = {'src_out_port': out_port, 'dst_in_port': 0}
+    src_out_attr = {'src_out_port': out_port, 'dst_in_port': 0, 'tensor': Tensor(shape=slice_before_shape)}
     out_edges = graph.sorted_out_edges(src, data=True)
     for _, dst, out_attr in out_edges:
         if out_attr.get('src_out_port', 0) != out_port:
@@ -1206,6 +1347,7 @@ def insert_tile(graph, src, dst, in_attr, reps, key=None, type='Tile', data_form
         tensor = dst_in_attr['tensor']
         if tensor.value is not None:
             tensor.value = np.tile(dst_in_attr['tensor'].value, reps.tolist())
+            tensor.shape = tensor.value.shape
         else:
             tensor_shape = tensor.get_shape()
             if tensor_shape is not None and None not in tensor_shape:

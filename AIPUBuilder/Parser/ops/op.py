@@ -148,6 +148,7 @@ class Op(abc.ABC):
         return {'name': {'type': AttrType.STRING, 'default': '', 'required': True},
                 'in_subgraph': {'type': AttrType.BOOL, 'default': False},
                 'subgraphs': {'type': AttrType.STRINGS, 'default': []},
+                'depend_nodes': {'type': AttrType.STRINGS, 'default': [], 'required': True},
                 'data_format': {'type': AttrType.STRING,
                                 'default': 'NHWC',
                                 'options': ['NWC', 'NCW', 'NHWC', 'NCHW', 'NDHWC', 'NCDHW', 'NCHW_VECT_C'],
@@ -605,7 +606,7 @@ class Op(abc.ABC):
                     if d['tensor'].is_const:
                         ret.append(u)
                     else:
-                        if self._graph.has_node(u) and self._graph.nodes[u]['op'] in ['Dummy', 'ArmInput', 'Input']:
+                        if self._graph.has_node(u) and self._graph.nodes[u]['op'] in ['Blank', 'ArmInput', 'Input']:
                             ret.append(u)
                         else:
                             checked_ops.append(u)
@@ -2097,9 +2098,7 @@ class BaseActivationOp(OpHasOneOutPort):
         elif act == 'CELU':
             a = self.alpha
             x = torch_tensor
-            x_0 = torch.tensor(0)
-            ret = (torch.maximum(x_0, x) + torch.minimum(x_0,
-                                                         a * (torch.exp(x / a) - 1.0))).numpy()
+            ret = torch.nn.functional.celu(x, alpha=a).numpy()
         else:
             ret = tensor
         return ret

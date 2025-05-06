@@ -12,7 +12,7 @@ from ....graph.node_wrap import NodeWrap
 from ....graph.graph_algo import get_valid_node_name, clear_redundant_nodes
 from ....graph.pattern_match import matched_patterns, single_node_matcher, two_nodes_matcher
 from ...onnx.passes.common_passes import insert_constant, remove_node_safely, insert_transpose, insert_reshape, \
-    insert_gather, insert_reshape_after, insert_tile, insert_cast_after, insert_transpose_after
+    insert_gather, insert_reshape_after, insert_tile, insert_cast_after, insert_transpose_after, insert_dequant_quant
 from ....common.defs import Tensor, FLOAT_EQUAL
 from ....common.utils import extend_lists
 from ....logger import INFO, DEBUG, WARN, ERROR, FATAL
@@ -816,160 +816,6 @@ def convert_square_diff(graph, op_type='TfSquaredDifference'):
 
 
 def convert_scatternd(graph, op_type='TfScatterNd'):
-    # TODO: Check whether this pass is still needed and can be replaced with pass convert_scatternd2.
-    if op_type not in ('TfScatterNd', 'LiteSCATTER_ND'):
-        ERROR('[Parser]: Meets invalid Op type (%s) in convert_scatternd!' % op_type)
-        return
-    matches = matched_patterns(graph,
-                               nodes=[
-                                   ('indices', {
-                                    'op': ['Constant', 'TfConst']}),
-                                   ('update', {}),
-                                   ('shape', {'op': ['Constant', 'TfConst']}),
-                                   ('scatter_nd', {'op': op_type})
-                               ],
-                               edges=[
-                                   ('indices', 'scatter_nd', {
-                                    'src_out_port': 0, 'dst_in_port': 0}),
-                                   ('update', 'scatter_nd', {
-                                       'src_out_port': 0, 'dst_in_port': 1}),
-                                   ('shape', 'scatter_nd', {
-                                    'src_out_port': 0, 'dst_in_port': 2})
-                               ])
-    matched = False
-    for m in matches:
-        names = ['shape', 'scatter_nd', 'indices', 'update']
-        node_objs = {n: NodeWrap(graph, m[n])['object'] for n in names}
-        data_obj = node_objs['shape']
-        indices_obj = node_objs['indices']
-        indices_name = m['indices']
-        scatter_nd_obj = node_objs['scatter_nd']
-        scatter_nd = m['scatter_nd']
-        in_edges = graph.sorted_in_edges(scatter_nd, data=True)
-        out_edge = graph.sorted_out_edges(scatter_nd, data=True)
-        if data_obj is not None \
-                and indices_obj is not None \
-                and scatter_nd_obj is not None \
-                and len(in_edges) == 3:
-            matched = True
-            indices = indices_obj.value
-            updates = in_edges[1][2]['tensor'].value
-            data = data_obj.value
-
-            outer_dims = len(indices.shape) - 1
-            indices_nd = indices.shape[-1]
-            slice_size = int(np.prod(updates.shape[outer_dims:]))
-            out_shape = data_obj.value
-
-            output_flat_size = int(np.prod(out_shape[:indices_nd]))
-            remain_flat_size = output_flat_size
-            dims_to_count = [0] * indices_nd
-            for i in range(indices_nd):
-                dims_to_count[i] = remain_flat_size // out_shape[i]
-                remain_flat_size = dims_to_count[i]
-
-            indices_reshape_dim = [-1, indices_nd]
-            updates_reshape_dim = [-1, slice_size]
-            reshaped_indices = np.reshape(indices, indices_reshape_dim)
-            unique_indices, _ = np.unique(
-                reshaped_indices, return_index=True, axis=0)
-
-            if len(unique_indices) < len(reshaped_indices):
-                indices_valid_out_shape = out_shape[:indices.shape[-1]]
-                appending_indices = np.expand_dims(
-                    np.array(indices_valid_out_shape) - 1, 0)
-                reshaped_indices = np.concatenate(
-                    [reshaped_indices, appending_indices], axis=0)
-                ref_indices = np.sum(reshaped_indices *
-                                     np.array(dims_to_count), axis=1)
-                sorted_indices = np.argsort(ref_indices)
-                gathered_ref_indices = np.take(
-                    ref_indices, sorted_indices, axis=0)
-                gather_id = np.array(sorted_indices).astype(np.int32)
-
-                updates_reshape = get_valid_node_name(
-                    graph, scatter_nd + '_updates_reshape')
-                concat = get_valid_node_name(graph, scatter_nd + '_concat')
-                post_segmentsum = get_valid_node_name(
-                    graph, concat + '_segmentsum')
-                update_gather = get_valid_node_name(
-                    graph, post_segmentsum + '_gather')
-                post_reshape = get_valid_node_name(
-                    graph, update_gather + '_post_reshape')
-
-                for src, _, in_attr in in_edges:
-                    if in_attr['dst_in_port'] == 0 or in_attr['dst_in_port'] == 2:
-                        graph.remove_edge(src, scatter_nd)
-                    elif in_attr['dst_in_port'] == 1:
-                        graph.remove_edge(src, scatter_nd)
-                        graph.add_edge(src, updates_reshape, **
-                                       {'src_out_port': in_attr['src_out_port'], 'dst_in_port': 0})
-                graph.add_edge(updates_reshape, concat, **
-                               {'src_out_port': 0, 'dst_in_port': 0})
-                graph.add_edge(concat, update_gather, **
-                               {'src_out_port': 0, 'dst_in_port': 0})
-                graph.add_edge(update_gather, post_segmentsum, **
-                               {'src_out_port': 0, 'dst_in_port': 0})
-                graph.add_edge(post_segmentsum, post_reshape, **
-                               {'src_out_port': 0, 'dst_in_port': 0})
-                for _, dst, out_attr in out_edge:
-                    graph.remove_edge(scatter_nd, dst)
-                    graph.add_edge(post_reshape, dst, **out_attr)
-
-                insert_constant(graph, updates_reshape + '_indices', np.array(updates_reshape_dim),
-                                updates_reshape, in_port=1, data_format='NHWC')
-                insert_constant(graph, concat + '_data', np.zeros(
-                    (1, slice_size), updates.dtype), concat, in_port=1, data_format='NHWC')
-                insert_constant(graph, update_gather + '_indices', gather_id,
-                                update_gather, in_port=1, data_format='NHWC')
-                insert_constant(graph, post_segmentsum + '_segment_ids', np.array(
-                    gathered_ref_indices).astype(np.int32), post_segmentsum, in_port=1, data_format='NHWC')
-                insert_constant(graph, post_reshape + '_indices', out_shape,
-                                post_reshape, in_port=1, data_format='NHWC')
-                insert_constant(graph, indices_name + '_new', gathered_ref_indices,
-                                out_edge[0][1], in_port=0, data_format='NHWC')
-
-                NodeWrap(graph, updates_reshape).replace_obj(
-                    'Reshape', {'name': updates_reshape, 'shape': np.array(updates_reshape_dim)})
-                NodeWrap(graph, concat).replace_obj(
-                    'Concat', {'name': concat, 'opset_version': 11, 'axis': 0})
-                NodeWrap(graph, post_segmentsum).replace_obj(
-                    'SegmentReduce', {'name': post_segmentsum, 'method': 'SUM'})
-                NodeWrap(graph, update_gather).replace_obj(
-                    'Gather', {'name': update_gather})
-                NodeWrap(graph, post_reshape).replace_obj(
-                    'Reshape', {'name': post_reshape, 'shape': out_shape})
-
-                if scatter_nd in graph._attr['output_names']:
-                    index = graph._attr['output_names'].index(scatter_nd)
-                    graph._attr['output_names'].remove(scatter_nd)
-                    graph._attr['output_names'].insert(index, post_reshape)
-
-            else:
-                for src, _, in_attr in in_edges:
-                    graph.remove_edge(src, scatter_nd)
-                    if in_attr['dst_in_port'] == 1:
-                        new_in_attr = copy.deepcopy(in_attr)
-                        new_in_attr['dst_in_port'] = 2
-                        graph.add_edge(src, scatter_nd, **new_in_attr)
-                    elif in_attr['dst_in_port'] == 0:
-                        new_in_attr = copy.deepcopy(in_attr)
-                        new_in_attr['dst_in_port'] = 1
-                        graph.add_edge(src, scatter_nd, **new_in_attr)
-                data = np.zeros(
-                    data_obj.value, dtype=in_edges[1][2]['tensor'].value.dtype)
-                insert_constant(graph, scatter_nd + '_data', data,
-                                scatter_nd, in_port=0, data_format='NHWC')
-                scatter_nd_attr = scatter_nd_obj.copied_attr()
-                scatter_nd_attr.update(
-                    {'reduction': 'add', 'opset_version': scatter_nd_obj.correspond_onnx_op['version']})
-                NodeWrap(graph, scatter_nd).replace_obj(
-                    scatter_nd_obj.correspond_onnx_op['type'], scatter_nd_attr)
-    if matched:
-        clear_redundant_nodes(graph)
-
-
-def convert_scatternd2(graph, op_type='TfScatterNd'):
     ''' Convert ScatterNd whose indices input is not constant to onnx ScatterND with reduction=add.
     '''
     if op_type not in ('TfScatterNd', 'LiteSCATTER_ND'):
@@ -981,14 +827,14 @@ def convert_scatternd2(graph, op_type='TfScatterNd'):
         scatternd_obj = NodeWrap(graph, scatternd)['object']
         scatternd_in_edges = graph.sorted_in_edges(scatternd, data=True)
         if scatternd_obj is None or len(scatternd_in_edges) < 3:
-            ERROR('[Parser]: Meets invalid %s Node(%s) in convert_scatternd2!' % (op_type, scatternd))
+            ERROR('[Parser]: Meets invalid %s Node(%s) in convert_scatternd!' % (op_type, scatternd))
             continue
         indices, _, indices_in_attr = scatternd_in_edges[0]
         updates, _, updates_in_attr = scatternd_in_edges[1]
         shape, _, shape_in_attr = scatternd_in_edges[2]
         if shape_in_attr['tensor'] is None or not shape_in_attr['tensor'].is_const \
                 or shape_in_attr['tensor'].value is None:
-            WARN('[Parser]: Meets unsupported non-const shape input of Node(%s) in convert_scatternd2!' % scatternd)
+            WARN('[Parser]: Meets unsupported non-const shape input of Node(%s) in convert_scatternd!' % scatternd)
             continue
         if updates_in_attr['tensor'] is None or updates_in_attr['tensor'].value is None:
             continue
@@ -1102,7 +948,7 @@ def convert_unpack(graph, op_type='LiteUNPACK'):
                 unpack_out_tensor = None
                 for _, dst, out_attr in out_edges:
                     if out_attr['src_out_port'] == p:
-                        unpack_out_tensor = out_attr['tensor']
+                        unpack_out_tensor = copy.deepcopy(out_attr['tensor'])
                         new_out_attr = copy.deepcopy(out_attr)
                         new_out_attr['src_out_port'] = 0
                         graph.remove_edge(unpack, dst)
@@ -2332,7 +2178,7 @@ def merge_quantized_lstm_cell(graph):
         biases_w = np.concatenate([input_wb, output_wb, forget_wb, cell_wb])
         biases_r = np.zeros_like(biases_w)
         B_value = np.stack([np.concatenate([biases_w, biases_r])])
-        seq_length = np.array([1] * batch_size, np.int64)
+        seq_length = np.array([1] * batch_size, np.int32)
         initial_hc_shape = [1, batch_size, hidden_size]
 
         # Create lstm node and connect input with lstm
@@ -2412,110 +2258,97 @@ def merge_quantized_lstm_cell(graph):
 
 def merge_quantized_lstm_cell2(graph):
     '''
-    Merge quantized lstm cell.
+    Merge quantized lstm cell. (for crnn first LSTM cell)
     '''
     matched = False
     cell_matches = matched_patterns(graph,
-                                    nodes=[('concat', {'op': 'LiteCONCATENATION'}),
-                                           ('fc', {'op': 'LiteFULLY_CONNECTED'}),
-                                           ('split', {'op': 'LiteSPLIT'}),
-                                           ('sigmoid_sp0', {'op': 'LiteLOGISTIC'}),
-                                           ('tanh_sp1', {'op': 'LiteTANH'}),
-                                           ('add_sp2', {'op': 'LiteADD'}),
-                                           ('sigmoid_sp3', {'op': 'LiteLOGISTIC'}),
-                                           ('adder', {'op': 'Constant'}),
-                                           ('mul_sp01', {'op': 'LiteMUL'}),
-                                           ('sigmoid_sp2', {'op': 'LiteLOGISTIC'}),
-                                           ('mul_sp2', {'op': 'LiteMUL'}),
-                                           ('add_cout', {'op': 'LiteADD'}),
-                                           ('tanh_c', {'op': 'LiteTANH'}),
-                                           ('mul_hout', {'op': 'LiteMUL'}),
-                                           ],
-                                    edges=[('concat', 'fc'),
-                                           ('fc', 'split'),
-                                           ('split', 'sigmoid_sp0',
-                                            {'src_out_port': 0}),
-                                           ('split', 'tanh_sp1',
-                                            {'src_out_port': 1}),
-                                           ('split', 'add_sp2', {
-                                               'src_out_port': 2}),
-                                           ('split', 'sigmoid_sp3',
-                                            {'src_out_port': 3}),
-                                           ('sigmoid_sp0', 'mul_sp01'),
-                                           ('tanh_sp1', 'mul_sp01'),
-                                           ('adder', 'add_sp2'),
-                                           ('add_sp2', 'sigmoid_sp2'),
-                                           ('sigmoid_sp2', 'mul_sp2'),
-                                           ('mul_sp01', 'add_cout'),
-                                           ('mul_sp2', 'add_cout'),
-                                           ('add_cout', 'tanh_c'),
-                                           ('tanh_c', 'mul_hout'),
-                                           ('sigmoid_sp3', 'mul_hout'),
-                                           ]
+                                    nodes=[
+                                        ('fc', {'op': 'LiteFULLY_CONNECTED'}),
+                                        ('split', {'op': 'LiteSPLIT'}),
+                                        ('sigmoid_sp0', {'op': 'LiteLOGISTIC'}),
+                                        ('sigmoid_sp1', {'op': 'LiteLOGISTIC'}),
+                                        ('tanh_sp2', {'op': 'LiteTANH'}),
+                                        ('sigmoid_sp3', {'op': 'LiteLOGISTIC'}),
+                                        ('initial_c', {'op': 'Constant'}),
+                                        ('mul_sp1', {'op': 'LiteMUL'}),
+                                        ('mul_sp02', {'op': 'LiteMUL'}),
+                                        ('add_cout', {'op': 'LiteADD'}),
+                                        ('tanh_c', {'op': 'LiteTANH'}),
+                                        ('mul_hout', {'op': 'LiteMUL'}),
+                                    ],
+                                    edges=[
+                                        ('fc', 'split'),
+                                        ('split', 'sigmoid_sp0',
+                                         {'src_out_port': 0}),
+                                        ('split', 'sigmoid_sp1',
+                                         {'src_out_port': 1}),
+                                        ('split', 'tanh_sp2', {
+                                            'src_out_port': 2}),
+                                        ('split', 'sigmoid_sp3',
+                                         {'src_out_port': 3}),
+                                        ('sigmoid_sp0', 'mul_sp02'),
+                                        ('tanh_sp2', 'mul_sp02',),
+                                        ('initial_c', 'mul_sp1'),
+                                        ('sigmoid_sp1', 'mul_sp1'),
+                                        ('mul_sp1', 'add_cout'),
+                                        ('mul_sp02', 'add_cout'),
+                                        ('add_cout', 'tanh_c'),
+                                        ('tanh_c', 'mul_hout'),
+                                        ('sigmoid_sp3', 'mul_hout'),
+                                    ]
                                     )
     for m in cell_matches:
-        names = ['concat', 'fc', 'adder', 'mul_hout', 'add_cout']
+        names = ['fc', 'initial_c', 'mul_hout', 'add_cout']
         objs_dict = {name: NodeWrap(graph, m[name])['object'] for name in names}
         if any(obj is None for obj in objs_dict.values()):
-            ERROR('[Parser]: Meet invalid node in merge_quantized_lstm_cell!')
+            ERROR('[Parser]: Meet invalid node in merge_quantized_lstm_cell2!')
             continue
 
-        concat = m['concat']
-        concat_in_shapes = objs_dict['concat'].get_input_shapes()
-        concat_in_edges = graph.sorted_in_edges(concat, data=True)
-        if len(concat_in_edges) < 2 \
-                or len(concat_in_shapes) < 2 \
-                or concat_in_shapes[0] is None \
-                or None in concat_in_shapes[0] \
-                or concat_in_shapes[1] is None \
-                or None in concat_in_shapes[1]:
+        fc_in_shapes = objs_dict['fc'].get_input_shapes()
+        fc_in_edges = graph.sorted_in_edges(m['fc'], data=True)
+        if len(fc_in_edges) < 1 \
+                or len(fc_in_shapes) < 1 \
+                or fc_in_shapes[0] is None \
+                or None in fc_in_shapes[0]:
             continue
-        batch_size, input_size = concat_in_shapes[0]
-        batch_size_from_hstate, hidden_size = concat_in_shapes[1]
-        if batch_size_from_hstate != batch_size:
+        batch_size, input_size = fc_in_shapes[0]
+
+        batch_from_cell, hidden_size = objs_dict['initial_c'].value.shape
+        if batch_size != batch_from_cell:
             continue
 
-        initial_c = None
-        mul_in_edges = graph.sorted_in_edges(m['mul_sp2'], data=True)
-        for src, _, mul_in_attr in mul_in_edges:
-            if src != m['sigmoid_sp2']:
-                initial_c = src
-                initial_c_in_attr = copy.deepcopy(mul_in_attr)
-        if initial_c is None:
-            continue
-
-        # Get forget_bias
-        adder_out_edges = graph.sorted_out_edges(m['adder'], data=True)
-        if len(adder_out_edges) < 1 \
-                or adder_out_edges[0][2]['tensor'] is None:
-            continue
-        forget_bias_scale_zp = adder_out_edges[0][2]['tensor'].scale_zp
-        forget_bias = objs_dict['adder'].value
+        if graph._attr.get('quantize', False):
+            quant = True
+        else:
+            quant = False
 
         # Get weights and biases
         weights = objs_dict['fc'].weights
-        weights_scale_zp = objs_dict['fc'].weights_scale_zp
         biases = objs_dict['fc'].biases
-        biases_scale_zp = objs_dict['fc'].biases_scale_zp
+        if quant:
+            weights_scale_zp = objs_dict['fc'].weights_scale_zp
+            biases_scale_zp = objs_dict['fc'].biases_scale_zp
 
         # get scale/zp from the output tensor of sum0, icfo, mul_i_and_c, mul_f_and_c_prev, c_lut,
         # cout, hout and f_in if forget_bias exists
-        act_nodes = [m[name] for name in ['fc', 'sigmoid_sp0', 'tanh_sp1',
-                                          'sigmoid_sp2', 'sigmoid_sp3', 'mul_sp01', 'mul_sp2', 'tanh_c',
-                                          'add_cout', 'mul_hout', 'add_sp2']]
-        activations_scale, activations_zp = get_out_tensor_scale_zp(graph, act_nodes)
-        if None in activations_scale or None in activations_zp:
-            continue
+        if quant:
+            act_nodes = [m[name] for name in ['fc', 'sigmoid_sp0', 'tanh_sp2',
+                                              'sigmoid_sp1', 'sigmoid_sp3', 'mul_sp02', 'mul_sp1', 'tanh_c',
+                                              'add_cout', 'mul_hout']]
+            activations_scale, activations_zp = get_out_tensor_scale_zp(graph, act_nodes)
+            if None in activations_scale or None in activations_zp:
+                continue
 
         matched = True
         # Prepare inputs for onnx lstm
-        kernel_weights, recurrent_weights = np.split(
-            weights, [input_size], axis=1)
-        input_w, cell_w, forget_w, output_w = np.split(
+        # insert zero Hidden
+        kernel_weights = weights
+        recurrent_weights = np.zeros([4 * hidden_size, hidden_size], dtype=weights.dtype)
+        input_w, forget_w, cell_w, output_w = np.split(
             kernel_weights, 4, axis=0)
-        input_r, cell_r, forget_r, output_r = np.split(
+        input_r, forget_r, cell_r, output_r = np.split(
             recurrent_weights, 4, axis=0)
-        input_wb, cell_wb, forget_wb, output_wb = np.split(biases, 4, axis=0)
+        input_wb, forget_wb, cell_wb, output_wb = np.split(biases, 4, axis=0)
         W_value = np.stack([np.concatenate(
             [input_w, output_w, forget_w, cell_w], axis=0)])
         R_value = np.stack([np.concatenate(
@@ -2523,16 +2356,17 @@ def merge_quantized_lstm_cell2(graph):
         biases_w = np.concatenate([input_wb, output_wb, forget_wb, cell_wb])
         biases_r = np.zeros_like(biases_w)
         B_value = np.stack([np.concatenate([biases_w, biases_r])])
-        seq_length = np.array([1] * batch_size, np.int64)
+        seq_length = np.array([1] * batch_size, np.int32)
         initial_hc_shape = [1, batch_size, hidden_size]
+        initial_h_value = np.zeros(initial_hc_shape, dtype=weights.dtype)
 
         # Create lstm node and connect input with lstm
-        lstm = get_valid_node_name(graph, concat + '_lstm')
-        src, _, in_attr = concat_in_edges[0]
-        graph.remove_edge(src, concat)
+        lstm = get_valid_node_name(graph, m['fc'] + '_lstm')
+        src, _, in_attr = fc_in_edges[0]
+        graph.remove_edge(src, m['fc'])
         graph.add_edge(src, lstm, **in_attr)
         src_new_dim = [1, batch_size, input_size]
-        insert_reshape(graph, src, lstm, in_attr, src_new_dim)
+        insert_reshape(graph, src, lstm, in_attr, src_new_dim, quantize=quant)
 
         # Connect W, R, B and sequence_lens with lstm
         insert_constant(graph, lstm + '_W', W_value, lstm,
@@ -2544,18 +2378,19 @@ def merge_quantized_lstm_cell2(graph):
         insert_constant(graph, lstm + '_seq_length', seq_length, lstm,
                         in_port=4, data_format='NHWC')
 
-        # Connect initial_h with lstm
-        initial_h, _, initial_h_in_attr = concat_in_edges[1]
-        initial_h_in_attr.update({'dst_in_port': 5})
-        graph.add_edge(initial_h, lstm, **initial_h_in_attr)
-        insert_reshape(graph, initial_h, lstm,
-                       initial_h_in_attr, initial_hc_shape)
+        # Create initial_h with lstm
+        insert_constant(graph, lstm + '_initial_h', initial_h_value, lstm,
+                        in_port=5, data_format='NHWC')
 
         # Connect initial_c with lstm
-        initial_c_in_attr.update({'dst_in_port': 6})
+        mul_sp1_in_edges = graph.sorted_in_edges(m['mul_sp1'], data=True)
+        initial_c, dst, initial_c_in_attr = mul_sp1_in_edges[0] if mul_sp1_in_edges[0][0] == m['initial_c'] \
+            else mul_sp1_in_edges[1]
+        graph.remove_edge(initial_c, dst)
+        initial_c_in_attr['dst_in_port'] = 6
         graph.add_edge(initial_c, lstm, **initial_c_in_attr)
-        insert_reshape(graph, initial_c, lstm,
-                       initial_c_in_attr, initial_hc_shape)
+        src_new_dim = [1, batch_size, hidden_size]
+        insert_reshape(graph, initial_c, lstm, initial_c_in_attr, src_new_dim, quantize=quant)
 
         # Connect the dst nodes of the hidden and the cell with lstm
         hout = m['mul_hout']
@@ -2586,16 +2421,20 @@ def merge_quantized_lstm_cell2(graph):
         # Convert to onnx lstm
         lstm_attr = {'name': lstm,
                      'opset_version': 14,
-                     'quantize': 1,
+                     'quantize': 0,
                      'layout': False,
                      'hidden_size': hidden_size,
-                     'forget_bias': forget_bias,
-                     'forget_bias_scale_zp': forget_bias_scale_zp,
                      'direction': 'forward',
-                     'weights_scale_zp': weights_scale_zp,
-                     'biases_scale_zp': biases_scale_zp,
-                     'activations_scale': np.array(activations_scale, np.float32),
-                     'activations_zp': np.array(activations_zp, np.int32)}
+                     }
+        if quant:
+            lstm_attr.update({
+                'quantize': 1,
+                'weights_scale_zp': [np.array([weights_scale_zp[0].item(), weights_scale_zp[0].item()], np.float32),
+                                     np.array([weights_scale_zp[1].item(), weights_scale_zp[1].item()], np.int32)],
+                'biases_scale_zp': biases_scale_zp,
+                'activations_scale': np.array(activations_scale, np.float32),
+                'activations_zp': np.array(activations_zp, np.int32)
+            })
         NodeWrap(graph, lstm).replace_obj('LSTM', lstm_attr)
 
     if matched:
@@ -3713,8 +3552,6 @@ def convert_to_onnx(graph):
                     if node_name in graph._attr['output_names']:
                         index = graph._attr['output_names'].index(node_name)
                         graph._attr['output_names'][index] = post_cast
-                elif pure_type == 'RIGHT_SHIFT':
-                    new_node_attr.update({'direction': 'RIGHT'})
                 elif pure_type == 'CAST':
                     new_node_attr.update({'saturate': False})
                 elif pure_type == 'ELU':
@@ -3813,6 +3650,8 @@ def convert_to_onnx(graph):
                                           'coordinate_transformation_mode': coordinate_transformation_mode,
                                           'nearest_mode': nearest_mode
                                           })
+                elif pure_type == 'RIGHT_SHIFT':
+                    new_node_attr.update({'direction': 'RIGHT'})
                 elif pure_type == 'SEGMENT_SUM':
                     new_node_attr.update({'method': 'SUM'})
                 elif pure_type == 'SELECT':

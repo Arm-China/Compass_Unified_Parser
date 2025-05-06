@@ -57,6 +57,22 @@ def univ_parser(params):
         else:
             params['ds_compat'] = False
 
+        if 'use_onnxsim' in params:
+            use_onnxsim = str(params['use_onnxsim']).lower() == 'true'
+            params['use_onnxsim'] = use_onnxsim
+        else:
+            params['use_onnxsim'] = True
+
+        if 'force_fp_norm' in params:
+            force_fp_norm = str(params['force_fp_norm']).lower() == 'true'
+            if force_fp_norm:
+                WARN('[Parser]: force float norm is enabled, quant norm will be replaced with deq + fp_norm + quant!')
+            params['force_fp_norm'] = force_fp_norm
+        else:
+            params['force_fp_norm'] = False
+
+        params['input_layouts'] = multi_string_to_list(params['input_layout']) if 'input_layout' in params else []
+
         def _parse_npy(key_name):
             input_npy = {}
             if params.get(key_name, ''):
@@ -118,6 +134,18 @@ def univ_parser(params):
             else:
                 FATAL(
                     '[Parser]: Length of input_names should be equal to length of input_shapes! '
+                    'Please check config file!')
+
+        input_layout_cnt = len(params['input_layouts'])
+        if len(params['input_names']) == input_layout_cnt:
+            params['input_layouts'] = {
+                params['input_names'][i]: v for i, v in enumerate(params['input_layouts'])}
+        else:
+            if input_layout_cnt == 0:
+                params['input_layouts'] = {name: None for name in params['input_names']}
+            else:
+                FATAL(
+                    '[Parser]: Length of input_layout should be equal to length of input names! '
                     'Please check config file!')
 
         if len(params['input_names']) == 0 and len(params['input_shapes']) == 0 and 'input_dimensions' in params:
@@ -230,7 +258,7 @@ def univ_parser(params):
                 process_graph(graph, params)
 
                 if 'subgraphs' in graph._attr and graph._attr['subgraphs']:
-                    for n_name, v in graph._attr['subgraphs'].items():
+                    for v in list(graph._attr['subgraphs'].values()):
                         for subgraph_name, subgraph in v.items():
                             front_process_graph(model_type, model_path, subgraph, params)
                             process_graph(subgraph, params)
@@ -239,7 +267,14 @@ def univ_parser(params):
                 txt_path, bin_path = '', ''
                 try:
                     assign_top_range_scale_zp(graph)
-                    trim_weights(graph)
+                    root_offset = trim_weights(graph)
+                    init_offset = root_offset
+                    if 'subgraphs' in graph._attr and graph._attr['subgraphs']:
+                        for n_name, v in graph._attr['subgraphs'].items():
+                            for subgraph_name, subgraph in v.items():
+                                assign_top_range_scale_zp(subgraph)
+                                sub_offset = trim_weights(subgraph, init_offset)
+                                init_offset = sub_offset
                     ret, txt_path, bin_path = serialize(graph, params)
                     ret = show_in_out_map(graph, params) and ret
                 except Exception as e:

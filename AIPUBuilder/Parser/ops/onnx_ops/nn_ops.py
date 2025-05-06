@@ -183,7 +183,7 @@ class BatchNormalizationOp(LayoutConcernedOp, OpHasVariableOutPorts, OnnxOp):
         is_training = self.training_mode
         if is_training:
             reshape_dim = None
-            if inputs[0].ndim not in (4, 5):
+            if inputs[0].ndim != 4:
                 if self.data_format.startswith('NC'):
                     reshape_dim = list(inputs[0].shape[:2]) + [int(np.prod(inputs[0].shape[2:])), 1]
                 else:
@@ -727,8 +727,13 @@ class GeluOp(BaseActivationOp, OnnxOp):
         super(GeluOp, self).infer_shape()
         inputs = self.get_input_tensors()
         input_tensor = torch.tensor(inputs[0], dtype=torch.float32)
-        out_tensor = torch.nn.functional.gelu(input_tensor,
-                                              approximate=self.approximate).numpy().astype(inputs[0].dtype)
+        from ...common.utils import version_to_tuple
+        if version_to_tuple(str(torch.onnx.producer_version)) < version_to_tuple('1.12.0'):
+            WARN('[Parser]Please upgrade your torch version to 1.12 or above.')
+            out_tensor = torch.nn.functional.gelu(input_tensor).numpy().astype(inputs[0].dtype)
+        else:
+            out_tensor = torch.nn.functional.gelu(input_tensor,
+                                                  approximate=self.approximate).numpy().astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
 
@@ -1995,11 +2000,11 @@ class MaxRoiPoolOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
         if self.data_format == 'NHWC':
             channels = inputs[0].shape[-1]
             out_tensor = np.random.ranf(
-                (rois, *self.pooled_shape, channels)).astype(np.float32)
+                (rois, *self.pooled_shape, channels)).astype(inputs[0].dtype)
         else:
             channels = inputs[0].shape[1]
             out_tensor = np.random.ranf(
-                (rois, channels, *self.pooled_shape)).astype(np.float32)
+                (rois, channels, *self.pooled_shape)).astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
 
@@ -2122,3 +2127,62 @@ class ReluOp(BaseReluOp, OnnxOp):
         inputs = self.get_input_tensors()
         out_tensor = self.cal_activation(inputs[0])
         self.set_out_tensor(out_tensor)
+
+
+class SimplifiedLayerNormalizationOp(OpHasAxis, OpHasVariableOutPorts, OnnxOp):
+    @classmethod
+    def attributes(cls):
+        return {
+            1: {
+                'axis': {
+                    'type': AttrType.INT, 'required': True
+                },
+                'epsilon': {
+                    'type': AttrType.FLOAT, 'required': True
+                },
+                'stash_type': {
+                    'type': AttrType.INT, 'required': True
+                },
+            }
+        }
+
+    def __getattr__(self, item):
+        ret = None
+        if item == 'axes':
+            ret = self.__dict__['_attr'][item].value
+            if ret is None and self.axis is not None:
+                input_length = len(self.get_input_shapes()[0])
+                start_axis = (self.axis + input_length) if self.axis < 0 else self.axis
+                ret = [axis for axis in range(input_length) if axis >= start_axis]
+                self.__dict__['_attr'][item].value = ret
+        if ret is None:
+            ret = super(SimplifiedLayerNormalizationOp, self).__getattr__(item)
+        return ret
+
+    def __init__(self, graph, attr_dict=None):
+        super(SimplifiedLayerNormalizationOp, self).__init__(graph, attr_dict)
+        self.update_attributes(SimplifiedLayerNormalizationOp, attr_dict)
+        assert self.check_required(), 'SimplifiedLayerNormalizationOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(SimplifiedLayerNormalizationOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        assert len(inputs) == 2, f'SimplifiedLayerNormalizationOp should have 2 inputs, but got {len(inputs)}'
+
+        input = inputs[0].astype(np.float32) if self.stash_type == 1 else inputs[0]
+        scale = inputs[1]
+
+        # RMSNorm
+        square = np.power(input, 2)
+        std_var = np.mean(square, axis=tuple(self.axes), keepdims=True)
+        normalized = input / np.sqrt(std_var + self.epsilon)
+        if self.stash_type == 1:
+            normalized = normalized.astype(inputs[0].dtype)
+        axes = OpHasAxis.make_axes_non_negative(
+            self.axes, len(input.shape))
+        weights = OpHasAxis.expand_to(scale, axes, len(input.shape))
+        out_tensors = [(normalized * weights).astype(inputs[0].dtype)]
+        out_ports = self.get_out_ports()
+        if 1 in out_ports:
+            out_tensors.append(np.array(std_var, np.float32))
+        self.set_out_tensor(out_tensors)

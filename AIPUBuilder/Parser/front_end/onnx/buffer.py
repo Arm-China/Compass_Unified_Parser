@@ -276,6 +276,7 @@ def get_graph_content(graph_proto, data_dir='', params={}):
     const_names = list(parse_proto(graph_proto.initializer, get_tensor_name))
     inputs = list(parse_proto(graph_proto.input, partial(get_value_content, params=params)))
     outputs = list(parse_proto(graph_proto.output, get_value_content))
+    interm_infos = list(parse_proto(graph_proto.value_info, get_value_content))
     nodes = list(parse_proto(graph_proto.node, partial(get_node_content, data_dir=data_dir)))
 
     output_index = {out.get('name', ''): i for i, out in enumerate(outputs)}
@@ -285,7 +286,14 @@ def get_graph_content(graph_proto, data_dir='', params={}):
                 outputs[output_index[node_out.get(
                     'name', '')]]['out_port'] = node_out['out_port']
 
-    return {'nodes': nodes, 'inputs': inputs, 'outputs': outputs, 'consts': const_values, 'const_names': const_names}
+    return {
+        'nodes': nodes,
+        'inputs': inputs,
+        'outputs': outputs,
+        'consts': const_values,
+        'const_names': const_names,
+        'interm_infos': interm_infos,
+    }
 
 
 def get_opset_content(opset_proto):

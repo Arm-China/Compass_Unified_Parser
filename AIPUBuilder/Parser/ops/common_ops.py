@@ -100,6 +100,17 @@ class BatchGatherOp(OpHasAxis, OpHasOneOutPort, CommonOp):
         self.set_out_tensor(out_tensor)
 
 
+class BlankOp(OpHasOneOutPort, ConstLikeOp, CommonOp):
+    def __init__(self, graph, attr_dict=None):
+        super(BlankOp, self).__init__(graph, attr_dict)
+
+    def infer_shape(self, input_tensor=None):
+        super(BlankOp, self).infer_shape()
+        if input_tensor is not None:
+            out_tensor = input_tensor.copy()
+            self.set_out_tensor(out_tensor)
+
+
 class BNLLOp(OpHasOneOutPort, CommonOp):
     def infer_shape(self):
         super(BNLLOp, self).infer_shape()
@@ -304,20 +315,27 @@ class DivModOp(OpNeedBroadcast, LayoutUnawareOp, OpHasDivisor, OpHasMultipleOutP
         self.set_out_tensor([out0, out1])
 
 
-class DummyOp(OpHasOneOutPort, ConstLikeOp, CommonOp):
+class DummyOp(OpHasVariableOutPorts, CommonOp):
     def __init__(self, graph, attr_dict=None):
         super(DummyOp, self).__init__(graph, attr_dict)
 
-    def infer_shape(self, input_tensor=None):
+    def infer_shape(self):
         super(DummyOp, self).infer_shape()
-        if input_tensor is not None:
-            out_tensor = input_tensor.copy()
-            self.set_out_tensor(out_tensor)
+        input_tensor = self.get_input_tensors()
+        out_tensor = input_tensor.copy()
+        self.set_out_tensor(out_tensor)
 
 
 class DummyInputOp(OpHasOneOutPort, InputLikeOp, CommonOp):
+    @classmethod
+    def attributes(cls):
+        return {'target_graph': {'type': AttrType.STRING, 'default': '', 'required': False},
+                }
+
     def __init__(self, graph, attr_dict=None):
         super(DummyInputOp, self).__init__(graph, attr_dict)
+        self.update_attributes(DummyInputOp, attr_dict)
+        assert self.check_required(), 'DummyInputOp is missing a required parameter.'
 
     def infer_shape(self, input_tensor=None, is_const=False):
         super(DummyInputOp, self).infer_shape()
@@ -467,9 +485,16 @@ class FullyConnectedOp(BaseLinearOp, CommonOp):
             inp = inputs[0].astype(np.float32)
         else:
             inp = inputs[0]
-        out_tensor = (tf.matmul(inp, np.transpose(self.weights, axes=type(self).perm_onnx_to_tf()))
-                      + self.biases
-                      ).numpy().astype(inputs[0].dtype)
+        if self.is_all_inputs_const():
+            out_tensor = (tf.matmul(inp, np.transpose(self.weights, axes=type(self).perm_onnx_to_tf()))
+                          + self.biases
+                          ).numpy().astype(inputs[0].dtype)
+        else:
+            a_shape = list(inp.shape)
+            b_shape = list(np.transpose(self.weights, axes=type(
+                self).perm_onnx_to_tf()).shape)
+            out_shape = [a_shape[0], b_shape[1]]
+            out_tensor = np.random.ranf(tuple(out_shape)).astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
 
@@ -522,6 +547,24 @@ class HardSwishOp(LayoutUnawareOp, OpHasOneOutPort, CommonOp):
 
 
 class InputOp(OpHasOneOutPort, InputLikeOp, CommonOp):
+    @classmethod
+    def attributes(cls):
+        return {
+            'layout': {
+                'type': AttrType.STRING,
+                'options': [
+                    'None', 'Flat', 'NCHW', 'NHWC', 'NCHWC4', 'NCHWC8', 'NCHWC16', 'NCHWC32',
+                    'NDHWC', 'NDCHWC16', 'NDCHWC32', 'NCDHWC16', 'NCDHWC32'
+                ],
+                'default': 'None'
+            }
+        }
+
+    def __init__(self, graph, attr_dict=None):
+        super(InputOp, self).__init__(graph, attr_dict)
+        self.update_attributes(InputOp, attr_dict)
+        assert self.check_required(), 'InputOp is missing a required parameter.'
+
     def infer_shape(self, input_tensor=None):
         super(InputOp, self).infer_shape()
         assert input_tensor is not None, 'input shape is empty in InputOp.'

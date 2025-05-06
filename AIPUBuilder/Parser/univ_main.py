@@ -5,6 +5,7 @@ import os
 import sys
 import argparse
 import configparser
+import time
 from .logger import *
 
 
@@ -60,6 +61,15 @@ optional arguments in Common section of <net.cfg>:
                         2) Three inputs, in which the dtype of the first input is int32, the second is uint8,
                            and the third is float32:
                            input_dtype=int32,uint8,float32
+    input_layout        The layout of input(s), Graph Builder will use this layout to do layout scheduling if set. 
+                        Use comma to separate for several layout string.
+                        The sequence of several layout should be aligned with inputs.
+                        Example:
+                        1) One input and the layout of the only one input is NCHW:
+                           input_layout=NCHW
+                        2) Three inputs, in which the layout of the first input is NCHW, the second not set,
+                           and the third is NCHWC32:
+                           input_layout=NCHW,None,NCHWC32
     iou_threshold       Overlap threshold value between two boxes. Required if detection_postprocess is used.
     obj_threshold       Confidence threshold value of the current box. Required if detection_postprocess in
                         (case insensitive):
@@ -102,6 +112,8 @@ optional arguments in Common section of <net.cfg>:
                         The cosine similarity and mean errors between outputs from optimizer forwarding
                         with float IR or quantized IR and outputs from runtime of the model's framework
                         will be shown if the file path is provided.
+    use_onnxsim         If use onnxsim(3rd onnx model simplify tool) to simplify the torch converted onnx model, 
+                        currently only works in torch model parsing. (default: True)
     ''')
     args.add_argument('-c', '--cfg', metavar='<net.cfg>',
                       type=str, required=True,
@@ -117,6 +129,7 @@ optional arguments in Common section of <net.cfg>:
     init_logging(verbose, logfile)
 
     exit_code = 0
+    t1 = time.time()
 
     if options.cfg and len(options.cfg) != 0:
         config = configparser.ConfigParser()
@@ -165,5 +178,8 @@ optional arguments in Common section of <net.cfg>:
         else:
             exit_code = -1
             ERROR('Common section is required in config file.')
+
+    t2 = time.time()
+    INFO(f'[Parser]: Parser cost {(t2 - t1):.2f} seconds.')
 
     return exit_code

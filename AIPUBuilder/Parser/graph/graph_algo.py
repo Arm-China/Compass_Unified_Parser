@@ -93,33 +93,35 @@ def determined_sort(g, outputs, sort_input=False):
 def clear_redundant_nodes(g, outputs=None):
     '''Delete redundant nodes in the graph.'''
     pred = g.predecessor
-    noop_names = [n for n in g.nodes if g.nodes[n]['op'] == 'Out'
-                  and pred[n]
-                  and any([p in g._attr.get('output_names', []) for p in pred[n]])
-                  ]
+    if g._attr.get('output_nodes', []) and None not in g._attr['output_nodes']:
+        noop_names = [n for n in g.nodes if g.nodes[n]['op'] == 'Out'
+                      and n in g._attr['output_nodes']]
+    else:
+        noop_names = [n for n in g.nodes if g.nodes[n]['op'] == 'Out'
+                      and pred[n]
+                      and any([p in g._attr.get('output_names', []) for p in pred[n]])
+                      ]
     output_names = outputs if outputs else (
         noop_names if noop_names else g._attr.get('output_names', []))
     subgraph_map = {}
+    graph_with_subgraph = 'subgraphs' in g._attr and len(g._attr['subgraphs']) > 0
     g._attr['subgraph_depends_nodes'] = []
-    if 'subgraphs' in g._attr and len(g._attr['subgraphs']) > 0:
+    if graph_with_subgraph:
         for k, v in g._attr['subgraphs'].items():
             for _k in v.keys():
                 subgraph_map[_k] = k
     if output_names:
         valid_nodes = determined_sort(g, output_names)
-        if 'subgraphs' in g._attr and len(g._attr['subgraphs']) > 0:
+        if graph_with_subgraph:
             for n in g.nodes:
                 node_obj = NodeWrap(g, n)['object']
-                if len(node_obj.subgraphs) > 0:
-                    for sub in node_obj.subgraphs:
-                        if sub in subgraph_map:
-                            root_node_name = subgraph_map[sub]
-                            if root_node_name in valid_nodes:
-                                if n not in output_names:
-                                    output_names.append(n)
-                                if n not in g._attr['subgraph_depends_nodes']:
-                                    g._attr['subgraph_depends_nodes'].append(n)
-            valid_nodes = determined_sort(g, output_names)
+                if node_obj is not None and \
+                        node_obj.depend_nodes and \
+                        any([a in valid_nodes for a in node_obj.depend_nodes]):
+                    if n not in g._attr['subgraph_depends_nodes'] and n not in valid_nodes:
+                        g._attr['subgraph_depends_nodes'].append(n)
+        if g._attr['subgraph_depends_nodes']:
+            valid_nodes = determined_sort(g, output_names + g._attr['subgraph_depends_nodes'])
         removing_nodes = set(g.nodes).difference(valid_nodes)
         valid_out_nodes = []
         for n in removing_nodes:
@@ -127,7 +129,7 @@ def clear_redundant_nodes(g, outputs=None):
                     len(pred[n]) == 1 and \
                     pred[n][0] not in removing_nodes:
                 if len(g.nodes[n]['object'].subgraphs) > 0:
-                    if 'subgraphs' in g._attr and len(g._attr['subgraphs']) > 0:
+                    if graph_with_subgraph:
                         for sub in g.nodes[n]['object'].subgraphs:
                             for k, v in g._attr['subgraphs'].items():
                                 if sub in v:
@@ -138,9 +140,14 @@ def clear_redundant_nodes(g, outputs=None):
                 else:
                     valid_out_nodes.append(n)
 
+            if isinstance(g, SubGraph) and (n in g._attr['input_tensors'] or
+                                            (g.nodes[n]['op'] == 'Out' and
+                                             len(pred[n]) == 1 and
+                                             pred[n][0] in g._attr['input_tensors'])):
+                valid_out_nodes.append(n)
         removing_nodes = set(removing_nodes).difference(valid_out_nodes)
         g.remove_nodes_from(removing_nodes)
-        if 'subgraphs' in g._attr and len(g._attr['subgraphs']) > 0:
+        if graph_with_subgraph:
             all_valid_nodes = valid_nodes
             for k, v in list(g._attr['subgraphs'].items()):
                 if k in removing_nodes:
@@ -227,11 +234,15 @@ def infer(graph, partial=False, chosen_list=None, final=False):
                             infer_data = graph._attr['input_tensors'][node_name].value
                         else:
                             if node_obj.type == 'DummyInput' and isinstance(graph, SubGraph):
-                                parent_node = graph._attr['parent_graph'].nodes[node_name]
-                                dummy_out_edges = graph._attr['parent_graph'].sorted_out_edges(
+                                from ..common.utils import get_target_graph
+                                target_g = get_target_graph(node_obj.target_graph, graph._root)
+                                parent_node = target_g.nodes[node_name]
+                                dummy_out_edges = target_g.sorted_out_edges(
                                     parent_node['object'].name,
                                     data=True)
                                 infer_data = dummy_out_edges[0][-1]['tensor'].value
+                                node_obj.infer_shape(infer_data, dummy_out_edges[0][-1]['tensor'].is_const)
+                                continue
                             else:
                                 log_func('[Parser]: Meet unsupported op type %s in Node(%s)!' %
                                          (node_obj.type, node_name))

@@ -357,46 +357,17 @@ def convert_maxpoolwithargmax(graph, op_type='TfMaxPoolWithArgmax'):
         matched = True
         argmaxpool_obj.update_pads(argmaxpool_obj.get_input_shapes()[0],
                                    argmaxpool_obj.get_output_shapes()[0])
-        if not bool(argmaxpool_obj.include_batch_in_index):
-            # Convert output indices from NHWC to HWC
-            sub = get_valid_node_name(graph, argmaxpool + '_indices_sub')
-            graph.add_edge(argmaxpool, sub, **{'src_out_port': 1,
-                                               'dst_in_port': 0, 'tensor': out_edges[0][3]['tensor']})
-            for _, dst, k, out_attr in out_edges:
-                if out_attr['src_out_port'] == 1:
-                    graph.remove_edge(argmaxpool, dst, key=k)
-                    new_out_attr = copy.deepcopy(out_attr)
-                    new_out_attr.update({'src_out_port': 0})
-                    graph.add_edge(sub, dst, **new_out_attr)
-
-            input_shapes = argmaxpool_obj.get_input_shapes()
-            output_shapes = argmaxpool_obj.get_output_shapes()
-            in_n, in_h, in_w, in_c = input_shapes[0]
-            _, out_h, out_w, out_c = output_shapes[0]
-            sub_oprand = np.reshape(
-                np.arange(0, in_n), (in_n, 1, 1, 1)) * in_h * in_w * in_c
-            sub_oprand = np.tile(
-                sub_oprand, [1, out_h, out_w, out_c]).astype(np.int32)
-            insert_constant(graph, sub + '_oprand', sub_oprand, sub, in_port=1)
-
-            NodeWrap(graph, sub).replace_obj(
-                'Sub', {'name': sub, 'opset_version': 7})
-
-            if argmaxpool in graph._attr['output_names']:
-                out_nodes = []
-                for n in graph._attr['output_names']:
-                    if n == argmaxpool:
-                        out_nodes.append(graph.successor[n][0])
-                        out_nodes.append(graph.successor[sub][0])
-                    else:
-                        out_nodes.extend(graph.successor[n])
-                graph._attr['output_nodes'] = out_nodes
-                idx = graph._attr['output_names'].index(argmaxpool)
-                graph._attr['output_names'].insert(idx + 1, sub)
         graph.remove_edges_from(in_edges[1:])
         maxpool_attr = argmaxpool_obj.copied_attr()
-        maxpool_attr.update({'opset_version': 12})
-        NodeWrap(graph, argmaxpool).replace_obj('MaxPool', maxpool_attr)
+        maxpool_attr.update({
+            'ceil_mode': 0,
+            'storage_order': 0,
+            'flatten_dim': 'NHWC'
+        })
+        if not bool(argmaxpool_obj.include_batch_in_index):
+            maxpool_attr.update({'flatten_dim': 'HWC'})
+
+        NodeWrap(graph, argmaxpool).replace_obj('ArmMaxPoolingWithArgMax', maxpool_attr)
     if matched:
         clear_redundant_nodes(graph)
 
@@ -771,7 +742,7 @@ def convert_topk(graph, op_type='TfTopKV2'):
         matched = True
         graph.remove_edges_from(in_edges[2:])
         topk_attr = topk_obj.copied_attr()
-        topk_attr.update({'opset_version': 11})
+        topk_attr.update({'opset_version': 11, 'select_index': 'first'})
         NodeWrap(graph, topk).replace_obj('TopK', topk_attr)
         if input_dtypes[1] != 'int64':
             k_src, _, k_in_attr = in_edges[1]
@@ -3181,6 +3152,7 @@ def merge_fasterrcnn(graph):
     graph._attr['output_names'].remove(secondstage_boxpredictor)
     graph._attr['output_names'].remove(secondstage_reshape)
     graph._attr['output_names'].extend([detection_output, nms2])
+    graph._attr['output_nodes'].clear()
 
     anchor_value = OpHasAnchors.convert_to_center_coordinate(_tile_anchor((img_height, img_width),
                                                                           (16, 16),
@@ -3874,6 +3846,7 @@ def merge_keras_maskrcnn(graph, params):
 
     graph._attr['output_names'] = [
         gather3, mrcnn_mask_reshape, topk_final, gather4]
+    graph._attr['output_nodes'].clear()
     clear_redundant_nodes(graph)
 
 
@@ -4492,7 +4465,7 @@ def merge_embedding_lookup_sparse_with_weights(graph):
         clear_redundant_nodes(graph)
 
 
-def convert_to_onnx(graph):
+def convert_to_onnx(graph, params):
     '''Convert the model to the onnx version.'''
     tf_ops = TfOp.get_concrete_subclass_names()
     matches = extend_lists([single_node_matcher(graph, op_type)
@@ -4700,6 +4673,13 @@ def convert_to_onnx(graph):
                         ERROR(
                             '[Parser]: Invalid TF Pad Node(%s) to convert to Onnx!' % node_name)
                         continue
+                elif pure_type in ('Placeholder',):
+                    if node_name in params['input_layouts'] and params['input_layouts'][node_name]:
+                        inp_layout = params['input_layouts'][node_name]
+                        new_node_attr.update({'layout': inp_layout})
+                    elif f'{node_name}:0' in params['input_layouts'] and params['input_layouts'][node_name + ':0']:
+                        inp_layout = params['input_layouts'][node_name + ':0']
+                        new_node_attr.update({'layout': inp_layout})
                 elif pure_type == 'Relu6':
                     new_node_attr.update({'min': 0., 'max': 6.})
                 elif pure_type == 'RightShift':

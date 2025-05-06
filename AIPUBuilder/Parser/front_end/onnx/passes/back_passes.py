@@ -29,7 +29,7 @@ from ....plugin_loader import PARSER_OP_DICT
 
 def adjust_5d_to_4d(graph):
     matches = [single_node_matcher(graph, type_name) for type_name in (
-        'ArmActivation', 'ArmBatchNorm', 'ArmDiv', 'ArmInstanceNorm', 'ArmLRN', 'ArmMatMul', 'ArmSlice')]
+        'ArmActivation', 'ArmBatchNorm', 'ArmInstanceNorm', 'ArmLRN', 'ArmMatMul', 'ArmSlice')]
     matches = extend_lists(matches)
     for m in matches:
         node_name = m['target']
@@ -2737,8 +2737,9 @@ def rename_mul_add_max_min(graph):
                 elif in_shapes[0] is not None \
                         and None not in in_shapes[0] \
                         and in_shapes[1] is not None \
-                        and None not in in_shapes[1]:
-                    pass
+                        and None not in in_shapes[1] \
+                        and list(in_shapes[0]) != list(in_shapes[1]):
+                    meta_ret = False
                 else:
                     meta_ret = False
                     ERROR(
@@ -2998,11 +2999,27 @@ def rename_resize(graph):
                     NodeWrap(graph, resize).replace_obj(
                         'ArmCropAndResize', crop_attr)
             else:
+                from decimal import Decimal
+
+                def increment_decimal_tail(num_str, decimals=None):
+                    d = Decimal(num_str)
+                    if decimals is None:
+                        decimals = abs(d.as_tuple().exponent)
+                    increment = Decimal('1') / (10 ** decimals)
+                    result = d + increment
+                    return result.normalize()
+
                 factors = resize_obj.scales.tolist()[1:-1]
                 try:
                     sizes = resize_obj.sizes.tolist()[1:-1]
                 except:
                     sizes = None
+
+                adjusted_factors = []
+                for i, factor in enumerate(factors):
+                    while int(input_shape[i + 1] * factor) < output_shape[i + 1]:
+                        factor = increment_decimal_tail(str(factor))
+                    adjusted_factors.append(factor)
                 graph.remove_edges_from(in_edges[1:])
                 mode = resize_obj.coordinate_transformation_mode
                 method = 'NEAREST' if resize_obj.mode == 'nearest' else 'BILINEAR'
@@ -3011,7 +3028,7 @@ def rename_resize(graph):
                         resize_obj.ori_keep_aspect_ratio_policy in ('not_larger', 'not_smaller'):
                     sizes = None
                     interp_attr.update({'keep_aspect_ratio_policy': resize_obj.ori_keep_aspect_ratio_policy})
-                interp_attr.update({'factors': factors,
+                interp_attr.update({'factors': adjusted_factors,
                                     'sizes': sizes,
                                     'method': method,
                                     'mode': mode})
@@ -3412,6 +3429,9 @@ def fuse_relu(graph):
         ops_has_relu_list, relu_ops_list)
     for op_type, relu_type in fuse_relu_combinations:
         matched = False
+        # Compass lib now only support fuse Relu for Add/Sub/Mul
+        if op_type in ['ArmAdd', 'ArmSub', 'ArmMul'] and relu_type not in ['Relu']:
+            continue
         matches1 = matched_patterns(graph,
                                     nodes=[
                                         ('linear', {'op': op_type}),
@@ -3457,6 +3477,12 @@ def fuse_relu(graph):
             op_has_relu_obj.update_activation(relu_attr)
             node_before_relu = op_has_relu if (not transpose) else transpose
             graph.remove_edge(node_before_relu, relu)
+            if op_has_relu_obj.quantize and relu_obj.quantize and transpose:
+                # update op_has_relu scale_zp
+                op_has_relu_out_edges = graph.sorted_out_edges(op_has_relu, data=True)
+                relu_scale_zp = graph.sorted_out_edges(relu, data=True)[0][-1]['tensor'].scale_zp
+                for _, _, out_attr in op_has_relu_out_edges:
+                    out_attr['tensor'].scale_zp = relu_scale_zp
             for _, dst, out_attr in graph.sorted_out_edges(relu, data=True):
                 graph.remove_edge(relu, dst)
                 graph.add_edge(node_before_relu, dst, **out_attr)
@@ -3928,6 +3954,7 @@ def detection_post_process(graph, params):
                     nms_out_attr.update({'name': nms_out})
                     NodeWrap(graph, nms_out).replace_obj('Out', nms_out_attr)
                 graph._attr['output_names'].clear()
+                graph._attr['output_nodes'].clear()
                 graph._attr['output_names'] = [region, nms]
             else:
                 ERROR(
@@ -4108,6 +4135,7 @@ def detection_post_process(graph, params):
                                    {'src_out_port': 4, 'dst_in_port': 2})
 
                     graph._attr['output_names'].clear()
+                    graph._attr['output_nodes'].clear()
                     graph._attr['output_names'] = [final_region_fuse, nms]
                 else:
                     ERROR(
@@ -4235,6 +4263,7 @@ def detection_post_process(graph, params):
                         NodeWrap(graph, nms_out).replace_obj(
                             'Out', nms_out_attr)
 
+                    graph._attr['output_nodes'].clear()
                     graph._attr['output_names'] = [detection, nms]
 
                     detection_in_edges = graph.sorted_in_edges(
@@ -4316,52 +4345,101 @@ def remove_redundant_reshape_transpose(graph):
         clear_redundant_nodes(graph)
 
 
+def remove_special_transpose(graph):
+    matches = matched_patterns(graph,
+                               nodes=[
+                                   ('trans', {'op': 'ArmTranspose'}),
+                                   ('reshape', {'op': 'ArmReshape'}),
+                               ],
+                               edges=[
+                                   ('trans', 'reshape', {'dst_in_port': 0}),
+                               ]
+                               )
+    for m in matches:
+        trans, rs = m['trans'], m['reshape']
+        transpose_obj = NodeWrap(graph, trans)['object']
+        reshape_obj = NodeWrap(graph, rs)['object']
+        if trans in graph._attr['output_names']:
+            continue
+        if transpose_obj is not None and \
+                reshape_obj is not None:
+            trans_in_edges = graph.sorted_in_edges(trans, data=True)
+            trans_out_edges = graph.sorted_out_edges(trans, data=True)
+            if len(trans_in_edges) < 1 or len(trans_out_edges) != 1:
+                continue
+            input_shapes = transpose_obj.get_input_shapes()
+            perm = transpose_obj.perm
+            if input_shapes is not None and \
+                    None not in input_shapes and \
+                    all([None not in shape for shape in input_shapes]):
+
+                def check_transpose(inp_shape, trans_perm):
+                    for i, axis in enumerate(trans_perm):
+                        if i != axis and inp_shape[i] != 1:
+                            new_idx = trans_perm.index(i)
+                            cross_axes = list(range(i + 1, new_idx + 1)) if i < new_idx else list(range(new_idx, i))
+                            for _axis in cross_axes:
+                                if inp_shape[_axis] != 1:
+                                    return False
+                    return True
+
+                matched = check_transpose(input_shapes[0], perm)
+                if matched:
+                    remove_node_safely(graph, trans)
+        else:
+            ERROR(
+                '[Parser]: Meets invalid Transpose Op(%s) in remove_special_transpose!' % trans)
+
+
 def remove_const(graph):
     removing_const = []
     for node_name in graph.nodes:
         node = NodeWrap(graph, node_name)
         node_obj = node['object']
-        if node_obj is not None and node_obj.type in ('Constant', 'Dummy') and \
+        if node_obj is not None and node_obj.type in ('Constant', 'Blank') and \
                 not node_obj.in_subgraph:
             const_out_edges = graph.sorted_out_edges(node_name, data=True)
             if len(const_out_edges) >= 1 and node_obj.type == 'Constant':
-                const_child = const_out_edges[0][1]
-                const_child_obj = NodeWrap(graph, const_child)['object']
-                if const_child_obj is not None:
-                    if isinstance(const_child_obj, (ArmOp, )):
-                        in_port = const_out_edges[0][2]['dst_in_port']
-                        op_in_ports_num = type(const_child_obj).num_in_ports()
-                        if op_in_ports_num < 0 or (op_in_ports_num >= 0 and in_port < op_in_ports_num):
+                for out_edge in const_out_edges:
+                    const_child = out_edge[1]
+                    const_child_obj = NodeWrap(graph, const_child)['object']
+                    if const_child_obj is not None:
+                        if isinstance(const_child_obj, (ArmOp, )):
+                            in_port = out_edge[2]['dst_in_port']
+                            op_in_ports_num = type(const_child_obj).num_in_ports()
+                            if op_in_ports_num < 0 or (op_in_ports_num >= 0 and in_port < op_in_ports_num):
+                                const_attr = node_obj.copied_attr()
+                                const_attr.update({'weights': node_obj.value})
+                                if node_obj.quantize and out_edge[2]['tensor'].scale_zp:
+                                    const_attr.update({'weights_scale_zp': list(out_edge[2]['tensor'].scale_zp)})
+                                NodeWrap(graph, node_name).replace_obj(
+                                    'ArmConstant', const_attr)
+                            else:
+                                graph.remove_edge(node_name, const_child)
+                        elif len(const_out_edges) == 1 and const_child_obj.type == 'Out' \
+                                and (node_name not in graph._attr['output_names']
+                                     or len(graph._attr['output_names']) > 1):
+                            removing_const.append(node_name)
+                            if node_name in graph._attr['output_names']:
+                                WARN(
+                                    '[Parser]: Remove isolated Constant Node(%s) from output in remove_const!' % node_name)
+                                graph._attr['output_names'].remove(node_name)
+                            if const_child_obj.name in graph._attr['output_nodes']:
+                                graph._attr['output_nodes'].remove(const_child_obj.name)
+                        else:
                             const_attr = node_obj.copied_attr()
                             const_attr.update({'weights': node_obj.value})
-                            if node_obj.quantize and const_out_edges[0][2]['tensor'].scale_zp:
-                                const_attr.update({'weights_scale_zp': list(const_out_edges[0][2]['tensor'].scale_zp)})
+                            if node_obj.quantize and out_edge[2]['tensor'].scale_zp:
+                                const_attr.update({'weights_scale_zp': list(out_edge[2]['tensor'].scale_zp)})
                             NodeWrap(graph, node_name).replace_obj(
                                 'ArmConstant', const_attr)
-                        else:
-                            removing_const.append(node_name)
-                    elif len(const_out_edges) == 1 and const_child_obj.type == 'Out' \
-                            and (node_name not in graph._attr['output_names']
-                                 or len(graph._attr['output_names']) > 1):
-                        removing_const.append(node_name)
-                        if node_name in graph._attr['output_names']:
-                            WARN('[Parser]: Remove isolated Constant Node(%s) from output in remove_const!' % node_name)
-                            graph._attr['output_names'].remove(node_name)
-                        if const_child_obj.name in graph._attr['output_nodes']:
-                            graph._attr['output_nodes'].remove(const_child_obj.name)
                     else:
-                        const_attr = node_obj.copied_attr()
-                        const_attr.update({'weights': node_obj.value})
-                        if node_obj.quantize and const_out_edges[0][2]['tensor'].scale_zp:
-                            const_attr.update({'weights_scale_zp': list(const_out_edges[0][2]['tensor'].scale_zp)})
-                        NodeWrap(graph, node_name).replace_obj(
-                            'ArmConstant', const_attr)
-                else:
-                    ERROR('[Parser]: Meets invalid Constant Node(%s) in remove_const!' %
-                          const_child)
+                        ERROR('[Parser]: Meets invalid Constant Node(%s) in remove_const!' %
+                              const_child)
             else:
                 removing_const.append(node_name)
     graph.remove_nodes_from(removing_const)
+    clear_redundant_nodes(graph)
 
 
 def remove_special_where(graph):
@@ -4401,7 +4479,7 @@ def remove_special_where(graph):
         clear_redundant_nodes(graph)
 
 
-def trim_weights(graph):
+def trim_weights(graph, init_offset=0):
     def _data_in_supported_dtype(np_data, attr_name, node_name):
         if not isinstance(np_data, np.ndarray):
             np_data = np.array(np_data)
@@ -4423,7 +4501,7 @@ def trim_weights(graph):
                                  graph._attr['subgraph_depends_nodes'] + graph._attr['output_names'],
                                  sort_input=True)
 
-    offset = 0
+    offset = init_offset
     for node_name in nodes_list:
         node = NodeWrap(graph, node_name)
         node_obj = node['object']
@@ -4629,6 +4707,7 @@ def trim_weights(graph):
         else:
             ERROR(
                 '[Parser]: Meets invalid Op object for Node %s in trim_weights!' % node_name)
+    return offset
 
 
 def insert_preprocess(graph):
@@ -5700,20 +5779,20 @@ def back_passes(graph, params):
 
     rename_argminmax(graph)
     rename_bitwise(graph)
-    rename_cum(graph)
     rename_bn(graph)
     rename_cast(graph)
     rename_col2im(graph)
     rename_compress(graph)
     rename_constant(graph)
     rename_conv(graph)
+    rename_cum(graph)
     rename_dilation_erosion(graph)
     rename_div(graph)
     rename_gemm(graph)
     rename_generate_proposals(graph)
     rename_gridsample(graph)
-    rename_layernorm(graph)
     rename_groupnorm(graph)
+    rename_layernorm(graph)
     rename_logical(graph)
     rename_matmulinteger(graph)
     rename_maxunpool(graph)
@@ -5738,16 +5817,17 @@ def back_passes(graph, params):
     rename_where(graph)
 
     simple_rename_list = [
-        'Abs', 'AccidentalHits', 'Acos', 'Acosh', 'AdaptivePool', 'AffineGrid', 'Asin',
+        'Abs', 'AccidentalHits', 'Acos', 'Acosh', 'AdaptivePool', 'Add', 'AffineGrid', 'Asin',
         'Asinh', 'Atan', 'Atanh', {'BatchGather': 'ArmGather'}, 'BitShift', 'BNLL',
         'Ceil', 'ChannelShuffle', 'Concat', {'Cos': 'ArmCosine'}, 'Cosh', 'CropAndResize',
         'CTCGreedyDecoder', 'DepthToSpace', 'DivMod', 'Erf', 'Exp', 'Filter', 'Floor',
         'FractionalPool', 'FullyConnected', 'Gather', 'GatherND', 'GatherElements', 'If', 'Input',
-        {'InstanceNormalization': 'ArmInstanceNorm'}, 'InTopK', 'IsInf', 'IsNaN', 'Log', 'LogSoftmax', 'LRN',
-        'MatMul', {'MeanVarianceNormalization': 'ArmMVN'}, 'Meshgrid', 'Mod', {'Neg': 'ArmNegative'},
+        {'InstanceNormalization': 'ArmInstanceNorm'}, 'InTopK', 'IsInf', 'IsNaN', 'Log', 'LogSoftmax',
+        'Loop', 'LRN',
+        'MatMul', {'MeanVarianceNormalization': 'ArmMVN'}, 'Meshgrid', 'Mod', 'Mul', {'Neg': 'ArmNegative'},
         'NonZero', 'NormalizedMoments', 'OverlapAdd', 'Pow', 'QueryRebatch', 'Reciprocal', 'Repeat',
         'ReverseSequence', 'Round', 'SegmentReduce', 'Sign', {'Sin': 'ArmSine'}, 'Sinh', 'SlotUpdate',
-        'Softmax', 'SpaceToDepth', 'SufficientStatistics', 'Split', 'Sqrt', 'Tan', 'Transpose',
+        'Softmax', 'SpaceToDepth', 'Sub', 'SufficientStatistics', 'Split', 'Sqrt', 'Tan', 'Transpose',
         'Trunc', 'Unique', 'ZeroFraction'
     ]
 
@@ -5769,6 +5849,7 @@ def back_passes(graph, params):
     merge_s2b_pool_b2s(graph)
 
     remove_redundant_bn(graph)
+    remove_special_transpose(graph)
     sink_transpose_through_special_reshape(graph)
     sink_quantize_through_concat(graph)
     remove_redundant_reshape_transpose(graph)

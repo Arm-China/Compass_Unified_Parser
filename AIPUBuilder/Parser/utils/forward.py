@@ -136,14 +136,27 @@ def onnx_forward(model_path, feed_dict, output_names=None, save_output=True):
     import onnx
     import numpy as np
 
-    # input_name = sess.get_inputs()[0].name
+    model_input_attrs = []
     try:
         sess = rt.InferenceSession(model_path)
+        model_output_names = [o.name for o in sess.get_outputs()]
+        for inp in sess.get_inputs():
+            inp_name = inp.name
+            dtype_str = inp.type[7:-1]
+            if dtype_str == 'bool':
+                np_dtype = bool
+            else:
+                np_dtype = getattr(np, 'float32' if dtype_str == 'float' else dtype_str)
+            model_input_attrs.append((inp_name, np_dtype))
     except:
         WARN('Error during onnxruntime, but we try to use onnx reference to infer..')
         from onnx.reference import ReferenceEvaluator
         sess = ReferenceEvaluator(model_path)
-    model_output_names = [o.name for o in sess.get_outputs()]
+        model_output_names = sess.output_names.copy()
+        from ..front_end.onnx.buffer import ONNX_NP_TENSOR_MAP
+        for i, inp_name in enumerate(sess.input_names):
+            np_dtype = ONNX_NP_TENSOR_MAP[sess.input_types[i].tensor_type.elem_type][1]
+            model_input_attrs.append((inp_name, np_dtype))
 
     # init output_dict: the keys have the same sequence as output_names
     output_dict = dict()
@@ -187,13 +200,11 @@ def onnx_forward(model_path, feed_dict, output_names=None, save_output=True):
                             save_as_external_data=True, all_tensors_to_one_file=False, convert_attribute=True)
             sess = rt.InferenceSession(new_model_path)
 
-    model_inputs = sess.get_inputs()
     input_names_from_feed_dict = list(feed_dict.keys())
     updated_feed_dict = {}
-    for model_input, default_name in zip(model_inputs, input_names_from_feed_dict):
-        input_name = model_input.name
-        dtype_str = model_input.type[7:-1]
-        np_dtype = getattr(np, 'float32' if dtype_str == 'float' else dtype_str)
+    for model_input, default_name in zip(model_input_attrs, input_names_from_feed_dict):
+        input_name = model_input[0]
+        np_dtype = model_input[1]
         if input_name in feed_dict:
             key_name = input_name
         else:
@@ -457,8 +468,12 @@ def opt_forward(txt_path, bin_path, feed_dict, output_names=None, save_output=Tr
         WARN('Outputs name len != outputs data len. Will save parts of outputs.')
 
     output_dict = {}
+    import numpy as np
     for name, value in zip(output_names, outputs):
-        output_dict[name] = value
+        if isinstance(value, np.ndarray):
+            output_dict[name] = value
+        else:
+            output_dict[name] = value.cpu().numpy()
 
     if save_output:
         save_data_to_file('opt_outputs.npy', output_dict)

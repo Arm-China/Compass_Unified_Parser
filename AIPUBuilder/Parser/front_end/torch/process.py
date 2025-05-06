@@ -11,6 +11,7 @@ import onnx
 import torch
 import torch.nn as nn
 import torch.onnx.symbolic_helper as helper
+from torch.onnx import _type_utils
 from torch.onnx import symbolic_opset9 as opset9
 from multiprocessing import Process
 from .utils import get_tuple_from_tensor_type, quantized_args, quantize_helper, quantize_helper_multi, \
@@ -296,8 +297,61 @@ def convert_constant_chunk(g, input, chunks, dim):
 
 @quantized_args(True, False, False)
 def convert_clamp(g, x, min_val, max_val):
-    from torch.onnx.symbolic_opset11 import clamp
-    return clamp(g, x, min_val, max_val)
+    from torch.onnx.symbolic_opset11 import clamp_max, clamp_min
+
+    def _cast_if_not_none(tensor, dtype):
+        if tensor is not None and not helper._is_none(tensor):
+            return g.op(
+                "Cast",
+                tensor,
+                to_i=dtype.onnx_type(),
+            )
+        else:
+            return tensor
+
+    scalar_type = _type_utils.JitScalarType.from_value(
+        x, _type_utils.JitScalarType.UNDEFINED
+    )
+    if scalar_type != _type_utils.JitScalarType.UNDEFINED:
+        _min_val = _cast_if_not_none(min_val, scalar_type)
+        _max_val = _cast_if_not_none(max_val, scalar_type)
+    else:
+        _min_val = min_val
+        _max_val = max_val
+
+    if helper._is_none(_min_val):
+        return clamp_max(g, x, _max_val)
+    elif helper._is_none(_max_val):
+        return clamp_min(g, x, _min_val)
+    else:
+        if helper._get_tensor_rank(min_val) == 0 and helper._get_tensor_rank(max_val) == 0:
+            min_t = helper._parse_arg(min_val, 't')
+            max_t = helper._parse_arg(max_val, 't')
+            if min_t > max_t:
+                x_rank = helper._get_tensor_rank(x)
+                if x_rank:
+                    inp_shape = g.op("Shape", x)
+                    inp_value = g.op(
+                        "Constant",
+                        value_t=torch.tensor(max_t, dtype=scalar_type.dtype()),
+                    )
+                    new_shape = g.op(
+                        "Constant",
+                        value_t=torch.tensor([1] * x_rank, dtype=torch.int64),
+                    )
+                    reshape_inp = g.op("Reshape", inp_value, new_shape)
+                    return g.op("Tile", reshape_inp, inp_shape)
+                else:
+                    return g.op(
+                        "Constant",
+                        value_t=torch.tensor(max_t, dtype=scalar_type.dtype()),
+                    )
+            else:
+                return helper._op_with_optional_float_cast(
+                    g, "Clip", x, _min_val, _max_val, opset_before=12
+                )
+        else:
+            return clamp_max(g, clamp_min(g, x, _min_val), _max_val)
 
 
 @helper.parse_args('v', 'is', 'is', 'is', 'is', 'is')
@@ -984,9 +1038,12 @@ def convert_quantized_cat(
 def convert_reduce_op(g, x, onnx_op, dim=None, keepdim=None, dtype=None, allow_multi_dim_support=True):
     if dim is None:
         # all-reduce path
-        x_rank = helper._get_tensor_rank(x)
-        dim_list = list(range(x_rank))
-        return g.op(onnx_op, x, axes_i=dim_list, keepdims_i=0)
+        if g.opset < 18:
+            x_rank = helper._get_tensor_rank(x)
+            dim_list = list(range(x_rank))
+            return g.op(onnx_op, x, axes_i=dim_list, keepdims_i=0)
+        else:
+            return g.op(onnx_op, x, keepdims_i=0)
     else:
         # dim-reduce path
         desc = 'is' if allow_multi_dim_support else 'i'
@@ -1000,7 +1057,13 @@ def convert_reduce_op(g, x, onnx_op, dim=None, keepdim=None, dtype=None, allow_m
                 x = g.op('Cast', x, to_i=helper.scalar_type_to_onnx[dtype])
             else:
                 WARN('[Parser]: Meets non-constant dtype in convert_reduce_op; dtype will be ignored!')
-        return g.op(onnx_op, x, axes_i=dim_list, keepdims_i=keepdim)
+        if g.opset < 18:
+            return g.op(onnx_op, x, axes_i=dim_list, keepdims_i=keepdim)
+        else:
+            axes = g.op(
+                "Constant", value_t=torch.tensor(dim_list, dtype=torch.int64)
+            )
+            return g.op(onnx_op, x, axes, keepdims_i=keepdim)
 
 
 @quantized_args(True)
@@ -1360,6 +1423,44 @@ def convert_unflatten(g, self, dim, sizes):
     return helper._reshape_helper(g, self, g.op('Constant', value_t=torch.tensor(reshape_dim)))
 
 
+def convert_upsample_antialias(g, input, size, scales_h, scales_w, align_corners, interpolate_mode):
+    assert interpolate_mode != 'nearest', 'Only linear and cubic are supported for antialias in convert_upsample_antialias'
+    roi = helper._optional_input_placeholder_tensor(g)
+    dim = input.type().dim()
+    if helper._is_none(size):
+        sizes = helper._optional_input_placeholder_tensor(g)
+        assert scales_h is not None, 'scales must not be None as sizes is None in convert_upsample_antialias'
+        if scales_w is None:
+            scales = helper._interpolate_get_scales(g, scales_h, dim)
+        else:
+            scales_h = helper._parse_arg(scales_h, 'f')
+            scales_w = helper._parse_arg(scales_w, 'f')
+            assert scales_h is not None and scales_w is not None, 'Meets unsupported scales in convert_upsample_antialias'
+            scales = g.op('Constant', value_t=torch.tensor([1.0, 1.0, scales_h, scales_w], dtype=torch.float32))
+    else:
+        input_shape = helper._get_tensor_sizes(input)
+        const_hw = g.op('Constant', value_t=torch.tensor(input_shape[:2], dtype=torch.int64))
+        size = g.op('Cast', size, to_i=torch._C._onnx.TensorProtoDataType.INT64)
+        sizes = g.op('Concat', const_hw, size, axis_i=0)
+        scales = helper._optional_input_placeholder_tensor(g)
+    coordinate_transformation_mode = 'align_corners' if align_corners else 'half_pixel'  # asymmetric?
+    return g.op(CUSTOM_OPSET_18 + 'Resize', input, roi, scales, sizes,
+                coordinate_transformation_mode_s=coordinate_transformation_mode,
+                mode_s=interpolate_mode, antialias_i=1)
+
+
+@helper.parse_args('v', 'v', 'b', 'v', 'v')
+@quantized_args(True)
+def convert_upsample_bicubic2d_aa(g, input, size, align_corners, scales_h=None, scales_w=None):
+    return convert_upsample_antialias(g, input, size, scales_h, scales_w, align_corners, 'cubic')
+
+
+@helper.parse_args('v', 'v', 'b', 'v', 'v')
+@quantized_args(True)
+def convert_upsample_bilinear2d_aa(g, input, size, align_corners, scales_h=None, scales_w=None):
+    return convert_upsample_antialias(g, input, size, scales_h, scales_w, align_corners, 'linear')
+
+
 @helper.parse_args('v', 'v')
 @quantized_args(True, False)
 def convert_view(g, self, shape):
@@ -1381,9 +1482,6 @@ def convert_index_put(g, x, indices_list_value, values, accumulate=False):
         indices_list = helper._unpack_list(indices_list_value)
     else:
         indices_list = [indices_list_value]
-    if helper.is_caffe2_aten_fallback():
-        args = [x] + indices_list + [values, accumulate]
-        return g.at('index_put', *args)
 
     accumulate = helper._parse_arg(accumulate, 'b')
 
@@ -1537,8 +1635,6 @@ def convert_index_copy(g, self, dim, index, source):
 
 @helper.parse_args('v', 'i', 'v', 'v', 's')
 def scatter_helper(g, self, dim, index, src, reduction):
-    if helper.is_caffe2_aten_fallback():
-        return g.at('scatter', self, dim, index, src, overload_name='src')
     src_type = src.type().scalarType()
     src = helper._maybe_get_scalar(src)
     if helper._is_value(src):
@@ -1667,16 +1763,6 @@ def convert_index_fill(g, self, dim, index, value):
         ERROR(
             'ONNX export does NOT support exporting index_add_() function while, the rank of self tensor or tensor to be added is unknown.')
 
-    if helper.is_caffe2_aten_fallback():
-        return g.at(
-            'index_fill',
-            self,
-            index,
-            value,
-            overload_name='int_Scalar',
-            dim_i=dim_value,
-        )
-
     expanded_index_shape, expanded_index = _index_fill_reshape_helper(
         g, self, dim, index
     )
@@ -1737,14 +1823,15 @@ def convert_torch_to_onnx(model_path, params):
                           training=torch.onnx.TrainingMode.PRESERVE,
                           custom_opsets=custom_opsets,
                           do_constant_folding=do_constant_folding)
-        try:
-            from onnxsim import simplify
-            sim_model, check = simplify(onnx_model_path, 1)
-            if check:
+
+        if params['use_onnxsim']:
+            try:
+                from onnxsim import simplify
+                sim_model, _ = simplify(onnx_model_path)
                 os.remove(onnx_model_path)
                 onnx.save(sim_model, onnx_model_path)
-        except:
-            WARN('[Parser]: Skip simplify onnx because error during onnxsim!')
+            except:
+                WARN('[Parser]: Skip simplify onnx because error during onnxsim!')
         return
 
     def _flatten_type(torch_type):
@@ -1807,6 +1894,8 @@ def convert_torch_to_onnx(model_path, params):
     if onnx_opset_version is not None:
         default_onnx_main_opset = None
         default_onnx_stable_opsets = []
+        from onnx.defs import onnx_opset_version
+        max_onnx_opset = onnx_opset_version()
         try:
             if torch_version_str.startswith('1.11'):
                 default_onnx_main_opset = helper._onnx_main_opset
@@ -1822,9 +1911,12 @@ def convert_torch_to_onnx(model_path, params):
         except Exception as e:
             DEBUG(
                 '[Parser]: Fail to get default onnx opset version because %s' % str(e))
-        if default_onnx_main_opset is None:
-            onnx_opset_version = None
-        elif onnx_opset_version >= default_onnx_main_opset or onnx_opset_version not in default_onnx_stable_opsets:
+        if len(default_onnx_stable_opsets) > 0:
+            onnx_opset_version = min(default_onnx_stable_opsets[-1], max_onnx_opset)
+            # FIXME, remove 17 opset after torch upgrade to 2.4
+            if torch_version < version_to_tuple('2.4'):
+                onnx_opset_version = min(onnx_opset_version, 17)
+        elif default_onnx_main_opset is not None:
             onnx_opset_version = default_onnx_main_opset
     if onnx_opset_version is None:
         onnx_opset_version = 9
@@ -1906,6 +1998,12 @@ def convert_torch_to_onnx(model_path, params):
         # The lowest version of onnx Col2Im is 18.
         torch.onnx.register_custom_op_symbolic(
             'aten::col2im', convert_col2im, onnx_opset_version)
+    # The lowest version of onnx Resize with antialias is 18.
+    # if onnx_opset_version < 18:  # FIXME: remove convert_upsample_xx after it's supported in torch
+    torch.onnx.register_custom_op_symbolic(
+        'aten::_upsample_bicubic2d_aa', convert_upsample_bicubic2d_aa, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'aten::_upsample_bilinear2d_aa', convert_upsample_bilinear2d_aa, onnx_opset_version)
     # if onnx_opset_version < 19:  # not yet supported in torch 2.1
     torch.onnx.register_custom_op_symbolic(
         'torchvision::deform_conv2d', convert_deform_conv, onnx_opset_version)

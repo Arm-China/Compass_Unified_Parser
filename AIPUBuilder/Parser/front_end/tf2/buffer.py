@@ -304,7 +304,8 @@ def parse_keras(model_path, params):
     model_inputs_names = model.input_names
 
     for n in nodes:
-        if n['name'] in model_inputs_names and n['name'] not in input_shapes:
+        if (n['name'] in model_inputs_names and
+                (n['name'] not in input_shapes or (n['name'] in input_shapes and not input_shapes[n['name']]))):
             tensor_shape = n['output'][0][1]
             input_shapes.update({n['name']: tensor_shape})
         if n['type'] == 'constant' and n['attr'].get('value', None) is not None:

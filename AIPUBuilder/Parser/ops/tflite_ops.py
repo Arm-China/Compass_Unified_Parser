@@ -1037,23 +1037,33 @@ class LiteFULLY_CONNECTEDOp(BaseActivationOp, BaseLinearOp, TfliteOp):
     def infer_shape(self):
         super(LiteFULLY_CONNECTEDOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        if self.weights is not None:
-            last_out_dim = self.weights.shape[-2]
-            inp = np.reshape(inputs[0], (-1, self.weights.shape[-1]))
-            out_tensor = np.matmul(inp, np.transpose(
-                self.weights, axes=type(self).perm_lite_to_tf()))
+        filter_shape = self.weights.shape if self.weights is not None else inputs[1].shape
+        if self.is_all_inputs_const():
+            if self.weights is not None:
+                last_out_dim = self.weights.shape[-2]
+                inp = np.reshape(inputs[0], (-1, self.weights.shape[-1]))
+                out_tensor = np.matmul(inp, np.transpose(
+                    self.weights, axes=type(self).perm_lite_to_tf()))
+            else:
+                last_out_dim = inputs[1].shape[-2]
+                inp = np.reshape(inputs[0], (-1, inputs[1].shape[-1]))
+                out_tensor = np.matmul(inp, np.transpose(inputs[1]))
+            if self.biases is not None:
+                out_tensor = out_tensor + self.biases
+            out_tensor = self.cal_activation(out_tensor)
+            if self.keepdims:
+                assert inputs[0].shape[-1] == inp.shape[-1], 'input0 shape[-1] MUST be equal to filter shape[-1].'
+                out_shape = list(inputs[0].shape[:-1]) + [last_out_dim]
+            else:
+                out_shape = [-1, last_out_dim]
+            out_tensor = np.reshape(out_tensor, out_shape)
         else:
-            last_out_dim = inputs[1].shape[-2]
-            inp = np.reshape(inputs[0], (-1, inputs[1].shape[-1]))
-            out_tensor = np.matmul(inp, np.transpose(inputs[1]))
-        if self.biases is not None:
-            out_tensor = out_tensor + self.biases
-        out_tensor = self.cal_activation(out_tensor)
-        if self.keepdims:
-            out_shape = list(inputs[0].shape[:-1]) + [last_out_dim]
-        else:
-            out_shape = [int(np.prod(inputs[0].shape[:-1])), last_out_dim]
-        out_tensor = np.reshape(out_tensor, out_shape)
+            if self.keepdims:
+                assert inputs[0].shape[-1] == filter_shape[-1], 'input0 shape[-1] MUST be equal to filter shape[-1].'
+                out_shape = list(inputs[0].shape[:-1]) + [filter_shape[-2]]
+            else:
+                out_shape = [int(np.prod(inputs[0].shape)) // filter_shape[-1], filter_shape[-2]]
+            out_tensor = np.random.ranf(tuple(out_shape)).astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
 
@@ -1421,7 +1431,7 @@ class LiteLOG_SOFTMAXOp(OpHasOneOutPort, TfliteOp):
 class LiteMAXIMUMOp(OpHasOneOutPort, TfliteOp):
     @classmethod
     def attributes(cls):
-        return {1: {}, 2: {}}
+        return {1: {}, 2: {}, 3: {}, 4: {}}
 
     def __init__(self, graph, attr_dict=None):
         super(LiteMAXIMUMOp, self).__init__(graph, attr_dict)
@@ -1675,13 +1685,13 @@ class LiteNON_MAX_SUPPRESSION_V4Op(OpHasMultipleOutPorts, TfliteOp):
             inputs = self.get_input_tensors()
             try:
                 if item == 'max_output_size':
-                    ret = int(np.asscalar(inputs[2]))
+                    ret = int(inputs[2].item())
                 elif item == 'iou_threshold':
-                    ret = float(np.asscalar(inputs[3]))
+                    ret = float(inputs[3].item())
                 elif item == 'score_threshold':
-                    ret = float(np.asscalar(inputs[4]))
+                    ret = float(inputs[4].item())
                 elif item == 'soft_nms_sigma':
-                    ret = float(np.asscalar(inputs[5]))
+                    ret = float(inputs[5].item())
                 self.__dict__['_attr'][item].value = ret
             except:
                 ret = None
@@ -1760,16 +1770,7 @@ class LiteONE_HOTOp(OpHasOneOutPort, TfliteOp):
         super(LiteONE_HOTOp, self).infer_shape()
         inputs = self.get_input_tensors()
         indices = inputs[0].astype(np.int64)
-        reps = [1] * (len(indices.shape) + 1)
-        depth = inputs[1]
-        reps[self.axis] = depth
-        values = inputs[2]
-        tiled_indices = np.tile(np.expand_dims(indices, axis=self.axis), reps)
-        out_tensor = (np.ones_like(tiled_indices) *
-                      values[1]).astype(values.dtype)
-        true_mask = np.logical_and(
-            tiled_indices >= -depth, tiled_indices < depth - 1)
-        out_tensor[true_mask] = values[0]
+        out_tensor = tf.one_hot(indices, inputs[1], on_value=inputs[2], off_value=inputs[3], axis=self.axis).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -1791,7 +1792,7 @@ class LitePACKOp(OpHasAxis, OpHasOneOutPort, TfliteOp):
         super(LitePACKOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor = tf.stack(inputs, axis=self.axis).numpy()
-        self.set_out_tensor(out_tensor)
+        self.set_out_tensor(out_tensor.astype(inputs[0].dtype))
 
     @property
     def correspond_onnx_op(self):
@@ -2742,7 +2743,7 @@ class LiteSQUAREOp(OpHasOneOutPort, TfliteOp):
     def infer_shape(self):
         super(LiteSQUAREOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.math.square(inputs[0])
+        out_tensor = tf.math.square(inputs[0]).numpy()
         self.set_out_tensor(out_tensor)
 
 

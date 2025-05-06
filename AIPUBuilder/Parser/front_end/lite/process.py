@@ -5,12 +5,11 @@
 from .load import convert_tflite_to_graph
 from .passes.front_passes import split_op_has_activation, split_fc, split_greater_or_less_equal, \
     split_not_equal, split_rsqrt, remove_detection_postprocess, convert_to_onnx, convert_onehot, convert_reverse_sequence, convert_square, \
-    convert_unpack, convert_negative_pool_pad, convert_scatternd, convert_scatternd2, convert_special_uni_seq_lstm, convert_strided_slice, convert_square_diff, \
+    convert_unpack, convert_negative_pool_pad, convert_scatternd, convert_special_uni_seq_lstm, convert_strided_slice, convert_square_diff, \
     convert_broadcast_to, remove_redundant_broadcast_to, remove_sub_equal_select, \
     merge_special_cast_quantize, convert_special_quantize, convert_special_dequantize, split_quatized_mean, \
     merge_quantized_instance_norm, merge_quantized_lstm_cell, convert_dequantize, merge_min_quant_max_to_clip, merge_quantized_ln, \
-    merge_dqd, convert_sparse_to_dense, merge_ln2, merge_ln3, merge_rms_norm
-# merge_quantized_lstm_cell2, merge_quantized_lstm2
+    merge_dqd, convert_sparse_to_dense, merge_ln2, merge_ln3, merge_rms_norm, merge_quantized_lstm_cell2, merge_quantized_lstm2
 from ..onnx.passes.front_passes import fuse_weights_const, convert_deconv
 from ..onnx.passes.common_passes import apply_subgraph_plugin, record_output_tensors, remove_useless_op, fuse_const
 from ...graph.graph_algo import infer, clear_redundant_nodes
@@ -23,6 +22,10 @@ def front_process_tflite(graph, params):
         apply_subgraph_plugin(graph)
         infer(graph, partial=True)
         fuse_weights_const(graph)
+
+        infer(graph)
+        remove_useless_op(
+            graph, ['LiteRESHAPE'])
 
         split_op_has_activation(graph)
 
@@ -41,6 +44,7 @@ def front_process_tflite(graph, params):
         else:
             merge_min_quant_max_to_clip(graph)
 
+        merge_quantized_lstm_cell2(graph)
         merge_ln2(graph)
         merge_ln3(graph)
         merge_rms_norm(graph)
@@ -67,7 +71,6 @@ def front_process_tflite(graph, params):
         convert_square(graph, 'LiteSQUARE')
         convert_square_diff(graph, 'LiteSQUARED_DIFFERENCE')
         convert_scatternd(graph, 'LiteSCATTER_ND')
-        convert_scatternd2(graph, 'LiteSCATTER_ND')
         convert_reverse(graph, op_type='LiteREVERSE_V2')
         convert_sparse_to_dense(graph, 'LiteSPARSE_TO_DENSE')
         merge_overlap_and_add(graph)
@@ -77,9 +80,6 @@ def front_process_tflite(graph, params):
         convert_special_uni_seq_lstm(graph)
 
         clear_redundant_nodes(graph)
-        infer(graph)
-        remove_useless_op(
-            graph, ['LiteRESHAPE'])
         fuse_const(graph)
 
         if not graph._attr.get('quantize', False):
@@ -110,11 +110,12 @@ def front_process_tflite(graph, params):
         convert_nms(graph, params)
 
         convert_to_onnx(graph)
+        infer(graph)
 
         # To support flex op in tflite model, need convert tf op to onnx as well.
         # FIXME: Other passes in tf front passes may be needed as well.
         from ..tf.passes.front_passes import convert_to_onnx as convert_tf_op_to_onnx
-        convert_tf_op_to_onnx(graph)
+        convert_tf_op_to_onnx(graph, params)
     else:
         WARN('[Parser]: Got empty graph in front_process_tflite!')
 

@@ -22,7 +22,7 @@ from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 def front_process_tf(graph, params):
     record_output_tensors(graph)
     if graph is not None and len(graph) > 0:
-        from ..lite.passes.front_passes import convert_scatternd, convert_scatternd2, split_rsqrt, \
+        from ..lite.passes.front_passes import convert_scatternd, split_rsqrt, \
             convert_strided_slice, \
             convert_square, convert_square_diff, split_not_equal, convert_reverse_sequence, convert_unpack, \
             convert_sparse_to_dense
@@ -61,7 +61,6 @@ def front_process_tf(graph, params):
         convert_floordiv(graph, op_type='TfFloorDiv')
         convert_reverse_sequence(graph, op_type='TfReverseSequence')
         convert_scatternd(graph, op_type='TfScatterNd')
-        convert_scatternd2(graph, op_type='TfScatterNd')
         convert_topk(graph, op_type='TfTopKV2')
         split_b2s(graph)
         split_s2b(graph, 'TfSpaceToBatchND')
@@ -93,7 +92,7 @@ def front_process_tf(graph, params):
 
         infer(graph)
 
-        convert_to_onnx(graph)
+        convert_to_onnx(graph, params)
 
     else:
         WARN('[Parser]: Got empty graph for TF model %s in front_process_tf!' %

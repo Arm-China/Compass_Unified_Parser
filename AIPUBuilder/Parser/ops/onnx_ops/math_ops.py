@@ -65,7 +65,7 @@ class AcoshOp(LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
         self.set_out_tensor(out_tensor)
 
 
-class AddOp(OpNeedBroadcast, OpHasAxis, OpHasOneOutPort, OnnxOp):
+class AddOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
     @classmethod
     def attributes(cls):
         return {1: {'axis': {'type': AttrType.INT},
@@ -465,7 +465,7 @@ class CumSumOp(OpHasOneOutPort, OpHasAxis, OnnxOp):
         self.set_out_tensor(out_tensor)
 
 
-class DivOp(OpNeedBroadcast, OpHasDivisor, OpHasOneOutPort, OnnxOp):
+class DivOp(OpHasDivisor, OpHasOneOutPort, OnnxOp):
     @classmethod
     def attributes(cls):
         return {1: {'axis': {'type': AttrType.INT},
@@ -600,7 +600,7 @@ class FloorOp(LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
     def infer_shape(self):
         super(FloorOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = np.floor(inputs[0]).astype(np.float32)
+        out_tensor = np.floor(inputs[0])
         self.set_out_tensor(out_tensor)
 
 
@@ -959,7 +959,39 @@ class MatMulOp(OpHasOneOutPort, OnnxOp):
     def infer_shape(self):
         super(MatMulOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = np.matmul(*inputs)
+        if self.is_all_inputs_const():
+            out_tensor = np.matmul(*inputs)
+        else:
+            a_shape = list(inputs[0].shape)
+            b_shape = list(inputs[1].shape)
+            a_dim = len(a_shape)
+            b_dim = len(b_shape)
+            max_dim = max(a_dim, b_dim)
+            out_shape = []
+            if max_dim != 1:
+                if a_dim == 1:
+                    out_shape = b_shape[:]
+                    del out_shape[-2]
+                elif b_dim == 1:
+                    out_shape = a_shape[:-1]
+                else:
+                    if a_dim < max_dim:
+                        for i in range(max_dim - a_dim):
+                            a_shape.insert(0, 1)
+                    if b_dim < max_dim:
+                        for i in range(max_dim - b_dim):
+                            b_shape.insert(0, 1)
+
+                    assert a_shape[-1] == b_shape[-2], (f'MatMulOp({self.name}) shape error, '
+                                                        f'input shape is: {inputs[0].shape}, {inputs[1].shape}!')
+                    for i in range(max_dim):
+                        if i < max_dim - 2:
+                            out_shape.append(max(a_shape[i], b_shape[i]))
+                        elif i == max_dim - 2:
+                            out_shape.append(a_shape[i])
+                        else:
+                            out_shape.append(b_shape[i])
+            out_tensor = np.random.ranf(tuple(out_shape)).astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
 
@@ -1130,7 +1162,7 @@ class ModOp(OpNeedBroadcast, LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
         self.set_out_tensor(out_tensor)
 
 
-class MulOp(OpNeedBroadcast, OpHasAxis, OpHasOneOutPort, OnnxOp):
+class MulOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
     @classmethod
     def attributes(cls):
         return {1: {'consumed_inputs': {'type': AttrType.INTS},
@@ -1552,7 +1584,7 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
 
     def __setattr__(self, item, value):
         if item in ('roi', 'scales', 'sizes'):
-            dtype = np.int64 if item == 'sizes' else np.float32
+            dtype = np.int64 if item == 'sizes' else np.float64
             try:
                 self.__dict__['_attr'][item].value = np.array(
                     value).astype(dtype)
@@ -2247,10 +2279,26 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
                     assert self.cur_version > 10, 'Mode cubic in Resize Op (%s) is not supported until opset 11' % self.name
                     assert len(input_dim_np) == 4, 'Resize op only supports cubic mode with 4d input, but got %dd!' % \
                         len(input_dim_np)
-                    func = ResizeOp.upsample_cubic_antialias if self.antialias else ResizeOp.upsample_cubic
-                    out_tensor = func(inp, out_spatial_shape, spatial_scales, self.roi,
-                                      self.coordinate_transformation_mode, self.cubic_coeff_a,
-                                      self.exclude_outside, self.extrapolation_value, is_nchw)
+                    if self.cubic_coeff_a == -0.75 and \
+                        (self.coordinate_transformation_mode == 'pytorch_half_pixel' or
+                         (self.coordinate_transformation_mode == 'half_pixel'
+                          and out_spatial_shape[0] > 1 and out_spatial_shape[1] > 1)):
+                        if self.sizes is not None and self.sizes.size > 0:
+                            out_tensor = torch.nn.functional.interpolate(torch.tensor(inp),
+                                                                         size=tuple(out_spatial_shape),
+                                                                         mode='bicubic',
+                                                                         antialias=self.antialias).cpu().numpy()
+                        else:
+                            scale_factor = tuple(self.scales[2:]) if is_nchw else tuple(self.scales[1:-1])
+                            out_tensor = torch.nn.functional.interpolate(torch.tensor(inp),
+                                                                         scale_factor=scale_factor,
+                                                                         mode='bicubic',
+                                                                         antialias=self.antialias).cpu().numpy()
+                    else:
+                        func = ResizeOp.upsample_cubic_antialias if self.antialias else ResizeOp.upsample_cubic
+                        out_tensor = func(inp, out_spatial_shape, spatial_scales, self.roi,
+                                          self.coordinate_transformation_mode, self.cubic_coeff_a,
+                                          self.exclude_outside, self.extrapolation_value, is_nchw)
                 if len(inputs[0].shape) == 3:
                     out_tensor = np.squeeze(out_tensor, axis=2) if is_nchw else np.squeeze(out_tensor, axis=1)
         else:
@@ -2582,7 +2630,7 @@ class SqrtOp(LayoutUnawareOp, OpHasOneOutPort, OpHasNonZeroInput, OnnxOp):
         self.set_out_tensor(out_tensor.astype(inputs[0].dtype))
 
 
-class SubOp(OpNeedBroadcast, OpHasAxis, OpHasOneOutPort, OnnxOp):
+class SubOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
     @classmethod
     def attributes(cls):
         return {1: {'axis': {'type': AttrType.INT},
@@ -2720,7 +2768,10 @@ class TopKOp(OpHasAxis, OpHasMultipleOutPorts, OnnxOp):
                 10: {'axis': {'default': -1}},
                 11: {'axis': {'default': -1},
                      'largest': {'type': AttrType.INT, 'options': [0, 1], 'default': 1},
-                     'sorted': {'type': AttrType.INT, 'options': [0, 1], 'default': 1}},
+                     'sorted': {'type': AttrType.INT, 'options': [0, 1], 'default': 1},
+                     'select_index': {'type': AttrType.STRING, 'options': ['first', 'last', 'random'],
+                                      'default': 'last'}
+                     },
                 }
 
     def __init__(self, graph, attr_dict=None):

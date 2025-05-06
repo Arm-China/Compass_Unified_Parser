@@ -60,7 +60,11 @@ class DequantizeLinearOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
         assert len(inputs) in (2, 3), 'DequantizeLinearOp expects 2 or 3 inputs, but got %d.' % len(inputs)
         if len(inputs) > 2:
             assert self.x_scale.shape == self.x_zero_point.shape, 'x_scale and x_zero_point in DequantizeLinearOp must have same shape.'
-        if self.axis is None:
+        if np.ndim(inputs[0]) == 0 or (np.ndim(inputs[0]) == 1 and len(inputs[0].shape) == 1):
+            is_scalar_or_1d_vector = True
+        else:
+            is_scalar_or_1d_vector = False
+        if self.axis is None or is_scalar_or_1d_vector:
             out_tensor = ((inputs[0] - self.x_zero_point) * self.x_scale).astype(np.float32)
         else:
             self.axis = OpHasAxis.make_axes_non_negative(self.axis, len(inputs[0].shape))
