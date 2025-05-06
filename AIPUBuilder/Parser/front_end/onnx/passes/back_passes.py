@@ -5849,6 +5849,27 @@ def make_graph_connected(graph):
                 graph._attr['output_names'][index] = dummy
 
 
+def remove_invalid_subgraphs(graph):
+    # clear subgraph
+    if not isinstance(graph, SubGraph):
+        from ....common.utils import get_all_child_nodes
+        removed_names = []
+        if 'subgraphs' in graph._attr and graph._attr['subgraphs']:
+            for n_name, v in graph._attr['subgraphs'].items():
+                if n_name not in removed_names:
+                    for subgraph_name, subgraph in v.items():
+                        parent_graph = subgraph._attr['parent_graph']
+                        parent_node = subgraph._attr['parent_node']
+                        if not parent_graph.has_node(parent_node):
+                            all_child_nodes = get_all_child_nodes(graph._attr['subgraphs'], parent_node)
+                            removed_names.extend(all_child_nodes)
+                            break
+            if removed_names:
+                for n_name in removed_names:
+                    if n_name in graph._attr['subgraphs']:
+                        graph._attr['subgraphs'].pop(n_name)
+
+
 def back_passes(graph, params):
     '''
     Pass is an optimization based on IR to remove redundant operators and perform hardware-friendly operator transformation.
@@ -6012,3 +6033,4 @@ def back_passes(graph, params):
     remove_redundant_cast(graph)
     make_graph_connected(graph)
     insert_preprocess(graph)
+    remove_invalid_subgraphs(graph)

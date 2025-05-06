@@ -43,6 +43,24 @@ def get_target_graph(target_g_name, root_graph, parent_graph=None):
         return root_graph
 
 
+def get_all_child_nodes(subgraph_dict, parent_node):
+    child_nodes = [parent_node]
+    while True:
+        tmp_nodes = child_nodes[:]
+        parent_graphs = list(subgraph_dict[child_nodes[-1]].keys())
+        for n_name, v in subgraph_dict.items():
+            if n_name not in child_nodes:
+                for t_graph in list(subgraph_dict[n_name].values()):
+                    if t_graph._attr['parent_graph'].name in parent_graphs:
+                        if n_name not in tmp_nodes:
+                            tmp_nodes.append(n_name)
+        if len(tmp_nodes) == len(child_nodes):
+            break
+        else:
+            child_nodes = tmp_nodes
+    return child_nodes[:]
+
+
 def readable_file(path):
     if not os.path.isfile(path):
         raise Exception('The "{}" is not existing file'.format(path))
