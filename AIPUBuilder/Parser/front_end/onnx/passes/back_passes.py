@@ -14,7 +14,7 @@ from ....graph.node_wrap import NodeWrap
 from ....graph.graph_algo import determined_sort, get_valid_node_name, clear_redundant_nodes, has_path, infer
 from ....graph.pattern_match import matched_patterns, single_node_matcher, two_nodes_matcher
 from ....ops.op import Op, LayoutUnawareOp, BaseLinearOp, BaseActivationOp, BaseReluOp, OpHasWeights, OpHasBiases, \
-    ArmOp, OpHasAxis, BaseQuantizeDequantizeOp, BaseRnnOp, OpHasAnchors, OpNeedUniBroadcast
+    ArmOp, OpHasAxis, BaseQuantizeDequantizeOp, BaseRnnOp, OpHasAnchors, OpNeedUniBroadcast, SameShapeOp
 from ....ops.onnx_ops.array_ops import ReshapeOp
 from ....ops.release_ops import ArmCastOp, ArmConvolutionOp, ArmConvolution3DOp, ArmConvIntegerOp, ArmDecodeBoxOp, \
     ArmDepthwiseConvOp, ArmConvTransposeOp, ArmConvTranspose3DOp, ArmActivationOp
@@ -31,7 +31,7 @@ from ....plugin_loader import PARSER_OP_DICT
 
 def adjust_5d_to_4d(graph):
     matches = [single_node_matcher(graph, type_name) for type_name in (
-        'ArmActivation', 'ArmBatchNorm', 'ArmInstanceNorm', 'ArmLRN', 'ArmMatMul', 'ArmSlice')]
+        'ArmBatchNorm', 'ArmInstanceNorm', 'ArmLRN', 'ArmMatMul')]
     matches = extend_lists(matches)
     for m in matches:
         node_name = m['target']
@@ -91,6 +91,8 @@ def adjust_5d_to_4d(graph):
                                int(np.prod(output_shapes[0][1:-2])),
                                output_shapes[0][-2],
                                output_shapes[0][-1]]
+                else:
+                    old_dim = pre_dim
                 post_dim = copy.deepcopy(output_shapes[0])
                 post_reshape = insert_reshape_after(
                     graph, node_name, post_dim, old_dim, type='ArmReshape', quantize=node_obj.quantize)
@@ -4867,6 +4869,72 @@ def insert_cast_if_must(graph):
     return happened
 
 
+def sink_single_reshape(graph):
+    unaware_types = set(ArmOp.get_concrete_subclass_names()).intersection(
+        SameShapeOp.get_concrete_subclass_names() + ['ArmQuantize', 'ArmDeQuantize'])
+    unaware_types = sorted(list(unaware_types))
+    matches = matched_patterns(graph,
+                               nodes=[('reshape', {'op': 'ArmReshape'}),
+                                      ('unaware', {'op': unaware_types})
+                                      ],
+                               edges=[('reshape', 'unaware')]
+                               )
+    for m in matches:
+        reshape, unaware = m['reshape'], m['unaware']
+        reshape_obj = NodeWrap(graph, reshape)['object']
+        unaware_obj = NodeWrap(graph, unaware)['object']
+        if reshape_obj is not None and unaware_obj is not None:
+            reshape_out_edges = graph.sorted_out_edges(reshape, data=True)
+            if len(reshape_out_edges) == 1 and unaware_obj.num_in_ports() == 1 and len(unaware_obj.get_out_ports()) == 1:
+                unaware_input_shape = unaware_obj.get_input_shapes()[0]
+                if unaware_input_shape is None \
+                        or any([s is None for s in unaware_input_shape]):
+                    ERROR(
+                        '[Parser]: Meets invalid input shape of Node(%s) in sink_single_reshape!' % unaware)
+                    continue
+                unaware_out_edges = graph.sorted_out_edges(unaware, data=True)
+                if len(unaware_out_edges) < 1:
+                    continue
+                if unaware_obj.type in ['ArmQuantize', 'ArmDeQuantize'] \
+                        and unaware_obj.axis is not None:
+                    continue
+                reshape_in_edges = graph.sorted_in_edges(reshape, data=True)
+                src, _, reshape_in_attr = reshape_in_edges[0]
+                _, _, reshape_out_attr = reshape_out_edges[0]
+                graph.remove_edge(src, reshape)
+                graph.remove_edges_from(reshape_out_edges)
+                for _, dst, out_attr in unaware_out_edges:
+                    graph.remove_edge(unaware, dst)
+                    new_out_attr = copy.deepcopy(out_attr)
+                    new_out_attr['src_out_port'] = 0
+                    graph.add_edge(reshape, dst, **new_out_attr)
+                unaware_out_tensor = copy.deepcopy(unaware_out_edges[0][2]['tensor'])
+                if unaware_out_tensor is not None:
+                    new_shape = reshape_in_attr['tensor'].shape
+                    if unaware_out_tensor.value is not None:
+                        unaware_out_tensor.value = np.reshape(unaware_out_tensor.value, new_shape)
+                    else:
+                        unware_out_shape = unaware_out_tensor.get_shape()
+                        if unware_out_shape is not None and None not in unware_out_shape:
+                            unaware_out_tensor.shape = tuple(new_shape)
+                new_in_attr = copy.deepcopy(reshape_in_attr)
+                new_in_attr['dst_in_port'] = reshape_out_attr['dst_in_port']
+                graph.add_edge(src, unaware, **new_in_attr)
+                graph.add_edge(unaware, reshape, **{
+                               'src_out_port': 0, 'dst_in_port': 0, 'tensor': unaware_out_tensor})
+                if unaware_obj.type == 'ArmActivation' and unaware_obj.method == 'PRELU':
+                    unaware_obj.negative_slope = np.reshape(
+                        unaware_obj.negative_slope, reshape_in_attr['tensor'].shape)
+                if unaware_obj.type == 'ArmQuantize':
+                    reshape_obj.quantize = True
+                if unaware in graph._attr['output_names']:
+                    index = graph._attr['output_names'].index(unaware)
+                    graph._attr['output_names'][index] = reshape
+        else:
+            ERROR('[Parser]: Meets invalid Node(%s) or Node(%s) in sink_single_reshape!' % (
+                reshape, unaware))
+
+
 def sink_single_transpose(graph):
     unaware_types = set(ArmOp.get_concrete_subclass_names()).intersection(
         LayoutUnawareOp.get_concrete_subclass_names() + ['ArmQuantize', 'ArmDeQuantize'])
@@ -5976,16 +6044,18 @@ def back_passes(graph, params):
     merge_hw_maxunpool(graph)
     merge_s2b_pool_b2s(graph)
 
+    remove_useless_op(graph, ['ArmReduce', 'ArmTile', 'ArmCast'])
     remove_redundant_bn(graph)
     remove_redundant_slice(graph)
     remove_special_transpose(graph)
     sink_transpose_through_special_reshape(graph)
     sink_quantize_through_concat(graph)
+    sink_single_reshape(graph)
     remove_redundant_reshape_transpose(graph)
     remove_redundant_reshape(graph, 'ArmReshape')
     remove_redundant_transpose(graph)
     remove_redundant_transpose2(graph)
-    remove_useless_op(graph, ['ArmReduce', 'ArmReshape', 'ArmTranspose', 'ArmTile', 'ArmCast'])
+    remove_useless_op(graph, ['ArmReshape', 'ArmTranspose'])
 
     fuse_const(graph)
     remove_const(graph)

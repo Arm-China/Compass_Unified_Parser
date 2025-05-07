@@ -7627,32 +7627,57 @@ def merge_q_ln_partial(graph):
 
 def merge_q_gelu(graph):
     matched = False
-    matches = matched_patterns(graph,
-                               nodes=[
-                                   ('dequant', {'op': 'DequantizeLinear'}),
-                                   ('div', {'op': 'Div'}),
-                                   ('divc', {'op': 'Constant'}),
-                                   ('erf', {'op': 'Erf'}),
-                                   ('quant', {'op': 'QuantizeLinear'}),
-                                   ('add', {'op': 'Add'}),
-                                   ('addc', {'op': 'Constant'}),
-                                   ('mul_1', {'op': 'Mul'}),
-                                   ('mulc', {'op': 'Constant'}),
-                                   ('mul_2', {'op': 'Mul'}),
-                               ],
-                               edges=[
-                                   ('dequant', 'div', {'dst_in_port': 0}),
-                                   ('divc', 'div', {'dst_in_port': 1}),
-                                   ('div', 'erf'),
-                                   ('erf', 'quant', {'dst_in_port': 0}),
-                                   ('quant', 'add'),
-                                   ('addc', 'add'),
-                                   ('add', 'mul_1'),
-                                   ('mul_1', 'mul_2'),
-                                   ('mulc', 'mul_2'),
-                               ]
-                               )
-    for m in matches:
+    matches_1 = matched_patterns(graph,
+                                 nodes=[
+                                     ('dequant', {'op': 'DequantizeLinear'}),
+                                     ('div', {'op': 'Div'}),
+                                     ('divc', {'op': 'Constant'}),
+                                     ('erf', {'op': 'Erf'}),
+                                     ('quant', {'op': 'QuantizeLinear'}),
+                                     ('add', {'op': 'Add'}),
+                                     ('addc', {'op': 'Constant'}),
+                                     ('mul_1', {'op': 'Mul'}),
+                                     ('mulc', {'op': 'Constant'}),
+                                     ('mul_2', {'op': 'Mul'}),
+                                 ],
+                                 edges=[
+                                     ('dequant', 'div', {'dst_in_port': 0}),
+                                     ('divc', 'div', {'dst_in_port': 1}),
+                                     ('div', 'erf'),
+                                     ('erf', 'quant', {'dst_in_port': 0}),
+                                     ('quant', 'add'),
+                                     ('addc', 'add'),
+                                     ('add', 'mul_1'),
+                                     ('mul_1', 'mul_2'),
+                                     ('mulc', 'mul_2'),
+                                 ]
+                                 )
+    matches_2 = matched_patterns(graph,
+                                 nodes=[
+                                     ('dequant', {'op': 'DequantizeLinear'}),
+                                     ('div', {'op': 'Div'}),
+                                     ('divc', {'op': 'Constant'}),
+                                     ('erf', {'op': 'Erf'}),
+                                     ('quant', {'op': 'QuantizeLinear'}),
+                                     ('add', {'op': 'Add'}),
+                                     ('addc', {'op': 'Constant'}),
+                                     ('mul_1', {'op': 'Mul'}),
+                                     ('mulc', {'op': 'Constant'}),
+                                     ('mul_2', {'op': 'Mul'}),
+                                 ],
+                                 edges=[
+                                     ('dequant', 'div', {'dst_in_port': 0}),
+                                     ('divc', 'div', {'dst_in_port': 1}),
+                                     ('div', 'erf'),
+                                     ('erf', 'quant', {'dst_in_port': 0}),
+                                     ('quant', 'add'),
+                                     ('addc', 'add'),
+                                     ('add', 'mul_2'),
+                                     ('mul_1', 'mul_2'),
+                                     ('mulc', 'mul_1'),
+                                 ]
+                                 )
+    for m in matches_1 + matches_2:
         key_names = ['dequant', 'div', 'divc', 'erf', 'add', 'addc',
                      'mulc', 'mul_2']
         node_objs = {k: NodeWrap(graph, m[k])['object'] for k in key_names}
@@ -7695,11 +7720,11 @@ def merge_q_gelu(graph):
         addc_value = (node_objs['addc'].value - addc_zp) * addc_scale
         if not FLOAT_EQUAL(addc_value, 1.0):
             continue
-        mulc_out_attrs = [in_attr for src, _, in_attr in mul2_in_edges if src == m['mulc']]
-        if len(mulc_out_attrs) != 1 or mulc_out_attrs[0]['tensor'].scale_zp is None \
-                or len(mulc_out_attrs[0]['tensor'].scale_zp) != 2:
+        mulc_out_attr = graph.sorted_out_edges(m['mulc'], data=True)[0][-1]
+        if mulc_out_attr['tensor'].scale_zp is None \
+                or len(mulc_out_attr['tensor'].scale_zp) != 2:
             continue
-        mulc_scale, mulc_zp = mulc_out_attrs[0]['tensor'].scale_zp
+        mulc_scale, mulc_zp = mulc_out_attr['tensor'].scale_zp
         mulc_value = (node_objs['mulc'].value - mulc_zp) * mulc_scale
         if not FLOAT_EQUAL(mulc_value, 0.5):
             continue

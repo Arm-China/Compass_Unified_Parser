@@ -13,7 +13,7 @@ from ..common.utils import list_list_to_string, get_random_array, get_target_gra
 from ..logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
-class ArmAbsOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
+class ArmAbsOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
         return {0: ['float32', 'float16', 'int8', 'uint8']}
@@ -49,7 +49,7 @@ class ArmAccidentalHitsOp(OpHasMultipleOutPorts, ArmOp):
         self.set_out_tensor([output_indices, output_ids, output_effective_len])
 
 
-class ArmAcosOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
+class ArmAcosOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
         return {0: ['float32', 'float16', 'int8', 'uint8']}
@@ -61,7 +61,7 @@ class ArmAcosOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
         self.set_out_tensor(out_tensor)
 
 
-class ArmAcoshOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
+class ArmAcoshOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
         return {0: ['float32', 'float16', 'int8', 'uint8']}
@@ -73,7 +73,7 @@ class ArmAcoshOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
         self.set_out_tensor(out_tensor)
 
 
-class ArmActivationOp(LayoutUnawareOp, OpHasMethod, OpHasOneOutPort, ArmOp):
+class ArmActivationOp(SameShapeOp, LayoutUnawareOp, OpHasMethod, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
         return {0: ['float32', 'float16', 'int8', 'uint8', 'int16', 'uint16', 'int32']}
@@ -448,7 +448,7 @@ class ArmArgMinMaxOp(OpHasMethod, OpHasAxis, OpHasOneOutPort, ArmOp):
         return ret
 
 
-class ArmAsinOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
+class ArmAsinOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
         return {0: ['float32', 'float16', 'int8', 'uint8']}
@@ -460,7 +460,7 @@ class ArmAsinOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
         self.set_out_tensor(out_tensor)
 
 
-class ArmAsinhOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
+class ArmAsinhOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
         return {0: ['float32', 'float16', 'int8', 'uint8']}
@@ -472,7 +472,7 @@ class ArmAsinhOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
         self.set_out_tensor(out_tensor)
 
 
-class ArmAtanOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
+class ArmAtanOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
         return {0: ['float32', 'float16', 'int8', 'uint8']}
@@ -484,7 +484,7 @@ class ArmAtanOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
         self.set_out_tensor(out_tensor)
 
 
-class ArmAtanhOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
+class ArmAtanhOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
         return {0: ['float32', 'float16', 'int8', 'uint8']}
@@ -756,7 +756,7 @@ class ArmBitwiseOp(OpHasOneOutPort, OpHasMethod, ArmOp):
         self.set_out_tensor(out_tensor)
 
 
-class ArmBNLLOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
+class ArmBNLLOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
         return {0: ['float32', 'float16']}
@@ -797,7 +797,7 @@ class ArmBoundingBoxOp(OpHasOneOutPort, ArmOp):
         return ret
 
 
-class ArmCastOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
+class ArmCastOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
     @classmethod
     def attributes(cls):
         return {'to_dtype': {'type': AttrType.STRING,
@@ -828,7 +828,7 @@ class ArmCastOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
         return ret
 
 
-class ArmCeilOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
+class ArmCeilOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
         return {0: ['float32', 'float16']}
@@ -965,7 +965,7 @@ class ArmConcatOp(OpHasAxis, OpHasOneOutPort, ArmOp):
         self.set_out_tensor(out_tensor)
 
 
-class ArmCoshOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
+class ArmCoshOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
         return {0: ['float32', 'float16', 'int8', 'uint8']}
@@ -1203,7 +1203,7 @@ class ArmConvTranspose3DOp(BaseActivationOp, BaseConvOp, ArmOp):
         self.set_out_tensor(out_tensor)
 
 
-class ArmCosineOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
+class ArmCosineOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
         return {0: ['float32', 'float16', 'int8', 'uint8']}
@@ -1992,7 +1992,7 @@ class ArmEmbeddingLookupSparseOp(OpHasOneOutPort, ArmOp):
         return ret
 
 
-class ArmErfOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
+class ArmErfOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
         return {0: ['float32', 'float16', 'int8', 'uint8']}
@@ -2034,7 +2034,7 @@ class ArmErosionOp(OpHasPaddingStrides, OpHasWeights, OpHasOneOutPort, ArmOp):
         self.set_out_tensor(out_tensor)
 
 
-class ArmExpOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
+class ArmExpOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
         return {0: ['float32', 'float16', 'int8', 'uint8']}
@@ -2176,7 +2176,7 @@ class ArmFilterBoxesOp(OpHasMultipleOutPorts, ArmOp):
         return ret
 
 
-class ArmFloorOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
+class ArmFloorOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
         return {0: ['float32', 'float16']}
@@ -2193,7 +2193,7 @@ class ArmFloorOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
         self.set_out_tensor(out_tensor)
 
 
-class ArmTruncOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
+class ArmTruncOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
         return {0: ['float32', 'float16']}
@@ -2911,7 +2911,7 @@ class ArmInTopKOp(OpHasOneOutPort, ArmOp):
         return ret
 
 
-class ArmIsInfOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
+class ArmIsInfOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
     @classmethod
     def num_in_ports(cls):
         return 0
@@ -2954,7 +2954,7 @@ class ArmIsInfOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
         return ret
 
 
-class ArmIsNaNOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
+class ArmIsNaNOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
     @classmethod
     def num_in_ports(cls):
         return 0
@@ -3014,7 +3014,7 @@ class ArmLayerNormOp(OpHasAxis, OpHasBiases, OpHasWeights, OpHasVariableOutPorts
         return ret
 
 
-class ArmLogOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
+class ArmLogOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
         return {0: ['float32', 'float16', 'int8', 'uint8']}
@@ -3675,7 +3675,7 @@ class ArmNormalizedMomentsOp(OpHasMultipleOutPorts, ArmOp):
         return ret
 
 
-class ArmNegativeOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
+class ArmNegativeOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
         return {0: ['float32', 'float16', 'int8', 'uint8']}
@@ -4331,7 +4331,7 @@ class ArmReduceOp(OpHasMethod, OpHasAxis, OpHasOneOutPort, ArmOp):
         self.set_out_tensor(out_tensor)
 
 
-class ArmReciprocalOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
+class ArmReciprocalOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
         return {0: ['float32', 'float16', 'int8', 'uint8']}
@@ -4709,7 +4709,7 @@ class ArmRoiAlignOp(OpHasMethod, OpHasOneOutPort, ArmOp):
         return ret
 
 
-class ArmRoundOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
+class ArmRoundOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
         return {0: ['float32', 'float16']}
@@ -4721,7 +4721,7 @@ class ArmRoundOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
         self.set_out_tensor(out_tensor)
 
 
-class ArmRsqrtOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
+class ArmRsqrtOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
         return {0: ['float32', 'float16', 'int8', 'uint8']}
@@ -4843,7 +4843,7 @@ class ArmSegmentReduceOp(OpHasMethod, OpHasOneOutPort, ArmOp):
         self.set_out_tensor(out_tensor)
 
 
-class ArmSignOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
+class ArmSignOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
         return {0: ['float32', 'float16', 'int8', 'uint8']}
@@ -4855,7 +4855,7 @@ class ArmSignOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
         self.set_out_tensor(out_tensor)
 
 
-class ArmSineOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
+class ArmSineOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
         return {0: ['float32', 'float16', 'int8', 'uint8']}
@@ -4867,7 +4867,7 @@ class ArmSineOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
         self.set_out_tensor(out_tensor)
 
 
-class ArmSinhOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
+class ArmSinhOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
         return {0: ['float32', 'float16', 'int8', 'uint8']}
@@ -5092,7 +5092,7 @@ class ArmSplitOp(OpHasAxis, OpHasMultipleOutPorts, ArmOp):
         return ret
 
 
-class ArmSqrtOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
+class ArmSqrtOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
         return {0: ['float32', 'float16', 'int8', 'uint8']}
@@ -5104,7 +5104,7 @@ class ArmSqrtOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
         self.set_out_tensor(out_tensors)
 
 
-class ArmSquareOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
+class ArmSquareOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
         return {0: ['float32', 'float16', 'int8', 'uint8']}
@@ -5178,7 +5178,7 @@ class ArmSufficientStatisticsOp(OpHasAxis, OpHasMultipleOutPorts, ArmOp):
         self.set_out_tensor(out_tensor_list)
 
 
-class ArmTanOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
+class ArmTanOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
         return {0: ['float32', 'float16', 'int8', 'uint8']}
