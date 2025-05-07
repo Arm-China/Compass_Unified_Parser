@@ -11987,7 +11987,7 @@ def split_special_gn(graph):
         graph.remove_edges_from(gn_out_edges + gn_in_edges[1:])
         num_groups = gn_obj.num_groups
         scale_value = np.ones([num_groups], gn_input_dtypes[1])
-        bias_value = np.zeros_like(scale_value, gn_input_dtypes[2])
+        bias_value = np.zeros_like(scale_value, 'float32')
         insert_constant(graph, scale + '_const', scale_value, gn, in_port=1)
         insert_constant(graph, bias + '_const', bias_value, gn, in_port=2)
 
