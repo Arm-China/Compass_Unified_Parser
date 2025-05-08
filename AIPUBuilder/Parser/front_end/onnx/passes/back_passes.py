@@ -4899,6 +4899,10 @@ def sink_single_reshape(graph):
                         and unaware_obj.axis is not None:
                     continue
                 reshape_in_edges = graph.sorted_in_edges(reshape, data=True)
+                reshape_in_shape = reshape_obj.get_input_shapes()[0]
+                if reshape_in_shape is None \
+                        or any([s is None for s in reshape_in_shape]):
+                    continue
                 src, _, reshape_in_attr = reshape_in_edges[0]
                 _, _, reshape_out_attr = reshape_out_edges[0]
                 graph.remove_edge(src, reshape)
@@ -4910,13 +4914,12 @@ def sink_single_reshape(graph):
                     graph.add_edge(reshape, dst, **new_out_attr)
                 unaware_out_tensor = copy.deepcopy(unaware_out_edges[0][2]['tensor'])
                 if unaware_out_tensor is not None:
-                    new_shape = reshape_in_attr['tensor'].shape
                     if unaware_out_tensor.value is not None:
-                        unaware_out_tensor.value = np.reshape(unaware_out_tensor.value, new_shape)
+                        unaware_out_tensor.value = np.reshape(unaware_out_tensor.value, reshape_in_shape)
                     else:
                         unware_out_shape = unaware_out_tensor.get_shape()
                         if unware_out_shape is not None and None not in unware_out_shape:
-                            unaware_out_tensor.shape = tuple(new_shape)
+                            unaware_out_tensor.shape = tuple(reshape_in_shape)
                 new_in_attr = copy.deepcopy(reshape_in_attr)
                 new_in_attr['dst_in_port'] = reshape_out_attr['dst_in_port']
                 graph.add_edge(src, unaware, **new_in_attr)
@@ -4924,7 +4927,7 @@ def sink_single_reshape(graph):
                                'src_out_port': 0, 'dst_in_port': 0, 'tensor': unaware_out_tensor})
                 if unaware_obj.type == 'ArmActivation' and unaware_obj.method == 'PRELU':
                     unaware_obj.negative_slope = np.reshape(
-                        unaware_obj.negative_slope, reshape_in_attr['tensor'].shape)
+                        unaware_obj.negative_slope, reshape_in_shape)
                 if unaware_obj.type == 'ArmQuantize':
                     reshape_obj.quantize = True
                 if unaware in graph._attr['output_names']:
