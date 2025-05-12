@@ -56,6 +56,7 @@ def build_subgraph(current_node_name,
                    g_content,
                    root_graph,
                    parent_graph_info,
+                   a_graphs_info,
                    a_nodes_info,
                    opset_ver):
     subgraph_name = f'{current_node_name}_{key}_subgraph'
@@ -152,6 +153,7 @@ def build_subgraph(current_node_name,
         'nodes': nodes,
         'consts': list(const_names.values())
     }})
+    a_graphs_info.update({subgraph_name: sub_graph})
 
     all_consts = {}
     out_tensor_operator_map = {}
@@ -207,8 +209,9 @@ def build_subgraph(current_node_name,
             root_graph._attr['source'],
             root_graph,
             root_node_name,
+            sub_graph_info,
             a_nodes_info=a_nodes_info,
-            parent_graph_info=sub_graph_info)
+            a_graphs_info=a_graphs_info)
         op_name = op_attr['name']
         if not sub_graph.has_node(op_name):
             sub_graph.add_node(op_name)
@@ -255,7 +258,7 @@ def build_subgraph(current_node_name,
                         n_name = get_valid_node_name(sub_graph, in_tensor_name)
                         sub_graph.add_node(n_name)
                         target_graph_name = all_consts[in_tensor_name]
-                        target_g = get_target_graph(target_graph_name, root_graph, parent_graph)
+                        target_g = get_target_graph(target_graph_name, root_graph, a_graphs_info)
                         op_obj = target_g.nodes[in_tensor_name]['object']
 
                         if root_node_name not in op_obj.depend_nodes:
@@ -305,7 +308,7 @@ def build_subgraph(current_node_name,
                 pre_op = a_nodes_info[target_graph_name]['nodes'][pre_op_id]
                 pre_op_name = pre_op['name'] if pre_op['name'] else pre_op['output'][0]['name']
                 if not sub_graph.has_node(pre_op_name):
-                    target_g = get_target_graph(target_graph_name, root_graph, parent_graph)
+                    target_g = get_target_graph(target_graph_name, root_graph, a_graphs_info)
                     if pre_op_name in target_g.nodes:
                         op_obj = target_g.nodes[pre_op_name]['object']
                         op_obj.in_subgraph = True
@@ -555,7 +558,8 @@ def build_subgraph(current_node_name,
     return sub_graph
 
 
-def attr_value_converter(attr_dict, source, root_graph, root_node_name, a_nodes_info, parent_graph_info=None):
+def attr_value_converter(attr_dict, source, root_graph, root_node_name,
+                         parent_graph_info, a_nodes_info, a_graphs_info=None):
     for key in attr_dict:
         if key == 'activations':
             acts = [act.upper() for act in attr_dict[key]]
@@ -591,6 +595,7 @@ def attr_value_converter(attr_dict, source, root_graph, root_node_name, a_nodes_
                                        attr_dict[key],
                                        root_graph,
                                        parent_graph_info,
+                                       a_graphs_info,
                                        a_nodes_info,
                                        attr_dict.get('opset_version', 1))
 
@@ -618,6 +623,7 @@ def convert_onnx_to_graph(graph, model_path, params):
 
     meta_ret = True
     all_nodes_dict = {}
+    all_graph_dict = {}
     consumer_ver = get_version(onnx)
     if consumer_ver >= 1.04:
         model = None
@@ -779,6 +785,8 @@ def convert_onnx_to_graph(graph, model_path, params):
                     'consts': list(const_names.values())
                 }})
 
+                all_graph_dict.update({graph.name: graph})
+
                 in_tensor_names = set()
                 for ni, node in enumerate(nodes):
                     op_attr = {k: v for k, v in node.items()}
@@ -817,8 +825,9 @@ def convert_onnx_to_graph(graph, model_path, params):
                         params['source'],
                         root_graph=graph,
                         root_node_name=op_attr['name'],
+                        parent_graph_info=root_info,
                         a_nodes_info=all_nodes_dict,
-                        parent_graph_info=root_info)
+                        a_graphs_info=all_graph_dict)
                     op_name = op_attr['name']
                     if not graph.has_node(op_name):
                         graph.add_node(op_name)

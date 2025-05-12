@@ -33,14 +33,16 @@ def get_file_name(file_path):
     return os.path.basename(file_path).split('.')[0]
 
 
-def get_target_graph(target_g_name, root_graph, parent_graph=None):
+def get_target_graph(target_g_name, root_graph, all_graph_info=None):
     for _, v in root_graph._attr['subgraphs'].items():
         if target_g_name in v:
             return v[target_g_name]
-    if parent_graph is not None and target_g_name == parent_graph.name:
-        return parent_graph
-    else:
+    if all_graph_info is not None and target_g_name in all_graph_info:
+        return all_graph_info[target_g_name]
+    elif target_g_name == root_graph.name:
         return root_graph
+    else:
+        raise RuntimeError(f'Cannot find target graph: {target_g_name}')
 
 
 def get_all_child_nodes(subgraph_dict, parent_node):
