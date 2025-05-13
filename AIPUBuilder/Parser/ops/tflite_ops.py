@@ -2962,7 +2962,8 @@ class LiteTRANSPOSE_CONVOp(BaseActivationOp, BaseDeconvOp, TfliteOp):
     def attributes(cls):
         return {1: {'output_shape': {'type': AttrType.INTS}},
                 2: {'output_shape': {'type': AttrType.INTS}},
-                3: {'output_shape': {'type': AttrType.INTS}}
+                3: {'output_shape': {'type': AttrType.INTS}},
+                4: {'output_shape': {'type': AttrType.INTS}},  # fused activation
                 }
 
     @classmethod
