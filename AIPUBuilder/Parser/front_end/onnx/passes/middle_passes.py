@@ -11537,7 +11537,6 @@ def remove_redundant_arithmetic(graph):
         op1_in_edges = graph.sorted_in_edges(m['op1'], data=True)
         op1_out_edges = graph.sorted_out_edges(m['op1'], data=True)
         op2_in_edges = graph.sorted_in_edges(m['op2'], data=True)
-        op2_out_edges = graph.sorted_out_edges(m['op2'], data=True)
         if any(obj is None for obj in node_objs.values()) \
                 or len(op1_in_edges) != 2 or len(op2_in_edges) != 2:
             ERROR('[Parser]: Meets invalid Nodes in remove_redundant_arithmetic!')
@@ -11547,41 +11546,46 @@ def remove_redundant_arithmetic(graph):
             continue
         op_type = node_objs['op1'].type
         if op_type == 'Mul':
-            const2_array = (node_objs['const2'].value *
-                            np.ones(shape=op2_out_edges[0][-1]['tensor'].shape, dtype=node_objs['const2'].value.dtype))
+            const1_array = (node_objs['const1'].value *
+                            np.ones(shape=op1_out_edges[0][-1]['tensor'].shape, dtype=node_objs['const1'].value.dtype))
         else:
-            const2_array = (node_objs['const2'].value +
-                            np.zeros(shape=op2_out_edges[0][-1]['tensor'].shape, dtype=node_objs['const2'].value.dtype))
+            const1_array = (node_objs['const1'].value +
+                            np.zeros(shape=op1_out_edges[0][-1]['tensor'].shape, dtype=node_objs['const1'].value.dtype))
 
         if 'reshape' in m:
             has_reshape = True
             rs_out_edges = graph.sorted_out_edges(m['reshape'], data=True)
-            const2_array = np.reshape(const2_array, op1_out_edges[0][-1]['tensor'].shape)
             if len(rs_out_edges) > 1:
                 continue
+            const1_array = np.reshape(const1_array, rs_out_edges[0][-1]['tensor'].shape)
         else:
             has_reshape = False
         matched = True
-        src, src_attr = src_to_op1_edge[0]
+
         if op_type == 'Mul':
-            new_const_value = np.array(const2_array * node_objs['const1'].value)
+            new_const_value = np.array(const1_array * node_objs['const2'].value)
         else:
-            new_const_value = np.array(const2_array + node_objs['const1'].value)
+            new_const_value = np.array(const1_array + node_objs['const2'].value)
 
-        const_to_op2_in_port = 1 - src_attr['dst_in_port']
+        const_to_op2_in_port = 0
+        for src, _, in_attr in op2_in_edges:
+            if src == m['const2']:
+                const_to_op2_in_port = in_attr['dst_in_port']
+                break
 
-        graph.remove_edge(m['const1'], m['op1'])
-        insert_constant(graph, m['op1'] + '_new_const', new_const_value, m['op1'], in_port=const_to_op2_in_port)
-        graph.remove_edges_from(op2_out_edges)
+        graph.remove_edges_from(op1_in_edges)
+        graph.remove_edges_from(op1_out_edges)
+        graph.remove_edge(m['const2'], m['op2'])
+        insert_constant(graph, m['op1'] + '_new_const', new_const_value, m['op2'], in_port=const_to_op2_in_port)
 
-        last_node_name = m['reshape'] if has_reshape else m['op1']
+        first_node_name = m['reshape'] if has_reshape else m['op2']
 
-        for _, dst, out_attr in op2_out_edges:
-            graph.add_edge(last_node_name, dst, **out_attr)
-
-        if m['op2'] in graph._attr['output_names']:
-            index = graph._attr['output_names'].index(m['op2'])
-            graph._attr['output_names'][index] = last_node_name
+        src, src_attr = src_to_op1_edge[0]
+        if has_reshape:
+            src_attr['dst_in_port'] = 0
+        else:
+            src_attr['dst_in_port'] = 1 - const_to_op2_in_port
+        graph.add_edge(src, first_node_name, **src_attr)
 
     if matched:
         clear_redundant_nodes(graph)

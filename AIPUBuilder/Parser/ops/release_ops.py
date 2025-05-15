@@ -1910,7 +1910,7 @@ class ArmDummyOp(LayoutUnawareOp, OpHasVariableOutPorts, ArmOp):
         self.set_out_tensor(out_tensor)
 
 
-class ArmEltwiseOp(LayoutUnawareOp, OpHasMethod, BaseActivationOp, ArmOp):
+class ArmEltwiseOp(SameShapeOp, LayoutUnawareOp, OpHasMethod, BaseActivationOp, ArmOp):
     FUNC_MAP = {'ADD': np.add,
                 'SUB': np.subtract,
                 'MUL': np.multiply,
@@ -3098,6 +3098,7 @@ class ArmLoopOp(OpHasSubGraph, DynamicShapeOp, ArmOp):
             'N': {'type': AttrType.INT, 'required': True},
             'K': {'type': AttrType.INT, 'required': True},
             'body': {'type': AttrType.GRAPH, 'required': True},
+            'default_max_count': {'type': AttrType.INT, 'required': True},
         }
 
     def __init__(self, graph, attr_dict=None):
@@ -3112,9 +3113,16 @@ class ArmLoopOp(OpHasSubGraph, DynamicShapeOp, ArmOp):
         assert len(inputs) >= 2
         in_edges = self._graph.sorted_in_edges(self.name, data=True)
         out_edges = self._graph.sorted_out_edges(self.name)
-        WARN(f'[Parser]: Loop({self.name}) max_count/cond_in is non-const, the infer shape is unreliable.')
-        max_count, ori_cond_in = 2, True
-        count_cond_is_const = False
+        if in_edges[0][2]['tensor'].is_const and \
+                in_edges[0][2]['tensor'].value is not None and \
+                in_edges[1][2]['tensor'].is_const and \
+                in_edges[1][2]['tensor'].value is not None:
+            max_count, ori_cond_in = min(int(inputs[0]), self.default_max_count), bool(inputs[1])
+            count_cond_is_const = True
+        else:
+            WARN(f'[Parser]: Loop({self.name}) max_count/cond_in is non-const, the infer shape is unreliable.')
+            max_count, ori_cond_in = self.default_max_count, True
+            count_cond_is_const = False
 
         cond_in = ori_cond_in
         body_inputs_num = len(self.body._attr['input_tensors'])  # 2+N
@@ -3163,6 +3171,17 @@ class ArmLoopOp(OpHasSubGraph, DynamicShapeOp, ArmOp):
                             if len(dummy_out_edges) == 0:
                                 ERROR(f'[Parser]: Get DummpyInput({n}) Out edges failed in Loop Node({self.name}).')
                             out_tensor = dummy_out_edges[0][-1]['tensor'].value
+                            # Maybe None because no infer during pass
+                            if out_tensor is None:
+                                out_tensor_dtype = dummy_out_edges[0][-1]['tensor'].dtype
+                                out_tensor_shape = dummy_out_edges[0][-1]['tensor'].shape
+                                if out_tensor_dtype in ('int32', 'int64'):
+                                    out_tensor = np.zeros(shape=out_tensor_shape).astype(out_tensor_dtype)
+                                elif out_tensor_dtype in ('float32', 'float64',):
+                                    out_tensor = np.random.ranf(size=out_tensor_shape).astype(out_tensor_dtype)
+                                else:
+                                    out_tensor = np.random.ranf(
+                                        size=out_tensor_shape).astype(out_tensor_dtype)
                             if n in cond_out_root_input_const:
                                 cond_out_root_input_const[n] = dummy_out_edges[0][-1]['tensor'].is_const
                             sub_node_obj.infer_shape(out_tensor, dummy_out_edges[0][-1]['tensor'].is_const)
@@ -3203,7 +3222,7 @@ class ArmLoopOp(OpHasSubGraph, DynamicShapeOp, ArmOp):
         else:
             loop_output_list = inputs[2:]
             loop_output_const_list = [attr['tensor'].is_const for _, _, attr in in_edges[2:]]
-        while len(loop_output_list) < len(out_edges):
+        while len(loop_output_list) < len(self.get_out_ports()):
             loop_output_list.append(np.array([]))
             loop_output_const_list.append(False)
         self.set_out_tensor(loop_output_list, all(loop_output_const_list))
@@ -4305,10 +4324,6 @@ class ArmReduceOp(OpHasMethod, OpHasAxis, OpHasOneOutPort, ArmOp):
     }
 
     @classmethod
-    def cast_in_ports(cls):
-        return {0: ['float32', 'float16', 'int8', 'uint8']}
-
-    @classmethod
     def attributes(cls):
         return {'method': {'options': ['ALL', 'ANY', 'MEAN', 'MIN', 'MAX', 'SUM', 'PROD', 'L1', 'L2', 'VARIANCE', 'UNBIASED_VARIANCE']}}
 
@@ -5217,10 +5232,6 @@ class ArmTileOp(OpHasOneOutPort, ArmOp):
 
 
 class ArmTopKOp(OpHasAxis, OpHasMultipleOutPorts, ArmOp):
-    @classmethod
-    def cast_in_ports(cls):
-        return {0: ['float32', 'float16', 'int8', 'uint8']}
-
     @classmethod
     def attributes(cls):
         return {'k': {'type': AttrType.INT, 'default': 1},
