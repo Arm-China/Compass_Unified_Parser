@@ -4899,12 +4899,14 @@ def sink_single_reshape(graph):
                 if reshape_in_shape is None \
                         or any([s is None for s in reshape_in_shape]):
                     continue
+                need_clear_graph = False
                 if unaware_obj.type == 'ArmEltwise':
                     unaware_in_edges = graph.sorted_in_edges(unaware, data=True)
                     another_src_edge = unaware_in_edges[0] if unaware_in_edges[1][0] == reshape else unaware_in_edges[1]
                     another_src = another_src_edge[0]
                     another_src_obj = NodeWrap(graph, another_src)['object']
                     if another_src_obj is not None and another_src_obj.type in ('ArmReshape', 'Constant'):
+                        need_clear_graph = True
                         if another_src_obj.type == 'ArmReshape':
                             rs2_in_shape = another_src_obj.get_input_shapes()[0]
                             if rs2_in_shape is None \
@@ -4956,6 +4958,8 @@ def sink_single_reshape(graph):
                         unaware_obj.negative_slope, reshape_in_shape)
                 if unaware_obj.type == 'ArmQuantize':
                     reshape_obj.quantize = True
+                if need_clear_graph:
+                    clear_redundant_nodes(graph)
         else:
             ERROR('[Parser]: Meets invalid Node(%s) or Node(%s) in sink_single_reshape!' % (
                 reshape, unaware))
