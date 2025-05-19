@@ -1621,16 +1621,20 @@ def convert_special_subgraph(graph):
                     dummy = insert_dummy(graph, src, scan_out, in_attr)
                     dummy_nodes.append(dummy)
                 if no_connected_inputs:
+                    in_port = 1
                     for i, inp in enumerate(no_connected_inputs):
+                        if graph.is_connected(inp, dummy_nodes[0]):
+                            continue
                         out_edge = graph.sorted_out_edges(inp, data=True)[0]
                         _, dst, out_attr = out_edge
                         graph.remove_edge(inp, dst)
                         in_attr = copy.deepcopy(out_attr)
-                        in_attr['dst_in_port'] = i + 1
+                        in_attr['dst_in_port'] = in_port
                         graph.add_edge(inp, dummy_nodes[0], **in_attr)
                         dummy_out_attr = copy.deepcopy(out_attr)
-                        dummy_out_attr['src_out_port'] = i + 1
+                        dummy_out_attr['src_out_port'] = in_port
                         graph.add_edge(dummy_nodes[0], dst, **dummy_out_attr)
+                        in_port += 1
             else:
                 out_edge = graph.sorted_out_edges(output_names[0], data=True)[0]
                 src, dst, out_attr = out_edge

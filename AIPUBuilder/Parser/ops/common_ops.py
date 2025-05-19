@@ -329,8 +329,10 @@ class DummyOp(OpHasVariableOutPorts, CommonOp):
 class DummyInputOp(OpHasOneOutPort, InputLikeOp, CommonOp):
     @classmethod
     def attributes(cls):
-        return {'target_graph': {'type': AttrType.STRING, 'default': '', 'required': False},
-                }
+        return {
+            'target_graph': {'type': AttrType.STRING, 'default': '', 'required': False},
+            'external_in_port': {'type': AttrType.INT, 'default': -1, 'required': False}
+        }
 
     def __init__(self, graph, attr_dict=None):
         super(DummyInputOp, self).__init__(graph, attr_dict)

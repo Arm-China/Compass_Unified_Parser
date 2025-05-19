@@ -39,10 +39,8 @@ def get_target_graph(target_g_name, root_graph, all_graph_info=None):
             return v[target_g_name]
     if all_graph_info is not None and target_g_name in all_graph_info:
         return all_graph_info[target_g_name]
-    elif target_g_name == root_graph.name:
-        return root_graph
     else:
-        raise RuntimeError(f'Cannot find target graph: {target_g_name}')
+        return root_graph
 
 
 def get_all_child_nodes(subgraph_dict, parent_node):

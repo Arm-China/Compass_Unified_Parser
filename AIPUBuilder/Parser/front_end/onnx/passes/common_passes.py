@@ -240,11 +240,12 @@ def remove_useless_op(graph, op_type_list):
                 in_edges = graph.sorted_in_edges(node_name)
                 if len(in_edges) <= 1:
                     removing_nodes.append(node_name)
-            elif op_type in ('Identity', 'DummyInput'):
-                if op_type == 'DummyInput' and isinstance(graph, SubGraph):
-                    out_edges = graph.sorted_out_edges(node_name, data=True)
-                    graph.remove_edges_from(out_edges)
-                removing_nodes.append(node_name)
+            elif op_type == 'Identity':
+                if node_obj.in_subgraph:
+                    node_attr = node_obj.copied_attr()
+                    NodeWrap(graph, node_name).replace_obj('Dummy', node_attr)
+                else:
+                    removing_nodes.append(node_name)
             elif op_type == 'Dropout':
                 in_edges = graph.sorted_in_edges(node_name, data=True)
                 if len(in_edges) != 3:

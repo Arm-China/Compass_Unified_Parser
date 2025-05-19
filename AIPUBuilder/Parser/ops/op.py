@@ -117,6 +117,48 @@ class Op(abc.ABC):
             ERROR(
                 '[Parser]: Meets error when writing data to bin for Node(%s)!' % name)
 
+    @staticmethod
+    def cal_reshape_changed_axis_map(rs_in_shape, rs_out_shape):
+        reshape_axes_map = []
+        # [[(rs_in_axes), (rs_out_axes)], ...]
+        rs_in_axes = []
+        rs_out_axes = []
+        i = j = 0
+
+        prod_in = 1
+        prod_out = 1
+        skip_prod_in = False
+        skip_prod_out = False
+        while i < len(rs_in_shape) and j < len(rs_out_shape):
+            if not skip_prod_in:
+                prod_in *= rs_in_shape[i]
+            if not skip_prod_out:
+                prod_out *= rs_out_shape[j]
+            if prod_in < prod_out:
+                rs_in_axes.append(i)
+                i += 1
+                skip_prod_in = False
+                skip_prod_out = True
+            elif prod_in == prod_out:
+                if rs_in_axes or rs_out_axes:
+                    rs_in_axes.append(i)
+                    rs_out_axes.append(j)
+                    reshape_axes_map.append([tuple(rs_in_axes), tuple(rs_out_axes)])
+                    rs_in_axes = []
+                    rs_out_axes = []
+                i += 1
+                j += 1
+                prod_in = 1
+                prod_out = 1
+                skip_prod_in = False
+                skip_prod_out = False
+            else:
+                rs_out_axes.append(j)
+                j += 1
+                skip_prod_in = True
+                skip_prod_out = False
+        return reshape_axes_map
+
     @classmethod
     def perm_nchw_to_nhwc(cls):
         '''Calculate the perm required to convert nchw to nhwc.'''
@@ -338,7 +380,7 @@ class Op(abc.ABC):
         return True
 
     def clear_unused_tensor(self, is_input_const=False):
-        if 'tensor_counter' in self._graph._attr and not is_input_const:
+        if 'tensor_counter' in self._graph._attr and not is_input_const and not self.in_subgraph:
             for src, _, in_d in self._graph.sorted_in_edges(self.name, data=True):
                 cur_tensor_hash = hash(in_d['tensor'])
                 if self._graph._attr['tensor_counter'][cur_tensor_hash] > 0:

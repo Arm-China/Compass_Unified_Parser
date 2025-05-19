@@ -2662,9 +2662,13 @@ def rename_logical(graph):
                 if in_tensors[0].get_dtype() is None \
                         or in_tensors[1].get_dtype() is None \
                         or in_tensors[0].get_dtype() != in_tensors[1].get_dtype():
-                    meta_ret = False
-                    ERROR(
-                        '[Parser]: Invalid inputs of Node(%s) for broadcasting in rename_logical!' % logical)
+                    if (in_tensors[0].get_dtype() in ('int32', 'int64') or
+                            in_tensors[1].get_dtype() in ('int32', 'int64')):
+                        pass
+                    else:
+                        meta_ret = False
+                        ERROR(
+                            '[Parser]: Invalid inputs of Node(%s) for broadcasting in rename_logical!' % logical)
             if meta_ret:
                 method = logical_map[logical_obj.type]
                 logical_attr = logical_obj.copied_attr()
@@ -2974,6 +2978,8 @@ def rename_reduce(graph):
                 reshape = insert_reshape_after(
                     graph, reduce, out_shape, type='Reshape',
                     quantize=reduce_obj.quantize)
+                reshape_obj = NodeWrap(graph, reshape)['object']
+                reshape_obj.in_subgraph = reduce_obj.in_subgraph
                 if reduce in graph._attr['output_names']:
                     index = graph._attr['output_names'].index(reduce)
                     graph._attr['output_names'][index] = reshape
@@ -5914,11 +5920,12 @@ def make_graph_connected(graph):
     if nx.is_weakly_connected(graph):
         return
     input_names = []
-    input_names_list = single_node_matcher(graph, 'ArmInput')
+    input_names_list = single_node_matcher(graph, 'ArmInput') + single_node_matcher(graph, 'DummyInput')
     for input_name in input_names_list:
         input_names.append(input_name['target'])
     output_names = list(graph._attr.get('output_names', []))
     no_connected_inputs = []
+    no_connected_outputs = []
     if output_names:
         for input_name in input_names:
             for out_name in output_names:
@@ -5927,27 +5934,30 @@ def make_graph_connected(graph):
                 else:
                     if input_name not in no_connected_inputs:
                         no_connected_inputs.append(input_name)
-    out_edge = graph.sorted_out_edges(output_names[0], data=True)[0]
-    src, dst, out_attr = out_edge
-    dummy = insert_dummy(graph, src, dst, out_attr, 'ArmDummy')
-    in_port = 0
-    if no_connected_inputs:
-        for inp in no_connected_inputs:
-            if inp == src:
-                continue
-            inp_out_edge = graph.sorted_out_edges(inp, data=True)[0]
-            _, dst, inp_out_attr = inp_out_edge
-            graph.remove_edge(inp, dst)
-            in_attr = copy.deepcopy(inp_out_attr)
-            in_attr['dst_in_port'] = in_port + 1
-            graph.add_edge(inp, dummy, **in_attr)
-            dummy_out_attr = copy.deepcopy(inp_out_attr)
-            dummy_out_attr['src_out_port'] = in_port + 1
-            graph.add_edge(dummy, dst, **dummy_out_attr)
-            in_port += 1
-            if inp in graph._attr['output_names']:
-                index = graph._attr['output_names'].index(inp)
-                graph._attr['output_names'][index] = dummy
+                    if out_name not in no_connected_outputs:
+                        no_connected_outputs.append(out_name)
+    if no_connected_outputs:
+        out_edge = graph.sorted_out_edges(no_connected_outputs[0], data=True)[0]
+        src, dst, out_attr = out_edge
+        dummy = insert_dummy(graph, src, dst, out_attr, 'ArmDummy')
+        in_port = 0
+        if no_connected_inputs:
+            for inp in no_connected_inputs:
+                if inp == src:
+                    continue
+                inp_out_edge = graph.sorted_out_edges(inp, data=True)[0]
+                _, dst, inp_out_attr = inp_out_edge
+                graph.remove_edge(inp, dst)
+                in_attr = copy.deepcopy(inp_out_attr)
+                in_attr['dst_in_port'] = in_port + 1
+                graph.add_edge(inp, dummy, **in_attr)
+                dummy_out_attr = copy.deepcopy(inp_out_attr)
+                dummy_out_attr['src_out_port'] = in_port + 1
+                graph.add_edge(dummy, dst, **dummy_out_attr)
+                in_port += 1
+                if inp in graph._attr['output_names']:
+                    index = graph._attr['output_names'].index(inp)
+                    graph._attr['output_names'][index] = dummy
 
 
 def remove_invalid_subgraphs(graph):

@@ -2735,7 +2735,7 @@ class ArmIfOp(OpHasSubGraph, DynamicShapeOp, ArmOp):
         self.update_attributes(ArmIfOp, attr_dict)
         assert self.check_required(), 'ArmIfOp is missing a required parameter.'
 
-    def forward(self, if_cond):
+    def forward(self, inputs, if_cond):
         # True: then branch, False: else branch
         from ..graph.graph_algo import determined_sort
         cur_sub_graph = self.then_branch if if_cond else self.else_branch
@@ -2749,10 +2749,18 @@ class ArmIfOp(OpHasSubGraph, DynamicShapeOp, ArmOp):
             if sub_node_obj.type == 'DummyInput':
                 assert sub_node_obj.target_graph != '', 'Target graph not set for DummyInput.'
                 target_g = get_target_graph(sub_node_obj.target_graph, cur_sub_graph._root)
-                parent_node = target_g.nodes[n]
-                dummy_out_edges = target_g.sorted_out_edges(parent_node['object'].name, data=True)
-                out_tensor = dummy_out_edges[0][-1]['tensor'].value
-                sub_node_obj.infer_shape(out_tensor, dummy_out_edges[0][-1]['tensor'].is_const)
+                if target_g.has_node(n):
+                    parent_node = target_g.nodes[n]
+                    dummy_out_edges = target_g.sorted_out_edges(parent_node['object'].name, data=True)
+                    out_tensor = dummy_out_edges[0][-1]['tensor'].value
+                    if out_tensor is None:
+                        assert sub_node_obj.external_in_port >= 0, f'external_in_port of {n} is not set correctly.'
+                        out_tensor = inputs[sub_node_obj.external_in_port]
+                    sub_node_obj.infer_shape(out_tensor, dummy_out_edges[0][-1]['tensor'].is_const)
+                else:
+                    assert sub_node_obj.external_in_port >= 0, f'external_in_port of {n} is not set correctly.'
+                    out_tensor = inputs[sub_node_obj.external_in_port]
+                    sub_node_obj.infer_shape(out_tensor, False)
             else:
                 sub_node_obj.infer_shape()
 
@@ -2772,9 +2780,10 @@ class ArmIfOp(OpHasSubGraph, DynamicShapeOp, ArmOp):
 
     def infer_shape(self):
         super(ArmIfOp, self).infer_shape()
+        inputs = self.get_input_tensors()
         WARN(f'[Parser]: If({self.name}) condition is non-const, the infer shape is unreliable.')
-        true_out_list, true_out_const_list = self.forward(True)
-        false_out_list, false_out_const_list = self.forward(False)
+        true_out_list, true_out_const_list = self.forward(inputs, True)
+        false_out_list, false_out_const_list = self.forward(inputs, False)
         output_list = []
         for true_v, false_v in zip(true_out_list, false_out_list):
             if true_v.dtype != false_v.dtype:
@@ -3120,7 +3129,7 @@ class ArmLoopOp(OpHasSubGraph, DynamicShapeOp, ArmOp):
             max_count, ori_cond_in = min(int(inputs[0]), self.default_max_count), bool(inputs[1])
             count_cond_is_const = True
         else:
-            WARN(f'[Parser]: Loop({self.name}) max_count/cond_in is non-const, the infer shape is unreliable.')
+            DEBUG(f'[Parser]: Loop({self.name}) max_count/cond_in is non-const, the infer shape is unreliable.')
             max_count, ori_cond_in = self.default_max_count, True
             count_cond_is_const = False
 
@@ -3142,6 +3151,7 @@ class ArmLoopOp(OpHasSubGraph, DynamicShapeOp, ArmOp):
             cond_out_root_input_const[inp] = False
         for i in range(max_count):
             if cond_in:
+                INFO(f'[Parser]: Loop Subgraph({self.body.name}) iter: {i} of Node: {self.name}')
                 output_list = []
                 output_const_list = []
                 for n in sub_nodes:
@@ -3171,17 +3181,9 @@ class ArmLoopOp(OpHasSubGraph, DynamicShapeOp, ArmOp):
                             if len(dummy_out_edges) == 0:
                                 ERROR(f'[Parser]: Get DummpyInput({n}) Out edges failed in Loop Node({self.name}).')
                             out_tensor = dummy_out_edges[0][-1]['tensor'].value
-                            # Maybe None because no infer during pass
                             if out_tensor is None:
-                                out_tensor_dtype = dummy_out_edges[0][-1]['tensor'].dtype
-                                out_tensor_shape = dummy_out_edges[0][-1]['tensor'].shape
-                                if out_tensor_dtype in ('int32', 'int64'):
-                                    out_tensor = np.zeros(shape=out_tensor_shape).astype(out_tensor_dtype)
-                                elif out_tensor_dtype in ('float32', 'float64',):
-                                    out_tensor = np.random.ranf(size=out_tensor_shape).astype(out_tensor_dtype)
-                                else:
-                                    out_tensor = np.random.ranf(
-                                        size=out_tensor_shape).astype(out_tensor_dtype)
+                                assert sub_node_obj.external_in_port >= 0, f'external_in_port of {n} is not set correctly.'
+                                out_tensor = inputs[sub_node_obj.external_in_port]
                             if n in cond_out_root_input_const:
                                 cond_out_root_input_const[n] = dummy_out_edges[0][-1]['tensor'].is_const
                             sub_node_obj.infer_shape(out_tensor, dummy_out_edges[0][-1]['tensor'].is_const)
@@ -3215,7 +3217,7 @@ class ArmLoopOp(OpHasSubGraph, DynamicShapeOp, ArmOp):
         # Loop outputs: N + K
         if ori_cond_in:
             loop_output_list = last_output_list[1: 1 + N]
-            loop_output_list.extend([np.vstack(x) for x in k_carried_away])
+            loop_output_list.extend([np.stack(x) for x in k_carried_away])
             loop_output_const_list = last_output_const_list[1: 1 + N]
             for i in range(K):
                 loop_output_const_list.append(last_output_const_list[1 + N + i])

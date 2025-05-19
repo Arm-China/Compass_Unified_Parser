@@ -2573,7 +2573,6 @@ def decompose_const_if_loop(graph, params):
                 condition = loop_in_edges[1][2]['tensor'].value
                 if not condition:
                     matched = True
-                    break
                 else:
                     if not loop_in_edges[0][2]['tensor'].is_const or \
                             loop_in_edges[0][2]['tensor'].value is None:
@@ -2581,6 +2580,17 @@ def decompose_const_if_loop(graph, params):
                     if loop_obj.real_loop_cnt is None:
                         continue
                     matched = True
+            if matched:
+                # check loop body
+                has_if = single_node_matcher(loop_obj.body, 'If') != []
+                check_if = check_decompose_const_if(loop_obj.body)
+                has_loop = single_node_matcher(loop_obj.body, 'Loop') != []
+                check_loop = check_decompose_const_loop(loop_obj.body)
+                if has_if:
+                    matched = check_if
+                if has_loop:
+                    matched = matched and check_loop
+                if matched:
                     break
         return matched
 

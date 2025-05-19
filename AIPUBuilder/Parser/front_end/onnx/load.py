@@ -193,7 +193,8 @@ def build_subgraph(current_node_name,
                 graph_is_quantized = True
         op_attr.update({'data_format': root_graph._attr['data_format'],
                         'opset_version': opset_version,
-                        'quantize': quantize
+                        'quantize': quantize,
+                        'in_subgraph': True
                         })
         if not op_attr['name']:
             if node['output'][0]['name']:
@@ -404,12 +405,16 @@ def build_subgraph(current_node_name,
                                     root_graph._attr['subgraph_depends'] = {
                                         current_node_name: {sub_graph.name: [n_name]}}
                                 sub_node_obj = NodeWrap(op_obj.then_branch, inp)['object']
+                                if sub_node_obj is None:
+                                    ERROR(f'[Parser]: Node: {inp} not in graph: {op_obj.then_branch.name}')
                                 dummy_attr = sub_node_obj.copied_attr()
                                 dummy_node = NodeWrap(sub_graph, n_name)
                                 dummy_attr['name'] = n_name
                                 dummy_node.replace_obj('DummyInput', dummy_attr)
                             else:
                                 n_name = inp
+                                sub_node_obj = NodeWrap(op_obj.then_branch, inp)['object']
+                            sub_node_obj.external_in_port = in_port
                             out_attr = op_obj.then_branch.sorted_out_edges(inp, data=True)[0][-1]
                             new_in_attr = copy.deepcopy(out_attr)
                             new_in_attr['src_out_port'] = 0
@@ -443,6 +448,8 @@ def build_subgraph(current_node_name,
                                 dummy_node.replace_obj('DummyInput', dummy_attr)
                             else:
                                 n_name = inp
+                                sub_node_obj = NodeWrap(op_obj.else_branch, inp)['object']
+                            sub_node_obj.external_in_port = in_port
                             out_attr = op_obj.else_branch.sorted_out_edges(inp, data=True)[0][-1]
                             new_in_attr = copy.deepcopy(out_attr)
                             new_in_attr['src_out_port'] = 0
@@ -474,6 +481,9 @@ def build_subgraph(current_node_name,
                                 dummy_node.replace_obj('DummyInput', dummy_attr)
                             else:
                                 n_name = inp
+                                sub_node_obj = NodeWrap(op_obj.body, inp)['object']
+
+                            sub_node_obj.external_in_port = in_port
                             out_attr = op_obj.body.sorted_out_edges(inp, data=True)[0][-1]
                             new_in_attr = copy.deepcopy(out_attr)
                             new_in_attr['src_out_port'] = 0
@@ -835,6 +845,8 @@ def convert_onnx_to_graph(graph, model_path, params):
                         op_attr['default_max_count'] = params.get('loop_max_count', 100)
                     elif node_type == 'TopK':
                         op_attr['select_index'] = 'first'
+                    if node_type in ('If', 'Loop'):
+                        op_attr['in_subgraph'] = True
                     NodeWrap(graph, op_name).replace_obj(node_type, op_attr)
                     if op_name in graph._attr['node_in_subgraphs']:
                         op_obj = graph.nodes[op_name]['object']
@@ -960,6 +972,8 @@ def convert_onnx_to_graph(graph, model_path, params):
                                         if not graph.has_node(inp):
                                             ERROR(f'[Parser]: node: {inp} not exist in graph but be dependent!')
                                         in_tensor_names.add(inp)
+                                        sub_node_obj = NodeWrap(op_obj.then_branch, inp)['object']
+                                        sub_node_obj.external_in_port = in_port
                                         out_attr = op_obj.then_branch.sorted_out_edges(inp, data=True)[0][-1]
                                         new_in_attr = copy.deepcopy(out_attr)
                                         new_in_attr['src_out_port'] = 0
@@ -975,6 +989,8 @@ def convert_onnx_to_graph(graph, model_path, params):
                                         if not graph.has_node(inp):
                                             ERROR(f'[Parser]: node: {inp} not exist in graph but be dependent!')
                                         in_tensor_names.add(inp)
+                                        sub_node_obj = NodeWrap(op_obj.else_branch, inp)['object']
+                                        sub_node_obj.external_in_port = in_port
                                         out_attr = op_obj.else_branch.sorted_out_edges(inp, data=True)[0][-1]
                                         new_in_attr = copy.deepcopy(out_attr)
                                         new_in_attr['src_out_port'] = 0
@@ -989,6 +1005,8 @@ def convert_onnx_to_graph(graph, model_path, params):
                                         if not graph.has_node(inp):
                                             ERROR(f'[Parser]: node: {inp} not exist in graph but be dependent!')
                                         in_tensor_names.add(inp)
+                                        sub_node_obj = NodeWrap(op_obj.body, inp)['object']
+                                        sub_node_obj.external_in_port = in_port
                                         out_attr = op_obj.body.sorted_out_edges(inp, data=True)[0][-1]
                                         new_in_attr = copy.deepcopy(out_attr)
                                         new_in_attr['src_out_port'] = 0

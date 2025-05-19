@@ -86,7 +86,8 @@ class AddOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
         inputs = self.get_input_tensors()
         input_dtypes = self.get_input_dtypes()
         assert len(inputs) == 2 and len(input_dtypes) == 2, 'The number of inputs is invalid in AddOp.'
-        assert input_dtypes[0] == input_dtypes[1], 'The dtype of inputs should be the same in AddOp.'
+        assert input_dtypes[0] == input_dtypes[1], \
+            f'The dtype of inputs should be the same in AddOp, but {input_dtypes[0]} and {input_dtypes[1]}.'
         cur_ver = self.cur_version
         if cur_ver <= 6:
             if self.broadcast:
