@@ -2021,13 +2021,6 @@ def rename_activations(graph):
                 else:
                     axis = 0
                 slope = np.squeeze(slope, axis=axis)
-            if len(slope.shape) == 5:
-                in_shape = slope.shape
-                pre_dim = [in_shape[0],
-                           int(np.prod(in_shape[1:3])),
-                           in_shape[3],
-                           in_shape[-1]]
-                slope = np.reshape(slope, pre_dim)
             act_attr.update({'negative_slope': slope})
             if act_obj.quantize and np.issubdtype(slope.dtype, np.integer):
                 scale_zp = in_edges[1][2]['tensor'].scale_zp
