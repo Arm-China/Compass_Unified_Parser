@@ -5518,6 +5518,8 @@ def sink_transpose_through_special_reshape(graph):
             continue
 
         trans_in_shape = trans_obj.get_input_shapes()[0]
+        if trans_in_shape is None or any([s is None for s in trans_in_shape]):
+            continue
         trans_in_edges = graph.sorted_in_edges(trans, data=True)
         for reshape, reshape_obj in out_reshape_objs.items():
             reshape_out_edges = graph.sorted_out_edges(reshape, data=True)
@@ -5525,52 +5527,82 @@ def sink_transpose_through_special_reshape(graph):
                 continue
             reshape_in_shape = reshape_obj.get_input_shapes()[0]
             reshape_out_shape = reshape_obj.get_output_shapes()[0]
-            if reshape_in_shape is None or reshape_out_shape is None \
-                    or (1 not in reshape_in_shape and 1 not in reshape_out_shape):
+            if reshape_in_shape is None or any([s is None for s in reshape_in_shape]):
                 continue
-            shape_len_diff = len(reshape_in_shape) - len(reshape_out_shape)
-            if abs(shape_len_diff) != 1:
+            if reshape_out_shape is None or any([s is None for s in reshape_out_shape]):
                 continue
-            none_one_in_shape = [d for d in reshape_in_shape if d != 1]
-            none_one_out_shape = [d for d in reshape_out_shape if d != 1]
-            if none_one_in_shape != none_one_out_shape:
-                continue
-            if len(none_one_in_shape) != len(set(none_one_in_shape)) or len(none_one_out_shape) != len(set(none_one_out_shape)):
-                continue
-
-            diff_axis = 0
-            for in_dim, out_dim in zip(reshape_in_shape, reshape_out_shape):
-                if in_dim != out_dim:
+            rs_changed_axes_map = Op.cal_reshape_changed_axis_map(reshape_in_shape, reshape_out_shape)
+            sink_ok = True
+            for axes_map in rs_changed_axes_map:
+                rs_in_axes = axes_map[0]
+                trans_in_axes = [trans_obj.perm[axis] for axis in rs_in_axes]
+                if trans_in_axes != list(range(trans_in_axes[0], trans_in_axes[-1] + 1)):
+                    sink_ok = False
                     break
-                diff_axis += 1
-            if shape_len_diff < 0:
-                if diff_axis in trans_obj.perm:
-                    change_pos = trans_obj.perm.index(diff_axis)
-                else:
-                    change_pos = len(trans_obj.perm)
-                new_dim = trans_in_shape[:]
-                new_dim.insert(change_pos, 1)
-            else:
-                new_dim = trans_in_shape[:]
-                for idx in range(diff_axis, len(trans_in_shape)):
-                    change_pos = trans_obj.perm[idx]
-                    if new_dim[change_pos] == 1:
-                        new_dim.pop(change_pos)
-                        break
+            if not sink_ok:
+                continue
 
-            if int(np.prod(new_dim)) != int(np.prod(reshape_in_shape)) or len(new_dim) == len(trans_in_shape):
+            new_rs_shape = []
+            perm_map = []
+            # gen_new_reshape & perm
+            for i in range(len(trans_in_shape)):
+                changed = False
+                for mm in rs_changed_axes_map:
+                    rs_in_axes, rs_out_axes = mm
+                    inp_rs_in_axes = [trans_obj.perm[axis] for axis in rs_in_axes]
+                    inp_rs_out_shape = [reshape_out_shape[axis] for axis in rs_out_axes]
+                    if i in inp_rs_in_axes:
+                        changed = True
+                        if i == inp_rs_in_axes[0]:
+                            new_rs_axes = list(range(len(new_rs_shape), len(new_rs_shape) + len(inp_rs_out_shape)))
+                            perm_map.append([tuple(inp_rs_in_axes), tuple(new_rs_axes)])
+                            new_rs_shape.extend(inp_rs_out_shape)
+                    else:
+                        continue
+                if not changed:
+                    new_rs_shape.append(trans_in_shape[i])
+
+            new_perm = []
+            axis_diff = 0
+            perm_map_min_axis = min(min(mm[0]) for mm in perm_map)
+            # gen new perm
+            for i, axis in enumerate(trans_obj.perm):
+                changed = False
+                for p_map in perm_map:
+                    rs_in_axes, rs_out_axes = p_map
+                    if axis in rs_in_axes:
+                        changed = True
+                        if axis == rs_in_axes[0]:
+                            for _axis in rs_out_axes:
+                                new_perm.append((_axis, False))
+                            axis_diff += (len(rs_out_axes) - len(rs_in_axes))
+                if not changed:
+                    if axis < perm_map_min_axis:
+                        new_perm.append((axis, False))
+                    else:
+                        new_perm.append((axis, True))
+
+            # adjust new_perm
+            new_perm_adj = []
+            for i, (axis, need_adj) in enumerate(new_perm):
+                if need_adj:
+                    new_perm_adj.append(axis + axis_diff)
+                else:
+                    new_perm_adj.append(axis)
+
+            if int(np.prod(new_rs_shape)) != int(np.prod(reshape_in_shape)) or len(new_rs_shape) == len(trans_in_shape):
                 WARN(
-                    '[Parser]: Meets invalid Reshape(%s) dim in sink_transpose_through_special_reshape!' % reshape)
+                    f'[Parser]: Meets invalid Reshape({reshape}) dim {new_rs_shape} in sink_transpose_through_special_reshape!')
+                continue
+
+            if sorted(new_perm_adj) != list(range(len(new_rs_shape))):
+                WARN(
+                    f'[Parser]: Meets invalid Transpose({trans}) in sink_transpose_through_special_reshape!')
+                WARN(
+                    f'Transpose in shape: {trans_in_shape}, perm: {trans_obj.perm}, reshape out shape: {reshape_out_shape}')
                 continue
 
             matched = True
-
-            new_perm = []
-            for d in reshape_out_shape:
-                for new_i, new_d in enumerate(new_dim):
-                    if new_d == d and new_i not in new_perm:
-                        new_perm.append(new_i)
-                        break
 
             src, _, trans_in_attr = trans_in_edges[0]
             graph.remove_edge(trans, reshape)
@@ -5580,7 +5612,7 @@ def sink_transpose_through_special_reshape(graph):
             for _, dst, out_attr in reshape_out_edges:
                 graph.remove_edge(reshape, dst)
                 graph.add_edge(new_transpose, dst, **out_attr)
-            reshape_obj.dim = new_dim
+            reshape_obj.dim = new_rs_shape
             reshape_in_edges = graph.sorted_in_edges(reshape, data=True)
             reshape_out_tensor = copy.deepcopy(reshape_out_edges[0][2]['tensor'])
             if reshape_in_edges[0][2]['tensor'].value is not None:
@@ -5592,7 +5624,7 @@ def sink_transpose_through_special_reshape(graph):
 
             new_transpose_attr = reshape_obj.copied_attr()
             new_transpose_attr.update(
-                {'name': new_transpose, 'perm': new_perm})
+                {'name': new_transpose, 'perm': new_perm_adj})
             NodeWrap(graph, new_transpose).replace_obj(
                 'ArmTranspose', new_transpose_attr)
 
