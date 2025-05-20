@@ -77,7 +77,7 @@ class IfOp(OpHasSubGraph, OnnxOp):
         if in_edges[0][2]['tensor'].is_const and \
                 in_edges[0][2]['tensor'].value is not None:
             if_cond = bool(inputs[0].item())
-            output_list, output_const_list = self.forward(if_cond)
+            output_list, output_const_list = self.forward(inputs, if_cond)
             self.set_out_tensor(output_list, all(output_const_list))
         else:
             DEBUG(f'[Parser]: If({self.name}) condition is non-const, the infer shape is unreliable.')
