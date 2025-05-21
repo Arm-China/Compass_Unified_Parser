@@ -5531,6 +5531,8 @@ def sink_transpose_through_special_reshape(graph):
                 continue
             if reshape_out_shape is None or any([s is None for s in reshape_out_shape]):
                 continue
+            if reshape_in_shape == reshape_out_shape:
+                continue
             rs_changed_axes_map = Op.cal_reshape_changed_axis_map(reshape_in_shape, reshape_out_shape)
             sink_ok = True
             for axes_map in rs_changed_axes_map:
@@ -5590,7 +5592,7 @@ def sink_transpose_through_special_reshape(graph):
                 else:
                     new_perm_adj.append(axis)
 
-            if int(np.prod(new_rs_shape)) != int(np.prod(reshape_in_shape)) or len(new_rs_shape) == len(trans_in_shape):
+            if int(np.prod(new_rs_shape)) != int(np.prod(reshape_in_shape)):
                 WARN(
                     f'[Parser]: Meets invalid Reshape({reshape}) dim {new_rs_shape} in sink_transpose_through_special_reshape!')
                 continue
@@ -5598,7 +5600,7 @@ def sink_transpose_through_special_reshape(graph):
             if sorted(new_perm_adj) != list(range(len(new_rs_shape))):
                 WARN(
                     f'[Parser]: Meets invalid Transpose({trans}) in sink_transpose_through_special_reshape!')
-                WARN(
+                DEBUG(
                     f'Transpose in shape: {trans_in_shape}, perm: {trans_obj.perm}, reshape out shape: {reshape_out_shape}')
                 continue
 

@@ -129,7 +129,9 @@ class Op(abc.ABC):
         prod_out = 1
         skip_prod_in = False
         skip_prod_out = False
-        while i < len(rs_in_shape) and j < len(rs_out_shape):
+        in_shape_len = len(rs_in_shape)
+        out_shape_len = len(rs_out_shape)
+        while i < in_shape_len and j < out_shape_len:
             if not skip_prod_in:
                 prod_in *= rs_in_shape[i]
             if not skip_prod_out:
@@ -157,6 +159,13 @@ class Op(abc.ABC):
                 j += 1
                 skip_prod_in = True
                 skip_prod_out = False
+        if not reshape_axes_map:
+            if in_shape_len != out_shape_len:
+                min_len = min(in_shape_len, out_shape_len)
+                if in_shape_len == min_len:
+                    reshape_axes_map.append([(min_len - 1,), tuple(list(range(min_len - 1, out_shape_len)))])
+                else:
+                    reshape_axes_map.append([tuple(list(range(min_len - 1, out_shape_len))), (min_len - 1,)])
         return reshape_axes_map
 
     @classmethod
