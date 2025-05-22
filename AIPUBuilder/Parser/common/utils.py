@@ -61,6 +61,10 @@ def get_all_child_nodes(subgraph_dict, parent_node):
     return child_nodes[:]
 
 
+def is_continuous_num(lst):
+    return lst == list(range(lst[0], lst[-1] + 1))
+
+
 def readable_file(path):
     if not os.path.isfile(path):
         raise Exception('The "{}" is not existing file'.format(path))

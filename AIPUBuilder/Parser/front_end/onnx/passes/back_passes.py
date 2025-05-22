@@ -9,7 +9,8 @@ import copy
 from ....common.defs import Tensor, FLOAT_EQUAL, Framework
 from ....graph.graph import SubGraph
 from ....logger import INFO, DEBUG, WARN, ERROR, FATAL
-from ....common.utils import extend_lists, list_string_to_list, float_string_to_list, get_converted_dtype, get_closest_dtype
+from ....common.utils import extend_lists, list_string_to_list, float_string_to_list, get_converted_dtype, \
+    get_closest_dtype, is_continuous_num
 from ....graph.node_wrap import NodeWrap
 from ....graph.graph_algo import determined_sort, get_valid_node_name, clear_redundant_nodes, has_path, infer
 from ....graph.pattern_match import matched_patterns, single_node_matcher, two_nodes_matcher
@@ -5516,7 +5517,8 @@ def sink_transpose_through_special_reshape(graph):
             ERROR(
                 '[Parser]: Meets invalid name that does not exist in graph in sink_transpose_through_special_reshape!')
             continue
-
+        if len(trans_out_names) == 1 and trans_out_names[0] in graph._attr['output_names']:
+            continue
         trans_in_shape = trans_obj.get_input_shapes()[0]
         if trans_in_shape is None or any([s is None for s in trans_in_shape]):
             continue
@@ -5538,7 +5540,7 @@ def sink_transpose_through_special_reshape(graph):
             for axes_map in rs_changed_axes_map:
                 rs_in_axes = axes_map[0]
                 trans_in_axes = [trans_obj.perm[axis] for axis in rs_in_axes]
-                if trans_in_axes != list(range(trans_in_axes[0], trans_in_axes[-1] + 1)):
+                if not is_continuous_num(trans_in_axes):
                     sink_ok = False
                     break
             if not sink_ok:
@@ -5555,14 +5557,21 @@ def sink_transpose_through_special_reshape(graph):
                     inp_rs_out_shape = [reshape_out_shape[axis] for axis in rs_out_axes]
                     if i in inp_rs_in_axes:
                         changed = True
-                        if i == inp_rs_in_axes[0]:
-                            new_rs_axes = list(range(len(new_rs_shape), len(new_rs_shape) + len(inp_rs_out_shape)))
-                            perm_map.append([tuple(inp_rs_in_axes), tuple(new_rs_axes)])
-                            new_rs_shape.extend(inp_rs_out_shape)
+                        if is_continuous_num(inp_rs_in_axes):
+                            if i == inp_rs_in_axes[0]:
+                                new_rs_axes = list(range(len(new_rs_shape), len(new_rs_shape) + len(inp_rs_out_shape)))
+                                perm_map.append([tuple(inp_rs_in_axes), tuple(new_rs_axes)])
+                                new_rs_shape.extend(inp_rs_out_shape)
+                        else:
+                            sink_ok = False
+                            break
                     else:
                         continue
                 if not changed:
                     new_rs_shape.append(trans_in_shape[i])
+
+            if not sink_ok:
+                continue
 
             new_perm = []
             axis_diff = 0

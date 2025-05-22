@@ -159,13 +159,11 @@ class Op(abc.ABC):
                 j += 1
                 skip_prod_in = True
                 skip_prod_out = False
-        if not reshape_axes_map:
-            if in_shape_len != out_shape_len:
-                min_len = min(in_shape_len, out_shape_len)
-                if in_shape_len == min_len:
-                    reshape_axes_map.append([(min_len - 1,), tuple(list(range(min_len - 1, out_shape_len)))])
-                else:
-                    reshape_axes_map.append([tuple(list(range(min_len - 1, out_shape_len))), (min_len - 1,)])
+        if i < in_shape_len:
+            reshape_axes_map.append([tuple(list(range(i - 1, in_shape_len))), (out_shape_len - 1,)])
+        if j < out_shape_len:
+            reshape_axes_map.append([(in_shape_len - 1,), tuple(list(range(j - 1, out_shape_len)))])
+
         return reshape_axes_map
 
     @classmethod
