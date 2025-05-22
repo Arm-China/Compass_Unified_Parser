@@ -315,7 +315,7 @@ def front_process_graph(model_type, model_path, graph, params):
 
 def process_graph(graph, params):
     from .front_end.onnx.passes.middle_passes import middle_passes, convert_onnx_version
-    from .front_end.onnx.passes.back_passes import back_passes, trim_weights, assign_top_range_scale_zp
+    from .front_end.onnx.passes.back_passes import back_passes
     from .front_end.onnx.passes.transform import transform_to_nhwc
     from .front_end.onnx.passes.common_passes import remove_useless_op, convert_64bit_const
     from .graph.graph_algo import infer

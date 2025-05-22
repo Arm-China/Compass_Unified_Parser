@@ -39,20 +39,14 @@ class IfOp(OpHasSubGraph, OnnxOp):
             if sub_node_obj.type == 'DummyInput':
                 assert sub_node_obj.target_graph != '', 'Target graph not set for DummyInput.'
                 target_g = get_target_graph(sub_node_obj.target_graph, cur_sub_graph._root)
-                if target_g.has_node(n):
-                    parent_node = target_g.nodes[n]
-                    dummy_out_edges = target_g.sorted_out_edges(parent_node['object'].name, data=True)
-                    if len(dummy_out_edges) == 0:
-                        ERROR(f'[Parser]: Get DummpyInput({n}) Out edges failed in If Node({self.name}).')
-                    out_tensor = dummy_out_edges[0][-1]['tensor'].value
-                    if out_tensor is None:
-                        assert sub_node_obj.external_in_port >= 0, f'external_in_port of {n} is not set correctly.'
-                        out_tensor = inputs[sub_node_obj.external_in_port]
-                    sub_node_obj.infer_shape(out_tensor, dummy_out_edges[0][-1]['tensor'].is_const)
-                else:
-                    assert sub_node_obj.external_in_port >= 0, f'external_in_port of {n} is not set correctly.'
-                    out_tensor = inputs[sub_node_obj.external_in_port]
-                    sub_node_obj.infer_shape(out_tensor, False)
+                parent_node = target_g.nodes[n]
+                dummy_out_edges = target_g.sorted_out_edges(parent_node['object'].name, data=True)
+                if len(dummy_out_edges) == 0:
+                    ERROR(f'[Parser]: Get DummpyInput({n}) Out edges failed in If Node({self.name}).')
+                assert sub_node_obj.external_in_port >= 0, f'external_in_port of {n} is not set correctly.'
+                out_tensor = inputs[sub_node_obj.external_in_port]
+                # out_tensor = dummy_out_edges[0][-1]['tensor'].value
+                sub_node_obj.infer_shape(out_tensor, dummy_out_edges[0][-1]['tensor'].is_const)
             else:
                 sub_node_obj.infer_shape()
 
@@ -191,10 +185,9 @@ class LoopOp(OpHasSubGraph, OnnxOp):
                             dummy_out_edges = target_g.sorted_out_edges(parent_node['object'].name, data=True)
                             if len(dummy_out_edges) == 0:
                                 ERROR(f'[Parser]: Get DummpyInput({n}) Out edges failed in Loop Node({self.name}).')
-                            out_tensor = dummy_out_edges[0][-1]['tensor'].value
-                            if out_tensor is None:
-                                assert sub_node_obj.external_in_port >= 0, f'external_in_port of {n} is not set correctly.'
-                                out_tensor = inputs[sub_node_obj.external_in_port]
+                            # out_tensor = dummy_out_edges[0][-1]['tensor'].value
+                            assert sub_node_obj.external_in_port >= 0, f'external_in_port of {n} is not set correctly.'
+                            out_tensor = inputs[sub_node_obj.external_in_port]
                             if n in cond_out_root_input_const:
                                 cond_out_root_input_const[n] = dummy_out_edges[0][-1]['tensor'].is_const
                             sub_node_obj.infer_shape(out_tensor, dummy_out_edges[0][-1]['tensor'].is_const)

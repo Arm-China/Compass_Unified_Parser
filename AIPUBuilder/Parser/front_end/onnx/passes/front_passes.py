@@ -1599,10 +1599,8 @@ def convert_special_subgraph(graph):
             for input_name in input_names_list:
                 input_names.append(input_name['target'])
             output_names = list(graph._attr.get('output_names', []))
-            body_inputs_num = len(graph._attr['input_tensors'])  # 2+N
-            body_outputs_num = len(output_names)  # 1+N+K
-            N = body_inputs_num - 2
-            K = body_outputs_num - 1 - N
+            # N = parent_node_obj.N
+            K = parent_node_obj.K
             no_connected_inputs = []
             if output_names:
                 for input_name in input_names:

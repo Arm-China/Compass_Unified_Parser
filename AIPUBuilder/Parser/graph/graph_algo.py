@@ -185,8 +185,12 @@ def infer(graph, partial=False, chosen_list=None, final=False):
                             if node_obj.type == 'DummyInput' and isinstance(graph, SubGraph):
                                 from ..common.utils import get_target_graph
                                 target_g = get_target_graph(node_obj.target_graph, graph._root)
-                                if target_g.has_node(node_name):
-                                    parent_node = target_g.nodes[node_name]
+                                if node_name in target_g._attr['subgraph_node_remapping']:
+                                    new_node_name = target_g._attr['subgraph_node_remapping'][node_name]
+                                else:
+                                    new_node_name = node_name
+                                if target_g.has_node(new_node_name):
+                                    parent_node = target_g.nodes[new_node_name]
                                     dummy_out_edges = target_g.sorted_out_edges(
                                         parent_node['object'].name,
                                         data=True)

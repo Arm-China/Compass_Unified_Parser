@@ -2304,25 +2304,6 @@ def rename_compress(graph):
         clear_redundant_nodes(graph)
 
 
-def rename_constant(graph):
-    matches = single_node_matcher(graph, 'Constant')
-    for m in matches:
-        cons = m['target']
-        cons_node = NodeWrap(graph, cons)
-        cons_obj = cons_node['object']
-        if cons_obj is None \
-                or cons_obj.value is None:
-            ERROR(
-                '[Parser]: Meets invalid Constant Op(%s) in rename_constant!' % cons)
-            continue
-        out_edges = graph.sorted_in_edges(cons, data=True)
-        if len(out_edges) == 0 and cons_obj.in_subgraph and len(cons_obj.subgraphs) > 0:
-            cons_attr = cons_obj.copied_attr()
-            cons_attr.update({'weights': cons_obj.value})
-            NodeWrap(graph, cons).replace_obj(
-                'ArmConstant', cons_attr)
-
-
 def rename_conv(graph):
     conv_types = ['Conv', 'ConvTranspose', 'ConvInteger']
     matches = matched_patterns(
@@ -2980,7 +2961,9 @@ def rename_reduce(graph):
                     graph, reduce, out_shape, type='Reshape',
                     quantize=reduce_obj.quantize)
                 reshape_obj = NodeWrap(graph, reshape)['object']
-                reshape_obj.in_subgraph = reduce_obj.in_subgraph
+                if reduce_obj.in_subgraph:
+                    reshape_obj.in_subgraph = reduce_obj.in_subgraph
+                    graph._attr['subgraph_node_remapping'][reduce] = reshape
                 if reduce in graph._attr['output_names']:
                     index = graph._attr['output_names'].index(reduce)
                     graph._attr['output_names'][index] = reshape
@@ -3221,18 +3204,21 @@ def rename_slice(graph):
         if slice_obj is not None \
                 and ((slice_obj.cur_version == 1 and len(in_edges) == 1) or (slice_obj.cur_version > 1 and 3 <= len(in_edges) <= 5)):
             if len(in_edges) > 1 and any(not in_attr['tensor'].is_const for _, _, in_attr in in_edges[1:]):
-                ERROR('Meets unsupported non-const starts/ends/axes/steps of Slice Node(%s) in rename_slice!' % slice)
-                continue
-            graph.remove_edges_from(in_edges[1:])
-            slice_attr = slice_obj.copied_attr()
-            ends = np.array(slice_obj.ends, np.int64)
-            ends_mask = np.logical_and(
-                ends < -1, np.array(slice_obj.steps, np.int64) < 0)
-            ends[ends_mask] = -1
-            slice_attr.update({'ends': ends.tolist()})
-            if 'steps' not in slice_attr:
-                slice_attr.update({'steps': slice_obj.steps})
-            NodeWrap(graph, slice).replace_obj('ArmSlice', slice_attr)
+                assert len(in_edges) == 5, 'Dynamic Slice should have 5 inputs.'
+                WARN(f'[Parser]: Dynamic Slice({slice} in this graph.)')
+                slice_attr = slice_obj.copied_attr()
+                NodeWrap(graph, slice).replace_obj('ArmSlice', slice_attr)
+            else:
+                graph.remove_edges_from(in_edges[1:])
+                slice_attr = slice_obj.copied_attr()
+                ends = np.array(slice_obj.ends, np.int64)
+                ends_mask = np.logical_and(
+                    ends < -1, np.array(slice_obj.steps, np.int64) < 0)
+                ends[ends_mask] = -1
+                slice_attr.update({'ends': ends.tolist()})
+                if 'steps' not in slice_attr:
+                    slice_attr.update({'steps': slice_obj.steps})
+                NodeWrap(graph, slice).replace_obj('ArmSlice', slice_attr)
         else:
             ERROR('[Parser]: Meets invalid Slice Op (%s) in rename_slice!' % slice)
 
@@ -4463,8 +4449,7 @@ def remove_const(graph):
     for node_name in graph.nodes:
         node = NodeWrap(graph, node_name)
         node_obj = node['object']
-        if node_obj is not None and node_obj.type in ('Constant', 'Blank') and \
-                not node_obj.in_subgraph:
+        if node_obj is not None and node_obj.type in ('Constant', 'Blank'):
             const_out_edges = graph.sorted_out_edges(node_name, data=True)
             if len(const_out_edges) >= 1 and node_obj.type == 'Constant':
                 for out_edge in const_out_edges:
@@ -4485,7 +4470,8 @@ def remove_const(graph):
                                 graph.remove_edge(node_name, const_child)
                         elif len(const_out_edges) == 1 and const_child_obj.type == 'Out' \
                                 and (node_name not in graph._attr['output_names']
-                                     or len(graph._attr['output_names']) > 1):
+                                     or len(graph._attr['output_names']) > 1) and \
+                                not node_obj.in_subgraph:
                             removing_const.append(node_name)
                             if node_name in graph._attr['output_names']:
                                 WARN(
@@ -4504,7 +4490,8 @@ def remove_const(graph):
                         ERROR('[Parser]: Meets invalid Constant Node(%s) in remove_const!' %
                               const_child)
             else:
-                removing_const.append(node_name)
+                if not node_obj.in_subgraph:
+                    removing_const.append(node_name)
     graph.remove_nodes_from(removing_const)
     clear_redundant_nodes(graph)
 
@@ -6063,7 +6050,6 @@ def back_passes(graph, params):
     rename_cast(graph)
     rename_col2im(graph)
     rename_compress(graph)
-    rename_constant(graph)
     rename_conv(graph)
     rename_cum(graph)
     rename_dilation_erosion(graph)

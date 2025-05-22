@@ -2722,6 +2722,10 @@ class ArmGRUv3Op(BaseRnnOp, OpHasBiases, OpHasWeights, ArmOp):
 
 class ArmIfOp(OpHasSubGraph, DynamicShapeOp, ArmOp):
     @classmethod
+    def num_in_ports(cls):
+        return -1
+
+    @classmethod
     def attributes(cls):
         return {
             'then_branch_inputs_num': {'type': AttrType.INT, 'required': True},
@@ -2752,10 +2756,9 @@ class ArmIfOp(OpHasSubGraph, DynamicShapeOp, ArmOp):
                 if target_g.has_node(n):
                     parent_node = target_g.nodes[n]
                     dummy_out_edges = target_g.sorted_out_edges(parent_node['object'].name, data=True)
-                    out_tensor = dummy_out_edges[0][-1]['tensor'].value
-                    if out_tensor is None:
-                        assert sub_node_obj.external_in_port >= 0, f'external_in_port of {n} is not set correctly.'
-                        out_tensor = inputs[sub_node_obj.external_in_port]
+                    # out_tensor = dummy_out_edges[0][-1]['tensor'].value
+                    assert sub_node_obj.external_in_port >= 0, f'external_in_port of {n} is not set correctly.'
+                    out_tensor = inputs[sub_node_obj.external_in_port]
                     sub_node_obj.infer_shape(out_tensor, dummy_out_edges[0][-1]['tensor'].is_const)
                 else:
                     assert sub_node_obj.external_in_port >= 0, f'external_in_port of {n} is not set correctly.'
@@ -3180,10 +3183,9 @@ class ArmLoopOp(OpHasSubGraph, DynamicShapeOp, ArmOp):
                             dummy_out_edges = target_g.sorted_out_edges(parent_node['object'].name, data=True)
                             if len(dummy_out_edges) == 0:
                                 ERROR(f'[Parser]: Get DummpyInput({n}) Out edges failed in Loop Node({self.name}).')
-                            out_tensor = dummy_out_edges[0][-1]['tensor'].value
-                            if out_tensor is None:
-                                assert sub_node_obj.external_in_port >= 0, f'external_in_port of {n} is not set correctly.'
-                                out_tensor = inputs[sub_node_obj.external_in_port]
+                            # out_tensor = dummy_out_edges[0][-1]['tensor'].value
+                            assert sub_node_obj.external_in_port >= 0, f'external_in_port of {n} is not set correctly.'
+                            out_tensor = inputs[sub_node_obj.external_in_port]
                             if n in cond_out_root_input_const:
                                 cond_out_root_input_const[n] = dummy_out_edges[0][-1]['tensor'].is_const
                             sub_node_obj.infer_shape(out_tensor, dummy_out_edges[0][-1]['tensor'].is_const)
@@ -4897,31 +4899,46 @@ class ArmSinhOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
 
 
 class ArmSliceOp(OpHasOneOutPort, ArmOp):
+    # 5 if Dynamic else 1
+    @classmethod
+    def num_in_ports(cls):
+        return -1
+
     @classmethod
     def attributes(cls):
-        return {'starts': {'type': AttrType.INTS, 'required': True},
-                'ends': {'type': AttrType.INTS, 'required': True},
-                'steps': {'type': AttrType.INTS, 'required': True}}
+        return {'starts': {'type': AttrType.INTS, 'required': False},
+                'ends': {'type': AttrType.INTS, 'required': False},
+                'steps': {'type': AttrType.INTS, 'required': False}}
 
     def __init__(self, graph, attr_dict=None):
         super(ArmSliceOp, self).__init__(graph, attr_dict)
         self.update_attributes(ArmSliceOp, attr_dict)
+        self.dynamic = False
         assert self.check_required(), 'ArmSliceOp is missing a required parameter.'
 
     def infer_shape(self):
         super(ArmSliceOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        obj = tuple(slice(s, None if (p < 0 and e < 0) else e, p)
-                    for s, e, p in zip(self.starts, self.ends, self.steps))
-        out_tensor = inputs[0][obj]
+        if len(inputs) > 1:
+            self.dynamic = True
+            assert len(inputs) == 5, 'Dynamic Slice should have 5 inputs.'
+            for inp in inputs[1:]:
+                assert len(inp.shape) == 1, f'Slice other inputs should be 1D, but {len(inp.shape)}D.'
+            out_tensor = inputs[0]
+        else:
+            self.dynamic = False
+            obj = tuple(slice(s, None if (p < 0 and e < 0) else e, p)
+                        for s, e, p in zip(self.starts, self.ends, self.steps))
+            out_tensor = inputs[0][obj]
         self.set_out_tensor(out_tensor)
 
     def write_attrs(self, txt_file):
         ret = super(ArmSliceOp, self).write_attrs(txt_file)
         if ret:
-            txt_file.write('begin=[%s]\n' % list_list_to_string(self.starts))
-            txt_file.write('end=[%s]\n' % list_list_to_string(self.ends))
-            txt_file.write('strides=[%s]\n' % list_list_to_string(self.steps))
+            if not self.dynamic:
+                txt_file.write('begin=[%s]\n' % list_list_to_string(self.starts))
+                txt_file.write('end=[%s]\n' % list_list_to_string(self.ends))
+                txt_file.write('strides=[%s]\n' % list_list_to_string(self.steps))
         return ret
 
 

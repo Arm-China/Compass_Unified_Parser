@@ -63,6 +63,7 @@ def build_subgraph(current_node_name,
     sub_graph = SubGraph(name=subgraph_name)
     sub_graph._attr['framework'] = root_graph._attr['framework']
     sub_graph._attr['parent_node'] = current_node_name
+    sub_graph._attr['subgraph_node_remapping'] = {}
 
     nodes = g_content.get('nodes', [])
 
@@ -146,7 +147,8 @@ def build_subgraph(current_node_name,
         NodeWrap(sub_graph, c_name).replace_obj('Constant', {'name': c_name,
                                                              'value': c['tensor'],
                                                              'data_format': root_graph._attr['data_format'],
-                                                             'opset_version': opset_ver})
+                                                             'opset_version': opset_ver,
+                                                             'in_subgraph': True})
     sub_graph_info.update({'const_names': list(const_names.values())})
 
     a_nodes_info.update({subgraph_name: {
@@ -249,7 +251,7 @@ def build_subgraph(current_node_name,
                                  }
                     sub_graph.add_edge(real_const_name, op_name, **edge_attr)
                 else:
-                    # from root const
+                    # from parent const
                     if sub_graph.has_node(in_tensor_name):
                         edge_attr = {'src_out_port': in_tensor_out_port, 'dst_in_port': in_port, 'tensor': Tensor(
                             name=in_tensor_name, is_const=True)}
@@ -630,6 +632,7 @@ def convert_onnx_to_graph(graph, model_path, params):
     graph._attr['subgraph_depends'] = OrderedDict()
     graph._attr['subgraph_depends_nodes'] = []
     graph._attr['subgraph_output_names'] = []
+    graph._attr['subgraph_node_remapping'] = {}
 
     meta_ret = True
     all_nodes_dict = {}

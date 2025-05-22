@@ -44,6 +44,19 @@ def fuse_const(graph):
                     NodeWrap(graph, node_name).replace_obj(
                         'Constant', const_attr)
                     in_edges = graph.sorted_in_edges(node_name)
+                    if isinstance(graph, SubGraph):
+                        for src, _ in in_edges:
+                            src_obj = NodeWrap(graph, src)['object']
+                            if src_obj is not None and src_obj.type == 'DummyInput':
+                                from ....common.utils import get_target_graph
+                                target_g = get_target_graph(src_obj.target_graph, graph._root)
+                                parent_node = graph._attr['parent_node']
+                                target_g.remove_edge(src, parent_node)
+                                if parent_node in graph._root._attr['subgraph_depends'] and \
+                                        graph.name in graph._root._attr['subgraph_depends'][parent_node]:
+                                    if src in graph._root._attr['subgraph_depends'][parent_node][graph.name]:
+                                        graph._root._attr['subgraph_depends'][parent_node][graph.name].remove(src)
+                                clear_redundant_nodes(target_g)
                     graph.remove_edges_from(in_edges)
     clear_redundant_nodes(graph)
 
@@ -105,7 +118,7 @@ def convert_dummyinput_to_input(graph):
             new_attr = node_obj.copied_attr()
             NodeWrap(graph, node_name).replace_obj(
                 'ArmInput', new_attr)
-            input_tensors.update({out_tensor.name: out_tensor})
+            input_tensors.update({node_name: out_tensor})
     if input_tensors:
         if isinstance(graph, SubGraph):
             for dpend_dict in list(graph._root._attr['subgraph_depends'].values()):

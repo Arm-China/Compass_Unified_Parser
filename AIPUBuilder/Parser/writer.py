@@ -210,7 +210,7 @@ def serialize(graph, params):
                     sub_output_tensor_names = get_output_tensor_names(subgraph)
                     sub_net_attr['output_tensors'] = string_list_to_string(sub_output_tensor_names)
 
-                    ret = write_net(txt_path, bin_path, sub_net_attr, subgraph)
+                    ret = ret and write_net(txt_path, bin_path, sub_net_attr, subgraph)
 
     else:
         ERROR('[Parser]: Meets invalid output dir in serialize!')
