@@ -2499,7 +2499,7 @@ def rename_loop(graph):
             ERROR('[Parser]: Meets invalid Loop Node(%s) in rename_loop!' % loop_node)
             continue
         body_inputs_num = len(loop_obj.body._attr['input_tensors'])  # 2+N
-        body_outputs_num = len(loop_obj.body._attr['output_names'])  # 1+N+K
+        body_outputs_num = len(loop_obj.body._attr['output_tensor_names'])  # 1+N+K
         N = body_inputs_num - 2
         K = body_outputs_num - 1 - N
         loop_attr = loop_obj.copied_attr()

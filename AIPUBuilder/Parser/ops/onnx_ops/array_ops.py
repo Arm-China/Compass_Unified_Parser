@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
+import copy
+
 import numpy as np
 import torch
 import tensorflow as tf
@@ -1258,6 +1260,18 @@ class SliceOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
                 starts[i], ends[i], steps[i] = start, end, meta_step
                 j += 1
         self.axes, self.starts, self.ends, self.steps = axes, starts, ends, steps
+
+        const_inputs = self.sorted_in_consts()
+        non_const_in_ports = list(range(len(inputs)))
+        for _, in_port, _ in const_inputs:
+            if in_port in non_const_in_ports:
+                non_const_in_ports.remove(in_port)
+
+        if len(non_const_in_ports) > 1:
+            out_tensor = copy.deepcopy(inputs[0])
+            self.set_out_tensor(out_tensor)
+            return
+
         obj = tuple(slice(s, None if (p < 0 and e < 0) else e, p)
                     for s, e, p in zip(self.starts, self.ends, self.steps))
         out_tensor = inputs[0][obj]

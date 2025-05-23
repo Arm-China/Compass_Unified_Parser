@@ -3138,7 +3138,7 @@ class ArmLoopOp(OpHasSubGraph, DynamicShapeOp, ArmOp):
 
         cond_in = ori_cond_in
         body_inputs_num = len(self.body._attr['input_tensors'])  # 2+N
-        body_outputs_num = len(self.body._attr['output_names'])  # 1+N+K
+        body_outputs_num = len(self.body._attr['output_tensor_names'])  # 1+N+K
         N = body_inputs_num - 2
         K = body_outputs_num - 1 - N
         k_carried_away = [[] for i in range(K)]
@@ -3202,8 +3202,7 @@ class ArmLoopOp(OpHasSubGraph, DynamicShapeOp, ArmOp):
                     is_const = self.body.nodes[out]['object'].is_all_inputs_const()
                     for _, dst, out_attr in self.body.sorted_out_edges(out, data=True):
                         if self.body.nodes[dst]['object'].type == 'Out':
-                            out_port = out_attr['src_out_port']
-                            out_tensor = self.body.nodes[out]['object'].get_output_tensors()[out_port]
+                            out_tensor = out_attr['tensor'].value
                             output_list.append(out_tensor)
                             output_const_list.append(is_const)
                 last_output_list = output_list.copy()

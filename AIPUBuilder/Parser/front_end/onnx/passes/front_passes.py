@@ -1599,7 +1599,6 @@ def convert_special_subgraph(graph):
             for input_name in input_names_list:
                 input_names.append(input_name['target'])
             output_names = list(graph._attr.get('output_names', []))
-            # N = parent_node_obj.N
             K = parent_node_obj.K
             no_connected_inputs = []
             if output_names:
