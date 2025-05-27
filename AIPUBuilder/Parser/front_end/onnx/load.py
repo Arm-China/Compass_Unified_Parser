@@ -870,7 +870,7 @@ def convert_onnx_to_graph(graph, model_path, params):
                             blank_attr = {'name': in_tensor_name}
                             if node_type == 'Loop':
                                 if in_port == 0:  # max-trip-count
-                                    default_v = np.array(np.iinfo(np.int64).max, dtype=np.int64)
+                                    default_v = np.array(np.iinfo(np.int32).max, dtype=np.int64)
                                     blank_node.replace_obj('Constant', {
                                         'name': in_tensor_name,
                                         'value': default_v,

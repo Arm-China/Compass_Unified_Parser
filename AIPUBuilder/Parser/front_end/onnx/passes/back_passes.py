@@ -5963,37 +5963,41 @@ def make_graph_connected(graph):
     for input_name in input_names_list:
         input_names.append(input_name['target'])
     output_names = list(graph._attr.get('output_names', []))
-    no_connected_inputs = []
     no_connected_outputs = []
+    connected_maps = {}
     if output_names:
         for input_name in input_names:
             for out_name in output_names:
                 if graph.is_connected(input_name, out_name):
-                    continue
-                else:
-                    if input_name not in no_connected_inputs:
-                        no_connected_inputs.append(input_name)
-                    if out_name not in no_connected_outputs:
-                        no_connected_outputs.append(out_name)
+                    if input_name in connected_maps:
+                        connected_maps[input_name].append(out_name)
+                    else:
+                        connected_maps[input_name] = [out_name]
+    for out_name in output_names:
+        matched = False
+        for k, v in connected_maps.items():
+            if v[0] not in no_connected_outputs:
+                no_connected_outputs.append(v[0])
+            if out_name in v:
+                matched = True
+        if not matched:
+            no_connected_outputs.append(out_name)
     if no_connected_outputs:
         out_edge = graph.sorted_out_edges(no_connected_outputs[0], data=True)[0]
         src, dst, out_attr = out_edge
         dummy = insert_dummy(graph, src, dst, out_attr, 'ArmDummy')
         in_port = 0
-        if no_connected_inputs:
-            for inp in no_connected_inputs:
-                if inp == src:
-                    continue
-                inp_out_edge = graph.sorted_out_edges(inp, data=True)[0]
-                _, dst, inp_out_attr = inp_out_edge
-                graph.remove_edge(inp, dst)
-                in_attr = copy.deepcopy(inp_out_attr)
-                in_attr['dst_in_port'] = in_port + 1
-                graph.add_edge(inp, dummy, **in_attr)
-                dummy_out_attr = copy.deepcopy(inp_out_attr)
-                dummy_out_attr['src_out_port'] = in_port + 1
-                graph.add_edge(dummy, dst, **dummy_out_attr)
-                in_port += 1
+        for out in no_connected_outputs[1:]:
+            out_out_edge = graph.sorted_out_edges(out, data=True)[0]
+            _, _dst, out_out_attr = out_out_edge
+            graph.remove_edge(out, _dst)
+            in_attr = copy.deepcopy(out_out_attr)
+            in_attr['dst_in_port'] = in_port + 1
+            graph.add_edge(out, dummy, **in_attr)
+            dummy_out_attr = copy.deepcopy(out_out_attr)
+            dummy_out_attr['src_out_port'] = in_port + 1
+            graph.add_edge(dummy, _dst, **dummy_out_attr)
+            in_port += 1
         if src in graph._attr['output_names']:
             index = graph._attr['output_names'].index(src)
             graph._attr['output_names'][index] = dummy
