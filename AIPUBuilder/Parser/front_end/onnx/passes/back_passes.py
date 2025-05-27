@@ -3204,8 +3204,17 @@ def rename_slice(graph):
         if slice_obj is not None \
                 and ((slice_obj.cur_version == 1 and len(in_edges) == 1) or (slice_obj.cur_version > 1 and 3 <= len(in_edges) <= 5)):
             if len(in_edges) > 1 and any(not in_attr['tensor'].is_const for _, _, in_attr in in_edges[1:]):
-                assert len(in_edges) == 5, 'Dynamic Slice should have 5 inputs.'
                 WARN(f'[Parser]: Dynamic Slice({slice} in this graph.)')
+                if len(in_edges) < 5:
+                    in_ports = slice_obj.get_in_ports()
+                    input_shapes = slice_obj.get_input_shapes()
+                    add_in_port = [x for x in range(5) if x not in in_ports]
+                    if 3 in add_in_port:
+                        axes = np.array(list(range(input_shapes[1][0])), np.int32)
+                        insert_constant(graph, slice + '_axes', axes, slice, in_port=3, data_format='NHWC')
+                    if 4 in add_in_port:
+                        steps = np.ones(input_shapes[1], np.int32)
+                        insert_constant(graph, slice + '_steps', steps, slice, in_port=4, data_format='NHWC')
                 slice_attr = slice_obj.copied_attr()
                 NodeWrap(graph, slice).replace_obj('ArmSlice', slice_attr)
             else:
