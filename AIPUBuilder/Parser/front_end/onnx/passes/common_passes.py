@@ -57,6 +57,12 @@ def fuse_const(graph):
                                     if src in graph._root._attr['subgraph_depends'][parent_node][graph.name]:
                                         graph._root._attr['subgraph_depends'][parent_node][graph.name].remove(src)
                                 clear_redundant_nodes(target_g)
+                                # Update external_in_port
+                                dm_matches = single_node_matcher(graph, 'DummyInput')
+                                for dm in dm_matches:
+                                    dm_obj = NodeWrap(graph, dm['target'])['object']
+                                    if dm_obj is not None and dm_obj.external_in_port > src_obj.external_in_port:
+                                        dm_obj.external_in_port -= 1
                     graph.remove_edges_from(in_edges)
     clear_redundant_nodes(graph)
 
@@ -116,6 +122,7 @@ def convert_dummyinput_to_input(graph):
             out_edges = graph.sorted_out_edges(node_name, data=True)
             out_tensor = out_edges[0][-1]['tensor']
             new_attr = node_obj.copied_attr()
+            new_attr['from_dummyinput'] = True
             NodeWrap(graph, node_name).replace_obj(
                 'ArmInput', new_attr)
             input_tensors.update({node_name: out_tensor})
@@ -255,8 +262,13 @@ def remove_useless_op(graph, op_type_list):
                     removing_nodes.append(node_name)
             elif op_type == 'Identity':
                 if node_obj.in_subgraph:
-                    node_attr = node_obj.copied_attr()
-                    NodeWrap(graph, node_name).replace_obj('Dummy', node_attr)
+                    out_edges = graph.sorted_out_edges(node_name, data=True)
+                    dst_obj = NodeWrap(graph, out_edges[0][1])['object']
+                    if dst_obj.type == 'Dummy':
+                        removing_nodes.append(node_name)
+                    else:
+                        node_attr = node_obj.copied_attr()
+                        NodeWrap(graph, node_name).replace_obj('Dummy', node_attr)
                 else:
                     removing_nodes.append(node_name)
             elif op_type == 'Dropout':

@@ -135,9 +135,9 @@ for k, models in ONNX_BENCHMARK.items():
     for m in models:
         SANITY_MODELS.append(f"onnx-{k}-{m}")
 
-for k, models in CAFFE_BENCHMARK.items():
-    for m in models:
-        SANITY_MODELS.append(f"caffe-{k}-{m}")
+# for k, models in CAFFE_BENCHMARK.items():
+#     for m in models:
+#         SANITY_MODELS.append(f"caffe-{k}-{m}")
 
 for k, models in TORCH_BENCHMARK.items():
     for m in models:

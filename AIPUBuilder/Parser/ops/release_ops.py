@@ -2750,7 +2750,13 @@ class ArmIfOp(OpHasSubGraph, DynamicShapeOp, ArmOp):
             sub_node_obj = cur_sub_graph.nodes[n]['object']
             if sub_node_obj is None:
                 ERROR(f'[Parser]: Get Node Obj Failed in If Infer of Node: {n}.')
-            if sub_node_obj.type == 'DummyInput':
+            if sub_node_obj.type == 'ArmInput':
+                if sub_node_obj.from_dummyinput:
+                    out_tensor = inputs[sub_node_obj.external_in_port]
+                    sub_node_obj.infer_shape(out_tensor)
+                else:
+                    ERROR(f'[Parser]: Inputs in If({self.name}) Node should be from Parent graph.')
+            elif sub_node_obj.type == 'DummyInput':
                 assert sub_node_obj.target_graph != '', 'Target graph not set for DummyInput.'
                 target_g = get_target_graph(sub_node_obj.target_graph, cur_sub_graph._root)
                 if target_g.has_node(n):
@@ -2771,12 +2777,10 @@ class ArmIfOp(OpHasSubGraph, DynamicShapeOp, ArmOp):
             is_const = cur_sub_graph.nodes[out]['object'].is_all_inputs_const()
             for _, dst, out_attr in cur_sub_graph.sorted_out_edges(out, data=True):
                 if cur_sub_graph.nodes[dst]['object'].type == 'Out':
-                    out_port = out_attr['src_out_port']
-                    o_edges = cur_sub_graph.sorted_out_edges(out, data=True)
-                    out_tensor = o_edges[out_port][-1]['tensor'].value
+                    out_tensor = out_attr['tensor'].value
                     output_list.append(out_tensor)
                     if isinstance(cur_sub_graph.nodes[out]['object'], OpHasSubGraph):
-                        output_const_list.append(o_edges[out_port][-1]['tensor'].is_const)
+                        output_const_list.append(out_attr['tensor'].is_const)
                     else:
                         output_const_list.append(is_const)
         return output_list, output_const_list
@@ -2820,6 +2824,14 @@ class ArmInputOp(OpHasOneOutPort, InputLikeOp, ArmOp):
                     'NDHWC', 'NDCHWC16', 'NDCHWC32', 'NCDHWC16', 'NCDHWC32'
                 ],
                 'default': 'None'
+            },
+            'from_dummyinput': {
+                'type': AttrType.BOOL,
+                'default': False
+            },
+            'external_in_port': {
+                'type': AttrType.INT,
+                'default': -1
             }
         }
 
@@ -3137,10 +3149,10 @@ class ArmLoopOp(OpHasSubGraph, DynamicShapeOp, ArmOp):
             count_cond_is_const = False
 
         cond_in = ori_cond_in
-        body_inputs_num = len(self.body._attr['input_tensors'])  # 2+N
-        body_outputs_num = len(self.body._attr['output_tensor_names'])  # 1+N+K
-        N = body_inputs_num - 2
-        K = body_outputs_num - 1 - N
+        # body_inputs_num = len(self.body._attr['input_tensors'])  # 2+N
+        # body_outputs_num = len(self.body._attr['output_tensor_names'])  # 1+N+K
+        N = self.N
+        K = self.K
         k_carried_away = [[] for i in range(K)]
 
         from ..graph.graph_algo import determined_sort
@@ -3163,18 +3175,21 @@ class ArmLoopOp(OpHasSubGraph, DynamicShapeOp, ArmOp):
                         ERROR(f'[Parser]: Get Node Obj Failed in Loop Infer of Node: {n}.')
                     try:
                         if sub_node_obj.type in ('Input', 'ArmInput'):
-                            inp_idx = list(self.body._attr['input_tensors'].keys()).index(n)
-                            if inp_idx == 0:
-                                out_tensor = np.array(loop_cnt, np.int32)
-                            elif inp_idx == 1:
-                                out_tensor = np.array(cond_in, bool)
+                            if sub_node_obj.type == 'ArmInput' and sub_node_obj.from_dummyinput:
+                                out_tensor = inputs[sub_node_obj.external_in_port]
                             else:
-                                if loop_cnt == 0:
-                                    out_tensor = copy.deepcopy(inputs[inp_idx])
+                                inp_idx = list(self.body._attr['input_tensors'].keys()).index(n)
+                                if inp_idx == 0:
+                                    out_tensor = np.array(loop_cnt, np.int32)
+                                elif inp_idx == 1:
+                                    out_tensor = np.array(cond_in, np.uint8)
                                 else:
-                                    out_tensor = copy.deepcopy(last_output_list[inp_idx - 1])
-                            if n in cond_out_root_input_const:
-                                cond_out_root_input_const[n] = in_edges[inp_idx][-1]['tensor'].is_const
+                                    if loop_cnt == 0:
+                                        out_tensor = copy.deepcopy(inputs[inp_idx])
+                                    else:
+                                        out_tensor = copy.deepcopy(last_output_list[inp_idx - 1])
+                                if n in cond_out_root_input_const:
+                                    cond_out_root_input_const[n] = in_edges[inp_idx][-1]['tensor'].is_const
                             sub_node_obj.infer_shape(out_tensor)
                         elif sub_node_obj.type == 'DummyInput':
                             assert sub_node_obj.target_graph != '', 'Target graph not set for DummyInput.'
@@ -3198,13 +3213,15 @@ class ArmLoopOp(OpHasSubGraph, DynamicShapeOp, ArmOp):
                             f'[Parser]: Infer of {sub_node_obj.type} Node({n}) in {self.name} meets issues: {str(e)}!')
                 loop_cnt += 1
                 # Loop body outputs: 1 + N + K
-                for out in self.body._attr['output_names']:
-                    is_const = self.body.nodes[out]['object'].is_all_inputs_const()
-                    for _, dst, out_attr in self.body.sorted_out_edges(out, data=True):
-                        if self.body.nodes[dst]['object'].type == 'Out':
-                            out_tensor = out_attr['tensor'].value
-                            output_list.append(out_tensor)
-                            output_const_list.append(is_const)
+                for o_tensor in self.body._attr['output_tensor_names']:
+                    for out in self.body._attr['output_names']:
+                        for _, dst, out_attr in self.body.sorted_out_edges(out, data=True):
+                            if self.body.nodes[dst]['object'].type == 'Out' and out_attr['tensor'].name == o_tensor:
+                                is_const = self.body.nodes[out]['object'].is_all_inputs_const()
+                                out_tensor = out_attr['tensor'].value
+                                output_list.append(out_tensor)
+                                output_const_list.append(is_const)
+                                break
                 last_output_list = output_list.copy()
                 last_output_const_list = output_const_list.copy()
                 cond_in = np.all(output_list[0])

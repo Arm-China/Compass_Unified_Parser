@@ -5985,9 +5985,9 @@ def make_graph_connected(graph):
                 dummy_out_attr['src_out_port'] = in_port + 1
                 graph.add_edge(dummy, dst, **dummy_out_attr)
                 in_port += 1
-                if inp in graph._attr['output_names']:
-                    index = graph._attr['output_names'].index(inp)
-                    graph._attr['output_names'][index] = dummy
+        if src in graph._attr['output_names']:
+            index = graph._attr['output_names'].index(src)
+            graph._attr['output_names'][index] = dummy
 
 
 def remove_invalid_subgraphs(graph):

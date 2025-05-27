@@ -250,6 +250,7 @@ def univ_parser(params):
                             is_dag = nx.is_directed_acyclic_graph(subgraph)
                             if not is_dag:
                                 ERROR(f'[Parser]: Graph({subgraph.name}) is not DAG!')
+                    infer(graph)
 
                 txt_path, bin_path = '', ''
                 try:

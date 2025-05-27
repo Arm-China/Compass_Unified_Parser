@@ -1613,10 +1613,12 @@ def convert_special_subgraph(graph):
                 dummy_nodes = []
                 scan_out_names = output_names[-K:]
                 for scan_out in scan_out_names:
-                    in_edges = graph.sorted_in_edges(scan_out, data=True)
-                    src, _, in_attr = in_edges[0]
-                    dummy = insert_dummy(graph, src, scan_out, in_attr)
+                    out_edges = graph.sorted_out_edges(scan_out, data=True)
+                    _, dst, out_attr = out_edges[0]
+                    dummy = insert_dummy(graph, scan_out, dst, out_attr)
                     dummy_nodes.append(dummy)
+                    index = graph._attr['output_names'].index(scan_out)
+                    graph._attr['output_names'][index] = dummy
                 if no_connected_inputs:
                     in_port = 1
                     for i, inp in enumerate(no_connected_inputs):
@@ -1636,6 +1638,8 @@ def convert_special_subgraph(graph):
                 out_edge = graph.sorted_out_edges(output_names[0], data=True)[0]
                 src, dst, out_attr = out_edge
                 dummy = insert_dummy(graph, src, dst, out_attr)
+                index = graph._attr['output_names'].index(src)
+                graph._attr['output_names'][index] = dummy
                 if no_connected_inputs:
                     for i, inp in enumerate(no_connected_inputs):
                         inp_out_edge = graph.sorted_out_edges(inp, data=True)[0]

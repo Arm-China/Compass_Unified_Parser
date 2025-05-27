@@ -200,13 +200,15 @@ class LoopOp(OpHasSubGraph, OnnxOp):
                             f'[Parser]: Infer of {sub_node_obj.type} Node({n}) in {self.name} meets issues: {str(e)}!')
                 loop_cnt += 1
                 # Loop body outputs: 1 + N + K
-                for out in self.body._attr['output_names']:
-                    is_const = self.body.nodes[out]['object'].is_all_inputs_const()
-                    for _, dst, out_attr in self.body.sorted_out_edges(out, data=True):
-                        if self.body.nodes[dst]['object'].type == 'Out':
-                            out_tensor = out_attr['tensor'].value
-                            output_list.append(out_tensor)
-                            output_const_list.append(is_const)
+                for o_tensor in self.body._attr['output_tensor_names']:
+                    for out in self.body._attr['output_names']:
+                        for _, dst, out_attr in self.body.sorted_out_edges(out, data=True):
+                            if self.body.nodes[dst]['object'].type == 'Out' and out_attr['tensor'].name == o_tensor:
+                                is_const = self.body.nodes[out]['object'].is_all_inputs_const()
+                                out_tensor = out_attr['tensor'].value
+                                output_list.append(out_tensor)
+                                output_const_list.append(is_const)
+                                break
                 last_output_list = output_list.copy()
                 last_output_const_list = output_const_list.copy()
                 cond_in = np.all(output_list[0])
