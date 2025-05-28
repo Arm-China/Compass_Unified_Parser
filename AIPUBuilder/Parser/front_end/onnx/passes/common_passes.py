@@ -51,12 +51,19 @@ def fuse_const(graph):
                                 from ....common.utils import get_target_graph
                                 target_g = get_target_graph(src_obj.target_graph, graph._root)
                                 parent_node = graph._attr['parent_node']
+                                parent_graph = graph._attr['parent_graph']
+                                parent_node_obj = NodeWrap(parent_graph, parent_node)['object']
                                 target_g.remove_edge(src, parent_node)
                                 if parent_node in graph._root._attr['subgraph_depends'] and \
                                         graph.name in graph._root._attr['subgraph_depends'][parent_node]:
                                     if src in graph._root._attr['subgraph_depends'][parent_node][graph.name]:
                                         graph._root._attr['subgraph_depends'][parent_node][graph.name].remove(src)
                                 clear_redundant_nodes(target_g)
+                                if parent_node_obj.type in ('ArmIf',):
+                                    if 'else_branch' in graph.name:
+                                        parent_node_obj.else_branch_inputs_num -= 1
+                                    else:
+                                        parent_node_obj.then_branch_inputs_num -= 1
                                 # Update external_in_port
                                 dm_matches = single_node_matcher(graph, 'DummyInput')
                                 for dm in dm_matches:

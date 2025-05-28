@@ -2289,8 +2289,35 @@ def _decompose_const_if(graph, params):
                     if keep_branch.name in graph._root._attr['subgraph_depends'][if_name]:
                         current_depends_node_info = graph._root._attr['subgraph_depends'][if_name][keep_branch.name]
                         parent_node_name = graph._attr['parent_node']
-                        graph._root._attr['subgraph_depends'][parent_node_name][graph.name] = current_depends_node_info
+                        origin_depend_nodes = graph._root._attr['subgraph_depends'][parent_node_name][graph.name]
+                        # need keep origin order
+                        new_depends_info = [x for x in origin_depend_nodes if x in current_depends_node_info]
+                        graph._root._attr['subgraph_depends'][parent_node_name][graph.name] = new_depends_info
                         graph._root._attr['subgraph_depends'].pop(if_name)
+                        removed_depends = list(set(origin_depend_nodes).difference(set(current_depends_node_info)))
+                        current_graph = graph
+                        if removed_depends:
+                            while isinstance(current_graph, SubGraph):
+                                parent_graph = current_graph._attr['parent_graph']
+                                parent_node_name = current_graph._attr['parent_node']
+                                parent_node_obj = NodeWrap(parent_graph, parent_node_name)['object']
+                                if parent_node_obj.type in ('ArmIf',):
+                                    if 'else_branch' in graph.name:
+                                        parent_node_obj.else_branch_inputs_num -= len(removed_depends)
+                                    else:
+                                        parent_node_obj.then_branch_inputs_num -= len(removed_depends)
+                                for rm_n in removed_depends:
+                                    parent_graph.remove_edge(rm_n, parent_node_name)
+                                    rm_n_obj = NodeWrap(current_graph, rm_n)['object']
+                                    dm_matches = single_node_matcher(current_graph, 'DummyInput')
+                                    for dm in dm_matches:
+                                        if dm['target'] not in removed_depends:
+                                            dm_obj = NodeWrap(current_graph, dm['target'])['object']
+                                            if dm_obj.external_in_port > rm_n_obj.external_in_port:
+                                                dm_obj.external_in_port -= 1
+                                clear_redundant_nodes(parent_graph)
+                                current_graph = parent_graph
+
             else:
                 removed_subgraphs = []
                 if if_name in graph._attr['subgraphs']:

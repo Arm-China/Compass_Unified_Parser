@@ -240,16 +240,17 @@ def univ_parser(params):
                 if 'subgraphs' in graph._attr and graph._attr['subgraphs']:
                     for v in list(graph._attr['subgraphs'].values()):
                         for subgraph_name, subgraph in v.items():
-                            front_process_graph(model_type, model_path, subgraph, params)
-                            process_graph(subgraph, params)
-                            convert_dummyinput_to_input(subgraph)
-                            is_connected = nx.is_weakly_connected(subgraph)
-                            if not is_connected:
-                                ERROR(f'[Parser]: Graph({subgraph.name}) is not connected!')
-                                break
-                            is_dag = nx.is_directed_acyclic_graph(subgraph)
-                            if not is_dag:
-                                ERROR(f'[Parser]: Graph({subgraph.name}) is not DAG!')
+                            if subgraph._attr['parent_node'] in graph._attr['subgraphs']:
+                                front_process_graph(model_type, model_path, subgraph, params)
+                                process_graph(subgraph, params)
+                                convert_dummyinput_to_input(subgraph)
+                                is_connected = nx.is_weakly_connected(subgraph)
+                                if not is_connected:
+                                    ERROR(f'[Parser]: Graph({subgraph.name}) is not connected!')
+                                    break
+                                is_dag = nx.is_directed_acyclic_graph(subgraph)
+                                if not is_dag:
+                                    ERROR(f'[Parser]: Graph({subgraph.name}) is not DAG!')
                     infer(graph)
 
                 txt_path, bin_path = '', ''
