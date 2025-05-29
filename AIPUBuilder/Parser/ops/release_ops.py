@@ -4914,7 +4914,7 @@ class ArmSinhOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
         self.set_out_tensor(out_tensor)
 
 
-class ArmSliceOp(OpHasOneOutPort, ArmOp):
+class ArmSliceOp(OpHasMultipleOutPorts, ArmOp):
     # 5 if Dynamic else 1
     @classmethod
     def num_in_ports(cls):
@@ -4940,12 +4940,14 @@ class ArmSliceOp(OpHasOneOutPort, ArmOp):
             assert len(inputs) == 5, 'Dynamic Slice should have 5 inputs.'
             for inp in inputs[1:]:
                 assert len(inp.shape) == 1, f'Slice other inputs should be 1D, but {len(inp.shape)}D.'
-            out_tensor = inputs[0]
+            output = inputs[0]
+            output_shape = np.array(list(inputs[0].shape), np.int32)
+            out_tensor = [output, output_shape]
         else:
             self.dynamic = False
             obj = tuple(slice(s, None if (p < 0 and e < 0) else e, p)
                         for s, e, p in zip(self.starts, self.ends, self.steps))
-            out_tensor = inputs[0][obj]
+            out_tensor = [inputs[0][obj]]
         self.set_out_tensor(out_tensor)
 
     def write_attrs(self, txt_file):
