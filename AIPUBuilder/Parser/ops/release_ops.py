@@ -3235,7 +3235,7 @@ class ArmLoopOp(OpHasSubGraph, DynamicShapeOp, ArmOp):
         # Loop outputs: N + K
         if ori_cond_in:
             loop_output_list = last_output_list[1: 1 + N]
-            loop_output_list.extend([np.stack(x) for x in k_carried_away])
+            loop_output_list.extend([np.vstack(x) for x in k_carried_away])
             loop_output_const_list = last_output_const_list[1: 1 + N]
             for i in range(K):
                 loop_output_const_list.append(last_output_const_list[1 + N + i])
