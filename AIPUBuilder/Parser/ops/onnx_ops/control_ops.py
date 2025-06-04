@@ -45,7 +45,6 @@ class IfOp(OpHasSubGraph, OnnxOp):
                     ERROR(f'[Parser]: Get DummpyInput({n}) Out edges failed in If Node({self.name}).')
                 assert sub_node_obj.external_in_port >= 0, f'external_in_port of {n} is not set correctly.'
                 out_tensor = inputs[sub_node_obj.external_in_port]
-                # out_tensor = dummy_out_edges[0][-1]['tensor'].value
                 sub_node_obj.infer_shape(out_tensor, dummy_out_edges[0][-1]['tensor'].is_const)
             else:
                 sub_node_obj.infer_shape()
@@ -72,7 +71,7 @@ class IfOp(OpHasSubGraph, OnnxOp):
                 in_edges[0][2]['tensor'].value is not None:
             if_cond = bool(inputs[0].item())
             output_list, output_const_list = self.forward(inputs, if_cond)
-            self.set_out_tensor(output_list, all(output_const_list))
+            self.set_out_tensor(output_list, output_const_list)
         else:
             DEBUG(f'[Parser]: If({self.name}) condition is non-const, the infer shape is unreliable.')
             true_out_list, true_out_const_list = self.forward(inputs, True)
@@ -87,7 +86,9 @@ class IfOp(OpHasSubGraph, OnnxOp):
                         output_list.append(true_v)
                     else:
                         output_list.append(false_v)
-            self.set_out_tensor(output_list, False)
+            output_const_list = [False] * len(output_list)
+            output_dynamic_list = [True] * len(output_list)
+            self.set_out_tensor(output_list, output_const_list, output_dynamic_list)
 
 
 class LoopOp(OpHasSubGraph, OnnxOp):
@@ -150,6 +151,9 @@ class LoopOp(OpHasSubGraph, OnnxOp):
         loop_cnt = 0
         last_output_list = []
         last_output_const_list = []
+        last_output_dynamic_list = []
+        loop_output_const_list = []
+        loop_output_dynamic_list = []
         cond_out_root_inputs = self.body.nodes[self.body._attr['output_names'][0]]['object'].get_root_inputs()
         cond_out_root_input_const = {}
         for inp in cond_out_root_inputs:
@@ -159,6 +163,7 @@ class LoopOp(OpHasSubGraph, OnnxOp):
                 INFO(f'[Parser]: Loop Subgraph({self.body.name}) iter: {i} of Node: {self.name}')
                 output_list = []
                 output_const_list = []
+                output_dynamic_list = []
                 for n in sub_nodes:
                     sub_node_obj = self.body.nodes[n]['object']
                     if sub_node_obj is None:
@@ -208,9 +213,11 @@ class LoopOp(OpHasSubGraph, OnnxOp):
                                 out_tensor = out_attr['tensor'].value
                                 output_list.append(out_tensor)
                                 output_const_list.append(is_const)
+                                output_dynamic_list.append(out_attr['tensor'].is_dynamic)
                                 break
                 last_output_list = output_list.copy()
                 last_output_const_list = output_const_list.copy()
+                last_output_dynamic_list = output_dynamic_list.copy()
                 cond_in = np.all(output_list[0])
                 if K > 0:
                     for k in range(K):
@@ -223,13 +230,15 @@ class LoopOp(OpHasSubGraph, OnnxOp):
         if ori_cond_in:
             loop_output_list = last_output_list[1: 1 + N]
             loop_output_list.extend([np.vstack(x) for x in k_carried_away])
-            loop_output_const_list = last_output_const_list[1: 1 + N]
-            for i in range(K):
-                loop_output_const_list.append(last_output_const_list[1 + N + i])
+            for i in range(N + K):
+                loop_output_const_list.append(last_output_const_list[1 + i])
+                loop_output_dynamic_list.append(last_output_dynamic_list[1 + i] or self.real_loop_cnt is None)
         else:
             loop_output_list = inputs[2:]
             loop_output_const_list = [attr['tensor'].is_const for _, _, attr in in_edges[2:]]
+            loop_output_dynamic_list = [attr['tensor'].is_dynamic for _, _, attr in in_edges[2:]]
         while len(loop_output_list) < len(self.get_out_ports()):
             loop_output_list.append(np.array([]))
             loop_output_const_list.append(False)
-        self.set_out_tensor(loop_output_list, all(loop_output_const_list))
+            loop_output_dynamic_list.append(False)
+        self.set_out_tensor(loop_output_list, loop_output_const_list, loop_output_dynamic_list)

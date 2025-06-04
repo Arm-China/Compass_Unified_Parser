@@ -576,6 +576,15 @@ class Op(abc.ABC):
                 self.name, keys=True, data=True)]
             return True if (is_const_list and all(is_const_list)) else False
 
+    def is_inputs_dynamic(self):
+        '''Determine whether has dynamic input.'''
+        if self.name in self._graph._attr['input_tensors']:
+            return self._graph._attr['input_tensors'][self.name].is_dynamic
+        else:
+            is_dynamic_list = [d['tensor'].is_dynamic for _, _, _, d in self._graph.sorted_in_edges(
+                self.name, keys=True, data=True)]
+            return True if (is_dynamic_list and any(is_dynamic_list)) else False
+
     def is_all_outputs_const(self):
         '''Determine whether all outputs are constant nodes.'''
         if isinstance(self, ConstLikeOp):
@@ -782,12 +791,14 @@ class OpHasOneOutPort(Op):
         '''set the out tensor of this op.'''
         try:
             is_const = self.is_all_inputs_const()
+            is_dynamic = self.is_inputs_dynamic()
             for _, _, d in self._graph.sorted_out_edges(self.name, data=True):
                 if d.get('tensor', None) is not None:
                     d['tensor'].value = tensor_data
                     if tensor_data is not None:
                         d['tensor'].shape = d['tensor'].value.shape
                         d['tensor'].is_const = is_const
+                        d['tensor'].is_dynamic = is_dynamic
                         if not self.quantize or d['tensor'].dtype is None:
                             d['tensor'].dtype = str(d['tensor'].value.dtype)
                 else:
@@ -813,12 +824,13 @@ class OpHasMultipleOutPorts(Op):
         '''An abstract method for shape inference.'''
         super(OpHasMultipleOutPorts, self).infer_shape()
 
-    def set_out_tensor(self, tensor_data_list):
+    def set_out_tensor(self, tensor_data_list, is_dynamic=False):
         '''set the out tensor of this op.'''
         try:
             from ..graph.node_wrap import NodeWrap
             from ..graph.graph_algo import get_valid_node_name
             is_const = self.is_all_inputs_const()
+            is_dynamic = self.is_inputs_dynamic() or is_dynamic
             out_ports = self.get_out_ports()
             if len(tensor_data_list) > len(out_ports):
                 for i in range(len(tensor_data_list)):
@@ -842,10 +854,11 @@ class OpHasMultipleOutPorts(Op):
                             if t is not None:
                                 d['tensor'].shape = d['tensor'].value.shape
                                 d['tensor'].is_const = is_const
+                                d['tensor'].is_dynamic = is_dynamic
                                 if not self.quantize or d['tensor'].dtype is None:
                                     d['tensor'].dtype = str(d['tensor'].value.dtype)
                         else:
-                            d['tensor'] = Tensor(value=t, is_const=is_const)
+                            d['tensor'] = Tensor(value=t, is_const=is_const, is_dynamic=is_dynamic)
 
             self.clear_unused_tensor(is_const)
 
@@ -2362,7 +2375,7 @@ class OpHasSubGraph(OpHasVariableOutPorts):
     OP with subgraph must inherit OpHasSubGraph.
     '''
 
-    def set_out_tensor(self, tensor_data_list, is_const=False):
+    def set_out_tensor(self, tensor_data_list, is_const_list=[], is_dynamic_list=[]):
         '''set the out tensor of this op.'''
         try:
             from ..graph.node_wrap import NodeWrap
@@ -2384,7 +2397,10 @@ class OpHasSubGraph(OpHasVariableOutPorts):
                         d['tensor'].value = tensor_data_list[out_ports.index(
                             d['src_out_port'])]
                         d['tensor'].shape = d['tensor'].value.shape
-                        d['tensor'].is_const = is_const
+                        d['tensor'].is_const = is_const_list[out_ports.index(
+                            d['src_out_port'])] if is_const_list else False
+                        d['tensor'].is_dynamic = is_dynamic_list[out_ports.index(
+                            d['src_out_port'])] if is_dynamic_list else False
                         if not self.quantize or d['tensor'].dtype is None:
                             d['tensor'].dtype = str(d['tensor'].value.dtype)
                     else:
@@ -2395,13 +2411,14 @@ class OpHasSubGraph(OpHasVariableOutPorts):
                     if d.get('tensor', None) is not None:
                         d['tensor'].value = tensor_data_list[0]
                         d['tensor'].shape = d['tensor'].value.shape
-                        d['tensor'].is_const = is_const
+                        d['tensor'].is_const = is_const_list[0] if is_const_list else False
+                        d['tensor'].is_dynamic = is_dynamic_list[0] if is_dynamic_list else False
                         if not self.quantize or d['tensor'].dtype is None:
                             d['tensor'].dtype = str(d['tensor'].value.dtype)
                     else:
                         d['tensor'] = Tensor(value=tensor_data_list[0])
 
-            self.clear_unused_tensor(is_const)
+            self.clear_unused_tensor(all(is_const_list) if is_const_list else False)
 
         except KeyError as e:
             ERROR('[Parser]: Node(%s) meets key error in set_out_tensor (%s)! ' %

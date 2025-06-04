@@ -2304,6 +2304,25 @@ def rename_compress(graph):
         clear_redundant_nodes(graph)
 
 
+def rename_constantofshape(graph):
+    matches = single_node_matcher(graph, 'ConstantOfShape')
+    for m in matches:
+        cons_of_shape = m['target']
+        cons_of_shape_obj = NodeWrap(graph, cons_of_shape)['object']
+        if cons_of_shape_obj is not None:
+            cons_of_shape_attr = cons_of_shape_obj.copied_attr()
+            if cons_of_shape_obj.value is not None:
+                value = cons_of_shape_obj.value
+            else:
+                value = np.array([0.], np.float32)
+            cons_of_shape_attr['value'] = value
+            NodeWrap(graph, cons_of_shape).replace_obj(
+                'ArmConstantOfShape', cons_of_shape_attr)
+        else:
+            ERROR(
+                '[Parser]: Meets invalid ConstantOfShape Op (%s) in rename_constantofshape!' % cons_of_shape)
+
+
 def rename_conv(graph):
     conv_types = ['Conv', 'ConvTranspose', 'ConvInteger']
     matches = matched_patterns(
@@ -3193,6 +3212,39 @@ def rename_scatterel(graph):
         else:
             ERROR(
                 '[Parser]: Meets invalid ScatterElements/Scatter Op (%s) in rename_scatterel!' % scatterel)
+
+
+def rename_shape(graph):
+    matches = single_node_matcher(graph, 'Shape')
+    for m in matches:
+        shape = m['target']
+        shape_obj = NodeWrap(graph, shape)['object']
+        if shape_obj is not None:
+            shape_attr = shape_obj.copied_attr()
+            input_shape = shape_obj.get_input_shapes()[0]
+            rank = len(input_shape)
+            if shape_obj.cur_version >= 15:
+                true_start = 0
+                true_end = rank
+                if shape_obj.end is not None:
+                    true_end = (shape_obj.end + rank) if shape_obj.end < 0 else shape_obj.end
+                    true_end = 0 if true_end < 0 else (
+                        rank if true_end > rank else true_end)
+                if shape_obj.start != 0:
+                    true_start = (
+                        shape_obj.start + rank) if shape_obj.start < 0 else shape_obj.start
+                    true_start = 0 if true_start < 0 else (
+                        rank - 1 if true_start >= rank else true_start)
+                shape_attr['start'] = true_start
+                shape_attr['end'] = true_end
+            else:
+                shape_attr['start'] = 0
+                shape_attr['end'] = rank
+            NodeWrap(graph, shape).replace_obj(
+                'ArmShape', shape_attr)
+        else:
+            ERROR(
+                '[Parser]: Meets invalid Shape Op (%s) in rename_shape!' % shape)
 
 
 def rename_slice(graph):
@@ -6063,6 +6115,7 @@ def back_passes(graph, params):
     rename_cast(graph)
     rename_col2im(graph)
     rename_compress(graph)
+    rename_constantofshape(graph)
     rename_conv(graph)
     rename_cum(graph)
     rename_dilation_erosion(graph)
@@ -6092,6 +6145,7 @@ def back_passes(graph, params):
     rename_roialign(graph)
     rename_scatternd(graph)
     rename_scatterel(graph)
+    rename_shape(graph)
     rename_slice(graph)
     rename_tile(graph)
     rename_topk(graph)

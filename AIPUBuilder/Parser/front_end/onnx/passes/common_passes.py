@@ -33,7 +33,8 @@ def fuse_const(graph):
                 continue
             if not isinstance(node_obj, ConstLikeOp) \
                     and isinstance(node_obj, OpHasOneOutPort) \
-                    and node_obj.is_all_inputs_const():
+                    and node_obj.is_all_inputs_const() \
+                    and not node_obj.is_inputs_dynamic():
                 out_edge = graph.sorted_out_edges(node_name, data=True)
                 if len(out_edge) >= 1 and out_edge[0][2]['tensor'] is not None and out_edge[0][2]['tensor'].value is not None:
                     const_value = out_edge[0][2]['tensor'].value
@@ -102,7 +103,8 @@ def convert_to_const(graph, op_type_name_list):
             if node_obj is None:
                 ERROR('[Parser]: Meets invalid Node(%s) in convert_to_const!' % node_name)
                 continue
-            if isinstance(node_obj, OpHasOneOutPort) and node_obj.type in op_type_name_list:
+            if isinstance(node_obj, OpHasOneOutPort) and node_obj.type in op_type_name_list and \
+                    not node_obj.is_inputs_dynamic():
                 out_tensors = node_obj.get_output_tensors()
                 if len(out_tensors) >= 1 and out_tensors[0] is not None and node_obj.is_all_outputs_const():
                     new_attr = node_obj.copied_attr()

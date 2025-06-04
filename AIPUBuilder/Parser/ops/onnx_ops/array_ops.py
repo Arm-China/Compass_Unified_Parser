@@ -951,7 +951,10 @@ class ScatterNDOp(OpHasOneOutPort, OnnxOp):
         data, indices, updates = inputs
         const_inputs = self.sorted_in_consts()
         inplace = True if all(in_port != 0 for _, in_port, _ in const_inputs) else False
-        out_tensor = ScatterNDOp.scatternd(data, indices, updates, reduction=self.reduction, inplace=inplace)
+        if self.is_inputs_dynamic():
+            out_tensor = data if inplace else copy.deepcopy(data)
+        else:
+            out_tensor = ScatterNDOp.scatternd(data, indices, updates, reduction=self.reduction, inplace=inplace)
         self.set_out_tensor(out_tensor)
 
 

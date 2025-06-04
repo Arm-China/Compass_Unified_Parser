@@ -1003,6 +1003,44 @@ class ArmConstantOp(OpHasWeights, OpHasOneOutPort, ConstLikeOp, ArmOp):
         self.set_out_tensor(self.weights)
 
 
+class ArmConstantOfShapeOp(LayoutUnawareOp, OpHasOneOutPort, DynamicShapeOp, ArmOp):
+    @classmethod
+    def num_in_ports(cls):
+        return 1
+
+    @classmethod
+    def attributes(cls):
+        return {
+            'value': {'type': AttrType.FLOAT, 'required': True},
+        }
+
+    def __init__(self, graph, attr_dict=None):
+        super(ArmConstantOfShapeOp, self).__init__(graph, attr_dict)
+        self.update_attributes(ArmConstantOfShapeOp, attr_dict)
+        assert self.check_required(), 'ArmConstantOfShapeOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(ArmConstantOfShapeOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        if len(inputs) >= 1 and inputs[0] is not None:
+            inp = inputs[0].astype(np.int32)
+            out_tensor = np.ndarray(inp.tolist())
+            out_tensor.fill(self.value[0])
+            out_tensor = out_tensor.astype(self.value.dtype)
+        else:
+            out_tensor = None
+        self.set_out_tensor(out_tensor)
+
+    def write_attrs(self, txt_file):
+        ret = super(ArmConstantOfShapeOp, self).write_attrs(txt_file)
+        if ret:
+            if np.issubdtype(self.value.dtype.type, np.integer):
+                txt_file.write('value=%d\n' % int(self.value[0]))
+            else:
+                txt_file.write(f'value={self.value[0]}\n')
+        return ret
+
+
 class ArmConvolutionOp(BaseActivationOp, BaseConvOp, ArmOp):
     @classmethod
     def cast_in_ports(cls):
@@ -2801,7 +2839,9 @@ class ArmIfOp(OpHasSubGraph, DynamicShapeOp, ArmOp):
                     output_list.append(true_v)
                 else:
                     output_list.append(false_v)
-        self.set_out_tensor(output_list, False)
+        output_const_list = [False] * len(output_list)
+        output_dynamic_list = [True] * len(output_list)
+        self.set_out_tensor(output_list, output_const_list, output_dynamic_list)
 
     def write_attrs(self, txt_file):
         ret = super(ArmIfOp, self).write_attrs(txt_file)
@@ -3160,6 +3200,9 @@ class ArmLoopOp(OpHasSubGraph, DynamicShapeOp, ArmOp):
         loop_cnt = 0
         last_output_list = []
         last_output_const_list = []
+        last_output_dynamic_list = []
+        loop_output_const_list = []
+        loop_output_dynamic_list = []
         cond_out_root_inputs = self.body.nodes[self.body._attr['output_names'][0]]['object'].get_root_inputs()
         cond_out_root_input_const = {}
         for inp in cond_out_root_inputs:
@@ -3169,6 +3212,7 @@ class ArmLoopOp(OpHasSubGraph, DynamicShapeOp, ArmOp):
                 INFO(f'[Parser]: Loop Subgraph({self.body.name}) iter: {i} of Node: {self.name}')
                 output_list = []
                 output_const_list = []
+                output_dynamic_list = []
                 for n in sub_nodes:
                     sub_node_obj = self.body.nodes[n]['object']
                     if sub_node_obj is None:
@@ -3221,9 +3265,11 @@ class ArmLoopOp(OpHasSubGraph, DynamicShapeOp, ArmOp):
                                 out_tensor = out_attr['tensor'].value
                                 output_list.append(out_tensor)
                                 output_const_list.append(is_const)
+                                output_dynamic_list.append(out_attr['tensor'].is_dynamic)
                                 break
                 last_output_list = output_list.copy()
                 last_output_const_list = output_const_list.copy()
+                last_output_dynamic_list = output_dynamic_list.copy()
                 cond_in = np.all(output_list[0])
                 if K > 0:
                     for k in range(K):
@@ -3236,16 +3282,18 @@ class ArmLoopOp(OpHasSubGraph, DynamicShapeOp, ArmOp):
         if ori_cond_in:
             loop_output_list = last_output_list[1: 1 + N]
             loop_output_list.extend([np.vstack(x) for x in k_carried_away])
-            loop_output_const_list = last_output_const_list[1: 1 + N]
-            for i in range(K):
-                loop_output_const_list.append(last_output_const_list[1 + N + i])
+            for i in range(N + K):
+                loop_output_const_list.append(last_output_const_list[1 + i])
+                loop_output_dynamic_list.append(last_output_dynamic_list[1 + i] or self.real_loop_cnt is None)
         else:
             loop_output_list = inputs[2:]
             loop_output_const_list = [attr['tensor'].is_const for _, _, attr in in_edges[2:]]
+            loop_output_dynamic_list = [attr['tensor'].is_dynamic for _, _, attr in in_edges[2:]]
         while len(loop_output_list) < len(self.get_out_ports()):
             loop_output_list.append(np.array([]))
             loop_output_const_list.append(False)
-        self.set_out_tensor(loop_output_list, all(loop_output_const_list))
+            loop_output_dynamic_list.append(False)
+        self.set_out_tensor(loop_output_list, loop_output_const_list, loop_output_dynamic_list)
 
     def write_attrs(self, txt_file):
         ret = super(ArmLoopOp, self).write_attrs(txt_file)
@@ -4878,6 +4926,45 @@ class ArmSegmentReduceOp(OpHasMethod, OpHasOneOutPort, ArmOp):
         self.set_out_tensor(out_tensor)
 
 
+class ArmShapeOp(LayoutUnawareOp, OpHasOneOutPort, DynamicShapeOp, ArmOp):
+    @classmethod
+    def cast_in_ports(cls):
+        return {0: ['float32', 'float16', 'int8', 'uint8', 'int16', 'uint16']}
+
+    @classmethod
+    def num_in_ports(cls):
+        return 1
+
+    @classmethod
+    def attributes(cls):
+        return {
+            'end': {'type': AttrType.INT, 'required': True},
+            'start': {'type': AttrType.INT, 'required': True}
+        }
+
+    def __init__(self, graph, attr_dict=None):
+        super(ArmShapeOp, self).__init__(graph, attr_dict)
+        self.update_attributes(ArmShapeOp, attr_dict)
+        assert self.check_required(), 'ArmShapeOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(ArmShapeOp, self).infer_shape()
+        input_shapes = self.get_input_shapes()
+        if input_shapes and input_shapes[0] is not None:
+            shape = input_shapes[0][self.start:self.end]
+            out_tensor = np.array(shape, np.int32)
+        else:
+            out_tensor = None
+        self.set_out_tensor(out_tensor)
+
+    def write_attrs(self, txt_file):
+        ret = super(ArmShapeOp, self).write_attrs(txt_file)
+        if ret:
+            txt_file.write('start=%d\n' % int(self.start))
+            txt_file.write('end=%d\n' % int(self.end))
+        return ret
+
+
 class ArmSignOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
@@ -4948,7 +5035,7 @@ class ArmSliceOp(OpHasMultipleOutPorts, ArmOp):
             obj = tuple(slice(s, None if (p < 0 and e < 0) else e, p)
                         for s, e, p in zip(self.starts, self.ends, self.steps))
             out_tensor = [inputs[0][obj]]
-        self.set_out_tensor(out_tensor)
+        self.set_out_tensor(out_tensor, is_dynamic=self.dynamic)
 
     def write_attrs(self, txt_file):
         ret = super(ArmSliceOp, self).write_attrs(txt_file)
