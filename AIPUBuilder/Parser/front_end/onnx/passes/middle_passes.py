@@ -11811,6 +11811,8 @@ def convert_div_to_mul(graph):
             continue
         if div_obj.quantize:
             continue
+        if np.issubdtype(const_obj.value.dtype.type, np.integer):
+            continue
         matched = True
         new_const_value = np.array(np.reciprocal(const_obj.value))
         graph.remove_edge(const, div)
