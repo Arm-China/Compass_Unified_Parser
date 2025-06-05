@@ -1160,31 +1160,50 @@ class SliceOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
         if not ret and item in ('starts', 'ends', 'axes', 'steps'):
             cur_ver = self.__dict__['_attr']['cur_version'].value
             try:
+                const_inputs = self.sorted_in_consts()
+                non_const_in_ports = list(range(len(self.get_input_tensors())))
+                for _, in_port, _ in const_inputs:
+                    if in_port in non_const_in_ports:
+                        non_const_in_ports.remove(in_port)
                 if item == 'axes':
                     if cur_ver == 1:
                         ret = list(
                             range(len(self.__dict__['_attr']['starts'].value)))
                     else:
                         inputs = self.get_input_tensors()
-                        ret = np.array(inputs[3]).tolist() if len(
-                            inputs) > 3 else list(range(len(self.get_input_shapes()[0])))
+                        if 3 in non_const_in_ports:
+                            ret = list(range(inputs[3].shape[0])) if len(
+                                inputs) > 3 else list(range(len(self.get_input_shapes()[0])))
+                        else:
+                            ret = np.array(inputs[3]).tolist() if len(
+                                inputs) > 3 else list(range(len(self.get_input_shapes()[0])))
                 elif item in ('starts', 'ends'):
                     if cur_ver == 1:
                         ret = self.__dict__['_attr'][item].value
                     else:
                         inputs = self.get_input_tensors()
                         if item == 'starts':
-                            ret = np.array(inputs[1]).tolist()
+                            if 1 in non_const_in_ports:
+                                ret = [0] * inputs[1].shape[0]
+                            else:
+                                ret = np.array(inputs[1]).tolist()
                         else:
-                            ret = np.array(inputs[2]).tolist()
+                            if 2 in non_const_in_ports:
+                                inp_shape = inputs[0].shape
+                                ret = [inp_shape[axis] for axis in self.axes]
+                            else:
+                                ret = np.array(inputs[2]).tolist()
                 elif item == 'steps':
                     inputs = self.get_input_tensors()
                     input_shapes = self.get_input_shapes()
                     if cur_ver == 1:
                         ret = [1] * len(input_shapes[0])
                     else:
-                        ret = np.array(inputs[4]).tolist() if len(
-                            inputs) > 4 else [1] * len(input_shapes[0])
+                        if 4 in non_const_in_ports:
+                            ret = [1] * len(input_shapes[0])
+                        else:
+                            ret = np.array(inputs[4]).tolist() if len(
+                                inputs) > 4 else [1] * len(input_shapes[0])
             except:
                 ret = None
         return ret

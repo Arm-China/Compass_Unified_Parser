@@ -3256,7 +3256,7 @@ def rename_slice(graph):
         if slice_obj is not None \
                 and ((slice_obj.cur_version == 1 and len(in_edges) == 1) or (slice_obj.cur_version > 1 and 3 <= len(in_edges) <= 5)):
             if len(in_edges) > 1 and any(not in_attr['tensor'].is_const for _, _, in_attr in in_edges[1:]):
-                WARN(f'[Parser]: Dynamic Slice({slice} in this graph.)')
+                WARN(f'[Parser]: Dynamic Slice({slice}) in this graph.')
                 if len(in_edges) < 5:
                     in_ports = slice_obj.get_in_ports()
                     input_shapes = slice_obj.get_input_shapes()
