@@ -104,7 +104,7 @@ def convert_to_const(graph, op_type_name_list):
                 ERROR('[Parser]: Meets invalid Node(%s) in convert_to_const!' % node_name)
                 continue
             if isinstance(node_obj, OpHasOneOutPort) and node_obj.type in op_type_name_list and \
-                    not node_obj.is_inputs_dynamic():
+                    not node_obj.is_inputs_dynamic() and not node_obj.is_outputs_dynamic():
                 out_tensors = node_obj.get_output_tensors()
                 if len(out_tensors) >= 1 and out_tensors[0] is not None and node_obj.is_all_outputs_const():
                     new_attr = node_obj.copied_attr()

@@ -567,7 +567,7 @@ class Op(abc.ABC):
     def is_all_inputs_const(self):
         '''Determine whether all inputs are constant nodes.'''
         if isinstance(self, ConstLikeOp):
-            return True
+            return not self.is_inputs_dynamic()
         elif self.name in self._graph._attr['input_tensors'] \
                 and self._graph._attr['input_tensors'][self.name].is_const:
             return True
@@ -584,6 +584,12 @@ class Op(abc.ABC):
             is_dynamic_list = [d['tensor'].is_dynamic for _, _, _, d in self._graph.sorted_in_edges(
                 self.name, keys=True, data=True)]
             return True if (is_dynamic_list and any(is_dynamic_list)) else False
+
+    def is_outputs_dynamic(self):
+        '''Determine whether has dynamic output.'''
+        is_dynamic_list = [d['tensor'].is_dynamic for _, _, _, d in self._graph.sorted_out_edges(
+            self.name, keys=True, data=True)]
+        return True if (is_dynamic_list and any(is_dynamic_list)) else False
 
     def is_all_outputs_const(self):
         '''Determine whether all outputs are constant nodes.'''
@@ -791,7 +797,10 @@ class OpHasOneOutPort(Op):
         '''set the out tensor of this op.'''
         try:
             is_const = self.is_all_inputs_const()
-            is_dynamic = self.is_inputs_dynamic()
+            if is_const:
+                is_dynamic = False
+            else:
+                is_dynamic = self.is_inputs_dynamic() or isinstance(self, DynamicShapeOp)
             for _, _, d in self._graph.sorted_out_edges(self.name, data=True):
                 if d.get('tensor', None) is not None:
                     d['tensor'].value = tensor_data
