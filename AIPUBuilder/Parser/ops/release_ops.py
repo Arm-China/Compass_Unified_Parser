@@ -14,9 +14,6 @@ from ..logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
 class ArmAbsOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
-    @classmethod
-    def cast_in_ports(cls):
-        return {0: ['float32', 'float16', 'int8', 'uint8']}
 
     def __init__(self, graph, attr_dict=None):
         super(ArmAbsOp, self).__init__(graph, attr_dict)
@@ -50,9 +47,6 @@ class ArmAccidentalHitsOp(OpHasMultipleOutPorts, ArmOp):
 
 
 class ArmAcosOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
-    @classmethod
-    def cast_in_ports(cls):
-        return {0: ['float32', 'float16', 'int8', 'uint8']}
 
     def infer_shape(self):
         super(ArmAcosOp, self).infer_shape()
@@ -62,9 +56,6 @@ class ArmAcosOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
 
 
 class ArmAcoshOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
-    @classmethod
-    def cast_in_ports(cls):
-        return {0: ['float32', 'float16', 'int8', 'uint8']}
 
     def infer_shape(self):
         super(ArmAcoshOp, self).infer_shape()
@@ -309,9 +300,6 @@ class ArmActivationOp(SameShapeOp, LayoutUnawareOp, OpHasMethod, OpHasOneOutPort
 
 
 class ArmAdaptivePoolOp(OpHasMethod, OpHasOneOutPort, ArmOp):
-    @classmethod
-    def cast_in_ports(cls):
-        return {0: ['float32', 'float16', 'int8', 'uint8']}
 
     @classmethod
     def attributes(cls):
@@ -405,9 +393,6 @@ class ArmAffineGridOp(OpHasOneOutPort, ArmOp):
 
 
 class ArmArgMinMaxOp(OpHasMethod, OpHasAxis, OpHasOneOutPort, ArmOp):
-    @classmethod
-    def cast_in_ports(cls):
-        return {0: ['float32', 'float16', 'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32']}
 
     @classmethod
     def attributes(cls):
@@ -449,9 +434,6 @@ class ArmArgMinMaxOp(OpHasMethod, OpHasAxis, OpHasOneOutPort, ArmOp):
 
 
 class ArmAsinOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
-    @classmethod
-    def cast_in_ports(cls):
-        return {0: ['float32', 'float16', 'int8', 'uint8']}
 
     def infer_shape(self):
         super(ArmAsinOp, self).infer_shape()
@@ -461,9 +443,6 @@ class ArmAsinOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
 
 
 class ArmAsinhOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
-    @classmethod
-    def cast_in_ports(cls):
-        return {0: ['float32', 'float16', 'int8', 'uint8']}
 
     def infer_shape(self):
         super(ArmAsinhOp, self).infer_shape()
@@ -473,9 +452,6 @@ class ArmAsinhOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
 
 
 class ArmAtanOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
-    @classmethod
-    def cast_in_ports(cls):
-        return {0: ['float32', 'float16', 'int8', 'uint8']}
 
     def infer_shape(self):
         super(ArmAtanOp, self).infer_shape()
@@ -485,9 +461,6 @@ class ArmAtanOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
 
 
 class ArmAtanhOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
-    @classmethod
-    def cast_in_ports(cls):
-        return {0: ['float32', 'float16', 'int8', 'uint8']}
 
     def infer_shape(self):
         super(ArmAtanhOp, self).infer_shape()
@@ -829,9 +802,6 @@ class ArmCastOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
 
 
 class ArmCeilOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
-    @classmethod
-    def cast_in_ports(cls):
-        return {0: ['float32', 'float16']}
 
     def infer_shape(self):
         super(ArmCeilOp, self).infer_shape()
@@ -841,9 +811,6 @@ class ArmCeilOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
 
 
 class ArmChannelShuffleOp(LayoutConcernedOp, OpHasMultipleOutPorts, ArmOp):
-    @classmethod
-    def cast_in_ports(cls):
-        return {0: ['float32', 'float16', 'int8', 'uint8']}
 
     @classmethod
     def attributes(cls):
@@ -928,10 +895,6 @@ class ArmConcatOp(OpHasAxis, OpHasOneOutPort, ArmOp):
     def num_in_ports(cls):
         return -1
 
-    @classmethod
-    def cast_in_ports(cls):
-        return {None: ['float32', 'float16', 'int32', 'uint8', 'int8']}
-
     def infer_shape(self):
         super(ArmConcatOp, self).infer_shape()
         inputs = self.get_input_tensors()
@@ -966,9 +929,6 @@ class ArmConcatOp(OpHasAxis, OpHasOneOutPort, ArmOp):
 
 
 class ArmCoshOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
-    @classmethod
-    def cast_in_ports(cls):
-        return {0: ['float32', 'float16', 'int8', 'uint8']}
 
     def infer_shape(self):
         super(ArmCoshOp, self).infer_shape()
@@ -1242,9 +1202,6 @@ class ArmConvTranspose3DOp(BaseActivationOp, BaseConvOp, ArmOp):
 
 
 class ArmCosineOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
-    @classmethod
-    def cast_in_ports(cls):
-        return {0: ['float32', 'float16', 'int8', 'uint8']}
 
     def infer_shape(self):
         super(ArmCosineOp, self).infer_shape()
@@ -1957,10 +1914,6 @@ class ArmEltwiseOp(SameShapeOp, LayoutUnawareOp, OpHasMethod, BaseActivationOp, 
                 }
 
     @classmethod
-    def cast_in_ports(cls):
-        return {0: ['float32', 'float16', 'int8', 'uint8', 'int32'], 1: ['float32', 'float16', 'int8', 'uint8', 'int32']}
-
-    @classmethod
     def num_in_ports(cls):
         return 2
 
@@ -2073,9 +2026,6 @@ class ArmErosionOp(OpHasPaddingStrides, OpHasWeights, OpHasOneOutPort, ArmOp):
 
 
 class ArmExpOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
-    @classmethod
-    def cast_in_ports(cls):
-        return {0: ['float32', 'float16', 'int8', 'uint8']}
 
     def infer_shape(self):
         super(ArmExpOp, self).infer_shape()
@@ -2215,9 +2165,6 @@ class ArmFilterBoxesOp(OpHasMultipleOutPorts, ArmOp):
 
 
 class ArmFloorOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
-    @classmethod
-    def cast_in_ports(cls):
-        return {0: ['float32', 'float16']}
 
     def __init__(self, graph, attr_dict=None):
         super(ArmFloorOp, self).__init__(graph, attr_dict)
@@ -2232,9 +2179,6 @@ class ArmFloorOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
 
 
 class ArmTruncOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
-    @classmethod
-    def cast_in_ports(cls):
-        return {0: ['float32', 'float16']}
 
     def __init__(self, graph, attr_dict=None):
         super(ArmTruncOp, self).__init__(graph, attr_dict)
@@ -3069,9 +3013,6 @@ class ArmLayerNormOp(OpHasAxis, OpHasBiases, OpHasWeights, OpHasVariableOutPorts
 
 
 class ArmLogOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
-    @classmethod
-    def cast_in_ports(cls):
-        return {0: ['float32', 'float16', 'int8', 'uint8']}
 
     def infer_shape(self):
         super(ArmLogOp, self).infer_shape()
@@ -3081,9 +3022,6 @@ class ArmLogOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
 
 
 class ArmLogSoftmaxOp(OpHasAxis, OpHasOneOutPort, ArmOp):
-    @classmethod
-    def cast_in_ports(cls):
-        return {0: ['float32', 'float16', 'int8', 'uint8']}
 
     @classmethod
     def attributes(cls):
@@ -3103,9 +3041,6 @@ class ArmLogSoftmaxOp(OpHasAxis, OpHasOneOutPort, ArmOp):
 
 
 class ArmLogicalOp(LayoutUnawareOp, OpHasMethod, OpHasOneOutPort, ArmOp):
-    @classmethod
-    def cast_in_ports(cls):
-        return {}
 
     @classmethod
     def num_in_ports(cls):
@@ -3439,9 +3374,6 @@ class ArmMatMulIntegerOp(OpHasOneOutPort, ArmOp):
 
 
 class ArmMaxPoolingWithArgMaxOp(OpHasPaddingStrides, OpHasMultipleOutPorts, ArmOp):
-    @classmethod
-    def cast_in_ports(cls):
-        return {0: ['float32', 'float16', 'int8', 'uint8']}
 
     @classmethod
     def attributes(cls):
@@ -3754,9 +3686,6 @@ class ArmNormalizedMomentsOp(OpHasMultipleOutPorts, ArmOp):
 
 
 class ArmNegativeOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
-    @classmethod
-    def cast_in_ports(cls):
-        return {0: ['float32', 'float16', 'int8', 'uint8']}
 
     def infer_shape(self):
         super(ArmNegativeOp, self).infer_shape()
@@ -3852,9 +3781,6 @@ class ArmNormalizationOp(OpHasMethod, OpHasAxis, OpHasOneOutPort, ArmOp):
 
 
 class ArmOneHotOp(OpHasOneOutPort, OpHasAxis, ArmOp):
-    @classmethod
-    def cast_in_ports(cls):
-        return {}
 
     @classmethod
     def attributes(cls):
@@ -3924,9 +3850,6 @@ class ArmOverlapAddOp(OpHasOneOutPort, ArmOp):
 
 
 class ArmPadOp(OpHasOneOutPort, ArmOp):
-    @classmethod
-    def cast_in_ports(cls):
-        return {0: ['float32', 'float16', 'int8', 'uint8', 'int32']}
 
     @classmethod
     def attributes(cls):
@@ -3963,9 +3886,6 @@ class ArmPadOp(OpHasOneOutPort, ArmOp):
 
 
 class ArmPoolingOp(OpHasMethod, OpHasPaddingStrides, OpHasOneOutPort, ArmOp):
-    @classmethod
-    def cast_in_ports(cls):
-        return {0: ['float32', 'float16', 'int8', 'uint8']}
 
     @classmethod
     def attributes(cls):
@@ -4049,9 +3969,6 @@ class ArmPoolingOp(OpHasMethod, OpHasPaddingStrides, OpHasOneOutPort, ArmOp):
 
 
 class ArmPooling3DOp(OpHasMethod, OpHasPaddingStrides, OpHasOneOutPort, ArmOp):
-    @classmethod
-    def cast_in_ports(cls):
-        return {0: ['float32', 'float16', 'int8', 'uint8']}
 
     @classmethod
     def attributes(cls):
@@ -4406,9 +4323,6 @@ class ArmReduceOp(OpHasMethod, OpHasAxis, OpHasOneOutPort, ArmOp):
 
 
 class ArmReciprocalOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
-    @classmethod
-    def cast_in_ports(cls):
-        return {0: ['float32', 'float16', 'int8', 'uint8']}
 
     def infer_shape(self):
         super(ArmReciprocalOp, self).infer_shape()
@@ -4672,7 +4586,7 @@ class ArmReverseSequenceOp(OpHasOneOutPort, ArmOp):
 
     @classmethod
     def cast_in_ports(cls):
-        return {0: ['float32', 'int32', 'int8', 'uint8', 'float16'], 1: 'int32'}
+        return {1: 'int32'}
 
     @classmethod
     def attributes(cls):
@@ -4784,9 +4698,6 @@ class ArmRoiAlignOp(OpHasMethod, OpHasOneOutPort, ArmOp):
 
 
 class ArmRoundOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
-    @classmethod
-    def cast_in_ports(cls):
-        return {0: ['float32', 'float16']}
 
     def infer_shape(self):
         super(ArmRoundOp, self).infer_shape()
@@ -4814,7 +4725,7 @@ class ArmScatterNDOp(OpHasOneOutPort, ArmOp):
 
     @classmethod
     def cast_in_ports(cls):
-        return {0: ['float32', 'float16', 'int8', 'uint8'], 1: 'int32', 2: ['float32', 'float16', 'int8', 'uint8']}
+        return {1: 'int32'}
 
     @classmethod
     def attributes(cls):
@@ -4918,9 +4829,6 @@ class ArmSegmentReduceOp(OpHasMethod, OpHasOneOutPort, ArmOp):
 
 
 class ArmShapeOp(LayoutUnawareOp, OpHasOneOutPort, DynamicShapeOp, ArmOp):
-    @classmethod
-    def cast_in_ports(cls):
-        return {0: ['float32', 'float16', 'int8', 'uint8', 'int16', 'uint16']}
 
     @classmethod
     def num_in_ports(cls):
@@ -4957,9 +4865,6 @@ class ArmShapeOp(LayoutUnawareOp, OpHasOneOutPort, DynamicShapeOp, ArmOp):
 
 
 class ArmSignOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
-    @classmethod
-    def cast_in_ports(cls):
-        return {0: ['float32', 'float16', 'int8', 'uint8']}
 
     def infer_shape(self):
         super(ArmSignOp, self).infer_shape()
@@ -4981,9 +4886,6 @@ class ArmSineOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
 
 
 class ArmSinhOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
-    @classmethod
-    def cast_in_ports(cls):
-        return {0: ['float32', 'float16', 'int8', 'uint8']}
 
     def infer_shape(self):
         super(ArmSinhOp, self).infer_shape()
@@ -5058,9 +4960,6 @@ class ArmSlotUpdateOp(OpHasOneOutPort, ArmOp):
 
 
 class ArmSoftmaxOp(OpHasAxis, OpHasOneOutPort, ArmOp):
-    @classmethod
-    def cast_in_ports(cls):
-        return {0: ['float32', 'float16', 'int8', 'uint8']}
 
     @classmethod
     def attributes(cls):
@@ -5223,9 +5122,6 @@ class ArmSplitOp(OpHasAxis, OpHasMultipleOutPorts, ArmOp):
 
 
 class ArmSqrtOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
-    @classmethod
-    def cast_in_ports(cls):
-        return {0: ['float32', 'float16', 'int8', 'uint8']}
 
     def infer_shape(self):
         super(ArmSqrtOp, self).infer_shape()
@@ -5235,9 +5131,6 @@ class ArmSqrtOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
 
 
 class ArmSquareOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
-    @classmethod
-    def cast_in_ports(cls):
-        return {0: ['float32', 'float16', 'int8', 'uint8']}
 
     def infer_shape(self):
         super(ArmSquareOp, self).infer_shape()
@@ -5309,9 +5202,6 @@ class ArmSufficientStatisticsOp(OpHasAxis, OpHasMultipleOutPorts, ArmOp):
 
 
 class ArmTanOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
-    @classmethod
-    def cast_in_ports(cls):
-        return {0: ['float32', 'float16', 'int8', 'uint8']}
 
     def infer_shape(self):
         super(ArmTanOp, self).infer_shape()

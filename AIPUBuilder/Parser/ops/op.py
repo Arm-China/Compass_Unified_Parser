@@ -2147,7 +2147,10 @@ class BaseActivationOp(OpHasOneOutPort):
             in_place = True
         else:
             in_place = False
-        torch_tensor = torch.from_numpy(tensor)
+        try:
+            torch_tensor = torch.from_numpy(tensor)
+        except:
+            torch_tensor = torch.from_numpy(tensor.astype(np.float32))
         if act == 'RELU':
             ret = torch.nn.functional.relu(torch_tensor, inplace=in_place).numpy()
         elif act == 'RELU6':
@@ -2172,6 +2175,7 @@ class BaseActivationOp(OpHasOneOutPort):
             ret = torch.nn.functional.celu(x, alpha=a).numpy()
         else:
             ret = tensor
+        ret = ret.astype(tensor.dtype)
         return ret
 
     def update_activation(self, attr_dict):

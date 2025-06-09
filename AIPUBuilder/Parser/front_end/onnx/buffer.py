@@ -7,6 +7,7 @@ import re
 from functools import partial
 import numpy as np
 from onnx.onnx_pb import TensorProto
+from ml_dtypes import bfloat16, float8_e5m2, float8_e4m3fn, float8_e4m3fnuz
 
 from ...common.defs import TensorType
 
@@ -29,6 +30,13 @@ from ...common.defs import TensorType
 # COMPLEX64 = 14; // complex
 # COMPLEX128 = 15; // complex
 # BFLOAT16 = 16;
+# FLOAT8E4M3FN = 17;
+# FLOAT8E4M3FNUZ = 18;
+# FLOAT8E5M2 = 19;
+# FLOAT8E5M2FNUZ = 20;
+# UINT4 = 21;
+# INT4 = 22;
+# FLOAT4E2M1 = 23;
 
 ONNX_NP_TENSOR_MAP = {
     0: ('UNDEFINED', None),
@@ -46,7 +54,11 @@ ONNX_NP_TENSOR_MAP = {
     12: ('UINT32', np.uint32),
     13: ('UINT64', np.uint64),
     14: ('COMPLEX64', np.complex64),
-    15: ('COMPLEX128', np.complex128)
+    15: ('COMPLEX128', np.complex128),
+    16: ('BFLOAT16', bfloat16),
+    17: ('FLOAT8E4M3FN', float8_e4m3fn),
+    18: ('FLOAT8E4M3FNUZ', float8_e4m3fnuz),
+    19: ('FLOAT8E5M2', float8_e5m2),
 }
 
 
