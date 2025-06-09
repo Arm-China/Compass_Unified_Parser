@@ -37,15 +37,12 @@ class IfOp(OpHasSubGraph, OnnxOp):
             if sub_node_obj is None:
                 ERROR(f'[Parser]: Get Node Obj Failed in If Infer of Node: {n}.')
             if sub_node_obj.type == 'DummyInput':
-                assert sub_node_obj.target_graph != '', 'Target graph not set for DummyInput.'
-                target_g = get_target_graph(sub_node_obj.target_graph, cur_sub_graph._root)
-                parent_node = target_g.nodes[n]
-                dummy_out_edges = target_g.sorted_out_edges(parent_node['object'].name, data=True)
-                if len(dummy_out_edges) == 0:
-                    ERROR(f'[Parser]: Get DummpyInput({n}) Out edges failed in If Node({self.name}).')
                 assert sub_node_obj.external_in_port >= 0, f'external_in_port of {n} is not set correctly.'
                 out_tensor = inputs[sub_node_obj.external_in_port]
-                sub_node_obj.infer_shape(out_tensor, dummy_out_edges[0][-1]['tensor'].is_const)
+                is_const = self._graph.sorted_in_edges(self.name, data=True)[
+                    sub_node_obj.external_in_port][2]['tensor'].is_const
+                sub_node_obj.is_const = is_const
+                sub_node_obj.infer_shape(out_tensor)
             else:
                 sub_node_obj.infer_shape()
 
@@ -190,12 +187,15 @@ class LoopOp(OpHasSubGraph, OnnxOp):
                             dummy_out_edges = target_g.sorted_out_edges(parent_node['object'].name, data=True)
                             if len(dummy_out_edges) == 0:
                                 ERROR(f'[Parser]: Get DummpyInput({n}) Out edges failed in Loop Node({self.name}).')
-                            # out_tensor = dummy_out_edges[0][-1]['tensor'].value
                             assert sub_node_obj.external_in_port >= 0, f'external_in_port of {n} is not set correctly.'
                             out_tensor = inputs[sub_node_obj.external_in_port]
+                            is_const = \
+                                self._graph.sorted_in_edges(self.name, data=True)[sub_node_obj.external_in_port][2][
+                                    'tensor'].is_const
+                            sub_node_obj.is_const = is_const
                             if n in cond_out_root_input_const:
                                 cond_out_root_input_const[n] = dummy_out_edges[0][-1]['tensor'].is_const
-                            sub_node_obj.infer_shape(out_tensor, dummy_out_edges[0][-1]['tensor'].is_const)
+                            sub_node_obj.infer_shape(out_tensor)
                         else:
                             if sub_node_obj.type in ('Constant', 'ArmConstant') and n in cond_out_root_input_const:
                                 cond_out_root_input_const[n] = True

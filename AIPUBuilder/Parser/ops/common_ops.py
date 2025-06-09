@@ -331,7 +331,8 @@ class DummyInputOp(OpHasOneOutPort, InputLikeOp, CommonOp):
     def attributes(cls):
         return {
             'target_graph': {'type': AttrType.STRING, 'default': '', 'required': False},
-            'external_in_port': {'type': AttrType.INT, 'default': -1, 'required': False}
+            'external_in_port': {'type': AttrType.INT, 'default': -1, 'required': False},
+            'is_const': {'type': AttrType.BOOL, 'default': False, 'required': False},
         }
 
     def __init__(self, graph, attr_dict=None):
@@ -339,13 +340,13 @@ class DummyInputOp(OpHasOneOutPort, InputLikeOp, CommonOp):
         self.update_attributes(DummyInputOp, attr_dict)
         assert self.check_required(), 'DummyInputOp is missing a required parameter.'
 
-    def infer_shape(self, input_tensor=None, is_const=False):
+    def infer_shape(self, input_tensor=None):
         super(DummyInputOp, self).infer_shape()
         assert input_tensor is not None, 'input tensor is empty in DummyInputOp.'
         out_tensor = input_tensor.copy()
-        self.set_out_tensor(out_tensor, is_const)
+        self.set_out_tensor(out_tensor)
 
-    def set_out_tensor(self, tensor_data, is_const):
+    def set_out_tensor(self, tensor_data):
         '''set the out tensor of this op.'''
         try:
             for _, _, d in self._graph.sorted_out_edges(self.name, data=True):
@@ -353,13 +354,13 @@ class DummyInputOp(OpHasOneOutPort, InputLikeOp, CommonOp):
                     d['tensor'].value = tensor_data
                     if tensor_data is not None:
                         d['tensor'].shape = d['tensor'].value.shape
-                        d['tensor'].is_const = is_const
+                        d['tensor'].is_const = self.is_const
                         if not self.quantize or d['tensor'].dtype is None:
                             d['tensor'].dtype = str(d['tensor'].value.dtype)
                 else:
                     d['tensor'] = Tensor(value=tensor_data)
 
-            self.clear_unused_tensor(is_const)
+            self.clear_unused_tensor(self.is_const)
 
         except KeyError as e:
             ERROR('[Parser]: Node(%s) meets key error in set_out_tensor (%s)!' %

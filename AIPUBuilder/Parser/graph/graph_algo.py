@@ -195,7 +195,7 @@ def infer(graph, partial=False, chosen_list=None, final=False):
                                         parent_node['object'].name,
                                         data=True)
                                     infer_data = dummy_out_edges[0][-1]['tensor'].value
-                                    node_obj.infer_shape(infer_data, dummy_out_edges[0][-1]['tensor'].is_const)
+                                    node_obj.infer_shape(infer_data)
                                 else:
                                     ERROR(f'[Parser]: Node: {node_name} not in graph: {target_g.name}')
                                 continue

@@ -2795,19 +2795,9 @@ class ArmIfOp(OpHasSubGraph, DynamicShapeOp, ArmOp):
                 else:
                     ERROR(f'[Parser]: Inputs in If({self.name}) Node should be from Parent graph.')
             elif sub_node_obj.type == 'DummyInput':
-                assert sub_node_obj.target_graph != '', 'Target graph not set for DummyInput.'
-                target_g = get_target_graph(sub_node_obj.target_graph, cur_sub_graph._root)
-                if target_g.has_node(n):
-                    parent_node = target_g.nodes[n]
-                    dummy_out_edges = target_g.sorted_out_edges(parent_node['object'].name, data=True)
-                    # out_tensor = dummy_out_edges[0][-1]['tensor'].value
-                    assert sub_node_obj.external_in_port >= 0, f'external_in_port of {n} is not set correctly.'
-                    out_tensor = inputs[sub_node_obj.external_in_port]
-                    sub_node_obj.infer_shape(out_tensor, dummy_out_edges[0][-1]['tensor'].is_const)
-                else:
-                    assert sub_node_obj.external_in_port >= 0, f'external_in_port of {n} is not set correctly.'
-                    out_tensor = inputs[sub_node_obj.external_in_port]
-                    sub_node_obj.infer_shape(out_tensor, False)
+                assert sub_node_obj.external_in_port >= 0, f'external_in_port of {n} is not set correctly.'
+                out_tensor = inputs[sub_node_obj.external_in_port]
+                sub_node_obj.infer_shape(out_tensor)
             else:
                 sub_node_obj.infer_shape()
 
@@ -3247,7 +3237,7 @@ class ArmLoopOp(OpHasSubGraph, DynamicShapeOp, ArmOp):
                             out_tensor = inputs[sub_node_obj.external_in_port]
                             if n in cond_out_root_input_const:
                                 cond_out_root_input_const[n] = dummy_out_edges[0][-1]['tensor'].is_const
-                            sub_node_obj.infer_shape(out_tensor, dummy_out_edges[0][-1]['tensor'].is_const)
+                            sub_node_obj.infer_shape(out_tensor)
                         else:
                             if sub_node_obj.type in ('Constant', 'ArmConstant') and n in cond_out_root_input_const:
                                 cond_out_root_input_const[n] = True
