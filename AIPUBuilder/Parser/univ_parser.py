@@ -308,6 +308,7 @@ def front_process_graph(model_type, model_path, graph, params):
             graph = front_process_tf(graph, params)
     elif model_type == 'caffe':
         from .front_end.caffe.process import front_process_caffe
+        WARN('[Parser]: Caffe support has been deprecated and will be removed in future versions!')
         graph = front_process_caffe(graph, params)
     else:
         ERROR('[Parser]: Framework %s is not supported!' %

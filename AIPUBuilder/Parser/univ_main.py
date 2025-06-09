@@ -32,7 +32,7 @@ required arguments in Common section of <net.cfg>:
 
 optional arguments in Common section of <net.cfg>:
     model_type          The model format of the input model. (default: tensorflow)
-                        The supported types are(case insensitive): tensorflow, tflite, onnx, caffe, torch.
+                        The supported types are(case insensitive): tensorflow, tflite, onnx, torch, caffe(deprecated).
     model_domain        The domain of the model. (default: image_classification)
                         Example:
                             image_classification
