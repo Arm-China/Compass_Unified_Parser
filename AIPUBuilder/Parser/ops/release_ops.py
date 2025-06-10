@@ -3157,6 +3157,7 @@ class ArmLoopOp(OpHasSubGraph, DynamicShapeOp, ArmOp):
 
     def __init__(self, graph, attr_dict=None):
         super(ArmLoopOp, self).__init__(graph, attr_dict)
+        self.real_loop_cnt = None
         self.update_attributes(ArmLoopOp, attr_dict)
         assert self.check_required(), 'ArmLoopOp is missing a required parameter.'
 

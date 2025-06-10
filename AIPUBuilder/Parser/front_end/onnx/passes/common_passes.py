@@ -1238,7 +1238,7 @@ def insert_repeat(graph, src, dst, in_attr, reps, axis=None, key=None, type='Rep
 
 def insert_reshape(graph, src, dst, in_attr, dim, key=None, type='Reshape', data_format='NHWC', quantize=False):
     ret = None
-    if graph.has_node(src) and graph.has_node(dst) and dim:
+    if graph.has_node(src) and graph.has_node(dst):
         if has_path(graph, src, dst):
             graph.remove_edge(src, dst, key=key)
         reshape = get_valid_node_name(graph, src + '_post_reshape')

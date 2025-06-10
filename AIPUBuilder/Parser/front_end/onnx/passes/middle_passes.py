@@ -3137,6 +3137,42 @@ def convert_center_crop_pad(graph):
         clear_redundant_nodes(graph)
 
 
+def convert_loop_cond_out(graph):
+    if not isinstance(graph, SubGraph):
+        return
+    parent_node_obj = NodeWrap(graph._attr['parent_graph'], graph._attr['parent_node'])['object']
+    if parent_node_obj is not None:
+        if parent_node_obj.type in ('Loop', 'ArmLoop'):
+            cond_out_name = graph._attr['output_names'][0]
+            cond_out_obj = NodeWrap(graph, cond_out_name)['object']
+            cond_out_shape = cond_out_obj.get_output_shapes()[0]
+            if cond_out_shape is not None and None not in cond_out_shape:
+                if cond_out_shape != []:
+                    # insert reduce all
+                    _, dst, out_attr = graph.sorted_out_edges(cond_out_name, data=True)[0]
+                    graph.remove_edge(cond_out_name, dst)
+                    reduce_all = get_valid_node_name(graph, cond_out_name + '_reduce')
+                    graph.add_node(reduce_all)
+                    graph.add_edge(cond_out_name, reduce_all, **out_attr)
+                    NodeWrap(graph, reduce_all).replace_obj(
+                        'ArmReduce', {'name': reduce_all,
+                                      'axes': list(range(len(cond_out_shape))),
+                                      'method': 'ALL'})
+                    reduce_all_output_shape = [1] * len(cond_out_shape)
+                    new_out_attr = copy.deepcopy(out_attr)
+                    if new_out_attr['tensor'].value is not None:
+                        new_out_attr['tensor'].value = np.all(
+                            out_attr['tensor'].value, keepdims=True)
+                    else:
+                        new_out_attr['tensor'].shape = reduce_all_output_shape
+                    graph.add_edge(reduce_all, dst, **new_out_attr)
+                    reshape = insert_reshape(
+                        graph, reduce_all, dst, new_out_attr, dim=[], quantize=cond_out_obj.quantize)
+                    if cond_out_name in graph._attr['output_names']:
+                        index = graph._attr['output_names'].index(cond_out_name)
+                        graph._attr['output_names'][index] = reshape
+
+
 def convert_min_max_to_clip(graph):
     matched = False
     matches = [matched_patterns(graph,
@@ -13287,6 +13323,7 @@ def middle_passes(graph, params):
     '''
 
     decompose_const_if_loop(graph, params)
+    convert_loop_cond_out(graph)
     convert_to_const(graph, ['Shape', 'ConstantOfShape',
                              'Range', 'NonZero', 'EyeLike'])
 
