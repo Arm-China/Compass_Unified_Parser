@@ -8103,8 +8103,7 @@ def merge_reduce_unbiased_variance(graph):
 
         unbiases_var_attr = node_objs['div'].copied_attr()
         unbiases_var_attr.update(
-            {'opset_version': 1,
-             'unbiased': 1,
+            {'unbiased': 1,
              'keepdims': node_objs['var'].keepdims,
              'axes': node_objs['var'].axes})
         NodeWrap(graph, m['div']).replace_obj(

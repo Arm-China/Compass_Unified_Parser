@@ -1010,11 +1010,11 @@ class ReduceAnyOp(OpHasAxis, OpHasOneOutPort, CommonOp):
         self.set_out_tensor(out_tensor)
 
 
-class ReduceVarianceOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
+class ReduceVarianceOp(OpHasAxis, OpHasOneOutPort, CommonOp):
     @classmethod
     def attributes(cls):
-        return {1: {'keepdims': {'default': 1},
-                    'unbiased': {'type': AttrType.INT, 'default': 0, 'options': [0, 1]}}
+        return {'keepdims': {'default': 1},
+                'unbiased': {'type': AttrType.INT, 'default': 0, 'options': [0, 1]}
                 }
 
     def __init__(self, graph, attr_dict=None):

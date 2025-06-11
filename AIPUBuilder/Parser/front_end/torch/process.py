@@ -22,6 +22,7 @@ from ...common.defs import FLOAT_EQUAL, INT_MAX
 
 # global variance
 ONNX_OPSET_VERSION = 9
+CUSTOM_OP = 'custom::'
 CUSTOM_OPSET_18 = 'opset_18::'
 CUSTOM_OPSET_19 = 'opset_19::'
 CUSTOM_OPSET_20 = 'opset_20::'
@@ -1076,6 +1077,40 @@ def convert_reduce_mean(g, x, dim_or_dtype=None, keepdim=None, dtype=None):
 
 
 @quantized_args(True)
+def convert_reduce_all(g, *args):
+    if len(args) == 1:
+        input = args[0]
+        reduce_all = g.op(CUSTOM_OP + 'ReduceAll', input, keepdims_i=0)
+        return helper._squeeze_helper(g, reduce_all, [0])
+    else:
+        input, dim, keepdim = args
+        dim = helper._parse_arg(dim, "t")
+        dim_list = [int(d) for d in dim.view(-1)]
+        keepdim = helper._parse_arg(keepdim, "i")
+        axes = g.op(
+            "Constant", value_t=torch.tensor(dim_list, dtype=torch.int64)
+        )
+        return g.op(CUSTOM_OP + 'ReduceAll', input, axes, keepdims_i=keepdim)
+
+
+@quantized_args(True)
+def convert_reduce_any(g, *args):
+    if len(args) == 1:
+        input = args[0]
+        reduce_all = g.op(CUSTOM_OP + 'ReduceAny', input, keepdims_i=0)
+        return helper._squeeze_helper(g, reduce_all, [0])
+    else:
+        input, dim, keepdim = args
+        dim = helper._parse_arg(dim, "t")
+        dim_list = [int(d) for d in dim.view(-1)]
+        keepdim = helper._parse_arg(keepdim, "i")
+        axes = g.op(
+            "Constant", value_t=torch.tensor(dim_list, dtype=torch.int64)
+        )
+        return g.op(CUSTOM_OP + 'ReduceAny', input, axes, keepdims_i=keepdim)
+
+
+@quantized_args(True)
 def convert_repeat_interleave(g, x, repeats, dim=None, output_size=None):
     from torch.onnx.symbolic_opset13 import repeat_interleave
     if helper._is_none(dim):
@@ -2022,6 +2057,10 @@ def convert_torch_to_onnx(model_path, params):
         'aten::addr', convert_addr, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::affine_grid_generator', convert_affinegrid, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'aten::all', convert_reduce_all, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'aten::any', convert_reduce_any, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::asinh', convert_asinh, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
