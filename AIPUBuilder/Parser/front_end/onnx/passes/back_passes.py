@@ -2473,6 +2473,15 @@ def rename_if(graph):
         if if_obj is None:
             ERROR('[Parser]: Meets invalid If Node(%s) in rename_if!' % if_node)
             continue
+        in_edges = graph.sorted_in_edges(if_node, data=True)
+        input_shapes = if_obj.get_input_shapes()
+        if input_shapes is None or None in input_shapes:
+            ERROR(f'[Parser]: Get input shapes failed in If Node({if_node}).')
+            return
+        if input_shapes[0] == []:
+            src, _, in_attr = in_edges[0]
+            insert_reshape(graph, src, if_node, in_attr, [1], type='ArmReshape', quantize=if_obj.quantize)
+
         then_inputs_num = 0
         else_inputs_num = 0
         sub_depends = graph._root._attr['subgraph_depends'] if isinstance(
@@ -2517,6 +2526,17 @@ def rename_loop(graph):
         if loop_obj is None:
             ERROR('[Parser]: Meets invalid Loop Node(%s) in rename_loop!' % loop_node)
             continue
+        in_edges = graph.sorted_in_edges(loop_node, data=True)
+        input_shapes = loop_obj.get_input_shapes()
+        if input_shapes is None or None in input_shapes:
+            ERROR(f'[Parser]: Get input shapes failed in Loop Node({loop_node}).')
+            return
+        if input_shapes[0] == []:
+            src, _, in_attr = in_edges[0]
+            insert_reshape(graph, src, loop_node, in_attr, [1], type='ArmReshape', quantize=loop_obj.quantize)
+        if input_shapes[1] == []:
+            src, _, in_attr = in_edges[1]
+            insert_reshape(graph, src, loop_node, in_attr, [1], type='ArmReshape', quantize=loop_obj.quantize)
         body_inputs_num = len(loop_obj.body._attr['input_tensors'])  # 2+N
         body_outputs_num = len(loop_obj.body._attr['output_tensor_names'])  # 1+N+K
         N = body_inputs_num - 2
