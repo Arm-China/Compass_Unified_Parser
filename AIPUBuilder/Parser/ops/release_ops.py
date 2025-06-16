@@ -971,7 +971,7 @@ class ArmConstantOfShapeOp(LayoutUnawareOp, OpHasOneOutPort, DynamicShapeOp, Arm
     @classmethod
     def attributes(cls):
         return {
-            'value': {'type': AttrType.FLOAT, 'required': True},
+            'value': {'type': AttrType.TENSOR, 'required': True},
         }
 
     def __init__(self, graph, attr_dict=None):
@@ -985,7 +985,7 @@ class ArmConstantOfShapeOp(LayoutUnawareOp, OpHasOneOutPort, DynamicShapeOp, Arm
         if len(inputs) >= 1 and inputs[0] is not None:
             inp = inputs[0].astype(np.int32)
             out_tensor = np.ndarray(inp.tolist())
-            out_tensor.fill(self.value[0])
+            out_tensor.fill(self.value.item())
             out_tensor = out_tensor.astype(self.value.dtype)
         else:
             out_tensor = None
@@ -995,9 +995,9 @@ class ArmConstantOfShapeOp(LayoutUnawareOp, OpHasOneOutPort, DynamicShapeOp, Arm
         ret = super(ArmConstantOfShapeOp, self).write_attrs(txt_file)
         if ret:
             if np.issubdtype(self.value.dtype.type, np.integer):
-                txt_file.write('value=%d\n' % int(self.value[0]))
+                txt_file.write('value=%d\n' % int(self.value.item()))
             else:
-                txt_file.write(f'value={self.value[0]}\n')
+                txt_file.write(f'value={self.value.item()}\n')
         return ret
 
 
@@ -5256,17 +5256,21 @@ class ArmTopKOp(OpHasAxis, OpHasMultipleOutPorts, ArmOp):
         inputs = self.get_input_tensors()
         # "topk_cpu" not implemented for 'Half'
         input_tensor = torch.from_numpy(inputs[0].astype(np.float64))
-        out_tensor_list = torch.topk(input_tensor, self.k, dim=self.axis, largest=bool(
-            self.largest), sorted=bool(self.sorted))
-        out_tensor_list = [ot.numpy() for ot in out_tensor_list]
-        out_tensor_list[0] = out_tensor_list[0].astype(inputs[0].dtype)
-        out_tensor_list[1] = out_tensor_list[1].astype(np.int32)
+        if self.k > 0:
+            out_tensor_list = torch.topk(input_tensor, self.k, dim=self.axis, largest=bool(
+                self.largest), sorted=bool(self.sorted))
+            out_tensor_list = [ot.numpy() for ot in out_tensor_list]
+            out_tensor_list[0] = out_tensor_list[0].astype(inputs[0].dtype)
+            out_tensor_list[1] = out_tensor_list[1].astype(np.int32)
+        else:
+            out_tensor_list = [inputs[0], np.zeros(inputs[0].shape, dtype=np.int32)]
         self.set_out_tensor(out_tensor_list)
 
     def write_attrs(self, txt_file):
         ret = super(ArmTopKOp, self).write_attrs(txt_file)
         if ret:
-            txt_file.write('k=%d\n' % self.k)
+            if self.k > 0:
+                txt_file.write('k=%d\n' % self.k)
             txt_file.write('sorted=%s\n' % str(bool(self.sorted)).lower())
             txt_file.write('largest=%s\n' % str(bool(self.largest)).lower())
             if self.select_index and self.select_index != 'last':

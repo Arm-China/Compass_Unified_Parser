@@ -627,6 +627,7 @@ def convert_onnx_to_graph(graph, model_path, params):
         else False
 
     graph._attr['force_not_quantize'] = force_not_quantize
+    graph._attr['enable_ds'] = params['enable_ds']
     graph._attr['subgraphs'] = OrderedDict()
     graph._attr['node_in_subgraphs'] = OrderedDict()
     graph._attr['subgraph_depends'] = OrderedDict()

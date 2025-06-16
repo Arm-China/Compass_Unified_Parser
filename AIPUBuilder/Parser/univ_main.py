@@ -114,6 +114,8 @@ optional arguments in Common section of <net.cfg>:
                         will be shown if the file path is provided.
     use_onnxsim         If use onnxsim(3rd onnx model simplify tool) to simplify the torch converted onnx model, 
                         currently only works in torch model parsing. (default: True)
+    enable_ds           If enable dynamic shape mode, if set to true, some ops will not be optimized.(e.g. Shape/
+                        ConstantOfShape...). (default: False)
     loop_max_count      Loop max count for Loop op infer shape. (default: 100)
     ''')
     args.add_argument('-c', '--cfg', metavar='<net.cfg>',

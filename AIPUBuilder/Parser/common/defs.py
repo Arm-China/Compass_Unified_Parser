@@ -140,6 +140,7 @@ class Tensor(object):
                 'required': False,
                 'is_const': False,
                 'is_dynamic': False,
+                'ds_shape': None,
                 'min_max': tuple(),
                 'scale_zp': tuple(),
                 'activation_quantization_axis': None,

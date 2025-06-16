@@ -389,14 +389,15 @@ class Op(abc.ABC):
     def clear_unused_tensor(self, is_input_const=False):
         if 'tensor_counter' in self._graph._attr and not is_input_const and not self.in_subgraph:
             for src, _, in_d in self._graph.sorted_in_edges(self.name, data=True):
-                cur_tensor_hash = hash(in_d['tensor'])
-                if self._graph._attr['tensor_counter'][cur_tensor_hash] > 0:
-                    self._graph._attr['tensor_counter'][cur_tensor_hash] -= 1
-                if self._graph._attr['tensor_counter'][cur_tensor_hash] == 0:
-                    if not isinstance(self._graph.nodes[src]['object'], (InputLikeOp, ConstLikeOp)) \
-                            and in_d['tensor'] is not None \
-                            and not in_d['tensor'].is_const:
-                        in_d['tensor'].value = None
+                if not self._graph.nodes[src]['object'].in_subgraph:
+                    cur_tensor_hash = hash(in_d['tensor'])
+                    if self._graph._attr['tensor_counter'][cur_tensor_hash] > 0:
+                        self._graph._attr['tensor_counter'][cur_tensor_hash] -= 1
+                    if self._graph._attr['tensor_counter'][cur_tensor_hash] == 0:
+                        if not isinstance(self._graph.nodes[src]['object'], (InputLikeOp, ConstLikeOp)) \
+                                and in_d['tensor'] is not None \
+                                and not in_d['tensor'].is_const:
+                            in_d['tensor'].value = None
 
     @abc.abstractmethod
     def infer_shape(self):
@@ -583,7 +584,8 @@ class Op(abc.ABC):
         else:
             is_dynamic_list = [d['tensor'].is_dynamic for _, _, _, d in self._graph.sorted_in_edges(
                 self.name, keys=True, data=True)]
-            return True if (is_dynamic_list and any(is_dynamic_list)) else False
+            return True if (is_dynamic_list and (any(is_dynamic_list) or
+                                                 self._graph._attr.get('enable_ds', False))) else False
 
     def is_outputs_dynamic(self):
         '''Determine whether has dynamic output.'''

@@ -277,7 +277,7 @@ class ConstantOfShapeOp(OpHasOneOutPort, ConstLikeOp, OnnxOp):
             inp = inputs[0].astype(np.int64)
             out_tensor = np.ndarray(inp.tolist())
             if self.value is not None:
-                out_tensor.fill(self.value[0])
+                out_tensor.fill(self.value.item())
                 out_tensor = out_tensor.astype(self.value.dtype)
             else:
                 out_tensor.fill(0)

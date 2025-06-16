@@ -76,14 +76,15 @@ def fuse_const(graph):
 
 
 def convert_64bit_const(graph):
-    matches = single_node_matcher(graph, ['Constant', 'ArmConstant'])
+    matches = single_node_matcher(graph, ['Constant', 'ArmConstant', 'ArmConstantOfShape'])
     for m in matches:
         node_obj = NodeWrap(graph, m['target'])['object']
         if node_obj is None:
             ERROR(
                 '[Parser]: Meets invalid Node (%s) in convert_64bit_const!' % m['target'])
             continue
-        value = getattr(node_obj, 'value') if node_obj.type == 'Constant' else getattr(node_obj, 'weights')
+        value = getattr(node_obj, 'value') if node_obj.type in ('Constant', 'ArmConstantOfShape') \
+            else getattr(node_obj, 'weights')
         value_dtype = str(value.dtype)
         if value_dtype in ['int64', 'uint64', 'float64']:
             if value_dtype == 'int64':
@@ -92,7 +93,7 @@ def convert_64bit_const(graph):
                 value = value.astype(np.uint32)
             elif value_dtype == 'float64':
                 value = value.astype(np.float32)
-            setattr(node_obj, 'value' if node_obj.type == 'Constant' else 'weights', value)
+            setattr(node_obj, 'value' if node_obj.type in ('Constant', 'ArmConstantOfShape') else 'weights', value)
 
 
 def convert_to_const(graph, op_type_name_list):
@@ -105,6 +106,8 @@ def convert_to_const(graph, op_type_name_list):
                 continue
             if isinstance(node_obj, OpHasOneOutPort) and node_obj.type in op_type_name_list and \
                     not node_obj.is_inputs_dynamic() and not node_obj.is_outputs_dynamic():
+                if node_obj.type in ('Shape', 'ConstantOfShape') and graph._attr.get('enable_ds', False):
+                    continue
                 out_tensors = node_obj.get_output_tensors()
                 if len(out_tensors) >= 1 and out_tensors[0] is not None and node_obj.is_all_outputs_const():
                     new_attr = node_obj.copied_attr()

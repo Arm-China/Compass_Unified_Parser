@@ -3338,14 +3338,17 @@ def rename_topk(graph):
             if (ver == 1 and len(in_edges) == 1) \
                     or (ver > 1 and len(in_edges) == 2):
                 in_consts = topk_obj.sorted_in_consts()
-                k = topk_obj.k if ver == 1 else int(in_consts[0][2])
+                if ver == 1:
+                    k = topk_obj.k
+                else:
+                    k = int(in_consts[0][2]) if in_consts else -1
                 need_sorted = topk_obj.sorted if ver >= 11 else True
                 largest = topk_obj.largest if ver >= 11 else True
                 topk_attr = topk_obj.copied_attr()
                 topk_attr.update(
                     {'k': k, 'sorted': need_sorted, 'largest': largest})
                 NodeWrap(graph, topk).replace_obj('ArmTopK', topk_attr)
-                if ver > 1:
+                if ver > 1 and k > 0:
                     graph.remove_edges_from(in_edges[1:])
 
 

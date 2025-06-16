@@ -73,6 +73,12 @@ def univ_parser(params):
         else:
             params['use_onnxsim'] = True
 
+        if 'enable_ds' in params:
+            enable_ds = str(params['enable_ds']).lower() == 'true'
+            params['enable_ds'] = enable_ds
+        else:
+            params['enable_ds'] = False
+
         params['input_layouts'] = multi_string_to_list(params['input_layout']) if 'input_layout' in params else []
 
         def _parse_npy(key_name):
