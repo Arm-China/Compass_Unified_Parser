@@ -91,6 +91,24 @@ class Op(abc.ABC):
         return out_shape
 
     @staticmethod
+    def symbol_to_shape(shape, symbol):
+        new_shape = []
+        for s in symbol:
+            if isinstance(s, str):
+                s_list = s.split('*')
+                tmp_shape = 1
+                for _s in s_list:
+                    idx = int(_s[1:])
+                    tmp_shape *= shape[idx]
+                new_shape.append(tmp_shape)
+            else:
+                new_shape.append(s)
+        if -1 in new_shape:
+            idx = new_shape.index(-1)
+            new_shape[idx] = int(np.prod(shape) // (-np.prod(new_shape)))
+        return new_shape
+
+    @staticmethod
     def framework_op_types(fw, extend=False):
         assert isinstance(fw, Framework), ('%s is not a valid framework type!' % str(fw))
         opsets = set()
@@ -436,6 +454,8 @@ class Op(abc.ABC):
                 top_info[0] if len(top_info) >= 3 else []))
             txt_file.write('layer_top_shape=[%s]\n' % string_list_to_string(
                 top_info[1] if len(top_info) >= 3 else []))
+            if len(top_info) >= 4 and 'symbol' in top_info[3][0] and self._graph._attr.get('enable_ds', False):
+                txt_file.write('ds_output_shape=[%s]\n' % string_list_to_string(top_info[3][0]['symbol']))
 
             if self._graph._attr.get('quantize', False) \
                     and len(top_info) >= 4 \
@@ -632,6 +652,21 @@ class Op(abc.ABC):
                   (self.name, str(e)))
             return []
 
+    def get_output_symbols(self):
+        '''Returns the output symbol of all outputs to this op.'''
+        try:
+            ret = []
+            for _, _, _, d in self._graph.sorted_out_edges(self.name, keys=True, data=True):
+                try:
+                    ret.append(list(d['tensor'].symbol))
+                except:
+                    ret.append(None)
+            return ret
+        except Exception as e:
+            ERROR('[Parser]: Node(%s) get_ds_output_shapes meets error:%s' %
+                  (self.name, str(e)))
+            return []
+
     def get_input_dtypes(self):
         try:
             ret = []
@@ -767,6 +802,8 @@ class Op(abc.ABC):
             if len(d['tensor'].min_max) == 2:
                 min_max = np.array(d['tensor'].min_max, dtype=np.float32)
                 info_value[2].update({'min_max': min_max})
+            if d['tensor'].symbol is not None and None not in d['tensor'].symbol:
+                info_value[2].update({'symbol': d['tensor'].symbol})
             if quantize:
                 if d['tensor'].dtype is not None:
                     info_value[2].update({'dtype': str(d['tensor'].dtype)})

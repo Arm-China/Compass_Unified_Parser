@@ -4501,7 +4501,13 @@ class ArmReshapeOp(OpHasOneOutPort, ArmOp):
     def infer_shape(self):
         super(ArmReshapeOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = np.reshape(inputs[0], self.dim)
+        output_symbol = self.get_output_symbols()[0]
+        if output_symbol is not None and None not in output_symbol:
+            out_shape = Op.symbol_to_shape(inputs[0].shape, output_symbol)
+            out_tensor = np.reshape(inputs[0], out_shape)
+            self.dim = list(out_shape)
+        else:
+            out_tensor = np.reshape(inputs[0], self.dim)
         self.set_out_tensor(out_tensor)
 
     def write_attrs(self, txt_file):

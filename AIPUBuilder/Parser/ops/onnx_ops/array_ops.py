@@ -826,6 +826,33 @@ class ReshapeOp(OpHasOneOutPort, OnnxOp):
         out_tensor = np.reshape(inputs[0], self.shape)
         self.set_out_tensor(out_tensor)
 
+    def cal_output_symbol(self):
+        input_shape = self.get_input_shapes()[0]
+        output_shape = self.get_output_shapes()[0]
+        symbol = [None] * len(output_shape)
+        axes_map = Op.cal_reshape_changed_axis_map(input_shape, output_shape)
+        for i in range(len(output_shape)):
+            changed = False
+            unchanged_axis = None
+            for in_axes, out_axes in axes_map:
+                if i in out_axes:
+                    changed = True
+                    if len(out_axes) == 1:
+                        out_axis = out_axes[0]
+                        if self.shape[out_axis] == -1:
+                            symbol[out_axis] = -1
+                        else:
+                            _symbol = ''
+                            for axis in in_axes:
+                                _symbol += f's{axis}*'
+                            symbol[out_axis] = _symbol[:-1]
+                elif i - 1 in out_axes:
+                    unchanged_axis = in_axes[-1] + 1
+            if not changed:
+                if unchanged_axis is not None:
+                    symbol[i] = f's{unchanged_axis}'
+        return symbol
+
 
 class ReverseSequenceOp(OpHasOneOutPort, OnnxOp):
     @classmethod

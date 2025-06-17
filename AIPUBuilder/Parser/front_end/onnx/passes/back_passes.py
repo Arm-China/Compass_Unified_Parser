@@ -2969,16 +2969,26 @@ def rename_reduce(graph):
             NodeWrap(graph, reduce).replace_obj('ArmReduce', reduce_attr)
             if reduce_obj.keepdims:
                 continue
-            if len(reduce_obj.get_input_shapes()) >= 1 \
-                    and reduce_obj.get_input_shapes()[0] is not None \
-                    and len(reduce_obj.get_output_shapes()) >= 1 \
-                    and reduce_obj.get_output_shapes()[0] is not None:
-                out_shape = reduce_obj.get_output_shapes()[0]
+            input_shapes = reduce_obj.get_input_shapes()
+            out_shapes = reduce_obj.get_output_shapes()
+            if len(input_shapes) >= 1 \
+                    and input_shapes[0] is not None \
+                    and len(out_shapes) >= 1 \
+                    and out_shapes[0] is not None:
+                out_shape = out_shapes[0]
                 if not out_shape:
                     out_shape = []
                 reshape = insert_reshape_after(
                     graph, reduce, out_shape, type='Reshape',
                     quantize=reduce_obj.quantize)
+                in_shape = input_shapes[0]
+                axes = reduce_obj.axes
+                out_symbols = [f's{i}' for i in range(len(in_shape))]
+                for axis in axes:
+                    del out_symbols[axis]
+                reshape_out_edges = graph.sorted_out_edges(reshape, data=True)
+                for out_edge in reshape_out_edges:
+                    out_edge[2]['tensor'].symbol = out_symbols
                 reshape_obj = NodeWrap(graph, reshape)['object']
                 if reduce_obj.in_subgraph:
                     reshape_obj.in_subgraph = reduce_obj.in_subgraph
@@ -3004,6 +3014,11 @@ def rename_reshape(graph):
                 if len(out_shapes[0]) == len(dim) \
                         and all([(s == d or d == -1) for (s, d) in zip(out_shapes[0], dim)]):
                     dim = out_shapes[0][:]
+                    if -1 in reshape_obj.shape[:]:
+                        symbol = reshape_obj.cal_output_symbol()
+                        out_edges = graph.sorted_out_edges(reshape, data=True)
+                        for out_edge in out_edges:
+                            out_edge[2]['tensor'].symbol = symbol
                 else:
                     ERROR(
                         '[Parser]: Dim of Reshape (%s) does not equal to output shape!' % reshape)

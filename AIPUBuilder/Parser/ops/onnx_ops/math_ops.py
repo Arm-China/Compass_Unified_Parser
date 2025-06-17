@@ -2796,13 +2796,20 @@ class TopKOp(OpHasAxis, OpHasMultipleOutPorts, OnnxOp):
         inputs = self.get_input_tensors()
         input_tensor = torch.from_numpy(inputs[0].astype(np.float64))
         cur_ver = self.cur_version
-        k = self.k if cur_ver == 1 else int(inputs[1])
-        largest = bool(self.largest) if cur_ver >= 11 else True
-        need_sorted = bool(self.sorted) if cur_ver >= 11 else True
-        out_tensor_list = torch.topk(
-            input_tensor, k, dim=self.axis, largest=largest, sorted=need_sorted)
-        out_tensor_list = [ot.numpy().astype(inputs[0].dtype) if i == 0 else ot.numpy().astype(
-            np.int64) for (i, ot) in enumerate(out_tensor_list)]
+        if cur_ver == 1:
+            k = self.k
+        else:
+            in_consts = self.sorted_in_consts()
+            k = int(in_consts[0][2]) if in_consts else -1
+        if k > 0:
+            largest = bool(self.largest) if cur_ver >= 11 else True
+            need_sorted = bool(self.sorted) if cur_ver >= 11 else True
+            out_tensor_list = torch.topk(
+                input_tensor, k, dim=self.axis, largest=largest, sorted=need_sorted)
+            out_tensor_list = [ot.numpy().astype(inputs[0].dtype) if i == 0 else ot.numpy().astype(
+                np.int64) for (i, ot) in enumerate(out_tensor_list)]
+        else:
+            out_tensor_list = [inputs[0], np.zeros(inputs[0].shape, dtype=np.int64)]
         self.set_out_tensor(out_tensor_list)
 
 
