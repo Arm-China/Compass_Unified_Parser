@@ -2983,12 +2983,15 @@ def rename_reduce(graph):
                     quantize=reduce_obj.quantize)
                 in_shape = input_shapes[0]
                 axes = reduce_obj.axes
-                out_symbols = [f's{i}' for i in range(len(in_shape))]
-                for axis in axes:
-                    del out_symbols[axis]
+                if out_shape == []:
+                    out_symbol = []
+                else:
+                    out_symbol = [f's{i}' for i in range(len(in_shape))]
+                    for axis in axes:
+                        del out_symbol[axis]
                 reshape_out_edges = graph.sorted_out_edges(reshape, data=True)
                 for out_edge in reshape_out_edges:
-                    out_edge[2]['tensor'].symbol = out_symbols
+                    out_edge[2]['tensor'].symbol = out_symbol
                 reshape_obj = NodeWrap(graph, reshape)['object']
                 if reduce_obj.in_subgraph:
                     reshape_obj.in_subgraph = reduce_obj.in_subgraph
