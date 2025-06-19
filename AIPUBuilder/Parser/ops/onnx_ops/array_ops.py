@@ -270,23 +270,6 @@ class ConstantOfShapeOp(OpHasOneOutPort, ConstLikeOp, OnnxOp):
         self.update_attributes(ConstantOfShapeOp, attr_dict)
         assert self.check_required(), 'ConstantOfShapeOp is missing a required parameter.'
 
-    def __getattr__(self, item):
-        ret = None
-        cur_ver = self.__dict__['_attr']['cur_version'].value
-        try:
-            if item == 'value':
-                ret = self.__dict__['_attr'][item].value
-                if ret.dtype == bool:
-                    if ret.item() == True:
-                        ret = np.array([1], dtype=np.uint8)
-                    else:
-                        ret = np.array([0], dtype=np.uint8)
-        except:
-            ret = None
-        if ret is None:
-            ret = super(ConstantOfShapeOp, self).__getattr__(item)
-        return ret
-
     def infer_shape(self):
         super(ConstantOfShapeOp, self).infer_shape()
         inputs = self.get_input_tensors()

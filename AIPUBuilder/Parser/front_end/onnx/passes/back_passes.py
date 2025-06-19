@@ -3397,54 +3397,70 @@ def split_crd_d2s(graph):
 
 def split_expand(graph):
     matched = False
-    matches = matched_patterns(graph,
-                               nodes=[('expand', {'op': 'Expand'}),
-                                      ('shape', {'op': 'Constant', 'unique': False})
-                                      ],
-                               edges=[
-                                   ('shape', 'expand', {'src_out_port': 0, 'dst_in_port': 1})]
-                               )
+    matches = single_node_matcher(graph, 'Expand')
     for m in matches:
-        expand, shape = m['expand'], m['shape']
+        expand = m['target']
         expand_obj = NodeWrap(graph, expand)['object']
-        shape_obj = NodeWrap(graph, shape)['object']
         in_edges = graph.sorted_in_edges(expand, data=True)
         if expand_obj is not None \
-                and shape_obj is not None \
                 and len(in_edges) == 2:
-            input_shapes = expand_obj.get_input_shapes()
-            if len(input_shapes) == 2 \
-                    and input_shapes[0] is not None \
-                    and all(d is not None for d in input_shapes[0]):
-                matched = True
-                graph.remove_edges_from(in_edges[1:])
-                input_shape = input_shapes[0]
-                shape_value = shape_obj.value.astype(np.int32)
-                quantize = expand_obj.quantize
-                # Dimensions are right alignment
-                if shape_value.size > len(input_shape):
-                    diff_size = shape_value.size - len(input_shape)
-                    input_shape = [1] * diff_size + input_shape
-                    src, _, in_attr = in_edges[0]
-                    insert_reshape(graph, src, expand, in_attr, input_shape, quantize=quantize)
-                elif shape_value.size < len(input_shape):
-                    diff_size = len(input_shape) - shape_value.size
-                    shape_value = np.concatenate(
-                        [np.array([1] * diff_size, np.int32), shape_value], axis=0)
-                input_shape = np.array(input_shape, np.int32)
-                ones_mask = shape_value == 1
-                shape_value[ones_mask] = input_shape[ones_mask]
-                tile_reps = shape_value // input_shape
-                insert_constant(graph, expand + '_reps', tile_reps,
-                                expand, in_port=1, data_format='NHWC')
+            matched = True
+            if in_edges[0][2]['tensor'].is_const and in_edges[0][2]['tensor'].value.size == 1:
+                value = in_edges[0][2]['tensor'].value
+                graph.remove_edge(in_edges[0][0], expand)
+                in_edges[1][2]['dst_in_port'] = 0
                 NodeWrap(graph, expand).replace_obj(
-                    'Tile', {'name': expand, 'opset_version': 6, 'quantize': quantize})
+                    'ConstantOfShape', {'name': expand, 'value': value, 'opset_version': 9})
+            elif in_edges[1][2]['tensor'].is_const:
+                shape_obj = NodeWrap(graph, in_edges[1][0])['object']
+                input_shapes = expand_obj.get_input_shapes()
+                if len(input_shapes) == 2 and shape_obj is not None \
+                        and input_shapes[0] is not None \
+                        and all(d is not None for d in input_shapes[0]):
+                    graph.remove_edges_from(in_edges[1:])
+                    input_shape = input_shapes[0]
+                    shape_value = shape_obj.value.astype(np.int32)
+                    quantize = expand_obj.quantize
+                    # Dimensions are right alignment
+                    if shape_value.size > len(input_shape):
+                        diff_size = shape_value.size - len(input_shape)
+                        input_shape = [1] * diff_size + input_shape
+                        src, _, in_attr = in_edges[0]
+                        insert_reshape(graph, src, expand, in_attr, input_shape, quantize=quantize)
+                    elif shape_value.size < len(input_shape):
+                        diff_size = len(input_shape) - shape_value.size
+                        shape_value = np.concatenate(
+                            [np.array([1] * diff_size, np.int32), shape_value], axis=0)
+                    input_shape = np.array(input_shape, np.int32)
+                    ones_mask = shape_value == 1
+                    shape_value[ones_mask] = input_shape[ones_mask]
+                    tile_reps = shape_value // input_shape
+                    insert_constant(graph, expand + '_reps', tile_reps,
+                                    expand, in_port=1, data_format='NHWC')
+                    NodeWrap(graph, expand).replace_obj(
+                        'Tile', {'name': expand, 'opset_version': 6, 'quantize': quantize})
             else:
-                ERROR(
-                    '[Parser]: Meets invalid shape of Expand Node (%s) in split_expand!' % expand)
+                inp_dtype = in_edges[0][2]['tensor'].dtype
+                shape_node, _, shape_attr = in_edges[1]
+                shape_attr['dst_in_port'] = 0
+                graph.remove_edge(shape_node, expand)
+                new_node = get_valid_node_name(graph, expand + '_ones')
+                graph.add_edge(shape_node, new_node, **shape_attr)
+
+                NodeWrap(graph, new_node).replace_obj(
+                    'ConstantOfShape', {'name': new_node,
+                                        'value': np.ones([1], dtype=inp_dtype),
+                                        'opset_version': 9})
+
+                mul_in_attr = copy.deepcopy(shape_attr)
+                mul_in_attr['dst_in_port'] = 1
+
+                graph.add_edge(new_node, expand, **mul_in_attr)
+                NodeWrap(graph, expand).replace_obj(
+                    'Mul', {'name': expand, 'opset_version': 13})
         else:
-            ERROR('[Parser]: Meets invalid Expand Node (%s) or Constant Node (%s) in split_expand!' % (
-                expand, shape))
+            ERROR('[Parser]: Meets invalid Expand Node (%s) in split_expand!' % (
+                expand,))
     if matched:
         clear_redundant_nodes(graph)
 

@@ -1838,47 +1838,6 @@ def convert_special_resize(graph):
                 '[Parser]: Meets invalid Resize Op (%s) in convert_special_resize!' % resize)
 
 
-def convert_expand(graph):
-    matched = False
-    matches = single_node_matcher(graph, 'Expand')
-    for m in matches:
-        expand = m['target']
-        expand_obj = NodeWrap(graph, expand)['object']
-        if expand_obj is not None:
-            matched = True
-            in_edges = graph.sorted_in_edges(expand, data=True)
-            if in_edges[0][2]['tensor'].is_const and in_edges[0][2]['tensor'].value.size == 1:
-                value = in_edges[0][2]['tensor'].value
-                graph.remove_edge(in_edges[0][0], expand)
-                in_edges[1][2]['dst_in_port'] = 0
-                NodeWrap(graph, expand).replace_obj(
-                    'ConstantOfShape', {'name': expand, 'value': value, 'opset_version': 9})
-            else:
-                inp_dtype = in_edges[0][2]['tensor'].dtype
-                shape_node, _, shape_attr = in_edges[1]
-                shape_attr['dst_in_port'] = 0
-                graph.remove_edge(shape_node, expand)
-                new_node = get_valid_node_name(graph, expand + '_ones')
-                graph.add_edge(shape_node, new_node, **shape_attr)
-
-                NodeWrap(graph, new_node).replace_obj(
-                    'ConstantOfShape', {'name': new_node,
-                                        'value': np.ones([1], dtype=inp_dtype),
-                                        'opset_version': 9})
-
-                mul_in_attr = copy.deepcopy(shape_attr)
-                mul_in_attr['dst_in_port'] = 1
-
-                graph.add_edge(new_node, expand, **mul_in_attr)
-                NodeWrap(graph, expand).replace_obj(
-                    'Mul', {'name': expand, 'opset_version': 13})
-        else:
-            ERROR(
-                '[Parser]: Meets invalid Expand Op (%s) in convert_expand!' % expand)
-    if matched:
-        clear_redundant_nodes(graph)
-
-
 def convert_special_pow(graph):
     matched = False
     matches = single_node_matcher(graph, 'Pow')
@@ -13435,7 +13394,6 @@ def middle_passes(graph, params):
     split_reduce_logsum(graph)
     split_reduce_sumsq(graph)
     split_roll(graph)
-    convert_expand(graph)
     convert_special_pow(graph)
     convert_special_mul(graph)
     convert_upsample_to_resize(graph)
