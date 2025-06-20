@@ -6,6 +6,7 @@ import sys
 from enum import Enum, unique
 import numpy as np
 import copy
+import ml_dtypes
 from ..logger import WARN, ERROR
 
 
@@ -27,19 +28,33 @@ def FLOAT64_EQUAL(x, y): return np.all(
 def TYPE_MIN(x):
     if isinstance(x, str):
         x = np.dtype(x)
-    if np.issubdtype(x, np.integer):
-        return np.iinfo(x).min
+    if 'numpy' in str(x.type):
+        if np.issubdtype(x, np.integer):
+            return np.iinfo(x).min
+        else:
+            return np.finfo(x).min.astype(x)
     else:
-        return np.finfo(x).min.astype(x)
+        # ml_dtypes
+        if x.name.startswith('int'):
+            return ml_dtypes.iinfo(x).min
+        else:
+            return ml_dtypes.finfo(x).min.astype(x)
 
 
 def TYPE_MAX(x):
     if isinstance(x, str):
         x = np.dtype(x)
-    if np.issubdtype(x, np.integer):
-        return np.iinfo(x).max
+    if 'numpy' in str(x.type):
+        if np.issubdtype(x, np.integer):
+            return np.iinfo(x).max
+        else:
+            return np.finfo(x).max.astype(x)
     else:
-        return np.finfo(x).max.astype(x)
+        # ml_dtypes
+        if x.name.startswith('int'):
+            return ml_dtypes.iinfo(x).max
+        else:
+            return ml_dtypes.finfo(x).max.astype(x)
 
 
 @unique
