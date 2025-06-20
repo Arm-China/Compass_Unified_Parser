@@ -846,6 +846,10 @@ class ReshapeOp(OpHasOneOutPort, OnnxOp):
                             for axis in in_axes:
                                 _symbol += f's{axis}*'
                             symbol[out_axis] = _symbol[:-1]
+                    else:
+                        for out_axis in out_axes:
+                            if self.shape[out_axis] in (1, -1):
+                                symbol[out_axis] = self.shape[out_axis]
                 elif i - 1 in out_axes:
                     unchanged_axis = in_axes[-1] + 1
             if not changed:
