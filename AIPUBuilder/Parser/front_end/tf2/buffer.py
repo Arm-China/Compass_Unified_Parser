@@ -6,6 +6,7 @@ import copy
 import os
 
 import numpy as np
+import ml_dtypes
 import tensorflow as tf
 import tensorflow.compat.v1 as tfv1
 from collections import OrderedDict

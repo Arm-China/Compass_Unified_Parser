@@ -31,7 +31,7 @@ required arguments in Common section of <net.cfg>:
     output              The output(s) node(s)' name of the model. Use comma to separate for several outputs.
 
 optional arguments in Common section of <net.cfg>:
-    model_type          The model format of the input model. (default: tensorflow)
+    model_type          The model format of the input model. (default: onnx)
                         The supported types are(case insensitive): tensorflow, tflite, onnx, torch, caffe(deprecated).
     model_domain        The domain of the model. (default: image_classification)
                         Example:
@@ -143,7 +143,7 @@ optional arguments in Common section of <net.cfg>:
 
         if 'Common' in config:
             common = config['Common']
-            model_type = 'tensorflow'
+            model_type = 'onnx'
             if 'model_type' in common:
                 model_type = common['model_type']
                 if model_type.upper() not in ('ONNX', 'TFLITE', 'CAFFE', 'TENSORFLOW', 'TF', 'TORCH', 'PYTORCH'):
@@ -155,6 +155,8 @@ optional arguments in Common section of <net.cfg>:
             os.environ['AIPU_DISABLE_BACKTRACE'] = 'True'
 
             model_type = model_type.lower()
+            model_type = 'tf' if model_type == 'tensorflow' else model_type
+            model_type = 'torch' if model_type == 'pytorch' else model_type
             common['model_type'] = model_type
 
             INFO('Begin to parse %s model %s...' %

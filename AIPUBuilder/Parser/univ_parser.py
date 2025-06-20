@@ -7,7 +7,9 @@ import numpy as np
 import onnx
 import torch
 from collections import OrderedDict
-from .common.utils import is_file, is_dir, multi_string_to_list, list_string_to_list, get_dict_params
+
+from .common.utils import is_file, is_dir, multi_string_to_list, list_string_to_list, get_dict_params, \
+    version_to_tuple
 from .graph.graph import Graph
 from .logger import *
 
@@ -188,12 +190,30 @@ def univ_parser(params):
 
             import tensorflow as tf
             tf.config.set_visible_devices([], 'GPU')
-            if int(tf.__version__.split('.')[0]) < 2:
-                WARN('Require tensorflow version==2.6 but now is in version %s!' % str(tf.__version__))
+            if version_to_tuple(tf.__version__) < version_to_tuple('2.6'):
+                WARN('Require tensorflow version>=2.6 but now is in version %s!' % str(tf.__version__))
+
+            if is_dir(model_path):
+                if model_type != 'tf':
+                    WARN(f'[Parser]: the model type in cfg is: {model_type}, but the model path is directory: {model_path}. '
+                         f'Do you set the wrong model path or model type?')
+            else:
+                model_type_suffix_mapping = {
+                    'tf': ['pb', 'h5', 'hdf5', 'keras'],
+                    'tflite': ['tflite'],
+                    'onnx': ['onnx'],
+                    'caffe': ['caffemodel', 'prototxt'],
+                    'torch': ['pt', 'pth'],
+                }
+                suffix = model_path.split('.')[-1]
+                if suffix not in model_type_suffix_mapping[model_type]:
+                    WARN(
+                        f'[Parser]: the model type in cfg is: {model_type}, but the model suffix of model is: {suffix}. '
+                        f'Do you set the wrong model path or model type?')
 
             try:
                 # Convert torch model to onnx before processing
-                if model_type in ('torch', 'pytorch'):
+                if model_type == 'torch':
                     from .front_end.torch.process import convert_torch_to_onnx
                     model_path, params = convert_torch_to_onnx(model_path, params)
                     model_type = 'onnx'
@@ -208,7 +228,7 @@ def univ_parser(params):
                 elif model_type == 'caffe':
                     from .front_end.caffe.process import process_caffe
                     graph = process_caffe(graph, model_path, params)
-                elif model_type in ('tf', 'tensorflow'):
+                elif model_type == 'tf':
                     is_keras_model = model_path.endswith('.h5') or model_path.endswith('.hdf5') or model_path.endswith(
                         '.keras') or is_dir(model_path)
                     if is_keras_model:
