@@ -3048,7 +3048,7 @@ class ArmLogSoftmaxOp(OpHasAxis, OpHasOneOutPort, ArmOp):
         super(ArmLogSoftmaxOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor = torch.log_softmax(
-            torch.from_numpy(inputs[0]), dim=self.axis).numpy()
+            torch.from_numpy(inputs[0].astype(np.float32)), dim=self.axis).numpy().astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
 
@@ -4796,9 +4796,9 @@ class ArmScatterElementsOp(OpHasOneOutPort, OpHasAxis, ArmOp):
         from .onnx_ops.array_ops import GatherElementsOp
         indices = GatherElementsOp.make_indices_non_negative(
             indices, inputs[0].shape[self.axis])
-        data_torch = torch.from_numpy(np.array(data))
+        data_torch = torch.from_numpy(np.array(data).astype(np.float32))
         index_torch = torch.from_numpy(np.array(indices).astype(np.int64))
-        update_torch = torch.from_numpy(updates)
+        update_torch = torch.from_numpy(updates.astype(np.float32))
         if self.reduction == 'NONE':
             out_tensor = torch.Tensor.scatter_(
                 data_torch, src=update_torch, dim=self.axis, index=index_torch).numpy()
@@ -4807,6 +4807,7 @@ class ArmScatterElementsOp(OpHasOneOutPort, OpHasAxis, ArmOp):
             assert self.reduction in reduction_map, 'Meets invalid reduction %s in infer_shape of ArmScatterElementsOp!' % self.reduction
             out_tensor = torch.Tensor.scatter_reduce(
                 data_torch, src=update_torch, dim=self.axis, index=index_torch, reduce=reduction_map[self.reduction]).numpy()
+        out_tensor = out_tensor.astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
     def write_attrs(self, txt_file):

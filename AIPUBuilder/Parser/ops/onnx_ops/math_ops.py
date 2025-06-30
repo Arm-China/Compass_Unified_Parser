@@ -877,11 +877,11 @@ class LogSoftmaxOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
                 else [int(np.prod(input_shape[:self.axis])), int(np.prod(input_shape[self.axis:]))]
             inp = np.reshape(inputs[0], inner_dim)
             out_tensor = torch.log_softmax(
-                torch.from_numpy(inp), dim=0 if self.axis == 0 else -1).numpy()
-            out_tensor = np.reshape(out_tensor, input_shape)
+                torch.from_numpy(inp.astype(np.float32)), dim=0 if self.axis == 0 else -1).numpy()
+            out_tensor = np.reshape(out_tensor, input_shape).astype(inputs[0].dtype)
         else:
             out_tensor = torch.log_softmax(
-                torch.from_numpy(inputs[0]), dim=self.axis).numpy()
+                torch.from_numpy(inputs[0].astype(np.float32)), dim=self.axis).numpy().astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
     def convert_version(self):

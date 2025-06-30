@@ -702,13 +702,13 @@ class PadOp(OpHasOneOutPort, OnnxOp):
             pads = np.transpose(pads)
             out_tensor = np.pad(sliced_input, pads, mode=self.mode)
         else:
-            torch_input = torch.from_numpy(sliced_input)
+            torch_input = torch.from_numpy(sliced_input.astype(np.float32))
             out_tensor = torch.nn.functional.pad(torch_input,
                                                  OpHasPaddingStrides.onnx_to_torch(
                                                      pads),
                                                  mode=self.mode if self.mode in (
                                                      'constant', 'reflect') else 'replicate',
-                                                 value=const_value).numpy()
+                                                 value=const_value).numpy().astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
     def is_fusable(self):
@@ -1054,11 +1054,11 @@ class ScatterElementsOp(OpHasOneOutPort, OpHasAxis, OnnxOp):
         inputs = self.get_input_tensors()
         data, indices, updates = inputs
         # data_torch = torch.from_numpy(data)  # data_torch and data share the same memory
-        data_torch = torch.from_numpy(np.array(data))
+        data_torch = torch.from_numpy(np.array(data).astype(np.float32))
         indices = GatherElementsOp.make_indices_non_negative(
             indices, inputs[0].shape[self.axis])
         index_torch = torch.from_numpy(np.array(indices).astype(np.int64))
-        update_torch = torch.from_numpy(np.array(updates).astype(data.dtype))
+        update_torch = torch.from_numpy(np.array(updates).astype(np.float32))
         if self.reduction == 'none':
             out_tensor = torch.Tensor.scatter_(
                 data_torch, src=update_torch, dim=self.axis, index=index_torch).numpy()  # in place operation
@@ -1067,6 +1067,7 @@ class ScatterElementsOp(OpHasOneOutPort, OpHasAxis, OnnxOp):
             assert self.reduction in onnx_reduction_map, 'Meets invalid reduction %s in infer_shape of ScatterElementsOp!' % self.reduction
             out_tensor = torch.Tensor.scatter_reduce(
                 data_torch, src=update_torch, dim=self.axis, index=index_torch, reduce=onnx_reduction_map[self.reduction]).numpy()
+        out_tensor = out_tensor.astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
 
