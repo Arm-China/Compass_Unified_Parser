@@ -6284,7 +6284,9 @@ def merge_special_concat_split_concat(graph):
                                 graph.add_edge(src, concat1_in_edges[1][1], **in_attr)
                     else:
                         split_out_port = split_out_edges[0][2]['src_out_port']
-                        if concat0_input_shapes[split_out_port] and \
+                        concat0_out_edges = graph.sorted_out_edges(concat0, data=True)
+                        if len(concat0_out_edges) == 1 and \
+                                concat0_input_shapes[split_out_port] and \
                                 None not in concat0_input_shapes[split_out_port] and \
                                 split_size[split_out_port] == concat0_input_shapes[split_out_port][concat0_axis]:
                             matched = True
