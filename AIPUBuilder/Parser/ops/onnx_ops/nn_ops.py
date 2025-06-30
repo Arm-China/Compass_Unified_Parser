@@ -728,7 +728,7 @@ class GeluOp(BaseActivationOp, OnnxOp):
     def infer_shape(self):
         super(GeluOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        input_tensor = torch.tensor(inputs[0], dtype=torch.float32)
+        input_tensor = torch.from_numpy(inputs[0].astype(np.float32))
         from ...common.utils import version_to_tuple
         if version_to_tuple(str(torch.onnx.producer_version)) < version_to_tuple('1.12.0'):
             WARN('[Parser]Please upgrade your torch version to 1.12 or above.')

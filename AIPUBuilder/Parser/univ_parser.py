@@ -209,7 +209,7 @@ def univ_parser(params):
                 suffix = model_path.split('.')[-1]
                 if suffix not in model_type_suffix_mapping[model_type]:
                     WARN(
-                        f'[Parser]: the model type in cfg is: {model_type}, but the model suffix of model is: {suffix}. '
+                        f'[Parser]: the model type in cfg is: {model_type}, but the model suffix is: {suffix}. '
                         f'Do you set the wrong model path or model type?')
 
             try:

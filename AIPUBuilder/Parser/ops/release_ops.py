@@ -160,7 +160,7 @@ class ArmActivationOp(SameShapeOp, LayoutUnawareOp, OpHasMethod, OpHasOneOutPort
 
     def gelu(self):
         inputs = self.get_input_tensors()
-        input_tensor = torch.tensor(inputs[0], dtype=torch.float32)
+        input_tensor = torch.from_numpy(inputs[0].astype(np.float32))
         out_tensor = torch.nn.functional.gelu(input_tensor,
                                               approximate=self.approximate).numpy().astype(inputs[0].dtype)
         return out_tensor
@@ -3403,7 +3403,7 @@ class ArmMaxPoolingWithArgMaxOp(OpHasPaddingStrides, OpHasMultipleOutPorts, ArmO
         super(ArmMaxPoolingWithArgMaxOp, self).infer_shape()
         inputs = self.get_input_tensors()
         input_tensor = torch.from_numpy(
-            np.transpose(inputs[0], axes=(0, 3, 1, 2)))
+            np.transpose(inputs[0], axes=(0, 3, 1, 2)).astype(np.float32))
         inp = torch.nn.functional.pad(input_tensor, self.torch_pads, mode='constant', value=0) \
             if self.auto_pad == 'NOTSET' \
             else input_tensor
@@ -3418,7 +3418,7 @@ class ArmMaxPoolingWithArgMaxOp(OpHasPaddingStrides, OpHasMultipleOutPorts, ArmO
                                                      ceil_mode=bool(
                                                          self.ceil_mode)
                                                      )
-        out_tensors = [t.numpy() if i == 0 else t.numpy().astype(np.int32)
+        out_tensors = [t.numpy().astype(inputs[0].dtype) if i == 0 else t.numpy().astype(np.int32)
                        for i, t in enumerate(out_tensors)]
         out_tensors = [np.transpose(t, axes=(0, 2, 3, 1)) for t in out_tensors]
         self.set_out_tensor(out_tensors)

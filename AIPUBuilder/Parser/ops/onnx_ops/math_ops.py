@@ -530,8 +530,8 @@ class EinsumOp(OpHasOneOutPort, OnnxOp):
     def infer_shape(self):
         super(EinsumOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        # assert len(inputs) == 2, 'Currently only two inputs are supported.'
-        out_tensor = np.einsum(self.equation, *inputs)
+        new_inputs = [inp.astype(np.float32) for inp in inputs]
+        out_tensor = np.einsum(self.equation, *new_inputs).astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
 
