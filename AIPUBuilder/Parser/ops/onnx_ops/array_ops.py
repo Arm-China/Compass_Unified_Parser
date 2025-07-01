@@ -497,10 +497,10 @@ class GatherElementsOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
         indices = inputs[1]
         indices = GatherElementsOp.make_indices_non_negative(
             indices, inputs[0].shape[self.axis])
-        torch_input = torch.from_numpy(inputs[0])
+        torch_input = torch.from_numpy(inputs[0].astype(np.float32))
         torch_indices = torch.from_numpy(np.array(indices, np.int64))
         out_tensor = torch.gather(torch_input, self.axis, torch_indices)
-        out_tensor = out_tensor.numpy()
+        out_tensor = out_tensor.numpy().astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
 
@@ -1004,13 +1004,13 @@ class ScatterOp(OpHasOneOutPort, OpHasAxis, OnnxOp):
         super(ScatterOp, self).infer_shape()
         inputs = self.get_input_tensors()
         data, indices, updates = inputs
-        data_torch = torch.from_numpy(data)
+        data_torch = torch.from_numpy(data.astype(np.float32))
         indices = GatherElementsOp.make_indices_non_negative(
             indices, inputs[0].shape[self.axis])
         index_torch = torch.from_numpy(np.array(indices).astype(np.int64))
-        update_torch = torch.from_numpy(updates)
+        update_torch = torch.from_numpy(updates.astype(np.float32))
         out_tensor = torch.Tensor.scatter_(
-            data_torch, src=update_torch, dim=self.axis, index=index_torch).numpy()
+            data_torch, src=update_torch, dim=self.axis, index=index_torch).numpy().astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
 
@@ -1391,7 +1391,7 @@ class SpaceToDepthOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
                 out_tensor = tf.nn.space_to_depth(
                     inputs[0], self.blocksize).numpy()
             else:
-                torch_input = torch.from_numpy(inputs[0])
+                torch_input = torch.from_numpy(inputs[0].astype(np.float32))
                 n, c, h, w = torch_input.size()
                 block_size = self.blocksize
                 out_tensor = torch_input.view(
@@ -1399,7 +1399,7 @@ class SpaceToDepthOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
                 out_tensor = out_tensor.permute(0, 3, 5, 1, 2, 4).contiguous()
                 out_tensor = out_tensor.view(
                     n, c * (block_size ** 2), h // block_size, w // block_size)
-                out_tensor = out_tensor.numpy()
+                out_tensor = out_tensor.numpy().astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
 
@@ -1617,9 +1617,10 @@ class TriluOp(OpHasOneOutPort, OnnxOp):
         super(TriluOp, self).infer_shape()
         inputs = self.get_input_tensors()
         if self.upper:
-            out_tensor = torch.triu(torch.from_numpy(inputs[0]), diagonal=self.k).numpy()
+            out_tensor = torch.triu(torch.from_numpy(inputs[0].astype(np.float32)), diagonal=self.k).numpy()
         else:
-            out_tensor = torch.tril(torch.from_numpy(inputs[0]), diagonal=self.k).numpy()
+            out_tensor = torch.tril(torch.from_numpy(inputs[0].astype(np.float32)), diagonal=self.k).numpy()
+        out_tensor = out_tensor.astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
 

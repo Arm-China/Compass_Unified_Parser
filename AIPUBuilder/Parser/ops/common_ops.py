@@ -204,7 +204,7 @@ class ChannelShuffleOp(LayoutConcernedOp, OpHasMultipleOutPorts, CommonOp):
         else:
             inp = inputs[0]
         out_tensor = torch.nn.functional.channel_shuffle(
-            torch.from_numpy(inp), self.group).numpy()
+            torch.from_numpy(inp.astype(np.float32)), self.group).numpy().astype(inputs[0].dtype)
         if pre_perm is not None:
             out_tensor = np.transpose(out_tensor, Op.cal_inverse_perm(pre_perm))
             out_tensors = np.split(out_tensor, self.splits, axis=-1)
@@ -928,11 +928,11 @@ class QueryRebatchOp(OpHasOneOutPort, CommonOp):
         out_shape.insert(1, cam_num)
         if self.is_all_inputs_const():
             batch = inputs[0].shape[0]
-            query = torch.from_numpy(inputs[0])
-            query_rebatch = torch.zeros(out_shape)
+            query = torch.from_numpy(inputs[0].astype(np.float32))
+            query_rebatch = torch.zeros(out_shape, dtype=torch.float32)
             for j in range(batch):
                 for i in range(cam_num):
-                    index_query_per_img = torch.from_numpy(inputs[i + 1])
+                    index_query_per_img = torch.from_numpy(inputs[i + 1].astype(np.float32))
                     query_rebatch[j, i, :len(index_query_per_img)] = query[j, index_query_per_img]
             out_tensor = query_rebatch.numpy().astype(inputs[0].dtype)
         else:
@@ -1132,11 +1132,12 @@ class SlotUpdateOp(OpHasOneOutPort, CommonOp):
         out_shape.pop(1)
         if self.is_all_inputs_const():
             batch = inputs[0].shape[0]
-            queries = torch.from_numpy(inputs[0])
-            slots = torch.zeros_like(queries)
+            queries = torch.from_numpy(inputs[0].astype(np.float32))
+            slots = torch.zeros_like(queries, dtype=torch.float32)
             for j in range(batch):
                 for i, index_query_per_img in enumerate(inputs[1:]):
-                    slots[j, torch.from_numpy(index_query_per_img)] += queries[j, i, :len(index_query_per_img)]
+                    slots[j, torch.from_numpy(index_query_per_img.astype(np.float32))
+                          ] += queries[j, i, :len(index_query_per_img)]
             out_tensor = slots.numpy().astype(inputs[0].dtype)
         else:
             out_tensor = np.random.ranf(out_shape).astype(inputs[0].dtype)
@@ -1198,8 +1199,8 @@ class TruncOp(LayoutUnawareOp, OpHasOneOutPort, CommonOp):
     def infer_shape(self):
         super(TruncOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        torch_input = torch.from_numpy(inputs[0])
-        out_tensor = torch.trunc(torch_input).numpy()
+        torch_input = torch.from_numpy(inputs[0].astype(np.float32))
+        out_tensor = torch.trunc(torch_input).numpy().astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
 

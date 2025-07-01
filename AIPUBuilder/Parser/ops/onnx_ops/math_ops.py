@@ -572,7 +572,7 @@ class ErfOp(OpHasOneOutPort, OnnxOp):
     def infer_shape(self):
         super(ErfOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = torch.erf(torch.from_numpy(np.array(inputs[0]))).numpy()
+        out_tensor = torch.erf(torch.from_numpy(np.array(inputs[0], dtype=np.float32))).numpy().astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
 

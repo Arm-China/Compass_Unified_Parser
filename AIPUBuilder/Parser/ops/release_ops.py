@@ -826,7 +826,7 @@ class ArmChannelShuffleOp(LayoutConcernedOp, OpHasMultipleOutPorts, ArmOp):
         pre_perm = [0, max_dim] + list(range(1, max_dim))
         inp = np.transpose(inputs[0], pre_perm)
         out_tensor = torch.nn.functional.channel_shuffle(
-            torch.from_numpy(inp), self.group).numpy()
+            torch.from_numpy(inp.astype(np.float32)), self.group).numpy().astype(inputs[0].dtype)
         out_tensor = np.transpose(out_tensor, Op.cal_inverse_perm(pre_perm))
         out_tensors = np.split(out_tensor, self.splits, axis=-1)
         self.set_out_tensor(out_tensors)
@@ -1996,14 +1996,10 @@ class ArmEmbeddingLookupSparseOp(OpHasOneOutPort, ArmOp):
 
 
 class ArmErfOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
-    @classmethod
-    def cast_in_ports(cls):
-        return {0: ['float32', 'float16', 'int8', 'uint8']}
-
     def infer_shape(self):
         super(ArmErfOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = torch.erf(torch.from_numpy(inputs[0])).numpy()
+        out_tensor = torch.erf(torch.from_numpy(inputs[0].astype(np.float32))).numpy().astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
 
@@ -2200,8 +2196,8 @@ class ArmTruncOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
     def infer_shape(self):
         super(ArmTruncOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        torch_input = torch.from_numpy(inputs[0])
-        out_tensor = torch.trunc(torch_input).numpy()
+        torch_input = torch.from_numpy(inputs[0].astype(np.float32))
+        out_tensor = torch.trunc(torch_input).numpy().astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
 
@@ -2354,10 +2350,10 @@ class ArmGatherElementsOp(OpHasAxis, OpHasOneOutPort, ArmOp):
         from .onnx_ops.array_ops import GatherElementsOp
         indices = GatherElementsOp.make_indices_non_negative(
             indices, inputs[0].shape[self.axis])
-        torch_input = torch.from_numpy(inputs[0])
+        torch_input = torch.from_numpy(inputs[0].astype(np.float32))
         torch_indices = torch.from_numpy(np.array(indices, np.int64))
         out_tensor = torch.gather(torch_input, self.axis, torch_indices)
-        out_tensor = out_tensor.numpy()
+        out_tensor = out_tensor.numpy().astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
 
@@ -2585,7 +2581,7 @@ class ArmGroupNormOp(OpHasAxis, OpHasBiases, OpHasWeights, OpHasOneOutPort, ArmO
         src_perm.insert(1, self.axis)
         inp = np.transpose(inputs[0], src_perm)
         m = torch.nn.GroupNorm(self.group, inp.shape[1], self.epsilon)
-        normalized = m(torch.from_numpy(inp)).detach().numpy()
+        normalized = m(torch.from_numpy(inp.astype(np.float32))).detach().numpy().astype(inputs[0].dtype)
         weight_bias_shape = [-1 if i ==
                              1 else 1 for i in range(len(inputs[0].shape))]
         weights = np.reshape(self.weights, weight_bias_shape)
