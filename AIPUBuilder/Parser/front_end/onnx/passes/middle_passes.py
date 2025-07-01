@@ -12450,8 +12450,8 @@ def split_deformable_conv(graph):
         data_post_reshape_dim = np.array([int(batch * offset_group), k_hw, -1, out_h, out_w], np.int64)
         data_post_trans_perm = [0, 2, 1, 3, 4]  # from [NG, k_hw, C//G, H, W] to [NG, C//G, k_hw, H, W]
         data_post_reshape2_dim = np.array([batch, int(in_c * k_hw), out_h, out_w], np.int64)
-        const_hw = np.array([[[2.0 / (in_h - 1)]], [[2.0 / (in_w - 1)]]], np.float32)
-        const_neg1 = np.array(-1.0, np.float32)
+        const_hw = np.array([[[2.0 / (in_h - 1)]], [[2.0 / (in_w - 1)]]]).astype(input_dtypes[2])
+        const_neg1 = np.array(-1.0).astype(input_dtypes[2])
         offset_base_data = DeformConvOp.gen_offset_base(weights_shape, offset_shape,
                                                         kernel_shape, strides, dilations, pads,
                                                         offset_group).astype(input_dtypes[2])
