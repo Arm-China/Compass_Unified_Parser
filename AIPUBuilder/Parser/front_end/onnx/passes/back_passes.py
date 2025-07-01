@@ -2398,7 +2398,7 @@ def rename_gemm(graph):
                 if len(in_edges) == 2:
                     np_dtype_str = gemm_obj.get_inputs_info()[2][1]
                     insert_constant(
-                        graph, gemm + '_C', np.zeros(output_shapes[0], dtype=getattr(np, np_dtype_str)), gemm, in_port=2)
+                        graph, gemm + '_C', np.zeros(output_shapes[0], dtype=np_dtype_str), gemm, in_port=2)
                 elif list(output_shapes[0]) != list(input_shapes[2]):
                     if input_shapes[2] is not None and all(d is not None for d in input_shapes[2]):
                         ret = OpNeedUniBroadcast.cal_reshape_and_tile([output_shapes[0], input_shapes[2]])
