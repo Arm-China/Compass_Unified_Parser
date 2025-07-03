@@ -329,13 +329,6 @@ class ArmAdaptivePoolOp(OpHasMethod, OpHasOneOutPort, ArmOp):
 
 class ArmAddOp(BaseActivationOp, ArmOp):
     @classmethod
-    def cast_in_ports(cls):
-        return {
-            0: ['float32', 'float16', 'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32'],
-            1: ['float32', 'float16', 'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32']
-        }
-
-    @classmethod
     def num_in_ports(cls):
         return 2
 
@@ -1841,13 +1834,6 @@ class ArmDilationOp(OpHasPaddingStrides, OpHasWeights, OpHasOneOutPort, LayoutCo
 
 
 class ArmDivOp(LayoutUnawareOp, OpHasDivisor, OpHasOneOutPort, ArmOp):
-    @classmethod
-    def cast_in_ports(cls):
-        return {
-            0: ['float32', 'float16', 'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32'],
-            1: ['float32', 'float16', 'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32']
-        }
-
     @classmethod
     def num_in_ports(cls):
         return 2
@@ -3586,13 +3572,6 @@ class ArmMomentsOp(OpHasMultipleOutPorts, OpHasAxis, ArmOp):
 
 class ArmMulOp(BaseActivationOp, ArmOp):
     @classmethod
-    def cast_in_ports(cls):
-        return {
-            0: ['float32', 'float16', 'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32'],
-            1: ['float32', 'float16', 'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32']
-        }
-
-    @classmethod
     def num_in_ports(cls):
         return 2
 
@@ -5173,13 +5152,6 @@ class ArmSquaredDifferenceOp(OpNeedBroadcast, OpHasOneOutPort, LayoutUnawareOp, 
 
 
 class ArmSubOp(BaseActivationOp, ArmOp):
-    @classmethod
-    def cast_in_ports(cls):
-        return {
-            0: ['float32', 'float16', 'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32'],
-            1: ['float32', 'float16', 'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32']
-        }
-
     @classmethod
     def num_in_ports(cls):
         return 2
