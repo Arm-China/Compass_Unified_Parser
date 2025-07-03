@@ -649,7 +649,7 @@ def convert_relu(graph):
             ERROR('[Parser]: Meets invalid Op (%s) in convert_relu!' % relu)
             continue
         matched = True
-        attr_dtype = getattr(np, getattr(relu_obj, 'dtype', 'float32'))
+        attr_dtype = relu_obj.dtype
         threshold = np.array(relu_obj.threshold, dtype=attr_dtype)
         negative_slope = np.array(relu_obj.negative_slope, dtype=attr_dtype)
         negative_slope_is_zero = FLOAT_EQUAL(negative_slope, 0)
