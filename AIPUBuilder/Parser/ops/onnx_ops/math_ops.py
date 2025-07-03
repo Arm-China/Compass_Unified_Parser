@@ -2341,6 +2341,7 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
             roi = self.roi
             if in_attr.get('tensor', None) is None \
                     or in_attr['tensor'].value is None \
+                    or 0 in in_attr['tensor'].value.shape \
                     or np.any(np.array(in_attr['tensor'].value) != roi):
                 self._graph.remove_edge(src, self.name, key=k)
                 insert_constant(self._graph, self.name + '_roi',
@@ -2354,6 +2355,7 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
             scales = self.scales
             if in_attr.get('tensor', None) is None \
                     or in_attr['tensor'].value is None \
+                    or 0 in in_attr['tensor'].value.shape \
                     or np.any(np.array(in_attr['tensor'].value) != scales):
                 self._graph.remove_edge(src, self.name, key=k)
                 insert_constant(self._graph, self.name + '_scales', np.array(
@@ -2367,6 +2369,7 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
             sizes = self.sizes
             if in_attr.get('tensor', None) is None \
                     or in_attr['tensor'].value is None \
+                    or 0 in in_attr['tensor'].value.shape \
                     or np.any(np.array(in_attr['tensor'].value) != sizes):
                 self._graph.remove_edge(src, self.name, key=k)
                 insert_constant(self._graph, self.name + '_sizes', np.array(
