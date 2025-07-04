@@ -345,7 +345,7 @@ class ArmAddOp(BaseActivationOp, ArmOp):
 class ArmAffineGridOp(OpHasOneOutPort, ArmOp):
     @classmethod
     def cast_in_ports(cls):
-        return {0: ['float32', 'float16'], 1: ['int32']}
+        return {1: ['int32']}
 
     @classmethod
     def num_in_ports(cls):
@@ -567,10 +567,6 @@ class ArmBasicLSTMOp(BaseRnnOp, OpHasBiases, OpHasWeights, ArmOp):
 
 
 class ArmBatchNormOp(BaseLinearOp, OpHasAxis, ArmOp):
-    @classmethod
-    def cast_in_ports(cls):
-        return {0: ['float32', 'float16', 'int8']}
-
     @classmethod
     def attributes(cls):
         return {'epsilon': {'type': AttrType.FLOAT, 'default': 0.0}}
@@ -1008,10 +1004,6 @@ class ArmConstantOfShapeOp(LayoutUnawareOp, OpHasOneOutPort, DynamicShapeOp, Arm
 
 class ArmConvolutionOp(BaseActivationOp, BaseConvOp, ArmOp):
     @classmethod
-    def cast_in_ports(cls):
-        return {0: ['float32', 'float16', 'int8', 'uint8']}
-
-    @classmethod
     def perm_onnx_to_ir(cls):
         return [0, 2, 3, 1]
 
@@ -1058,10 +1050,6 @@ class ArmConvolutionOp(BaseActivationOp, BaseConvOp, ArmOp):
 
 
 class ArmConvolution3DOp(BaseActivationOp, BaseConvOp, ArmOp):
-    @classmethod
-    def cast_in_ports(cls):
-        return {0: ['float32', 'float16', 'int8', 'uint8']}
-
     @classmethod
     def perm_onnx_to_ir(cls):
         return [0, 3, 4, 2, 1]
@@ -1125,10 +1113,6 @@ class ArmConvIntegerOp(BaseConvOp, ArmOp):
 
 class ArmConvTransposeOp(BaseActivationOp, BaseConvOp, ArmOp):
     @classmethod
-    def cast_in_ports(cls):
-        return {0: ['float32', 'float16', 'uint8', 'int8']}
-
-    @classmethod
     def attributes(cls):
         return {'output_shape': {'type': AttrType.INTS, 'required': True},
                 'output_padding': {'type': AttrType.INTS, 'default': [0, 0]}
@@ -1180,10 +1164,6 @@ class ArmConvTransposeOp(BaseActivationOp, BaseConvOp, ArmOp):
 
 
 class ArmConvTranspose3DOp(BaseActivationOp, BaseConvOp, ArmOp):
-    @classmethod
-    def cast_in_ports(cls):
-        return {0: ['float32', 'float16', 'uint8', 'int8']}
-
     @classmethod
     def attributes(cls):
         return {'output_shape': {'type': AttrType.INTS, 'required': True}}
@@ -2545,9 +2525,6 @@ class ArmGridSampleOp(LayoutConcernedOp, OpHasMethod, OpHasOneOutPort, ArmOp):
 
 
 class ArmGroupNormOp(OpHasAxis, OpHasBiases, OpHasWeights, OpHasOneOutPort, ArmOp):
-    @classmethod
-    def cast_in_ports(cls):
-        return {0: ['float32', 'float16', 'int8', 'uint8']}
 
     @classmethod
     def attributes(cls):
@@ -2828,10 +2805,6 @@ class ArmInputOp(OpHasOneOutPort, InputLikeOp, ArmOp):
 
 class ArmInstanceNormOp(OpHasBiases, OpHasWeights, OpHasOneOutPort, ArmOp):
     @classmethod
-    def cast_in_ports(cls):
-        return {0: ['float32', 'float16', 'int8', 'uint8']}
-
-    @classmethod
     def attributes(cls):
         return {'non_channel_axes': {'type': AttrType.INTS, 'default': None},
                 'epsilon': {'type': AttrType.FLOAT, 'default': 1e-5},
@@ -2965,10 +2938,6 @@ class ArmIsNaNOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
 
 
 class ArmLayerNormOp(OpHasAxis, OpHasBiases, OpHasWeights, OpHasVariableOutPorts, ArmOp):
-    @classmethod
-    def cast_in_ports(cls):
-        return {0: ['float32', 'float16', 'int8', 'uint8']}
-
     @classmethod
     def attributes(cls):
         return {'epsilon': {'type': AttrType.FLOAT, 'required': True, 'default': 1e-5}
@@ -3273,11 +3242,6 @@ class ArmMatMulOp(OpHasOneOutPort, ArmOp):
         return 2
 
     @classmethod
-    def cast_in_ports(cls):
-        return {0: ['float32', 'float16', 'uint8', 'int16', 'int8'],
-                1: ['float32', 'float16', 'uint8', 'int16', 'int8']}
-
-    @classmethod
     def attributes(cls):
         return {'trans_a': {'type': AttrType.INT, 'default': 0},
                 'trans_b': {'type': AttrType.INT, 'default': 0},
@@ -3524,10 +3488,6 @@ class ArmModOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
         return 2
 
     @classmethod
-    def cast_in_ports(cls):
-        return {0: ['float32', 'float16', 'int8', 'uint8', 'int32', 'uint32'], 1: ['float32', 'float16', 'int8', 'uint8', 'int32', 'uint32']}
-
-    @classmethod
     def attributes(cls):
         return {'fmod': {'type': AttrType.INT, 'default': 0}}
 
@@ -3589,10 +3549,6 @@ class ArmMVNOp(OpHasOneOutPort, OpHasAxis, ArmOp):
     '''
     (X-EX)/sqrt(E(X-EX)^2)
     '''
-    @classmethod
-    def cast_in_ports(cls):
-        return {0: ['float32', 'float16', 'int8', 'uint8']}
-
     @classmethod
     def attributes(cls):
         return {'epsilon': {'type': AttrType.FLOAT, 'default': 1e-9},
@@ -4067,10 +4023,6 @@ class ArmPowOp(LayoutUnawareOp, OpHasOneOutPort, ArmOp):
     @classmethod
     def num_in_ports(cls):
         return 2
-
-    @classmethod
-    def cast_in_ports(cls):
-        return {0: ['float32', 'float16'], 1: ['float32', 'float16', 'int32']}
 
     def __init__(self, graph, attr_dict=None):
         super(ArmPowOp, self).__init__(graph, attr_dict)
@@ -5139,10 +5091,6 @@ class ArmSquaredDifferenceOp(OpNeedBroadcast, OpHasOneOutPort, LayoutUnawareOp, 
     @classmethod
     def num_in_ports(cls):
         return 2
-
-    @classmethod
-    def cast_in_ports(cls):
-        return {0: ['float32', 'float16', 'int8', 'uint8'], 1: ['float32', 'float16', 'int8', 'uint8']}
 
     def infer_shape(self):
         super(ArmSquaredDifferenceOp, self).infer_shape()
