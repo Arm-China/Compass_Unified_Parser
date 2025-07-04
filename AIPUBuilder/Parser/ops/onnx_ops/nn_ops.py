@@ -1497,10 +1497,11 @@ class LayerNormalizationOp(OpHasAxis, OpHasVariableOutPorts, OnnxOp):
             biases = np.zeros_like(weights)
         out_tensors = [np.array(normalized * weights + biases, dtype=input_dtype)]
         out_ports = self.get_out_ports()
+        std_mean_dtype = 'bfloat16' if inputs[0].dtype == 'bfloat16' else 'float32'
         if 1 in out_ports:
-            out_tensors.append(np.array(mean, np.float32))
+            out_tensors.append(np.array(mean, std_mean_dtype))
         if 2 in out_ports:
-            out_tensors.append(np.array(ngamma, np.float32))
+            out_tensors.append(np.array(ngamma, std_mean_dtype))
         self.set_out_tensor(out_tensors)
 
     def convert_version(self):
@@ -1509,7 +1510,7 @@ class LayerNormalizationOp(OpHasAxis, OpHasVariableOutPorts, OnnxOp):
         assert len(input_shapes) >= 2, 'Meets invalid inputs of LayerNormalizationOp(%s) in convert_version!' % self.name
         if len(input_shapes) == 2:
             np_dtype_str = self.get_inputs_info()[2][1]
-            bias = np.zeros(input_shapes[1], dtype=getattr(np, np_dtype_str))
+            bias = np.zeros(input_shapes[1], dtype=np_dtype_str)
             insert_constant(self._graph, self.name + '_bias', bias, self.name, in_port=2)
 
 

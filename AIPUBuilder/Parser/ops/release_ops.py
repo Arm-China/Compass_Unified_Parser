@@ -2963,9 +2963,10 @@ class ArmLayerNormOp(OpHasAxis, OpHasBiases, OpHasWeights, OpHasVariableOutPorts
         out_tensor = (normalized * weights + biases).astype(input_dtype)
         out_tensors = [out_tensor]
         out_ports = self.get_out_ports()
+        std_mean_dtype = 'bfloat16' if inputs[0].dtype == 'bfloat16' else 'float32'
         if 1 in out_ports or 2 in out_ports:
-            out_tensors.append(np.array(mean, np.float32))
-            out_tensors.append(np.array(ngamma, np.float32))
+            out_tensors.append(np.array(mean, std_mean_dtype))
+            out_tensors.append(np.array(ngamma, std_mean_dtype))
         self.set_out_tensor(out_tensors)
 
     def write_attrs(self, txt_file):
@@ -3565,7 +3566,7 @@ class ArmMVNOp(OpHasOneOutPort, OpHasAxis, ArmOp):
         inputs = self.get_input_tensors()
         data_mean = np.mean(inputs[0], axis=tuple(self.axes), keepdims=True)
         data_std = np.std(inputs[0], axis=tuple(self.axes), keepdims=True)
-        out_tensor = (inputs[0] - data_mean) / (data_std + self.epsilon)
+        out_tensor = (inputs[0] - data_mean) / (data_std + self.epsilon).astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
     def write_attrs(self, txt_file):

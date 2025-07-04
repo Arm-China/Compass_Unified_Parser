@@ -1106,7 +1106,7 @@ class MeanVarianceNormalizationOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
         inputs = self.get_input_tensors()
         data_mean = np.mean(inputs[0], axis=tuple(self.axes), keepdims=True)
         data_std = np.std(inputs[0], axis=tuple(self.axes), keepdims=True)
-        out_tensor = (inputs[0] - data_mean) / (data_std + self.epsilon)
+        out_tensor = (inputs[0] - data_mean) / (data_std + self.epsilon).astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
 
