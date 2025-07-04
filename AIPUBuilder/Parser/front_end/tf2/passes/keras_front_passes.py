@@ -674,7 +674,8 @@ def convert_relu(graph):
         thresholded_relu_in_attr = copy.deepcopy(in_attr)
         graph.add_edge(src, thresholded_relu, **thresholded_relu_in_attr)
         thres_out_tensor = None if in_attr['tensor'].value is None else \
-            torch.nn.Threshold(threshold.item(), 0)(torch.tensor(in_attr['tensor'].value)).detach().numpy()
+            torch.nn.Threshold(threshold.item(), 0)(torch.tensor(in_attr['tensor'].value.astype(
+                np.float32))).detach().numpy().astype(in_attr['tensor'].value.dtype)
         add_pos_in_tensor = thres_out_tensor
         pos_last_node = thresholded_relu
         if max_value is not None:
