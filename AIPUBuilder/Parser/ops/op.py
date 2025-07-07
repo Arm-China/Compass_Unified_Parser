@@ -1821,11 +1821,6 @@ class BaseLinearOp(OpHasBiases, OpHasWeights, OpHasOneOutPort):
         '''Convert the perm under the TF lite framework to the perm under the TF framework.'''
         return [1, 0]
 
-    @classmethod
-    def cast_in_ports(cls):
-        '''Returns the port index to which the cast needs to be added and the cast dtype to be converted.'''
-        return {0: 'float32'}
-
     def __init__(self, graph, attr_dict=None):
         super(BaseLinearOp, self).__init__(graph, attr_dict)
         self.update_attributes(BaseLinearOp, attr_dict)
