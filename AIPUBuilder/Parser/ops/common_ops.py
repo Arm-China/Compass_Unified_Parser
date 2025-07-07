@@ -1027,6 +1027,12 @@ class ReduceVarianceOp(OpHasAxis, OpHasOneOutPort, CommonOp):
         try:
             if item in ('keepdims', 'unbiased'):
                 ret = bool(self.__dict__['_attr'][item].value)
+            if item == 'axes':
+                inputs = self.get_input_tensors()
+                if len(inputs) > 1:
+                    ret = inputs[1].tolist() if inputs[1].size > 0 else None
+                    if ret is not None:
+                        self.__dict__['_attr'][item].value = ret
         except:
             ret = None
         if ret is None:

@@ -1081,7 +1081,7 @@ def convert_reduce_all(g, *args):
     if len(args) == 1:
         input = args[0]
         reduce_all = g.op(CUSTOM_OP + 'ReduceAll', input, keepdims_i=0)
-        return helper._squeeze_helper(g, reduce_all, [0])
+        return reduce_all
     else:
         input, dim, keepdim = args
         dim = helper._parse_arg(dim, "t")
@@ -1097,8 +1097,8 @@ def convert_reduce_all(g, *args):
 def convert_reduce_any(g, *args):
     if len(args) == 1:
         input = args[0]
-        reduce_all = g.op(CUSTOM_OP + 'ReduceAny', input, keepdims_i=0)
-        return helper._squeeze_helper(g, reduce_all, [0])
+        reduce_any = g.op(CUSTOM_OP + 'ReduceAny', input, keepdims_i=0)
+        return reduce_any
     else:
         input, dim, keepdim = args
         dim = helper._parse_arg(dim, "t")
@@ -1108,6 +1108,52 @@ def convert_reduce_any(g, *args):
             "Constant", value_t=torch.tensor(dim_list, dtype=torch.int64)
         )
         return g.op(CUSTOM_OP + 'ReduceAny', input, axes, keepdims_i=keepdim)
+
+
+@quantized_args(True)
+def convert_reduce_var(g, *args):
+    if len(args) == 2:
+        input = args[0]
+        unbiased = helper._parse_arg(args[1], "i")
+        reduce_var = g.op(CUSTOM_OP + 'ReduceVariance', input, keepdims_i=0, unbiased_i=unbiased)
+        return reduce_var
+    else:
+        input, dim, correction, keepdim = args
+        dim = helper._parse_arg(dim, "t")
+        dim_list = [int(d) for d in dim.view(-1)]
+        keepdim = helper._parse_arg(keepdim, "i")
+        unbiased = helper._parse_arg(correction, "i")
+        axes = g.op(
+            "Constant", value_t=torch.tensor(dim_list, dtype=torch.int64)
+        )
+        return g.op(CUSTOM_OP + 'ReduceVariance', input, axes, keepdims_i=keepdim, unbiased_i=unbiased)
+
+
+@quantized_args(True)
+def convert_var_mean(g, *args):
+    if len(args) == 2:
+        input = args[0]
+        unbiased = helper._parse_arg(args[1], "i")
+        reduce_var = g.op(CUSTOM_OP + 'ReduceVariance', input, keepdims_i=0, unbiased_i=unbiased)
+        reduce_mean = g.op('ReduceMean', input, keepdims_i=0)
+        return (reduce_var, reduce_mean)
+    else:
+        input, dim, correction, keepdim = args
+        dim = helper._parse_arg(dim, "t")
+        dim_list = [int(d) for d in dim.view(-1)]
+        keepdim = helper._parse_arg(keepdim, "i")
+        unbiased = helper._parse_arg(correction, "i")
+        axes = g.op(
+            "Constant", value_t=torch.tensor(dim_list, dtype=torch.int64)
+        )
+        return (g.op(CUSTOM_OP + 'ReduceVariance', input, axes, keepdims_i=keepdim, unbiased_i=unbiased),
+                g.op('ReduceMean', input, axes, keepdims_i=keepdim))
+
+
+@quantized_args(True)
+def convert_std_mean(g, *args):
+    var, mean = convert_var_mean(g, *args)
+    return g.op('Sqrt', var), mean
 
 
 @quantized_args(True)
@@ -2061,6 +2107,12 @@ def convert_torch_to_onnx(model_path, params):
         'aten::all', convert_reduce_all, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::any', convert_reduce_any, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'aten::var', convert_reduce_var, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'aten::var_mean', convert_var_mean, onnx_opset_version)
+    torch.onnx.register_custom_op_symbolic(
+        'aten::std_mean', convert_std_mean, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
         'aten::asinh', convert_asinh, onnx_opset_version)
     torch.onnx.register_custom_op_symbolic(
