@@ -3273,11 +3273,11 @@ def rename_slice(graph):
         in_edges = graph.sorted_in_edges(slice, data=True)
         if slice_obj is not None \
                 and ((slice_obj.cur_version == 1 and len(in_edges) == 1) or (slice_obj.cur_version > 1 and 3 <= len(in_edges) <= 5)):
+            input_shapes = slice_obj.get_input_shapes()
             if len(in_edges) > 1 and any(not in_attr['tensor'].is_const for _, _, in_attr in in_edges[1:]):
                 WARN(f'[Parser]: Dynamic Slice({slice}) in this graph.')
                 if len(in_edges) < 5:
                     in_ports = slice_obj.get_in_ports()
-                    input_shapes = slice_obj.get_input_shapes()
                     add_in_port = [x for x in range(5) if x not in in_ports]
                     if 3 in add_in_port:
                         axes = np.array(list(range(input_shapes[1][0])), np.int32)
@@ -3291,9 +3291,11 @@ def rename_slice(graph):
                 graph.remove_edges_from(in_edges[1:])
                 slice_attr = slice_obj.copied_attr()
                 ends = np.array(slice_obj.ends, np.int64)
-                ends_mask = np.logical_and(
-                    ends < -1, np.array(slice_obj.steps, np.int64) < 0)
-                ends[ends_mask] = -1
+                for i, s in enumerate(slice_obj.steps):
+                    if s < 0:
+                        tmp_end = ends[i]
+                        shape = input_shapes[0][i]
+                        ends[i] = max(min(shape - 1, tmp_end), - shape - 1)
                 slice_attr.update({'ends': ends.tolist()})
                 if 'steps' not in slice_attr:
                     slice_attr.update({'steps': slice_obj.steps})
