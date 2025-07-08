@@ -1915,7 +1915,12 @@ class BaseConvOp(OpHasPaddingStrides, BaseLinearOp, LayoutConcernedOp):
             if 'ConvInteger' in self.type or self.type == 'QLinearConv':
                 self.biases = np.zeros((self.num_output,), np.int32)
             else:
-                self.biases = np.zeros((self.num_output,), np.float32)
+                inp_dtypes = self.get_input_dtypes()
+                if inp_dtypes and inp_dtypes[0] is not None:
+                    bias_dtype = inp_dtypes[0]
+                else:
+                    bias_dtype = np.float32
+                self.biases = np.zeros((self.num_output,), bias_dtype)
 
     def write_attrs(self, txt_file):
         '''Write the required attr in IR.'''
