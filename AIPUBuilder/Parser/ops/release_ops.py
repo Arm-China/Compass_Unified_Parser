@@ -452,6 +452,14 @@ class ArmAtanhOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
 
 class ArmBasicLSTMOp(BaseRnnOp, OpHasBiases, OpHasWeights, ArmOp):
     @classmethod
+    def cast_in_ports(cls):
+        return {
+            0: ['float32', 'float16', 'bfloat16', 'int8'],
+            1: ['float32', 'float16', 'bfloat16', 'int8'],
+            2: ['float32', 'float16', 'bfloat16', 'int8']
+        }
+
+    @classmethod
     def num_in_ports(cls):
         return 3
 
@@ -2507,6 +2515,10 @@ class ArmGroupNormOp(OpHasAxis, OpHasBiases, OpHasWeights, OpHasOneOutPort, ArmO
 
 class ArmGRUv1Op(BaseRnnOp, OpHasBiases, OpHasWeights, ArmOp):
     @classmethod
+    def cast_in_ports(cls):
+        return {0: ['float32', 'float16', 'bfloat16'], 1: ['float32', 'float16', 'bfloat16']}
+
+    @classmethod
     def num_in_ports(cls):
         return 2
 
@@ -2558,6 +2570,10 @@ class ArmGRUv1Op(BaseRnnOp, OpHasBiases, OpHasWeights, ArmOp):
 
 
 class ArmGRUv3Op(BaseRnnOp, OpHasBiases, OpHasWeights, ArmOp):
+    @classmethod
+    def cast_in_ports(cls):
+        return {0: ['float32', 'float16', 'bfloat16'], 1: ['float32', 'float16', 'bfloat16']}
+
     @classmethod
     def num_in_ports(cls):
         return 2
