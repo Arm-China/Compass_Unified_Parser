@@ -2367,7 +2367,7 @@ class ArmGemmOp(OpHasOneOutPort, ArmOp):
         B = inputs[1] if not bool(self.trans_b) else np.transpose(inputs[1])
         # alpha * A' * B' + beta * C
         C = inputs[2]
-        out_tensor = self.alpha * np.matmul(A, B) + self.beta * C
+        out_tensor = (self.alpha * np.matmul(A, B) + self.beta * C).astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
     def write_attrs(self, txt_file):

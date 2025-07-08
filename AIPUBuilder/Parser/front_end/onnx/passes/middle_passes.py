@@ -12170,6 +12170,7 @@ def split_special_ln2(graph):
             ERROR('[Parser]: Meets invalid LayerNormalization Node(%s) in split_special_ln!' % ln)
             continue
         input_shapes = ln_obj.get_input_shapes()
+        input_dtypes = ln_obj.get_input_dtypes()
         if any(s is None for s in input_shapes) or any(d is None for s in input_shapes for d in s):
             continue
         out_ports = ln_obj.get_out_ports()
@@ -12204,7 +12205,7 @@ def split_special_ln2(graph):
         graph.add_edge(x, sub, **x_in_attr)
         graph.add_edge(ln, sub, **{'dst_in_port': 1, 'tensor': Tensor(shape=mean_shape)})
         graph.add_edge(ln, add1, **{'src_out_port': 1, 'tensor': Tensor(shape=mean_shape)})
-        insert_constant(graph, ln + '_epsilon', np.array(ln_obj.epsilon, dtype=np.float32), add1, in_port=1)
+        insert_constant(graph, ln + '_epsilon', np.array(ln_obj.epsilon, dtype=input_dtypes[0]), add1, in_port=1)
         graph.add_edge(add1, sqrt, **{'tensor': Tensor(shape=mean_shape)})
         graph.add_edge(sqrt, reciprocal)
         graph.add_edge(sub, mul1)
