@@ -18,7 +18,7 @@ class AttentionOp(OpHasVariableOutPorts, OnnxOp):
                 'qk_matmul_output_mode': {'type': AttrType.INT, 'default': 0},
                 'scale': {'type': AttrType.FLOAT, 'default': None},
                 'softcap': {'type': AttrType.FLOAT, 'default': 0.0},
-                'softmax_precision': {'type': AttrType.INT, 'default': 0},
+                'softmax_precision': {'type': AttrType.INT, 'default': -1},
             }
         }
 
@@ -57,33 +57,42 @@ class AttentionOp(OpHasVariableOutPorts, OnnxOp):
             hidden_size_q = Q.shape[2]
             hidden_size_k = K.shape[2]
             hidden_size_v = V.shape[2]
-            assert self.q_num_heads is not None and self.kv_num_heads is not None
+            assert self.q_num_heads != 0 and self.kv_num_heads != 0
 
             head_size_q = int(hidden_size_q / self.q_num_heads)
-            new_shape_q = [batch_size, self.q_num_heads, Q.shape[1], head_size_q]
+            new_shape_q = [batch_size, Q.shape[1], self.q_num_heads, head_size_q]
             Q = np.reshape(Q, new_shape_q)
+            Q = Q.transpose(0, 2, 1, 3)
 
             head_size_k = int(hidden_size_k / self.kv_num_heads)
-            new_shape_k = [batch_size, self.kv_num_heads, K.shape[1], head_size_k]
+            new_shape_k = [batch_size, K.shape[1], self.kv_num_heads, head_size_k]
             K = np.reshape(K, new_shape_k)
+            K = K.transpose(0, 2, 1, 3)
 
             head_size_v = int(hidden_size_v / self.kv_num_heads)
-            new_shape_v = [batch_size, self.kv_num_heads, V.shape[1], head_size_v]
+            new_shape_v = [batch_size, V.shape[1], self.kv_num_heads, head_size_v]
             V = np.reshape(V, new_shape_v)
+            V = V.transpose(0, 2, 1, 3)
+
         assert len(Q.shape) == 4 and len(K.shape) == 4 and len(V.shape) == 4
 
         # Calculate Scaling Factor if not provided
         if self.scale is None:
             q_head_size = Q.shape[3]
             scale = 1 / np.sqrt(q_head_size)
+        else:
+            scale = self.scale
         scale = np.sqrt(scale)
 
+        in_ports = self.get_in_ports()
         # Update key and value cache
-        if past_key is not None:
+        if 4 in in_ports and len(inputs) >= 5:
+            past_key = inputs[4]
             present_key = np.concatenate((past_key, K), axis=2)
         else:
             present_key = K
-        if past_value is not None:
+        if 5 in in_ports and len(inputs) >= 6:
+            past_value = inputs[5]
             present_value = np.concatenate((past_value, V), axis=2)
         else:
             present_value = V
@@ -99,14 +108,15 @@ class AttentionOp(OpHasVariableOutPorts, OnnxOp):
         # is a square matrix. The attention masking has the form of the upper left causal
         # bias due to the alignment when the mask is a non-square matrix.
         if self.is_causal == 1:
-            assert attn_mask is None
+            assert 3 not in in_ports
             temp_mask = np.ones((q_sequence_length, kv_sequence_length), dtype=bool)
             temp_mask = np.tril(temp_mask, k=0)
             temp_mask = np.logical_not(temp_mask)
             attn_bias_ma = np.ma.array(attn_bias, mask=temp_mask)
             attn_bias = attn_bias_ma.filled(fill_value=float("-inf"))
-        if attn_mask is not None:
-            assert is_causal != 1
+        if 3 in in_ports and len(inputs) >= 4:
+            attn_mask = inputs[3]
+            assert self.is_causal != 1
             if attn_mask.dtype == bool:
                 attn_mask = np.logical_not(attn_mask)
                 attn_bias_ma = np.ma.array(attn_bias, mask=attn_mask)
@@ -118,9 +128,9 @@ class AttentionOp(OpHasVariableOutPorts, OnnxOp):
         # 1) q_num_heads != kv_num_heads
         # 2) q_num_heads % kv_num_heads == 0
         # 3) kv_num_heads == k_num_heads == v_num_heads
-        if self.q_num_heads is None:
+        if self.q_num_heads == 0:
             q_num_heads = Q.shape[1]
-        if self.kv_num_heads is None:
+        if self.kv_num_heads == 0:
             k_num_heads = K.shape[1]
             v_num_heads = K.shape[1]
         else:
@@ -161,12 +171,12 @@ class AttentionOp(OpHasVariableOutPorts, OnnxOp):
             qk_matmul_output = qk_matmul_output + attn_bias
 
         # Apply softcap
-        if self.softcap is not None:
+        if self.softcap != 0:
             qk_with_bias = _softcap(qk_with_bias, self.softcap)
             if self.qk_matmul_output_mode == 2:
                 qk_matmul_output = qk_with_bias
 
-        if self.softmax_precision is not None:
+        if self.softmax_precision != -1:
             qk_with_bias = qk_with_bias.astype(
                 onnx.helper.tensor_dtype_to_np_dtype(self.softmax_precision)
             )

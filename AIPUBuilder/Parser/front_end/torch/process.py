@@ -2320,7 +2320,8 @@ def convert_torch_to_onnx(model_path, params):
             WARN('[Parser]: Input dtype %s is changed to float32 because %s' %
                  (input_dtype[idx], str(e)))
         if 'float' in str(tensor_dtype):
-            tensor = torch.randn(input_shape, dtype=tensor_dtype)
+            np_data = np.random.randn(*input_shape)
+            tensor = torch.tensor(np_data).to(tensor_dtype)
         else:
             tensor = torch.zeros(input_shape, dtype=tensor_dtype)
         if use_gpu:
