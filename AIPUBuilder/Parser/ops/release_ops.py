@@ -752,7 +752,8 @@ class ArmCastOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
     def attributes(cls):
         return {'to_dtype': {'type': AttrType.STRING,
                              'required': True,
-                             'options': ['int8', 'uint8', 'int16', 'uint32', 'uint16', 'int32', 'float32', 'float16', 'bfloat16']
+                             'options': ['int8', 'uint8', 'int16', 'uint32', 'uint16', 'int32', 'float32',
+                                         'float16', 'bfloat16', 'float8_e5m2', 'float8_e4m3fn']
                              },
                 'clip_mode': {'type': AttrType.STRING, 'options': ['saturation', 'truncation'], 'default': 'saturation'},
                 'ignore_scale_zp': {'type': AttrType.BOOL, 'default': True}
