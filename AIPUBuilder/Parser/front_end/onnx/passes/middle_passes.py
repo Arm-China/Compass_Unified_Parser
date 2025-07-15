@@ -7340,117 +7340,285 @@ def convert_attention(graph):
             continue
         att_in_edges = graph.sorted_in_edges(att, data=True)
         att_out_edges = graph.sorted_out_edges(att, data=True)
-        outports = att_obj.get_out_ports()
+        in_ports = att_obj.get_in_ports()
+        out_ports = att_obj.get_out_ports()
 
         input_shapes = att_obj.get_input_shapes()
         input_dtypes = att_obj.get_input_dtypes()
-        q_shape = input_shapes[0]
+        q_shape, k_shape, v_shape = input_shapes[:3]
         if len(q_shape) not in (3, 4):
             ERROR(
                 '[Parser]: Only support 3 or 4-dims of query in Attention node(%s)' % att)
             continue
-        head_dim = q_shape[-1] // att_obj.num_heads
-        bs, seq_len = q_shape[:2]
+        # head_dim = q_shape[-1] // att_obj.num_heads
+        bs = q_shape[0]
         query = att_in_edges[0][0]
         key = att_in_edges[1][0]
         value = att_in_edges[2][0]
-        attention_bias = att_in_edges[5][0]
 
         if len(q_shape) == 3:
             # Q: [bs, q_seq_len, q_hidden_size]  q_hidden_size = q_num_heads * head_size
-            q_hidden_size = input_shapes[0][2]
+            q_hidden_size = q_shape[2]
+            q_seq_len = q_shape[1]
+            q_num_heads = att_obj.q_num_heads
             # split query
-            q_head_size = q_hidden_size // att_obj.q_num_heads
-            rs_q = insert_reshape(graph, query, att, att_in_edges[0][-1],
-                                  [bs, att_obj.q_num_heads, input_shapes[0][1], head_dim])
-            rs_q_in_attr = copy.deepcopy(att_in_edges[0][-1])
-            rs_q_in_attr['tensor'].shape = [bs, seq_len, att_obj.num_heads, head_dim]
+            q_head_size = q_hidden_size // q_num_heads
+            query = insert_reshape(graph, query, att, att_in_edges[0][-1],
+                                   [bs, q_seq_len, q_num_heads, q_head_size])
+            rs_q_out_attr = graph.sorted_out_edges(query, data=True)[0][-1]
+            query = insert_transpose(graph, query, att, rs_q_out_attr, perm=[0, 2, 1, 3])
+            q_shape = [bs, q_num_heads, q_seq_len, q_head_size]
 
             # K: [bs, kv_seq_len, k_hidden_size]  q_hidden_size = kv_num_heads * head_size
+            k_hidden_size = k_shape[2]
+            kv_seq_len = k_shape[1]
+            kv_num_heads = att_obj.kv_num_heads
             # split key
-            rs_k = insert_reshape(graph, key, att, att_in_edges[1][-1], [bs, seq_len, att_obj.num_heads, head_dim])
-            rs_k_in_attr = copy.deepcopy(att_in_edges[1][-1])
-            rs_k_in_attr['tensor'].shape = [bs, seq_len, att_obj.num_heads, head_dim]
+            k_head_size = k_hidden_size // kv_num_heads
+            key = insert_reshape(graph, key, att, att_in_edges[1][-1], [bs, kv_seq_len, kv_num_heads, k_head_size])
+            key_out_attr = graph.sorted_out_edges(key, data=True)[0][-1]
+            key = insert_transpose(graph, key, att, key_out_attr, perm=[0, 2, 1, 3])
+            k_shape = [bs, kv_num_heads, kv_seq_len, k_head_size]
 
             # V: [bs, kv_seq_len, v_hidden_size]  q_hidden_size = kv_num_heads * v_head_size
+            v_hidden_size = v_shape[2]
+            v_head_size = v_hidden_size // kv_num_heads
             # split value
-            rs_v = insert_reshape(graph, value, att, att_in_edges[2][-1], [bs, seq_len, att_obj.num_heads, head_dim])
-            rs_v_in_attr = copy.deepcopy(att_in_edges[2][-1])
-            rs_v_in_attr['tensor'].shape = [bs, seq_len, att_obj.num_heads, head_dim]
+            value = insert_reshape(graph, value, att, att_in_edges[2][-1], [bs, kv_seq_len, kv_num_heads, v_head_size])
+            value_out_attr = graph.sorted_out_edges(value, data=True)[0][-1]
+            value = insert_transpose(graph, value, att, value_out_attr, perm=[0, 2, 1, 3])
+            v_shape = [bs, kv_num_heads, kv_seq_len, v_head_size]
         else:
-            pass
+            q_head_size = q_shape[-1]
+            q_seq_len = q_shape[2]
+            q_num_heads = q_shape[1]
 
-        trans_q = insert_transpose(graph, rs_q, att, rs_q_in_attr, perm=[0, 2, 1, 3])
-        trans_k = insert_transpose(graph, rs_k, att, rs_k_in_attr, perm=[0, 2, 3, 1])
+            kv_seq_len = k_shape[2]
+            kv_num_heads = k_shape[1]
 
-        trans_q_out_shape = [rs_q_in_attr['tensor'].shape[axis] for axis in [0, 2, 1, 3]]
-        trans_k_out_shape = [rs_k_in_attr['tensor'].shape[axis] for axis in [0, 2, 3, 1]]
+        if att_obj.scale is None:
+            scale = 1 / np.sqrt(q_head_size).astype(input_dtypes[0])
+        else:
+            scale = att_obj.scale.astype(input_dtypes[0])
+
+        if 4 in in_ports:  # past_key
+            # add concat
+            past_key = att_in_edges[4][0]
+            concat_k = get_valid_node_name(graph, att + '_concat_k')
+            graph.add_node(concat_k)
+            concat_k_attr = {'name': concat_k, 'axis': 2, 'opset_version': 13}
+            graph.add_edge(past_key, concat_k, **{'src_out_port': 0, 'dst_in_port': 0,
+                                                  'tensor': Tensor(shape=tuple(input_shapes[4]))})
+            graph.add_edge(key, concat_k, **{'src_out_port': 0, 'dst_in_port': 1,
+                                             'tensor': Tensor(shape=tuple(k_shape))})
+            NodeWrap(graph, concat_k).replace_obj('Concat', concat_k_attr)
+            graph.remove_edge(key, att)
+            graph.remove_edge(past_key, att)
+            concat_k_shape = k_shape[:2] + [input_shapes[4][2] + k_shape[2]] + k_shape[3:]
+            graph.add_edge(concat_k, att, **{'src_out_port': 0, 'dst_in_port': 4,
+                                             'tensor': Tensor(shape=tuple(concat_k_shape))})
+            key = concat_k
+        if 5 in in_ports:  # past_value
+            # add concat
+            past_value = att_in_edges[5][0]
+            concat_v = get_valid_node_name(graph, att + '_concat_v')
+            graph.add_node(concat_v)
+            concat_v_attr = {'name': concat_v, 'axis': 2, 'opset_version': 13}
+            graph.add_edge(past_value, concat_v, **{'src_out_port': 0, 'dst_in_port': 0,
+                                                    'tensor': Tensor(shape=tuple(input_shapes[5]))})
+            graph.add_edge(value, concat_v, **{'src_out_port': 0, 'dst_in_port': 1,
+                                               'tensor': Tensor(shape=tuple(v_shape))})
+            NodeWrap(graph, concat_v).replace_obj('Concat', concat_v_attr)
+            graph.remove_edge(value, att)
+            graph.remove_edge(past_value, att)
+            concat_v_shape = v_shape[:2] + [input_shapes[5][2] + v_shape[2]] + v_shape[3:]
+            graph.add_edge(concat_v, att, **{'src_out_port': 0, 'dst_in_port': 5,
+                                             'tensor': Tensor(shape=tuple(concat_v_shape))})
+            value = concat_v
+            kv_seq_len += input_shapes[5][2]
+
+        if q_num_heads > kv_num_heads and q_num_heads % kv_num_heads == 0:  # GQA
+            seq_reps = q_num_heads // kv_num_heads
+            reps = [1, seq_reps, 1, 1]
+            # tile K, V
+            key_out_attr = graph.sorted_out_edges(key, data=True)[0][-1]
+            value_out_attr = graph.sorted_out_edges(value, data=True)[0][-1]
+            tile_k = insert_tile(graph, key, att, key_out_attr, reps)
+            tile_v = insert_tile(graph, value, att, value_out_attr, reps)
+            key = tile_k
+            value = tile_v
+
+        key_out_attr = graph.sorted_out_edges(key, data=True)[0][-1]
+        trans_k = insert_transpose(graph, key, att, key_out_attr, perm=[0, 1, 3, 2])
+        trans_k_out_shape = [k_shape[axis] for axis in [0, 1, 3, 2]]
 
         # split_q @ split_k
-        matmul = get_valid_node_name(graph, att + '_matmul')
-        graph.add_node(matmul)
-        matmul_attr = {'name': matmul, 'opset_version': 13}
-        graph.add_edge(trans_q, matmul, **{'src_out_port': 0, 'dst_in_port': 0,
-                                           'tensor': Tensor(shape=tuple(trans_q_out_shape))})
-        graph.add_edge(trans_k, matmul, **{'src_out_port': 0, 'dst_in_port': 1,
-                                           'tensor': Tensor(shape=tuple(trans_k_out_shape))})
-        NodeWrap(graph, matmul).replace_obj('MatMul', matmul_attr)
+        qk_matmul = get_valid_node_name(graph, att + '_matmul')
+        graph.add_node(qk_matmul)
+        qk_matmul_attr = {'name': qk_matmul, 'opset_version': 13}
+        graph.add_edge(query, qk_matmul, **{'src_out_port': 0, 'dst_in_port': 0,
+                                            'tensor': Tensor(shape=tuple(q_shape))})
+        graph.add_edge(trans_k, qk_matmul, **{'src_out_port': 0, 'dst_in_port': 1,
+                                              'tensor': Tensor(shape=tuple(trans_k_out_shape))})
+        graph.remove_edge(trans_k, att)
+        graph.remove_edge(query, att)
+        NodeWrap(graph, qk_matmul).replace_obj('MatMul', qk_matmul_attr)
 
-        matmul_out_shape = trans_q_out_shape[:-1] + trans_k_out_shape[-1:]
+        matmul_out_shape = q_shape[:-1] + trans_k_out_shape[-1:]
 
         # scores
         mul = get_valid_node_name(graph, att + '_mul')
         graph.add_node(mul)
         mul_attr = {'name': mul, 'opset_version': 13}
-        graph.add_edge(matmul, mul, **{'src_out_port': 0, 'dst_in_port': 0,
-                                       'tensor': Tensor(shape=tuple(matmul_out_shape))})
-        insert_constant(graph, att + '_scale', np.array(att_obj.scale, dtype=input_dtypes[0]), mul, in_port=1)
+        graph.add_edge(qk_matmul, mul, **{'src_out_port': 0, 'dst_in_port': 0,
+                                          'tensor': Tensor(shape=tuple(matmul_out_shape))})
+        insert_constant(graph, att + '_scale', np.array(scale, dtype=input_dtypes[0]), mul, in_port=1)
         NodeWrap(graph, mul).replace_obj('Mul', mul_attr)
 
-        add = get_valid_node_name(graph, att + '_add')
-        graph.add_node(add)
-        add_attr = {'name': add, 'opset_version': 13}
-        graph.add_edge(mul, add, **{'src_out_port': 0, 'dst_in_port': 0,
-                                    'tensor': Tensor(shape=tuple(matmul_out_shape))})
-        graph.add_edge(attention_bias, add, **{'src_out_port': 0, 'dst_in_port': 1})
-        NodeWrap(graph, add).replace_obj('Add', add_attr)
+        if att_obj.is_causal == 1:
+            attn_bias = np.zeros((q_seq_len, kv_seq_len), dtype=input_dtypes[0])
+            temp_mask = np.ones((q_seq_len, kv_seq_len), dtype=bool)
+            temp_mask = np.tril(temp_mask, k=0)
+            temp_mask = np.logical_not(temp_mask)
+            attn_bias_ma = np.ma.array(attn_bias, mask=temp_mask)
+            attn_bias = attn_bias_ma.filled(fill_value=float("-inf"))
+
+            add = get_valid_node_name(graph, att + '_add')
+            graph.add_node(add)
+            add_attr = {'name': add, 'opset_version': 13}
+            graph.add_edge(mul, add, **{'src_out_port': 0, 'dst_in_port': 0,
+                                        'tensor': Tensor(shape=tuple(matmul_out_shape))})
+            insert_constant(graph, att + '_atten_bias', np.array(attn_bias, dtype=input_dtypes[0]), add, in_port=1)
+            NodeWrap(graph, add).replace_obj('Add', add_attr)
+            attn_bias_node = add
+        else:
+            if 3 in in_ports:
+                attn_mask = att_in_edges[3][0]
+                graph.remove_edge(attn_mask, att)
+                if input_dtypes[3] == 'bool':
+                    where = get_valid_node_name(graph, att + '_where')
+                    graph.add_node(where)
+                    where_attr = {'name': where, 'opset_version': 13}
+                    graph.add_edge(attn_mask, where, **{'src_out_port': 0, 'dst_in_port': 0,
+                                                        'tensor': Tensor(shape=tuple(matmul_out_shape))})
+                    insert_constant(graph, att + '_inf', np.array(float("-inf"), dtype=input_dtypes[0]), where,
+                                    in_port=1)
+                    graph.add_edge(mul, where, **{'src_out_port': 0, 'dst_in_port': 2,
+                                                  'tensor': Tensor(shape=tuple(matmul_out_shape))})
+                    NodeWrap(graph, where).replace_obj('Where', where_attr)
+                    attn_bias_node = where
+                else:
+                    add = get_valid_node_name(graph, att + '_add')
+                    graph.add_node(add)
+                    add_attr = {'name': add, 'opset_version': 13}
+                    graph.add_edge(mul, add, **{'src_out_port': 0, 'dst_in_port': 0,
+                                                'tensor': Tensor(shape=tuple(matmul_out_shape))})
+                    graph.add_edge(attn_mask, add, **{'src_out_port': 0, 'dst_in_port': 1})
+                    NodeWrap(graph, add).replace_obj('Add', add_attr)
+                    attn_bias_node = add
+
+        if att_obj.softcap > 0:
+            div = get_valid_node_name(graph, att + '_div')
+            graph.add_node(div)
+            div_attr = {'name': div, 'opset_version': 13}
+            graph.add_edge(attn_bias_node, div, **{'src_out_port': 0, 'dst_in_port': 0,
+                                                   'tensor': Tensor(shape=tuple(matmul_out_shape))})
+            insert_constant(graph, att + '_softcap', np.array(att_obj.softcap, dtype=input_dtypes[0]), div, in_port=1)
+            NodeWrap(graph, div).replace_obj('Div', div_attr)
+
+            tanh = get_valid_node_name(graph, att + '_tanh')
+            graph.add_node(tanh)
+            tanh_attr = {'name': tanh, 'opset_version': 13}
+            graph.add_edge(div, tanh, **{'src_out_port': 0, 'dst_in_port': 0,
+                                         'tensor': Tensor(shape=tuple(matmul_out_shape))})
+            NodeWrap(graph, tanh).replace_obj('Tanh', tanh_attr)
+
+            mul = get_valid_node_name(graph, att + '_mul')
+            graph.add_node(mul)
+            mul_attr = {'name': mul, 'opset_version': 13}
+            graph.add_edge(tanh, mul, **{'src_out_port': 0, 'dst_in_port': 0,
+                                         'tensor': Tensor(shape=tuple(matmul_out_shape))})
+            graph.add_edge(att + '_softcap', mul, **{'src_out_port': 0, 'dst_in_port': 1})
+            NodeWrap(graph, mul).replace_obj('Mul', mul_attr)
+            attn_softcap = mul
+        else:
+            attn_softcap = attn_bias_node
 
         # Softmax
         softmax = get_valid_node_name(graph, att + '_softmax')
         graph.add_node(softmax)
         softmax_attr = {'name': softmax, 'opset_version': 13, 'axis': -1}
-        graph.add_edge(add, softmax, **{'src_out_port': 0, 'dst_in_port': 0})
+        graph.add_edge(attn_softcap, softmax, **{'src_out_port': 0, 'dst_in_port': 0})
         NodeWrap(graph, softmax).replace_obj('Softmax', softmax_attr)
 
-        trans_v = insert_transpose(graph, rs_v, att, rs_v_in_attr, perm=[0, 2, 1, 3])
+        if len(input_shapes[0]) == 3:
+            matmul_v = get_valid_node_name(graph, att + '_matmul_v')
+            graph.add_node(matmul_v)
+            matmul_v_attr = {'name': matmul_v, 'opset_version': 13}
+            graph.add_edge(softmax, matmul_v, **{'src_out_port': 0, 'dst_in_port': 0,
+                                                 'tensor': Tensor(shape=tuple(matmul_out_shape))})
+            graph.add_edge(value, matmul_v, **{'src_out_port': 0, 'dst_in_port': 1,
+                                               'tensor': Tensor(shape=tuple(v_shape))})
+            NodeWrap(graph, matmul_v).replace_obj('MatMul', matmul_v_attr)
 
-        trans_v_out_shape = [rs_v_in_attr['tensor'].shape[axis] for axis in [0, 2, 1, 3]]
+            graph.remove_edge(value, att)
 
-        matmul_v = get_valid_node_name(graph, att + '_matmul_v')
-        graph.add_node(matmul_v)
-        matmul_v_attr = {'name': matmul_v, 'opset_version': 13}
-        graph.add_edge(softmax, matmul_v, **{'src_out_port': 0, 'dst_in_port': 0,
-                                             'tensor': Tensor(shape=tuple(matmul_out_shape))})
-        graph.add_edge(trans_v, matmul_v, **{'src_out_port': 0, 'dst_in_port': 1,
-                                             'tensor': Tensor(shape=tuple(trans_v_out_shape))})
-        NodeWrap(graph, matmul_v).replace_obj('MatMul', matmul_v_attr)
+            matmul_v_out_shape = matmul_out_shape[:-1] + v_shape[-1:]
 
-        matmul_v_out_shape = matmul_out_shape[:-1] + trans_v_out_shape[-1:]
+            trans_out_in_attr = {'src_out_port': 0, 'dst_in_port': 0,
+                                 'tensor': Tensor(shape=tuple(matmul_v_out_shape))}
+            insert_transpose(graph, matmul_v, att, trans_out_in_attr, perm=[0, 2, 1, 3])
 
-        # concat heads
-        trans_out_in_attr = copy.deepcopy(att_in_edges[2][-1])
-        trans_out_in_attr['tensor'].shape = matmul_v_out_shape
-        trans_out = insert_transpose(graph, matmul_v, att, trans_out_in_attr, perm=[0, 2, 1, 3])
-        rs_out_in_attr = copy.deepcopy(att_in_edges[2][-1])
-        rs_out_in_attr['tensor'].shape = [matmul_v_out_shape[axis] for axis in [0, 2, 1, 3]]
-        rs_out = insert_reshape(graph, trans_out, att, rs_out_in_attr, q_shape)
-        graph.remove_edges_from(att_in_edges)
-        graph.remove_edges_from(att_out_edges)
+            reshape_dim = np.array([bs, q_seq_len, -1], np.int32)
+            const = get_valid_node_name(graph, att + 'post_reshape_shape')
+            graph.add_node(const)
+            const_attr = {'name': const, 'value': reshape_dim, 'opset_version': 9}
+            NodeWrap(graph, const).replace_obj('Constant', const_attr)
+            const_edge_attr = {'src_out_port': 0, 'dst_in_port': 1,
+                               'tensor': Tensor(value=reshape_dim, is_const=True)}
+            graph.add_edge(const, att, **const_edge_attr)
+            op_attr = att_obj.copied_attr()
+            NodeWrap(graph, att).replace_obj('Reshape', op_attr)
+        else:
+            op_attr = att_obj.copied_attr()
+            NodeWrap(graph, att).replace_obj('MatMul', op_attr)
 
-        for _, dst, out_attr in att_out_edges:
-            tmp_out_attr = copy.deepcopy(out_attr)
-            tmp_out_attr.update({'src_out_port': 0})
-            graph.add_edge(rs_out, dst, **tmp_out_attr)
+        if len(att_out_edges) > 1:
+            for i, (_, dst, out_attr) in enumerate(att_out_edges[1:]):
+                if i == 0:
+                    graph.remove_edge(att, dst)
+                    new_out_attr = copy.deepcopy(out_attr)
+                    new_out_attr['src_out_port'] = 0
+                    graph.add_edge(key, dst, **new_out_attr)
+                elif i == 1:
+                    graph.remove_edge(att, dst)
+                    new_out_attr = copy.deepcopy(out_attr)
+                    new_out_attr['src_out_port'] = 0
+                    graph.add_edge(value, dst, **new_out_attr)
+                else:
+                    graph.remove_edge(att, dst)
+                    new_out_attr = copy.deepcopy(out_attr)
+                    new_out_attr['src_out_port'] = 0
+                    if att_obj.qk_matmul_output_mode == 0:
+                        qk_matmul_node = qk_matmul
+                    elif att_obj.qk_matmul_output_mode == 1:
+                        qk_matmul_node = attn_bias_node
+                    elif att_obj.qk_matmul_output_mode == 2:
+                        qk_matmul_node = attn_softcap
+                    else:
+                        qk_matmul_node = softmax
+                    graph.add_edge(qk_matmul_node, dst, **new_out_attr)
+
+            if att in graph._attr['output_names']:
+                idx = graph._attr['output_names'].index(att)
+                if 1 in out_ports:
+                    graph._attr['output_names'].insert(idx, key)
+                    idx += 1
+                if 2 in out_ports:
+                    graph._attr['output_names'].insert(idx, value)
+                    idx += 1
+                if 3 in out_ports:
+                    graph._attr['output_names'].insert(idx, qk_matmul_node)
 
         clear_redundant_nodes(graph)
 

@@ -82,7 +82,6 @@ class AttentionOp(OpHasVariableOutPorts, OnnxOp):
             scale = 1 / np.sqrt(q_head_size)
         else:
             scale = self.scale
-        scale = np.sqrt(scale)
 
         in_ports = self.get_in_ports()
         # Update key and value cache
@@ -102,7 +101,7 @@ class AttentionOp(OpHasVariableOutPorts, OnnxOp):
         # Create attn_bias
         q_sequence_length = Q.shape[2]
         kv_sequence_length = K.shape[2]
-        attn_bias = np.zeros((q_sequence_length, kv_sequence_length), dtype=Q.dtype)
+        attn_bias = np.zeros((batch_size, Q.shape[1], q_sequence_length, kv_sequence_length), dtype=Q.dtype)
         # First case: If is_causal is provided
         # If set to true, the attention masking is a lower triangular matrix when the mask
         # is a square matrix. The attention masking has the form of the upper left causal
@@ -128,8 +127,8 @@ class AttentionOp(OpHasVariableOutPorts, OnnxOp):
         # 1) q_num_heads != kv_num_heads
         # 2) q_num_heads % kv_num_heads == 0
         # 3) kv_num_heads == k_num_heads == v_num_heads
-        if self.q_num_heads == 0:
-            q_num_heads = Q.shape[1]
+        q_num_heads = Q.shape[1]
+
         if self.kv_num_heads == 0:
             k_num_heads = K.shape[1]
             v_num_heads = K.shape[1]
@@ -149,11 +148,9 @@ class AttentionOp(OpHasVariableOutPorts, OnnxOp):
         # The following pattern is applied
         #      Q          K          V
         #      |          |          |
-        #     Q*scale    K*scale     |
-        #      |          |          |
         #      |       Transpose     |
         #      |          |          |
-        #      ---MatMul---          |
+        #      ---MatMul * scale---  |
         #            |               |
         # at_mask---Add              |
         #            |               |
@@ -165,7 +162,7 @@ class AttentionOp(OpHasVariableOutPorts, OnnxOp):
         #                    |
         #                    Y
         k_transpose = np.transpose(K, (0, 1, 3, 2))
-        qk_matmul_output = np.matmul(Q * scale, k_transpose * scale)
+        qk_matmul_output = np.matmul(Q, k_transpose) * scale
         qk_with_bias = qk_matmul_output + attn_bias
         if self.qk_matmul_output_mode == 1:
             qk_matmul_output = qk_matmul_output + attn_bias
