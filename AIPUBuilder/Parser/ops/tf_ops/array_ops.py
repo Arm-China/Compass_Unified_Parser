@@ -1217,7 +1217,7 @@ class TfZerosLikeOp(ConstLikeOp, OpHasOneOutPort, TfOp):
     def attributes(cls):
         return {1: {'dtype': {'default': None,
                               'options': [None,
-                                          'float16', 'float32', 'float64',
+                                          'bfloat16', 'float16', 'float32', 'float64',
                                           'int8', 'uint8', 'int16', 'uint16',
                                           'int32', 'int64',
                                           'complex64', 'complex128',

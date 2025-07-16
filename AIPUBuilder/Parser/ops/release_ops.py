@@ -8,7 +8,7 @@ import multiprocessing as mp
 import tensorflow as tf
 import numpy as np
 from .op import *
-from ..common.defs import FLOAT_EQUAL
+from ..common.defs import FLOAT_EQUAL, TYPE_MIN, TYPE_MAX
 from ..common.utils import list_list_to_string, get_random_array, get_target_graph
 from ..logger import INFO, DEBUG, WARN, ERROR, FATAL
 
@@ -1682,7 +1682,7 @@ class ArmDeQuantizeOp(OpHasAxis, BaseQuantizeDequantizeOp, OpHasOneOutPort, ArmO
     def attributes(cls):
         return {'from_dtype': {'type': AttrType.STRING,
                                'required': True,
-                               'options': ['int8', 'uint8', 'int32', 'uint32']}
+                               'options': ['float8_e5m2', 'float8_e4m3fn', 'int8', 'uint8', 'int32', 'uint32']}
                 }
 
     def __init__(self, graph, attr_dict=None):
@@ -4090,7 +4090,7 @@ class ArmQuantizeOp(OpHasAxis, BaseQuantizeDequantizeOp, OpHasOneOutPort, ArmOp)
             'to_dtype': {
                 'type': AttrType.STRING,
                 'required': True,
-                'options': ['int8', 'uint8', 'int32', 'uint32']
+                'options': ['float8_e5m2', 'float8_e4m3fn', 'int8', 'uint8', 'int32', 'uint32']
             },
             'round_mode': {
                 'type': AttrType.STRING,
@@ -4108,8 +4108,8 @@ class ArmQuantizeOp(OpHasAxis, BaseQuantizeDequantizeOp, OpHasOneOutPort, ArmOp)
     def infer_shape(self):
         super(ArmQuantizeOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        zp_min = np.iinfo(self.zero_point.dtype).min
-        zp_max = np.iinfo(self.zero_point.dtype).max
+        zp_min = TYPE_MIN(self.zero_point.dtype)
+        zp_max = TYPE_MAX(self.zero_point.dtype)
         if self.axis is None:
             out_tensor = np.clip(
                 (inputs[0] / self.scale + self.zero_point), zp_min, zp_max).astype(self.to_dtype)

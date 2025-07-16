@@ -345,8 +345,7 @@ class QuantizeLinearOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
             out_tensor = np.round(inputs[0] / np.reshape(self.y_scale, y_scale_shape)) \
                 + np.reshape(self.y_zero_point, y_zero_point_shape)
         zp_dtype = self.y_zero_point.dtype
-        out_tensor = np.clip(out_tensor, np.iinfo(zp_dtype).min, np.iinfo(
-            zp_dtype).max).astype(zp_dtype)
+        out_tensor = np.clip(out_tensor, TYPE_MIN(zp_dtype), TYPE_MAX(zp_dtype)).astype(zp_dtype)
         self.set_out_tensor(out_tensor)
 
     def convert_version(self):
