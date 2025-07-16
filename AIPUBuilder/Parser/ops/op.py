@@ -454,8 +454,9 @@ class Op(abc.ABC):
                 top_info[0] if len(top_info) >= 3 else []))
             txt_file.write('layer_top_shape=[%s]\n' % string_list_to_string(
                 top_info[1] if len(top_info) >= 3 else []))
-            if len(top_info) >= 4 and 'symbol' in top_info[3][0] and self._graph._attr.get('enable_ds', False):
-                txt_file.write('ds_output_shape=[%s]\n' % string_list_to_string(top_info[3][0]['symbol']))
+            # TODO: experimental feature
+            # if len(top_info) >= 4 and 'symbol' in top_info[3][0] and self._graph._attr.get('enable_ds', False):
+            #     txt_file.write('ds_output_shape=[%s]\n' % string_list_to_string(top_info[3][0]['symbol']))
 
             if self._graph._attr.get('quantize', False) \
                     and len(top_info) >= 4 \
