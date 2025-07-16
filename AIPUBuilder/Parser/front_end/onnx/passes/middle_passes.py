@@ -12547,6 +12547,52 @@ def split_special_ln2(graph):
                 graph._attr['output_names'].insert(index, reciprocal)
 
 
+def split_special_rmsnorm(graph):
+    '''Split RMSNormalization into RMSNorm+Mul if scale is not constant.
+    '''
+    matches = single_node_matcher(graph, 'RMSNormalization')
+    for m in matches:
+        rms = m['target']
+        rms_obj = NodeWrap(graph, rms)['object']
+        rms_in_edges = graph.sorted_in_edges(rms, data=True)
+        rms_out_edges = graph.sorted_out_edges(rms, data=True)
+        if rms_obj is None or len(rms_in_edges) < 2 or len(rms_out_edges) < 1:
+            ERROR('[Parser]: Meets invalid RMSNormalization Node(%s) in split_special_rmsnorm!' % rms)
+            continue
+        if rms_obj.get_out_ports() != [0]:
+            continue
+        scale, _, scale_in_attr = rms_in_edges[1]
+        if scale_in_attr['tensor'] is not None and scale_in_attr['tensor'].is_const:
+            continue
+        graph.remove_edges_from(rms_out_edges + rms_in_edges[1:])
+
+        input_shapes = rms_obj.get_input_shapes()
+        input_dtypes = rms_obj.get_input_dtypes()
+        if any(s is None for s in input_shapes) or any(d is None for s in input_shapes for d in s):
+            continue
+        new_scale_shape = [input_shapes[0][axis] for axis in rms_obj.axes]
+        new_scale = np.ones(new_scale_shape, dtype=input_dtypes[0])
+        insert_constant(graph, rms + '_new_scale', new_scale, rms, in_port=1, quantize=rms_obj.quantize)
+
+        mul = get_valid_node_name(graph, rms + '_mul')
+        graph.add_node(mul)
+
+        scale, _, in_attr = rms_in_edges[1]
+        _, dst, out_attr = rms_out_edges[0]
+        graph.add_edge(rms, mul, **out_attr)
+        graph.add_edge(scale, mul, **in_attr)
+        graph.add_edge(mul, dst, **out_attr)
+
+        mul_attr = rms_obj.copied_attr()
+        mul_attr.update(
+            {'name': mul, 'opset_version': 13})
+        NodeWrap(graph, mul).replace_obj('Mul', mul_attr)
+
+        if rms in graph._attr['output_names']:
+            index = graph._attr['output_names'].index(rms)
+            graph._attr['output_names'][index] = mul
+
+
 def split_group_conv(graph):
     matches = single_node_matcher(graph, 'Conv')
     for single_match in matches:
@@ -13689,6 +13735,7 @@ def middle_passes(graph, params):
     split_special_gn(graph)
     split_special_ln(graph)
     split_special_ln2(graph)
+    split_special_rmsnorm(graph)
     split_hardmax(graph)
     split_reduce_logsumexp(graph)
     split_reduce_logsum(graph)

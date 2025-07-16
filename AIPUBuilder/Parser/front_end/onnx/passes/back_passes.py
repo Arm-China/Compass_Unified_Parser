@@ -2581,6 +2581,54 @@ def rename_layernorm(graph):
         clear_redundant_nodes(graph)
 
 
+def rename_rmsnorm(graph):
+    matched = False
+    matches = single_node_matcher(graph, 'RMSNormalization')
+    for m in matches:
+        rmsnorm = m['target']
+        rmsnorm_obj = NodeWrap(graph, rmsnorm)['object']
+        in_edges = graph.sorted_in_edges(rmsnorm, data=True)
+        out_edges = graph.sorted_out_edges(rmsnorm, data=True)
+        if rmsnorm_obj is None or len(in_edges) != 2 or len(out_edges) < 1:
+            ERROR('[Parser]: Meets invalid RMSNormalization Node(%s) in rename_rmsnorm!' % rmsnorm)
+            continue
+        scale_in_attr = in_edges[1][2]
+        if scale_in_attr['tensor'] is None or not scale_in_attr['tensor'].is_const:
+            WARN('[Parser]: Meets unsupported non-constant scale and bias of RMSNormalization Node(%s) in rename_rmsnorm!' % rmsnorm)
+            continue
+        in_shapes = rmsnorm_obj.get_input_shapes()
+        if len(in_shapes) < 1 or in_shapes[0] is None:
+            ERROR('[Parser]: Meets invalid input shape of RMSNormalization Node(%s) in rename_rmsnorm!' % rmsnorm)
+            continue
+        in_shape_len = len(in_shapes[0])
+        rms_axes = OpHasAxis.make_axes_non_negative(rmsnorm_obj.axes, in_shape_len)
+        non_rms_axes = [axis for axis in range(in_shape_len) if axis not in rms_axes]
+        pre_perm = non_rms_axes + rms_axes
+        if pre_perm != list(range(in_shape_len)):
+            updated_axes = list(range(len(non_rms_axes), in_shape_len))
+            src, _, in_attr = in_edges[0]
+            insert_transpose(graph, src, rmsnorm, in_attr, pre_perm, type='ArmTranspose')
+            post_perm = Op.cal_inverse_perm(pre_perm)
+            post_trans = insert_transpose_after(graph, rmsnorm, post_perm, type='ArmTranspose')
+            if rmsnorm in graph._attr['output_names']:
+                index = graph._attr['output_names'].index(rmsnorm)
+                graph._attr['output_names'][index] = post_trans
+        else:
+            updated_axes = rms_axes
+        matched = True
+        graph.remove_edges_from(in_edges[1:])
+
+        rmsnorm_attr = rmsnorm_obj.copied_attr()
+        scale = scale_in_attr['tensor'].value
+        rmsnorm_attr.update({'weights': scale, 'axes': updated_axes})
+        if rmsnorm_obj.quantize:
+            if scale_in_attr['tensor'].scale_zp:
+                rmsnorm_attr.update({'weights_scale_zp': list(scale_in_attr['tensor'].scale_zp)})
+        NodeWrap(graph, rmsnorm).replace_obj('ArmRMSNorm', rmsnorm_attr)
+    if matched:
+        clear_redundant_nodes(graph)
+
+
 def rename_groupnorm(graph):
     matches = single_node_matcher(graph, 'GroupNormalization')
     for m in matches:
@@ -6180,6 +6228,7 @@ def back_passes(graph, params):
 
     rename_reshape(graph)
     rename_resize(graph)
+    rename_rmsnorm(graph)
     rename_roipool(graph)
     rename_roialign(graph)
     rename_scatternd(graph)
