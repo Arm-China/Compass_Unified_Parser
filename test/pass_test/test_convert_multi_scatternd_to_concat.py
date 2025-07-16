@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
+# Copyright © 2022-2025 Arm Technology (China) Co. Ltd.
 
 import numpy as np
 import onnx
@@ -30,7 +30,7 @@ def create_scatter_model(onnx_path, input_size, update_size, output_size, versio
     Y0 = helper.make_tensor_value_info('Y0', TensorProto.FLOAT, output_size)
     Y1 = helper.make_tensor_value_info('Y1', TensorProto.FLOAT, output_size)
     Y = helper.make_tensor_value_info('Y', TensorProto.FLOAT, output_size)
-    indices = np.expand_dims(np.array(list(np.ndindex(*input_size[:-1]))), list(range(len(input_size)-2)))
+    indices = np.expand_dims(np.array(list(np.ndindex(*input_size[:-1]))), list(range(len(input_size) - 2)))
     indices1, indices2 = np.split(indices, 2, -2)
 
     indices1_tensor = create_initializer_tensor(
@@ -64,7 +64,7 @@ def create_scatter_model(onnx_path, input_size, update_size, output_size, versio
         [Y],  # outputs
         initializer=[indices1_tensor, indices2_tensor],
     )
-    model_def = helper.make_model(graph_def, producer_name=OP_NAME+'-model')
+    model_def = helper.make_model(graph_def, producer_name=OP_NAME + '-model')
     model_def.opset_import[0].version = version
     onnx.checker.check_model(model_def)
     onnx.save_model(model_def, onnx_path)

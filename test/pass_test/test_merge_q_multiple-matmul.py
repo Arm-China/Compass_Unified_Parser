@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
+# Copyright © 2022-2025 Arm Technology (China) Co. Ltd.
 
 
 import os
@@ -68,7 +68,7 @@ def create_QLinearMatMul_model(onnx_path, inp_a_shape, inp_b_shape, output_shape
         [X1, X2],  # inputs
         [Y_0, Y_1],  # outputs
     )
-    model_def = helper.make_model(graph_def, producer_name=OP_NAME+'-model')
+    model_def = helper.make_model_gen_version(graph_def, producer_name=OP_NAME + '-model', ir_version=10)
     model_def.opset_import[0].version = version
     onnx.checker.check_model(model_def)
     onnx.save_model(model_def, onnx_path)

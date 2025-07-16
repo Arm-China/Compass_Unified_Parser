@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
+# Copyright © 2022-2025 Arm Technology (China) Co. Ltd.
 
 
 import os
@@ -31,7 +31,7 @@ def create_col2im_model(onnx_path, input_shape, output_shape, version=18):
         [X],  # inputs
         [Y],  # outputs
     )
-    model_def = helper.make_model(graph_def, producer_name=OP_NAME+'-model')
+    model_def = helper.make_model(graph_def, producer_name=OP_NAME + '-model')
     onnx.checker.check_model(model_def)
     onnx.save_model(model_def, onnx_path)
     return onnx_path

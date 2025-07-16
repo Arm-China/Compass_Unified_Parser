@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
+# Copyright © 2022-2025 Arm Technology (China) Co. Ltd.
 
 
 import numpy as np
@@ -51,7 +51,7 @@ def create_conv_transpose_model(onnx_path, input_size, output_size, weight, vers
         [X],  # inputs
         [Y],  # outputs
     )
-    model_def = helper.make_model(graph_def, producer_name=OP_NAME+'-model')
+    model_def = helper.make_model(graph_def, producer_name=OP_NAME + '-model')
     model_def.opset_import[0].version = version
     onnx.checker.check_model(model_def)
     onnx.save_model(model_def, onnx_path)
@@ -87,7 +87,7 @@ def run_torch(inp, weight, bias,
     print('conv_res shape: %s' % str(conv_res.shape))
     h = conv_res.shape[-2]
     w = conv_res.shape[-1]
-    crop_torch_res = conv_res[..., pad_top:(h-pad_bottom), pad_left:(w-pad_right)]
+    crop_torch_res = conv_res[..., pad_top:(h - pad_bottom), pad_left:(w - pad_right)]
     res = crop_torch_res.cpu().detach().numpy()
     print('torch_res shape: %s' % str(res.shape))
     print(res[0, 0, 0, :])  # [0. 1. 3. 2.]

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
+# Copyright © 2022-2025 Arm Technology (China) Co. Ltd.
 
 
 from itertools import combinations
@@ -77,7 +77,7 @@ for keep_dim in keep_dims:
                 for output_list in output_lists_2:
                     model_path = TEST_NAME + \
                         str(axes) + str(keep_dim) + \
-                        str(one_input)+str(output_list) + '.h5'
+                        str(one_input) + str(output_list) + '.h5'
                     # model_path = TEST_NAME + str(output_list) + '.h5'
                     create_suff_model(
                         model_path, input_shape1, input_shape2, keep_dim, axes, one_input, output_list)
@@ -89,7 +89,7 @@ for keep_dim in keep_dims:
                 for output_list in output_lists_1:
                     model_path = TEST_NAME + \
                         str(axes) + str(keep_dim) + \
-                        str(one_input)+str(output_list) + '.h5'
+                        str(one_input) + str(output_list) + '.h5'
 
                     # model_path = TEST_NAME + str(output_list) + '.h5'
                     create_suff_model(
