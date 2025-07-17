@@ -3148,26 +3148,26 @@ def convert_loop_cond_out(graph):
             cond_out_shape = cond_out_obj.get_output_shapes()[0]
             if cond_out_shape is not None and None not in cond_out_shape:
                 if cond_out_shape != []:
-                    # insert reduce all
+                    # insert reduce any
                     _, dst, out_attr = graph.sorted_out_edges(cond_out_name, data=True)[0]
                     graph.remove_edge(cond_out_name, dst)
-                    reduce_all = get_valid_node_name(graph, cond_out_name + '_reduce')
-                    graph.add_node(reduce_all)
-                    graph.add_edge(cond_out_name, reduce_all, **out_attr)
-                    NodeWrap(graph, reduce_all).replace_obj(
-                        'ArmReduce', {'name': reduce_all,
+                    reduce_node = get_valid_node_name(graph, cond_out_name + '_reduce')
+                    graph.add_node(reduce_node)
+                    graph.add_edge(cond_out_name, reduce_node, **out_attr)
+                    NodeWrap(graph, reduce_node).replace_obj(
+                        'ArmReduce', {'name': reduce_node,
                                       'axes': list(range(len(cond_out_shape))),
-                                      'method': 'ALL'})
-                    reduce_all_output_shape = [1] * len(cond_out_shape)
+                                      'method': 'ANY'})
+                    reduce_output_shape = [1] * len(cond_out_shape)
                     new_out_attr = copy.deepcopy(out_attr)
                     if new_out_attr['tensor'].value is not None:
-                        new_out_attr['tensor'].value = np.all(
+                        new_out_attr['tensor'].value = np.any(
                             out_attr['tensor'].value, keepdims=True)
                     else:
-                        new_out_attr['tensor'].shape = reduce_all_output_shape
-                    graph.add_edge(reduce_all, dst, **new_out_attr)
+                        new_out_attr['tensor'].shape = reduce_output_shape
+                    graph.add_edge(reduce_node, dst, **new_out_attr)
                     reshape = insert_reshape(
-                        graph, reduce_all, dst, new_out_attr, dim=[], quantize=cond_out_obj.quantize)
+                        graph, reduce_node, dst, new_out_attr, dim=[], quantize=cond_out_obj.quantize)
                     if cond_out_name in graph._attr['output_names']:
                         index = graph._attr['output_names'].index(cond_out_name)
                         graph._attr['output_names'][index] = reshape
