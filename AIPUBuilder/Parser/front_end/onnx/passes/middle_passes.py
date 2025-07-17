@@ -8,7 +8,7 @@ import copy
 import networkx as nx
 from functools import reduce
 from collections import OrderedDict
-from ....common.defs import Tensor, FLOAT_EQUAL, FLOAT64_EQUAL, TYPE_MAX
+from ....common.defs import Tensor, FLOAT_EQUAL, FLOAT64_EQUAL, TYPE_MAX, TYPE_MIN
 from ....graph.graph import SubGraph
 from ....logger import INFO, DEBUG, WARN, ERROR, FATAL
 from ....common.utils import extend_lists, get_converted_dtype
@@ -3509,8 +3509,8 @@ def convert_quantizelinear(graph):
             graph.add_edge(add, clip, **common_attr)
             NodeWrap(graph, clip).replace_obj('Clip', {'name': clip,
                                                        'opset_version': 1,
-                                                       'max': np.iinfo(zp_dtype).max,
-                                                       'min': np.iinfo(zp_dtype).min})
+                                                       'max': TYPE_MAX(zp_dtype),
+                                                       'min': TYPE_MIN(zp_dtype)})
 
             graph.add_edge(clip, quant, **common_attr)
             if graph._attr.get('quantize', False):
