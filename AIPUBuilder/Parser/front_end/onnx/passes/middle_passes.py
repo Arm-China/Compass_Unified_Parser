@@ -2044,6 +2044,78 @@ def convert_special_scatternd2(graph):
         clear_redundant_nodes(graph)
 
 
+def fuse_special_scatternd(graph):
+    matched = False
+    matches = matched_patterns(graph,
+                               nodes=[
+                                   ('indices0', {'op': 'Constant'}),
+                                   ('updates0', {'op': 'Constant'}),
+                                   ('scatternd0', {'op': 'ScatterND'}),
+                                   ('indices1', {'op': 'Constant'}),
+                                   ('updates1', {'op': 'Constant'}),
+                                   ('scatternd1', {'op': 'ScatterND'})
+                               ],
+                               edges=[
+                                   ('indices0', 'scatternd0', {'src_out_port': 0, 'dst_in_port': 1}),
+                                   ('updates0', 'scatternd0', {'dst_in_port': 2}),
+                                   ('scatternd0', 'scatternd1'),
+                                   ('indices1', 'scatternd1', {'src_out_port': 0, 'dst_in_port': 1}),
+                                   ('updates1', 'scatternd1', {'dst_in_port': 2})
+                               ])
+    for m in matches:
+        indices0, scatternd0, updates0 = m['indices0'], m['scatternd0'], m['updates0']
+        indices1, scatternd1, updates1 = m['indices1'], m['scatternd1'], m['updates1']
+        indices0_obj, scatternd0_obj, updates0_obj, indices1_obj, scatternd1_obj, updates1_obj = [NodeWrap(graph, name)['object'] for name in [
+            indices0, scatternd0, updates0, indices1, scatternd1, updates1]]
+        scatternd0_in_edges = graph.sorted_in_edges(scatternd0, data=True)
+        scatternd0_out_edges = graph.sorted_out_edges(scatternd0, data=True)
+        scatternd1_in_edges = graph.sorted_in_edges(scatternd1, data=True)
+        if indices0_obj is None or scatternd0_obj is None or len(scatternd0_in_edges) < 3:
+            ERROR('[Parser]: Meet invalid node in fuse_special_scatternd!')
+            continue
+        if indices1_obj is None or scatternd1_obj is None or len(scatternd1_in_edges) < 3:
+            ERROR('[Parser]: Meet invalid node in fuse_special_scatternd!')
+            continue
+        if scatternd0_obj.reduction != scatternd1_obj.reduction:
+            continue
+        if len(scatternd0_out_edges) != 1:
+            continue
+        sc0_shapes = scatternd0_obj.get_input_shapes()
+        sc1_shapes = scatternd1_obj.get_input_shapes()
+        if len(sc0_shapes) < 3 \
+                or any((input_shape is None or None in input_shape) for input_shape in sc0_shapes):
+            continue
+        if len(sc1_shapes) < 3 \
+                or any((input_shape is None or None in input_shape) for input_shape in sc1_shapes):
+            continue
+        if sc0_shapes != sc1_shapes:
+            continue
+
+        id0_value = indices0_obj.value
+        id1_value = indices1_obj.value
+        new_id_value = np.concatenate([id0_value, id1_value], axis=-2)
+
+        unique_rows = np.unique(new_id_value.reshape([-1, id0_value.shape[-1]]), axis=-2, return_counts=True)
+        if np.any(unique_rows[1] > 1):
+            continue
+
+        up0_value = updates0_obj.value
+        up1_value = updates1_obj.value
+        new_up_value = np.concatenate([up0_value, up1_value], axis=-1)
+
+        matched = True
+        graph.remove_edges_from(scatternd0_in_edges)
+        graph.remove_edges_from(scatternd1_in_edges)
+        src, _, in_attr = scatternd0_in_edges[0]
+        graph.add_edge(src, scatternd1, **in_attr)
+        insert_constant(graph, scatternd1 + '_new_idx', new_id_value,
+                        scatternd1, in_port=1, quantize=scatternd1_obj.quantize)
+        insert_constant(graph, scatternd1 + '_new_update', new_up_value, scatternd1, in_port=2,
+                        quantize=scatternd1_obj.quantize)
+    if matched:
+        clear_redundant_nodes(graph)
+
+
 def convert_multi_scatternd_to_concat(graph):
     '''Convert multiple connected ScatterND whose indice is sorted and regular to one Concat op.
     '''
@@ -13748,6 +13820,7 @@ def middle_passes(graph, params):
     convert_multi_scatternd_to_concat(graph)
     convert_special_scatternd(graph)
     convert_special_scatternd2(graph)
+    fuse_special_scatternd(graph)
     convert_special_cast(graph)
     merge_special_concat_split_concat(graph)
     convert_global_pool(graph)

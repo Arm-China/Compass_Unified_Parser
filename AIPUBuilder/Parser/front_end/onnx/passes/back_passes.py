@@ -3694,6 +3694,138 @@ def fuse_relu(graph):
             clear_redundant_nodes(graph)
 
 
+def common_subexpression_elimination(graph):
+    nodes_list = determined_sort(graph, graph._attr['output_names'])
+    expr_cache = {}
+    matched = False
+    for node in nodes_list:
+        node_obj = NodeWrap(graph, node)['object']
+        if node_obj is None:
+            continue
+        if node_obj.type in ('ArmInput',):
+            continue
+        input_nodes = [src for src, _ in graph.sorted_in_edges(node)]
+        src_out_ports = [in_attr['src_out_port'] for _, _, in_attr in graph.sorted_in_edges(node, data=True)]
+        node_attr = {}
+        for key, value in node_obj.copied_attr().items():
+            if key == 'name':
+                continue
+            if isinstance(value, (list, tuple)):
+                tmp_list = []
+                for v in value:
+                    if isinstance(v, np.ndarray):
+                        tmp_list.append(v.tobytes())
+                    else:
+                        tmp_list.append(v)
+                node_attr[key] = tuple(tmp_list)
+            elif isinstance(value, np.ndarray):
+                node_attr[key] = value.tobytes()
+            else:
+                node_attr[key] = value
+
+        if node_obj.type in ('Constant', 'ArmConstant'):  # update scale/zp info
+            tensor_info = graph.sorted_out_edges(node, data=True)[0][-1]['tensor']
+            scale_zp = []
+            for v in tensor_info.scale_zp:
+                if isinstance(v, np.ndarray):
+                    scale_zp.append(v.tobytes())
+                else:
+                    scale_zp.append(v)
+            node_attr['scale_zp'] = tuple(scale_zp)
+
+        signature = (node_obj.type, tuple(input_nodes), tuple(src_out_ports), frozenset(node_attr.items()))
+
+        if signature in expr_cache:
+            matched = True
+            ori_node = expr_cache[signature]
+            in_edges = graph.sorted_in_edges(node)
+            out_edges = graph.sorted_out_edges(node, data=True)
+            graph.remove_edges_from(in_edges)
+            graph.remove_edges_from(out_edges)
+            for _, dst, out_attr in out_edges:
+                graph.add_edge(ori_node, dst, **out_attr)
+        else:
+            expr_cache[signature] = node
+
+    if matched:
+        clear_redundant_nodes(graph)
+
+
+def lift_special_slice(graph):
+    fix_layout_ops = ['ArmScatterND']
+    for op_type in fix_layout_ops:
+        matched = False
+        matches = matched_patterns(graph,
+                                   nodes=[
+                                       ('unware', {'op': op_type}),
+                                       ('slice', {'op': 'ArmSlice'})
+                                   ],
+                                   edges=[
+                                       ('unware', 'slice'),
+                                   ])
+        for m in matches:
+            unware, slice = m['unware'], m['slice']
+            if slice in graph._attr['output_names']:
+                continue
+            unware_obj = NodeWrap(graph, unware)['object']
+            slice_obj = NodeWrap(graph, slice)['object']
+            if unware_obj is None or slice_obj is None:
+                ERROR(f'[Parser]: Meet invalid node in lift_special_slice!')
+                continue
+            unware_in_edges = graph.sorted_in_edges(unware, data=True)
+            slice_in_edges = graph.sorted_in_edges(slice, data=True)
+
+            if len(slice_in_edges) != 1 or slice_obj.dynamic:
+                continue
+
+            starts, ends, steps = slice_obj.starts, slice_obj.ends, slice_obj.steps
+            if any(step != 1 for step in steps):
+                continue
+            unware_input_shapes = unware_obj.get_input_shapes()
+
+            if unware_obj.type == 'ArmScatterND':
+                if len(unware_in_edges) != 3:
+                    continue
+                idx_node = unware_in_edges[1][0]
+                update_node = unware_in_edges[2][0]
+                idx_obj = NodeWrap(graph, idx_node)['object']
+                update_obj = NodeWrap(graph, update_node)['object']
+                if idx_obj.type not in ('ArmConstant', 'Constant') or update_obj.type not in ('ArmConstant', 'Constant'):
+                    continue
+                # TODO, can support more cases
+                if unware_input_shapes[1][-1] != len(unware_input_shapes[0]):
+                    continue
+                matched = True
+                idx_value = idx_obj.value
+                updates_value = update_obj.value
+
+                mask = np.where((idx_value >= np.array(starts)).all(axis=-1)
+                                & (idx_value < np.array(ends)).all(axis=-1))
+                adjusted_idx = idx_value[mask] - starts
+                adjusted_updates = updates_value[mask]
+
+                slice_out_edges = graph.sorted_out_edges(slice, data=True)
+                graph.remove_edges_from(unware_in_edges)
+                graph.remove_edges_from(slice_in_edges)
+                graph.remove_edges_from(slice_out_edges)
+
+                src, _, in_attr = unware_in_edges[0]
+                graph.add_edge(src, slice, **in_attr)
+                new_in_attr = copy.deepcopy(in_attr)
+                graph.add_edge(slice, unware, **new_in_attr)
+
+                insert_constant(graph, unware + '_new_idx', adjusted_idx, unware, in_port=1)
+                insert_constant(graph, unware + '_new_updates', adjusted_updates, unware, in_port=2)
+
+                for _, dst, out_attr in slice_out_edges:
+                    graph.add_edge(unware, dst, **out_attr)
+            else:
+                raise NotImplementedError(f'{unware_obj.type} not implement yet.')
+
+        if matched:
+            clear_redundant_nodes(graph)
+
+
 def detection_post_process(graph, params):
     if params.get('detection_postprocess', '').upper() in ('SSD', 'SSD_RESNET'):
         if len(graph._attr['output_names']) == 2:
@@ -6257,6 +6389,7 @@ def back_passes(graph, params):
     for op in simple_rename_list:
         simple_rename(graph, op)
 
+    common_subexpression_elimination(graph)
     fuse_relu(graph)
     rename_activations(graph)
 
@@ -6270,6 +6403,7 @@ def back_passes(graph, params):
     merge_hw_maxpoolargmax(graph)
     merge_hw_maxunpool(graph)
     merge_s2b_pool_b2s(graph)
+    lift_special_slice(graph)
 
     remove_useless_op(graph, ['ArmReduce', 'ArmTile', 'ArmCast'])
     remove_redundant_bn(graph)
