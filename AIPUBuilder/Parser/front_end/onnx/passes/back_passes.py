@@ -3704,36 +3704,47 @@ def common_subexpression_elimination(graph):
             continue
         if node_obj.type in ('ArmInput',):
             continue
-        input_nodes = [src for src, _ in graph.sorted_in_edges(node)]
-        src_out_ports = [in_attr['src_out_port'] for _, _, in_attr in graph.sorted_in_edges(node, data=True)]
+        input_nodes = []
+        src_out_ports = []
+        for src, _, in_attr in graph.sorted_in_edges(node, data=True):
+            input_nodes.append(src)
+            src_out_ports.append(in_attr['src_out_port'])
+
         node_attr = {}
         for key, value in node_obj.copied_attr().items():
             if key == 'name':
                 continue
             if isinstance(value, (list, tuple)):
                 tmp_list = []
+                tmp_dtype_list = []
                 for v in value:
-                    if isinstance(v, np.ndarray):
+                    if isinstance(v, (np.ndarray, np.generic)):
                         tmp_list.append(v.tobytes())
+                        tmp_dtype_list.append(v.dtype)
                     else:
                         tmp_list.append(v)
                 node_attr[key] = tuple(tmp_list)
-            elif isinstance(value, np.ndarray):
+                if tmp_dtype_list:
+                    node_attr[key + '_dtypes'] = tuple(tmp_dtype_list)
+            elif isinstance(value, (np.ndarray, np.generic)):
                 node_attr[key] = value.tobytes()
+                node_attr[key + '_dtype'] = value.dtype
             else:
                 node_attr[key] = value
 
         if node_obj.type in ('Constant', 'ArmConstant'):  # update scale/zp info
-            tensor_info = graph.sorted_out_edges(node, data=True)[0][-1]['tensor']
-            scale_zp = []
-            for v in tensor_info.scale_zp:
-                if isinstance(v, np.ndarray):
-                    scale_zp.append(v.tobytes())
-                else:
-                    scale_zp.append(v)
-            node_attr['scale_zp'] = tuple(scale_zp)
+            out_edges = graph.sorted_out_edges(node, data=True)
+            if out_edges:
+                tensor_info = out_edges[0][-1]['tensor']
+                scale_zp = []
+                for v in tensor_info.scale_zp:
+                    if isinstance(v, np.ndarray):
+                        scale_zp.append(v.tobytes())
+                    else:
+                        scale_zp.append(v)
+                node_attr['scale_zp'] = tuple(scale_zp)
 
-        signature = (node_obj.type, tuple(input_nodes), tuple(src_out_ports), frozenset(node_attr.items()))
+        signature = hash((node_obj.type, tuple(input_nodes), tuple(src_out_ports), frozenset(node_attr.items())))
 
         if signature in expr_cache:
             matched = True
