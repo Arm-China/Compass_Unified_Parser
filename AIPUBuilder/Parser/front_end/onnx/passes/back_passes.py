@@ -3700,7 +3700,7 @@ def common_subexpression_elimination(graph):
     matched = False
     for node in nodes_list:
         node_obj = NodeWrap(graph, node)['object']
-        if node_obj is None:
+        if node_obj is None or isinstance(node_obj, PluginOp):
             continue
         if node_obj.type in ('ArmInput',):
             continue
