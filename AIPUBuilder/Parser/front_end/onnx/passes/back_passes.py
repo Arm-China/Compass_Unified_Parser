@@ -3721,6 +3721,8 @@ def common_subexpression_elimination(graph):
                     if isinstance(v, (np.ndarray, np.generic)):
                         tmp_list.append(v.tobytes())
                         tmp_dtype_list.append(v.dtype)
+                    elif isinstance(v, list):
+                        tmp_list.append(tuple(v))
                     else:
                         tmp_list.append(v)
                 node_attr[key] = tuple(tmp_list)
