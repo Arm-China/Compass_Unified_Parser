@@ -3388,7 +3388,7 @@ def split_quatized_mean(graph, op_type='LiteMEAN'):
                         post_add,
                         in_port=1,
                         data_format='NHWC',
-                        scale_zp=(np.ones_like(input_scale_zp[0]), np.zeros_like(input_scale_zp[1])),
+                        scale_zp=(input_scale_zp[0], np.zeros_like(input_scale_zp[1])),
                         quantize=True)
         if mean in graph._attr['output_names']:
             index = graph._attr['output_names'].index(mean)

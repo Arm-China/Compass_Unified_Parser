@@ -223,7 +223,7 @@ class LiteBATCH_MATMULOp(OpHasOneOutPort, TfliteOp):
 class LiteBATCH_TO_SPACE_NDOp(OpHasOneOutPort, TfliteOp):
     @classmethod
     def attributes(cls):
-        return {1: {}, 2: {}}
+        return {1: {}, 2: {}, 3: {}}
 
     def __init__(self, graph, attr_dict=None):
         super(LiteBATCH_TO_SPACE_NDOp, self).__init__(graph, attr_dict)
