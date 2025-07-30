@@ -5312,6 +5312,99 @@ class ArmRgbToYuvOp(OpHasOneOutPort, ArmOp):
         return ret
 
 
+class ArmRotaryEmbeddingOp(OpHasCaches, OpHasOneOutPort, ArmOp):
+    @classmethod
+    def num_in_ports(cls):
+        return 2
+
+    @classmethod
+    def attributes(cls):
+        return {
+            'num_heads': {'type': AttrType.INT},
+            'interleaved': {'type': AttrType.INT, 'default': 0, 'options': [0, 1]},
+            'rotary_embedding_dim': {'type': AttrType.INT},
+            'cos_cache': {'type': AttrType.TENSOR},
+            'sin_cache': {'type': AttrType.TENSOR},
+        }
+
+    def __init__(self, graph, attr_dict=None):
+        super(ArmRotaryEmbeddingOp, self).__init__(graph, attr_dict)
+        self.update_attributes(ArmRotaryEmbeddingOp, attr_dict)
+        assert self.check_required(), 'ArmRotaryEmbeddingOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(ArmRotaryEmbeddingOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        assert len(inputs) == 2, '2 inputs are needed in RotaryEmbeddingOp.'
+        original_input_shape = inputs[0].shape
+        # First ensure input to be processed has shape [batch_size, seq_len, num_heads, head_size]
+        if len(inputs[0].shape) == 4:
+            input = np.transpose(inputs[0], (0, 2, 1, 3))
+        else:
+            input = inputs[0]
+        batch_size = input.shape[0]
+        sequence_length = input.shape[1]
+        if len(input.shape) == 3:
+            hidden_size = input.shape[2]
+            assert self.num_heads != 0
+            head_size = int(hidden_size / self.num_heads)
+            new_shape = [batch_size, sequence_length, self.num_heads, head_size]
+            input = np.reshape(input, new_shape)
+        assert len(input.shape) == 4
+
+        rotary_embedding_dim = self.rotary_embedding_dim
+        x_rotate = input[:, :, :, :rotary_embedding_dim]
+        x_not_rotate = input[:, :, :, rotary_embedding_dim:]
+        rotary_embedding_dim_half = rotary_embedding_dim // 2
+
+        cos_cache = self.cos_cache
+        sin_cache = self.sin_cache
+        position_ids = inputs[1]
+        cos = cos_cache[position_ids]  # Shape: [batch_size, sequence_length, head_size/2]
+        sin = sin_cache[position_ids]  # Shape: [batch_size, sequence_length, head_size/2]
+
+        cos = cos[:, :, :rotary_embedding_dim_half]  # Shape: [batch_size, sequence_length, rotary_embedding_dim/2]
+        sin = sin[:, :, :rotary_embedding_dim_half]  # Shape: [batch_size, sequence_length, rotary_embedding_dim/2]
+        cos = np.expand_dims(cos, axis=2)  # Shape: [batch_size, sequence_length, 1, rotary_embedding_dim/2]
+        sin = np.expand_dims(sin, axis=2)  # Shape: [batch_size, sequence_length, 1, rotary_embedding_dim/2]
+
+        # Either divide the input in halves or interleave (based on interleaved attribute)
+        if self.interleaved:
+            x1 = x_rotate[:, :, :, 0::2]
+            x2 = x_rotate[:, :, :, 1::2]
+        else:
+            x1, x2 = np.split(x_rotate, 2, axis=-1)
+
+        # Calculate real and imaginary values
+        real = (cos * x1) - (sin * x2)
+        imag = (sin * x1) + (cos * x2)
+
+        # Inserted rotated embeddings back to the original input
+        if self.interleaved:
+            # x_rotate[:, :, :, 0::2] = real
+            # x_rotate[:, :, :, 1::2] = imag
+            real = np.expand_dims(real, axis=-1)
+            imag = np.expand_dims(imag, axis=-1)
+            x_rotate_concat = np.concatenate((real, imag), axis=-1)
+            x_rotate = np.reshape(x_rotate_concat, x_rotate.shape)
+        else:
+            x_rotate = np.concatenate((real, imag), axis=-1)
+        output = np.concatenate((x_rotate, x_not_rotate), axis=-1)
+        if len(original_input_shape) == 3:
+            output = np.reshape(output, original_input_shape)
+        else:
+            output = np.transpose(output, (0, 2, 1, 3))
+        self.set_out_tensor(output)
+
+    def write_attrs(self, txt_file):
+        ret = super(ArmRotaryEmbeddingOp, self).write_attrs(txt_file)
+        if ret:
+            txt_file.write(f'num_heads={self.num_heads}\n')
+            txt_file.write(f'interleaved={self.interleaved}\n')
+            txt_file.write(f'rotary_embedding_dim={self.rotary_embedding_dim}\n')
+        return ret
+
+
 class ArmZeroFractionOp(OpHasOneOutPort, ArmOp):
     def infer_shape(self):
         super(ArmZeroFractionOp, self).infer_shape()

@@ -7158,7 +7158,7 @@ def convert_simplified_layernorm(graph):
             ERROR('[Parser]: non-const scale of SimplifiedLayerNormalization node(%s) not support yet!' % simple_ln)
 
 
-def convert_rotary_embedding(graph):
+def convert_rotary_embedding_ms(graph):
     matches = single_node_matcher(graph, 'RotaryEmbeddingMs')
     for m in matches:
         embd = m['target']
@@ -13751,7 +13751,7 @@ def middle_passes(graph, params):
 
     # LLM related contributed ops
     convert_simplified_layernorm(graph)
-    convert_rotary_embedding(graph)
+    convert_rotary_embedding_ms(graph)
     convert_mha(graph)
     convert_skip_simplified_layernorm(graph)
     convert_attention(graph)

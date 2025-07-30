@@ -15,7 +15,7 @@ from ....graph.node_wrap import NodeWrap
 from ....graph.graph_algo import determined_sort, get_valid_node_name, clear_redundant_nodes, has_path, infer
 from ....graph.pattern_match import matched_patterns, single_node_matcher, two_nodes_matcher
 from ....ops.op import Op, LayoutUnawareOp, BaseLinearOp, BaseActivationOp, BaseReluOp, OpHasWeights, OpHasBiases, \
-    ArmOp, OpHasAxis, BaseQuantizeDequantizeOp, BaseRnnOp, OpHasAnchors, OpNeedUniBroadcast, SameShapeOp
+    ArmOp, OpHasAxis, BaseQuantizeDequantizeOp, BaseRnnOp, OpHasAnchors, OpNeedUniBroadcast, SameShapeOp, OpHasCaches
 from ....ops.onnx_ops.array_ops import ReshapeOp
 from ....ops.release_ops import ArmCastOp, ArmConvolutionOp, ArmConvolution3DOp, ArmConvIntegerOp, ArmDecodeBoxOp, \
     ArmDepthwiseConvOp, ArmConvTransposeOp, ArmConvTranspose3DOp, ArmActivationOp
@@ -3248,6 +3248,56 @@ def rename_roialign(graph):
                 'ArmRoiAlign', roialign_attr)
 
 
+def rename_rotary_embedding(graph):
+    matches = single_node_matcher(graph, 'RotaryEmbedding')
+    for m in matches:
+        node_name = m['target']
+        node_obj = NodeWrap(graph, node_name)['object']
+
+        in_edges = graph.sorted_in_edges(node_name, data=True)
+        input_shapes = node_obj.get_input_shapes()
+        if node_obj is not None and len(in_edges) >= 3 and not node_obj.quantize:
+            cos_cache_tensor = in_edges[1][-1]['tensor']
+            sin_cache_tensor = in_edges[2][-1]['tensor']
+            if not cos_cache_tensor.is_const or not sin_cache_tensor.is_const:
+                ERROR(f'[Parser]: cos_cache or sin_cache is not const in RotaryEmbeddingOp({node_name}).')
+                continue
+            cos_cache = cos_cache_tensor.value
+            sin_cache = sin_cache_tensor.value
+
+            if len(cos_cache.shape) == 3:
+                cos_cache = cos_cache[0].reshape(-1, cos_cache.shape[-1])
+            if len(sin_cache.shape) == 3:
+                sin_cache = sin_cache[0].reshape(-1, sin_cache.shape[-1])
+
+            node_obj.cos_cache = cos_cache
+            node_obj.sin_cache = sin_cache
+
+            graph.remove_edges_from(in_edges[1:3])
+
+            if len(in_edges) == 3:
+                # insert postion_ids
+                seq_len = input_shapes[0][-2] if len(input_shapes[0]) == 4 else input_shapes[0][1]
+                bs = input_shapes[0][0]
+                position_ids = np.arange(seq_len, dtype=np.int32).reshape(1, seq_len).repeat(bs, axis=0)
+                insert_constant(graph, node_name + '_position_ids', position_ids, node_name, in_port=1)
+
+            num_heads = input_shapes[0][1] if len(input_shapes[0]) == 4 else node_obj.num_heads
+            if node_obj.rotary_embedding_dim == 0:
+                rotary_embedding_dim = input_shapes[0][-1] if len(input_shapes[0]
+                                                                  ) == 4 else input_shapes[0][-1] // num_heads
+            else:
+                rotary_embedding_dim = node_obj.rotary_embedding_dim
+
+            rope_attr = node_obj.copied_attr()
+            rope_attr.update({
+                'rotary_embedding_dim': rotary_embedding_dim,
+                'num_heads': num_heads,
+            })
+            NodeWrap(graph, node_name).replace_obj('ArmRotaryEmbedding', rope_attr)
+            clear_redundant_nodes(graph)
+
+
 def rename_scatternd(graph):
     matches = single_node_matcher(graph, 'ScatterND')
     for m in matches:
@@ -4981,6 +5031,19 @@ def trim_weights(graph, init_offset=0):
                     offset += width.size * width.dtype.itemsize
                 else:
                     ERROR('[Parser]: Meets invalid anchors for Node %s in trim_weights!' % node_name)
+            if isinstance(node_obj, OpHasCaches):
+                if node_obj.cos_cache is not None and node_obj.sin_cache is not None:
+                    cos_cache = _data_in_supported_dtype(node_obj.cos_cache, 'cos_cache', node_name)
+                    node_obj.cos_cache = cos_cache
+                    node_obj.cos_cache_offset = offset
+                    offset += cos_cache.size * cos_cache.dtype.itemsize
+
+                    sin_cache = _data_in_supported_dtype(node_obj.sin_cache, 'sin_cache', node_name)
+                    node_obj.sin_cache = sin_cache
+                    node_obj.sin_cache_offset = offset
+                    offset += sin_cache.size * sin_cache.dtype.itemsize
+                else:
+                    ERROR('[Parser]: Meets invalid caches for Node %s in trim_weights!' % node_name)
             if isinstance(node_obj, (BaseActivationOp, ArmActivationOp)) \
                     and hasattr(node_obj, 'negative_slope') \
                     and hasattr(node_obj, 'negative_slope_offset') \
@@ -6376,6 +6439,7 @@ def back_passes(graph, params):
     rename_rmsnorm(graph)
     rename_roipool(graph)
     rename_roialign(graph)
+    rename_rotary_embedding(graph)
     rename_scatternd(graph)
     rename_scatterel(graph)
     rename_shape(graph)

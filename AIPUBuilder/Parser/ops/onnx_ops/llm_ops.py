@@ -216,6 +216,7 @@ class RotaryEmbeddingOp(OpHasOneOutPort, OnnxOp):
     def infer_shape(self):
         super(RotaryEmbeddingOp, self).infer_shape()
         inputs = self.get_input_tensors()
+        assert len(inputs) >= 3, 'At least 3 inputs are needed in RotaryEmbeddingOp.'
         original_input_shape = inputs[0].shape
         # First ensure input to be processed has shape [batch_size, seq_len, num_heads, head_size]
         if len(inputs[0].shape) == 4:
@@ -237,33 +238,26 @@ class RotaryEmbeddingOp(OpHasOneOutPort, OnnxOp):
         if self.rotary_embedding_dim is None or self.rotary_embedding_dim == 0:
             # If rotary_embedding_dim not provided, perform full rotation by using head_size
             rotary_embedding_dim = head_size
+        else:
+            rotary_embedding_dim = self.rotary_embedding_dim
         x_rotate = input[:, :, :, :rotary_embedding_dim]
         x_not_rotate = input[:, :, :, rotary_embedding_dim:]
-        rotary_embedding_dim_half = int(rotary_embedding_dim / 2)
+        rotary_embedding_dim_half = rotary_embedding_dim // 2
 
+        cos_cache = inputs[1]
+        sin_cache = inputs[2]
         # Retrieve sin and cos caches using position ids
-        if position_ids is not None:
-            cos = cos_cache[
-                position_ids
-            ]  # Shape: [batch_size, sequence_length, head_size/2]
-            sin = sin_cache[
-                position_ids
-            ]  # Shape: [batch_size, sequence_length, head_size/2]
+        if len(inputs) > 3:
+            position_ids = inputs[3]
+            cos = cos_cache[position_ids]  # Shape: [batch_size, sequence_length, head_size/2]
+            sin = sin_cache[position_ids]  # Shape: [batch_size, sequence_length, head_size/2]
         else:
             cos = cos_cache
             sin = sin_cache
-        cos = cos[
-            :, :, :rotary_embedding_dim_half
-        ]  # Shape: [batch_size, sequence_length, rotary_embedding_dim/2]
-        sin = sin[
-            :, :, :rotary_embedding_dim_half
-        ]  # Shape: [batch_size, sequence_length, rotary_embedding_dim/2]
-        cos = np.expand_dims(
-            cos, axis=2
-        )  # Shape: [batch_size, sequence_length, 1, rotary_embedding_dim/2]
-        sin = np.expand_dims(
-            sin, axis=2
-        )  # Shape: [batch_size, sequence_length, 1, rotary_embedding_dim/2]
+        cos = cos[:, :, :rotary_embedding_dim_half]  # Shape: [batch_size, sequence_length, rotary_embedding_dim/2]
+        sin = sin[:, :, :rotary_embedding_dim_half]  # Shape: [batch_size, sequence_length, rotary_embedding_dim/2]
+        cos = np.expand_dims(cos, axis=2)  # Shape: [batch_size, sequence_length, 1, rotary_embedding_dim/2]
+        sin = np.expand_dims(sin, axis=2)  # Shape: [batch_size, sequence_length, 1, rotary_embedding_dim/2]
 
         # Either divide the input in halves or interleave (based on interleaved attribute)
         if self.interleaved:
