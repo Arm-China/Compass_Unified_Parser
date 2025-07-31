@@ -3007,6 +3007,7 @@ class ArmLoopOp(OpHasSubGraph, DynamicShapeOp, ArmOp):
     def __init__(self, graph, attr_dict=None):
         super(ArmLoopOp, self).__init__(graph, attr_dict)
         self.real_loop_cnt = None
+        self.loop_default_count = 0
         self.update_attributes(ArmLoopOp, attr_dict)
         assert self.check_required(), 'ArmLoopOp is missing a required parameter.'
 
@@ -3118,6 +3119,7 @@ class ArmLoopOp(OpHasSubGraph, DynamicShapeOp, ArmOp):
                 break
         if count_cond_is_const and all(list(cond_out_root_input_const.values())):
             self.real_loop_cnt = loop_cnt
+        self.loop_default_count = loop_cnt
         # Loop outputs: N + K
         if ori_cond_in:
             loop_output_list = last_output_list[1: 1 + N]
@@ -3141,6 +3143,7 @@ class ArmLoopOp(OpHasSubGraph, DynamicShapeOp, ArmOp):
             txt_file.write('dependency_inputs_num=%d\n' % self.N)
             txt_file.write('scan_outputs_num=%d\n' % self.K)
             txt_file.write('body=%s\n' % self.body.name)
+            txt_file.write('loop_default_count=%d\n' % self.loop_default_count)
         return ret
 
 
