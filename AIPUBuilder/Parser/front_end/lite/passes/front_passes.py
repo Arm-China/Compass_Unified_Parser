@@ -2919,7 +2919,7 @@ def merge_dqd(graph, op_list):
         clear_redundant_nodes(graph)
 
 
-def merge_min_quant_max_to_clip(graph):
+def merge_min_max_to_clip(graph):
     quantize = graph._attr.get('quantize', False)
     if quantize:
         return
