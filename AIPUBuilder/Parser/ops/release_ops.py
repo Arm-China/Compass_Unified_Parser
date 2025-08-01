@@ -4510,7 +4510,12 @@ class ArmRMSNormOp(OpHasAxis, OpHasWeights, OpHasOneOutPort, ArmOp):
         normalized = inputs[0] / np.sqrt(mean + self.epsilon)
         axes = OpHasAxis.make_axes_non_negative(
             self.axes, len(inputs[0].shape))
-        weights = OpHasAxis.expand_to(self.weights, axes, len(inputs[0].shape))
+        try:
+            weights = OpHasAxis.expand_to(self.weights, axes, len(inputs[0].shape))
+        except:
+            WARN(
+                f'[Parser]: weights shape shoule be broadcastable with shape which axis specified in RMSNorm({self.name}).')
+            weights = self.weights
         out_tensor = (normalized * weights).astype(input_dtype)
         self.set_out_tensor(out_tensor)
 

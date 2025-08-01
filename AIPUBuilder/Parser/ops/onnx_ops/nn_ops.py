@@ -2174,7 +2174,7 @@ class RMSNormalizationOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
             normalized = inp / np.sqrt(mean + self.epsilon)
             if self.stash_type:
                 normalized = np.array(normalized, inputs[0].dtype)
-            weights = OpHasAxis.expand_to(inputs[1], self.axes, input_length)
+            weights = inputs[1]
             out_tensor = (normalized * weights).astype(input_dtype)
         else:
             out_tensor = copy.deepcopy(inputs[0])
