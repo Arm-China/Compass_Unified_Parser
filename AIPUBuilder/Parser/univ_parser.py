@@ -7,6 +7,7 @@ import numpy as np
 import onnx
 import torch
 import ml_dtypes
+import glob
 from collections import OrderedDict
 
 from .common.utils import is_file, is_dir, multi_string_to_list, list_string_to_list, get_dict_params, \
@@ -20,7 +21,12 @@ def univ_parser(params):
 
     if params:
         '''Set the necessary parameters.'''
-        model_path = params.get('input_model', '')
+        model_pathes = glob.glob(params.get('input_model', ''))
+        if model_pathes:
+            model_path = model_pathes[0]
+        else:
+            ERROR('Model path in cfg is incorrect, please check!')
+            ret = False
         output_dir = params.get('output_dir', './')
         model_type = params.get('model_type', '')
         if 'input_names' not in params and 'input' in params:

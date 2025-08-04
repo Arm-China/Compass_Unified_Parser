@@ -7588,6 +7588,8 @@ def convert_attention(graph):
                     graph.add_edge(attn_mask, add, **{'src_out_port': 0, 'dst_in_port': 1})
                     NodeWrap(graph, add).replace_obj('Add', add_attr)
                     attn_bias_node = add
+            else:
+                attn_bias_node = mul
 
         if att_obj.softcap > 0:
             div = get_valid_node_name(graph, att + '_div')
@@ -7620,7 +7622,8 @@ def convert_attention(graph):
         softmax = get_valid_node_name(graph, att + '_softmax')
         graph.add_node(softmax)
         softmax_attr = {'name': softmax, 'opset_version': 13, 'axis': -1}
-        graph.add_edge(attn_softcap, softmax, **{'src_out_port': 0, 'dst_in_port': 0})
+        graph.add_edge(attn_softcap, softmax, **{'src_out_port': 0, 'dst_in_port': 0,
+                                                 'tensor': Tensor(shape=tuple(matmul_out_shape))})
         NodeWrap(graph, softmax).replace_obj('Softmax', softmax_attr)
 
         if len(input_shapes[0]) == 3:
@@ -7652,6 +7655,8 @@ def convert_attention(graph):
             op_attr = att_obj.copied_attr()
             NodeWrap(graph, att).replace_obj('Reshape', op_attr)
         else:
+            graph.add_edge(softmax, att, **{'src_out_port': 0, 'dst_in_port': 0,
+                                            'tensor': Tensor(shape=tuple(matmul_out_shape))})
             op_attr = att_obj.copied_attr()
             NodeWrap(graph, att).replace_obj('MatMul', op_attr)
 
