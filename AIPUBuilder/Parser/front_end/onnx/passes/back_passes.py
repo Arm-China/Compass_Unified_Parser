@@ -3445,6 +3445,7 @@ def rename_topk(graph):
                 topk_attr = topk_obj.copied_attr()
                 topk_attr.update(
                     {'k': k, 'sorted': need_sorted, 'largest': largest})
+                topk_attr['select_index'] = 'last' if graph._attr['model_type'] == 'torch' else 'first'
                 NodeWrap(graph, topk).replace_obj('ArmTopK', topk_attr)
                 if ver > 1 and k > 0:
                     graph.remove_edges_from(in_edges[1:])

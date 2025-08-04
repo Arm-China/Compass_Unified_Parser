@@ -182,7 +182,7 @@ def univ_parser(params):
         else:
             if not params.get('model_name', ''):
                 params['model_name'] = model_type + '_model'
-            graph = Graph(name=params['model_name'])
+            graph = Graph(name=params['model_name'], model_type=model_type)
 
             tmp_tensors_dir = '.%s_tmp_tensors' % params.get('model_name', '')
             tmp_tensors_path = os.path.join(output_dir, tmp_tensors_dir)
