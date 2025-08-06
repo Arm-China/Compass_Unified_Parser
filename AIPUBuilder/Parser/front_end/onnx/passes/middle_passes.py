@@ -7474,40 +7474,44 @@ def convert_attention(graph):
             scale = att_obj.scale.astype(input_dtypes[0])
 
         if 4 in in_ports:  # past_key
-            # add concat
             past_key = att_in_edges[4][0]
-            concat_k = get_valid_node_name(graph, att + '_concat_k')
-            graph.add_node(concat_k)
-            concat_k_attr = {'name': concat_k, 'axis': 2, 'opset_version': 13}
-            graph.add_edge(past_key, concat_k, **{'src_out_port': 0, 'dst_in_port': 0,
-                                                  'tensor': Tensor(shape=tuple(input_shapes[4]))})
-            graph.add_edge(key, concat_k, **{'src_out_port': 0, 'dst_in_port': 1,
-                                             'tensor': Tensor(shape=tuple(k_shape))})
-            NodeWrap(graph, concat_k).replace_obj('Concat', concat_k_attr)
-            graph.remove_edge(key, att)
             graph.remove_edge(past_key, att)
-            concat_k_shape = k_shape[:2] + [input_shapes[4][2] + k_shape[2]] + k_shape[3:]
-            graph.add_edge(concat_k, att, **{'src_out_port': 0, 'dst_in_port': 4,
-                                             'tensor': Tensor(shape=tuple(concat_k_shape))})
-            key = concat_k
-        if 5 in in_ports:  # past_value
-            # add concat
+            if NodeWrap(graph, past_key)['object'].type != 'Blank':
+                # add concat
+                concat_k = get_valid_node_name(graph, att + '_concat_k')
+                graph.add_node(concat_k)
+                concat_k_attr = {'name': concat_k, 'axis': 2, 'opset_version': 13}
+                graph.add_edge(past_key, concat_k, **{'src_out_port': 0, 'dst_in_port': 0,
+                                                      'tensor': Tensor(shape=tuple(input_shapes[4]))})
+                graph.add_edge(key, concat_k, **{'src_out_port': 0, 'dst_in_port': 1,
+                                                 'tensor': Tensor(shape=tuple(k_shape))})
+                NodeWrap(graph, concat_k).replace_obj('Concat', concat_k_attr)
+                graph.remove_edge(key, att)
+                concat_k_shape = k_shape[:2] + [input_shapes[4][2] + k_shape[2]] + k_shape[3:]
+                graph.add_edge(concat_k, att, **{'src_out_port': 0, 'dst_in_port': 4,
+                                                 'tensor': Tensor(shape=tuple(concat_k_shape))})
+                key = concat_k
+                k_shape = concat_k_shape[:]
+        if 5 in in_ports:
             past_value = att_in_edges[5][0]
-            concat_v = get_valid_node_name(graph, att + '_concat_v')
-            graph.add_node(concat_v)
-            concat_v_attr = {'name': concat_v, 'axis': 2, 'opset_version': 13}
-            graph.add_edge(past_value, concat_v, **{'src_out_port': 0, 'dst_in_port': 0,
-                                                    'tensor': Tensor(shape=tuple(input_shapes[5]))})
-            graph.add_edge(value, concat_v, **{'src_out_port': 0, 'dst_in_port': 1,
-                                               'tensor': Tensor(shape=tuple(v_shape))})
-            NodeWrap(graph, concat_v).replace_obj('Concat', concat_v_attr)
-            graph.remove_edge(value, att)
             graph.remove_edge(past_value, att)
-            concat_v_shape = v_shape[:2] + [input_shapes[5][2] + v_shape[2]] + v_shape[3:]
-            graph.add_edge(concat_v, att, **{'src_out_port': 0, 'dst_in_port': 5,
-                                             'tensor': Tensor(shape=tuple(concat_v_shape))})
-            value = concat_v
-            kv_seq_len += input_shapes[5][2]
+            if NodeWrap(graph, past_value)['object'].type != 'Blank':  # past_value
+                # add concat
+                concat_v = get_valid_node_name(graph, att + '_concat_v')
+                graph.add_node(concat_v)
+                concat_v_attr = {'name': concat_v, 'axis': 2, 'opset_version': 13}
+                graph.add_edge(past_value, concat_v, **{'src_out_port': 0, 'dst_in_port': 0,
+                                                        'tensor': Tensor(shape=tuple(input_shapes[5]))})
+                graph.add_edge(value, concat_v, **{'src_out_port': 0, 'dst_in_port': 1,
+                                                   'tensor': Tensor(shape=tuple(v_shape))})
+                NodeWrap(graph, concat_v).replace_obj('Concat', concat_v_attr)
+                graph.remove_edge(value, att)
+                concat_v_shape = v_shape[:2] + [input_shapes[5][2] + v_shape[2]] + v_shape[3:]
+                graph.add_edge(concat_v, att, **{'src_out_port': 0, 'dst_in_port': 5,
+                                                 'tensor': Tensor(shape=tuple(concat_v_shape))})
+                value = concat_v
+                kv_seq_len += input_shapes[5][2]
+                v_shape = concat_v_shape[:]
 
         if q_num_heads > kv_num_heads and q_num_heads % kv_num_heads == 0:  # GQA
             seq_reps = q_num_heads // kv_num_heads
@@ -7567,27 +7571,30 @@ def convert_attention(graph):
             if 3 in in_ports:
                 attn_mask = att_in_edges[3][0]
                 graph.remove_edge(attn_mask, att)
-                if input_dtypes[3] == 'bool':
-                    where = get_valid_node_name(graph, att + '_where')
-                    graph.add_node(where)
-                    where_attr = {'name': where, 'opset_version': 13}
-                    graph.add_edge(attn_mask, where, **{'src_out_port': 0, 'dst_in_port': 0,
-                                                        'tensor': Tensor(shape=tuple(matmul_out_shape))})
-                    insert_constant(graph, att + '_inf', np.array(float("-inf"), dtype=input_dtypes[0]), where,
-                                    in_port=1)
-                    graph.add_edge(mul, where, **{'src_out_port': 0, 'dst_in_port': 2,
-                                                  'tensor': Tensor(shape=tuple(matmul_out_shape))})
-                    NodeWrap(graph, where).replace_obj('Where', where_attr)
-                    attn_bias_node = where
+                if NodeWrap(graph, attn_mask)['object'].type != 'Blank':
+                    if input_dtypes[3] == 'bool':
+                        where = get_valid_node_name(graph, att + '_where')
+                        graph.add_node(where)
+                        where_attr = {'name': where, 'opset_version': 13}
+                        graph.add_edge(attn_mask, where, **{'src_out_port': 0, 'dst_in_port': 0,
+                                                            'tensor': Tensor(shape=tuple(matmul_out_shape))})
+                        insert_constant(graph, att + '_inf', np.array(float("-inf"), dtype=input_dtypes[0]), where,
+                                        in_port=1)
+                        graph.add_edge(mul, where, **{'src_out_port': 0, 'dst_in_port': 2,
+                                                      'tensor': Tensor(shape=tuple(matmul_out_shape))})
+                        NodeWrap(graph, where).replace_obj('Where', where_attr)
+                        attn_bias_node = where
+                    else:
+                        add = get_valid_node_name(graph, att + '_add')
+                        graph.add_node(add)
+                        add_attr = {'name': add, 'opset_version': 13}
+                        graph.add_edge(mul, add, **{'src_out_port': 0, 'dst_in_port': 0,
+                                                    'tensor': Tensor(shape=tuple(matmul_out_shape))})
+                        graph.add_edge(attn_mask, add, **{'src_out_port': 0, 'dst_in_port': 1})
+                        NodeWrap(graph, add).replace_obj('Add', add_attr)
+                        attn_bias_node = add
                 else:
-                    add = get_valid_node_name(graph, att + '_add')
-                    graph.add_node(add)
-                    add_attr = {'name': add, 'opset_version': 13}
-                    graph.add_edge(mul, add, **{'src_out_port': 0, 'dst_in_port': 0,
-                                                'tensor': Tensor(shape=tuple(matmul_out_shape))})
-                    graph.add_edge(attn_mask, add, **{'src_out_port': 0, 'dst_in_port': 1})
-                    NodeWrap(graph, add).replace_obj('Add', add_attr)
-                    attn_bias_node = add
+                    attn_bias_node = mul
             else:
                 attn_bias_node = mul
 

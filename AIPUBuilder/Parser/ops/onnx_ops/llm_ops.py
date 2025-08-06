@@ -85,12 +85,12 @@ class AttentionOp(OpHasVariableOutPorts, OnnxOp):
 
         in_ports = self.get_in_ports()
         # Update key and value cache
-        if 4 in in_ports and len(inputs) >= 5:
+        if 4 in in_ports and len(inputs) >= 5 and inputs[4] is not None:
             past_key = inputs[4]
             present_key = np.concatenate((past_key, K), axis=2)
         else:
             present_key = K
-        if 5 in in_ports and len(inputs) >= 6:
+        if 5 in in_ports and len(inputs) >= 6 and inputs[5] is not None:
             past_value = inputs[5]
             present_value = np.concatenate((past_value, V), axis=2)
         else:
@@ -107,13 +107,13 @@ class AttentionOp(OpHasVariableOutPorts, OnnxOp):
         # is a square matrix. The attention masking has the form of the upper left causal
         # bias due to the alignment when the mask is a non-square matrix.
         if self.is_causal == 1:
-            assert 3 not in in_ports
+            assert 3 not in in_ports or inputs[3] is None
             temp_mask = np.ones((q_sequence_length, kv_sequence_length), dtype=bool)
             temp_mask = np.tril(temp_mask, k=0)
             temp_mask = np.logical_not(temp_mask)
             attn_bias_ma = np.ma.array(attn_bias, mask=temp_mask)
             attn_bias = attn_bias_ma.filled(fill_value=float("-inf"))
-        if 3 in in_ports and len(inputs) >= 4:
+        if 3 in in_ports and len(inputs) >= 4 and inputs[3] is not None:
             attn_mask = inputs[3]
             assert self.is_causal != 1
             if attn_mask.dtype == bool:
@@ -195,6 +195,14 @@ class AttentionOp(OpHasVariableOutPorts, OnnxOp):
         if 3 in out_ports:
             out_tensors.append(qk_matmul_output)
         self.set_out_tensor(out_tensors)
+
+    def convert_version(self):
+        # from ...front_end.onnx.passes.common_passes import insert_constant
+        max_ver = type(self).max_ver()
+        cur_ver = self.cur_version
+        if cur_ver < max_ver:
+            # TODO
+            self.cur_version = max_ver
 
 
 class RotaryEmbeddingOp(OpHasOneOutPort, OnnxOp):
