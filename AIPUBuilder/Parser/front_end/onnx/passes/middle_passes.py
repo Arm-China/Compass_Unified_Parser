@@ -7543,13 +7543,13 @@ def convert_attention(graph):
         matmul_out_shape = q_shape[:-1] + trans_k_out_shape[-1:]
 
         # scores
-        mul = get_valid_node_name(graph, att + '_mul')
-        graph.add_node(mul)
-        mul_attr = {'name': mul, 'opset_version': 13}
-        graph.add_edge(qk_matmul, mul, **{'src_out_port': 0, 'dst_in_port': 0,
-                                          'tensor': Tensor(shape=tuple(matmul_out_shape))})
-        insert_constant(graph, att + '_scale', np.array(scale, dtype=input_dtypes[0]), mul, in_port=1)
-        NodeWrap(graph, mul).replace_obj('Mul', mul_attr)
+        mul_scale = get_valid_node_name(graph, att + '_mul_scale')
+        graph.add_node(mul_scale)
+        mul_attr = {'name': mul_scale, 'opset_version': 13}
+        graph.add_edge(qk_matmul, mul_scale, **{'src_out_port': 0, 'dst_in_port': 0,
+                                                'tensor': Tensor(shape=tuple(matmul_out_shape))})
+        insert_constant(graph, att + '_scale', np.array(scale, dtype=input_dtypes[0]), mul_scale, in_port=1)
+        NodeWrap(graph, mul_scale).replace_obj('Mul', mul_attr)
 
         if att_obj.is_causal == 1:
             attn_bias = np.zeros((q_seq_len, kv_seq_len), dtype=input_dtypes[0])
@@ -7562,8 +7562,8 @@ def convert_attention(graph):
             add = get_valid_node_name(graph, att + '_add')
             graph.add_node(add)
             add_attr = {'name': add, 'opset_version': 13}
-            graph.add_edge(mul, add, **{'src_out_port': 0, 'dst_in_port': 0,
-                                        'tensor': Tensor(shape=tuple(matmul_out_shape))})
+            graph.add_edge(mul_scale, add, **{'src_out_port': 0, 'dst_in_port': 0,
+                                              'tensor': Tensor(shape=tuple(matmul_out_shape))})
             insert_constant(graph, att + '_atten_bias', np.array(attn_bias, dtype=input_dtypes[0]), add, in_port=1)
             NodeWrap(graph, add).replace_obj('Add', add_attr)
             attn_bias_node = add
@@ -7580,23 +7580,23 @@ def convert_attention(graph):
                                                             'tensor': Tensor(shape=tuple(matmul_out_shape))})
                         insert_constant(graph, att + '_inf', np.array(float("-inf"), dtype=input_dtypes[0]), where,
                                         in_port=1)
-                        graph.add_edge(mul, where, **{'src_out_port': 0, 'dst_in_port': 2,
-                                                      'tensor': Tensor(shape=tuple(matmul_out_shape))})
+                        graph.add_edge(mul_scale, where, **{'src_out_port': 0, 'dst_in_port': 2,
+                                                            'tensor': Tensor(shape=tuple(matmul_out_shape))})
                         NodeWrap(graph, where).replace_obj('Where', where_attr)
                         attn_bias_node = where
                     else:
                         add = get_valid_node_name(graph, att + '_add')
                         graph.add_node(add)
                         add_attr = {'name': add, 'opset_version': 13}
-                        graph.add_edge(mul, add, **{'src_out_port': 0, 'dst_in_port': 0,
-                                                    'tensor': Tensor(shape=tuple(matmul_out_shape))})
+                        graph.add_edge(mul_scale, add, **{'src_out_port': 0, 'dst_in_port': 0,
+                                                          'tensor': Tensor(shape=tuple(matmul_out_shape))})
                         graph.add_edge(attn_mask, add, **{'src_out_port': 0, 'dst_in_port': 1})
                         NodeWrap(graph, add).replace_obj('Add', add_attr)
                         attn_bias_node = add
                 else:
-                    attn_bias_node = mul
+                    attn_bias_node = mul_scale
             else:
-                attn_bias_node = mul
+                attn_bias_node = mul_scale
 
         if att_obj.softcap > 0:
             div = get_valid_node_name(graph, att + '_div')
@@ -7684,7 +7684,7 @@ def convert_attention(graph):
                     new_out_attr = copy.deepcopy(out_attr)
                     new_out_attr['src_out_port'] = 0
                     if att_obj.qk_matmul_output_mode == 0:
-                        qk_matmul_node = qk_matmul
+                        qk_matmul_node = mul_scale
                     elif att_obj.qk_matmul_output_mode == 1:
                         qk_matmul_node = attn_bias_node
                     elif att_obj.qk_matmul_output_mode == 2:
