@@ -7573,11 +7573,18 @@ def convert_attention(graph):
                 graph.remove_edge(attn_mask, att)
                 if NodeWrap(graph, attn_mask)['object'].type != 'Blank':
                     if input_dtypes[3] == 'bool':
+                        not_node = get_valid_node_name(graph, att + '_not')
+                        graph.add_node(not_node)
+                        not_node_attr = {'name': not_node, 'opset_version': 1}
+                        graph.add_edge(attn_mask, not_node, **{'src_out_port': 0, 'dst_in_port': 0,
+                                                               'tensor': Tensor(shape=tuple(input_shapes[3]))})
+                        NodeWrap(graph, not_node).replace_obj('Not', not_node_attr)
+
                         where = get_valid_node_name(graph, att + '_where')
                         graph.add_node(where)
                         where_attr = {'name': where, 'opset_version': 13}
-                        graph.add_edge(attn_mask, where, **{'src_out_port': 0, 'dst_in_port': 0,
-                                                            'tensor': Tensor(shape=tuple(matmul_out_shape))})
+                        graph.add_edge(not_node, where, **{'src_out_port': 0, 'dst_in_port': 0,
+                                                           'tensor': Tensor(shape=tuple(input_shapes[3]))})
                         insert_constant(graph, att + '_inf', np.array(float("-inf"), dtype=input_dtypes[0]), where,
                                         in_port=1)
                         graph.add_edge(mul_scale, where, **{'src_out_port': 0, 'dst_in_port': 2,
