@@ -117,11 +117,9 @@ class AttentionOp(OpHasVariableOutPorts, OnnxOp):
             attn_mask = inputs[3]
             assert self.is_causal != 1
             if attn_mask.dtype == bool:
-                attn_mask = np.logical_not(attn_mask)
-                attn_bias_ma = np.ma.array(attn_bias, mask=attn_mask)
-                attn_bias = attn_bias_ma.filled(fill_value=float("-inf"))
-            else:
-                attn_bias += attn_mask
+                attn_mask = (1 - attn_mask).astype(Q.dtype)
+                attn_mask[attn_mask == 1] = -np.inf
+            attn_bias += attn_mask
 
         # Group Query Attention is applied if the following are satisfied
         # 1) q_num_heads != kv_num_heads
