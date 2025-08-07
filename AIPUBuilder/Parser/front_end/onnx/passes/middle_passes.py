@@ -7519,13 +7519,16 @@ def convert_attention(graph):
             # tile K, V
             key_out_attr = graph.sorted_out_edges(key, data=True)[0][-1]
             value_out_attr = graph.sorted_out_edges(value, data=True)[0][-1]
-            tile_k = insert_tile(graph, key, att, key_out_attr, reps)
-            tile_v = insert_tile(graph, value, att, value_out_attr, reps)
-            key = tile_k
-            value = tile_v
+            tiled_k = insert_tile(graph, key, att, key_out_attr, reps)
+            tiled_v = insert_tile(graph, value, att, value_out_attr, reps)
+            k_shape[1] = k_shape[1] * seq_reps
+            v_shape[1] = v_shape[1] * seq_reps
+        else:
+            tiled_k = key
+            tiled_v = value
 
-        key_out_attr = graph.sorted_out_edges(key, data=True)[0][-1]
-        trans_k = insert_transpose(graph, key, att, key_out_attr, perm=[0, 1, 3, 2])
+        key_out_attr = graph.sorted_out_edges(tiled_k, data=True)[0][-1]
+        trans_k = insert_transpose(graph, tiled_k, att, key_out_attr, perm=[0, 1, 3, 2])
         trans_k_out_shape = [k_shape[axis] for axis in [0, 1, 3, 2]]
 
         # split_q @ split_k
@@ -7552,21 +7555,77 @@ def convert_attention(graph):
         NodeWrap(graph, mul_scale).replace_obj('Mul', mul_attr)
 
         if att_obj.is_causal == 1:
-            attn_bias = np.zeros((q_seq_len, kv_seq_len), dtype=input_dtypes[0])
-            temp_mask = np.ones_like(attn_bias, dtype=bool)
-            temp_mask = np.tril(temp_mask, k=0)
-            temp_mask = np.logical_not(temp_mask)
-            attn_bias_ma = np.ma.array(attn_bias, mask=temp_mask)
-            attn_bias = attn_bias_ma.filled(fill_value=float("-inf"))
+            if 3 in in_ports:
+                attn_mask = att_in_edges[3][0]
+                graph.remove_edge(attn_mask, att)
+                if NodeWrap(graph, attn_mask)['object'].type == 'Blank':
+                    attn_bias = np.zeros((q_seq_len, kv_seq_len), dtype=input_dtypes[0])
+                    temp_mask = np.ones_like(attn_bias, dtype=bool)
+                    temp_mask = np.tril(temp_mask, k=0)
+                    temp_mask = np.logical_not(temp_mask)
+                    attn_bias_ma = np.ma.array(attn_bias, mask=temp_mask)
+                    attn_bias = attn_bias_ma.filled(fill_value=float("-inf"))
 
-            add = get_valid_node_name(graph, att + '_add')
-            graph.add_node(add)
-            add_attr = {'name': add, 'opset_version': 13}
-            graph.add_edge(mul_scale, add, **{'src_out_port': 0, 'dst_in_port': 0,
-                                              'tensor': Tensor(shape=tuple(matmul_out_shape))})
-            insert_constant(graph, att + '_atten_bias', np.array(attn_bias, dtype=input_dtypes[0]), add, in_port=1)
-            NodeWrap(graph, add).replace_obj('Add', add_attr)
-            attn_bias_node = add
+                    add = get_valid_node_name(graph, att + '_add')
+                    graph.add_node(add)
+                    add_attr = {'name': add, 'opset_version': 13}
+                    graph.add_edge(mul_scale, add, **{'src_out_port': 0, 'dst_in_port': 0,
+                                                      'tensor': Tensor(shape=tuple(matmul_out_shape))})
+                    insert_constant(graph, att + '_atten_bias', np.array(attn_bias,
+                                    dtype=input_dtypes[0]), add, in_port=1)
+                    NodeWrap(graph, add).replace_obj('Add', add_attr)
+                    attn_bias_node = add
+                else:
+                    last_node = attn_mask
+                    if input_dtypes[3] == 'bool':
+                        not_node = get_valid_node_name(graph, att + '_not')
+                        graph.add_node(not_node)
+                        not_node_attr = {'name': not_node, 'opset_version': 1}
+                        graph.add_edge(attn_mask, not_node, **{'src_out_port': 0, 'dst_in_port': 0,
+                                                               'tensor': Tensor(shape=tuple(input_shapes[3]))})
+                        NodeWrap(graph, not_node).replace_obj('Not', not_node_attr)
+
+                        where = get_valid_node_name(graph, att + '_where')
+                        graph.add_node(where)
+                        where_attr = {'name': where, 'opset_version': 13}
+                        graph.add_edge(not_node, where, **{'src_out_port': 0, 'dst_in_port': 0,
+                                                           'tensor': Tensor(shape=tuple(input_shapes[3]))})
+                        insert_constant(graph, att + '_inf', np.array(float("-inf"), dtype=input_dtypes[0]), where,
+                                        in_port=1)
+                        graph.add_edge(mul_scale, where, **{'src_out_port': 0, 'dst_in_port': 2,
+                                                            'tensor': Tensor(shape=tuple(matmul_out_shape))})
+                        NodeWrap(graph, where).replace_obj('Where', where_attr)
+                        last_node = where
+
+                    temp_mask = np.ones((q_seq_len, kv_seq_len), dtype=input_dtypes[0])
+                    temp_mask = 1 - np.tril(temp_mask, k=0)
+                    temp_mask[temp_mask == 1] = -np.inf
+
+                    add = get_valid_node_name(graph, att + '_add')
+                    graph.add_node(add)
+                    add_attr = {'name': add, 'opset_version': 13}
+                    insert_constant(graph, att + '_temp_mask', np.array(temp_mask, dtype=input_dtypes[0]),
+                                    add, in_port=1)
+                    graph.add_edge(last_node, add, **{'src_out_port': 0, 'dst_in_port': 0,
+                                                      'tensor': Tensor(shape=tuple(matmul_out_shape))})
+                    NodeWrap(graph, add).replace_obj('Add', add_attr)
+                    attn_bias_node = add
+            else:
+                attn_bias = np.zeros((q_seq_len, kv_seq_len), dtype=input_dtypes[0])
+                temp_mask = np.ones_like(attn_bias, dtype=bool)
+                temp_mask = np.tril(temp_mask, k=0)
+                temp_mask = np.logical_not(temp_mask)
+                attn_bias_ma = np.ma.array(attn_bias, mask=temp_mask)
+                attn_bias = attn_bias_ma.filled(fill_value=float("-inf"))
+
+                add = get_valid_node_name(graph, att + '_add')
+                graph.add_node(add)
+                add_attr = {'name': add, 'opset_version': 13}
+                graph.add_edge(mul_scale, add, **{'src_out_port': 0, 'dst_in_port': 0,
+                                                  'tensor': Tensor(shape=tuple(matmul_out_shape))})
+                insert_constant(graph, att + '_atten_bias', np.array(attn_bias, dtype=input_dtypes[0]), add, in_port=1)
+                NodeWrap(graph, add).replace_obj('Add', add_attr)
+                attn_bias_node = add
         else:
             if 3 in in_ports:
                 attn_mask = att_in_edges[3][0]
@@ -7646,11 +7705,11 @@ def convert_attention(graph):
             matmul_v_attr = {'name': matmul_v, 'opset_version': 13}
             graph.add_edge(softmax, matmul_v, **{'src_out_port': 0, 'dst_in_port': 0,
                                                  'tensor': Tensor(shape=tuple(matmul_out_shape))})
-            graph.add_edge(value, matmul_v, **{'src_out_port': 0, 'dst_in_port': 1,
-                                               'tensor': Tensor(shape=tuple(v_shape))})
+            graph.add_edge(tiled_v, matmul_v, **{'src_out_port': 0, 'dst_in_port': 1,
+                                                 'tensor': Tensor(shape=tuple(v_shape))})
             NodeWrap(graph, matmul_v).replace_obj('MatMul', matmul_v_attr)
 
-            graph.remove_edge(value, att)
+            graph.remove_edge(tiled_v, att)
 
             matmul_v_out_shape = matmul_out_shape[:-1] + v_shape[-1:]
 

@@ -107,19 +107,29 @@ class AttentionOp(OpHasVariableOutPorts, OnnxOp):
         # is a square matrix. The attention masking has the form of the upper left causal
         # bias due to the alignment when the mask is a non-square matrix.
         if self.is_causal == 1:
-            assert 3 not in in_ports or inputs[3] is None
-            temp_mask = np.ones_like(attn_bias, dtype=bool)
-            temp_mask = np.tril(temp_mask, k=0)
-            temp_mask = np.logical_not(temp_mask)
-            attn_bias_ma = np.ma.array(attn_bias, mask=temp_mask)
-            attn_bias = attn_bias_ma.filled(fill_value=float("-inf"))
-        if 3 in in_ports and len(inputs) >= 4 and inputs[3] is not None:
-            attn_mask = inputs[3]
-            assert self.is_causal != 1
-            if attn_mask.dtype == bool:
-                attn_mask = (1 - attn_mask).astype(Q.dtype)
-                attn_mask[attn_mask == 1] = -np.inf
-            attn_bias += attn_mask
+            if 3 in in_ports and len(inputs) >= 4 and inputs[3] is not None:
+                attn_mask = inputs[3]
+                if attn_mask.dtype == bool:
+                    attn_mask = (1 - attn_mask).astype(Q.dtype)
+                    attn_mask[attn_mask == 1] = -np.inf
+                temp_mask = np.ones_like(attn_bias, dtype=Q.dtype)
+                temp_mask = 1 - np.tril(temp_mask, k=0)
+                temp_mask[temp_mask == 1] = -np.inf
+                attn_bias = attn_mask + temp_mask
+            else:
+                temp_mask = np.ones_like(attn_bias, dtype=bool)
+                temp_mask = np.tril(temp_mask, k=0)
+                temp_mask = np.logical_not(temp_mask)
+                attn_bias_ma = np.ma.array(attn_bias, mask=temp_mask)
+                attn_bias = attn_bias_ma.filled(fill_value=float("-inf"))
+        else:
+            if 3 in in_ports and len(inputs) >= 4 and inputs[3] is not None:
+                attn_mask = inputs[3]
+                assert self.is_causal != 1
+                if attn_mask.dtype == bool:
+                    attn_mask = (1 - attn_mask).astype(Q.dtype)
+                    attn_mask[attn_mask == 1] = -np.inf
+                attn_bias += attn_mask
 
         # Group Query Attention is applied if the following are satisfied
         # 1) q_num_heads != kv_num_heads
