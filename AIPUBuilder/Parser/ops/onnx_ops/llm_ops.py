@@ -79,9 +79,9 @@ class AttentionOp(OpHasVariableOutPorts, OnnxOp):
         # Calculate Scaling Factor if not provided
         if self.scale is None:
             q_head_size = Q.shape[3]
-            scale = 1 / np.sqrt(q_head_size)
+            scale = (1 / np.sqrt(q_head_size)).astype(Q.dtype)
         else:
-            scale = self.scale
+            scale = np.array(self.scale, dtype=Q.dtype)
 
         in_ports = self.get_in_ports()
         # Update key and value cache
@@ -108,7 +108,7 @@ class AttentionOp(OpHasVariableOutPorts, OnnxOp):
         # bias due to the alignment when the mask is a non-square matrix.
         if self.is_causal == 1:
             assert 3 not in in_ports or inputs[3] is None
-            temp_mask = np.ones((q_sequence_length, kv_sequence_length), dtype=bool)
+            temp_mask = np.ones_like(attn_bias, dtype=bool)
             temp_mask = np.tril(temp_mask, k=0)
             temp_mask = np.logical_not(temp_mask)
             attn_bias_ma = np.ma.array(attn_bias, mask=temp_mask)

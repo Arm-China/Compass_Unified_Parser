@@ -7469,9 +7469,9 @@ def convert_attention(graph):
             kv_num_heads = k_shape[1]
 
         if att_obj.scale is None:
-            scale = 1 / np.sqrt(q_head_size).astype(input_dtypes[0])
+            scale = (1 / np.sqrt(q_head_size)).astype(input_dtypes[0])
         else:
-            scale = att_obj.scale.astype(input_dtypes[0])
+            scale = np.array(att_obj.scale, dtype=input_dtypes[0])
 
         if 4 in in_ports:  # past_key
             past_key = att_in_edges[4][0]
@@ -7553,7 +7553,7 @@ def convert_attention(graph):
 
         if att_obj.is_causal == 1:
             attn_bias = np.zeros((q_seq_len, kv_seq_len), dtype=input_dtypes[0])
-            temp_mask = np.ones((q_seq_len, kv_seq_len), dtype=bool)
+            temp_mask = np.ones_like(attn_bias, dtype=bool)
             temp_mask = np.tril(temp_mask, k=0)
             temp_mask = np.logical_not(temp_mask)
             attn_bias_ma = np.ma.array(attn_bias, mask=temp_mask)
