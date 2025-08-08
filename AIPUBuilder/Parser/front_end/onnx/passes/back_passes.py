@@ -3281,6 +3281,13 @@ def rename_rotary_embedding(graph):
                 bs = input_shapes[0][0]
                 position_ids = np.arange(seq_len, dtype=np.int32).reshape(1, seq_len).repeat(bs, axis=0)
                 insert_constant(graph, node_name + '_position_ids', position_ids, node_name, in_port=1)
+            else:
+                # update position_ids in port
+                position_ids, _, in_attr = in_edges[3]
+                graph.remove_edge(position_ids, node_name)
+                new_in_attr = copy.deepcopy(in_attr)
+                new_in_attr['dst_in_port'] = 1
+                graph.add_edge(position_ids, node_name, **new_in_attr)
 
             num_heads = input_shapes[0][1] if len(input_shapes[0]) == 4 else node_obj.num_heads
             if node_obj.rotary_embedding_dim == 0:
