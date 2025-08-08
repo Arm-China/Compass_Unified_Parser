@@ -7734,13 +7734,14 @@ def convert_attention(graph):
             NodeWrap(graph, att).replace_obj('MatMul', op_attr)
 
         if len(att_out_edges) > 1:
-            for i, (_, dst, out_attr) in enumerate(att_out_edges[1:]):
-                if i == 0:
+            for _, dst, out_attr in att_out_edges[1:]:
+                out_port = out_attr['src_out_port']
+                if out_port == 1:
                     graph.remove_edge(att, dst)
                     new_out_attr = copy.deepcopy(out_attr)
                     new_out_attr['src_out_port'] = 0
                     graph.add_edge(key, dst, **new_out_attr)
-                elif i == 1:
+                elif out_port == 2:
                     graph.remove_edge(att, dst)
                     new_out_attr = copy.deepcopy(out_attr)
                     new_out_attr['src_out_port'] = 0
