@@ -2832,7 +2832,7 @@ class ArmInTopKOp(OpHasOneOutPort, ArmOp):
 class ArmIsInfOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
     @classmethod
     def num_in_ports(cls):
-        return 0
+        return 1
 
     @classmethod
     def attributes(cls):
@@ -2875,7 +2875,7 @@ class ArmIsInfOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
 class ArmIsNaNOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
     @classmethod
     def num_in_ports(cls):
-        return 0
+        return 1
 
     def __init__(self, graph, attr_dict=None):
         super(ArmIsNaNOp, self).__init__(graph, attr_dict)
@@ -5320,10 +5320,10 @@ class ArmRgbToYuvOp(OpHasOneOutPort, ArmOp):
         return ret
 
 
-class ArmRotaryEmbeddingOp(OpHasCaches, OpHasOneOutPort, ArmOp):
+class ArmRotaryEmbeddingOp(OpHasOneOutPort, ArmOp):
     @classmethod
     def num_in_ports(cls):
-        return 2
+        return -1
 
     @classmethod
     def attributes(cls):
@@ -5331,8 +5331,6 @@ class ArmRotaryEmbeddingOp(OpHasCaches, OpHasOneOutPort, ArmOp):
             'num_heads': {'type': AttrType.INT},
             'interleaved': {'type': AttrType.INT, 'default': 0, 'options': [0, 1]},
             'rotary_embedding_dim': {'type': AttrType.INT},
-            'cos_cache': {'type': AttrType.TENSOR},
-            'sin_cache': {'type': AttrType.TENSOR},
         }
 
     def __init__(self, graph, attr_dict=None):
@@ -5343,7 +5341,7 @@ class ArmRotaryEmbeddingOp(OpHasCaches, OpHasOneOutPort, ArmOp):
     def infer_shape(self):
         super(ArmRotaryEmbeddingOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        assert len(inputs) == 2, '2 inputs are needed in RotaryEmbeddingOp.'
+        assert len(inputs) in (3, 4), '3 or 4 inputs are needed in RotaryEmbeddingOp.'
         original_input_shape = inputs[0].shape
         # First ensure input to be processed has shape [batch_size, seq_len, num_heads, head_size]
         if len(inputs[0].shape) == 4:
@@ -5365,11 +5363,15 @@ class ArmRotaryEmbeddingOp(OpHasCaches, OpHasOneOutPort, ArmOp):
         x_not_rotate = input[:, :, :, rotary_embedding_dim:]
         rotary_embedding_dim_half = rotary_embedding_dim // 2
 
-        cos_cache = self.cos_cache
-        sin_cache = self.sin_cache
-        position_ids = inputs[1]
-        cos = cos_cache[position_ids]  # Shape: [batch_size, sequence_length, head_size/2]
-        sin = sin_cache[position_ids]  # Shape: [batch_size, sequence_length, head_size/2]
+        cos_cache = inputs[1]
+        sin_cache = inputs[2]
+        if len(cos_cache.shape) == 2:
+            position_ids = inputs[3]
+            cos = cos_cache[position_ids]  # Shape: [batch_size, sequence_length, head_size/2]
+            sin = sin_cache[position_ids]  # Shape: [batch_size, sequence_length, head_size/2]
+        else:
+            cos = cos_cache
+            sin = sin_cache
 
         cos = cos[:, :, :rotary_embedding_dim_half]  # Shape: [batch_size, sequence_length, rotary_embedding_dim/2]
         sin = sin[:, :, :rotary_embedding_dim_half]  # Shape: [batch_size, sequence_length, rotary_embedding_dim/2]

@@ -1807,45 +1807,6 @@ class OpHasAnchors(Op):
         return ret
 
 
-class OpHasCaches(Op):
-    '''
-    Class OpHasCaches inherited from OP.
-    Some OPs with caches parameter must inherit this class, such as RotaryEmbedding.
-    '''
-
-    def write_attrs(self, txt_file):
-        '''Write the required attr in IR.'''
-        ret = super(OpHasCaches, self).write_attrs(txt_file)
-        if ret and self.cos_cache is not None and self.sin_cache is not None:
-            txt_file.write('cos_type=%s\n' % str(self.cos_cache.dtype))
-            txt_file.write('cos_offset=%d\n' % self.cos_cache_offset)
-            txt_file.write('cos_size=%d\n' %
-                           (self.cos_cache.size * self.cos_cache.dtype.itemsize))
-            txt_file.write('cos_shape=[%s]\n' % num_list_to_string(
-                list(self.cos_cache.shape)))
-
-            txt_file.write('sin_type=%s\n' % str(self.sin_cache.dtype))
-            txt_file.write('sin_offset=%d\n' % self.sin_cache_offset)
-            txt_file.write('sin_size=%d\n' %
-                           (self.sin_cache.size * self.sin_cache.dtype.itemsize))
-            txt_file.write('sin_shape=[%s]\n' % num_list_to_string(
-                list(self.sin_cache.shape)))
-            return ret
-
-    def write_caches(self, bin_file):
-        '''Write the caches attr in IR bin file.'''
-        ret = True
-        if not bin_file.closed and bin_file.mode == 'ab':
-            if self.cos_cache is not None and self.cos_cache_offset >= 0:
-                Op.numpy_to_bin(bin_file, self.cos_cache, self.cos_cache_offset, self.name)
-            if self.sin_cache is not None and self.sin_cache_offset >= 0:
-                Op.numpy_to_bin(bin_file, self.sin_cache, self.sin_cache_offset, self.name)
-        else:
-            FATAL('[Parser]: Invalid file to write caches for Node(%s) in write_caches!' %
-                  (self.name))
-        return ret
-
-
 class BaseLinearOp(OpHasBiases, OpHasWeights, OpHasOneOutPort):
     '''
     Class BaseLinearOp inherited from OpHasBiases, OpHasWeights, OpHasOneOutPort class.
