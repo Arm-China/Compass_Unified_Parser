@@ -191,13 +191,13 @@ def convert_multi_outputs_to_const(graph, op_type_name_list):
     clear_redundant_nodes(graph)
 
 
-def remove_node_safely(graph, n):
+def remove_node_safely(graph, n, main_in_port=0):
     assert graph.has_node(
         n), 'The node %s does not exist, cannot remove_node_safely.' % (n)
     in_edges = graph.sorted_in_edges(n, data=True)
     out_edges = graph.sorted_out_edges(n, data=True)
     if len(in_edges) >= 1:
-        src_name, _, in_attr = in_edges[0]
+        src_name, _, in_attr = in_edges[main_in_port]
         new_attr = copy.deepcopy(in_attr)
         for _, dst_name, out_attr in out_edges:
             if NodeWrap(graph, src_name)['object'].type == 'Constant':

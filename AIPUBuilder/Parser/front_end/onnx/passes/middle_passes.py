@@ -2786,13 +2786,27 @@ def fuse_bias(graph):
             if transpose_obj is not None and (
                     len(graph.sorted_out_edges(transpose)) != 1 or transpose_obj.perm != [0, 2, 3, 1]):
                 continue
-            bias_inputs = bias_obj.get_input_tensors()
-            if len(bias_inputs) == 2 and np.ndim(bias_inputs[1]) == 1 and linear_obj.num_output == bias_inputs[1].size:
-                new_biases = bias_inputs[1] if linear_obj.biases is None else (
-                    linear_obj.biases + bias_inputs[1])
+            bias_in_edges = graph.sorted_in_edges(bias, data=True)
+            const_in_name = None
+            bias_main_in_port = 0
+            bias_main_in_name = linear if transpose is None else transpose
+            for src, _, in_attr in bias_in_edges:
+                if src != bias_main_in_name:
+                    const_in_name = src
+                else:
+                    bias_main_in_port = in_attr['dst_in_port']
+            const_obj = NodeWrap(graph, const_in_name)['object']
+            if const_obj.type != 'Constant':
+                continue
+            bias_value = const_obj.value
+            if len(bias_in_edges) == 2 and linear_obj.num_output == bias_value.size:
+                if np.ndim(bias_value) != 1:
+                    bias_value = bias_value.reshape([linear_obj.num_output])
+                new_biases = bias_value if linear_obj.biases is None else (
+                    linear_obj.biases + bias_value)
                 linear_obj.biases = new_biases
                 if transpose is None:
-                    remove_node_safely(graph, bias)
+                    remove_node_safely(graph, bias, main_in_port=bias_main_in_port)
                 else:
                     bias_out_edges = graph.sorted_out_edges(bias, data=True)
                     graph.remove_edge(transpose, bias)
@@ -11606,63 +11620,83 @@ def lift_single_add_sub_mul_div(graph):
                 f'[Parser]: Meets invalid {const_obj.type} Op ({const}) in lift_single_add_sub_mul_div!')
             continue
         const_value = const_obj.value
-        if const_value.min() != const_value.max():
-            continue
-        non_math_in_edges = graph.sorted_in_edges(non_math_op, data=True)
-        non_math_out_edges = graph.sorted_out_edges(non_math_op, data=True)
-        math_in_edges = graph.sorted_in_edges(math_op, data=True)
-        math_out_edges = graph.sorted_out_edges(math_op, data=True)
-        if len(non_math_out_edges) != 1:
-            continue
-        if math_obj.type in ['Sub', 'Div']:
-            if math_in_edges[1][0] != const:
+        non_math_shape = non_math_obj.get_input_shapes()[0]
+        if non_math_shape is not None and None not in non_math_shape:
+            try:
+                tmp_tensor = np.broadcast_to(const_value, non_math_shape)
+                keep_const = True
+            except:
+                keep_const = False
+
+            non_math_in_edges = graph.sorted_in_edges(non_math_op, data=True)
+            non_math_out_edges = graph.sorted_out_edges(non_math_op, data=True)
+            math_in_edges = graph.sorted_in_edges(math_op, data=True)
+            math_out_edges = graph.sorted_out_edges(math_op, data=True)
+            if len(non_math_out_edges) != 1:
                 continue
-        lift_ok = True
-        if non_math_obj.type == 'Reshape':
-            try:
-                out_t = np.reshape(np.ones(shape=non_math_in_edges[0][-1]['tensor'].shape,
-                                           dtype=non_math_in_edges[0][-1]['tensor'].dtype) + const_value,
-                                   non_math_obj.shape)
-                if list(out_t.shape) != list(math_out_edges[0][-1]['tensor'].shape):
-                    lift_ok = False
-            except:
-                lift_ok = False
-        else:
-            try:
-                out_t = np.transpose(np.ones(shape=non_math_in_edges[0][-1]['tensor'].shape,
-                                             dtype=non_math_in_edges[0][-1]['tensor'].dtype) + const_value,
-                                     non_math_obj.perm)
-                if list(out_t.shape) != list(math_out_edges[0][-1]['tensor'].shape):
-                    lift_ok = False
-            except:
-                lift_ok = False
-        if not lift_ok:
-            continue
-        matched = True
-        non_math_src = non_math_in_edges[0][0]
-        graph.remove_edge(non_math_src, non_math_op)
-        graph.remove_edges_from(non_math_out_edges)
-        graph.remove_edges_from(math_out_edges)
+            if math_obj.type in ['Sub', 'Div']:
+                if math_in_edges[1][0] != const:
+                    continue
 
-        math_scale_zp = math_out_edges[0][-1]['tensor'].scale_zp
+            if keep_const:
+                new_const = const_value
+            else:
+                # broadcast const to math op's shape
+                new_const = np.zeros(shape=non_math_out_edges[0][-1]['tensor'].shape,
+                                     dtype=non_math_out_edges[0][-1]['tensor'].dtype) + const_value
 
-        math_in_attr = copy.deepcopy(non_math_in_edges[0][-1])
-        math_in_attr['dst_in_port'] = non_math_out_edges[0][-1]['dst_in_port']
-        graph.add_edge(non_math_src, math_op, **math_in_attr)
+            # Cannot lift if math used to broadcast shape, e.g. [384] --> [1,1,384] * [1,384,1] = [1,384,384]
+            if new_const.size > int(np.prod(non_math_shape)):
+                continue
 
-        non_math_in_attr = copy.deepcopy(non_math_in_edges[0][-1])
-        non_math_in_attr['tensor'].scale_zp = math_scale_zp
-        graph.add_edge(math_op, non_math_op, **non_math_in_attr)
+            matched = True
+            if non_math_obj.type == 'Reshape':
+                if not keep_const:
+                    new_const = new_const.reshape(non_math_shape)
+            else:
+                src_perm = non_math_obj.perm
+                inverse_perm = Op.cal_inverse_perm(src_perm)
+                if not keep_const:
+                    new_const = new_const.transpose(inverse_perm)
 
-        for _, math_dst, math_out_attr in math_out_edges:
-            out_attr = copy.deepcopy(math_out_attr)
-            out_attr['tensor'].scale_zp = math_scale_zp
-            graph.add_edge(non_math_op, math_dst, **out_attr)
-        if math_op in graph._attr['output_names']:
-            index = graph._attr['output_names'].index(math_op)
-            graph._attr['output_names'][index] = non_math_op
+            non_math_src = non_math_in_edges[0][0]
+            graph.remove_edge(non_math_src, non_math_op)
+            graph.remove_edges_from(non_math_out_edges)
+            graph.remove_edges_from(math_out_edges)
+
+            if not keep_const:
+                graph.remove_edge(const, math_op)
+                const_in_port = 0
+                const_scale_zp = None
+                for src, _, in_attr in math_in_edges:
+                    if src == const:
+                        const_in_port = in_attr['dst_in_port']
+                        const_scale_zp = in_attr['tensor'].scale_zp
+                        break
+
+                insert_constant(graph, const + '_new_const', new_const, math_op,
+                                in_port=const_in_port, scale_zp=const_scale_zp, quantize=const_obj.quantize)
+
+            math_scale_zp = math_out_edges[0][-1]['tensor'].scale_zp
+
+            math_in_attr = copy.deepcopy(non_math_in_edges[0][-1])
+            math_in_attr['dst_in_port'] = non_math_out_edges[0][-1]['dst_in_port']
+            graph.add_edge(non_math_src, math_op, **math_in_attr)
+
+            non_math_in_attr = copy.deepcopy(non_math_in_edges[0][-1])
+            non_math_in_attr['tensor'].scale_zp = math_scale_zp
+            graph.add_edge(math_op, non_math_op, **non_math_in_attr)
+
+            for _, math_dst, math_out_attr in math_out_edges:
+                out_attr = copy.deepcopy(math_out_attr)
+                out_attr['tensor'].scale_zp = math_scale_zp
+                graph.add_edge(non_math_op, math_dst, **out_attr)
+            if math_op in graph._attr['output_names']:
+                index = graph._attr['output_names'].index(math_op)
+                graph._attr['output_names'][index] = non_math_op
     if matched:
         clear_redundant_nodes(graph)
+    return matched
 
 
 def rearrange_matmul_reshape_bias(graph):
@@ -13973,8 +14007,8 @@ def middle_passes(graph, params):
     fuse_gather_const_mul(graph)
     if not params.get('ds_compat', False):
         convert_gather_to_slice(graph)
-    for i in range(3):
-        lift_single_add_sub_mul_div(graph)
+    while lift_single_add_sub_mul_div(graph):
+        pass
     rearrange_matmul_reshape_bias(graph)
     fuse_bias(graph)
     rename_single_mul_or_add_or_sub(graph)
