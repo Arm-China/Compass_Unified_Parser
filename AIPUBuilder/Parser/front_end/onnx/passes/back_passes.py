@@ -3770,6 +3770,7 @@ def common_subexpression_elimination(graph):
                     else:
                         scale_zp.append(v)
                 node_attr['scale_zp'] = tuple(scale_zp)
+                node_attr['shape'] = tuple(tensor_info.shape)
 
         signature = hash((node_obj.type, tuple(input_nodes), tuple(src_out_ports), frozenset(node_attr.items())))
 

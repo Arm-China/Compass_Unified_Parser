@@ -11642,29 +11642,37 @@ def lift_single_add_sub_mul_div(graph):
                 new_const = const_value
             else:
                 # broadcast const to math op's shape
-                new_const = np.zeros(shape=non_math_out_edges[0][-1]['tensor'].shape,
-                                     dtype=non_math_out_edges[0][-1]['tensor'].dtype) + const_value
+                new_const = (np.zeros(shape=non_math_out_edges[0][-1]
+                             ['tensor'].shape) + const_value).astype(const_value.dtype)
 
             # Cannot lift if math used to broadcast shape, e.g. [384] --> [1,1,384] * [1,384,1] = [1,384,384]
             if new_const.size > int(np.prod(non_math_shape)):
                 continue
 
-            matched = True
-            if non_math_obj.type == 'Reshape':
-                if not keep_const:
-                    new_const = new_const.reshape(non_math_shape)
+            if new_const.min() == new_const.max() and new_const.size > 1:
+                is_scalar = True
+                new_const = np.array(const_value.min(), dtype=const_value.dtype)
             else:
-                src_perm = non_math_obj.perm
-                inverse_perm = Op.cal_inverse_perm(src_perm)
-                if not keep_const:
-                    new_const = new_const.transpose(inverse_perm)
+                is_scalar = False
+
+            matched = True
+
+            if not is_scalar:
+                if non_math_obj.type == 'Reshape':
+                    if not keep_const:
+                        new_const = new_const.reshape(non_math_shape)
+                else:
+                    src_perm = non_math_obj.perm
+                    inverse_perm = Op.cal_inverse_perm(src_perm)
+                    if not keep_const:
+                        new_const = new_const.transpose(inverse_perm)
 
             non_math_src = non_math_in_edges[0][0]
             graph.remove_edge(non_math_src, non_math_op)
             graph.remove_edges_from(non_math_out_edges)
             graph.remove_edges_from(math_out_edges)
 
-            if not keep_const:
+            if not keep_const or is_scalar:
                 graph.remove_edge(const, math_op)
                 const_in_port = 0
                 const_scale_zp = None
