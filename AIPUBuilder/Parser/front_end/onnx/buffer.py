@@ -126,6 +126,7 @@ def parse_proto_name(proto_name):
 
 def get_tensor_shape_content(tensor_shape_proto, params={}):
     shape_list = []
+    ds = []
     for d in tensor_shape_proto.dim:
         dim_value = d.dim_value
         if dim_value == 0:
@@ -136,6 +137,7 @@ def get_tensor_shape_content(tensor_shape_proto, params={}):
                     dim_strings = re.findall(re.compile(r'[a-zA-Z_]*'), dim_param)
                     if len(dim_strings) > 0:
                         dim_str = dim_strings[0]
+                        ds.append(dim_str)
                         if dim_str in params.get('input_dimensions', {}):
                             dim_param = re.sub(dim_str, str(params['input_dimensions'][dim_str]), dim_param)
                             dim_value = eval(dim_param)
@@ -147,8 +149,10 @@ def get_tensor_shape_content(tensor_shape_proto, params={}):
                         dim_value = int(dim_param)
             except:
                 pass
+        else:
+            ds.append(dim_value)
         shape_list.append(dim_value)
-    return np.array([dim for dim in shape_list], dtype=np.int64)
+    return np.array([dim for dim in shape_list], dtype=np.int64), ds
 
 
 def get_tensor_message(tensor_message, params={}):
@@ -159,7 +163,8 @@ def get_tensor_message(tensor_message, params={}):
         if field_name == 'elem_type':
             field_value = ONNX_NP_TENSOR_MAP[field_value][1].__name__
         elif field_name == 'shape':
-            field_value = get_tensor_shape_content(field[1], params=params)
+            field_value, ds = get_tensor_shape_content(field[1], params=params)
+            ret.update({'dynamic_shape': ds})
         else:
             continue
         ret.update({field_name: field_value})

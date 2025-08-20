@@ -186,7 +186,7 @@ class Graph(nx.MultiDiGraph):
                 keys.index(n_name), "white", id_s, n_name, n.get('op', ''))
             in_tensor = [str(a["tensor"].shape) + str(a["tensor"].dtype)
                          for _, _, a in self.sorted_in_edges(n_name, data=True)]
-            out_tensor = [str(a["tensor"].shape) + str(a["tensor"].dtype)
+            out_tensor = [str(a["tensor"].shape) + str(a["tensor"].symbol) + str(a["tensor"].dtype)
                           for _, _, a in self.sorted_out_edges(n_name, data=True)]
             label += "|"
             if len(in_tensor):

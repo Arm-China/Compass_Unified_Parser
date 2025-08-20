@@ -6,6 +6,7 @@ import numpy as np
 import itertools
 from functools import reduce
 import copy
+from sympy import Symbol
 from ....common.defs import Tensor, FLOAT_EQUAL, Framework
 from ....graph.graph import SubGraph
 from ....logger import INFO, DEBUG, WARN, ERROR, FATAL
@@ -3066,7 +3067,7 @@ def rename_reshape(graph):
                         and all([(s == d or d == -1) for (s, d) in zip(out_shapes[0], dim)]):
                     dim = out_shapes[0][:]
                     if -1 in reshape_obj.shape[:]:
-                        symbol = reshape_obj.cal_output_symbol()
+                        symbol = reshape_obj.infer_symbol()
                         out_edges = graph.sorted_out_edges(reshape, data=True)
                         for out_edge in out_edges:
                             out_edge[2]['tensor'].symbol = symbol
@@ -3431,10 +3432,10 @@ def rename_where(graph):
         where = m['target']
         where_obj = NodeWrap(graph, where)['object']
         if where_obj is not None:
-            in_consts = where_obj.sorted_in_consts()
-            for c, _, v in in_consts:
-                if v is not None:
-                    NodeWrap(graph, c)['object'].value = v.astype(np.float32)
+            # in_consts = where_obj.sorted_in_consts()
+            # for c, _, v in in_consts:
+            #     if v is not None:
+            #         NodeWrap(graph, c)['object'].value = v.astype(np.float32)
             select_attr = where_obj.copied_attr()
             NodeWrap(graph, where).replace_obj('ArmWhere', select_attr)
 
@@ -5559,7 +5560,8 @@ def sink_reshape_through_cast(graph):
         if cast_obj is None or len(reshape_in_edges) < 1 or len(cast_out_edges) < 1:
             ERROR('[Parser]: Meets invalid Node object in sink_reshape_through_cast!')
             continue
-        reshape_out_edges = graph.sorted_out_edges(reshape)
+        reshape_out_edges = graph.sorted_out_edges(reshape, data=True)
+        reshape_symbol = reshape_out_edges[0][-1]['tensor'].symbol
         if len(reshape_out_edges) != 1:
             continue
         graph.remove_edges_from(reshape_in_edges + cast_out_edges)
@@ -5578,7 +5580,9 @@ def sink_reshape_through_cast(graph):
                 reshape_in_attr['tensor'].activation_quantization_axis = cast_out_tensor.activation_quantization_axis
         graph.add_edge(cast, reshape, **reshape_in_attr)
         for _, dst, out_attr in cast_out_edges:
-            graph.add_edge(reshape, dst, **out_attr)
+            new_out_attr = copy.deepcopy(out_attr)
+            new_out_attr['tensor'].symbol = reshape_symbol
+            graph.add_edge(reshape, dst, **new_out_attr)
 
 
 def sink_transpose_with_const(graph):
@@ -5854,6 +5858,10 @@ def sink_transpose_through_special_reshape(graph):
 
             new_rs_shape = []
             perm_map = []
+            trans_in_symbol = trans_obj.get_input_symbols()[0]
+            new_rs_symbol = []
+            origin_rs_in_symbol = reshape_obj.get_input_symbols()[0]
+            origin_rs_out_symbol = reshape_obj.get_output_symbols()[0]
             # gen_new_reshape & perm
             for i in range(len(trans_in_shape)):
                 changed = False
@@ -5861,6 +5869,16 @@ def sink_transpose_through_special_reshape(graph):
                     rs_in_axes, rs_out_axes = mm
                     inp_rs_in_axes = [trans_obj.perm[axis] for axis in rs_in_axes]
                     inp_rs_out_shape = [reshape_out_shape[axis] for axis in rs_out_axes]
+                    inp_rs_out_symbol = []
+                    if origin_rs_out_symbol is not None:
+                        sym_map = list(zip([origin_rs_in_symbol[axis] for axis in rs_in_axes],
+                                           [trans_in_symbol[axis] for axis in inp_rs_in_axes]))
+                        for axis in rs_out_axes:
+                            if isinstance(origin_rs_out_symbol[axis], int):
+                                inp_rs_out_symbol.append(origin_rs_out_symbol[axis])
+                            else:
+                                s = origin_rs_out_symbol[axis]
+                                inp_rs_out_symbol.append(s.subs(sym_map, simultaneous=True))
                     if i in inp_rs_in_axes:
                         changed = True
                         if is_continuous_num(inp_rs_in_axes):
@@ -5868,6 +5886,8 @@ def sink_transpose_through_special_reshape(graph):
                                 new_rs_axes = list(range(len(new_rs_shape), len(new_rs_shape) + len(inp_rs_out_shape)))
                                 perm_map.append([tuple(inp_rs_in_axes), tuple(new_rs_axes)])
                                 new_rs_shape.extend(inp_rs_out_shape)
+                                if inp_rs_out_symbol:
+                                    new_rs_symbol.extend(inp_rs_out_symbol)
                         else:
                             sink_ok = False
                             break
@@ -5875,6 +5895,7 @@ def sink_transpose_through_special_reshape(graph):
                         continue
                 if not changed:
                     new_rs_shape.append(trans_in_shape[i])
+                    new_rs_symbol.append(trans_in_symbol[i])
 
             if not sink_ok:
                 continue
@@ -5937,6 +5958,7 @@ def sink_transpose_through_special_reshape(graph):
                     reshape_in_edges[0][2]['tensor'].value, reshape_obj.dim)
             else:
                 reshape_out_tensor.shape = reshape_obj.dim
+            reshape_out_tensor.symbol = new_rs_symbol
             graph.add_edge(reshape, new_transpose, **{'tensor': reshape_out_tensor})
 
             new_transpose_attr = reshape_obj.copied_attr()
@@ -5956,6 +5978,68 @@ def sink_transpose_through_special_reshape(graph):
 
     if matched:
         clear_redundant_nodes(graph)
+
+# convert special reshape to transpose to facilitate fusion with other transpose
+
+
+def convert_special_reshape(graph):
+    matches = single_node_matcher(graph, 'ArmReshape')
+    for m in matches:
+        rs = m['target']
+        rs_obj = NodeWrap(graph, rs)['object']
+        if rs_obj is None:
+            ERROR(
+                '[Parser]: Meets invalid ArmReshape Node(%s) in convert_special_reshape!' % rs)
+            continue
+        rs_in_edges = graph.sorted_in_edges(rs)
+        rs_out_edges = graph.sorted_out_edges(rs, data=True)
+        if len(rs_out_edges) != 1:
+            continue
+        last_op_obj = NodeWrap(graph, rs_in_edges[0][0])['object']
+        next_op_obj = NodeWrap(graph, rs_out_edges[0][1])['object']
+        if last_op_obj is not None and \
+                next_op_obj is not None and \
+                (last_op_obj.type == 'ArmTranspose' or next_op_obj.type == 'ArmTranspose'):
+            rs_in_shape = rs_obj.get_input_shapes()[0]
+            if rs_in_shape is None or any([s is None for s in rs_in_shape]):
+                continue
+            rs_out_shape = rs_obj.get_output_shapes()[0]
+            if rs_out_shape is None or any([s is None for s in rs_out_shape]):
+                continue
+            if len(rs_in_shape) != len(rs_out_shape):
+                continue
+            changed_axes = []
+            rs_in_non_one_dims = []
+            rs_out_non_one_dims = []
+            for i in range(len(rs_in_shape)):
+                if rs_in_shape[i] != rs_out_shape[i]:
+                    changed_axes.append(i)
+                    if rs_in_shape[i] != 1:
+                        rs_in_non_one_dims.append(i)
+                    if rs_out_shape[i] != 1:
+                        rs_out_non_one_dims.append(i)
+            changed_axes_len = len(changed_axes)
+            if changed_axes_len == 2 and len(rs_in_non_one_dims) == len(rs_out_non_one_dims) == 1:
+                if not is_continuous_num(changed_axes):
+                    # check discontinuous axis
+                    discontinuous_axes = [x for x in range(
+                        changed_axes[0], changed_axes[-1] + 1) if x not in changed_axes]
+                    if any([rs_in_shape[axis] != 1 for axis in discontinuous_axes]):
+                        continue
+                # check changed dims have len(changed_axes)-1 shape 1
+                new_perm = list(range(len(rs_in_shape)))
+                new_perm[rs_out_non_one_dims[0]] = rs_in_non_one_dims[0]
+                new_perm[rs_in_non_one_dims[0]] = rs_out_non_one_dims[0]
+
+                out_symbol = [Symbol(f's{axis}') for axis in new_perm]
+                for _, dst, out_attr in rs_out_edges:
+                    out_attr['tensor'].symbol = out_symbol
+
+                new_transpose_attr = rs_obj.copied_attr()
+                new_transpose_attr.update(
+                    {'name': rs, 'perm': new_perm})
+                NodeWrap(graph, rs).replace_obj(
+                    'ArmTranspose', new_transpose_attr)
 
 
 def sink_transpose_through_split(graph):
@@ -6453,6 +6537,7 @@ def back_passes(graph, params):
     remove_redundant_slice(graph)
     remove_special_transpose(graph)
     sink_transpose_through_special_reshape(graph)
+    convert_special_reshape(graph)
     sink_quantize_through_concat(graph)
     sink_single_reshape(graph)
     remove_redundant_reshape_transpose(graph)
@@ -6486,6 +6571,7 @@ def back_passes(graph, params):
                           merge_same_op_at_out_port
                           ]:
                     f(graph)
+                    convert_special_reshape(graph)
                     remove_redundant_transpose(graph)
                     remove_redundant_transpose_unaware(graph)
                     remove_redundant_reshape(graph, 'ArmReshape')
