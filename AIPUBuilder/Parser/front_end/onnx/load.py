@@ -7,6 +7,7 @@ from collections import defaultdict, OrderedDict
 import itertools
 import numpy as np
 import onnx
+from sympy import Symbol
 from ...graph.graph import Graph, SubGraph
 from .buffer import get_model_content, parse_proto, get_tensor_content, get_value_content, get_node_content, \
     get_graph_content
@@ -26,7 +27,7 @@ onnx_source_map = {
 }
 
 
-def gen_input_tensor(name, shape, dtype, params):
+def gen_input_tensor(name, shape, dtype, params, dynamic_shape=[]):
     if 0 in shape and name not in params.get('input_shapes', {}):
         WARN('[Parser]: Shape 0 found in Input node(%s), please check config file!' %
              name)
@@ -47,7 +48,34 @@ def gen_input_tensor(name, shape, dtype, params):
             input_tensor = np.random.ranf(
                 size=shape).astype(input_type)
         is_const = False
-    return Tensor(name=name, value=input_tensor, is_const=is_const)
+    symbol = []
+    if params['dynamic_axes']:
+        if isinstance(params['dynamic_axes'], dict) and name in params['dynamic_axes']:
+            dynamic_axes = params['dynamic_axes'][name]
+            shape_len = len(shape)
+            dynamic_axes = [axis if axis >= 0 else axis + shape_len for axis in dynamic_axes]
+            idx_start = 0
+            for n, s in params['input_shapes'].items():
+                if n != name:
+                    idx_start += len(s)
+                else:
+                    break
+            for i, s in enumerate(shape):
+                if i in dynamic_axes:
+                    symbol.append(Symbol(f'd{idx_start + i}'))
+                else:
+                    symbol.append(s)
+        elif isinstance(params['dynamic_axes'], list) and dynamic_shape:
+            assert len(dynamic_shape) == len(shape)
+            for i, ds in enumerate(dynamic_shape):
+                if ds in params['dynamic_axes']:
+                    symbol.append(Symbol(ds))
+                else:
+                    symbol.append(shape[i])
+        else:
+            raise NotImplementedError('Not support this dynamic_axes format yet.')
+
+    return Tensor(name=name, value=input_tensor, is_const=is_const, symbol=symbol)
 
 
 def build_subgraph(current_node_name,
@@ -733,6 +761,7 @@ def convert_onnx_to_graph(graph, model_path, params):
                             del custom_input_infos[single_input['name']]
 
                         input_shape = single_input['type']['tensor_type']['shape'].tolist()
+                        ds = single_input['type']['tensor_type']['dynamic_shape']
                         if 'input_shapes' in params and len(input_shape) >= 1:
                             name = single_input['name']
                             if name not in params['input_shapes']:
@@ -747,7 +776,7 @@ def convert_onnx_to_graph(graph, model_path, params):
                                 input_shape[:] = params['input_shapes'][name][:]
 
                         inp_tensor = gen_input_tensor(single_input['name'], input_shape,
-                                                      single_input['type']['tensor_type']['elem_type'], params)
+                                                      single_input['type']['tensor_type']['elem_type'], params, ds)
 
                         graph._attr['input_tensors'].update({
                             single_input['name']: inp_tensor

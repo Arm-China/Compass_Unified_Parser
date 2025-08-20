@@ -25,7 +25,7 @@ def univ_parser(params):
         if model_pathes:
             model_path = model_pathes[0]
         else:
-            ERROR('Model path in cfg is incorrect, please check!')
+            FATAL('Model path in cfg is incorrect, please check!')
             ret = False
         output_dir = params.get('output_dir', './')
         model_type = params.get('model_type', '')
@@ -88,6 +88,15 @@ def univ_parser(params):
         else:
             params['enable_ds'] = False
 
+        if 'dynamic_axes' in params:
+            da = params['dynamic_axes'].strip()
+            if da[0] == '[' and da[-1] == ']':
+                params['dynamic_axes'] = list_string_to_list(da)
+            else:
+                params['dynamic_axes'] = multi_string_to_list(da)
+        else:
+            params['dynamic_axes'] = []
+
         params['input_layouts'] = multi_string_to_list(params['input_layout']) if 'input_layout' in params else []
 
         def _parse_npy(key_name):
@@ -145,6 +154,16 @@ def univ_parser(params):
         if len(params['input_names']) == input_shapes_cnt:
             params['input_shapes'] = {
                 params['input_names'][i]: v for i, v in enumerate(params['input_shapes'])}
+            if params['dynamic_axes']:
+                params['enable_ds'] = True
+                if isinstance(params['dynamic_axes'][0][0], int):
+                    if len(params['dynamic_axes']) == input_shapes_cnt:
+                        params['dynamic_axes'] = {
+                            params['input_names'][i]: v for i, v in enumerate(params['dynamic_axes'])}
+                    else:
+                        FATAL(
+                            '[Parser]: Length of input_names should be equal to length of dynamic_axes! '
+                            'Please check config file!')
         else:
             if input_shapes_cnt == 0:
                 params['input_shapes'] = {name: None for name in params['input_names']}
@@ -188,7 +207,9 @@ def univ_parser(params):
         else:
             if not params.get('model_name', ''):
                 params['model_name'] = model_type + '_model'
-            graph = Graph(name=params['model_name'], model_type=model_type)
+            graph = Graph(name=params['model_name'],
+                          model_type=model_type,
+                          enable_ds=params['enable_ds'])
 
             tmp_tensors_dir = '.%s_tmp_tensors' % params.get('model_name', '')
             tmp_tensors_path = os.path.join(output_dir, tmp_tensors_dir)

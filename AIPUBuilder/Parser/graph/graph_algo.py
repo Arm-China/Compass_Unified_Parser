@@ -181,6 +181,7 @@ def infer(graph, partial=False, chosen_list=None, final=False):
                                         np.dtype(casted_type))
                         if node_name in graph._attr['input_tensors']:
                             infer_data = graph._attr['input_tensors'][node_name].value
+                            inp_symbol = graph._attr['input_tensors'][node_name].symbol
                         else:
                             if node_obj.type == 'DummyInput' and isinstance(graph, SubGraph):
                                 from ..common.utils import get_target_graph
@@ -202,7 +203,7 @@ def infer(graph, partial=False, chosen_list=None, final=False):
                             else:
                                 log_func('[Parser]: Meet unsupported op type %s in Node(%s)!' %
                                          (node_obj.type, node_name))
-                        node_obj.infer_shape(infer_data)
+                        node_obj.infer_shape(infer_data, inp_symbol)
                     elif isinstance(node_obj, UndefinedOp):
                         log_func('[Parser]: Meet unsupported op type %s in Node(%s)!' % (node_obj.type, node_name))
                     elif isinstance(node_obj, PluginOp):

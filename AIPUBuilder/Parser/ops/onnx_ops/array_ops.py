@@ -774,6 +774,7 @@ class ReshapeOp(OpHasOneOutPort, OnnxOp):
 
     def __init__(self, graph, attr_dict=None):
         super(ReshapeOp, self).__init__(graph, attr_dict)
+        self.origin_shape = None
         self.update_attributes(ReshapeOp, attr_dict)
         assert self.check_required(), 'ReshapeOp is missing a required parameter.'
 
@@ -788,6 +789,7 @@ class ReshapeOp(OpHasOneOutPort, OnnxOp):
                 else:
                     if cur_ver == 1:
                         shape = self._attr[item].value
+                        self.origin_shape = shape
                     else:
                         in_edges = self._graph.sorted_in_edges(
                             self.name, data=True)
@@ -801,6 +803,7 @@ class ReshapeOp(OpHasOneOutPort, OnnxOp):
                     try:
                         if np.ndim(shape) == 0:
                             shape = [shape]
+                        self.origin_shape = shape.copy()
                         if 0 in shape:
                             for idx, val in enumerate(shape):
                                 if val == 0:
@@ -824,38 +827,67 @@ class ReshapeOp(OpHasOneOutPort, OnnxOp):
         super(ReshapeOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor = np.reshape(inputs[0], self.shape)
-        self.set_out_tensor(out_tensor)
+        out_symbol = self.infer_symbol()
+        self.set_out_tensor(out_tensor, out_symbol)
 
-    def cal_output_symbol(self):
+    def infer_symbol(self):
+        if not self._graph._attr['enable_ds']:
+            return None
         input_shape = self.get_input_shapes()[0]
-        output_shape = self.get_output_shapes()[0]
-        symbol = [None] * len(output_shape)
-        axes_map = Op.cal_reshape_changed_axis_map(input_shape, output_shape)
-        for i in range(len(output_shape)):
-            changed = False
-            unchanged_axis = None
-            for in_axes, out_axes in axes_map:
-                if i in out_axes:
-                    changed = True
-                    if len(out_axes) == 1:
-                        out_axis = out_axes[0]
-                        if self.shape[out_axis] == -1:
-                            symbol[out_axis] = -1
-                        else:
-                            _symbol = ''
-                            for axis in in_axes:
-                                _symbol += f's{axis}*'
-                            symbol[out_axis] = _symbol[:-1]
+        input_symbol = self.get_input_symbols()[0]
+        output_shape = self.shape if self.origin_shape is None else self.origin_shape
+        output_symbol = [None] * len(output_shape)
+        if 0 in output_shape or -1 in output_shape:
+            for i, s in enumerate(output_shape):
+                if s == 0 and self.allowzero == 0:
+                    output_symbol[i] = input_symbol[i]
+                else:
+                    output_symbol[i] = s
+        else:
+            axes_map = Op.cal_reshape_changed_axis_map(input_shape, output_shape)
+            if axes_map:
+                inp_unchanged_axis = 0
+                for i in range(len(output_shape)):
+                    changed_axis = False
+                    skip_axis = False
+                    for am in axes_map:
+                        if i in am[1]:
+                            if i == am[1][0]:
+                                changed_axis = True
+                                break
+                            else:
+                                skip_axis = True
+                    if skip_axis:
+                        continue
+                    if not changed_axis:
+                        output_symbol[i] = Symbol(f's{inp_unchanged_axis}')
+                        inp_unchanged_axis += 1
                     else:
-                        for out_axis in out_axes:
-                            if self.shape[out_axis] in (1, -1):
-                                symbol[out_axis] = self.shape[out_axis]
-                elif i - 1 in out_axes:
-                    unchanged_axis = in_axes[-1] + 1
-            if not changed:
-                if unchanged_axis is not None:
-                    symbol[i] = f's{unchanged_axis}'
-        return symbol
+                        for in_axes, out_axes in axes_map:
+                            if out_axes[0] == i:
+                                if len(out_axes) == 1:
+                                    out_axis = out_axes[0]
+                                    _symbol = 1
+                                    for axis in in_axes:
+                                        _symbol *= input_symbol[axis]
+                                        inp_unchanged_axis += 1
+                                    output_symbol[out_axis] = _symbol
+                                else:
+                                    _symbol = 1
+                                    for axis in in_axes:
+                                        _symbol *= input_symbol[axis]
+                                        inp_unchanged_axis += 1
+                                    out_prod = 1
+                                    for axis in out_axes:
+                                        if axis == out_axes[-1]:
+                                            output_symbol[axis] = _symbol / out_prod
+                                        else:
+                                            output_symbol[axis] = output_shape[axis]
+                                            out_prod *= output_shape[axis]
+                                break
+            else:
+                output_symbol = input_symbol.copy()
+        return output_symbol
 
 
 class ReverseSequenceOp(OpHasOneOutPort, OnnxOp):
@@ -1522,7 +1554,22 @@ class SqueezeOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
         inputs = self.get_input_tensors()
         out_tensor = np.squeeze(np.array(inputs[0]), axis=tuple(
             self.axes) if self.axes else None)
-        self.set_out_tensor(out_tensor)
+        out_symbol = self.infer_symbol()
+        self.set_out_tensor(out_tensor, out_symbol)
+
+    def infer_symbol(self):
+        if self._graph._attr['enable_ds']:
+            input_symbols = self.get_input_symbols()
+            keep_axes = []
+            for axis in range(len(input_symbols[0])):
+                if axis not in self.axes:
+                    keep_axes.append(axis)
+            out_symbol = []
+            for axis in keep_axes:
+                out_symbol.append(input_symbols[0][axis])
+        else:
+            out_symbol = None
+        return out_symbol
 
 
 class TileOp(OpHasOneOutPort, OnnxOp):
@@ -1722,7 +1769,24 @@ class UnsqueezeOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
         super(UnsqueezeOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor = np.expand_dims(np.array(inputs[0]), axis=self.axes)
-        self.set_out_tensor(out_tensor)
+        out_symbol = self.infer_symbol()
+        self.set_out_tensor(out_tensor, out_symbol)
+
+    def infer_symbol(self):
+        if self._graph._attr['enable_ds']:
+            input_symbols = self.get_input_symbols()
+            out_ndim = len(self.axes) + len(input_symbols[0])
+
+            symbol_it = iter(input_symbols[0])
+            out_symbol = []
+            for axis in range(out_ndim):
+                if axis in self.axes:
+                    out_symbol.append(1)
+                else:
+                    out_symbol.append(next(symbol_it))
+        else:
+            out_symbol = None
+        return out_symbol
 
 
 class WhereOp(OpNeedBroadcast, OpHasOneOutPort, OnnxOp):
