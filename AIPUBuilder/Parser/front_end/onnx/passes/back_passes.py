@@ -3067,7 +3067,7 @@ def rename_reshape(graph):
                         and all([(s == d or d == -1) for (s, d) in zip(out_shapes[0], dim)]):
                     dim = out_shapes[0][:]
                     if -1 in reshape_obj.shape[:]:
-                        symbol = reshape_obj.cal_output_symbol()
+                        symbol = reshape_obj.infer_symbol()
                         out_edges = graph.sorted_out_edges(reshape, data=True)
                         for out_edge in out_edges:
                             out_edge[2]['tensor'].symbol = symbol
@@ -5560,7 +5560,8 @@ def sink_reshape_through_cast(graph):
         if cast_obj is None or len(reshape_in_edges) < 1 or len(cast_out_edges) < 1:
             ERROR('[Parser]: Meets invalid Node object in sink_reshape_through_cast!')
             continue
-        reshape_out_edges = graph.sorted_out_edges(reshape)
+        reshape_out_edges = graph.sorted_out_edges(reshape, data=True)
+        reshape_symbol = reshape_out_edges[0][-1]['tensor'].symbol
         if len(reshape_out_edges) != 1:
             continue
         graph.remove_edges_from(reshape_in_edges + cast_out_edges)
@@ -5579,7 +5580,9 @@ def sink_reshape_through_cast(graph):
                 reshape_in_attr['tensor'].activation_quantization_axis = cast_out_tensor.activation_quantization_axis
         graph.add_edge(cast, reshape, **reshape_in_attr)
         for _, dst, out_attr in cast_out_edges:
-            graph.add_edge(reshape, dst, **out_attr)
+            new_out_attr = copy.deepcopy(out_attr)
+            new_out_attr['tensor'].symbol = reshape_symbol
+            graph.add_edge(reshape, dst, **new_out_attr)
 
 
 def sink_transpose_with_const(graph):
@@ -5855,6 +5858,10 @@ def sink_transpose_through_special_reshape(graph):
 
             new_rs_shape = []
             perm_map = []
+            trans_in_symbol = trans_obj.get_input_symbols()[0]
+            new_rs_symbol = []
+            origin_rs_in_symbol = reshape_obj.get_input_symbols()[0]
+            origin_rs_out_symbol = reshape_obj.get_output_symbols()[0]
             # gen_new_reshape & perm
             for i in range(len(trans_in_shape)):
                 changed = False
@@ -5862,6 +5869,16 @@ def sink_transpose_through_special_reshape(graph):
                     rs_in_axes, rs_out_axes = mm
                     inp_rs_in_axes = [trans_obj.perm[axis] for axis in rs_in_axes]
                     inp_rs_out_shape = [reshape_out_shape[axis] for axis in rs_out_axes]
+                    inp_rs_out_symbol = []
+                    if origin_rs_out_symbol is not None:
+                        sym_map = list(zip([origin_rs_in_symbol[axis] for axis in rs_in_axes],
+                                           [trans_in_symbol[axis] for axis in inp_rs_in_axes]))
+                        for axis in rs_out_axes:
+                            if isinstance(origin_rs_out_symbol[axis], int):
+                                inp_rs_out_symbol.append(origin_rs_out_symbol[axis])
+                            else:
+                                s = origin_rs_out_symbol[axis]
+                                inp_rs_out_symbol.append(s.subs(sym_map, simultaneous=True))
                     if i in inp_rs_in_axes:
                         changed = True
                         if is_continuous_num(inp_rs_in_axes):
@@ -5869,6 +5886,8 @@ def sink_transpose_through_special_reshape(graph):
                                 new_rs_axes = list(range(len(new_rs_shape), len(new_rs_shape) + len(inp_rs_out_shape)))
                                 perm_map.append([tuple(inp_rs_in_axes), tuple(new_rs_axes)])
                                 new_rs_shape.extend(inp_rs_out_shape)
+                                if inp_rs_out_symbol:
+                                    new_rs_symbol.extend(inp_rs_out_symbol)
                         else:
                             sink_ok = False
                             break
@@ -5876,6 +5895,7 @@ def sink_transpose_through_special_reshape(graph):
                         continue
                 if not changed:
                     new_rs_shape.append(trans_in_shape[i])
+                    new_rs_symbol.append(trans_in_symbol[i])
 
             if not sink_ok:
                 continue
@@ -5938,6 +5958,7 @@ def sink_transpose_through_special_reshape(graph):
                     reshape_in_edges[0][2]['tensor'].value, reshape_obj.dim)
             else:
                 reshape_out_tensor.shape = reshape_obj.dim
+            reshape_out_tensor.symbol = new_rs_symbol
             graph.add_edge(reshape, new_transpose, **{'tensor': reshape_out_tensor})
 
             new_transpose_attr = reshape_obj.copied_attr()

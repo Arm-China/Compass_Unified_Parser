@@ -568,11 +568,15 @@ class InputOp(OpHasOneOutPort, InputLikeOp, CommonOp):
         self.update_attributes(InputOp, attr_dict)
         assert self.check_required(), 'InputOp is missing a required parameter.'
 
-    def infer_shape(self, input_tensor=None):
+    def infer_shape(self, input_tensor=None, input_symbol=None):
         super(InputOp, self).infer_shape()
         assert input_tensor is not None, 'input shape is empty in InputOp.'
         out_tensor = input_tensor.copy()
-        self.set_out_tensor(out_tensor)
+        if input_symbol is not None:
+            out_symbol = input_symbol.copy()
+            self.set_out_tensor(out_tensor, out_symbol)
+        else:
+            self.set_out_tensor(out_tensor)
 
 
 class InTopKOp(LayoutUnawareOp, OpHasOneOutPort, CommonOp):

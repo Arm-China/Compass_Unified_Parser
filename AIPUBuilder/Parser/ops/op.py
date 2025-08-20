@@ -9,6 +9,7 @@ import copy
 from functools import reduce
 from collections import OrderedDict, defaultdict
 from collections.abc import Iterable
+from sympy import Symbol, symbols
 import itertools
 import numpy as np
 import torch
@@ -93,16 +94,15 @@ class Op(abc.ABC):
     @staticmethod
     def symbol_to_shape(shape, symbol):
         new_shape = []
+        sub_list = []
+        for i, s in enumerate(shape):
+            sub_list.append((Symbol(f's{i}'), s))
         for s in symbol:
-            if isinstance(s, str):
-                s_list = s.split('*')
-                tmp_shape = 1
-                for _s in s_list:
-                    idx = int(_s[1:])
-                    tmp_shape *= shape[idx]
-                new_shape.append(tmp_shape)
-            else:
+            if isinstance(s, int):
                 new_shape.append(s)
+            else:
+                tmp_shape = s.subs(sub_list)
+                new_shape.append(tmp_shape)
         if -1 in new_shape:
             idx = new_shape.index(-1)
             new_shape[idx] = int(np.prod(shape) // (-np.prod(new_shape)))
@@ -455,8 +455,8 @@ class Op(abc.ABC):
             txt_file.write('layer_top_shape=[%s]\n' % string_list_to_string(
                 top_info[1] if len(top_info) >= 3 else []))
             # TODO: experimental feature
-            # if len(top_info) >= 4 and 'symbol' in top_info[3][0] and self._graph._attr.get('enable_ds', False):
-            #     txt_file.write('ds_output_shape=[%s]\n' % string_list_to_string(top_info[3][0]['symbol']))
+            if len(top_info) >= 4 and 'symbol' in top_info[3][0] and self._graph._attr.get('enable_ds', False):
+                txt_file.write('ds_output_shape=[%s]\n' % string_list_to_string(top_info[3][0]['symbol']))
 
             if self._graph._attr.get('quantize', False) \
                     and len(top_info) >= 4 \
@@ -653,6 +653,24 @@ class Op(abc.ABC):
                   (self.name, str(e)))
             return []
 
+    def get_input_symbols(self):
+        '''Get input symbol of the node.'''
+        try:
+            from sympy import symbols
+            ret = []
+            idx = 0
+            for _, _, _, d in self._graph.sorted_in_edges(self.name, keys=True, data=True):
+                try:
+                    shape = list(d['tensor'].get_shape())
+                    ret.append([symbols(f's{i + idx}') for i in range(len(shape))])
+                    idx += len(shape)
+                except:
+                    ret.append(None)
+            return ret
+        except Exception as e:
+            ERROR('[Parser]: An exception occurred with get_input_symbols. Node(%s) %s' % (
+                self.name, str(e)))
+
     def get_output_symbols(self):
         '''Returns the output symbol of all outputs to this op.'''
         try:
@@ -833,7 +851,7 @@ class OpHasOneOutPort(Op):
         '''An abstract method for shape inference.'''
         super(OpHasOneOutPort, self).infer_shape()
 
-    def set_out_tensor(self, tensor_data):
+    def set_out_tensor(self, tensor_data, out_symbol=None):
         '''set the out tensor of this op.'''
         try:
             is_const = self.is_all_inputs_const()
@@ -844,6 +862,8 @@ class OpHasOneOutPort(Op):
             for _, _, d in self._graph.sorted_out_edges(self.name, data=True):
                 if d.get('tensor', None) is not None:
                     d['tensor'].value = tensor_data
+                    if out_symbol is not None:
+                        d['tensor'].symbol = out_symbol
                     if tensor_data is not None:
                         d['tensor'].shape = d['tensor'].value.shape
                         d['tensor'].is_const = is_const

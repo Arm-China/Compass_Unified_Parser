@@ -119,6 +119,14 @@ optional arguments in Common section of <net.cfg>:
     enable_ds           If enable dynamic shape mode, if set to true, some ops will not be optimized.(e.g. Shape/
                         ConstantOfShape...). (default: False)
     loop_max_count      Loop max count for Loop op infer shape. (default: 100)
+    dynamic_axes        [Experiment]Specific which axis is dynamic in input shapes. List corresponding to input_shape 
+                        or string of input_shape(onnx only).
+                        Accepted range is [-r, r-1] where r = rank(input)(default: None)
+                        Example:
+                            dynamic_axes=[],[0, 3] means two inputs in model, and axis 0 and axis 3 in 2nd input are 
+                            dynamic.
+                            dynamic_axes=batch_size,sequence_length means batch_size and sequence_length axes named in 
+                            model input shapes are dynamic.
     ''')
     args.add_argument('-c', '--cfg', metavar='<net.cfg>',
                       type=str, required=True,

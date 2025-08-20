@@ -615,6 +615,18 @@ def remove_redundant_reshape(graph, type='Reshape'):
         if len(reshape_1_in_shapes) >= 1 \
                 and len(reshape_2_out_shapes) >= 1 \
                 and reshape_1 not in graph._attr['output_names']:
+            rs1_out_symbol = reshape_1_obj.get_output_symbols()[0]
+            rs2_out_symbol = reshape_2_obj.get_output_symbols()[0]
+            new_rs_out_symbol = []
+            if rs1_out_symbol is not None and None not in rs1_out_symbol \
+                    and rs2_out_symbol is not None and None not in rs2_out_symbol:
+                rs2_in_symbol = reshape_2_obj.get_input_symbols()[0]
+                sym_map = list(zip(rs2_in_symbol, rs1_out_symbol))
+                for s in rs2_out_symbol:
+                    if isinstance(s, int):
+                        new_rs_out_symbol.append(s)
+                    else:
+                        new_rs_out_symbol.append(s.subs(sym_map, simultaneous=True))
             if len(reshape_1_out_edges) == 1:
                 remove_node_safely(graph, reshape_1)
                 if type == 'Reshape' and len(reshape_2_edges) == 2:
@@ -632,6 +644,10 @@ def remove_redundant_reshape(graph, type='Reshape'):
                     if reshape_2 in graph._attr['output_names']:
                         index = graph._attr['output_names'].index(reshape_2)
                         graph._attr['output_names'][index] = src
+                else:
+                    if new_rs_out_symbol:
+                        for _, dst, out_attr in reshape_2_out_edges:
+                            out_attr['tensor'].symbol = new_rs_out_symbol
                 clear_redundant_nodes(graph)
             elif len(reshape_1_out_edges) > 1:
                 reshape_1_out_node_objs = []

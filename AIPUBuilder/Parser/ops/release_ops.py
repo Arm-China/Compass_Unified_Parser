@@ -2742,11 +2742,15 @@ class ArmInputOp(OpHasOneOutPort, InputLikeOp, ArmOp):
         self.update_attributes(ArmInputOp, attr_dict)
         assert self.check_required(), 'ArmInputOp is missing a required parameter.'
 
-    def infer_shape(self, input_tensor=None):
+    def infer_shape(self, input_tensor=None, input_symbol=None):
         super(ArmInputOp, self).infer_shape()
         assert input_tensor is not None, f'input tensor({self.name}) is empty in ArmInputOp.'
         out_tensor = input_tensor.copy()
-        self.set_out_tensor(out_tensor)
+        if input_symbol is not None:
+            out_symbol = input_symbol.copy()
+            self.set_out_tensor(out_tensor, out_symbol)
+        else:
+            self.set_out_tensor(out_tensor)
 
     def write_attrs(self, txt_file):
         ret = super(ArmInputOp, self).write_attrs(txt_file)
