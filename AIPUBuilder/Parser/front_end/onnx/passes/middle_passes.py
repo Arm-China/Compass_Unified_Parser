@@ -12350,50 +12350,79 @@ def convert_div_to_mul(graph):
         clear_redundant_nodes(graph)
 
 
-def remove_sub_add_pair(graph):
-    matches_1 = matched_patterns(graph,
-                                 nodes=[
-                                     ('const_1', {'op': 'Constant'}),
-                                     ('sub', {'op': 'Sub'}),
-                                     ('const_2', {'op': 'Constant'}),
-                                     ('add', {'op': 'Add'}),
-                                 ],
-                                 edges=[
-                                     ('const_1', 'sub', {'dst_in_port': 1}),
-                                     ('sub', 'add'),
-                                     ('const_2', 'add', {'dst_in_port': 1}),
-                                 ])
-    matches_2 = matched_patterns(graph,
-                                 nodes=[
-                                     ('const_1', {'op': 'Constant'}),
-                                     ('add', {'op': 'Add'}),
-                                     ('const_2', {'op': 'Constant'}),
-                                     ('sub', {'op': 'Sub'}),
-                                 ],
-                                 edges=[
-                                     ('const_1', 'add', {'dst_in_port': 1}),
-                                     ('add', 'sub'),
-                                     ('const_2', 'sub', {'dst_in_port': 1}),
-                                 ])
-    all_matches = matches_1 + matches_2
+def remove_sub_add_mul_div_pair(graph):
+    all_matches = []
+    for op_pair in [('Sub', 'Add'), ('Div', 'Mul')]:
+        matches_1 = matched_patterns(graph,
+                                     nodes=[
+                                         ('const_1', {'op': 'Constant'}),
+                                         ('sub_div', {'op': op_pair[0]}),
+                                         ('const_2', {'op': 'Constant'}),
+                                         ('add_mul', {'op': op_pair[1]}),
+                                     ],
+                                     edges=[
+                                         ('const_1', 'sub_div', {'dst_in_port': 1}),
+                                         ('sub_div', 'add_mul', {'src_out_port': 0}),
+                                         ('const_2', 'add_mul'),
+                                     ])
+        matches_2 = matched_patterns(graph,
+                                     nodes=[
+                                         ('const_1', {'op': 'Constant'}),
+                                         ('sub_div', {'op': op_pair[0]}),
+                                         ('add_mul', {'op': op_pair[1]}),
+                                     ],
+                                     edges=[
+                                         ('const_1', 'sub_div', {'dst_in_port': 1}),
+                                         ('const_1', 'add_mul'),
+                                         ('sub_div', 'add_mul', {'src_out_port': 0}),
+                                     ])
+        matches_3 = matched_patterns(graph,
+                                     nodes=[
+                                         ('const_1', {'op': 'Constant'}),
+                                         ('add_mul', {'op': op_pair[1]}),
+                                         ('const_2', {'op': 'Constant'}),
+                                         ('sub_div', {'op': op_pair[0]}),
+                                     ],
+                                     edges=[
+                                         ('const_1', 'add_mul',),
+                                         ('add_mul', 'sub_div', {'dst_in_port': 0}),
+                                         ('const_2', 'sub_div', {'dst_in_port': 1}),
+                                     ])
+        matches_4 = matched_patterns(graph,
+                                     nodes=[
+                                         ('const_1', {'op': 'Constant'}),
+                                         ('add_mul', {'op': op_pair[1]}),
+                                         ('sub_div', {'op': op_pair[0]}),
+                                     ],
+                                     edges=[
+                                         ('const_1', 'add_mul'),
+                                         ('const_1', 'sub_div', {'dst_in_port': 1}),
+                                         ('add_mul', 'sub_div', {'src_out_port': 0}),
+                                     ])
+        all_matches += matches_1 + matches_2 + matches_3 + matches_4
     for m in all_matches:
-        const_1, const_2, add, sub = m['const_1'], m['const_2'], m['add'], m['sub']
-        if not graph.has_node(add) or not graph.has_node(sub):
-            ERROR('[Parser]: Node (%s or %s or %s or %s) cannot be found, graph maybe has been changed!' % (
-                const_1, const_2, add, sub))
+        const_1, sub_div, add_mul = m['const_1'], m['sub_div'], m['add_mul']
+        const_2 = m['const_2'] if 'const_2' in m else None
+        if not graph.has_node(sub_div) or not graph.has_node(add_mul):
+            ERROR('[Parser]: Node (%s or %s or %s) cannot be found, graph maybe has been changed!' % (
+                const_1, sub_div, add_mul))
             continue
-        inp = add if sub in graph.children(add) else sub
-        out = sub if inp == add else add
+        inp = sub_div if add_mul in graph.children(sub_div) else add_mul
+        out = add_mul if inp == sub_div else sub_div
         inp_out_edges = graph.sorted_out_edges(inp)
         const_1_node = NodeWrap(graph, const_1)
-        const_2_node = NodeWrap(graph, const_2)
         if len(inp_out_edges) == 1 \
-                and const_1_node['object'].value is not None \
-                and const_2_node['object'].value is not None \
-                and const_1_node['object'].value.shape == const_2_node['object'].value.shape \
-                and np.all(const_1_node['object'].value == const_2_node['object'].value):
-            remove_node_safely(graph, out)
-            remove_node_safely(graph, inp)
+                and const_1_node['object'].value is not None:
+            if const_2 is not None:
+                const_2_node = NodeWrap(graph, const_2)
+                if const_2_node['object'].value is not None \
+                        and const_1_node['object'].value.shape == const_2_node['object'].value.shape \
+                        and np.all(const_1_node['object'].value == const_2_node['object'].value):
+                    remove_node_safely(graph, out)
+                    remove_node_safely(graph, inp)
+            else:
+                remove_node_safely(graph, out)
+                remove_node_safely(graph, inp)
 
 
 def remove_special_gather(graph):
@@ -13952,7 +13981,7 @@ def middle_passes(graph, params):
     convert_sigmoid_mul_to_swish(graph)
     remove_useless_op(graph, ['Cast', 'Concat', 'Identity', 'Pad', 'Slice',
                               'Transpose', 'Reshape', 'AveragePool', 'MaxPool', 'Resize'])
-    remove_sub_add_pair(graph)
+    remove_sub_add_mul_div_pair(graph)
     merge_divmod(graph)
     merge_divmod2(graph)
     merge_clip(graph)
