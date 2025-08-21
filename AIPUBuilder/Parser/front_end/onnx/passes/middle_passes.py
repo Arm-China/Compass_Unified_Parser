@@ -3233,30 +3233,29 @@ def convert_loop_cond_out(graph):
             cond_out_obj = NodeWrap(graph, cond_out_name)['object']
             cond_out_shape = cond_out_obj.get_output_shapes()[0]
             if cond_out_shape is not None and None not in cond_out_shape:
-                if cond_out_shape != []:
-                    # insert reduce any
+                if cond_out_shape and int(np.prod(cond_out_shape)) > 1:
+                    # insert gather_nd to get the first value
                     _, dst, out_attr = graph.sorted_out_edges(cond_out_name, data=True)[0]
                     graph.remove_edge(cond_out_name, dst)
-                    reduce_node = get_valid_node_name(graph, cond_out_name + '_reduce')
-                    graph.add_node(reduce_node)
-                    graph.add_edge(cond_out_name, reduce_node, **out_attr)
-                    NodeWrap(graph, reduce_node).replace_obj(
-                        'ArmReduce', {'name': reduce_node,
-                                      'axes': list(range(len(cond_out_shape))),
-                                      'method': 'ANY'})
-                    reduce_output_shape = [1] * len(cond_out_shape)
+                    gather_node = get_valid_node_name(graph, cond_out_name + '_gather')
+                    graph.add_node(gather_node)
+                    graph.add_edge(cond_out_name, gather_node, **out_attr)
+                    # insert indice
+                    rank_cond_out = len(cond_out_shape)
+                    indices = np.zeros([rank_cond_out], dtype=np.int64)
+                    insert_constant(graph, gather_node + '_indice', indices, gather_node, in_port=1)
+                    NodeWrap(graph, gather_node).replace_obj(
+                        'GatherND', {'name': gather_node,
+                                     'batch_dims': 0, 'opset_version': 13})
                     new_out_attr = copy.deepcopy(out_attr)
                     if new_out_attr['tensor'].value is not None:
-                        new_out_attr['tensor'].value = np.any(
-                            out_attr['tensor'].value, keepdims=True)
+                        new_out_attr['tensor'].value = np.take(out_attr['tensor'].value, 0)
                     else:
-                        new_out_attr['tensor'].shape = reduce_output_shape
-                    graph.add_edge(reduce_node, dst, **new_out_attr)
-                    reshape = insert_reshape(
-                        graph, reduce_node, dst, new_out_attr, dim=[], quantize=cond_out_obj.quantize)
+                        new_out_attr['tensor'].shape = []
+                    graph.add_edge(gather_node, dst, **new_out_attr)
                     if cond_out_name in graph._attr['output_names']:
                         index = graph._attr['output_names'].index(cond_out_name)
-                        graph._attr['output_names'][index] = reshape
+                        graph._attr['output_names'][index] = gather_node
 
 
 def convert_min_max_to_clip(graph):
