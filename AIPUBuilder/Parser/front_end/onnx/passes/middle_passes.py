@@ -898,6 +898,83 @@ def convert_gather_to_slice(graph):
                         graph._attr['output_names'].remove(gather)
                         graph._attr['output_names'].insert(index, reshape)
 
+# for better performance in lib
+
+
+def convert_gathernd_to_gather(graph):
+    matches = single_node_matcher(graph, 'GatherND')
+    for m in matches:
+        gathernd = m['target']
+        gathernd_obj = NodeWrap(graph, gathernd)['object']
+        if gathernd_obj is not None:
+            in_edges = graph.sorted_in_edges(gathernd, data=True)
+            input_shapes = gathernd_obj.get_input_shapes()
+            in_consts = gathernd_obj.sorted_in_consts()
+            batch_dims = gathernd_obj.batch_dims
+            if len(in_edges) == 2 \
+                    and len(input_shapes) == 2 \
+                    and input_shapes[0] is not None \
+                    and input_shapes[1] is not None \
+                    and input_shapes[1][-1] == 1 \
+                    and batch_dims == 0 \
+                    and len(in_consts) == 1 \
+                    and in_consts[0][2] is not None:
+                graph.remove_edges_from(in_edges[1:])
+                indices_value = in_consts[0][2].squeeze(axis=-1)
+                scale_zp = in_edges[1][2]['tensor'].scale_zp
+
+                insert_constant(graph, gathernd + '_new_indices', indices_value, gathernd, in_port=1,
+                                scale_zp=scale_zp, data_format='NHWC',
+                                quantize=gathernd_obj.quantize)
+
+                gather_attr = gathernd_obj.copied_attr()
+                gather_attr.update(
+                    {'name': gathernd, 'opset_version': 13, 'axis': 0})
+                NodeWrap(graph, gathernd).replace_obj('Gather', gather_attr)
+
+
+# for better performance in lib
+def convert_scatterele_to_scatternd(graph):
+    matches = single_node_matcher(graph, 'ScatterElements')
+    for m in matches:
+        node_name = m['target']
+        node_obj = NodeWrap(graph, node_name)['object']
+        if node_obj is not None:
+            in_edges = graph.sorted_in_edges(node_name, data=True)
+            input_shapes = node_obj.get_input_shapes()
+            axis = node_obj.axis
+            input_rank = len(input_shapes[0])
+            if None in input_shapes or any([None in s for s in input_shapes]):
+                continue
+            indices_tensor = in_edges[1][2]['tensor']
+            if not indices_tensor.is_const or indices_tensor.value is None:
+                continue
+            if len(in_edges) == 3 \
+                    and len(input_shapes) == 3 \
+                    and axis == 0 and input_rank >= 2:
+                last_dim = input_shapes[1][-1]
+
+                # check indices if can be de-tile to [..., input_rank - 1]
+                expected_last_dim = input_rank - 1
+                if last_dim % expected_last_dim != 0:
+                    continue
+                indices_value = indices_tensor.value
+                compare_base = np.take(indices_value, axis=-1, indices=np.arange(0, expected_last_dim))
+                if not np.allclose(indices_value, np.broadcast_to(compare_base, input_shapes[1]), equal_nan=True):
+                    continue
+
+                indices_name = in_edges[1][0]
+                graph.remove_edge(indices_name, node_name)
+                scale_zp = in_edges[1][2]['tensor'].scale_zp
+                insert_constant(graph, node_name + '_new_indices', compare_base, node_name, in_port=1,
+                                scale_zp=scale_zp, data_format='NHWC',
+                                quantize=node_obj.quantize)
+
+                scnd_attr = node_obj.copied_attr()
+                scnd_attr.update(
+                    {'name': node_name, 'opset_version': 16})
+                NodeWrap(graph, node_name).replace_obj('ScatterND', scnd_attr)
+
 
 def convert_gemm_to_fc(graph):
     matches = single_node_matcher(graph, 'Gemm')
@@ -14038,6 +14115,8 @@ def middle_passes(graph, params):
     convert_gemm_to_fc(graph)
     convert_special_matmul_to_fc(graph)
     fuse_mul_add_or_sub(graph)
+    convert_gathernd_to_gather(graph)
+    convert_scatterele_to_scatternd(graph)
     merge_gather_slice(graph)
     remove_special_gather(graph)
     fuse_gather_const_mul(graph)
