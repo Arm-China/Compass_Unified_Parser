@@ -951,12 +951,13 @@ def convert_scatterele_to_scatternd(graph):
                 continue
             if len(in_edges) == 3 \
                     and len(input_shapes) == 3 \
-                    and axis == 0 and input_rank >= 2:
+                    and axis == 0 and input_rank >= 2 \
+                    and input_shapes[0][-1] == input_shapes[1][-1] == input_shapes[2][-1]:
                 last_dim = input_shapes[1][-1]
 
                 # check indices if can be de-tile to [..., input_rank - 1]
                 expected_last_dim = input_rank - 1
-                if last_dim % expected_last_dim != 0:
+                if expected_last_dim != 1:
                     continue
                 indices_value = indices_tensor.value
                 compare_base = np.take(indices_value, axis=-1, indices=np.arange(0, expected_last_dim))
