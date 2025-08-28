@@ -7262,111 +7262,139 @@ def convert_rotary_embedding_ms(graph):
             continue
         embd_in_edges = graph.sorted_in_edges(embd, data=True)
         embd_out_edges = graph.sorted_out_edges(embd, data=True)
-        if len(embd_in_edges) == 4 and \
-                NodeWrap(graph, embd_in_edges[2][0])['object'].type == 'Constant' and \
-                NodeWrap(graph, embd_in_edges[3][0])['object'].type == 'Constant':
-            input = embd_in_edges[0][0]
-            position_ids = embd_in_edges[1][0]
-            cos_cache = embd_in_edges[2][0]
-            sin_cache = embd_in_edges[3][0]
-            input_shapes = embd_obj.get_input_shapes()
-            bs, seq_len, hidden_size = input_shapes[0][:3]
-            if len(input_shapes[0]) == 4:
-                seq_len = input_shapes[0][2]
-                hidden_size = input_shapes[0][1] * input_shapes[0][3]
-            max_seq_len = embd_obj.cos_cache.shape[0]
-            head_size = embd_obj.cos_cache.shape[1] * \
-                2 if embd_obj.rotary_embedding_dim == 0 else hidden_size // embd_obj.num_heads
-            num_heads = int(np.prod(input_shapes[0])) // (bs * seq_len * head_size)
-            rs0 = insert_reshape(graph, input, embd, embd_in_edges[0][-1], [bs, seq_len, num_heads, head_size])
-            # tile cos_cache & sin_cache
-            tile_cos = insert_tile(graph, cos_cache, embd, embd_in_edges[2][-1], [1, 2])
-            tile_sin = insert_tile(graph, sin_cache, embd, embd_in_edges[3][-1], [1, 2])
+        input_shapes = embd_obj.get_input_shapes()
+        position_id_shape = input_shapes[1]
+        input = embd_in_edges[0][0]
+        position_ids = embd_in_edges[1][0]
+        cos_cache = embd_in_edges[2][0]
+        sin_cache = embd_in_edges[3][0]
 
-            # get cos embedding
-            tile_cos_out_edges = graph.sorted_out_edges(tile_cos, data=True)
-            gather_cos = insert_gather(graph, tile_cos, embd, position_ids, axis=0, edge_attr=tile_cos_out_edges[0][-1])
-            gather_cos_out_edges = graph.sorted_out_edges(gather_cos, data=True)
-            gather_cos_output_shape = list(gather_cos_out_edges[0][-1]['tensor'].shape)
-            gather_cos_output_shape.insert(2, 1)
-            rs_cos = insert_reshape(graph, gather_cos, embd, gather_cos_out_edges[0][-1], gather_cos_output_shape)
-            cos_mul = get_valid_node_name(graph, rs_cos + '_post_mul')
-            graph.add_node(cos_mul)
-            cos_mul_attr = {'name': cos_mul, 'opset_version': 13}
-            graph.add_edge(rs_cos, cos_mul, **{'src_out_port': 0, 'dst_in_port': 1,
-                                               'tensor': Tensor(shape=gather_cos_output_shape)})
-            graph.add_edge(rs0, cos_mul, **{'src_out_port': 0, 'dst_in_port': 0,
-                                            'tensor': Tensor(shape=(bs, seq_len, num_heads, head_size))})
-            NodeWrap(graph, cos_mul).replace_obj('Mul', cos_mul_attr)
+        bs, seq_len, hidden_size = input_shapes[0][:3]
+        if len(input_shapes[0]) == 4:
+            seq_len = input_shapes[0][2]
+            hidden_size = input_shapes[0][1] * input_shapes[0][3]
+        max_seq_len = embd_obj.cos_cache.shape[0]
+        head_size = embd_obj.cos_cache.shape[1] * \
+            2 if embd_obj.rotary_embedding_dim == 0 else hidden_size // embd_obj.num_heads
+        num_heads = int(np.prod(input_shapes[0])) // (bs * seq_len * head_size)
 
-            # crop input & concat
-            inp_crop0 = get_valid_node_name(graph, rs0 + '_post_slice')
-            graph.add_node(inp_crop0)
-            inp_crop0_attr = {'name': inp_crop0, 'opset_version': 1,
-                              'axes': [-1], 'starts': [head_size // 2], 'ends': [head_size]}
-            graph.add_edge(rs0, inp_crop0, **{'src_out_port': 0, 'dst_in_port': 0,
-                                              'tensor': Tensor(shape=(bs, seq_len, num_heads, head_size))})
-            NodeWrap(graph, inp_crop0).replace_obj('Slice', inp_crop0_attr)
+        if len(position_id_shape) == 2 and FLOAT_EQUAL(embd_obj.scale, 1.0):
+            # convert to onnx rotary_embedding
+            graph.remove_edge(position_ids, embd)
+            graph.remove_edge(cos_cache, embd)
+            graph.remove_edge(sin_cache, embd)
 
-            neg = get_valid_node_name(graph, inp_crop0 + '_post_neg')
-            graph.add_node(neg)
-            neg_attr = {'name': neg, 'opset_version': 13}
-            graph.add_edge(inp_crop0, neg, **{'src_out_port': 0, 'dst_in_port': 0,
-                                              'tensor': Tensor(shape=(bs, seq_len, num_heads, head_size // 2))})
-            NodeWrap(graph, neg).replace_obj('Neg', neg_attr)
+            position_id_in_attr = embd_in_edges[1][-1]
+            position_id_in_attr['dst_in_port'] = 3
+            graph.add_edge(position_ids, embd, **position_id_in_attr)
 
-            inp_crop1 = get_valid_node_name(graph, rs0 + '_post_slice')
-            graph.add_node(inp_crop1)
-            inp_crop1_attr = {'name': inp_crop1, 'opset_version': 1, 'axes': [-1], 'ends': [head_size // 2],
-                              'starts': [0]}
-            graph.add_edge(rs0, inp_crop1, **{'src_out_port': 0, 'dst_in_port': 0,
-                                              'tensor': Tensor(shape=(bs, seq_len, num_heads, head_size))})
-            NodeWrap(graph, inp_crop1).replace_obj('Slice', inp_crop1_attr)
+            cos_in_attr = embd_in_edges[2][-1]
+            cos_in_attr['dst_in_port'] = 1
+            graph.add_edge(cos_cache, embd, **cos_in_attr)
 
-            concat = get_valid_node_name(graph, rs0 + '_post_concat')
-            graph.add_node(concat)
-            concat_attr = {'name': concat, 'opset_version': 13, 'axis': -1}
-            graph.add_edge(neg, concat, **{'src_out_port': 0, 'dst_in_port': 0,
-                                           'tensor': Tensor(shape=(bs, seq_len, num_heads, head_size // 2))})
-            graph.add_edge(inp_crop1, concat, **{'src_out_port': 0, 'dst_in_port': 1,
-                                                 'tensor': Tensor(shape=(bs, seq_len, num_heads, head_size // 2))})
-            NodeWrap(graph, concat).replace_obj('Concat', concat_attr)
+            sin_in_attr = embd_in_edges[3][-1]
+            sin_in_attr['dst_in_port'] = 2
+            graph.add_edge(sin_cache, embd, **sin_in_attr)
 
-            # get sin embedding
-            tile_sin_out_edges = graph.sorted_out_edges(tile_sin, data=True)
-            gather_sin = insert_gather(graph, tile_sin, embd, position_ids, axis=0, edge_attr=tile_sin_out_edges[0][-1])
-            gather_sin_out_edges = graph.sorted_out_edges(gather_sin, data=True)
-            gather_sin_output_shape = list(gather_sin_out_edges[0][-1]['tensor'].shape)
-            gather_sin_output_shape.insert(2, 1)
-            rs_sin = insert_reshape(graph, gather_sin, embd, gather_sin_out_edges[0][-1], gather_sin_output_shape)
-            sin_mul = get_valid_node_name(graph, rs_sin + '_post_mul')
-            graph.add_node(sin_mul)
-            sin_mul_attr = {'name': sin_mul, 'opset_version': 13}
-            graph.add_edge(rs_sin, sin_mul, **{'src_out_port': 0, 'dst_in_port': 1})
-            graph.add_edge(concat, sin_mul, **{'src_out_port': 0, 'dst_in_port': 0})
-            NodeWrap(graph, sin_mul).replace_obj('Mul', sin_mul_attr)
-
-            # Add cos_mul & sin_mul
-            add = get_valid_node_name(graph, embd + '_post_add')
-            graph.add_node(add)
-            add_attr = {'name': add, 'opset_version': 13}
-            graph.add_edge(sin_mul, add, **{'src_out_port': 0, 'dst_in_port': 1})
-            graph.add_edge(cos_mul, add, **{'src_out_port': 0, 'dst_in_port': 0})
-            NodeWrap(graph, add).replace_obj('Add', add_attr)
-
-            rs1 = insert_reshape(graph, add, embd, {'src_out_port': 0, 'dst_in_port': 0}, input_shapes[0])
-            graph.remove_edges_from(embd_in_edges)
-            graph.remove_edges_from(embd_out_edges)
-
-            for _, dst, out_attr in embd_out_edges:
-                tmp_out_attr = copy.deepcopy(out_attr)
-                tmp_out_attr.update({'src_out_port': 0})
-                graph.add_edge(rs1, dst, **tmp_out_attr)
-
-            clear_redundant_nodes(graph)
+            rope_attr = embd_obj.copied_attr()
+            rope_attr.update({'opset_version': 23, 'num_heads': num_heads})
+            NodeWrap(graph, embd).replace_obj('RotaryEmbedding', rope_attr)
         else:
-            ERROR(
-                '[Parser]: non-const cos_cache/sin_cache of RotaryEmbeddingMs node(%s) not support yet!' % embd)
+            if len(embd_in_edges) == 4 and \
+                    NodeWrap(graph, embd_in_edges[2][0])['object'].type == 'Constant' and \
+                    NodeWrap(graph, embd_in_edges[3][0])['object'].type == 'Constant':
+
+                rs0 = insert_reshape(graph, input, embd, embd_in_edges[0][-1], [bs, seq_len, num_heads, head_size])
+                # tile cos_cache & sin_cache
+                tile_cos = insert_tile(graph, cos_cache, embd, embd_in_edges[2][-1], [1, 2])
+                tile_sin = insert_tile(graph, sin_cache, embd, embd_in_edges[3][-1], [1, 2])
+
+                # get cos embedding
+                tile_cos_out_edges = graph.sorted_out_edges(tile_cos, data=True)
+                gather_cos = insert_gather(graph, tile_cos, embd, position_ids,
+                                           axis=0, edge_attr=tile_cos_out_edges[0][-1])
+                gather_cos_out_edges = graph.sorted_out_edges(gather_cos, data=True)
+                gather_cos_output_shape = list(gather_cos_out_edges[0][-1]['tensor'].shape)
+                gather_cos_output_shape.insert(2, 1)
+                rs_cos = insert_reshape(graph, gather_cos, embd, gather_cos_out_edges[0][-1], gather_cos_output_shape)
+                cos_mul = get_valid_node_name(graph, rs_cos + '_post_mul')
+                graph.add_node(cos_mul)
+                cos_mul_attr = {'name': cos_mul, 'opset_version': 13}
+                graph.add_edge(rs_cos, cos_mul, **{'src_out_port': 0, 'dst_in_port': 1,
+                                                   'tensor': Tensor(shape=gather_cos_output_shape)})
+                graph.add_edge(rs0, cos_mul, **{'src_out_port': 0, 'dst_in_port': 0,
+                                                'tensor': Tensor(shape=(bs, seq_len, num_heads, head_size))})
+                NodeWrap(graph, cos_mul).replace_obj('Mul', cos_mul_attr)
+
+                # crop input & concat
+                inp_crop0 = get_valid_node_name(graph, rs0 + '_post_slice')
+                graph.add_node(inp_crop0)
+                inp_crop0_attr = {'name': inp_crop0, 'opset_version': 1,
+                                  'axes': [-1], 'starts': [head_size // 2], 'ends': [head_size]}
+                graph.add_edge(rs0, inp_crop0, **{'src_out_port': 0, 'dst_in_port': 0,
+                                                  'tensor': Tensor(shape=(bs, seq_len, num_heads, head_size))})
+                NodeWrap(graph, inp_crop0).replace_obj('Slice', inp_crop0_attr)
+
+                neg = get_valid_node_name(graph, inp_crop0 + '_post_neg')
+                graph.add_node(neg)
+                neg_attr = {'name': neg, 'opset_version': 13}
+                graph.add_edge(inp_crop0, neg, **{'src_out_port': 0, 'dst_in_port': 0,
+                                                  'tensor': Tensor(shape=(bs, seq_len, num_heads, head_size // 2))})
+                NodeWrap(graph, neg).replace_obj('Neg', neg_attr)
+
+                inp_crop1 = get_valid_node_name(graph, rs0 + '_post_slice')
+                graph.add_node(inp_crop1)
+                inp_crop1_attr = {'name': inp_crop1, 'opset_version': 1, 'axes': [-1], 'ends': [head_size // 2],
+                                  'starts': [0]}
+                graph.add_edge(rs0, inp_crop1, **{'src_out_port': 0, 'dst_in_port': 0,
+                                                  'tensor': Tensor(shape=(bs, seq_len, num_heads, head_size))})
+                NodeWrap(graph, inp_crop1).replace_obj('Slice', inp_crop1_attr)
+
+                concat = get_valid_node_name(graph, rs0 + '_post_concat')
+                graph.add_node(concat)
+                concat_attr = {'name': concat, 'opset_version': 13, 'axis': -1}
+                graph.add_edge(neg, concat, **{'src_out_port': 0, 'dst_in_port': 0,
+                                               'tensor': Tensor(shape=(bs, seq_len, num_heads, head_size // 2))})
+                graph.add_edge(inp_crop1, concat, **{'src_out_port': 0, 'dst_in_port': 1,
+                                                     'tensor': Tensor(shape=(bs, seq_len, num_heads, head_size // 2))})
+                NodeWrap(graph, concat).replace_obj('Concat', concat_attr)
+
+                # get sin embedding
+                tile_sin_out_edges = graph.sorted_out_edges(tile_sin, data=True)
+                gather_sin = insert_gather(graph, tile_sin, embd, position_ids,
+                                           axis=0, edge_attr=tile_sin_out_edges[0][-1])
+                gather_sin_out_edges = graph.sorted_out_edges(gather_sin, data=True)
+                gather_sin_output_shape = list(gather_sin_out_edges[0][-1]['tensor'].shape)
+                gather_sin_output_shape.insert(2, 1)
+                rs_sin = insert_reshape(graph, gather_sin, embd, gather_sin_out_edges[0][-1], gather_sin_output_shape)
+                sin_mul = get_valid_node_name(graph, rs_sin + '_post_mul')
+                graph.add_node(sin_mul)
+                sin_mul_attr = {'name': sin_mul, 'opset_version': 13}
+                graph.add_edge(rs_sin, sin_mul, **{'src_out_port': 0, 'dst_in_port': 1})
+                graph.add_edge(concat, sin_mul, **{'src_out_port': 0, 'dst_in_port': 0})
+                NodeWrap(graph, sin_mul).replace_obj('Mul', sin_mul_attr)
+
+                # Add cos_mul & sin_mul
+                add = get_valid_node_name(graph, embd + '_post_add')
+                graph.add_node(add)
+                add_attr = {'name': add, 'opset_version': 13}
+                graph.add_edge(sin_mul, add, **{'src_out_port': 0, 'dst_in_port': 1})
+                graph.add_edge(cos_mul, add, **{'src_out_port': 0, 'dst_in_port': 0})
+                NodeWrap(graph, add).replace_obj('Add', add_attr)
+
+                rs1 = insert_reshape(graph, add, embd, {'src_out_port': 0, 'dst_in_port': 0}, input_shapes[0])
+                graph.remove_edges_from(embd_in_edges)
+                graph.remove_edges_from(embd_out_edges)
+
+                for _, dst, out_attr in embd_out_edges:
+                    tmp_out_attr = copy.deepcopy(out_attr)
+                    tmp_out_attr.update({'src_out_port': 0})
+                    graph.add_edge(rs1, dst, **tmp_out_attr)
+
+                clear_redundant_nodes(graph)
+            else:
+                ERROR(
+                    '[Parser]: non-const cos_cache/sin_cache of RotaryEmbeddingMs node(%s) not support yet!' % embd)
 
 
 def convert_mha(graph):
