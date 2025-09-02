@@ -49,6 +49,7 @@ def gen_input_tensor(name, shape, dtype, params, dynamic_shape=[]):
                 size=shape).astype(input_type)
         is_const = False
     symbol = []
+    global_symbols = []
     if params['dynamic_axes']:
         if isinstance(params['dynamic_axes'], dict) and name in params['dynamic_axes']:
             dynamic_axes = params['dynamic_axes'][name]
@@ -62,20 +63,24 @@ def gen_input_tensor(name, shape, dtype, params, dynamic_shape=[]):
                     break
             for i, s in enumerate(shape):
                 if i in dynamic_axes:
-                    symbol.append(Symbol(f'd{idx_start + i}'))
+                    global_s = Symbol(f'd{idx_start + i}')
+                    global_symbols.append(global_s)
+                    symbol.append(global_s)
                 else:
                     symbol.append(s)
         elif isinstance(params['dynamic_axes'], list) and dynamic_shape:
             assert len(dynamic_shape) == len(shape)
             for i, ds in enumerate(dynamic_shape):
                 if ds in params['dynamic_axes']:
-                    symbol.append(Symbol(ds))
+                    global_s = Symbol(ds)
+                    symbol.append(global_s)
+                    global_symbols.append(global_s)
                 else:
                     symbol.append(shape[i])
         else:
             raise NotImplementedError('Not support this dynamic_axes format yet.')
 
-    return Tensor(name=name, value=input_tensor, is_const=is_const, symbol=symbol)
+    return Tensor(name=name, value=input_tensor, is_const=is_const, symbol=symbol), global_symbols
 
 
 def build_subgraph(current_node_name,
@@ -775,8 +780,10 @@ def convert_onnx_to_graph(graph, model_path, params):
                                     and len(input_shape) == len(params['input_shapes'][name]):
                                 input_shape[:] = params['input_shapes'][name][:]
 
-                        inp_tensor = gen_input_tensor(single_input['name'], input_shape,
-                                                      single_input['type']['tensor_type']['elem_type'], params, ds)
+                        inp_tensor, global_symbols = gen_input_tensor(single_input['name'], input_shape,
+                                                                      single_input['type']['tensor_type']['elem_type'], params, ds)
+                        if global_symbols:
+                            graph._attr['global_symbols'].update(global_symbols)
 
                         graph._attr['input_tensors'].update({
                             single_input['name']: inp_tensor
@@ -1206,9 +1213,9 @@ def convert_onnx_to_graph(graph, model_path, params):
                                         graph._attr['input_tensors'].update({in_node_name: out_edges[0][2]['tensor']})
                                     else:
                                         try:
-                                            inp_tensor = gen_input_tensor(in_node_name,
-                                                                          custom_input_infos[in_name]['shape'],
-                                                                          custom_input_infos[in_name]['dtype'], params)
+                                            inp_tensor, global_symbols = gen_input_tensor(in_node_name,
+                                                                                          custom_input_infos[in_name]['shape'],
+                                                                                          custom_input_infos[in_name]['dtype'], params)
                                         except:
                                             ERROR(
                                                 '[Parser]: Shape of Input(%s) is unknown! Please provide input_shape in cfg file!' % in_name)

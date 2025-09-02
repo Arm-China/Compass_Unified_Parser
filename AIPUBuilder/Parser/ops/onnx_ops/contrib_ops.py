@@ -37,42 +37,48 @@ class MultiHeadAttentionMsOp(OpHasVariableOutPorts, OnnxOp):
         assert len(inputs) <= 8, f'MultiHeadAttentionMsOp should have 1~8 inputs, but got {len(inputs)}'
 
         query = inputs[0]
+        bs, seq_len = inputs[0].shape[:2]
         self.head_dim = query.shape[-1] // self.num_heads
-        key = inputs[1] if len(inputs) > 1 else None
-        value = inputs[2] if len(inputs) > 2 else None
-        bias = inputs[3] if len(inputs) > 3 else None
-        key_padding_mask = inputs[4] if len(inputs) > 4 else None
-        attention_bias = inputs[5] if len(inputs) > 5 else None
-        past_key = inputs[6] if len(inputs) > 6 else None
-        past_value = inputs[7] if len(inputs) > 7 else None
+        if self.is_all_inputs_const():
+            key = inputs[1] if len(inputs) > 1 else None
+            value = inputs[2] if len(inputs) > 2 else None
+            bias = inputs[3] if len(inputs) > 3 else None
+            key_padding_mask = inputs[4] if len(inputs) > 4 else None
+            attention_bias = inputs[5] if len(inputs) > 5 else None
+            past_key = inputs[6] if len(inputs) > 6 else None
+            past_value = inputs[7] if len(inputs) > 7 else None
 
-        # TODO, add infer if bias/key_padding_mask/past_key/past_value is not None
-        # TODO, add present_key/value output
-        def split_heads(x):
-            x = x.reshape(x.shape[0], -1, self.num_heads, self.head_dim)
-            return x.transpose(0, 2, 1, 3)
+            # TODO, add infer if bias/key_padding_mask/past_key/past_value is not None
+            # TODO, add present_key/value output
+            def split_heads(x):
+                x = x.reshape(x.shape[0], -1, self.num_heads, self.head_dim)
+                return x.transpose(0, 2, 1, 3)
 
-        def concat_heads(x):
-            x = np.transpose(x, [0, 2, 1, 3])
-            return x.reshape(x.shape[0], -1, self.num_heads * self.head_dim)
+            def concat_heads(x):
+                x = np.transpose(x, [0, 2, 1, 3])
+                return x.reshape(x.shape[0], -1, self.num_heads * self.head_dim)
 
-        q_split = split_heads(query)
-        k_split = split_heads(key)
-        qk_matmul = np.matmul(q_split, np.transpose(k_split, [0, 1, 3, 2]))
-        scores = qk_matmul * self.scale
-        attention_out = scores + attention_bias
-        attention = torch.softmax(torch.tensor(attention_out), dim=-1)
-        v_split = split_heads(value)
-        output = np.matmul(attention.cpu().numpy(), v_split)
+            q_split = split_heads(query)
+            k_split = split_heads(key)
+            qk_matmul = np.matmul(q_split, np.transpose(k_split, [0, 1, 3, 2]))
+            scores = qk_matmul * self.scale
+            attention_out = scores + attention_bias
+            attention = torch.softmax(torch.tensor(attention_out), dim=-1)
+            v_split = split_heads(value)
+            output = np.matmul(attention.cpu().numpy(), v_split)
 
-        # concat heads
-        out_tensors = [concat_heads(output)]
+            # concat heads
+            out_tensors = [concat_heads(output)]
+        else:
+            out_tensor = np.random.ranf((bs, seq_len, self.num_heads * self.head_dim)).astype(inputs[0].dtype)
+            out_tensors = [out_tensor]
+        out_symbols = [self.get_input_symbols(local=True)[0]]
         out_ports = self.get_out_ports()
         # if 1 in out_ports:
         #     out_tensors.append(np.array(std_var, np.float32))
         # if 2 in out_ports:
         #     out_tensors.append(np.array(std_var, np.float32))
-        self.set_out_tensor(out_tensors)
+        self.set_out_tensor(out_tensors, out_symbols)
 
 
 class QGemmMsOp(OpHasOneOutPort, OnnxOp):
@@ -572,7 +578,8 @@ class RotaryEmbeddingMsOp(OpHasOneOutPort, OnnxOp):
         sin_emb = np.expand_dims(np.take(sin_cache, np.array(postion_ids, np.int32), axis=0), axis=2)
         sin_mul = rotate_input * np.tile(sin_emb, reps=(1, 1, int(input.shape[2]), 1))
         out_tensor = np.reshape((cos_mul + sin_mul), (bs, seq_len, -1)).astype(input.dtype)
-        self.set_out_tensor(out_tensor)
+        out_symbol = self.get_input_symbols(local=True)[0]
+        self.set_out_tensor(out_tensor, out_symbol)
 
 
 class SkipSimplifiedLayerNormalizationMsOp(OpHasVariableOutPorts, OnnxOp):
@@ -622,4 +629,22 @@ class SkipSimplifiedLayerNormalizationMsOp(OpHasVariableOutPorts, OnnxOp):
             output_tensors.append(variance.astype(np.float32))
         if 3 in out_ports:
             output_tensors.append(inp_skip_bias_sum.astype(input.dtype))
-        self.set_out_tensor(output_tensors)
+        out_symbols = self.cal_output_symbol()
+        self.set_out_tensor(output_tensors, out_symbols)
+
+    def cal_output_symbol(self):
+        if self._graph._attr['enable_ds']:
+            input_symbols = self.get_input_symbols(local=True)
+            out_ports = self.get_out_ports()
+            out_symbols = [input_symbols[0]]
+            mean_var_symbol = input_symbols[0]
+            mean_var_symbol[-1] = 1
+            if 1 in out_ports:
+                out_symbols.append(mean_var_symbol)
+            if 2 in out_ports:
+                out_symbols.append(mean_var_symbol)
+            if 3 in out_ports:
+                out_symbols.append(input_symbols[0])
+        else:
+            out_symbols = []
+        return out_symbols

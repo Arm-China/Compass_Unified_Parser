@@ -21,7 +21,7 @@ from ....graph.graph_algo import has_path, get_valid_node_name, all_simple_paths
 from ....graph.pattern_match import matched_patterns, single_node_matcher, two_nodes_matcher
 
 
-def fuse_const(graph):
+def fuse_const(graph, final=False):
     matches = single_node_matcher(graph, '')
     for m in matches:
         node_name = m['target']
@@ -31,10 +31,19 @@ def fuse_const(graph):
                 ERROR(
                     '[Parser]: Meets invalid Node (%s) in fuse_const!' % node_name)
                 continue
-            if not isinstance(node_obj, ConstLikeOp) \
-                    and isinstance(node_obj, OpHasOneOutPort) \
-                    and node_obj.is_all_inputs_const() \
-                    and not node_obj.is_inputs_dynamic():
+            ds_condition = False
+            if node_obj.type not in ('Constant', 'ArmConstant') and \
+                    isinstance(node_obj, OpHasOneOutPort):
+                if node_obj.is_inputs_dynamic() or not node_obj.is_all_inputs_const():
+                    if graph._attr['enable_ds'] \
+                            and final and node_obj.type[:3] != 'Arm' \
+                            and isinstance(node_obj, ConstLikeOp):
+                        ds_condition = True
+                        WARN(f'{node_obj.type}({node_name}) not support dynamic now, we infer it as static shape instead.')
+                else:
+                    ds_condition = True
+                if not ds_condition:
+                    continue
                 out_edge = graph.sorted_out_edges(node_name, data=True)
                 if len(out_edge) >= 1 and out_edge[0][2]['tensor'] is not None and out_edge[0][2]['tensor'].value is not None:
                     const_value = out_edge[0][2]['tensor'].value
@@ -1255,7 +1264,8 @@ def insert_repeat(graph, src, dst, in_attr, reps, axis=None, key=None, type='Rep
     return ret
 
 
-def insert_reshape(graph, src, dst, in_attr, dim, key=None, type='Reshape', data_format='NHWC', quantize=False):
+def insert_reshape(graph, src, dst, in_attr, dim,
+                   key=None, type='Reshape', data_format='NHWC', quantize=False, symbol=None):
     ret = None
     if graph.has_node(src) and graph.has_node(dst):
         if has_path(graph, src, dst):
@@ -1291,6 +1301,8 @@ def insert_reshape(graph, src, dst, in_attr, dim, key=None, type='Reshape', data
                 out_tensor.shape = out_tensor.value.shape
             else:
                 out_tensor.shape = tuple(dim)
+            if symbol is not None:
+                out_tensor.symbol = symbol
         reshape_out_attr.update({'src_out_port': 0, 'tensor': out_tensor})
         graph.add_edge(reshape, dst, **reshape_out_attr)
         ret = reshape
@@ -1299,7 +1311,7 @@ def insert_reshape(graph, src, dst, in_attr, dim, key=None, type='Reshape', data
     return ret
 
 
-def insert_reshape_after(graph, src, new_dim, old_dim=None, out_port=0, type='Reshape', quantize=False):
+def insert_reshape_after(graph, src, new_dim, old_dim=None, out_port=0, type='Reshape', quantize=False, symbol=None):
     ret = None
     if old_dim is None:
         old_dim = list()
@@ -1333,6 +1345,8 @@ def insert_reshape_after(graph, src, new_dim, old_dim=None, out_port=0, type='Re
                 graph.remove_edge(src, dst, key)
                 new_out_attr = copy.deepcopy(out_attr)
                 new_out_attr['src_out_port'] = 0
+                if symbol is not None and new_out_attr.get('tensor', None) is not None:
+                    new_out_attr['tensor'].symbol = symbol
                 graph.add_edge(reshape, dst, **new_out_attr)
                 if new_out_attr.get('tensor', None) is not None:
                     new_out_tensor_shape = new_out_attr['tensor'].get_shape()

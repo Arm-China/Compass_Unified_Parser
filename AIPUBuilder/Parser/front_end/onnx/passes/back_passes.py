@@ -5858,9 +5858,9 @@ def sink_transpose_through_special_reshape(graph):
 
             new_rs_shape = []
             perm_map = []
-            trans_in_symbol = trans_obj.get_input_symbols()[0]
+            trans_in_symbol = trans_obj.get_input_symbols(local=True)[0]
             new_rs_symbol = []
-            origin_rs_in_symbol = reshape_obj.get_input_symbols()[0]
+            origin_rs_in_symbol = reshape_obj.get_input_symbols(local=True)[0]
             origin_rs_out_symbol = reshape_obj.get_output_symbols()[0]
             # gen_new_reshape & perm
             for i in range(len(trans_in_shape)):
@@ -6546,7 +6546,7 @@ def back_passes(graph, params):
     remove_redundant_transpose2(graph)
     remove_useless_op(graph, ['ArmReshape', 'ArmTranspose'])
 
-    fuse_const(graph)
+    fuse_const(graph, final=True)
     remove_const(graph)
     fuse_quant_op(graph, ['ArmEltwise', 'ArmSlice'])
 
@@ -6570,6 +6570,7 @@ def back_passes(graph, params):
                           sink_transpose_with_const,
                           merge_same_op_at_out_port
                           ]:
+                    WARN(f.__name__)
                     f(graph)
                     convert_special_reshape(graph)
                     remove_redundant_transpose(graph)

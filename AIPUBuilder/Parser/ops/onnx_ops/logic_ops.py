@@ -6,7 +6,7 @@ from ..op import *
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
-class AndOp(OpNeedBroadcast, OpHasOneOutPort, OnnxOp):
+class AndOp(MultidirectionalBroadcastOp, OpNeedBroadcast, OpHasOneOutPort, OnnxOp):
     @classmethod
     def attributes(cls):
         return {1: {'axis': {'type': AttrType.INT},
@@ -35,7 +35,8 @@ class AndOp(OpNeedBroadcast, OpHasOneOutPort, OnnxOp):
             out_tensor = np.logical_and(inputs[0], second_input)
         else:
             out_tensor = np.logical_and(*inputs)
-        self.set_out_tensor(out_tensor)
+        out_symbol = self.cal_output_symbol()
+        self.set_out_tensor(out_tensor, out_symbol)
 
     def __getattr__(self, item):
         ret = None
@@ -54,7 +55,7 @@ class AndOp(OpNeedBroadcast, OpHasOneOutPort, OnnxOp):
         return ret
 
 
-class EqualOp(OpNeedBroadcast, OpHasAxis, OpHasOneOutPort, OnnxOp):
+class EqualOp(MultidirectionalBroadcastOp, OpNeedBroadcast, OpHasAxis, OpHasOneOutPort, OnnxOp):
     @classmethod
     def attributes(cls):
         return {1: {'axis': {'type': AttrType.INT},
@@ -85,7 +86,8 @@ class EqualOp(OpNeedBroadcast, OpHasAxis, OpHasOneOutPort, OnnxOp):
             out_tensor = np.equal(inputs[0], second_input)
         else:
             out_tensor = np.equal(*inputs)
-        self.set_out_tensor(out_tensor)
+        out_symbol = self.cal_output_symbol()
+        self.set_out_tensor(out_tensor, out_symbol)
 
     def __getattr__(self, item):
         ret = None
@@ -104,7 +106,7 @@ class EqualOp(OpNeedBroadcast, OpHasAxis, OpHasOneOutPort, OnnxOp):
         return ret
 
 
-class GreaterOp(OpNeedBroadcast, OpHasAxis, OpHasOneOutPort, OnnxOp):
+class GreaterOp(MultidirectionalBroadcastOp, OpNeedBroadcast, OpHasAxis, OpHasOneOutPort, OnnxOp):
     @classmethod
     def attributes(cls):
         return {1: {'axis': {'type': AttrType.INT},
@@ -135,7 +137,8 @@ class GreaterOp(OpNeedBroadcast, OpHasAxis, OpHasOneOutPort, OnnxOp):
             out_tensor = np.greater(inputs[0], second_input)
         else:
             out_tensor = np.greater(*inputs)
-        self.set_out_tensor(out_tensor)
+        out_symbol = self.cal_output_symbol()
+        self.set_out_tensor(out_tensor, out_symbol)
 
     def __getattr__(self, item):
         ret = None
@@ -173,7 +176,7 @@ class GreaterOrEqualOp(OpNeedBroadcast, OpHasOneOutPort, OnnxOp):
         self.set_out_tensor(out_tensor)
 
 
-class LessOp(OpNeedBroadcast, OpHasAxis, OpHasOneOutPort, OnnxOp):
+class LessOp(MultidirectionalBroadcastOp, OpNeedBroadcast, OpHasAxis, OpHasOneOutPort, OnnxOp):
     @classmethod
     def attributes(cls):
         return {1: {'axis': {'type': AttrType.INT},
@@ -204,7 +207,8 @@ class LessOp(OpNeedBroadcast, OpHasAxis, OpHasOneOutPort, OnnxOp):
             out_tensor = np.less(inputs[0], second_input)
         else:
             out_tensor = np.less(*inputs)
-        self.set_out_tensor(out_tensor)
+        out_symbol = self.cal_output_symbol()
+        self.set_out_tensor(out_tensor, out_symbol)
 
     def __getattr__(self, item):
         ret = None
@@ -259,7 +263,7 @@ class NotOp(OpHasOneOutPort, OnnxOp):
         self.set_out_tensor(out_tensor)
 
 
-class OrOp(OpNeedBroadcast, OpHasOneOutPort, OnnxOp):
+class OrOp(MultidirectionalBroadcastOp, OpNeedBroadcast, OpHasOneOutPort, OnnxOp):
     @classmethod
     def attributes(cls):
         return {1: {'axis': {'type': AttrType.INT},
@@ -288,7 +292,8 @@ class OrOp(OpNeedBroadcast, OpHasOneOutPort, OnnxOp):
             out_tensor = np.logical_or(inputs[0], second_input)
         else:
             out_tensor = np.logical_or(*inputs)
-        self.set_out_tensor(out_tensor)
+        out_symbol = self.cal_output_symbol()
+        self.set_out_tensor(out_tensor, out_symbol)
 
     def __getattr__(self, item):
         ret = None
@@ -307,7 +312,7 @@ class OrOp(OpNeedBroadcast, OpHasOneOutPort, OnnxOp):
         return ret
 
 
-class XorOp(OpNeedBroadcast, OpHasOneOutPort, OnnxOp):
+class XorOp(MultidirectionalBroadcastOp, OpNeedBroadcast, OpHasOneOutPort, OnnxOp):
     @classmethod
     def attributes(cls):
         return {1: {'axis': {'type': AttrType.INT},
@@ -351,4 +356,5 @@ class XorOp(OpNeedBroadcast, OpHasOneOutPort, OnnxOp):
             out_tensor = np.logical_xor(inputs[0], second_input)
         else:
             out_tensor = np.logical_xor(*inputs)
-        self.set_out_tensor(out_tensor)
+        out_symbol = self.cal_output_symbol()
+        self.set_out_tensor(out_tensor, out_symbol)

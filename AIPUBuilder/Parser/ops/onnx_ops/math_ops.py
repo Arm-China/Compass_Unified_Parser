@@ -6,6 +6,7 @@ import math
 import torch
 import tensorflow as tf
 import numpy as np
+from sympy import Max
 from dataclasses import dataclass
 from ..op import *
 from ...common.defs import FLOAT_MIN, FLOAT_MAX, FLOAT_EQUAL, TYPE_MIN, TYPE_MAX
@@ -65,7 +66,7 @@ class AcoshOp(LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
         self.set_out_tensor(out_tensor)
 
 
-class AddOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
+class AddOp(MultidirectionalBroadcastOp, OpHasAxis, OpHasOneOutPort, OnnxOp):
     @classmethod
     def attributes(cls):
         return {1: {'axis': {'type': AttrType.INT},
@@ -105,7 +106,8 @@ class AddOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
             out_tensor = np.add(inputs[0], second_input)
         else:
             out_tensor = np.add(*inputs)
-        self.set_out_tensor(out_tensor)
+        out_symbol = self.cal_output_symbol()
+        self.set_out_tensor(out_tensor, out_symbol)
 
     def __getattr__(self, item):
         ret = None
@@ -471,7 +473,7 @@ class CumSumOp(OpHasOneOutPort, OpHasAxis, OnnxOp):
         self.set_out_tensor(out_tensor)
 
 
-class DivOp(OpHasDivisor, OpHasOneOutPort, OnnxOp):
+class DivOp(MultidirectionalBroadcastOp, OpHasDivisor, OpHasOneOutPort, OnnxOp):
     @classmethod
     def attributes(cls):
         return {1: {'axis': {'type': AttrType.INT},
@@ -513,7 +515,8 @@ class DivOp(OpHasDivisor, OpHasOneOutPort, OnnxOp):
                 out_tensor = inputs[0] // inputs[1]
             else:
                 out_tensor = np.true_divide(*inputs)
-        self.set_out_tensor(out_tensor)
+        out_symbol = self.cal_output_symbol()
+        self.set_out_tensor(out_tensor, out_symbol)
 
 
 class EinsumOp(OpHasOneOutPort, OnnxOp):
@@ -965,40 +968,50 @@ class MatMulOp(OpHasOneOutPort, OnnxOp):
     def infer_shape(self):
         super(MatMulOp, self).infer_shape()
         inputs = self.get_input_tensors()
+        out_symbol = None
         if self.is_all_inputs_const():
             out_tensor = np.matmul(*inputs)
         else:
             a_shape = list(inputs[0].shape)
             b_shape = list(inputs[1].shape)
-            a_dim = len(a_shape)
-            b_dim = len(b_shape)
-            max_dim = max(a_dim, b_dim)
-            out_shape = []
-            if max_dim != 1:
-                if a_dim == 1:
-                    out_shape = b_shape[:]
-                    del out_shape[-2]
-                elif b_dim == 1:
-                    out_shape = a_shape[:-1]
+            out_symbol = self.cal_output_symbol()
+            a_symbol, b_symbol = self.get_input_symbols(local=True)
+            sym_mp = list(zip(a_symbol, a_shape)) + list(zip(b_symbol, b_shape))
+            out_shape = Op.eval_symbol(sym_mp, out_symbol)
+            out_tensor = np.random.ranf(tuple(out_shape)).astype(inputs[0].dtype)
+        self.set_out_tensor(out_tensor, out_symbol)
+
+    def cal_output_symbol(self):
+        a_symbol, b_symbol = self.get_input_symbols(local=True)
+        a_dim = len(a_symbol)
+        b_dim = len(b_symbol)
+        max_dim = max(a_dim, b_dim)
+        out_symbol = []
+        if max_dim != 1:
+            if a_dim == 1:
+                out_symbol = b_symbol[:]
+                del out_symbol[-2]
+            elif b_dim == 1:
+                out_symbol = a_symbol[:-1]
+            else:
+                if b_dim == 2:
+                    out_symbol = a_symbol[:-1] + b_symbol[-1:]
                 else:
                     if a_dim < max_dim:
                         for i in range(max_dim - a_dim):
-                            a_shape.insert(0, 1)
+                            a_symbol.insert(0, 1)
                     if b_dim < max_dim:
                         for i in range(max_dim - b_dim):
-                            b_shape.insert(0, 1)
+                            b_symbol.insert(0, 1)
 
-                    assert a_shape[-1] == b_shape[-2], (f'MatMulOp({self.name}) shape error, '
-                                                        f'input shape is: {inputs[0].shape}, {inputs[1].shape}!')
                     for i in range(max_dim):
                         if i < max_dim - 2:
-                            out_shape.append(max(a_shape[i], b_shape[i]))
+                            out_symbol.append(Max(a_symbol[i], b_symbol[i]))
                         elif i == max_dim - 2:
-                            out_shape.append(a_shape[i])
+                            out_symbol.append(a_symbol[i])
                         else:
-                            out_shape.append(b_shape[i])
-            out_tensor = np.random.ranf(tuple(out_shape)).astype(inputs[0].dtype)
-        self.set_out_tensor(out_tensor)
+                            out_symbol.append(b_symbol[i])
+        return out_symbol
 
 
 class MatMulIntegerOp(OpHasOneOutPort, OnnxOp):
@@ -1040,7 +1053,7 @@ class MatMulIntegerOp(OpHasOneOutPort, OnnxOp):
         self.set_out_tensor(out_tensor)
 
 
-class MaxOp(OpNeedBroadcast, LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
+class MaxOp(MultidirectionalBroadcastOp, OpNeedBroadcast, LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
     @classmethod
     def attributes(cls):
         return {1: {'consumed_inputs': {'type': AttrType.INTS}},
@@ -1058,10 +1071,11 @@ class MaxOp(OpNeedBroadcast, LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
         super(MaxOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor = reduce(lambda x, y: np.maximum(x, y), inputs)
-        self.set_out_tensor(out_tensor)
+        out_symbol = self.cal_output_symbol()
+        self.set_out_tensor(out_tensor, out_symbol)
 
 
-class MeanOp(OpNeedBroadcast, OpHasOneOutPort, OnnxOp):
+class MeanOp(MultidirectionalBroadcastOp, OpNeedBroadcast, OpHasOneOutPort, OnnxOp):
     @classmethod
     def attributes(cls):
         return {1: {'consumed_inputs': {'type': AttrType.INTS}},
@@ -1081,7 +1095,8 @@ class MeanOp(OpNeedBroadcast, OpHasOneOutPort, OnnxOp):
         stacked = np.stack(inputs, axis=0)
         out_tensor = np.squeeze(
             np.mean(stacked, axis=0, keepdims=True), axis=0)
-        self.set_out_tensor(out_tensor)
+        out_symbol = self.cal_output_symbol()
+        self.set_out_tensor(out_tensor, out_symbol)
 
 
 class MeanVarianceNormalizationOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
@@ -1110,7 +1125,7 @@ class MeanVarianceNormalizationOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
         self.set_out_tensor(out_tensor)
 
 
-class MinOp(OpNeedBroadcast, LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
+class MinOp(MultidirectionalBroadcastOp, OpNeedBroadcast, LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
     @classmethod
     def attributes(cls):
         return {1: {'consumed_inputs': {'type': AttrType.INTS}},
@@ -1128,7 +1143,8 @@ class MinOp(OpNeedBroadcast, LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
         super(MinOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor = reduce(lambda x, y: np.minimum(x, y), inputs)
-        self.set_out_tensor(out_tensor)
+        out_symbol = self.cal_output_symbol()
+        self.set_out_tensor(out_tensor, out_symbol)
 
 
 class MishOp(LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
@@ -1168,7 +1184,7 @@ class ModOp(OpNeedBroadcast, LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
         self.set_out_tensor(out_tensor)
 
 
-class MulOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
+class MulOp(MultidirectionalBroadcastOp, OpHasAxis, OpHasOneOutPort, OnnxOp):
     @classmethod
     def attributes(cls):
         return {1: {'consumed_inputs': {'type': AttrType.INTS},
@@ -1204,7 +1220,8 @@ class MulOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
             out_tensor = np.multiply(inputs[0], second_input)
         else:
             out_tensor = np.multiply(*inputs)
-        self.set_out_tensor(out_tensor)
+        out_symbol = self.cal_output_symbol()
+        self.set_out_tensor(out_tensor, out_symbol)
 
     def __getattr__(self, item):
         ret = None
@@ -1265,7 +1282,7 @@ class NonZeroOp(LayoutUnawareOp, DynamicShapeOp, OpHasOneOutPort, OnnxOp):
         self.set_out_tensor(out_tensor)
 
 
-class PowOp(OpNeedBroadcast, OpHasAxis, OpHasOneOutPort, OnnxOp):
+class PowOp(MultidirectionalBroadcastOp, OpNeedBroadcast, OpHasAxis, OpHasOneOutPort, OnnxOp):
     @classmethod
     def attributes(cls):
         return {1: {'axis': {'type': AttrType.INT},
@@ -1297,7 +1314,8 @@ class PowOp(OpNeedBroadcast, OpHasAxis, OpHasOneOutPort, OnnxOp):
         else:
             out_tensor = np.power(*inputs)
         out_tensor = out_tensor.astype(inputs[0].dtype)
-        self.set_out_tensor(out_tensor)
+        out_symbol = self.cal_output_symbol()
+        self.set_out_tensor(out_tensor, out_symbol)
 
     def __getattr__(self, item):
         ret = None
@@ -2639,7 +2657,7 @@ class SqrtOp(LayoutUnawareOp, OpHasOneOutPort, OpHasNonZeroInput, OnnxOp):
         self.set_out_tensor(out_tensor.astype(inputs[0].dtype))
 
 
-class SubOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
+class SubOp(MultidirectionalBroadcastOp, OpHasAxis, OpHasOneOutPort, OnnxOp):
     @classmethod
     def attributes(cls):
         return {1: {'axis': {'type': AttrType.INT},
@@ -2673,7 +2691,8 @@ class SubOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
             out_tensor = np.subtract(inputs[0], second_input)
         else:
             out_tensor = np.subtract(*inputs)
-        self.set_out_tensor(out_tensor)
+        out_symbol = self.cal_output_symbol()
+        self.set_out_tensor(out_tensor, out_symbol)
 
     def __getattr__(self, item):
         ret = None

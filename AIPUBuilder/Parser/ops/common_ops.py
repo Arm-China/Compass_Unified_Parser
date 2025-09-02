@@ -578,6 +578,11 @@ class InputOp(OpHasOneOutPort, InputLikeOp, CommonOp):
         else:
             self.set_out_tensor(out_tensor)
 
+    def infer_symbol(self, input_symbol=None):
+        super(InputOp, self).infer_symbol()
+        assert input_symbol is not None, 'input symbol is empty in InputOp.'
+        self.set_out_symbol(input_symbol)
+
 
 class InTopKOp(LayoutUnawareOp, OpHasOneOutPort, CommonOp):
     @classmethod

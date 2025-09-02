@@ -70,6 +70,13 @@ class Framework(Enum):
     TORCH = 8
 
 
+@unique
+class DsMode(Enum):
+    NONE = 0   # static shape
+    HALF = 1   # infer with static shape if meet unsupported dynamic op
+    FULL = 2   # need support all dynamic ops
+
+
 def get_opset_version(version_number):
     ONNX_VERSION_OPSET_MAP = {
         '1.03': 8,

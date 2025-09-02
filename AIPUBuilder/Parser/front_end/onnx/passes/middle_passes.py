@@ -8,6 +8,7 @@ import copy
 import networkx as nx
 from functools import reduce
 from collections import OrderedDict
+from sympy import symbols, Symbol
 from ....common.defs import Tensor, FLOAT_EQUAL, FLOAT64_EQUAL, TYPE_MAX, TYPE_MIN
 from ....graph.graph import SubGraph
 from ....logger import INFO, DEBUG, WARN, ERROR, FATAL
@@ -1708,9 +1709,12 @@ def convert_special_matmul_to_fc(graph):
                 biases = np.zeros([weights.shape[0]], w_obj.value.dtype)
                 matmul_attr.update({'weights': weights, 'biases': biases})
             NodeWrap(graph, matmul).replace_obj('FullyConnected', matmul_attr)
-            if len(input_shapes[0]) > 2:
+            inp_rank = len(input_shapes[0])
+            if inp_rank > 2:
                 src, _, in_attr = in_edges[0]
-                insert_reshape(graph, src, matmul, in_attr, [-1, input_shapes[0][-1]], quantize=matmul_obj.quantize)
+                rs_symbol = [-1, Symbol(f's{inp_rank-1}')]
+                pre_reshape = insert_reshape(graph, src, matmul, in_attr, [-1, input_shapes[0][-1]],
+                                             quantize=matmul_obj.quantize, symbol=rs_symbol)
                 post_reshape = insert_reshape_after(graph,
                                                     matmul,
                                                     output_shapes[0],
@@ -7431,13 +7435,18 @@ def convert_mha(graph):
         attention_bias = mha_in_edges[5][0]
 
         # split query
-        rs_q = insert_reshape(graph, query, mha, mha_in_edges[0][-1], [bs, seq_len, mha_obj.num_heads, head_dim])
+        rs_q_symbol = [Symbol('s0'), Symbol('s1'), mha_obj.num_heads, Symbol('s2') / mha_obj.num_heads]
+        rs_q = insert_reshape(graph, query, mha, mha_in_edges[0][-1],
+                              [bs, seq_len, mha_obj.num_heads, head_dim],
+                              symbol=rs_q_symbol)
         rs_q_in_attr = copy.deepcopy(mha_in_edges[0][-1])
         rs_q_in_attr['tensor'].shape = [bs, seq_len, mha_obj.num_heads, head_dim]
         trans_q = insert_transpose(graph, rs_q, mha, rs_q_in_attr, perm=[0, 2, 1, 3])
 
         # split key
-        rs_k = insert_reshape(graph, key, mha, mha_in_edges[1][-1], [bs, seq_len, mha_obj.num_heads, head_dim])
+        rs_k = insert_reshape(graph, key, mha, mha_in_edges[1][-1],
+                              [bs, seq_len, mha_obj.num_heads, head_dim],
+                              symbol=rs_q_symbol[:])
         rs_k_in_attr = copy.deepcopy(mha_in_edges[1][-1])
         rs_k_in_attr['tensor'].shape = [bs, seq_len, mha_obj.num_heads, head_dim]
         trans_k = insert_transpose(graph, rs_k, mha, rs_k_in_attr, perm=[0, 2, 3, 1])
@@ -7482,7 +7491,9 @@ def convert_mha(graph):
         NodeWrap(graph, softmax).replace_obj('Softmax', softmax_attr)
 
         # split value
-        rs_v = insert_reshape(graph, value, mha, mha_in_edges[2][-1], [bs, seq_len, mha_obj.num_heads, head_dim])
+        rs_v = insert_reshape(graph, value, mha, mha_in_edges[2][-1],
+                              [bs, seq_len, mha_obj.num_heads, head_dim],
+                              symbol=rs_q_symbol[:])
         rs_v_in_attr = copy.deepcopy(mha_in_edges[2][-1])
         rs_v_in_attr['tensor'].shape = [bs, seq_len, mha_obj.num_heads, head_dim]
         trans_v = insert_transpose(graph, rs_v, mha, rs_v_in_attr, perm=[0, 2, 1, 3])
@@ -7506,7 +7517,8 @@ def convert_mha(graph):
         trans_out = insert_transpose(graph, matmul_v, mha, trans_out_in_attr, perm=[0, 2, 1, 3])
         rs_out_in_attr = copy.deepcopy(mha_in_edges[2][-1])
         rs_out_in_attr['tensor'].shape = [matmul_v_out_shape[axis] for axis in [0, 2, 1, 3]]
-        rs_out = insert_reshape(graph, trans_out, mha, rs_out_in_attr, q_shape)
+        rs_out_symbol = [Symbol('s0'), Symbol('s1'), Symbol('s2') * Symbol('s3')]
+        rs_out = insert_reshape(graph, trans_out, mha, rs_out_in_attr, q_shape, symbol=rs_out_symbol)
         graph.remove_edges_from(mha_in_edges)
         graph.remove_edges_from(mha_out_edges)
 

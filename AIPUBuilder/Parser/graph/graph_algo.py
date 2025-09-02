@@ -238,3 +238,59 @@ def infer(graph, partial=False, chosen_list=None, final=False):
     else:
         ERROR('[Parser]: Meets empty graph when inferring!')
     return ret
+
+
+def infer_symbol(graph, output_node=None):
+    if len(graph) > 0:
+        nodes_list = determined_sort(graph, graph._attr['output_names'])
+
+        for node_name in nodes_list:
+            node_obj = NodeWrap(graph, node_name)['object']
+            if node_obj is not None:
+                if node_obj.in_subgraph:
+                    DEBUG('[Parser]: Subgraph Node(%s) is in infer, result is not guaranteed!' % node_name)
+
+                try:
+                    if isinstance(node_obj, InputLikeOp):
+                        inp_symbol = None
+                        if node_name in graph._attr['input_tensors']:
+                            inp_symbol = graph._attr['input_tensors'][node_name].symbol
+                        else:
+                            if node_obj.type == 'DummyInput' and isinstance(graph, SubGraph):
+                                # TODO
+                                pass
+                            else:
+                                ERROR('[Parser]: Meet unsupported op type %s in Node(%s)!' %
+                                      (node_obj.type, node_name))
+                        node_obj.infer_symbol(inp_symbol)
+                    elif isinstance(node_obj, UndefinedOp):
+                        ERROR('[Parser]: Meet unsupported op type %s in Node(%s)!' % (node_obj.type, node_name))
+                    elif isinstance(node_obj, PluginOp):
+                        node_obj.infer_symbol()
+                    else:
+                        node_obj.infer_symbol()
+                except Exception as e:
+                    ERROR('[Parser]: Infer symbol of %s Node(%s) meets issues: %s!' %
+                          (node_obj.type, node_name, str(e)))
+
+                msg = ', '.join([
+                    str(datetime.now().time()),
+                    # str((psutil.Process(os.getpid()).memory_info().rss - mem1) / (1024*1024)),
+                    node_obj.type,
+                    node_obj.name,
+                    node_obj.data_format,
+                    str(node_obj.get_output_shapes()),
+                    str([str(v.dtype)
+                         if v is not None else None
+                         for v in node_obj.get_output_tensors()]),
+                    str(node_obj.is_all_inputs_const())
+                ])
+                DEBUG(msg)
+            else:
+                ERROR('[Parser]: Meets invalid Node (%s) in infer symbol!' % node_name)
+
+            if output_node is not None and node_name == output_node:
+                # stop infer symbol if meet output_node
+                break
+    else:
+        ERROR('[Parser]: Meets empty graph when inferring symbol!')

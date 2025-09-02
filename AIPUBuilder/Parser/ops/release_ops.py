@@ -4699,7 +4699,7 @@ class ArmSegmentReduceOp(OpHasMethod, OpHasOneOutPort, ArmOp):
         self.set_out_tensor(out_tensor)
 
 
-class ArmShapeOp(LayoutUnawareOp, OpHasOneOutPort, DynamicShapeOp, ArmOp):
+class ArmShapeOp(OpHasOneOutPort, DynamicShapeOp, ArmOp):
     @classmethod
     def num_in_ports(cls):
         return 1

@@ -209,7 +209,8 @@ def univ_parser(params):
                 params['model_name'] = model_type + '_model'
             graph = Graph(name=params['model_name'],
                           model_type=model_type,
-                          enable_ds=params['enable_ds'])
+                          enable_ds=params['enable_ds'],
+                          global_symbols=set())
 
             tmp_tensors_dir = '.%s_tmp_tensors' % params.get('model_name', '')
             tmp_tensors_path = os.path.join(output_dir, tmp_tensors_dir)
