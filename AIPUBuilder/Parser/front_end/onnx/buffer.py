@@ -50,7 +50,7 @@ ONNX_NP_TENSOR_MAP = {
     8: ('STRING', str),
     9: ('BOOL', bool),
     10: ('FLOAT16', np.float16),
-    11: ('DOUBLE', np.double),
+    11: ('DOUBLE', np.float64),
     12: ('UINT32', np.uint32),
     13: ('UINT64', np.uint64),
     14: ('COMPLEX64', np.complex64),
