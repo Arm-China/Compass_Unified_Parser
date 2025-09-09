@@ -7852,6 +7852,18 @@ def convert_attention(graph):
             op_attr = att_obj.copied_attr()
             NodeWrap(graph, att).replace_obj('MatMul', op_attr)
 
+        if att_obj.softmax_precision != -1:
+            # add cast for different softmax precision
+            from ..buffer import ONNX_NP_TENSOR_MAP
+            np_dtype_name = np.dtype(ONNX_NP_TENSOR_MAP[att_obj.softmax_precision][1]).name
+            if np_dtype_name != input_dtypes[0]:
+                in_attr = {'src_out_port': 0, 'dst_in_port': 0,
+                           'tensor': Tensor(shape=tuple(matmul_out_shape))}
+                pre_cast = insert_cast(graph, attn_softcap, softmax, np_dtype_name, in_attr)
+                matmul_v_name = matmul_v if len(input_shapes[0]) == 3 else att
+                post_cast = insert_cast(graph, softmax, matmul_v_name, input_dtypes[0], in_attr)
+                softmax = post_cast
+
         if len(att_out_edges) > 1:
             for _, dst, out_attr in att_out_edges[1:]:
                 out_port = out_attr['src_out_port']

@@ -860,8 +860,12 @@ def insert_cast(graph, src, dst, dst_type, in_attr=None, key=None, type='Cast'):
         cast_in_attr = copy.deepcopy(in_attr)
         cast_in_attr['dst_in_port'] = 0
         cast_out_tensor = Tensor()
-        if in_attr.get('tensor', None) is not None and in_attr['tensor'].value is not None:
-            cast_out_tensor.value = in_attr['tensor'].value.astype(np.dtype(dst_type))
+        if in_attr.get('tensor', None) is not None:
+            if in_attr['tensor'].value is not None:
+                cast_out_tensor.value = in_attr['tensor'].value.astype(np.dtype(dst_type))
+            if in_attr['tensor'].shape is not None:
+                cast_out_tensor.shape = in_attr['tensor'].shape
+                cast_out_tensor.dtype = dst_type
         else:
             cast_out_tensor.dtype = dst_type
         cast_out_attr = {'src_out_port': 0, 'dst_in_port': in_attr.get(
