@@ -1940,14 +1940,14 @@ def convert_torch_to_onnx(model_path, params):
 
     # Load TorchScript/non-TorchScript model
     is_torch_script_model = False
-    force_cpu = params.get('force_cpu', False)
+    force_cpu_parse = params.get('force_cpu_parse', False)
     is_cuda_available = torch.cuda.is_available()
-    use_gpu = is_cuda_available and (not force_cpu)
-    if force_cpu:
+    use_gpu = is_cuda_available and (not force_cpu_parse)
+    if force_cpu_parse:
         device = 'cpu'
     else:
         device = 'cuda' if is_cuda_available else 'cpu'
-    WARN('[Parser]: In pytorch %s mode now. Please check \'force_cpu\' in config file and confirm whether your model is created in the same mode!' % device.upper())
+    WARN('[Parser]: In pytorch %s mode now. Please check \'force_cpu_parse\' in config file and confirm whether your model is created in the same mode!' % device.upper())
 
     try:
         model = torch.jit.load(model_path, map_location=torch.device(device))
