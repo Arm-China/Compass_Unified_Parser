@@ -120,7 +120,7 @@ class ArmActivationOp(SameShapeOp, LayoutUnawareOp, OpHasMethod, OpHasOneOutPort
         func = ArmActivationOp.METHOD[self.method]
         inputs = self.get_input_tensors()
         if self.method == 'CELU':
-            inp = inputs[0].astype(np.float32) if np.issubdtype(inputs[0].dtype, np.integer) else inputs[0]
+            inp = inputs[0].astype(np.float32)
             inp = torch.tensor(inp)
             out_tensor = func(inp, self.alpha).cpu().numpy().astype(inputs[0].dtype)
         elif self.method == 'CLIP':
