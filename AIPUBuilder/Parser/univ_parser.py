@@ -136,10 +136,10 @@ def univ_parser(params):
             else:
                 params['input_dtype'] = ['float32'] * input_num
                 INFO('[Parser]: Input dtype is not set; default to float32 for torch model!')
-            if params.get('force_cpu', None) is not None:
-                params['force_cpu'] = True if str(params['force_cpu']).lower() == 'true' else False
+            if params.get('force_cpu_parse', None) is not None:
+                params['force_cpu_parse'] = True if str(params['force_cpu_parse']).lower() == 'true' else False
             else:
-                params['force_cpu'] = False
+                params['force_cpu_parse'] = False
 
         input_shapes_cnt = len(params['input_shapes'])
         if len(params['input_names']) == input_shapes_cnt:

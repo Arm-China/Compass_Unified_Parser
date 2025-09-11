@@ -103,6 +103,8 @@ optional arguments in Common section of <net.cfg>:
                         For non-quantized models, this field should be ignored. For quantized model, if
                         this field is set to False or not set, the quantized op will be kept and the output
                         IR will be a quantized IR.
+    force_cpu_parse     This field is used only for parsing a CPU exported Torchscript (tensors saved on a CPU device) 
+                        file to ensure that it is processed by the CPU in a CUDA available device.(default: False)
     similarity_input_npy
                         Show similarity and mean errors if the file path of the feeded inputs is provided.
                         The file should be a binary file in NumPy .npy format. A dictionary in format
