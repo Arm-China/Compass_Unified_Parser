@@ -91,8 +91,8 @@ class AddOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
         if input_dtypes == ['int64', 'int32']:
             inputs[1] = inputs[1].astype(np.int64)
         # WA for subgraph
-        assert inputs[0].dtype == inputs[1].dtype, \
-            f'The dtype of inputs should be the same in AddOp, but {inputs[0].dtype} and {inputs[1].dtype}.'
+        # assert inputs[0].dtype == inputs[1].dtype, \
+        #     f'The dtype of inputs should be the same in AddOp, but {inputs[0].dtype} and {inputs[1].dtype}.'
         cur_ver = self.cur_version
         if cur_ver <= 6:
             if self.broadcast:
@@ -494,7 +494,7 @@ class DivOp(OpHasDivisor, OpHasOneOutPort, OnnxOp):
         inputs = self.get_input_tensors()
         input_dtypes = self.get_input_dtypes()
         assert len(inputs) == 2 and len(input_dtypes) == 2, 'The number of inputs is invalid in DivOp.'
-        assert input_dtypes[0] == input_dtypes[1], 'The dtype of inputs should be the same in DivOp.'
+        # assert input_dtypes[0] == input_dtypes[1], 'The dtype of inputs should be the same in DivOp.'
         cur_ver = self.cur_version
         if cur_ver <= 6:
             if self.broadcast:
@@ -1191,7 +1191,7 @@ class MulOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
         inputs = self.get_input_tensors()
         input_dtypes = self.get_input_dtypes()
         assert len(inputs) == 2 and len(input_dtypes) == 2, 'The number of inputs is invalid in MulOp.'
-        assert input_dtypes[0] == input_dtypes[1], 'The dtype of inputs should be the same in MulOp.'
+        # assert input_dtypes[0] == input_dtypes[1], 'The dtype of inputs should be the same in MulOp.'
         cur_ver = self.cur_version
         if cur_ver <= 6:
             if self.broadcast:
@@ -2660,7 +2660,7 @@ class SubOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
         inputs = self.get_input_tensors()
         input_dtypes = self.get_input_dtypes()
         assert len(inputs) == 2 and len(input_dtypes) == 2, 'The number of inputs is invalid in SubOp.'
-        assert input_dtypes[0] == input_dtypes[1], 'The dtype of inputs should be the same in SubOp.'
+        # assert input_dtypes[0] == input_dtypes[1], 'The dtype of inputs should be the same in SubOp.'
         cur_ver = self.cur_version
         if cur_ver <= 6:
             if self.broadcast:

@@ -2211,7 +2211,7 @@ class BaseActivationOp(OpHasOneOutPort):
                               max=self.clip_max).numpy()
         elif act == 'CELU':
             a = self.alpha
-            x = torch_tensor
+            x = torch_tensor.to(torch.float32)
             ret = torch.nn.functional.celu(x, alpha=a).numpy()
         else:
             ret = tensor
