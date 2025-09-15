@@ -2856,7 +2856,8 @@ def fuse_bias(graph):
         linear, bias = m['linear'], m['add']
         transpose = m.get('transpose', None)
         linear_obj = NodeWrap(graph, linear)['object']
-        if linear_obj.quantize:
+        output_dtypes = linear_obj.get_output_dtypes()
+        if linear_obj.quantize and 'int' in output_dtypes[0]:
             continue
         bias_obj = NodeWrap(graph, bias)['object']
         transpose_obj = NodeWrap(graph, transpose)['object']
@@ -2997,6 +2998,8 @@ def fuse_linear_bn(graph):
         if linear_obj is not None and bn_obj is not None and (transpose is None or transpose_obj is not None):
             if linear_obj.weights is None or linear_obj.biases is None:
                 WARN('[Parser]: Meets invalid %s Op (%s) in fuse_linear_bn!' % (linear_obj.type, linear))
+                continue
+            if linear_obj.quantize:
                 continue
             if bn_obj.training_mode:
                 continue
@@ -7515,6 +7518,71 @@ def convert_mha(graph):
             tmp_out_attr.update({'src_out_port': 0})
             graph.add_edge(rs_out, dst, **tmp_out_attr)
 
+        clear_redundant_nodes(graph)
+
+
+def convert_matmulnbits(graph):
+    matched = False
+    matches = single_node_matcher(graph, 'MatMulNBitsMs')
+    for m in matches:
+        node = m['target']
+        node_obj = NodeWrap(graph, node)['object']
+        if node_obj is None:
+            ERROR(
+                '[Parser]: Meets invalid MatMulNBitsMs node(%s) in convert_matmulnbits!' % node)
+            continue
+        if node_obj.bits not in (4, 8):
+            ERROR(
+                f'[Parser]: Meets unsupported bits({node_obj.bits}) in MatMulNBitsMs node({node}) in convert_matmulnbits!')
+            continue
+        node_in_edges = graph.sorted_in_edges(node, data=True)
+        has_non_const_inputs = False
+        for src, _, in_attr in node_in_edges[1:]:
+            if not in_attr['tensor'].is_const:
+                has_non_const_inputs = True
+                break
+
+        if has_non_const_inputs:
+            ERROR(
+                '[Parser]: Meets non_const weights/scale/zp in MatMulNBitsMs node(%s) in convert_matmulnbits!' % node)
+            continue
+
+        input_shapes = node_obj.get_input_shapes()
+        output_shapes = node_obj.get_output_shapes()
+        if len(input_shapes[0]) >= 2:
+            matched = True
+            graph.remove_edges_from(node_in_edges[1:])
+
+            if node_obj.bits == 4:
+                # split N bits from quantized weights
+                B = node_in_edges[1][-1]['tensor'].value
+                high_nbits = (B >> 4) & 0x0F
+                low_nbits = B & 0x0F
+                quant_weights = np.concatenate([high_nbits, low_nbits], axis=-1).reshape(node_obj.N, -1)
+            else:
+                quant_weights = node_in_edges[1]['tensor'].value
+            matmul_attr = node_obj.copied_attr()
+            weight_scale_zp = [node_obj.scales, node_obj.zero_points]
+            matmul_attr.update({'weights': quant_weights,
+                                'weights_scale_zp': weight_scale_zp,
+                                'biases': node_obj.bias,
+                                'quantize': True})
+            if node_obj.bits == 4:
+                matmul_attr['weights_packed_dtype'] = 'aligned_int4'
+            NodeWrap(graph, node).replace_obj('FullyConnected', matmul_attr)
+            if len(input_shapes[0]) > 2:
+                src, _, in_attr = node_in_edges[0]
+                insert_reshape(graph, src, node, in_attr, [-1, input_shapes[0][-1]], quantize=False)
+                post_reshape = insert_reshape_after(graph,
+                                                    node,
+                                                    output_shapes[0],
+                                                    old_dim=[int(np.prod(output_shapes[0][:-1])), output_shapes[0][-1]],
+                                                    quantize=False)
+                if node in graph._attr['output_names']:
+                    index = graph._attr['output_names'].index(node)
+                    graph._attr['output_names'][index] = post_reshape
+
+    if matched:
         clear_redundant_nodes(graph)
 
 
@@ -14020,6 +14088,7 @@ def middle_passes(graph, params):
     convert_simplified_layernorm(graph)
     convert_rotary_embedding_ms(graph)
     convert_mha(graph)
+    convert_matmulnbits(graph)
     convert_skip_simplified_layernorm(graph)
     convert_attention(graph)
 

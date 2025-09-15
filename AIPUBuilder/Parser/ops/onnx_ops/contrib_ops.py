@@ -6,6 +6,94 @@ from ..op import *
 import numpy as np
 
 
+class MatMulNBitsMsOp(OpHasOneOutPort, OnnxOp):
+    @classmethod
+    def attributes(cls):
+        return {
+            1: {
+                'K': {
+                    'type': AttrType.INT, 'required': True
+                },
+                'N': {
+                    'type': AttrType.INT, 'required': True
+                },
+                'accuracy_level': {
+                    'type': AttrType.INT, 'default': 0
+                },
+                'bits': {
+                    'type': AttrType.INT, 'required': True
+                },
+                'block_size': {
+                    'type': AttrType.INT, 'required': True
+                },
+            }
+        }
+
+    def __getattr__(self, item):
+        try:
+            ret = self.__dict__['_attr'][item].value
+        except:
+            ret = None
+        try:
+            if ret is None:
+                input_names = ['scales', 'zero_points', 'g_idx', 'bias']
+                if item in input_names:
+                    item_idx = input_names.index(item) + 2
+                    inputs = self.get_input_tensors()
+                    if len(inputs) > item_idx:
+                        ret = inputs[item_idx]
+                        if 'scale' in item:
+                            ret = np.array(ret)
+                        self.__dict__['_attr'][item] = Attribute(item, {'type': AttrType.TENSOR, 'value': ret})
+                    if ret is None:
+                        if item == 'zero_points':
+                            fill_value = 2**(self.bits - 1)
+                            ret = np.full(self.scales.shape, fill_value, dtype=inputs[0].dtype)
+                        if item == 'bias':
+                            ret = np.zeros([self.N], dtype=inputs[0].dtype)
+                        self.__dict__['_attr'][item] = Attribute(item, {'type': AttrType.TENSOR, 'value': ret})
+        except:
+            ret = None
+        if ret is None:
+            ret = super(MatMulNBitsMsOp, self).__getattr__(item)
+        return ret
+
+    def __init__(self, graph, attr_dict=None):
+        super(MatMulNBitsMsOp, self).__init__(graph, attr_dict)
+        self.update_attributes(MatMulNBitsMsOp, attr_dict)
+        assert self.check_required(), 'MatMulNBitsMsOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(MatMulNBitsMsOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        assert 3 <= len(inputs) <= 6, f'MatMulNBitsMsOp should have 3~6 inputs, but got {len(inputs)}'
+        assert self.bits in (4, 8), f'MatMulNBitsMsOp only support 4/8 bit, but got {self.bits}'
+        A = inputs[0]
+        B = inputs[1]
+        if self.bits == 4:
+            # split N bits from quantized weights
+            high_nbits = (B >> self.bits) & 0x0F
+            low_nbits = B & 0x0F
+            quant_weights = np.concatenate([high_nbits, low_nbits], axis=-1).reshape(self.N, -1)
+        else:
+            quant_weights = B
+
+        if self.block_size < 16 or (self.block_size & (self.block_size - 1) != 0):
+            ERROR(f'Node({self.name}) block_size must be a power of 2, and >= 16. Got {self.block_size}.')
+
+        scale = np.repeat(self.scales.reshape(self.N, -1), self.block_size, axis=-1)
+        zp = np.repeat(self.zero_points.reshape(self.N, -1), self.block_size, axis=-1)
+        if self.is_all_inputs_const():
+            # dequantize B tensor according scale
+            deq_B = ((quant_weights - zp) * scale).transpose()
+            out_tensor = np.matmul(A, deq_B).astype(A.dtype) + self.bias
+        else:
+            out_shape = list(A.shape).copy()
+            out_shape[-1] = self.N
+            out_tensor = np.random.ranf(tuple(out_shape)).astype(A.dtype) + self.bias
+        self.set_out_tensor(out_tensor)
+
+
 class MultiHeadAttentionMsOp(OpHasVariableOutPorts, OnnxOp):
     @classmethod
     def attributes(cls):
