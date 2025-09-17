@@ -837,6 +837,9 @@ class ReshapeOp(OpHasOneOutPort, OnnxOp):
                                 if val == 0:
                                     shape[idx] = self.get_input_tensors()[
                                         0].shape[idx]
+                        if -1 in shape:
+                            idx = shape.index(-1)
+                            shape[idx] = int(np.prod(self.get_input_shapes()[0]) // -np.prod(shape))
                     except:
                         ERROR(
                             '[Parser]: Meets exception when obtaining shape of Reshape(%s) for %s!' % self.name)
@@ -861,10 +864,12 @@ class ReshapeOp(OpHasOneOutPort, OnnxOp):
     def cal_output_symbol(self):
         if not self._graph._attr['enable_ds']:
             return None
+        input_shape = self.get_input_shapes()[0]
         out_symbol = self.get_output_symbols()
         if out_symbol and out_symbol[0] is not None:
-            return out_symbol[0]
-        input_shape = self.get_input_shapes()[0]
+            inferred_shape = self.eval_symbol([input_shape], out_symbol)
+            if inferred_shape[0] == self.shape:
+                return out_symbol[0]
         input_symbol = self.get_input_symbols(local=True)[0]
         output_shape = self.shape if self.origin_shape is None else self.origin_shape
         output_symbol = [None] * len(output_shape)

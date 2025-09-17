@@ -48,7 +48,6 @@ def front_process_onnx(graph, params):
         convert_special_sequence_construct(graph)
         merge_sequence_construct_and_concat(graph)
         infer(graph)
-        infer_symbol(graph)
         merge_qgemm(graph)
 
     else:

@@ -975,9 +975,7 @@ class MatMulOp(OpHasOneOutPort, OnnxOp):
             a_shape = list(inputs[0].shape)
             b_shape = list(inputs[1].shape)
             out_symbol = self.cal_output_symbol()
-            a_symbol, b_symbol = self.get_input_symbols(local=True)
-            sym_mp = list(zip(a_symbol, a_shape)) + list(zip(b_symbol, b_shape))
-            out_shape = Op.eval_symbol(sym_mp, out_symbol)
+            out_shape = self.eval_symbol([a_shape, b_shape], [out_symbol])[0]
             out_tensor = np.random.ranf(tuple(out_shape)).astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor, out_symbol)
 
@@ -1006,7 +1004,23 @@ class MatMulOp(OpHasOneOutPort, OnnxOp):
 
                     for i in range(max_dim):
                         if i < max_dim - 2:
-                            out_symbol.append(Max(a_symbol[i], b_symbol[i]))
+                            if a_symbol[i] == 1:
+                                out_symbol.append(b_symbol[i])
+                            elif b_symbol[i] == 1:
+                                out_symbol.append(a_symbol[i])
+                            else:
+                                input_shapes = self.get_input_shapes()
+                                sym_shape_map = {}
+                                idx_add = 0
+                                for shape in input_shapes:
+                                    for idx, s in enumerate(shape):
+                                        sym_shape_map[idx + idx_add] = s
+                                    idx_add += len(shape)
+                                sym_idx = int(re.findall(r'\d+', str(a_symbol[i]))[0])
+                                if sym_shape_map[sym_idx] != 1:
+                                    out_symbol.append(a_symbol[i])
+                                else:
+                                    out_symbol.append(b_symbol[i])
                         elif i == max_dim - 2:
                             out_symbol.append(a_symbol[i])
                         else:

@@ -272,20 +272,6 @@ def infer_symbol(graph, output_node=None):
                 except Exception as e:
                     ERROR('[Parser]: Infer symbol of %s Node(%s) meets issues: %s!' %
                           (node_obj.type, node_name, str(e)))
-
-                msg = ', '.join([
-                    str(datetime.now().time()),
-                    # str((psutil.Process(os.getpid()).memory_info().rss - mem1) / (1024*1024)),
-                    node_obj.type,
-                    node_obj.name,
-                    node_obj.data_format,
-                    str(node_obj.get_output_shapes()),
-                    str([str(v.dtype)
-                         if v is not None else None
-                         for v in node_obj.get_output_tensors()]),
-                    str(node_obj.is_all_inputs_const())
-                ])
-                DEBUG(msg)
             else:
                 ERROR('[Parser]: Meets invalid Node (%s) in infer symbol!' % node_name)
 

@@ -49,7 +49,7 @@ def gen_input_tensor(name, shape, dtype, params, dynamic_shape=[]):
                 size=shape).astype(input_type)
         is_const = False
     symbol = []
-    global_symbols = []
+    global_symbols = {}
     if params['dynamic_axes']:
         if isinstance(params['dynamic_axes'], dict) and name in params['dynamic_axes']:
             dynamic_axes = params['dynamic_axes'][name]
@@ -64,7 +64,8 @@ def gen_input_tensor(name, shape, dtype, params, dynamic_shape=[]):
             for i, s in enumerate(shape):
                 if i in dynamic_axes:
                     global_s = Symbol(f'd{idx_start + i}')
-                    global_symbols.append(global_s)
+                    if global_s not in global_symbols:
+                        global_symbols[global_s] = s
                     symbol.append(global_s)
                 else:
                     symbol.append(s)
@@ -74,7 +75,8 @@ def gen_input_tensor(name, shape, dtype, params, dynamic_shape=[]):
                 if ds in params['dynamic_axes']:
                     global_s = Symbol(ds)
                     symbol.append(global_s)
-                    global_symbols.append(global_s)
+                    if global_s not in global_symbols:
+                        global_symbols[global_s] = shape[i]
                 else:
                     symbol.append(shape[i])
         else:

@@ -4375,7 +4375,7 @@ class ArmReshapeOp(OpHasOneOutPort, ArmOp):
         if self._graph._attr.get('enable_ds', False) and \
                 output_symbol is not None and \
                 None not in output_symbol:
-            out_shape = Op.symbol_to_shape(inputs[0].shape, output_symbol)
+            out_shape = self.eval_symbol([inputs[0].shape], [output_symbol])[0]
             out_tensor = np.reshape(inputs[0], out_shape)
             self.dim = list(out_shape)
         else:

@@ -16,7 +16,8 @@ from ....common.utils import extend_lists, get_converted_dtype
 from ....graph.node_wrap import NodeWrap
 from ....graph.pattern_match import matched_patterns, single_node_matcher, two_nodes_matcher
 # from ....graph.pattern_generator import match_patterns_from_expression
-from ....graph.graph_algo import get_valid_node_name, clear_redundant_nodes, determined_sort, all_simple_paths, has_path
+from ....graph.graph_algo import get_valid_node_name, clear_redundant_nodes, determined_sort, all_simple_paths, \
+    has_path, infer_symbol
 from ....ops.op import Op, BaseLinearOp, BaseConvOp, BaseDeconvOp, BaseOnnxPoolOp, OpHasOneOutPort, OpHasPaddingStrides, \
     OpHasAxis, \
     OnnxOp, CommonOp, OpNeedBroadcast, OpNeedUniBroadcast, OnnxReduceOp
@@ -1712,14 +1713,27 @@ def convert_special_matmul_to_fc(graph):
             inp_rank = len(input_shapes[0])
             if inp_rank > 2:
                 src, _, in_attr = in_edges[0]
-                rs_symbol = [-1, Symbol(f's{inp_rank-1}')]
+                if graph._attr['enable_ds']:
+                    infer_symbol(graph, src)
+                    src_obj = NodeWrap(graph, src)['object']
+                    src_out_symbol = src_obj.get_output_symbols()[0]
+                    if not Op.is_all_global_symbols(src_out_symbol, graph._attr['global_symbols']):
+                        pre_rs_symbol = [-1, Symbol(f's{inp_rank-1}')]
+                        post_rs_symbol = None
+                    else:
+                        pre_rs_symbol = [-1, src_out_symbol[-1]]
+                        post_rs_symbol = src_out_symbol[:-1] + [Symbol('s1')]
+                else:
+                    pre_rs_symbol = None
+                    post_rs_symbol = None
                 pre_reshape = insert_reshape(graph, src, matmul, in_attr, [-1, input_shapes[0][-1]],
-                                             quantize=matmul_obj.quantize, symbol=rs_symbol)
+                                             quantize=matmul_obj.quantize, symbol=pre_rs_symbol)
                 post_reshape = insert_reshape_after(graph,
                                                     matmul,
                                                     output_shapes[0],
                                                     old_dim=[int(np.prod(output_shapes[0][:-1])), output_shapes[0][-1]],
-                                                    quantize=matmul_obj.quantize)
+                                                    quantize=matmul_obj.quantize,
+                                                    symbol=post_rs_symbol)
                 if matmul in graph._attr['output_names']:
                     index = graph._attr['output_names'].index(matmul)
                     graph._attr['output_names'][index] = post_reshape
@@ -11803,6 +11817,7 @@ def lift_single_add_sub_mul_div(graph):
                                 in_port=const_in_port, scale_zp=const_scale_zp, quantize=const_obj.quantize)
 
             math_scale_zp = math_out_edges[0][-1]['tensor'].scale_zp
+            rs_symbol = non_math_out_edges[0][-1]['tensor'].symbol
 
             math_in_attr = copy.deepcopy(non_math_in_edges[0][-1])
             math_in_attr['dst_in_port'] = non_math_out_edges[0][-1]['dst_in_port']
@@ -11815,6 +11830,7 @@ def lift_single_add_sub_mul_div(graph):
             for _, math_dst, math_out_attr in math_out_edges:
                 out_attr = copy.deepcopy(math_out_attr)
                 out_attr['tensor'].scale_zp = math_scale_zp
+                out_attr['tensor'].symbol = rs_symbol
                 graph.add_edge(non_math_op, math_dst, **out_attr)
             if math_op in graph._attr['output_names']:
                 index = graph._attr['output_names'].index(math_op)

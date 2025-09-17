@@ -92,23 +92,6 @@ class Op(abc.ABC):
         return out_shape
 
     @staticmethod
-    def symbol_to_shape(shape, symbol):
-        new_shape = []
-        sub_list = []
-        for i, s in enumerate(shape):
-            sub_list.append((Symbol(f's{i}'), s))
-        for s in symbol:
-            if isinstance(s, int):
-                new_shape.append(s)
-            else:
-                tmp_shape = s.subs(sub_list)
-                new_shape.append(tmp_shape)
-        if -1 in new_shape:
-            idx = new_shape.index(-1)
-            new_shape[idx] = int(np.prod(shape) // (-np.prod(new_shape)))
-        return new_shape
-
-    @staticmethod
     def framework_op_types(fw, extend=False):
         assert isinstance(fw, Framework), ('%s is not a valid framework type!' % str(fw))
         opsets = set()
@@ -192,37 +175,6 @@ class Op(abc.ABC):
             reshape_axes_map.append([(in_shape_len - 1,), tuple(list(range(j - 1, out_shape_len)))])
 
         return reshape_axes_map
-
-    @staticmethod
-    def eval_symbol(symbol_map, output_symbol):
-        # symbol_map: [(s0, 1), (s1, 2)...]
-        output = []
-        for out_s in output_symbol:
-            if isinstance(out_s, list):
-                sub_out = []
-                for s in out_s:
-                    if isinstance(s, int):
-                        sub_out.append(s)
-                    else:
-                        sub_out.append(s.subs(symbol_map))
-                output.append(sub_out)
-            elif isinstance(out_s, int):
-                output.append(out_s)
-            else:
-                output.append(out_s.subs(symbol_map))
-        if -1 in output:
-            size = 1
-            ret = True
-            for s, num in symbol_map:
-                if isinstance(num, int):
-                    size *= num
-                else:
-                    ret = False
-                    break
-            if ret:
-                idx = output.index(-1)
-                output[idx] = int(size // (-np.prod(output)))
-        return output
 
     @staticmethod
     def is_all_global_symbols(current_symbols, global_symbols):
@@ -475,6 +427,39 @@ class Op(abc.ABC):
     def infer_shape(self):
         '''An abstract method for shape inference.'''
         pass
+
+    def eval_symbol(self, input_shapes, output_symbols):
+        sub_list = []
+        shape_idx = 0
+        for shape in input_shapes:
+            for i, s in enumerate(shape):
+                sub_list.append((Symbol(f's{i + shape_idx}'), s))
+            shape_idx += len(shape)
+        if self._graph._attr['global_symbols']:
+            for k, v in self._graph._attr['global_symbols'].items():
+                sub_list.append((k, v))
+        # symbol_map: [(s0, 1), (s1, 2)...]
+        output_shapes = []
+        for symbol in output_symbols:
+            output = []
+            for out_s in symbol:
+                if isinstance(out_s, list):
+                    sub_out = []
+                    for s in out_s:
+                        if isinstance(s, int):
+                            sub_out.append(s)
+                        else:
+                            sub_out.append(s.subs(sub_list))
+                    output.append(sub_out)
+                elif isinstance(out_s, int):
+                    output.append(out_s)
+                else:
+                    output.append(out_s.subs(sub_list))
+            if -1 in output:
+                idx = output.index(-1)
+                output[idx] = int(np.prod(input_shapes[0]) // (-np.prod(output)))
+            output_shapes.append(output)
+        return output_shapes
 
     def write_attrs(self, txt_file):
         '''Write the required attr in IR.'''
