@@ -376,7 +376,7 @@ def process_graph(graph, params):
     from .front_end.onnx.passes.back_passes import back_passes
     from .front_end.onnx.passes.transform import transform_to_nhwc
     from .front_end.onnx.passes.common_passes import remove_useless_op, convert_64bit_const
-    from .graph.graph_algo import infer
+    from .graph.graph_algo import infer, infer_symbol
     from .preprocess import gamut_preprocess, preprocess
     from .misc import special_character_conversion
     '''Gives a 'may be time consuming' hint for huge models.'''
@@ -431,5 +431,6 @@ def process_graph(graph, params):
         convert_64bit_const(graph)
         infer(graph, final=True)
         remove_useless_op(graph, ['ArmCast'])
+        # infer_symbol(graph)
     except Exception as e:
         ERROR('[Parser]: Meets exception in last infer (%s)!' % str(e))

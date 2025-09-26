@@ -199,6 +199,23 @@ class ConcatOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
         output_symbol[self.axis] = concat_axis_symbol
         return output_symbol
 
+    def infer_symbol(self):
+        input_tensor_symbols = self.get_input_symbol_values()
+        invalid = False
+        for inp in input_tensor_symbols:
+            if inp is None:
+                invalid = True
+                break
+        if invalid:
+            out_symbol_value = None
+        else:
+            assert self.axis == 0
+            out_symbol_value = []
+            for inp in input_tensor_symbols:
+                out_symbol_value.extend(inp)
+        self.set_out_symbol_value(out_symbol_value)
+        super().infer_symbol()
+
 
 class ConstantOp(OpHasOneOutPort, ConstLikeOp, OnnxOp):
     @classmethod
@@ -299,6 +316,20 @@ class ConstantOfShapeOp(OpHasOneOutPort, ConstLikeOp, OnnxOp):
             out_tensor = None
         self.set_out_tensor(out_tensor)
 
+    def infer_symbol(self):
+        input_tensor_symbols = self.get_input_symbol_values()
+        invalid = False
+        for inp in input_tensor_symbols:
+            if inp is None:
+                invalid = True
+                break
+        out_symbol = None
+        if not invalid:
+            if input_tensor_symbols[0] is not None and \
+                    Op.is_all_global_symbols(input_tensor_symbols[0], self._graph._attr['global_symbols']):
+                out_symbol = input_tensor_symbols[0]
+        self.set_out_symbol(out_symbol)
+
 
 class DepthToSpaceOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
     @classmethod
@@ -395,7 +426,27 @@ class ExpandOp(OpHasOneOutPort, OnnxOp):
         super(ExpandOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor = inputs[0] * np.ones(inputs[1].tolist(), inputs[0].dtype)
-        self.set_out_tensor(out_tensor)
+        out_symbol = self.cal_output_symbol()
+        self.set_out_tensor(out_tensor, out_symbol)
+
+    def cal_output_symbol(self):
+        if not self._graph._attr['enable_ds']:
+            return None
+        # only support the expanded axis is fixed
+        inputs = self.get_input_tensors()
+        expanded_list = inputs[1].tolist()
+        input_shape = inputs[0].shape
+        if len(expanded_list) != len(input_shape):
+            ERROR(f'Symbol infer of ExpandOp({self.name}) only support same length of input and shape.')
+            return None
+        input_symbol = self.get_input_symbols(local=True)[0]
+        out_symbol = []
+        for i in range(len(input_shape)):
+            if input_shape[i] == expanded_list[i]:
+                out_symbol.append(input_symbol[i])
+            else:
+                out_symbol.append(expanded_list[i])
+        return out_symbol
 
 
 class EyeLikeOp(OpHasOneOutPort, ConstLikeOp, OnnxOp):
@@ -498,6 +549,18 @@ class GatherOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
         else:
             out_symbol = None
         return out_symbol
+
+    def infer_symbol(self):
+        input_tensor_symbols = self.get_input_symbol_values()
+        if input_tensor_symbols[0] is None or input_tensor_symbols[1] is None:
+            out_symbol_value = None
+        else:
+            inp_symbol_value = input_tensor_symbols[0]
+            idx = input_tensor_symbols[1]
+            assert self.axis == 0
+            out_symbol_value = inp_symbol_value[idx]
+        self.set_out_symbol_value(out_symbol_value)
+        super().infer_symbol()
 
 
 class GatherElementsOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
@@ -917,13 +980,37 @@ class ReshapeOp(OpHasOneOutPort, OnnxOp):
         else:
             output_symbol = input_symbol.copy()
 
-        if 0 in output_shape or -1 in output_shape:
+        if 0 in output_shape:
+            # or -1 in output_shape:
             for i, s in enumerate(output_shape):
                 if s == 0:
                     output_symbol[i] = input_symbol[i]
-                elif s == -1:
-                    output_symbol[i] = -1
+                # elif s == -1:
+                #     output_symbol[i] = -1
         return output_symbol
+
+    def infer_symbol(self):
+        input_tensor_symbols = self.get_input_symbol_values()
+        invalid = False
+        for inp in input_tensor_symbols:
+            if inp is None:
+                invalid = True
+                break
+        if invalid:
+            out_symbol_value = None
+        else:
+            if input_tensor_symbols[1] == [1]:
+                out_symbol_value = [input_tensor_symbols[0]]
+            else:
+                ERROR('Not Implemented yet')
+                out_symbol_value = None
+        self.set_out_symbol_value(out_symbol_value)
+        if input_tensor_symbols[1] is not None and \
+                not all(isinstance(x, int) for x in input_tensor_symbols[1]) and \
+                Op.is_all_global_symbols(input_tensor_symbols[1], self._graph._attr['global_symbols']):
+            self.set_out_symbol(input_tensor_symbols[1])
+        else:
+            super().infer_symbol()
 
 
 class ReverseSequenceOp(OpHasOneOutPort, OnnxOp):
@@ -1181,6 +1268,12 @@ class ShapeOp(OpHasOneOutPort, ConstLikeOp, OnnxOp):
         else:
             out_tensor = None
         self.set_out_tensor(out_tensor)
+
+    def infer_symbol(self):
+        inp_symbol = self.get_input_symbols()[0]
+        if inp_symbol and None not in inp_symbol:
+            if Op.is_all_global_symbols(inp_symbol, self._graph._attr['global_symbols']):
+                self.set_out_symbol_value(inp_symbol)
 
 
 class SizeOp(OpHasOneOutPort, ConstLikeOp, OnnxOp):
@@ -1844,6 +1937,20 @@ class UnsqueezeOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
         else:
             out_symbol = None
         return out_symbol
+
+    def infer_symbol(self):
+        input_tensor_symbols = self.get_input_symbol_values()
+        out_symbol_value = None
+        if input_tensor_symbols[0] is None or input_tensor_symbols[1] is None:
+            pass
+        else:
+            inp_symbol_value = input_tensor_symbols[0]
+            axes = input_tensor_symbols[1].tolist()
+            for axis in axes:
+                out_symbol_value = [inp_symbol_value]
+                inp_symbol_value = out_symbol_value
+        self.set_out_symbol_value(out_symbol_value)
+        super().infer_symbol()
 
 
 class WhereOp(MultidirectionalBroadcastOp, OpNeedBroadcast, OpHasOneOutPort, OnnxOp):

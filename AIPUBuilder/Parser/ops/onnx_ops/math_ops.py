@@ -82,6 +82,22 @@ class AddOp(MultidirectionalBroadcastOp, OpHasAxis, OpHasOneOutPort, OnnxOp):
         self.update_attributes(AddOp, attr_dict)
         assert self.check_required(), 'AddOp is missing a required parameter.'
 
+    def __getattr__(self, item):
+        ret = None
+        cur_ver = self.__dict__['_attr']['cur_version'].value
+        try:
+            if item == 'broadcast':
+                if cur_ver <= 6:
+                    ret = bool(self.__dict__['_attr'][item].value)
+                else:
+                    ERROR('[Parser]: Unsupported op version [%s] for %s!' %
+                          (cur_ver, type(self).__name__))
+        except:
+            ret = None
+        if ret is None:
+            ret = super(AddOp, self).__getattr__(item)
+        return ret
+
     def infer_shape(self):
         super(AddOp, self).infer_shape()
         inputs = self.get_input_tensors()
@@ -109,21 +125,45 @@ class AddOp(MultidirectionalBroadcastOp, OpHasAxis, OpHasOneOutPort, OnnxOp):
         out_symbol = self.cal_output_symbol()
         self.set_out_tensor(out_tensor, out_symbol)
 
-    def __getattr__(self, item):
-        ret = None
-        cur_ver = self.__dict__['_attr']['cur_version'].value
-        try:
-            if item == 'broadcast':
-                if cur_ver <= 6:
-                    ret = bool(self.__dict__['_attr'][item].value)
-                else:
-                    ERROR('[Parser]: Unsupported op version [%s] for %s!' %
-                          (cur_ver, type(self).__name__))
-        except:
-            ret = None
-        if ret is None:
-            ret = super(AddOp, self).__getattr__(item)
-        return ret
+    def infer_symbol(self):
+        inp_symbol = self.get_input_symbols()
+        if inp_symbol and None not in inp_symbol:
+            local_symbol = self.get_input_symbols(local=True)
+            out_local_symbol = self.get_output_symbols()[0]
+            if out_local_symbol is not None:
+                sym_mp = []
+                for i, inp_s in enumerate(inp_symbol):
+                    if not Op.is_all_global_symbols(inp_s, self._graph._attr['global_symbols']):
+                        continue
+                    sym_mp += list(zip(local_symbol[i], inp_s))
+                output_symbol = []
+                for i, s in enumerate(out_local_symbol):
+                    if isinstance(s, int):
+                        output_symbol.append(s)
+                    else:
+                        new_s = s.subs(sym_mp)
+                        if isinstance(new_s, Max):
+                            symbols_set = new_s.free_symbols
+                            has_global_symbol = False
+                            for _s in symbols_set:
+                                if _s in self._graph._attr['global_symbols']:
+                                    has_global_symbol = True
+                                    output_symbol.append(_s)
+                                    break
+                            if not has_global_symbol:
+                                output_symbol.append(new_s)
+                        else:
+                            if new_s not in self._graph._attr['global_symbols'] and \
+                                    len(inp_symbol[0]) == len(inp_symbol[1]):
+                                if inp_symbol[0][i] in self._graph._attr['global_symbols']:
+                                    output_symbol.append(inp_symbol[0][i])
+                                elif inp_symbol[1][i] in self._graph._attr['global_symbols']:
+                                    output_symbol.append(inp_symbol[1][i])
+                                else:
+                                    output_symbol.append(new_s)
+                            else:
+                                output_symbol.append(new_s)
+                self.set_out_symbol(output_symbol)
 
 
 class ArgMaxOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
@@ -1020,7 +1060,11 @@ class MatMulOp(OpHasOneOutPort, OnnxOp):
                                 if sym_shape_map[sym_idx] != 1:
                                     out_symbol.append(a_symbol[i])
                                 else:
-                                    out_symbol.append(b_symbol[i])
+                                    b_sym_idx = int(re.findall(r'\d+', str(b_symbol[i]))[0])
+                                    if sym_shape_map[b_sym_idx] == 1:
+                                        out_symbol.append(Max(a_symbol[i], b_symbol[i]))
+                                    else:
+                                        out_symbol.append(b_symbol[i])
                         elif i == max_dim - 2:
                             out_symbol.append(a_symbol[i])
                         else:
@@ -2552,7 +2596,7 @@ class SinhOp(LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
         self.set_out_tensor(out_tensor)
 
 
-class SoftmaxOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
+class SoftmaxOp(SameShapeOp, OpHasAxis, OpHasOneOutPort, OnnxOp):
     @classmethod
     def attributes(cls):
         return {1: {'axis': {'default': 1}},
@@ -2568,21 +2612,25 @@ class SoftmaxOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
     def infer_shape(self):
         super(SoftmaxOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        if self.cur_version < 13:
-            input_shape = inputs[0].shape
-            inner_dim = [-1, 1] \
-                if self.axis == 0 \
-                else [int(np.prod(input_shape[:self.axis])), int(np.prod(input_shape[self.axis:]))]
-            # torch softmax not implemented for 'Half'
-            inp = np.reshape(inputs[0], inner_dim).astype(np.float32)
-            out_tensor = torch.nn.functional.softmax(
-                torch.from_numpy(inp), dim=0 if self.axis == 0 else -1).numpy()
-            out_tensor = np.reshape(out_tensor, input_shape)
+        input_shape = inputs[0].shape
+        if self.is_all_inputs_const():
+            if self.cur_version < 13:
+                inner_dim = [-1, 1] \
+                    if self.axis == 0 \
+                    else [int(np.prod(input_shape[:self.axis])), int(np.prod(input_shape[self.axis:]))]
+                # torch softmax not implemented for 'Half'
+                inp = np.reshape(inputs[0], inner_dim).astype(np.float32)
+                out_tensor = torch.nn.functional.softmax(
+                    torch.from_numpy(inp), dim=0 if self.axis == 0 else -1).numpy()
+                out_tensor = np.reshape(out_tensor, input_shape)
+            else:
+                inp = np.array(inputs[0], dtype=np.float32)
+                out_tensor = torch.nn.functional.softmax(
+                    torch.from_numpy(inp), dim=self.axis).numpy()
         else:
-            inp = np.array(inputs[0], dtype=np.float32)
-            out_tensor = torch.nn.functional.softmax(
-                torch.from_numpy(inp), dim=self.axis).numpy()
-        self.set_out_tensor(out_tensor.astype(inputs[0].dtype))
+            out_tensor = np.random.ranf(tuple(input_shape)).astype(inputs[0].dtype)
+        out_symbol = self.cal_output_symbol()
+        self.set_out_tensor(out_tensor.astype(inputs[0].dtype), out_symbol)
 
     def convert_version(self):
         max_ver = type(self).max_ver()

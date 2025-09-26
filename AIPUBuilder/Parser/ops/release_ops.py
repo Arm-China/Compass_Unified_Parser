@@ -2752,6 +2752,11 @@ class ArmInputOp(OpHasOneOutPort, InputLikeOp, ArmOp):
         else:
             self.set_out_tensor(out_tensor)
 
+    def infer_symbol(self, input_symbol=None):
+        super(ArmInputOp, self).infer_symbol()
+        assert input_symbol is not None, 'input symbol is empty in ArmInputOp.'
+        self.set_out_symbol(input_symbol)
+
     def write_attrs(self, txt_file):
         ret = super(ArmInputOp, self).write_attrs(txt_file)
         if ret:

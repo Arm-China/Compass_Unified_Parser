@@ -34,7 +34,7 @@ class MultiHeadAttentionMsOp(OpHasVariableOutPorts, OnnxOp):
     def infer_shape(self):
         super(MultiHeadAttentionMsOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        assert len(inputs) <= 8, f'MultiHeadAttentionMsOp should have 1~8 inputs, but got {len(inputs)}'
+        assert len(inputs) <= 10, f'MultiHeadAttentionMsOp should have 1~10 inputs, but got {len(inputs)}'
 
         query = inputs[0]
         bs, seq_len = inputs[0].shape[:2]

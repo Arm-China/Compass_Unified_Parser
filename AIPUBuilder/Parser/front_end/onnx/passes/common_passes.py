@@ -6,6 +6,7 @@ import numpy as np
 import copy
 import itertools
 from collections import OrderedDict
+from sympy import Symbol
 from ....plugin_loader import PARSER_OP_DICT
 
 from ....common.defs import Tensor, Framework, FLOAT_EQUAL
@@ -1374,6 +1375,7 @@ def insert_reshape_after(graph, src, new_dim, old_dim=None, out_port=0, type='Re
                             src_out_attr.update({'tensor': Tensor()})
                         src_out_attr['tensor'].dtype = new_out_attr['tensor'].dtype
                         src_out_attr['tensor'].scale_zp = new_out_attr['tensor'].scale_zp
+        src_out_attr['tensor'].symbol = out_edges[0][-1]['tensor'].symbol
         graph.add_edge(src, reshape, **src_out_attr)
         ret = reshape
     else:
@@ -1505,6 +1507,14 @@ def insert_tile(graph, src, dst, in_attr, reps, key=None, type='Tile', data_form
             tensor_shape = tensor.get_shape()
             if tensor_shape is not None and None not in tensor_shape:
                 tensor.shape = tuple([int(shape * rep) for shape, rep in zip(tensor_shape, reps)])
+        if graph._attr['enable_ds']:
+            out_symbol = []
+            for i, r in enumerate(reps):
+                if r == 1:
+                    out_symbol.append(Symbol(f's{i}'))
+                else:
+                    out_symbol.append(Symbol(f's{i}*{r}'))
+            tensor.symbol = out_symbol
         dst_in_attr.update({'src_out_port': 0, 'tensor': tensor})
         graph.add_edge(tile, dst, **dst_in_attr)
 
@@ -1564,6 +1574,8 @@ def insert_transpose(graph, src, dst, in_attr, perm, key=None, type='Transpose',
                 out_tensor.shape = out_tensor.value.shape
             elif out_tensor.shape is not None and len(out_tensor.shape) == len(perm):
                 out_tensor.shape = tuple(out_tensor.shape[idx] for idx in perm)
+        if graph._attr['enable_ds']:
+            out_tensor.symbol = [Symbol(f's{idx}') for idx in perm]
         transpose_out_attr.update({'src_out_port': 0, 'tensor': out_tensor})
         graph.add_edge(transpose, dst, **transpose_out_attr)
         ret = transpose
@@ -1593,6 +1605,8 @@ def insert_transpose_after(graph, src, perm, port=0, type='Transpose', quantize=
                 new_out_attr = copy.deepcopy(out_attr)
                 new_out_attr['src_out_port'] = 0
                 graph.remove_edge(src, dst, key=k)
+                if graph._attr['enable_ds']:
+                    new_out_attr['tensor'].symbol = [Symbol(f's{idx}') for idx in perm]
                 graph.add_edge(transpose, dst, **new_out_attr)
                 if out_tensor is None:
                     out_tensor = copy.deepcopy(new_out_attr['tensor'])
