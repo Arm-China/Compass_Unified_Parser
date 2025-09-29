@@ -4773,7 +4773,7 @@ def remove_special_transpose(graph):
                 '[Parser]: Meets invalid Transpose Op(%s) in remove_special_transpose!' % trans)
 
 
-def remove_const(graph):
+def rename_const(graph):
     removing_const = []
     for node_name in graph.nodes:
         node = NodeWrap(graph, node_name)
@@ -6555,8 +6555,8 @@ def back_passes(graph, params):
     remove_redundant_transpose2(graph)
     remove_useless_op(graph, ['ArmReshape', 'ArmTranspose'])
 
-    fuse_const(graph, final=True)
-    remove_const(graph)
+    fuse_const(graph)
+    rename_const(graph)
     fuse_quant_op(graph, ['ArmEltwise', 'ArmSlice'])
 
     if graph._attr['framework'] in (Framework.ONNX, Framework.CAFFE):
@@ -6579,7 +6579,6 @@ def back_passes(graph, params):
                           sink_transpose_with_const,
                           merge_same_op_at_out_port
                           ]:
-                    # WARN(f.__name__)
                     f(graph)
                     convert_special_reshape(graph)
                     remove_redundant_transpose(graph)

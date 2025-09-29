@@ -1973,3 +1973,26 @@ class WhereOp(MultidirectionalBroadcastOp, OpNeedBroadcast, OpHasOneOutPort, Onn
         out_tensor = tf.where(*inputs).numpy()  # tf 1.x only
         out_symbol = self.cal_output_symbol()
         self.set_out_tensor(out_tensor, out_symbol)
+
+    def infer_symbol(self):
+        input_tensor_symbols = self.get_input_symbol_values()
+        invalid = False
+        for inp in input_tensor_symbols:
+            if inp is None:
+                invalid = True
+                break
+        if len(input_tensor_symbols) != 3:
+            invalid = True
+        if not invalid:
+            cond = input_tensor_symbols[0]
+            if len(cond) == 1:
+                out_symbol_value = input_tensor_symbols[1] if cond[0] else input_tensor_symbols[2]
+            else:
+                out_symbol_value = []
+                for i, c in enumerate(cond):
+                    out_symbol_value.append(input_tensor_symbols[1][i] if c else input_tensor_symbols[2][i])
+        else:
+            out_symbol_value = None
+
+        self.set_out_symbol_value(out_symbol_value)
+        super().infer_symbol()

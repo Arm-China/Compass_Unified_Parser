@@ -14126,6 +14126,7 @@ def middle_passes(graph, params):
     if graph._attr['enable_ds']:
         # infer symbol before insert reshape before FC
         infer(graph)
+        fuse_const(graph)
     convert_gemm_to_fc(graph)
     convert_special_matmul_to_fc(graph)
     fuse_mul_add_or_sub(graph)

@@ -78,7 +78,7 @@ class MultiHeadAttentionMsOp(OpHasVariableOutPorts, OnnxOp):
         #     out_tensors.append(np.array(std_var, np.float32))
         # if 2 in out_ports:
         #     out_tensors.append(np.array(std_var, np.float32))
-        self.set_out_tensor(out_tensors, out_symbols)
+        self.set_out_tensor(out_tensors, out_symbols=out_symbols)
 
 
 class QGemmMsOp(OpHasOneOutPort, OnnxOp):

@@ -71,6 +71,22 @@ class EqualOp(MultidirectionalBroadcastOp, OpNeedBroadcast, OpHasAxis, OpHasOneO
         self.update_attributes(EqualOp, attr_dict)
         assert self.check_required(), 'EqualOp is missing a required parameter.'
 
+    def __getattr__(self, item):
+        ret = None
+        cur_ver = self.__dict__['_attr']['cur_version'].value
+        try:
+            if item == 'broadcast':
+                if cur_ver == 1:
+                    ret = bool(self.__dict__['_attr'][item].value)
+                else:
+                    ERROR('[Parser]: Unsupported op version [%s] for %s!' %
+                          (cur_ver, type(self).__name__))
+        except:
+            ret = None
+        if ret is None:
+            ret = super(EqualOp, self).__getattr__(item)
+        return ret
+
     def infer_shape(self):
         super(EqualOp, self).infer_shape()
         inputs = self.get_input_tensors()
@@ -89,21 +105,28 @@ class EqualOp(MultidirectionalBroadcastOp, OpNeedBroadcast, OpHasAxis, OpHasOneO
         out_symbol = self.cal_output_symbol()
         self.set_out_tensor(out_tensor, out_symbol)
 
-    def __getattr__(self, item):
-        ret = None
-        cur_ver = self.__dict__['_attr']['cur_version'].value
-        try:
-            if item == 'broadcast':
-                if cur_ver == 1:
-                    ret = bool(self.__dict__['_attr'][item].value)
-                else:
-                    ERROR('[Parser]: Unsupported op version [%s] for %s!' %
-                          (cur_ver, type(self).__name__))
-        except:
-            ret = None
-        if ret is None:
-            ret = super(EqualOp, self).__getattr__(item)
-        return ret
+    def infer_symbol(self):
+        input_tensor_symbols = self.get_input_symbol_values()
+        invalid = False
+        for inp in input_tensor_symbols:
+            if inp is None:
+                invalid = True
+                break
+        const_info = self.sorted_in_consts()
+        if len(const_info) != 1:
+            invalid = True
+
+        if not invalid:
+            const_idx, const_value = const_info[0][1], const_info[0][2]
+            if np.all(const_value <= 0):
+                out_symbol_value = np.zeros_like(const_value, dtype=bool).tolist()
+            else:
+                out_symbol_value = None
+        else:
+            out_symbol_value = None
+
+        self.set_out_symbol_value(out_symbol_value)
+        super().infer_symbol()
 
 
 class GreaterOp(MultidirectionalBroadcastOp, OpNeedBroadcast, OpHasAxis, OpHasOneOutPort, OnnxOp):

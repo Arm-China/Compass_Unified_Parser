@@ -154,7 +154,8 @@ class ArmActivationOp(SameShapeOp, LayoutUnawareOp, OpHasMethod, OpHasOneOutPort
             out_tensor = self.thresholded_relu()
         else:
             out_tensor = func(inputs[0]).numpy().astype(inputs[0].dtype)
-        self.set_out_tensor(out_tensor)
+        out_symbol = self.cal_output_symbol()
+        self.set_out_tensor(out_tensor, out_symbol)
 
     def gelu(self):
         inputs = self.get_input_tensors()
@@ -324,7 +325,7 @@ class ArmAdaptivePoolOp(OpHasMethod, OpHasOneOutPort, ArmOp):
         return ret
 
 
-class ArmAddOp(BaseActivationOp, ArmOp):
+class ArmAddOp(MultidirectionalBroadcastOp, BaseActivationOp, ArmOp):
     @classmethod
     def num_in_ports(cls):
         return 2
@@ -336,7 +337,8 @@ class ArmAddOp(BaseActivationOp, ArmOp):
         assert len(inputs) == 2 and len(input_dtypes) == 2, 'The number of inputs is invalid in AddOp.'
         assert input_dtypes[0] == input_dtypes[1], 'The dtype of inputs should be the same in AddOp.'
         out_tensor = np.add(*inputs)
-        self.set_out_tensor(out_tensor)
+        out_symbol = self.cal_output_symbol()
+        self.set_out_tensor(out_tensor, out_symbol)
 
 
 class ArmAffineGridOp(OpHasOneOutPort, ArmOp):
@@ -768,7 +770,8 @@ class ArmCastOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
         super(ArmCastOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor = inputs[0].astype(np.dtype(self.to_dtype))
-        self.set_out_tensor(out_tensor)
+        out_symbol = self.cal_output_symbol()
+        self.set_out_tensor(out_tensor, out_symbol)
 
     def write_attrs(self, txt_file):
         ret = super(ArmCastOp, self).write_attrs(txt_file)
@@ -903,6 +906,23 @@ class ArmConcatOp(OpHasAxis, OpHasOneOutPort, ArmOp):
             out_tensor = out_tensor.astype(dtype)
         self.set_out_tensor(out_tensor)
 
+    def infer_symbol(self):
+        input_tensor_symbols = self.get_input_symbol_values()
+        invalid = False
+        for inp in input_tensor_symbols:
+            if inp is None:
+                invalid = True
+                break
+        if invalid:
+            out_symbol_value = None
+        else:
+            assert self.axis == 0
+            out_symbol_value = []
+            for inp in input_tensor_symbols:
+                out_symbol_value.extend(inp)
+        self.set_out_symbol_value(out_symbol_value)
+        super().infer_symbol()
+
 
 class ArmCoshOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
     def infer_shape(self):
@@ -981,6 +1001,20 @@ class ArmConstantOfShapeOp(LayoutUnawareOp, OpHasOneOutPort, DynamicShapeOp, Arm
         else:
             out_tensor = None
         self.set_out_tensor(out_tensor)
+
+    def infer_symbol(self):
+        input_tensor_symbols = self.get_input_symbol_values()
+        invalid = False
+        for inp in input_tensor_symbols:
+            if inp is None:
+                invalid = True
+                break
+        out_symbol = None
+        if not invalid:
+            if input_tensor_symbols[0] is not None and \
+                    Op.is_all_global_symbols(input_tensor_symbols[0], self._graph._attr['global_symbols']):
+                out_symbol = input_tensor_symbols[0]
+        self.set_out_symbol(out_symbol)
 
     def write_attrs(self, txt_file):
         ret = super(ArmConstantOfShapeOp, self).write_attrs(txt_file)
@@ -1790,7 +1824,7 @@ class ArmDilationOp(OpHasPaddingStrides, OpHasWeights, OpHasOneOutPort, LayoutCo
         self.set_out_tensor(out_tensor)
 
 
-class ArmDivOp(LayoutUnawareOp, OpHasDivisor, OpHasOneOutPort, ArmOp):
+class ArmDivOp(MultidirectionalBroadcastOp, LayoutUnawareOp, OpHasDivisor, OpHasOneOutPort, ArmOp):
     @classmethod
     def num_in_ports(cls):
         return 2
@@ -1799,7 +1833,8 @@ class ArmDivOp(LayoutUnawareOp, OpHasDivisor, OpHasOneOutPort, ArmOp):
         super(ArmDivOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensors = np.true_divide(*inputs)
-        self.set_out_tensor(out_tensors)
+        out_symbol = self.cal_output_symbol()
+        self.set_out_tensor(out_tensors, out_symbol)
 
 
 class ArmDivModOp(LayoutUnawareOp, OpHasDivisor, OpHasMultipleOutPorts, ArmOp):
@@ -1893,7 +1928,55 @@ class ArmEltwiseOp(SameShapeOp, LayoutUnawareOp, OpHasMethod, BaseActivationOp, 
         eltwise_func = ArmEltwiseOp.FUNC_MAP[self.method]
         out_tensor = eltwise_func(*inputs)
         out_tensor = self.cal_activation(out_tensor)
-        self.set_out_tensor(out_tensor)
+        out_symbol = self.cal_output_symbol()
+        self.set_out_tensor(out_tensor, out_symbol)
+
+    def infer_symbol(self):
+        input_tensor_symbols = self.get_input_symbol_values()
+        invalid = False
+        for inp in input_tensor_symbols:
+            if inp is None:
+                invalid = True
+                break
+        out_symbol_value = None
+        if not invalid:
+            from sympy import Max, Min
+            is_list = isinstance(input_tensor_symbols[0], list)
+            out_symbol_value = [] if is_list else None
+            if self.method == 'ADD':
+                if is_list:
+                    for a0, a1 in zip(*input_tensor_symbols):
+                        out_symbol_value.append(a0 + a1)
+                else:
+                    out_symbol_value = input_tensor_symbols[0] + input_tensor_symbols[1]
+            elif self.method == 'SUB':
+                if is_list:
+                    for a0, a1 in zip(*input_tensor_symbols):
+                        out_symbol_value.append(a0 - a1)
+                else:
+                    out_symbol_value = input_tensor_symbols[0] - input_tensor_symbols[1]
+            elif self.method == 'MUL':
+                if is_list:
+                    for a0, a1 in zip(*input_tensor_symbols):
+                        out_symbol_value.append(a0 * a1)
+                else:
+                    out_symbol_value = input_tensor_symbols[0] * input_tensor_symbols[1]
+            elif self.method == 'MAX':
+                if is_list:
+                    for a0, a1 in zip(*input_tensor_symbols):
+                        out_symbol_value.append(Max(a0, a1))
+                else:
+                    out_symbol_value = Max(input_tensor_symbols[0], input_tensor_symbols[1])
+            elif self.method == 'MIN':
+                if is_list:
+                    for a0, a1 in zip(*input_tensor_symbols):
+                        out_symbol_value.append(Min(a0, a1))
+                else:
+                    out_symbol_value = Min(input_tensor_symbols[0], input_tensor_symbols[1])
+            else:
+                raise NotImplementedError(f'{self.method} is not supported yet!')
+        self.set_out_symbol_value(out_symbol_value)
+        super().infer_symbol()
 
 
 class ArmEmbeddingLookupSparseOp(OpHasOneOutPort, ArmOp):
@@ -2964,7 +3047,7 @@ class ArmLogSoftmaxOp(OpHasAxis, OpHasOneOutPort, ArmOp):
         self.set_out_tensor(out_tensor)
 
 
-class ArmLogicalOp(LayoutUnawareOp, OpHasMethod, OpHasOneOutPort, ArmOp):
+class ArmLogicalOp(SameShapeOp, LayoutUnawareOp, OpHasMethod, OpHasOneOutPort, ArmOp):
     @classmethod
     def num_in_ports(cls):
         return 2
@@ -2996,7 +3079,37 @@ class ArmLogicalOp(LayoutUnawareOp, OpHasMethod, OpHasOneOutPort, ArmOp):
         inputs = self.get_input_tensors()
         logical_func = ArmLogicalOp.FUNC_MAP[self.method]
         out_tensor = logical_func(*inputs).astype(np.uint8)
-        self.set_out_tensor(out_tensor)
+        out_symbol = self.cal_output_symbol()
+        self.set_out_tensor(out_tensor, out_symbol)
+
+    def infer_symbol(self):
+        input_tensor_symbols = self.get_input_symbol_values()
+        invalid = False
+        for inp in input_tensor_symbols:
+            if inp is None:
+                invalid = True
+                break
+        const_info = self.sorted_in_consts()
+        if len(const_info) == 0:
+            invalid = True
+        if not invalid:
+            if self.method in ('EQUAL', 'LESS', 'LESS_EQUAL'):
+                if len(const_info) == 1:
+                    const_idx, const_value = const_info[0][1], const_info[0][2]
+                    if np.all(const_value <= 0):
+                        out_symbol_value = np.zeros_like(const_value, dtype=bool).tolist()
+                    else:
+                        out_symbol_value = None
+                else:
+                    out_symbol_value = None
+            else:
+                out_symbol_value = None
+                ERROR(f'{self.method} not support infer symbol yet, please implemented it first.')
+        else:
+            out_symbol_value = None
+
+        self.set_out_symbol_value(out_symbol_value)
+        super().infer_symbol()
 
 
 class ArmLoopOp(OpHasSubGraph, DynamicShapeOp, ArmOp):
@@ -3229,24 +3342,33 @@ class ArmMatMulOp(OpHasOneOutPort, ArmOp):
         inputs = self.get_input_tensors()
         if len(inputs[0].shape) != 4 or len(inputs[1].shape) != 4:
             ERROR('[Parser]: Currently only 4 dim input are supported in ArmMatMulOp.!')
-        A = inputs[0] if not bool(self.trans_a) else np.transpose(
-            inputs[0], (0, 1, 3, 2))
-        B = inputs[1] if not bool(self.trans_b) else np.transpose(
-            inputs[1], (0, 1, 3, 2))
+        A = inputs[0]
+        B = inputs[1]
         #out_tensor = np.matmul(A, B)
         a_shape = list(A.shape)
         b_shape = list(B.shape)
-        out_shape = []
+        out_symbol = self.cal_output_symbol()
+        out_shape = self.eval_symbol([a_shape, b_shape], [out_symbol])[0]
+        out_tensor = np.random.ranf(tuple(out_shape)).astype(inputs[0].dtype)
+        self.set_out_tensor(out_tensor, out_symbol)
+
+    def cal_output_symbol(self):
+        a_symbol, b_symbol = self.get_input_symbols(local=True)
+        if bool(self.trans_a):
+            a_symbol = [a_symbol[idx] for idx in (0, 1, 3, 2)]
+        if bool(self.trans_b):
+            b_symbol = [b_symbol[idx] for idx in (0, 1, 3, 2)]
         max_dim = 4
+        out_symbol = []
+
         for i in range(max_dim):
             if i < max_dim - 2:
-                out_shape.append(max(a_shape[i], b_shape[i]))
+                out_symbol.append(Max(a_symbol[i], b_symbol[i]))
             elif i == max_dim - 2:
-                out_shape.append(a_shape[i])
+                out_symbol.append(a_symbol[i])
             else:
-                out_shape.append(b_shape[i])
-        out_tensor = np.random.ranf(tuple(out_shape)).astype(inputs[0].dtype)
-        self.set_out_tensor(out_tensor)
+                out_symbol.append(b_symbol[i])
+        return out_symbol
 
     def write_attrs(self, txt_file):
         ret = super(ArmMatMulOp, self).write_attrs(txt_file)
@@ -3484,7 +3606,7 @@ class ArmMomentsOp(OpHasMultipleOutPorts, OpHasAxis, ArmOp):
         return ret
 
 
-class ArmMulOp(BaseActivationOp, ArmOp):
+class ArmMulOp(MultidirectionalBroadcastOp, BaseActivationOp, ArmOp):
     @classmethod
     def num_in_ports(cls):
         return 2
@@ -3496,7 +3618,8 @@ class ArmMulOp(BaseActivationOp, ArmOp):
         assert len(inputs) == 2 and len(input_dtypes) == 2, 'The number of inputs is invalid in MulOp.'
         assert input_dtypes[0] == input_dtypes[1], 'The dtype of inputs should be the same in MulOp.'
         out_tensor = np.multiply(*inputs)
-        self.set_out_tensor(out_tensor)
+        out_symbol = self.cal_output_symbol()
+        self.set_out_tensor(out_tensor, out_symbol)
 
 
 class ArmMVNOp(OpHasOneOutPort, OpHasAxis, ArmOp):
@@ -4376,16 +4499,66 @@ class ArmReshapeOp(OpHasOneOutPort, ArmOp):
     def infer_shape(self):
         super(ArmReshapeOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        output_symbol = self.get_output_symbols()[0]
-        if self._graph._attr.get('enable_ds', False) and \
-                output_symbol is not None and \
-                None not in output_symbol:
-            out_shape = self.eval_symbol([inputs[0].shape], [output_symbol])[0]
-            out_tensor = np.reshape(inputs[0], out_shape)
-            self.dim = list(out_shape)
+        out_tensor = np.reshape(inputs[0], self.dim)
+        output_symbol = self.cal_output_symbol()
+        self.set_out_tensor(out_tensor, output_symbol)
+
+    def cal_output_symbol(self):
+        if not self._graph._attr['enable_ds']:
+            return None
+        input_shape = self.get_input_shapes()[0]
+        out_symbol = self.get_output_symbols()
+        if out_symbol and out_symbol[0] is not None:
+            inferred_shape = self.eval_symbol([input_shape], out_symbol)
+            if inferred_shape[0] == self.dim:
+                return out_symbol[0]
+        input_symbol = self.get_input_symbols(local=True)[0]
+        output_shape = self.dim
+        output_symbol = [None] * len(output_shape)
+        axes_map = Op.cal_reshape_changed_axis_map(input_shape, output_shape)
+        if axes_map:
+            inp_unchanged_axis = 0
+            for i in range(len(output_shape)):
+                changed_axis = False
+                skip_axis = False
+                for am in axes_map:
+                    if i in am[1]:
+                        if i == am[1][0]:
+                            changed_axis = True
+                            break
+                        else:
+                            skip_axis = True
+                if skip_axis:
+                    continue
+                if not changed_axis:
+                    output_symbol[i] = Symbol(f's{inp_unchanged_axis}')
+                    inp_unchanged_axis += 1
+                else:
+                    for in_axes, out_axes in axes_map:
+                        if out_axes[0] == i:
+                            if len(out_axes) == 1:
+                                out_axis = out_axes[0]
+                                _symbol = 1
+                                for axis in in_axes:
+                                    _symbol *= input_symbol[axis]
+                                    inp_unchanged_axis += 1
+                                output_symbol[out_axis] = _symbol
+                            else:
+                                _symbol = 1
+                                for axis in in_axes:
+                                    _symbol *= input_symbol[axis]
+                                    inp_unchanged_axis += 1
+                                out_prod = 1
+                                for axis in out_axes:
+                                    if axis == out_axes[-1]:
+                                        output_symbol[axis] = _symbol / out_prod
+                                    else:
+                                        output_symbol[axis] = output_shape[axis]
+                                        out_prod *= output_shape[axis]
+                            break
         else:
-            out_tensor = np.reshape(inputs[0], self.dim)
-        self.set_out_tensor(out_tensor)
+            output_symbol = input_symbol.copy()
+        return output_symbol
 
     def write_attrs(self, txt_file):
         ret = super(ArmReshapeOp, self).write_attrs(txt_file)
@@ -4499,7 +4672,7 @@ class ArmReverseSequenceOp(OpHasOneOutPort, ArmOp):
         return ret
 
 
-class ArmRMSNormOp(OpHasAxis, OpHasWeights, OpHasOneOutPort, ArmOp):
+class ArmRMSNormOp(SameShapeOp, OpHasAxis, OpHasWeights, OpHasOneOutPort, ArmOp):
     @classmethod
     def attributes(cls):
         return {'epsilon': {'type': AttrType.FLOAT, 'required': True, 'default': 1e-5}
@@ -4526,7 +4699,8 @@ class ArmRMSNormOp(OpHasAxis, OpHasWeights, OpHasOneOutPort, ArmOp):
                 f'[Parser]: weights shape shoule be broadcastable with shape which axis specified in RMSNorm({self.name}).')
             weights = self.weights
         out_tensor = (normalized * weights).astype(input_dtype)
-        self.set_out_tensor(out_tensor)
+        out_symbol = self.cal_output_symbol()
+        self.set_out_tensor(out_tensor, out_symbol)
 
     def write_attrs(self, txt_file):
         ret = super(ArmRMSNormOp, self).write_attrs(txt_file)
@@ -4731,6 +4905,12 @@ class ArmShapeOp(OpHasOneOutPort, DynamicShapeOp, ArmOp):
             out_tensor = None
         self.set_out_tensor(out_tensor)
 
+    def infer_symbol(self):
+        inp_symbol = self.get_input_symbols()[0]
+        if inp_symbol and None not in inp_symbol:
+            if Op.is_all_global_symbols(inp_symbol, self._graph._attr['global_symbols']):
+                self.set_out_symbol_value(inp_symbol)
+
     def write_attrs(self, txt_file):
         ret = super(ArmShapeOp, self).write_attrs(txt_file)
         if ret:
@@ -4763,8 +4943,7 @@ class ArmSinhOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
         self.set_out_tensor(out_tensor)
 
 
-class ArmSliceOp(OpHasMultipleOutPorts, ArmOp):
-    # 5 if Dynamic else 1
+class ArmSliceOp(OpHasVariableOutPorts, ArmOp):
     @classmethod
     def num_in_ports(cls):
         return -1
@@ -4799,6 +4978,19 @@ class ArmSliceOp(OpHasMultipleOutPorts, ArmOp):
             out_tensor = [inputs[0][obj]]
         self.set_out_tensor(out_tensor, is_dynamic=self.dynamic)
 
+    def infer_symbol(self):
+        if not self.dynamic:
+            input_tensor_symbols = self.get_input_symbol_values()
+            if input_tensor_symbols[0] is None:
+                out_symbol_value = None
+            else:
+                inp_symbol_value = input_tensor_symbols[0]
+                assert len(self.starts) == len(self.ends) == len(self.steps) == 1
+                s = slice(self.starts[0], self.ends[0], self.steps[0])
+                out_symbol_value = [inp_symbol_value[s]]
+            self.set_out_symbol_value(out_symbol_value)
+            super().infer_symbol()
+
     def write_attrs(self, txt_file):
         ret = super(ArmSliceOp, self).write_attrs(txt_file)
         if ret:
@@ -4828,7 +5020,7 @@ class ArmSlotUpdateOp(OpHasOneOutPort, ArmOp):
         self.set_out_tensor(out_tensor)
 
 
-class ArmSoftmaxOp(OpHasAxis, OpHasOneOutPort, ArmOp):
+class ArmSoftmaxOp(SameShapeOp, OpHasAxis, OpHasOneOutPort, ArmOp):
     @classmethod
     def attributes(cls):
         return {'axis': {'default': -1}}
@@ -4842,7 +5034,8 @@ class ArmSoftmaxOp(OpHasAxis, OpHasOneOutPort, ArmOp):
         super(ArmSoftmaxOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor = tf.nn.softmax(inputs[0].astype(np.float32), axis=self.axis).numpy()
-        self.set_out_tensor(out_tensor.astype(inputs[0].dtype))
+        out_symbol = self.cal_output_symbol()
+        self.set_out_tensor(out_tensor.astype(inputs[0].dtype), out_symbol)
 
 
 class ArmSpaceToBatchOp(OpHasOneOutPort, ArmOp):
@@ -5016,7 +5209,7 @@ class ArmSquaredDifferenceOp(OpNeedBroadcast, OpHasOneOutPort, LayoutUnawareOp, 
         self.set_out_tensor(out_tensor)
 
 
-class ArmSubOp(BaseActivationOp, ArmOp):
+class ArmSubOp(MultidirectionalBroadcastOp, BaseActivationOp, ArmOp):
     @classmethod
     def num_in_ports(cls):
         return 2
@@ -5028,7 +5221,8 @@ class ArmSubOp(BaseActivationOp, ArmOp):
         assert len(inputs) == 2 and len(input_dtypes) == 2, 'The number of inputs is invalid in SubOp.'
         assert input_dtypes[0] == input_dtypes[1], 'The dtype of inputs should be the same in SubOp.'
         out_tensor = np.subtract(*inputs)
-        self.set_out_tensor(out_tensor)
+        out_symbol = self.cal_output_symbol()
+        self.set_out_tensor(out_tensor, out_symbol)
 
 
 class ArmSufficientStatisticsOp(OpHasAxis, OpHasMultipleOutPorts, ArmOp):
@@ -5238,7 +5432,7 @@ class ArmUpsampleByIndexOp(OpHasOneOutPort, ArmOp):
         return ret
 
 
-class ArmWhereOp(OpHasOneOutPort, ArmOp):
+class ArmWhereOp(MultidirectionalBroadcastOp, OpHasOneOutPort, ArmOp):
     @classmethod
     def num_in_ports(cls):
         return 3
@@ -5251,7 +5445,30 @@ class ArmWhereOp(OpHasOneOutPort, ArmOp):
         super(ArmWhereOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor = np.where(*inputs)
-        self.set_out_tensor(out_tensor)
+        out_symbol = self.cal_output_symbol()
+        self.set_out_tensor(out_tensor, out_symbol)
+
+    def infer_symbol(self):
+        input_tensor_symbols = self.get_input_symbol_values()
+        invalid = False
+        for inp in input_tensor_symbols:
+            if inp is None:
+                invalid = True
+                break
+        assert len(input_tensor_symbols) == 3
+        if not invalid:
+            cond = input_tensor_symbols[0]
+            if len(cond) == 1:
+                out_symbol_value = input_tensor_symbols[1] if cond[0] else input_tensor_symbols[2]
+            else:
+                out_symbol_value = []
+                for i, c in enumerate(cond):
+                    out_symbol_value.append(input_tensor_symbols[1][i] if c else input_tensor_symbols[2][i])
+        else:
+            out_symbol_value = None
+
+        self.set_out_symbol_value(out_symbol_value)
+        super().infer_symbol()
 
 
 class ArmYuvToRgbOp(OpHasOneOutPort, ArmOp):

@@ -10,6 +10,8 @@ import ml_dtypes
 import glob
 from collections import OrderedDict
 
+from AIPUBuilder.Parser.front_end.onnx.passes.common_passes import fuse_const
+
 from .common.utils import is_file, is_dir, multi_string_to_list, list_string_to_list, get_dict_params, \
     version_to_tuple
 from .graph.graph import Graph
@@ -431,6 +433,8 @@ def process_graph(graph, params):
         convert_64bit_const(graph)
         infer(graph, final=True)
         remove_useless_op(graph, ['ArmCast'])
-        # infer_symbol(graph)
+        if graph._attr['enable_ds']:
+            fuse_const(graph, final=True)
+            infer_symbol(graph)
     except Exception as e:
         ERROR('[Parser]: Meets exception in last infer (%s)!' % str(e))

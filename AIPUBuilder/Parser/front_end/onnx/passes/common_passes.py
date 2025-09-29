@@ -32,28 +32,30 @@ def fuse_const(graph, final=False):
                 ERROR(
                     '[Parser]: Meets invalid Node (%s) in fuse_const!' % node_name)
                 continue
-            ds_condition = False
-            if node_obj.type not in ('Constant', 'ArmConstant') and \
-                    isinstance(node_obj, OpHasOneOutPort):
-                if node_obj.is_inputs_dynamic() or not node_obj.is_all_inputs_const():
-                    if graph._attr['enable_ds'] \
-                            and final and node_obj.type[:3] != 'Arm' \
-                            and isinstance(node_obj, ConstLikeOp):
-                        ds_condition = True
-                        WARN(f'{node_obj.type}({node_name}) not support dynamic now, we infer it as static shape instead.')
-                else:
-                    ds_condition = True
-                if not ds_condition:
-                    continue
+            if not isinstance(node_obj, ConstLikeOp) \
+                    and isinstance(node_obj, OpHasOneOutPort) \
+                    and node_obj.is_all_inputs_const() \
+                    and not node_obj.is_inputs_dynamic():
                 out_edge = graph.sorted_out_edges(node_name, data=True)
                 if len(out_edge) >= 1 and out_edge[0][2]['tensor'] is not None and out_edge[0][2]['tensor'].value is not None:
-                    const_value = out_edge[0][2]['tensor'].value
-                    const_attr = {'name': node_name,
-                                  'value': const_value,
-                                  'data_format': node_obj.data_format,
-                                  'opset_version': 9}
-                    NodeWrap(graph, node_name).replace_obj(
-                        'Constant', const_attr)
+                    if final:
+                        const_attr = node_obj.copied_attr()
+                        const_attr.update({'weights': out_edge[0][2]['tensor'].value})
+                        if node_obj.quantize and out_edge[0][2]['tensor'].scale_zp:
+                            const_attr.update({'weights_scale_zp': list(out_edge[0][2]['tensor'].scale_zp)})
+                        NodeWrap(graph, node_name).replace_obj(
+                            'ArmConstant', const_attr)
+                    else:
+                        const_value = out_edge[0][2]['tensor'].value
+                        const_attr = {'name': node_name,
+                                      'value': const_value,
+                                      'data_format': node_obj.data_format,
+                                      'opset_version': 9}
+                        NodeWrap(graph, node_name).replace_obj(
+                            'Constant', const_attr)
+                    if graph._attr['enable_ds']:
+                        for _, _, out_attr in out_edge:
+                            out_attr['tensor'].symbol = list(out_edge[0][2]['tensor'].value.shape)
                     in_edges = graph.sorted_in_edges(node_name)
                     if isinstance(graph, SubGraph):
                         for src, _ in in_edges:
@@ -107,6 +109,7 @@ def convert_64bit_const(graph):
 
 
 def convert_to_const(graph, op_type_name_list):
+    from ....ops.op_factory import is_compass_supported_op
     if len(graph) and op_type_name_list:
         for node_name in graph.nodes:
             node = NodeWrap(graph, node_name)
@@ -114,10 +117,21 @@ def convert_to_const(graph, op_type_name_list):
             if node_obj is None:
                 ERROR('[Parser]: Meets invalid Node(%s) in convert_to_const!' % node_name)
                 continue
-            if isinstance(node_obj, OpHasOneOutPort) and node_obj.type in op_type_name_list and \
-                    not node_obj.is_inputs_dynamic() and not node_obj.is_outputs_dynamic():
-                if node_obj.type in ('Shape', 'ConstantOfShape') and graph._attr.get('enable_ds', False):
-                    continue
+            if isinstance(node_obj, OpHasOneOutPort) and node_obj.type in op_type_name_list:
+                if graph._attr.get('enable_ds', False):
+                    if is_compass_supported_op(node_obj.type):
+                        continue
+                    else:
+                        WARN(
+                            f'{node_obj.type}({node_name}) not support dynamic now, we convert it as constant instead.')
+                else:
+                    if node_obj.is_inputs_dynamic() or node_obj.is_outputs_dynamic():
+                        if is_compass_supported_op(node_obj.type):
+                            continue
+                        else:
+                            WARN(
+                                f'{node_obj.type}({node_name}) not support dynamic now, we convert it as constant instead.')
+
                 out_tensors = node_obj.get_output_tensors()
                 if len(out_tensors) >= 1 and out_tensors[0] is not None and node_obj.is_all_outputs_const():
                     new_attr = node_obj.copied_attr()
@@ -125,6 +139,10 @@ def convert_to_const(graph, op_type_name_list):
                     node.replace_obj('Constant', new_attr)
                     const_in_edges = graph.sorted_in_edges(node_name)
                     graph.remove_edges_from(const_in_edges)
+                    out_edges = graph.sorted_out_edges(node_name, data=True)
+                    for _, _, out_attr in out_edges:
+                        out_attr['tensor'].is_dynamic = False
+                        out_attr['tensor'].is_const = True
         clear_redundant_nodes(graph)
     else:
         WARN('[Parser]: Invalid params for convert_to_const!')
@@ -630,7 +648,7 @@ def remove_redundant_reshape(graph, type='Reshape'):
             new_rs_out_symbol = []
             if rs1_out_symbol is not None and None not in rs1_out_symbol \
                     and rs2_out_symbol is not None and None not in rs2_out_symbol:
-                rs2_in_symbol = reshape_2_obj.get_input_symbols()[0]
+                rs2_in_symbol = reshape_2_obj.get_input_symbols(local=True)[0]
                 sym_map = list(zip(rs2_in_symbol, rs1_out_symbol))
                 for s in rs2_out_symbol:
                     if isinstance(s, int):

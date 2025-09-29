@@ -241,6 +241,8 @@ def infer(graph, partial=False, chosen_list=None, final=False):
 
 
 def infer_symbol(graph, output_node=None):
+    if not graph._attr['enable_ds']:
+        return None
     if len(graph) > 0:
         nodes_list = determined_sort(graph, graph._attr['output_names'])
 
