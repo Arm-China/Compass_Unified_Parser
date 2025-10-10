@@ -1669,7 +1669,8 @@ def convert_special_matmul_to_fc(graph):
                                ],
                                edges=[
                                    ('w', 'matmul', {'src_out_port': 0, 'dst_in_port': 1}),
-                               ])
+                               ], topo_order=True)
+    last_input = None
     for m in matches:
         matmul, w = m['matmul'], m['w']
         matmul_obj = NodeWrap(graph, matmul)['object']
@@ -1714,7 +1715,7 @@ def convert_special_matmul_to_fc(graph):
             if inp_rank > 2:
                 src, _, in_attr = in_edges[0]
                 if graph._attr['enable_ds']:
-                    infer_symbol(graph, src)
+                    infer_symbol(graph, src, last_input)
                     src_obj = NodeWrap(graph, src)['object']
                     src_out_symbol = src_obj.get_output_symbols()[0]
                     pre_rs_sym0 = 1
@@ -1745,6 +1746,7 @@ def convert_special_matmul_to_fc(graph):
                                                     old_dim=[int(np.prod(output_shapes[0][:-1])), output_shapes[0][-1]],
                                                     quantize=matmul_obj.quantize,
                                                     symbol=post_rs_symbol)
+                last_input = post_reshape
                 if matmul in graph._attr['output_names']:
                     index = graph._attr['output_names'].index(matmul)
                     graph._attr['output_names'][index] = post_reshape

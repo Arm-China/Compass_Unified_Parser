@@ -53,7 +53,7 @@ def get_valid_node_name(graph, base_name, nodes_name=None):
     return ret
 
 
-def determined_sort(g, outputs, sort_input=False):
+def determined_sort(g, outputs, inputs=None, sort_input=False):
     '''Get all the sorted nodes according to the outputs node of the graph.'''
     op_order = []
     if outputs:
@@ -61,11 +61,13 @@ def determined_sort(g, outputs, sort_input=False):
         pred = g.predecessor
         visited = set()
         while len(stack) != 0:
-            node_name = stack[0]
-            stack.pop(0)
+            node_name = stack.pop(0)
             visited.add(node_name)
             has_child = False
-            in_names = [name for name in pred[node_name]]
+            if inputs is not None and node_name in inputs:
+                in_names = []
+            else:
+                in_names = [name for name in pred[node_name]]
             for in_node_name in in_names:
                 if in_node_name not in visited:
                     stack.insert(0, node_name)
@@ -240,11 +242,18 @@ def infer(graph, partial=False, chosen_list=None, final=False):
     return ret
 
 
-def infer_symbol(graph, output_node=None):
+def infer_symbol(graph, output_node=None, input_node=None):
     if not graph._attr['enable_ds']:
         return None
     if len(graph) > 0:
-        nodes_list = determined_sort(graph, graph._attr['output_names'])
+        if output_node is None:
+            nodes_list = determined_sort(graph, graph._attr['output_names'], input_node)
+        else:
+            if isinstance(output_node, str):
+                output_nodes = [output_node]
+            else:
+                output_nodes = output_node
+            nodes_list = determined_sort(graph, output_nodes, input_node)
 
         for node_name in nodes_list:
             node_obj = NodeWrap(graph, node_name)['object']
@@ -277,8 +286,5 @@ def infer_symbol(graph, output_node=None):
             else:
                 ERROR('[Parser]: Meets invalid Node (%s) in infer symbol!' % node_name)
 
-            if output_node is not None and node_name == output_node:
-                # stop infer symbol if meet output_node
-                break
     else:
         ERROR('[Parser]: Meets empty graph when inferring symbol!')

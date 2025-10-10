@@ -6,10 +6,10 @@ import abc
 import inspect
 import re
 import copy
-from functools import reduce
+
 from collections import OrderedDict, defaultdict
 from collections.abc import Iterable
-from sympy import Symbol, symbols, Max, Number
+from sympy import Symbol, Max, Number
 import itertools
 import numpy as np
 import torch
@@ -943,8 +943,8 @@ class OpHasOneOutPort(Op):
             if out_local_symbol is not None:
                 sym_mp = []
                 for i, inp_s in enumerate(inp_symbol):
-                    if not Op.is_all_global_symbols(inp_s, self._graph._attr['global_symbols']):
-                        continue
+                    # if not Op.is_all_global_symbols(inp_s, self._graph._attr['global_symbols']):
+                    #     continue
                     sym_mp += list(zip(local_symbol[i], inp_s))
                 output_symbol = []
                 for s in out_local_symbol:
