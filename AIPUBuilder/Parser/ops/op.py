@@ -497,8 +497,9 @@ class Op(abc.ABC):
             txt_file.write('layer_top_shape=[%s]\n' % string_list_to_string(
                 top_info[1] if len(top_info) >= 3 else []))
             # TODO: experimental feature
-            if len(top_info) >= 4 and 'symbol' in top_info[3][0] and self._graph._attr.get('enable_ds', False):
-                txt_file.write('ds_output_shape=[%s]\n' % string_list_to_string(top_info[3][0]['symbol']))
+            if len(top_info) >= 4 and 'symbol' in top_info[3][0] and self._graph._attr['enable_ds']:
+                out_symbols = [str(od['symbol']).replace(' ', '') for od in top_info[3] if 'symbol' in od]
+                txt_file.write('ds_output_shape=[%s]\n' % string_list_to_string(out_symbols))
 
             if self._graph._attr.get('quantize', False) \
                     and len(top_info) >= 4 \
@@ -888,7 +889,6 @@ class Op(abc.ABC):
         info = OrderedDict()
         for u, v, k, d in self._graph.sorted_out_edges(self.name, keys=True, data=True):
             name_suffix = '_' + str(d['src_out_port'])
-            info_value = []
             if u in self._graph._attr.get('duplicate_name', {}):
                 u = self._graph._attr['duplicate_name'][u]
 
