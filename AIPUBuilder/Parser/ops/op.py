@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
+# Copyright © 2022-2025 Arm Technology (China) Co. Ltd.
 
 
 import abc
@@ -91,6 +91,24 @@ class Op(abc.ABC):
         return out_shape
 
     @staticmethod
+    def symbol_to_shape(shape, symbol):
+        new_shape = []
+        for s in symbol:
+            if isinstance(s, str):
+                s_list = s.split('*')
+                tmp_shape = 1
+                for _s in s_list:
+                    idx = int(_s[1:])
+                    tmp_shape *= shape[idx]
+                new_shape.append(tmp_shape)
+            else:
+                new_shape.append(s)
+        if -1 in new_shape:
+            idx = new_shape.index(-1)
+            new_shape[idx] = int(np.prod(shape) // (-np.prod(new_shape)))
+        return new_shape
+
+    @staticmethod
     def framework_op_types(fw, extend=False):
         assert isinstance(fw, Framework), ('%s is not a valid framework type!' % str(fw))
         opsets = set()
@@ -116,6 +134,55 @@ class Op(abc.ABC):
         if not (ndarray.dtype.itemsize * int(np.prod(ndarray.shape)) == end - start):
             ERROR(
                 '[Parser]: Meets error when writing data to bin for Node(%s)!' % name)
+
+    @staticmethod
+    def cal_reshape_changed_axis_map(rs_in_shape, rs_out_shape):
+        reshape_axes_map = []
+        # [[(rs_in_axes), (rs_out_axes)], ...]
+        rs_in_axes = []
+        rs_out_axes = []
+        i = j = 0
+
+        prod_in = 1
+        prod_out = 1
+        skip_prod_in = False
+        skip_prod_out = False
+        in_shape_len = len(rs_in_shape)
+        out_shape_len = len(rs_out_shape)
+        while i < in_shape_len and j < out_shape_len:
+            if not skip_prod_in:
+                prod_in *= rs_in_shape[i]
+            if not skip_prod_out:
+                prod_out *= rs_out_shape[j]
+            if prod_in < prod_out:
+                rs_in_axes.append(i)
+                i += 1
+                skip_prod_in = False
+                skip_prod_out = True
+            elif prod_in == prod_out:
+                if rs_in_axes or rs_out_axes:
+                    rs_in_axes.append(i)
+                    rs_out_axes.append(j)
+                    reshape_axes_map.append([tuple(rs_in_axes), tuple(rs_out_axes)])
+                    rs_in_axes = []
+                    rs_out_axes = []
+                i += 1
+                j += 1
+                prod_in = 1
+                prod_out = 1
+                skip_prod_in = False
+                skip_prod_out = False
+            else:
+                rs_out_axes.append(j)
+                j += 1
+                skip_prod_in = True
+                skip_prod_out = False
+        if i < in_shape_len:
+            reshape_axes_map.append([tuple(list(range(i - 1, in_shape_len))), (out_shape_len - 1,)])
+        if j < out_shape_len:
+            reshape_axes_map.append([(in_shape_len - 1,), tuple(list(range(j - 1, out_shape_len)))])
+
+        return reshape_axes_map
 
     @classmethod
     def perm_nchw_to_nhwc(cls):
@@ -338,16 +405,17 @@ class Op(abc.ABC):
         return True
 
     def clear_unused_tensor(self, is_input_const=False):
-        if 'tensor_counter' in self._graph._attr and not is_input_const:
+        if 'tensor_counter' in self._graph._attr and not is_input_const and not self.in_subgraph:
             for src, _, in_d in self._graph.sorted_in_edges(self.name, data=True):
-                cur_tensor_hash = hash(in_d['tensor'])
-                if self._graph._attr['tensor_counter'][cur_tensor_hash] > 0:
-                    self._graph._attr['tensor_counter'][cur_tensor_hash] -= 1
-                if self._graph._attr['tensor_counter'][cur_tensor_hash] == 0:
-                    if not isinstance(self._graph.nodes[src]['object'], (InputLikeOp, ConstLikeOp)) \
-                            and in_d['tensor'] is not None \
-                            and not in_d['tensor'].is_const:
-                        in_d['tensor'].value = None
+                if not self._graph.nodes[src]['object'].in_subgraph:
+                    cur_tensor_hash = hash(in_d['tensor'])
+                    if self._graph._attr['tensor_counter'][cur_tensor_hash] > 0:
+                        self._graph._attr['tensor_counter'][cur_tensor_hash] -= 1
+                    if self._graph._attr['tensor_counter'][cur_tensor_hash] == 0:
+                        if not isinstance(self._graph.nodes[src]['object'], (InputLikeOp, ConstLikeOp)) \
+                                and in_d['tensor'] is not None \
+                                and not in_d['tensor'].is_const:
+                            in_d['tensor'].value = None
 
     @abc.abstractmethod
     def infer_shape(self):
@@ -386,6 +454,9 @@ class Op(abc.ABC):
                 top_info[0] if len(top_info) >= 3 else []))
             txt_file.write('layer_top_shape=[%s]\n' % string_list_to_string(
                 top_info[1] if len(top_info) >= 3 else []))
+            # TODO: experimental feature
+            # if len(top_info) >= 4 and 'symbol' in top_info[3][0] and self._graph._attr.get('enable_ds', False):
+            #     txt_file.write('ds_output_shape=[%s]\n' % string_list_to_string(top_info[3][0]['symbol']))
 
             if self._graph._attr.get('quantize', False) \
                     and len(top_info) >= 4 \
@@ -518,7 +589,7 @@ class Op(abc.ABC):
     def is_all_inputs_const(self):
         '''Determine whether all inputs are constant nodes.'''
         if isinstance(self, ConstLikeOp):
-            return True
+            return not self.is_inputs_dynamic()
         elif self.name in self._graph._attr['input_tensors'] \
                 and self._graph._attr['input_tensors'][self.name].is_const:
             return True
@@ -526,6 +597,22 @@ class Op(abc.ABC):
             is_const_list = [d['tensor'].is_const for _, _, _, d in self._graph.sorted_in_edges(
                 self.name, keys=True, data=True)]
             return True if (is_const_list and all(is_const_list)) else False
+
+    def is_inputs_dynamic(self):
+        '''Determine whether has dynamic input.'''
+        if self.name in self._graph._attr['input_tensors']:
+            return self._graph._attr['input_tensors'][self.name].is_dynamic
+        else:
+            is_dynamic_list = [d['tensor'].is_dynamic for _, _, _, d in self._graph.sorted_in_edges(
+                self.name, keys=True, data=True)]
+            return True if (is_dynamic_list and (any(is_dynamic_list) or
+                                                 self._graph._attr.get('enable_ds', False))) else False
+
+    def is_outputs_dynamic(self):
+        '''Determine whether has dynamic output.'''
+        is_dynamic_list = [d['tensor'].is_dynamic for _, _, _, d in self._graph.sorted_out_edges(
+            self.name, keys=True, data=True)]
+        return True if (is_dynamic_list and any(is_dynamic_list)) else False
 
     def is_all_outputs_const(self):
         '''Determine whether all outputs are constant nodes.'''
@@ -563,6 +650,21 @@ class Op(abc.ABC):
             return ret
         except Exception as e:
             ERROR('[Parser]: Node(%s) get_output_shapes meets error:%s' %
+                  (self.name, str(e)))
+            return []
+
+    def get_output_symbols(self):
+        '''Returns the output symbol of all outputs to this op.'''
+        try:
+            ret = []
+            for _, _, _, d in self._graph.sorted_out_edges(self.name, keys=True, data=True):
+                try:
+                    ret.append(list(d['tensor'].symbol))
+                except:
+                    ret.append(None)
+            return ret
+        except Exception as e:
+            ERROR('[Parser]: Node(%s) get_ds_output_shapes meets error:%s' %
                   (self.name, str(e)))
             return []
 
@@ -701,6 +803,8 @@ class Op(abc.ABC):
             if len(d['tensor'].min_max) == 2:
                 min_max = np.array(d['tensor'].min_max, dtype=np.float32)
                 info_value[2].update({'min_max': min_max})
+            if d['tensor'].symbol is not None and None not in d['tensor'].symbol:
+                info_value[2].update({'symbol': d['tensor'].symbol})
             if quantize:
                 if d['tensor'].dtype is not None:
                     info_value[2].update({'dtype': str(d['tensor'].dtype)})
@@ -733,12 +837,17 @@ class OpHasOneOutPort(Op):
         '''set the out tensor of this op.'''
         try:
             is_const = self.is_all_inputs_const()
+            if is_const:
+                is_dynamic = False
+            else:
+                is_dynamic = self.is_inputs_dynamic() or isinstance(self, DynamicShapeOp)
             for _, _, d in self._graph.sorted_out_edges(self.name, data=True):
                 if d.get('tensor', None) is not None:
                     d['tensor'].value = tensor_data
                     if tensor_data is not None:
                         d['tensor'].shape = d['tensor'].value.shape
                         d['tensor'].is_const = is_const
+                        d['tensor'].is_dynamic = is_dynamic
                         if not self.quantize or d['tensor'].dtype is None:
                             d['tensor'].dtype = str(d['tensor'].value.dtype)
                 else:
@@ -764,12 +873,13 @@ class OpHasMultipleOutPorts(Op):
         '''An abstract method for shape inference.'''
         super(OpHasMultipleOutPorts, self).infer_shape()
 
-    def set_out_tensor(self, tensor_data_list):
+    def set_out_tensor(self, tensor_data_list, is_dynamic=False):
         '''set the out tensor of this op.'''
         try:
             from ..graph.node_wrap import NodeWrap
             from ..graph.graph_algo import get_valid_node_name
             is_const = self.is_all_inputs_const()
+            is_dynamic = self.is_inputs_dynamic() or is_dynamic
             out_ports = self.get_out_ports()
             if len(tensor_data_list) > len(out_ports):
                 for i in range(len(tensor_data_list)):
@@ -793,10 +903,11 @@ class OpHasMultipleOutPorts(Op):
                             if t is not None:
                                 d['tensor'].shape = d['tensor'].value.shape
                                 d['tensor'].is_const = is_const
+                                d['tensor'].is_dynamic = is_dynamic
                                 if not self.quantize or d['tensor'].dtype is None:
                                     d['tensor'].dtype = str(d['tensor'].value.dtype)
                         else:
-                            d['tensor'] = Tensor(value=t, is_const=is_const)
+                            d['tensor'] = Tensor(value=t, is_const=is_const, is_dynamic=is_dynamic)
 
             self.clear_unused_tensor(is_const)
 
@@ -1711,11 +1822,6 @@ class BaseLinearOp(OpHasBiases, OpHasWeights, OpHasOneOutPort):
         '''Convert the perm under the TF lite framework to the perm under the TF framework.'''
         return [1, 0]
 
-    @classmethod
-    def cast_in_ports(cls):
-        '''Returns the port index to which the cast needs to be added and the cast dtype to be converted.'''
-        return {0: 'float32'}
-
     def __init__(self, graph, attr_dict=None):
         super(BaseLinearOp, self).__init__(graph, attr_dict)
         self.update_attributes(BaseLinearOp, attr_dict)
@@ -1810,7 +1916,12 @@ class BaseConvOp(OpHasPaddingStrides, BaseLinearOp, LayoutConcernedOp):
             if 'ConvInteger' in self.type or self.type == 'QLinearConv':
                 self.biases = np.zeros((self.num_output,), np.int32)
             else:
-                self.biases = np.zeros((self.num_output,), np.float32)
+                inp_dtypes = self.get_input_dtypes()
+                if inp_dtypes and inp_dtypes[0] is not None:
+                    bias_dtype = inp_dtypes[0]
+                else:
+                    bias_dtype = np.float32
+                self.biases = np.zeros((self.num_output,), bias_dtype)
 
     def write_attrs(self, txt_file):
         '''Write the required attr in IR.'''
@@ -2076,7 +2187,10 @@ class BaseActivationOp(OpHasOneOutPort):
             in_place = True
         else:
             in_place = False
-        torch_tensor = torch.from_numpy(tensor)
+        try:
+            torch_tensor = torch.from_numpy(tensor)
+        except:
+            torch_tensor = torch.from_numpy(tensor.astype(np.float32))
         if act == 'RELU':
             ret = torch.nn.functional.relu(torch_tensor, inplace=in_place).numpy()
         elif act == 'RELU6':
@@ -2101,6 +2215,7 @@ class BaseActivationOp(OpHasOneOutPort):
             ret = torch.nn.functional.celu(x, alpha=a).numpy()
         else:
             ret = tensor
+        ret = ret.astype(tensor.dtype)
         return ret
 
     def update_activation(self, attr_dict):
@@ -2313,7 +2428,7 @@ class OpHasSubGraph(OpHasVariableOutPorts):
     OP with subgraph must inherit OpHasSubGraph.
     '''
 
-    def set_out_tensor(self, tensor_data_list, is_const=False):
+    def set_out_tensor(self, tensor_data_list, is_const_list=[], is_dynamic_list=[]):
         '''set the out tensor of this op.'''
         try:
             from ..graph.node_wrap import NodeWrap
@@ -2335,7 +2450,10 @@ class OpHasSubGraph(OpHasVariableOutPorts):
                         d['tensor'].value = tensor_data_list[out_ports.index(
                             d['src_out_port'])]
                         d['tensor'].shape = d['tensor'].value.shape
-                        d['tensor'].is_const = is_const
+                        d['tensor'].is_const = is_const_list[out_ports.index(
+                            d['src_out_port'])] if is_const_list else False
+                        d['tensor'].is_dynamic = is_dynamic_list[out_ports.index(
+                            d['src_out_port'])] if is_dynamic_list else False
                         if not self.quantize or d['tensor'].dtype is None:
                             d['tensor'].dtype = str(d['tensor'].value.dtype)
                     else:
@@ -2346,13 +2464,14 @@ class OpHasSubGraph(OpHasVariableOutPorts):
                     if d.get('tensor', None) is not None:
                         d['tensor'].value = tensor_data_list[0]
                         d['tensor'].shape = d['tensor'].value.shape
-                        d['tensor'].is_const = is_const
+                        d['tensor'].is_const = is_const_list[0] if is_const_list else False
+                        d['tensor'].is_dynamic = is_dynamic_list[0] if is_dynamic_list else False
                         if not self.quantize or d['tensor'].dtype is None:
                             d['tensor'].dtype = str(d['tensor'].value.dtype)
                     else:
                         d['tensor'] = Tensor(value=tensor_data_list[0])
 
-            self.clear_unused_tensor(is_const)
+            self.clear_unused_tensor(all(is_const_list) if is_const_list else False)
 
         except KeyError as e:
             ERROR('[Parser]: Node(%s) meets key error in set_out_tensor (%s)! ' %

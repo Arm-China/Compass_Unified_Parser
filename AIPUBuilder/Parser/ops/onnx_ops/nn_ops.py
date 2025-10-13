@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
-# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
+# Copyright © 2022-2025 Arm Technology (China) Co. Ltd.
+import copy
+
 import numpy as np
 import torch
 import tensorflow as tf
@@ -726,7 +728,7 @@ class GeluOp(BaseActivationOp, OnnxOp):
     def infer_shape(self):
         super(GeluOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        input_tensor = torch.tensor(inputs[0], dtype=torch.float32)
+        input_tensor = torch.from_numpy(inputs[0].astype(np.float32))
         from ...common.utils import version_to_tuple
         if version_to_tuple(str(torch.onnx.producer_version)) < version_to_tuple('1.12.0'):
             WARN('[Parser]Please upgrade your torch version to 1.12 or above.')
@@ -1495,10 +1497,11 @@ class LayerNormalizationOp(OpHasAxis, OpHasVariableOutPorts, OnnxOp):
             biases = np.zeros_like(weights)
         out_tensors = [np.array(normalized * weights + biases, dtype=input_dtype)]
         out_ports = self.get_out_ports()
+        std_mean_dtype = 'bfloat16' if inputs[0].dtype == 'bfloat16' else 'float32'
         if 1 in out_ports:
-            out_tensors.append(np.array(mean, np.float32))
+            out_tensors.append(np.array(mean, std_mean_dtype))
         if 2 in out_ports:
-            out_tensors.append(np.array(ngamma, np.float32))
+            out_tensors.append(np.array(ngamma, std_mean_dtype))
         self.set_out_tensor(out_tensors)
 
     def convert_version(self):
@@ -1507,7 +1510,7 @@ class LayerNormalizationOp(OpHasAxis, OpHasVariableOutPorts, OnnxOp):
         assert len(input_shapes) >= 2, 'Meets invalid inputs of LayerNormalizationOp(%s) in convert_version!' % self.name
         if len(input_shapes) == 2:
             np_dtype_str = self.get_inputs_info()[2][1]
-            bias = np.zeros(input_shapes[1], dtype=getattr(np, np_dtype_str))
+            bias = np.zeros(input_shapes[1], dtype=np_dtype_str)
             insert_constant(self._graph, self.name + '_bias', bias, self.name, in_port=2)
 
 
@@ -2126,6 +2129,55 @@ class ReluOp(BaseReluOp, OnnxOp):
         super(ReluOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor = self.cal_activation(inputs[0])
+        self.set_out_tensor(out_tensor)
+
+
+class RMSNormalizationOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
+    @classmethod
+    def attributes(cls):
+        return {
+            23: {
+                'epsilon': {'type': AttrType.FLOAT, 'required': False, 'default': 1e-5},
+                'axis': {'type': AttrType.INT, 'required': False, 'default': -1},
+                'stash_type': {'type': AttrType.INT, 'default': 1}}
+        }
+
+    def __init__(self, graph, attr_dict=None):
+        super(RMSNormalizationOp, self).__init__(graph, attr_dict)
+        self.update_attributes(RMSNormalizationOp, attr_dict)
+        assert self.check_required(), 'RMSNormalizationOp is missing a required parameter.'
+
+    def __getattr__(self, item):
+        ret = None
+        if item == 'axes':
+            ret = self.__dict__['_attr'][item].value
+            if ret is None and self.axis is not None:
+                input_length = len(self.get_input_shapes()[0])
+                start_axis = (self.axis + input_length) if self.axis < 0 else self.axis
+                ret = [axis for axis in range(input_length) if axis >= start_axis]
+                self.__dict__['_attr'][item].value = ret
+        if ret is None:
+            ret = super(RMSNormalizationOp, self).__getattr__(item)
+        return ret
+
+    def infer_shape(self):
+        super(RMSNormalizationOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        assert len(inputs) == 2, 'RMSNormalizationOp expects 2 inputs, but got %d' % len(inputs)
+        if self.is_all_inputs_const():
+            input_length = len(inputs[0].shape)
+            input_dtype = inputs[0].dtype
+            self.axes = OpHasAxis.make_axes_non_negative(self.axes, input_length)
+            inp = np.array(inputs[0], np.float32) if self.stash_type else inputs[0]
+            sq_input = inp * inp
+            mean = np.mean(sq_input, axis=tuple(self.axes), keepdims=True)
+            normalized = inp / np.sqrt(mean + self.epsilon)
+            if self.stash_type:
+                normalized = np.array(normalized, inputs[0].dtype)
+            weights = inputs[1]
+            out_tensor = (normalized * weights).astype(input_dtype)
+        else:
+            out_tensor = copy.deepcopy(inputs[0])
         self.set_out_tensor(out_tensor)
 
 

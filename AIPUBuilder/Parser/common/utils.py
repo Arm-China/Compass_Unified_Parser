@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
+# Copyright © 2022-2025 Arm Technology (China) Co. Ltd.
 
 
 import os
@@ -33,14 +33,36 @@ def get_file_name(file_path):
     return os.path.basename(file_path).split('.')[0]
 
 
-def get_target_graph(target_g_name, root_graph, parent_graph=None):
+def get_target_graph(target_g_name, root_graph, all_graph_info=None):
     for _, v in root_graph._attr['subgraphs'].items():
         if target_g_name in v:
             return v[target_g_name]
-    if parent_graph is not None and target_g_name == parent_graph.name:
-        return parent_graph
+    if all_graph_info is not None and target_g_name in all_graph_info:
+        return all_graph_info[target_g_name]
     else:
         return root_graph
+
+
+def get_all_child_nodes(subgraph_dict, parent_node):
+    child_nodes = [parent_node]
+    while True:
+        tmp_nodes = child_nodes[:]
+        parent_graphs = list(subgraph_dict[child_nodes[-1]].keys())
+        for n_name, v in subgraph_dict.items():
+            if n_name not in child_nodes:
+                for t_graph in list(subgraph_dict[n_name].values()):
+                    if t_graph._attr['parent_graph'].name in parent_graphs:
+                        if n_name not in tmp_nodes:
+                            tmp_nodes.append(n_name)
+        if len(tmp_nodes) == len(child_nodes):
+            break
+        else:
+            child_nodes = tmp_nodes
+    return child_nodes[:]
+
+
+def is_continuous_num(lst):
+    return lst == list(range(lst[0], lst[-1] + 1))
 
 
 def readable_file(path):

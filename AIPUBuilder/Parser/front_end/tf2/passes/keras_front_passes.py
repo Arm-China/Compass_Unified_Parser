@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
+# Copyright © 2022-2025 Arm Technology (China) Co. Ltd.
 
 
 import numpy as np
@@ -649,8 +649,9 @@ def convert_relu(graph):
             ERROR('[Parser]: Meets invalid Op (%s) in convert_relu!' % relu)
             continue
         matched = True
-        threshold = np.array(relu_obj.threshold)
-        negative_slope = np.array(relu_obj.negative_slope)
+        attr_dtype = relu_obj.dtype
+        threshold = np.array(relu_obj.threshold, dtype=attr_dtype)
+        negative_slope = np.array(relu_obj.negative_slope, dtype=attr_dtype)
         negative_slope_is_zero = FLOAT_EQUAL(negative_slope, 0)
         max_value = relu_obj.max_value
         new_node_attr = relu_obj.copied_attr()
@@ -673,14 +674,15 @@ def convert_relu(graph):
         thresholded_relu_in_attr = copy.deepcopy(in_attr)
         graph.add_edge(src, thresholded_relu, **thresholded_relu_in_attr)
         thres_out_tensor = None if in_attr['tensor'].value is None else \
-            torch.nn.Threshold(threshold.item(), 0)(torch.tensor(in_attr['tensor'].value)).detach().numpy()
+            torch.nn.Threshold(threshold.item(), 0)(torch.tensor(in_attr['tensor'].value.astype(
+                np.float32))).detach().numpy().astype(in_attr['tensor'].value.dtype)
         add_pos_in_tensor = thres_out_tensor
         pos_last_node = thresholded_relu
         if max_value is not None:
             min_after_thres = get_valid_node_name(graph, thresholded_relu + '_min')
             min_in_attr = {'tensor': Tensor(value=thres_out_tensor)}
             graph.add_edge(thresholded_relu, min_after_thres, **min_in_attr)
-            insert_constant(graph, min_after_thres + '_operand', np.array(max_value),
+            insert_constant(graph, min_after_thres + '_operand', np.array(max_value, dtype=attr_dtype),
                             min_after_thres, in_port=1, data_format='NHWC')
             add_pos_in_tensor = None if thres_out_tensor is None else \
                 np.maximum(thres_out_tensor, max_value)
@@ -708,7 +710,8 @@ def convert_relu(graph):
         min_after_sub_in_tensor = None if in_attr['tensor'].value is None else (in_attr['tensor'].value - threshold)
         min_after_sub_in_attr = {'tensor': Tensor(value=min_after_sub_in_tensor)}
         graph.add_edge(sub, min_after_sub, **min_after_sub_in_attr)
-        insert_constant(graph, min_after_sub + '_zero', np.array(0.), min_after_sub, in_port=1, data_format='NHWC')
+        insert_constant(graph, min_after_sub + '_zero', np.array(0., dtype=attr_dtype),
+                        min_after_sub, in_port=1, data_format='NHWC')
         mul_after_min = get_valid_node_name(graph, relu + '_mul')
         mul_after_min_in_tensor = None if min_after_sub_in_tensor is None else np.minimum(min_after_sub_in_tensor, 0)
         mul_after_min_in_attr = {'tensor': Tensor(value=mul_after_min_in_tensor)}
@@ -746,18 +749,19 @@ def convert_rescaling(graph):
         if rescaling_obj is None or len(in_edges) < 1:
             ERROR('[Parser]: Meets invalid Op (%s) in convert_rescaling!' % rescaling)
             continue
+        attr_dtype = getattr(np, getattr(rescaling_obj, 'dtype', 'float32'))
         mul = get_valid_node_name(graph, rescaling + '_mul')
         src, _, in_attr = in_edges[0]
         graph.remove_edges_from(in_edges)
         graph.add_edge(src, mul, **in_attr)
-        insert_constant(graph, mul + '_scale', np.array(rescaling_obj.scale, np.float32), mul, in_port=1)
+        insert_constant(graph, mul + '_scale', np.array(rescaling_obj.scale, attr_dtype), mul, in_port=1)
 
         mul_out_attr = copy.deepcopy(in_attr)
         mul_out_attr.update({'src_out_port': 0})
         if in_attr['tensor'] is not None and in_attr['tensor'].value is not None:
             mul_out_attr['tensor'].value = in_attr['tensor'].value * rescaling_obj.scale
         graph.add_edge(mul, rescaling, **mul_out_attr)
-        insert_constant(graph, rescaling + '_offset', np.array(rescaling_obj.offset, np.float32), rescaling, in_port=1)
+        insert_constant(graph, rescaling + '_offset', np.array(rescaling_obj.offset, attr_dtype), rescaling, in_port=1)
 
         NodeWrap(graph, mul).replace_obj('Mul', {'name': mul, 'opset_version': 13})
         add_attr = rescaling_obj.copied_attr()

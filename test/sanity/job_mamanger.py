@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
+# Copyright © 2022-2025 Arm Technology (China) Co. Ltd.
 
 
 import os
@@ -68,7 +68,7 @@ class JobManager(object):
                             result = "(fail)"
                         # print("%s finish , cost_time = %3.0fs %s" \
                         #         %(job.name.ljust(25), job_dict["cost_time"], result))
-                    elif timeout > 0 and time.time()-t0 > timeout:
+                    elif timeout > 0 and time.time() - t0 > timeout:
                         job_dict["cost_time"] = time.time() - t0
                         # print("%s timeout, cost_time = %3.0fs %s" \
                         #         %(job.name.ljust(25), job_dict["cost_time"], "(timeout)"))
@@ -93,7 +93,7 @@ class JobManager(object):
                 if len(self.running_jobs) == 0:
                     if no_job_time == 0:
                         no_job_time = time.time()
-                    if time.time()-no_job_time > self.timeout:
+                    if time.time() - no_job_time > self.timeout:
                         break
                 elif no_job_time != 0:
                     no_job_time = 0

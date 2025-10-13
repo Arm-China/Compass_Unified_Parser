@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
+# Copyright © 2022-2025 Arm Technology (China) Co. Ltd.
 
 
 import math
@@ -86,7 +86,13 @@ class AddOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
         inputs = self.get_input_tensors()
         input_dtypes = self.get_input_dtypes()
         assert len(inputs) == 2 and len(input_dtypes) == 2, 'The number of inputs is invalid in AddOp.'
-        assert input_dtypes[0] == input_dtypes[1], 'The dtype of inputs should be the same in AddOp.'
+        if input_dtypes == ['int32', 'int64']:
+            inputs[0] = inputs[0].astype(np.int64)
+        if input_dtypes == ['int64', 'int32']:
+            inputs[1] = inputs[1].astype(np.int64)
+        # WA for subgraph
+        assert inputs[0].dtype == inputs[1].dtype, \
+            f'The dtype of inputs should be the same in AddOp, but {inputs[0].dtype} and {inputs[1].dtype}.'
         cur_ver = self.cur_version
         if cur_ver <= 6:
             if self.broadcast:
@@ -524,8 +530,8 @@ class EinsumOp(OpHasOneOutPort, OnnxOp):
     def infer_shape(self):
         super(EinsumOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        # assert len(inputs) == 2, 'Currently only two inputs are supported.'
-        out_tensor = np.einsum(self.equation, *inputs)
+        new_inputs = [inp.astype(np.float32) for inp in inputs]
+        out_tensor = np.einsum(self.equation, *new_inputs).astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
 
@@ -566,7 +572,7 @@ class ErfOp(OpHasOneOutPort, OnnxOp):
     def infer_shape(self):
         super(ErfOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = torch.erf(torch.from_numpy(np.array(inputs[0]))).numpy()
+        out_tensor = torch.erf(torch.from_numpy(np.array(inputs[0], dtype=np.float32))).numpy().astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
 
@@ -871,11 +877,11 @@ class LogSoftmaxOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
                 else [int(np.prod(input_shape[:self.axis])), int(np.prod(input_shape[self.axis:]))]
             inp = np.reshape(inputs[0], inner_dim)
             out_tensor = torch.log_softmax(
-                torch.from_numpy(inp), dim=0 if self.axis == 0 else -1).numpy()
-            out_tensor = np.reshape(out_tensor, input_shape)
+                torch.from_numpy(inp.astype(np.float32)), dim=0 if self.axis == 0 else -1).numpy()
+            out_tensor = np.reshape(out_tensor, input_shape).astype(inputs[0].dtype)
         else:
             out_tensor = torch.log_softmax(
-                torch.from_numpy(inputs[0]), dim=self.axis).numpy()
+                torch.from_numpy(inputs[0].astype(np.float32)), dim=self.axis).numpy().astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
     def convert_version(self):
@@ -1100,7 +1106,7 @@ class MeanVarianceNormalizationOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
         inputs = self.get_input_tensors()
         data_mean = np.mean(inputs[0], axis=tuple(self.axes), keepdims=True)
         data_std = np.std(inputs[0], axis=tuple(self.axes), keepdims=True)
-        out_tensor = (inputs[0] - data_mean) / (data_std + self.epsilon)
+        out_tensor = (inputs[0] - data_mean) / (data_std + self.epsilon).astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
 
@@ -2335,6 +2341,7 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
             roi = self.roi
             if in_attr.get('tensor', None) is None \
                     or in_attr['tensor'].value is None \
+                    or 0 in in_attr['tensor'].value.shape \
                     or np.any(np.array(in_attr['tensor'].value) != roi):
                 self._graph.remove_edge(src, self.name, key=k)
                 insert_constant(self._graph, self.name + '_roi',
@@ -2348,6 +2355,7 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
             scales = self.scales
             if in_attr.get('tensor', None) is None \
                     or in_attr['tensor'].value is None \
+                    or 0 in in_attr['tensor'].value.shape \
                     or np.any(np.array(in_attr['tensor'].value) != scales):
                 self._graph.remove_edge(src, self.name, key=k)
                 insert_constant(self._graph, self.name + '_scales', np.array(
@@ -2361,6 +2369,7 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
             sizes = self.sizes
             if in_attr.get('tensor', None) is None \
                     or in_attr['tensor'].value is None \
+                    or 0 in in_attr['tensor'].value.shape \
                     or np.any(np.array(in_attr['tensor'].value) != sizes):
                 self._graph.remove_edge(src, self.name, key=k)
                 insert_constant(self._graph, self.name + '_sizes', np.array(
@@ -2764,13 +2773,13 @@ class ThresholdedReluOp(BaseActivationOp, OnnxOp):
 class TopKOp(OpHasAxis, OpHasMultipleOutPorts, OnnxOp):
     @classmethod
     def attributes(cls):
-        return {1: {'axis': {'default': -1}, 'k': {'type': AttrType.INT, 'required': True}},
-                10: {'axis': {'default': -1}},
+        return {1: {'axis': {'default': -1}, 'k': {'type': AttrType.INT, 'required': True},
+                    },
+                10: {'axis': {'default': -1},
+                     },
                 11: {'axis': {'default': -1},
                      'largest': {'type': AttrType.INT, 'options': [0, 1], 'default': 1},
                      'sorted': {'type': AttrType.INT, 'options': [0, 1], 'default': 1},
-                     'select_index': {'type': AttrType.STRING, 'options': ['first', 'last', 'random'],
-                                      'default': 'last'}
                      },
                 }
 
@@ -2784,13 +2793,20 @@ class TopKOp(OpHasAxis, OpHasMultipleOutPorts, OnnxOp):
         inputs = self.get_input_tensors()
         input_tensor = torch.from_numpy(inputs[0].astype(np.float64))
         cur_ver = self.cur_version
-        k = self.k if cur_ver == 1 else int(inputs[1])
-        largest = bool(self.largest) if cur_ver >= 11 else True
-        need_sorted = bool(self.sorted) if cur_ver >= 11 else True
-        out_tensor_list = torch.topk(
-            input_tensor, k, dim=self.axis, largest=largest, sorted=need_sorted)
-        out_tensor_list = [ot.numpy().astype(inputs[0].dtype) if i == 0 else ot.numpy().astype(
-            np.int64) for (i, ot) in enumerate(out_tensor_list)]
+        if cur_ver == 1:
+            k = self.k
+        else:
+            in_consts = self.sorted_in_consts()
+            k = int(in_consts[0][2]) if in_consts else -1
+        if k > 0:
+            largest = bool(self.largest) if cur_ver >= 11 else True
+            need_sorted = bool(self.sorted) if cur_ver >= 11 else True
+            out_tensor_list = torch.topk(
+                input_tensor, k, dim=self.axis, largest=largest, sorted=need_sorted)
+            out_tensor_list = [ot.numpy().astype(inputs[0].dtype) if i == 0 else ot.numpy().astype(
+                np.int64) for (i, ot) in enumerate(out_tensor_list)]
+        else:
+            out_tensor_list = [inputs[0], np.zeros(inputs[0].shape, dtype=np.int64)]
         self.set_out_tensor(out_tensor_list)
 
 

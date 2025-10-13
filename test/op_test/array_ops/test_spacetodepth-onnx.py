@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
+# Copyright © 2022-2025 Arm Technology (China) Co. Ltd.
 
 import numpy as np
 import onnx
@@ -26,7 +26,7 @@ def create_space_to_depth_model(onnx_path, input_shape, output_shape, blocksize,
         [Y],  # outputs
 
     )
-    model_def = helper.make_model(graph_def, producer_name=OP_NAME+'-model')
+    model_def = helper.make_model(graph_def, producer_name=OP_NAME + '-model')
     model_def.opset_import[0].version = version
     onnx.checker.check_model(model_def)
     onnx.save_model(model_def, onnx_path)
@@ -41,9 +41,9 @@ blocksizes = [1, 2]
 for blocksize in blocksizes:
     model_path = '-'.join([OP_NAME, str(blocksize)]) + '.onnx'
     output_shape = [input_shape[0],
-                    int(input_shape[1]*blocksize*blocksize),
-                    int(input_shape[2]/blocksize),
-                    int(input_shape[3]/blocksize)]
+                    int(input_shape[1] * blocksize * blocksize),
+                    int(input_shape[2] / blocksize),
+                    int(input_shape[3] / blocksize)]
     create_space_to_depth_model(model_path, input_shape, output_shape, blocksize)
     exit_status = run_parser(model_path, feed_dict, verify=True)
     assert exit_status

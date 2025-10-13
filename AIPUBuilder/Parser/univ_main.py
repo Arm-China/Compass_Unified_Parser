@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
+# Copyright © 2022-2025 Arm Technology (China) Co. Ltd.
 
 import os
 import sys
@@ -31,8 +31,8 @@ required arguments in Common section of <net.cfg>:
     output              The output(s) node(s)' name of the model. Use comma to separate for several outputs.
 
 optional arguments in Common section of <net.cfg>:
-    model_type          The model format of the input model. (default: tensorflow)
-                        The supported types are(case insensitive): tensorflow, tflite, onnx, caffe, torch.
+    model_type          The model format of the input model. (default: onnx)
+                        The supported types are(case insensitive): tensorflow, tflite, onnx, torch, caffe(deprecated).
     model_domain        The domain of the model. (default: image_classification)
                         Example:
                             image_classification
@@ -103,6 +103,8 @@ optional arguments in Common section of <net.cfg>:
                         For non-quantized models, this field should be ignored. For quantized model, if
                         this field is set to False or not set, the quantized op will be kept and the output
                         IR will be a quantized IR.
+    force_cpu_parse     This field is used only for parsing a CPU exported Torchscript (tensors saved on a CPU device) 
+                        file to ensure that it is processed by the CPU in a CUDA available device.(default: False)
     similarity_input_npy
                         Show similarity and mean errors if the file path of the feeded inputs is provided.
                         The file should be a binary file in NumPy .npy format. A dictionary in format
@@ -114,6 +116,9 @@ optional arguments in Common section of <net.cfg>:
                         will be shown if the file path is provided.
     use_onnxsim         If use onnxsim(3rd onnx model simplify tool) to simplify the torch converted onnx model, 
                         currently only works in torch model parsing. (default: True)
+    enable_ds           If enable dynamic shape mode, if set to true, some ops will not be optimized.(e.g. Shape/
+                        ConstantOfShape...). (default: False)
+    loop_max_count      Loop max count for Loop op infer shape. (default: 100)
     ''')
     args.add_argument('-c', '--cfg', metavar='<net.cfg>',
                       type=str, required=True,
@@ -140,7 +145,7 @@ optional arguments in Common section of <net.cfg>:
 
         if 'Common' in config:
             common = config['Common']
-            model_type = 'tensorflow'
+            model_type = 'onnx'
             if 'model_type' in common:
                 model_type = common['model_type']
                 if model_type.upper() not in ('ONNX', 'TFLITE', 'CAFFE', 'TENSORFLOW', 'TF', 'TORCH', 'PYTORCH'):
@@ -152,6 +157,8 @@ optional arguments in Common section of <net.cfg>:
             os.environ['AIPU_DISABLE_BACKTRACE'] = 'True'
 
             model_type = model_type.lower()
+            model_type = 'tf' if model_type == 'tensorflow' else model_type
+            model_type = 'torch' if model_type == 'pytorch' else model_type
             common['model_type'] = model_type
 
             INFO('Begin to parse %s model %s...' %

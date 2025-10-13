@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
+# Copyright © 2022-2025 Arm Technology (China) Co. Ltd.
 
 
 import numpy as np
@@ -36,7 +36,7 @@ for frame_step in range(2, 5):
         feed_dict = dict()
         feed_dict['X:0'] = np.random.ranf(input_shape).astype(np.float32)
 
-        model_path = TEST_NAME + str(frame_step)+'.pb'
+        model_path = TEST_NAME + str(frame_step) + '.pb'
         # Create model
         create_overlapadd_model(model_path, input_shape, frame_step)
 

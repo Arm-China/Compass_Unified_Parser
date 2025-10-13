@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
+# Copyright © 2022-2025 Arm Technology (China) Co. Ltd.
 
 
 import os
@@ -7,6 +7,7 @@ import re
 from functools import partial
 import numpy as np
 from onnx.onnx_pb import TensorProto
+from ml_dtypes import bfloat16, float8_e5m2, float8_e4m3fn, float8_e4m3fnuz
 
 from ...common.defs import TensorType
 
@@ -29,6 +30,13 @@ from ...common.defs import TensorType
 # COMPLEX64 = 14; // complex
 # COMPLEX128 = 15; // complex
 # BFLOAT16 = 16;
+# FLOAT8E4M3FN = 17;
+# FLOAT8E4M3FNUZ = 18;
+# FLOAT8E5M2 = 19;
+# FLOAT8E5M2FNUZ = 20;
+# UINT4 = 21;
+# INT4 = 22;
+# FLOAT4E2M1 = 23;
 
 ONNX_NP_TENSOR_MAP = {
     0: ('UNDEFINED', None),
@@ -42,11 +50,15 @@ ONNX_NP_TENSOR_MAP = {
     8: ('STRING', str),
     9: ('BOOL', bool),
     10: ('FLOAT16', np.float16),
-    11: ('DOUBLE', np.double),
+    11: ('DOUBLE', np.float64),
     12: ('UINT32', np.uint32),
     13: ('UINT64', np.uint64),
     14: ('COMPLEX64', np.complex64),
-    15: ('COMPLEX128', np.complex128)
+    15: ('COMPLEX128', np.complex128),
+    16: ('BFLOAT16', bfloat16),
+    17: ('FLOAT8E4M3FN', float8_e4m3fn),
+    18: ('FLOAT8E4M3FNUZ', float8_e4m3fnuz),
+    19: ('FLOAT8E5M2', float8_e5m2),
 }
 
 
@@ -86,15 +98,17 @@ def onnx_tensor_decoder(pb, data_dir=''):
                     ret = np.array(pb.string_data, dtype=np_type)
                 elif data_type_name in ['FLOAT', 'COMPLEX64']:
                     ret = np.array(pb.float_data, dtype=np_type)
-                elif data_type_name == 'FLOAT16':
+                elif data_type_name in ['FLOAT16', 'BFLOAT16']:
                     # from TENSOR_TYPE_MAP in onnx/mapping.py and make_tensor in onnx/helper.py float16
                     # data is stored in uint16:
                     # vals = (np.array(vals).astype(np_dtype).view(dtype=np.uint16).flatten().tolist())
                     ret = np.frombuffer(np.array(pb.int32_data, dtype=np.uint16).tobytes(), dtype=np_type)
+                elif data_type_name in ['FLOAT8E4M3FN', 'FLOAT8E4M3FNUZ', 'FLOAT8E5M2']:
+                    ret = np.frombuffer(np.array(pb.int32_data, dtype=np.uint8).tobytes(), dtype=np_type)
                 elif data_type_name in ['DOUBLE', 'COMPLEX128']:
                     ret = np.array(pb.double_data, dtype=np_type)
                 else:
-                    pass
+                    raise NotImplementedError(f'{data_type_name} still not implemented yet!')
     return ret
 
 

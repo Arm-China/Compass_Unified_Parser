@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
+# Copyright © 2022-2025 Arm Technology (China) Co. Ltd.
 
 import numpy as np
 import torch
@@ -40,9 +40,10 @@ output_channels = 12
 for input_shape in input_shapes:
     x_data = np.random.ranf(input_shape).astype(np.float32)
     for group, offset_group in zip([1, 1, 3, 2], [1, 2, 6, 1]):
-        offset_shape = [input_shape[0], int(2*offset_group*kernel_height*kernel_width), output_height, output_width]
+        offset_shape = [input_shape[0], int(2 * offset_group * kernel_height *
+                                            kernel_width), output_height, output_width]
         offset = np.random.randint(-4, 10, offset_shape).astype(np.float32)
-        mask_shape = [input_shape[0], int(offset_group*kernel_height*kernel_width), output_height, output_width]
+        mask_shape = [input_shape[0], int(offset_group * kernel_height * kernel_width), output_height, output_width]
         mask = np.random.randint(-3, 3, mask_shape).astype(np.float32)
         feed_dict = {'x': x_data, 'offset': offset, 'mask': mask}
         inputs = ()
@@ -50,7 +51,7 @@ for input_shape in input_shapes:
             inputs += (torch.tensor(data), )
         assert input_shape[1] % group == 0, 'input shape %s is invalid' % str(input_shape)
         model_path = '-'.join([TEST_NAME, str(group), str(offset_group)]) + '.pt'
-        weight_shape = [output_channels, int(input_shape[1]//group), kernel_height, kernel_width]
+        weight_shape = [output_channels, int(input_shape[1] // group), kernel_height, kernel_width]
         create_deform_conv_model(model_path, inputs, weight_shape)
         # create_deform_conv_model(model_path)
         exit_status = run_parser(model_path, feed_dict)

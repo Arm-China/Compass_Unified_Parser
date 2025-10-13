@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
+# Copyright © 2022-2025 Arm Technology (China) Co. Ltd.
 
 
 import numpy as np
@@ -33,7 +33,8 @@ def fuse_const(graph):
                 continue
             if not isinstance(node_obj, ConstLikeOp) \
                     and isinstance(node_obj, OpHasOneOutPort) \
-                    and node_obj.is_all_inputs_const():
+                    and node_obj.is_all_inputs_const() \
+                    and not node_obj.is_inputs_dynamic():
                 out_edge = graph.sorted_out_edges(node_name, data=True)
                 if len(out_edge) >= 1 and out_edge[0][2]['tensor'] is not None and out_edge[0][2]['tensor'].value is not None:
                     const_value = out_edge[0][2]['tensor'].value
@@ -44,19 +45,46 @@ def fuse_const(graph):
                     NodeWrap(graph, node_name).replace_obj(
                         'Constant', const_attr)
                     in_edges = graph.sorted_in_edges(node_name)
+                    if isinstance(graph, SubGraph):
+                        for src, _ in in_edges:
+                            src_obj = NodeWrap(graph, src)['object']
+                            if src_obj is not None and src_obj.type == 'DummyInput':
+                                from ....common.utils import get_target_graph
+                                target_g = get_target_graph(src_obj.target_graph, graph._root)
+                                parent_node = graph._attr['parent_node']
+                                parent_graph = graph._attr['parent_graph']
+                                parent_node_obj = NodeWrap(parent_graph, parent_node)['object']
+                                target_g.remove_edge(src, parent_node)
+                                if parent_node in graph._root._attr['subgraph_depends'] and \
+                                        graph.name in graph._root._attr['subgraph_depends'][parent_node]:
+                                    if src in graph._root._attr['subgraph_depends'][parent_node][graph.name]:
+                                        graph._root._attr['subgraph_depends'][parent_node][graph.name].remove(src)
+                                clear_redundant_nodes(target_g)
+                                if parent_node_obj.type in ('ArmIf',):
+                                    if 'else_branch' in graph.name:
+                                        parent_node_obj.else_branch_inputs_num -= 1
+                                    else:
+                                        parent_node_obj.then_branch_inputs_num -= 1
+                                # Update external_in_port
+                                dm_matches = single_node_matcher(graph, 'DummyInput')
+                                for dm in dm_matches:
+                                    dm_obj = NodeWrap(graph, dm['target'])['object']
+                                    if dm_obj is not None and dm_obj.external_in_port > src_obj.external_in_port:
+                                        dm_obj.external_in_port -= 1
                     graph.remove_edges_from(in_edges)
     clear_redundant_nodes(graph)
 
 
 def convert_64bit_const(graph):
-    matches = single_node_matcher(graph, ['Constant', 'ArmConstant'])
+    matches = single_node_matcher(graph, ['Constant', 'ArmConstant', 'ArmConstantOfShape'])
     for m in matches:
         node_obj = NodeWrap(graph, m['target'])['object']
         if node_obj is None:
             ERROR(
                 '[Parser]: Meets invalid Node (%s) in convert_64bit_const!' % m['target'])
             continue
-        value = getattr(node_obj, 'value') if node_obj.type == 'Constant' else getattr(node_obj, 'weights')
+        value = getattr(node_obj, 'value') if node_obj.type in ('Constant', 'ArmConstantOfShape') \
+            else getattr(node_obj, 'weights')
         value_dtype = str(value.dtype)
         if value_dtype in ['int64', 'uint64', 'float64']:
             if value_dtype == 'int64':
@@ -65,7 +93,7 @@ def convert_64bit_const(graph):
                 value = value.astype(np.uint32)
             elif value_dtype == 'float64':
                 value = value.astype(np.float32)
-            setattr(node_obj, 'value' if node_obj.type == 'Constant' else 'weights', value)
+            setattr(node_obj, 'value' if node_obj.type in ('Constant', 'ArmConstantOfShape') else 'weights', value)
 
 
 def convert_to_const(graph, op_type_name_list):
@@ -76,7 +104,10 @@ def convert_to_const(graph, op_type_name_list):
             if node_obj is None:
                 ERROR('[Parser]: Meets invalid Node(%s) in convert_to_const!' % node_name)
                 continue
-            if isinstance(node_obj, OpHasOneOutPort) and node_obj.type in op_type_name_list:
+            if isinstance(node_obj, OpHasOneOutPort) and node_obj.type in op_type_name_list and \
+                    not node_obj.is_inputs_dynamic() and not node_obj.is_outputs_dynamic():
+                if node_obj.type in ('Shape', 'ConstantOfShape') and graph._attr.get('enable_ds', False):
+                    continue
                 out_tensors = node_obj.get_output_tensors()
                 if len(out_tensors) >= 1 and out_tensors[0] is not None and node_obj.is_all_outputs_const():
                     new_attr = node_obj.copied_attr()
@@ -91,6 +122,7 @@ def convert_to_const(graph, op_type_name_list):
 
 def convert_dummyinput_to_input(graph):
     matches = single_node_matcher(graph, 'DummyInput')
+    input_tensors = {}
     for m in matches:
         node_name = m['target']
         if node_name in graph.nodes:
@@ -100,12 +132,22 @@ def convert_dummyinput_to_input(graph):
                     '[Parser]: Meets invalid Node (%s) in convert_dummyinput_to_input!' % node_name)
                 continue
             out_edges = graph.sorted_out_edges(node_name, data=True)
-            assert len(out_edges) == 1, 'DummyInput should only have 1 output.'
             out_tensor = out_edges[0][-1]['tensor']
             new_attr = node_obj.copied_attr()
+            new_attr['from_dummyinput'] = True
             NodeWrap(graph, node_name).replace_obj(
                 'ArmInput', new_attr)
-            graph._attr['input_tensors'].update({out_tensor.name: out_tensor})
+            input_tensors.update({node_name: out_tensor})
+    if input_tensors:
+        if isinstance(graph, SubGraph):
+            for dpend_dict in list(graph._root._attr['subgraph_depends'].values()):
+                if graph.name in dpend_dict:
+                    depend_nodes = dpend_dict[graph.name]
+                    for depend_node in depend_nodes:
+                        if depend_node in input_tensors:
+                            graph._attr['input_tensors'].update({depend_node: input_tensors[depend_node]})
+        else:
+            graph._attr['input_tensors'].update(input_tensors)
 
 
 def convert_multi_outputs_to_const(graph, op_type_name_list):
@@ -149,13 +191,13 @@ def convert_multi_outputs_to_const(graph, op_type_name_list):
     clear_redundant_nodes(graph)
 
 
-def remove_node_safely(graph, n):
+def remove_node_safely(graph, n, main_in_port=0):
     assert graph.has_node(
         n), 'The node %s does not exist, cannot remove_node_safely.' % (n)
     in_edges = graph.sorted_in_edges(n, data=True)
     out_edges = graph.sorted_out_edges(n, data=True)
     if len(in_edges) >= 1:
-        src_name, _, in_attr = in_edges[0]
+        src_name, _, in_attr = in_edges[main_in_port]
         new_attr = copy.deepcopy(in_attr)
         for _, dst_name, out_attr in out_edges:
             if NodeWrap(graph, src_name)['object'].type == 'Constant':
@@ -230,11 +272,17 @@ def remove_useless_op(graph, op_type_list):
                 in_edges = graph.sorted_in_edges(node_name)
                 if len(in_edges) <= 1:
                     removing_nodes.append(node_name)
-            elif op_type in ('Identity', 'DummyInput'):
-                if op_type == 'DummyInput' and isinstance(graph, SubGraph):
+            elif op_type == 'Identity':
+                if node_obj.in_subgraph:
                     out_edges = graph.sorted_out_edges(node_name, data=True)
-                    graph.remove_edges_from(out_edges)
-                removing_nodes.append(node_name)
+                    dst_obj = NodeWrap(graph, out_edges[0][1])['object']
+                    if dst_obj.type == 'Dummy':
+                        removing_nodes.append(node_name)
+                    else:
+                        node_attr = node_obj.copied_attr()
+                        NodeWrap(graph, node_name).replace_obj('Dummy', node_attr)
+                else:
+                    removing_nodes.append(node_name)
             elif op_type == 'Dropout':
                 in_edges = graph.sorted_in_edges(node_name, data=True)
                 if len(in_edges) != 3:
@@ -501,6 +549,53 @@ def remove_redundant_bn(graph, max_branches=6):
                 ERROR('[Parser]: Meets invalid BatchNorm Op in remove_redundant_bn!')
 
 
+def remove_redundant_slice(graph, max_try=2):
+    for j in range(max_try):
+        matched = False
+        matches = matched_patterns(graph,
+                                   nodes=[
+                                       ('s1', {'op': 'ArmSlice'}), ('s2', {'op': 'ArmSlice'})],
+                                   edges=[('s1', 's2')]
+                                   )
+        for m in matches:
+            s1, s2 = m['s1'], m['s2']
+            s1_obj = NodeWrap(graph, s1)['object']
+            s2_obj = NodeWrap(graph, s2)['object']
+            if s1_obj is None:
+                ERROR(
+                    '[Parser]: Meets invalid Slice Op (%s) in remove_redundant_slice!' % s1)
+                continue
+            if s2_obj is None:
+                ERROR(
+                    '[Parser]: Meets invalid Slice Op (%s) in remove_redundant_slice!' % s2)
+                continue
+            s1_out_edges = graph.sorted_out_edges(s1, data=True)
+            if len(s1_out_edges) != 1:
+                continue
+            matched = True
+            s1_in_edges = graph.sorted_in_edges(s1, data=True)
+            new_starts = []
+            new_ends = []
+            new_steps = []
+            for i in range(len(s1_obj.starts)):
+                new_starts.append(s1_obj.starts[i] + s2_obj.starts[i] * s1_obj.steps[i])
+                new_steps.append(s1_obj.steps[i] * s2_obj.steps[i])
+                temp_end = s1_obj.starts[i] + s2_obj.ends[i] * s1_obj.steps[i]
+                new_ends.append(min(temp_end, s1_obj.ends[i]))
+
+            s2_obj.starts = new_starts
+            s2_obj.ends = new_ends
+            s2_obj.steps = new_steps
+
+            graph.remove_edges_from(s1_in_edges)
+            graph.remove_edges_from(s1_out_edges)
+            src, _, in_attr = s1_in_edges[0]
+            graph.add_edge(src, s2, **in_attr)
+
+        if matched:
+            clear_redundant_nodes(graph)
+
+
 def remove_redundant_reshape(graph, type='Reshape'):
     matches = matched_patterns(graph,
                                nodes=[
@@ -765,8 +860,12 @@ def insert_cast(graph, src, dst, dst_type, in_attr=None, key=None, type='Cast'):
         cast_in_attr = copy.deepcopy(in_attr)
         cast_in_attr['dst_in_port'] = 0
         cast_out_tensor = Tensor()
-        if in_attr.get('tensor', None) is not None and in_attr['tensor'].value is not None:
-            cast_out_tensor.value = in_attr['tensor'].value.astype(np.dtype(dst_type))
+        if in_attr.get('tensor', None) is not None:
+            if in_attr['tensor'].value is not None:
+                cast_out_tensor.value = in_attr['tensor'].value.astype(np.dtype(dst_type))
+            if in_attr['tensor'].shape is not None:
+                cast_out_tensor.shape = in_attr['tensor'].shape
+                cast_out_tensor.dtype = dst_type
         else:
             cast_out_tensor.dtype = dst_type
         cast_out_attr = {'src_out_port': 0, 'dst_in_port': in_attr.get(
@@ -968,6 +1067,29 @@ def insert_constant(graph, name, value, dst, in_port=0, data_format='NCHW', cons
         ERROR('[Parser]: Invalid params for insert_constant (%s)!' % name)
 
 
+def insert_dummy(graph, src, dst, in_attr, dummpy_type='Dummy', quantize=False):
+    ret = None
+    if graph.has_node(src) and graph.has_node(dst):
+        if has_path(graph, src, dst):
+            graph.remove_edge(src, dst)
+        dummy = get_valid_node_name(graph, src + '_post_dummy')
+        graph.add_node(dummy)
+        dummy_attr = {'name': dummy, 'quantize': quantize}
+        NodeWrap(graph, dummy).replace_obj(dummpy_type, dummy_attr)
+
+        dummy_in_attr = copy.deepcopy(in_attr)
+        dummy_in_attr.update({'dst_in_port': 0})
+        graph.add_edge(src, dummy, **dummy_in_attr)
+
+        dummy_out_attr = copy.deepcopy(in_attr)
+        dummy_out_attr.update({'src_out_port': 0})
+        graph.add_edge(dummy, dst, **dummy_out_attr)
+        ret = dummy
+    else:
+        ERROR('[Parser]: Invalid params for insert_dummy!')
+    return ret
+
+
 def insert_dequant_quant(graph, src, dst, in_attr, op_type, key=None, data_format='NHWC'):
     ret = None
     if graph.has_node(src) and graph.has_node(dst):
@@ -983,8 +1105,11 @@ def insert_dequant_quant(graph, src, dst, in_attr, op_type, key=None, data_forma
 
         scale, zp = in_attr['tensor'].scale_zp
 
-        scale = np.array(scale[0], dtype=np.float32)
-        zp = np.array(zp[0], dtype=in_attr['tensor'].dtype)
+        if scale.size != 1 or zp.size != 1:
+            ERROR('[Parser]: scale or zp size > 1, still not support!')
+
+        scale = np.array(scale.item(), dtype=np.float32)
+        zp = np.array(zp.item(), dtype=in_attr['tensor'].dtype)
 
         scale_const = get_valid_node_name(graph, new_op + '_scale')
         graph.add_node(scale_const)
@@ -1014,11 +1139,13 @@ def insert_dequant_quant(graph, src, dst, in_attr, op_type, key=None, data_forma
         out_tensor = Tensor()
         if in_attr.get('tensor', None) is not None:
             out_tensor = copy.deepcopy(in_attr['tensor'])
+            if op_type == 'DequantizeLinear':
+                out_tensor.dtype = 'float32'
+                out_tensor.min_max = ()
+                out_tensor.scale_zp = ()
             if in_attr['tensor'].value is not None:
                 if op_type == 'DequantizeLinear':
                     out_tensor.value = (in_attr['tensor'].value - zp) * scale.astype(np.float32)
-                    out_tensor.min_max = ()
-                    out_tensor.scale_zp = ()
                 else:
                     out_tensor.value = np.round(in_attr['tensor'].value / scale + zp).astype(zp.dtype)
                 out_tensor.shape = out_tensor.value.shape
@@ -1118,7 +1245,7 @@ def insert_repeat(graph, src, dst, in_attr, reps, axis=None, key=None, type='Rep
 
 def insert_reshape(graph, src, dst, in_attr, dim, key=None, type='Reshape', data_format='NHWC', quantize=False):
     ret = None
-    if graph.has_node(src) and graph.has_node(dst) and dim:
+    if graph.has_node(src) and graph.has_node(dst):
         if has_path(graph, src, dst):
             graph.remove_edge(src, dst, key=key)
         reshape = get_valid_node_name(graph, src + '_post_reshape')

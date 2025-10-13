@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
+# Copyright © 2022-2025 Arm Technology (China) Co. Ltd.
 
 import numpy as np
 
@@ -41,7 +41,7 @@ shape = [4, 18, 24, 4]
 # Generate input data
 feed_dict = dict()
 # feed_dict['X1'] = np.ones(indices_shape).astype(np.int32)
-feed_dict['X1'] = np.tile(np.array([[0, 1, 2, 3], [2, 10, 20, 3]], np.int32), [int(1728/2), 1])
+feed_dict['X1'] = np.tile(np.array([[0, 1, 2, 3], [2, 10, 20, 3]], np.int32), [int(1728 / 2), 1])
 feed_dict['X2'] = np.random.ranf(updates_shape).astype(np.float32)
 
 for model_type in ('tf', 'tflite'):

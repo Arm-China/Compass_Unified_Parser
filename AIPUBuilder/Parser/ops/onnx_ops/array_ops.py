@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
-# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
+# Copyright © 2022-2025 Arm Technology (China) Co. Ltd.
+import copy
+
 import numpy as np
 import torch
 import tensorflow as tf
@@ -275,7 +277,7 @@ class ConstantOfShapeOp(OpHasOneOutPort, ConstLikeOp, OnnxOp):
             inp = inputs[0].astype(np.int64)
             out_tensor = np.ndarray(inp.tolist())
             if self.value is not None:
-                out_tensor.fill(self.value[0])
+                out_tensor.fill(self.value.item())
                 out_tensor = out_tensor.astype(self.value.dtype)
             else:
                 out_tensor.fill(0)
@@ -495,10 +497,10 @@ class GatherElementsOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
         indices = inputs[1]
         indices = GatherElementsOp.make_indices_non_negative(
             indices, inputs[0].shape[self.axis])
-        torch_input = torch.from_numpy(inputs[0])
+        torch_input = torch.from_numpy(inputs[0].astype(np.float32))
         torch_indices = torch.from_numpy(np.array(indices, np.int64))
         out_tensor = torch.gather(torch_input, self.axis, torch_indices)
-        out_tensor = out_tensor.numpy()
+        out_tensor = out_tensor.numpy().astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
 
@@ -700,13 +702,13 @@ class PadOp(OpHasOneOutPort, OnnxOp):
             pads = np.transpose(pads)
             out_tensor = np.pad(sliced_input, pads, mode=self.mode)
         else:
-            torch_input = torch.from_numpy(sliced_input)
+            torch_input = torch.from_numpy(sliced_input.astype(np.float32))
             out_tensor = torch.nn.functional.pad(torch_input,
                                                  OpHasPaddingStrides.onnx_to_torch(
                                                      pads),
                                                  mode=self.mode if self.mode in (
                                                      'constant', 'reflect') else 'replicate',
-                                                 value=const_value).numpy()
+                                                 value=const_value).numpy().astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
     def is_fusable(self):
@@ -823,6 +825,37 @@ class ReshapeOp(OpHasOneOutPort, OnnxOp):
         inputs = self.get_input_tensors()
         out_tensor = np.reshape(inputs[0], self.shape)
         self.set_out_tensor(out_tensor)
+
+    def cal_output_symbol(self):
+        input_shape = self.get_input_shapes()[0]
+        output_shape = self.get_output_shapes()[0]
+        symbol = [None] * len(output_shape)
+        axes_map = Op.cal_reshape_changed_axis_map(input_shape, output_shape)
+        for i in range(len(output_shape)):
+            changed = False
+            unchanged_axis = None
+            for in_axes, out_axes in axes_map:
+                if i in out_axes:
+                    changed = True
+                    if len(out_axes) == 1:
+                        out_axis = out_axes[0]
+                        if self.shape[out_axis] == -1:
+                            symbol[out_axis] = -1
+                        else:
+                            _symbol = ''
+                            for axis in in_axes:
+                                _symbol += f's{axis}*'
+                            symbol[out_axis] = _symbol[:-1]
+                    else:
+                        for out_axis in out_axes:
+                            if self.shape[out_axis] in (1, -1):
+                                symbol[out_axis] = self.shape[out_axis]
+                elif i - 1 in out_axes:
+                    unchanged_axis = in_axes[-1] + 1
+            if not changed:
+                if unchanged_axis is not None:
+                    symbol[i] = f's{unchanged_axis}'
+        return symbol
 
 
 class ReverseSequenceOp(OpHasOneOutPort, OnnxOp):
@@ -949,7 +982,10 @@ class ScatterNDOp(OpHasOneOutPort, OnnxOp):
         data, indices, updates = inputs
         const_inputs = self.sorted_in_consts()
         inplace = True if all(in_port != 0 for _, in_port, _ in const_inputs) else False
-        out_tensor = ScatterNDOp.scatternd(data, indices, updates, reduction=self.reduction, inplace=inplace)
+        if self.is_inputs_dynamic():
+            out_tensor = data if inplace else copy.deepcopy(data)
+        else:
+            out_tensor = ScatterNDOp.scatternd(data, indices, updates, reduction=self.reduction, inplace=inplace)
         self.set_out_tensor(out_tensor)
 
 
@@ -968,13 +1004,13 @@ class ScatterOp(OpHasOneOutPort, OpHasAxis, OnnxOp):
         super(ScatterOp, self).infer_shape()
         inputs = self.get_input_tensors()
         data, indices, updates = inputs
-        data_torch = torch.from_numpy(data)
+        data_torch = torch.from_numpy(data.astype(np.float32))
         indices = GatherElementsOp.make_indices_non_negative(
             indices, inputs[0].shape[self.axis])
         index_torch = torch.from_numpy(np.array(indices).astype(np.int64))
-        update_torch = torch.from_numpy(updates)
+        update_torch = torch.from_numpy(updates.astype(np.float32))
         out_tensor = torch.Tensor.scatter_(
-            data_torch, src=update_torch, dim=self.axis, index=index_torch).numpy()
+            data_torch, src=update_torch, dim=self.axis, index=index_torch).numpy().astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
 
@@ -1018,11 +1054,11 @@ class ScatterElementsOp(OpHasOneOutPort, OpHasAxis, OnnxOp):
         inputs = self.get_input_tensors()
         data, indices, updates = inputs
         # data_torch = torch.from_numpy(data)  # data_torch and data share the same memory
-        data_torch = torch.from_numpy(np.array(data))
+        data_torch = torch.from_numpy(np.array(data).astype(np.float32))
         indices = GatherElementsOp.make_indices_non_negative(
             indices, inputs[0].shape[self.axis])
         index_torch = torch.from_numpy(np.array(indices).astype(np.int64))
-        update_torch = torch.from_numpy(np.array(updates).astype(data.dtype))
+        update_torch = torch.from_numpy(np.array(updates).astype(np.float32))
         if self.reduction == 'none':
             out_tensor = torch.Tensor.scatter_(
                 data_torch, src=update_torch, dim=self.axis, index=index_torch).numpy()  # in place operation
@@ -1031,6 +1067,7 @@ class ScatterElementsOp(OpHasOneOutPort, OpHasAxis, OnnxOp):
             assert self.reduction in onnx_reduction_map, 'Meets invalid reduction %s in infer_shape of ScatterElementsOp!' % self.reduction
             out_tensor = torch.Tensor.scatter_reduce(
                 data_torch, src=update_torch, dim=self.axis, index=index_torch, reduce=onnx_reduction_map[self.reduction]).numpy()
+        out_tensor = out_tensor.astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
 
@@ -1178,8 +1215,16 @@ class SliceOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
                     if cur_ver == 1:
                         ret = [1] * len(input_shapes[0])
                     else:
-                        ret = np.array(inputs[4]).tolist() if len(
-                            inputs) > 4 else [1] * len(input_shapes[0])
+                        const_inputs = self.sorted_in_consts()
+                        non_const_in_ports = list(range(len(self.get_input_tensors())))
+                        for _, in_port, _ in const_inputs:
+                            if in_port in non_const_in_ports:
+                                non_const_in_ports.remove(in_port)
+                        if 4 in non_const_in_ports:
+                            ret = [1] * len(input_shapes[0])
+                        else:
+                            ret = np.array(inputs[4]).tolist() if len(
+                                inputs) > 4 else [1] * len(input_shapes[0])
             except:
                 ret = None
         return ret
@@ -1258,6 +1303,7 @@ class SliceOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
                 starts[i], ends[i], steps[i] = start, end, meta_step
                 j += 1
         self.axes, self.starts, self.ends, self.steps = axes, starts, ends, steps
+
         obj = tuple(slice(s, None if (p < 0 and e < 0) else e, p)
                     for s, e, p in zip(self.starts, self.ends, self.steps))
         out_tensor = inputs[0][obj]
@@ -1345,7 +1391,7 @@ class SpaceToDepthOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
                 out_tensor = tf.nn.space_to_depth(
                     inputs[0], self.blocksize).numpy()
             else:
-                torch_input = torch.from_numpy(inputs[0])
+                torch_input = torch.from_numpy(inputs[0].astype(np.float32))
                 n, c, h, w = torch_input.size()
                 block_size = self.blocksize
                 out_tensor = torch_input.view(
@@ -1353,7 +1399,7 @@ class SpaceToDepthOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
                 out_tensor = out_tensor.permute(0, 3, 5, 1, 2, 4).contiguous()
                 out_tensor = out_tensor.view(
                     n, c * (block_size ** 2), h // block_size, w // block_size)
-                out_tensor = out_tensor.numpy()
+                out_tensor = out_tensor.numpy().astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
 
@@ -1571,9 +1617,10 @@ class TriluOp(OpHasOneOutPort, OnnxOp):
         super(TriluOp, self).infer_shape()
         inputs = self.get_input_tensors()
         if self.upper:
-            out_tensor = torch.triu(torch.from_numpy(inputs[0]), diagonal=self.k).numpy()
+            out_tensor = torch.triu(torch.from_numpy(inputs[0].astype(np.float32)), diagonal=self.k).numpy()
         else:
-            out_tensor = torch.tril(torch.from_numpy(inputs[0]), diagonal=self.k).numpy()
+            out_tensor = torch.tril(torch.from_numpy(inputs[0].astype(np.float32)), diagonal=self.k).numpy()
+        out_tensor = out_tensor.astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
 

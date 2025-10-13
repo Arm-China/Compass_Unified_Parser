@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
+# Copyright © 2022-2025 Arm Technology (China) Co. Ltd.
 
 
 #!/usr/bin/env python3
@@ -135,9 +135,9 @@ for k, models in ONNX_BENCHMARK.items():
     for m in models:
         SANITY_MODELS.append(f"onnx-{k}-{m}")
 
-for k, models in CAFFE_BENCHMARK.items():
-    for m in models:
-        SANITY_MODELS.append(f"caffe-{k}-{m}")
+# for k, models in CAFFE_BENCHMARK.items():
+#     for m in models:
+#         SANITY_MODELS.append(f"caffe-{k}-{m}")
 
 for k, models in TORCH_BENCHMARK.items():
     for m in models:

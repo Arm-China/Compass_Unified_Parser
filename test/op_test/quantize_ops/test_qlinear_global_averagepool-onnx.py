@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
+# Copyright © 2022-2025 Arm Technology (China) Co. Ltd.
 
 
 import os
@@ -42,7 +42,7 @@ def create_QLinearAdd_model(onnx_path, input_shape, output_shape, channels_last,
     msdomain = onnx.OperatorSetIdProto()
     msdomain.version = 1
     msdomain.domain = 'com.microsoft'
-    model_def = helper.make_model(graph_def, producer_name=OP_NAME+'-model', opset_imports=[onnxdomain, msdomain])
+    model_def = helper.make_model(graph_def, producer_name=OP_NAME + '-model', opset_imports=[onnxdomain, msdomain])
     onnx.checker.check_model(model_def)
     onnx.save_model(model_def, onnx_path)
     return onnx_path

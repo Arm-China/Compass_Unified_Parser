@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
-# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
+# Copyright © 2022-2025 Arm Technology (China) Co. Ltd.
 
 
 from ..op import *
+from ...common.defs import TYPE_MAX, TYPE_MIN
 import numpy as np
 
 
@@ -266,11 +267,11 @@ class QLinearMatMulOp(OpHasOneOutPort, OnnxOp):
         super(QLinearMatMulOp, self).infer_shape()
         inputs = self.get_input_tensors()
         assert len(inputs) == 8, 'Meets invalid inputs length of QLinearMatMul(%s)' % self.name
-        float_a = (self.a.astype(np.int32) - self.a_zero_point) * self.a_scale
-        float_b = (self.b.astype(np.int32) - self.b_zero_point) * self.b_scale
+        float_a = (self.a.astype(np.float32) - self.a_zero_point) * self.a_scale
+        float_b = (self.b.astype(np.float32) - self.b_zero_point) * self.b_scale
         float_y = np.matmul(float_a, float_b)
-        out_min = np.iinfo(self.y_zero_point.dtype).min
-        out_max = np.iinfo(self.y_zero_point.dtype).max
+        out_min = TYPE_MIN(self.y_zero_point.dtype)
+        out_max = TYPE_MAX(self.y_zero_point.dtype)
         out_tensor = np.clip(np.around(float_y / self.y_scale) + self.y_zero_point,
                              out_min, out_max).astype(self.y_zero_point.dtype)
         self.set_out_tensor(out_tensor)
@@ -344,8 +345,7 @@ class QuantizeLinearOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
             out_tensor = np.round(inputs[0] / np.reshape(self.y_scale, y_scale_shape)) \
                 + np.reshape(self.y_zero_point, y_zero_point_shape)
         zp_dtype = self.y_zero_point.dtype
-        out_tensor = np.clip(out_tensor, np.iinfo(zp_dtype).min, np.iinfo(
-            zp_dtype).max).astype(zp_dtype)
+        out_tensor = np.clip(out_tensor, TYPE_MIN(zp_dtype), TYPE_MAX(zp_dtype)).astype(zp_dtype)
         self.set_out_tensor(out_tensor)
 
     def convert_version(self):

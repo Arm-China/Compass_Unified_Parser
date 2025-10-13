@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
+# Copyright © 2022-2025 Arm Technology (China) Co. Ltd.
 
 
 from collections import OrderedDict, defaultdict
@@ -166,9 +166,18 @@ class Graph(nx.MultiDiGraph):
             except:
                 pass
 
+    def is_connected(self, u, v):
+        is_connect = False
+        weak_components = list(nx.weakly_connected_components(self))
+        for component in weak_components:
+            if u in component and v in component:
+                is_connect = True
+                break
+        return is_connect
+
     def dot(self):
         keys = list(self.nodes._nodes.keys())
-        ret = "digraph \"%s\" {\nnode [shape=record];\n" % self._attr["name"]
+        ret = "digraph \"%s\" {\nnode [shape=record];\n" % self.name
 
         for i, (n_name, n) in enumerate(self.nodes._nodes.items()):
             # n is a dictionary whose keys include 'op', 'unique' and 'object'.
@@ -249,9 +258,10 @@ class SubGraph(Graph):
     def __init__(self, **attr):
         super(SubGraph, self).__init__(**attr)
         self._root = None
-        self._attr = defaultdict(int)
+        self._attr = defaultdict(None)
         self._attr['framework'] = None
         self._attr['parent_graph'] = None
+        self._attr['parent_node'] = None
         self._attr['input_tensors'] = OrderedDict()
         self._attr['output_names'] = []
         self._attr['output_tensor_names'] = []

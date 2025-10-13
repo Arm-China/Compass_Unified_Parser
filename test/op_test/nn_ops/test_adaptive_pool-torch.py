@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
+# Copyright © 2022-2025 Arm Technology (China) Co. Ltd.
 
 
 import torch
@@ -54,7 +54,7 @@ for input_shape in ([2, 51, 52], [2, 6, 51, 52]):
             # prepare model and input datas
             create_avgpool_model(model_path, x_data, output_size, method, 2)
             exit_status = run_parser(model_path, feed_dict, verify=True,
-                                     expected_keywords=['method='+method])
+                                     expected_keywords=['method=' + method])
             assert exit_status
 
 input_shapes = [[2, 51, 52], [2, 6, 51, 52], [2, 4, 30, 31, 32]]
@@ -65,9 +65,9 @@ for input_shape, output_size in zip(input_shapes, output_sizes):
     for method in ('MAX', 'AVG', ):
         model_path = '-'.join([TEST_NAME, str(len(input_shape)), method]) + '.pt'
         # prepare model and input datas
-        create_avgpool_model(model_path, x_data, output_size, method, len(input_shape)-2)
+        create_avgpool_model(model_path, x_data, output_size, method, len(input_shape) - 2)
         # opt only support input [N,H,W,C] or [H,W,C]
         verify = False if len(input_shape) != 4 else True
         exit_status = run_parser(model_path, feed_dict, verify=verify,
-                                 expected_keywords=['method='+method])
+                                 expected_keywords=['method=' + method])
         assert exit_status

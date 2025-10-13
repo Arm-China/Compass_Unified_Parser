@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
+# Copyright © 2022-2025 Arm Technology (China) Co. Ltd.
 
 
 import tensorflow as tf
@@ -223,7 +223,7 @@ class LiteBATCH_MATMULOp(OpHasOneOutPort, TfliteOp):
 class LiteBATCH_TO_SPACE_NDOp(OpHasOneOutPort, TfliteOp):
     @classmethod
     def attributes(cls):
-        return {1: {}, 2: {}}
+        return {1: {}, 2: {}, 3: {}}
 
     def __init__(self, graph, attr_dict=None):
         super(LiteBATCH_TO_SPACE_NDOp, self).__init__(graph, attr_dict)
@@ -2962,7 +2962,8 @@ class LiteTRANSPOSE_CONVOp(BaseActivationOp, BaseDeconvOp, TfliteOp):
     def attributes(cls):
         return {1: {'output_shape': {'type': AttrType.INTS}},
                 2: {'output_shape': {'type': AttrType.INTS}},
-                3: {'output_shape': {'type': AttrType.INTS}}
+                3: {'output_shape': {'type': AttrType.INTS}},
+                4: {'output_shape': {'type': AttrType.INTS}},  # fused activation
                 }
 
     @classmethod

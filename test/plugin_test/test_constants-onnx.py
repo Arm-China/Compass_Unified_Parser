@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
+# Copyright © 2022-2025 Arm Technology (China) Co. Ltd.
 
 import os
 import numpy as np
@@ -38,7 +38,7 @@ def create_pow_model(onnx_path, input_size, output_size, exponent, version=14):
         [X1, X2],  # inputs
         [Y],  # outputs
     )
-    model_def = helper.make_model(graph_def, producer_name=OP_NAME+'-model')
+    model_def = helper.make_model(graph_def, producer_name=OP_NAME + '-model')
     model_def.opset_import[0].version = version
     onnx.checker.check_model(model_def)
     onnx.save_model(model_def, onnx_path)

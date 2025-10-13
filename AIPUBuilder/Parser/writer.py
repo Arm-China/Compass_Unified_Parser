@@ -1,12 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
-# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
+# Copyright © 2022-2025 Arm Technology (China) Co. Ltd.
 
 
 import os
 from collections import OrderedDict
 from .graph.graph_algo import determined_sort
 from .graph.node_wrap import NodeWrap
-from .ops.op import ArmOp, OpHasWeights, OpHasBiases, BaseActivationOp, BaseQuantizeDequantizeOp, BaseRnnOp, OpHasAnchors
+from .ops.op import ArmOp, OpHasWeights, OpHasBiases, BaseActivationOp, BaseQuantizeDequantizeOp, BaseRnnOp, \
+    OpHasAnchors
 from .ops.release_ops import ArmActivationOp
 from .ops.common_ops import PluginOp
 from .common.utils import is_dir, list_list_to_string, string_list_to_string
@@ -114,7 +115,7 @@ def write_nodes_weights(bin_path, nodes_list, graph):
 
 def write_net(txt_path, bin_path, net_attr, graph):
     sorted_list = determined_sort(graph,
-                                  graph._attr['subgraph_depends_nodes'] + graph._attr['output_names'],
+                                  graph._attr['output_names'],
                                   sort_input=True)
     ret = write_nodes_attrs(txt_path, net_attr, sorted_list, graph)
 
@@ -164,7 +165,7 @@ def serialize(graph, params):
             os.remove(bin_path)
 
         sorted_list = determined_sort(graph,
-                                      graph._attr['subgraph_depends_nodes'] + graph._attr['output_names'],
+                                      graph._attr['output_names'],
                                       sort_input=True)
 
         net_attr = OrderedDict()
@@ -210,7 +211,7 @@ def serialize(graph, params):
                     sub_output_tensor_names = get_output_tensor_names(subgraph)
                     sub_net_attr['output_tensors'] = string_list_to_string(sub_output_tensor_names)
 
-                    ret = write_net(txt_path, bin_path, sub_net_attr, subgraph)
+                    ret = ret and write_net(txt_path, bin_path, sub_net_attr, subgraph)
 
     else:
         ERROR('[Parser]: Meets invalid output dir in serialize!')

@@ -1,13 +1,17 @@
 # SPDX-License-Identifier: Apache-2.0
-# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
+# Copyright © 2022-2025 Arm Technology (China) Co. Ltd.
 
 import os
 import re
 import numpy as np
 import onnx
 import torch
+import ml_dtypes
+import glob
 from collections import OrderedDict
-from .common.utils import is_file, is_dir, multi_string_to_list, list_string_to_list, get_dict_params
+
+from .common.utils import is_file, is_dir, multi_string_to_list, list_string_to_list, get_dict_params, \
+    version_to_tuple
 from .graph.graph import Graph
 from .logger import *
 
@@ -17,7 +21,12 @@ def univ_parser(params):
 
     if params:
         '''Set the necessary parameters.'''
-        model_path = params.get('input_model', '')
+        model_pathes = glob.glob(params.get('input_model', ''))
+        if model_pathes:
+            model_path = model_pathes[0]
+        else:
+            ERROR('Model path in cfg is incorrect, please check!')
+            ret = False
         output_dir = params.get('output_dir', './')
         model_type = params.get('model_type', '')
         if 'input_names' not in params and 'input' in params:
@@ -57,19 +66,27 @@ def univ_parser(params):
         else:
             params['ds_compat'] = False
 
+        if 'loop_max_count' in params:
+            try:
+                loop_max_count = int(params['loop_max_count'])
+            except:
+                loop_max_count = 100
+            loop_max_count = loop_max_count if loop_max_count > 0 else 100
+            params['loop_max_count'] = loop_max_count
+        else:
+            params['loop_max_count'] = 100
+
         if 'use_onnxsim' in params:
             use_onnxsim = str(params['use_onnxsim']).lower() == 'true'
             params['use_onnxsim'] = use_onnxsim
         else:
             params['use_onnxsim'] = True
 
-        if 'force_fp_norm' in params:
-            force_fp_norm = str(params['force_fp_norm']).lower() == 'true'
-            if force_fp_norm:
-                WARN('[Parser]: force float norm is enabled, quant norm will be replaced with deq + fp_norm + quant!')
-            params['force_fp_norm'] = force_fp_norm
+        if 'enable_ds' in params:
+            enable_ds = str(params['enable_ds']).lower() == 'true'
+            params['enable_ds'] = enable_ds
         else:
-            params['force_fp_norm'] = False
+            params['enable_ds'] = False
 
         params['input_layouts'] = multi_string_to_list(params['input_layout']) if 'input_layout' in params else []
 
@@ -119,10 +136,10 @@ def univ_parser(params):
             else:
                 params['input_dtype'] = ['float32'] * input_num
                 INFO('[Parser]: Input dtype is not set; default to float32 for torch model!')
-            if params.get('force_cpu', None) is not None:
-                params['force_cpu'] = True if str(params['force_cpu']).lower() == 'true' else False
+            if params.get('force_cpu_parse', None) is not None:
+                params['force_cpu_parse'] = True if str(params['force_cpu_parse']).lower() == 'true' else False
             else:
-                params['force_cpu'] = False
+                params['force_cpu_parse'] = False
 
         input_shapes_cnt = len(params['input_shapes'])
         if len(params['input_names']) == input_shapes_cnt:
@@ -171,7 +188,9 @@ def univ_parser(params):
         else:
             if not params.get('model_name', ''):
                 params['model_name'] = model_type + '_model'
-            graph = Graph(name=params['model_name'])
+            graph = Graph(name=params['model_name'],
+                          model_type=model_type,
+                          enable_ds=params['enable_ds'])
 
             tmp_tensors_dir = '.%s_tmp_tensors' % params.get('model_name', '')
             tmp_tensors_path = os.path.join(output_dir, tmp_tensors_dir)
@@ -180,12 +199,30 @@ def univ_parser(params):
 
             import tensorflow as tf
             tf.config.set_visible_devices([], 'GPU')
-            if int(tf.__version__.split('.')[0]) < 2:
-                WARN('Require tensorflow version==2.6 but now is in version %s!' % str(tf.__version__))
+            if version_to_tuple(tf.__version__) < version_to_tuple('2.6'):
+                WARN('Require tensorflow version>=2.6 but now is in version %s!' % str(tf.__version__))
+
+            if is_dir(model_path):
+                if model_type != 'tf':
+                    WARN(f'[Parser]: the model type in cfg is: {model_type}, but the model path is directory: {model_path}. '
+                         f'Do you set the wrong model path or model type?')
+            else:
+                model_type_suffix_mapping = {
+                    'tf': ['pb', 'h5', 'hdf5', 'keras'],
+                    'tflite': ['tflite'],
+                    'onnx': ['onnx'],
+                    'caffe': ['caffemodel', 'prototxt'],
+                    'torch': ['pt', 'pth'],
+                }
+                suffix = model_path.split('.')[-1]
+                if suffix not in model_type_suffix_mapping[model_type]:
+                    WARN(
+                        f'[Parser]: the model type in cfg is: {model_type}, but the model suffix is: {suffix}. '
+                        f'Do you set the wrong model path or model type?')
 
             try:
                 # Convert torch model to onnx before processing
-                if model_type in ('torch', 'pytorch'):
+                if model_type == 'torch':
                     from .front_end.torch.process import convert_torch_to_onnx
                     model_path, params = convert_torch_to_onnx(model_path, params)
                     model_type = 'onnx'
@@ -200,7 +237,7 @@ def univ_parser(params):
                 elif model_type == 'caffe':
                     from .front_end.caffe.process import process_caffe
                     graph = process_caffe(graph, model_path, params)
-                elif model_type in ('tf', 'tensorflow'):
+                elif model_type == 'tf':
                     is_keras_model = model_path.endswith('.h5') or model_path.endswith('.hdf5') or model_path.endswith(
                         '.keras') or is_dir(model_path)
                     if is_keras_model:
@@ -220,49 +257,36 @@ def univ_parser(params):
                 from .front_end.onnx.passes.back_passes import trim_weights, assign_top_range_scale_zp
                 from .front_end.onnx.passes.common_passes import remove_useless_op, convert_dummyinput_to_input
                 from .graph.graph_algo import infer, has_path
-                from .graph.pattern_match import single_node_matcher
                 from .writer import serialize, show_in_out_map
                 from .misc import check_similarity
-
-                '''Check if it is a connected graph.'''
-                input_names = []
-                input_names_list = single_node_matcher(graph, 'Input')
-                for input_name in input_names_list:
-                    input_names.append(input_name['target'])
-                output_names = list(set(graph._attr.get('output_names', [])).difference(
-                    list(graph._attr.get('subgraph_output_names', []))))
-                for output_name in output_names:
-                    has_path_flag = False
-                    for input_name in input_names:
-                        if has_path(graph, input_name, output_name):
-                            has_path_flag = True
-                            break
-                        else:
-                            inp_obj = graph.nodes[input_name]['object']
-                            if len(inp_obj.subgraphs) > 0 and \
-                                    'subgraphs' in graph._attr and \
-                                    len(graph._attr['subgraphs']) > 0:
-                                for sub in inp_obj.subgraphs:
-                                    for k, v in graph._attr['subgraphs'].items():
-                                        if sub in v:
-                                            has_path_flag = True
-                                            break
-                    if has_path_flag is False and len(input_names) > 0:
-                        out_edges = graph.sorted_out_edges(output_name, data=True)
-                        if len(out_edges) > 0 and all((out_attr['tensor'] is not None and out_attr['tensor'].is_const) for _, _, out_attr in out_edges):
-                            WARN('[Parser]: Meets const node %s in outputs! It could be removed from graph!' % output_name)
-                        else:
-                            ERROR('[Parser]: Graph is not a connected one!')
-                            break
+                import networkx as nx
 
                 process_graph(graph, params)
+
+                '''Check if it is a connected DAG graph.'''
+                is_connected = nx.is_weakly_connected(graph)
+                if not is_connected:
+                    ERROR(f'[Parser]: Graph({graph.name}) is not connected!')
+
+                is_dag = nx.is_directed_acyclic_graph(graph)
+                if not is_dag:
+                    ERROR(f'[Parser]: Graph({graph.name}) is not DAG!')
 
                 if 'subgraphs' in graph._attr and graph._attr['subgraphs']:
                     for v in list(graph._attr['subgraphs'].values()):
                         for subgraph_name, subgraph in v.items():
-                            front_process_graph(model_type, model_path, subgraph, params)
-                            process_graph(subgraph, params)
-                            convert_dummyinput_to_input(subgraph)
+                            if subgraph._attr['parent_node'] in graph._attr['subgraphs']:
+                                front_process_graph(model_type, model_path, subgraph, params)
+                                process_graph(subgraph, params)
+                                convert_dummyinput_to_input(subgraph)
+                                is_connected = nx.is_weakly_connected(subgraph)
+                                if not is_connected:
+                                    ERROR(f'[Parser]: Graph({subgraph.name}) is not connected!')
+                                    break
+                                is_dag = nx.is_directed_acyclic_graph(subgraph)
+                                if not is_dag:
+                                    ERROR(f'[Parser]: Graph({subgraph.name}) is not DAG!')
+                    infer(graph)
 
                 txt_path, bin_path = '', ''
                 try:
@@ -319,6 +343,7 @@ def front_process_graph(model_type, model_path, graph, params):
             graph = front_process_tf(graph, params)
     elif model_type == 'caffe':
         from .front_end.caffe.process import front_process_caffe
+        WARN('[Parser]: Caffe support has been deprecated and will be removed in future versions!')
         graph = front_process_caffe(graph, params)
     else:
         ERROR('[Parser]: Framework %s is not supported!' %
@@ -328,7 +353,7 @@ def front_process_graph(model_type, model_path, graph, params):
 
 def process_graph(graph, params):
     from .front_end.onnx.passes.middle_passes import middle_passes, convert_onnx_version
-    from .front_end.onnx.passes.back_passes import back_passes, trim_weights, assign_top_range_scale_zp
+    from .front_end.onnx.passes.back_passes import back_passes
     from .front_end.onnx.passes.transform import transform_to_nhwc
     from .front_end.onnx.passes.common_passes import remove_useless_op, convert_64bit_const
     from .graph.graph_algo import infer

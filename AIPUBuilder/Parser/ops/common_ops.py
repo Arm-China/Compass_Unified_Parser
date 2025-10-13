@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
+# Copyright © 2022-2025 Arm Technology (China) Co. Ltd.
 
 
 import tensorflow as tf
@@ -204,7 +204,7 @@ class ChannelShuffleOp(LayoutConcernedOp, OpHasMultipleOutPorts, CommonOp):
         else:
             inp = inputs[0]
         out_tensor = torch.nn.functional.channel_shuffle(
-            torch.from_numpy(inp), self.group).numpy()
+            torch.from_numpy(inp.astype(np.float32)), self.group).numpy().astype(inputs[0].dtype)
         if pre_perm is not None:
             out_tensor = np.transpose(out_tensor, Op.cal_inverse_perm(pre_perm))
             out_tensors = np.split(out_tensor, self.splits, axis=-1)
@@ -329,21 +329,24 @@ class DummyOp(OpHasVariableOutPorts, CommonOp):
 class DummyInputOp(OpHasOneOutPort, InputLikeOp, CommonOp):
     @classmethod
     def attributes(cls):
-        return {'target_graph': {'type': AttrType.STRING, 'default': '', 'required': False},
-                }
+        return {
+            'target_graph': {'type': AttrType.STRING, 'default': '', 'required': False},
+            'external_in_port': {'type': AttrType.INT, 'default': -1, 'required': False},
+            'is_const': {'type': AttrType.BOOL, 'default': False, 'required': False},
+        }
 
     def __init__(self, graph, attr_dict=None):
         super(DummyInputOp, self).__init__(graph, attr_dict)
         self.update_attributes(DummyInputOp, attr_dict)
         assert self.check_required(), 'DummyInputOp is missing a required parameter.'
 
-    def infer_shape(self, input_tensor=None, is_const=False):
+    def infer_shape(self, input_tensor=None):
         super(DummyInputOp, self).infer_shape()
         assert input_tensor is not None, 'input tensor is empty in DummyInputOp.'
         out_tensor = input_tensor.copy()
-        self.set_out_tensor(out_tensor, is_const)
+        self.set_out_tensor(out_tensor)
 
-    def set_out_tensor(self, tensor_data, is_const):
+    def set_out_tensor(self, tensor_data):
         '''set the out tensor of this op.'''
         try:
             for _, _, d in self._graph.sorted_out_edges(self.name, data=True):
@@ -351,13 +354,13 @@ class DummyInputOp(OpHasOneOutPort, InputLikeOp, CommonOp):
                     d['tensor'].value = tensor_data
                     if tensor_data is not None:
                         d['tensor'].shape = d['tensor'].value.shape
-                        d['tensor'].is_const = is_const
+                        d['tensor'].is_const = self.is_const
                         if not self.quantize or d['tensor'].dtype is None:
                             d['tensor'].dtype = str(d['tensor'].value.dtype)
                 else:
                     d['tensor'] = Tensor(value=tensor_data)
 
-            self.clear_unused_tensor(is_const)
+            self.clear_unused_tensor(self.is_const)
 
         except KeyError as e:
             ERROR('[Parser]: Node(%s) meets key error in set_out_tensor (%s)!' %
@@ -645,6 +648,10 @@ class MMCVModulatedDeformConv2dOp(BaseConvOp, OnnxOp):
 
 
 class MomentsOp(OpHasMultipleOutPorts, OpHasAxis, CommonOp):
+    @classmethod
+    def attributes(cls):
+        return {'keepdims': {'type': AttrType.INT, 'options': [0, 1], 'default': 1}}
+
     def infer_shape(self):
         super(MomentsOp, self).infer_shape()
         inputs = self.get_input_tensors()
@@ -921,11 +928,11 @@ class QueryRebatchOp(OpHasOneOutPort, CommonOp):
         out_shape.insert(1, cam_num)
         if self.is_all_inputs_const():
             batch = inputs[0].shape[0]
-            query = torch.from_numpy(inputs[0])
-            query_rebatch = torch.zeros(out_shape)
+            query = torch.from_numpy(inputs[0].astype(np.float32))
+            query_rebatch = torch.zeros(out_shape, dtype=torch.float32)
             for j in range(batch):
                 for i in range(cam_num):
-                    index_query_per_img = torch.from_numpy(inputs[i + 1])
+                    index_query_per_img = torch.from_numpy(inputs[i + 1].astype(np.float32))
                     query_rebatch[j, i, :len(index_query_per_img)] = query[j, index_query_per_img]
             out_tensor = query_rebatch.numpy().astype(inputs[0].dtype)
         else:
@@ -1003,11 +1010,11 @@ class ReduceAnyOp(OpHasAxis, OpHasOneOutPort, CommonOp):
         self.set_out_tensor(out_tensor)
 
 
-class ReduceVarianceOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
+class ReduceVarianceOp(OpHasAxis, OpHasOneOutPort, CommonOp):
     @classmethod
     def attributes(cls):
-        return {1: {'keepdims': {'default': 1},
-                    'unbiased': {'type': AttrType.INT, 'default': 0, 'options': [0, 1]}}
+        return {'keepdims': {'default': 1},
+                'unbiased': {'type': AttrType.INT, 'default': 0, 'options': [0, 1]}
                 }
 
     def __init__(self, graph, attr_dict=None):
@@ -1020,6 +1027,12 @@ class ReduceVarianceOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
         try:
             if item in ('keepdims', 'unbiased'):
                 ret = bool(self.__dict__['_attr'][item].value)
+            if item == 'axes':
+                inputs = self.get_input_tensors()
+                if len(inputs) > 1:
+                    ret = inputs[1].tolist() if inputs[1].size > 0 else None
+                    if ret is not None:
+                        self.__dict__['_attr'][item].value = ret
         except:
             ret = None
         if ret is None:
@@ -1125,11 +1138,12 @@ class SlotUpdateOp(OpHasOneOutPort, CommonOp):
         out_shape.pop(1)
         if self.is_all_inputs_const():
             batch = inputs[0].shape[0]
-            queries = torch.from_numpy(inputs[0])
-            slots = torch.zeros_like(queries)
+            queries = torch.from_numpy(inputs[0].astype(np.float32))
+            slots = torch.zeros_like(queries, dtype=torch.float32)
             for j in range(batch):
                 for i, index_query_per_img in enumerate(inputs[1:]):
-                    slots[j, torch.from_numpy(index_query_per_img)] += queries[j, i, :len(index_query_per_img)]
+                    slots[j, torch.from_numpy(index_query_per_img.astype(np.float32))
+                          ] += queries[j, i, :len(index_query_per_img)]
             out_tensor = slots.numpy().astype(inputs[0].dtype)
         else:
             out_tensor = np.random.ranf(out_shape).astype(inputs[0].dtype)
@@ -1191,8 +1205,8 @@ class TruncOp(LayoutUnawareOp, OpHasOneOutPort, CommonOp):
     def infer_shape(self):
         super(TruncOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        torch_input = torch.from_numpy(inputs[0])
-        out_tensor = torch.trunc(torch_input).numpy()
+        torch_input = torch.from_numpy(inputs[0].astype(np.float32))
+        out_tensor = torch.trunc(torch_input).numpy().astype(inputs[0].dtype)
         self.set_out_tensor(out_tensor)
 
 

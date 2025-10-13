@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
+# Copyright © 2022-2025 Arm Technology (China) Co. Ltd.
 import numpy as np
 
 from ..op import *
@@ -25,19 +25,10 @@ class IfOp(OpHasSubGraph, OnnxOp):
         self.update_attributes(IfOp, attr_dict)
         assert self.check_required(), 'IfOp is missing a required parameter.'
 
-    def infer_shape(self):
-        super(IfOp, self).infer_shape()
-        inputs = self.get_input_tensors()
-        in_edges = self._graph.sorted_in_edges(self.name, data=True)
-        if in_edges[0][2]['tensor'].is_const and \
-                in_edges[0][2]['tensor'].value is not None:
-            if_cond = bool(inputs[0].item())
-        else:
-            WARN(f'[Parser]: If({self.name}) condition is non-const, the infer shape is unreliable.')
-            if_cond = True
+    def forward(self, inputs, condition):
         # True: then branch, False: else branch
         from ...graph.graph_algo import determined_sort
-        cur_sub_graph = self.then_branch if if_cond else self.else_branch
+        cur_sub_graph = self.then_branch if condition else self.else_branch
         sub_nodes = determined_sort(cur_sub_graph, cur_sub_graph._attr['output_names'])
         output_list = []
         output_const_list = []
@@ -46,14 +37,12 @@ class IfOp(OpHasSubGraph, OnnxOp):
             if sub_node_obj is None:
                 ERROR(f'[Parser]: Get Node Obj Failed in If Infer of Node: {n}.')
             if sub_node_obj.type == 'DummyInput':
-                assert sub_node_obj.target_graph != '', 'Target graph not set for DummyInput.'
-                target_g = get_target_graph(sub_node_obj.target_graph, cur_sub_graph._root)
-                parent_node = target_g.nodes[n]
-                dummy_out_edges = target_g.sorted_out_edges(parent_node['object'].name, data=True)
-                if len(dummy_out_edges) == 0:
-                    ERROR(f'[Parser]: Get DummpyInput({n}) Out edges failed in If Node({self.name}).')
-                out_tensor = dummy_out_edges[0][-1]['tensor'].value
-                sub_node_obj.infer_shape(out_tensor, dummy_out_edges[0][-1]['tensor'].is_const)
+                assert sub_node_obj.external_in_port >= 0, f'external_in_port of {n} is not set correctly.'
+                out_tensor = inputs[sub_node_obj.external_in_port]
+                is_const = self._graph.sorted_in_edges(self.name, data=True)[
+                    sub_node_obj.external_in_port][2]['tensor'].is_const
+                sub_node_obj.is_const = is_const
+                sub_node_obj.infer_shape(out_tensor)
             else:
                 sub_node_obj.infer_shape()
 
@@ -69,16 +58,53 @@ class IfOp(OpHasSubGraph, OnnxOp):
                         output_const_list.append(o_edges[out_port][-1]['tensor'].is_const)
                     else:
                         output_const_list.append(is_const)
-        self.set_out_tensor(output_list, all(output_const_list))
+        return output_list, output_const_list
+
+    def infer_shape(self):
+        super(IfOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        in_edges = self._graph.sorted_in_edges(self.name, data=True)
+        if in_edges[0][2]['tensor'].is_const and \
+                in_edges[0][2]['tensor'].value is not None:
+            if_cond = bool(inputs[0].item())
+            output_list, output_const_list = self.forward(inputs, if_cond)
+            self.set_out_tensor(output_list, output_const_list)
+        else:
+            DEBUG(f'[Parser]: If({self.name}) condition is non-const, the infer shape is unreliable.')
+            true_out_list, true_out_const_list = self.forward(inputs, True)
+            false_out_list, false_out_const_list = self.forward(inputs, False)
+            output_list = []
+            for true_v, false_v in zip(true_out_list, false_out_list):
+                if true_v.dtype != false_v.dtype:
+                    ERROR(
+                        f'[Parser]: If({self.name}) output dtype mismatch, {true_v.dtype} in then_branch and {false_v.dtype} in else_branch.')
+                else:
+                    if true_v.size > false_v.size:
+                        output_list.append(true_v)
+                    else:
+                        output_list.append(false_v)
+            output_const_list = [False] * len(output_list)
+            output_dynamic_list = [True] * len(output_list)
+            self.set_out_tensor(output_list, output_const_list, output_dynamic_list)
 
 
 class LoopOp(OpHasSubGraph, OnnxOp):
     @classmethod
     def attributes(cls):
-        return {1: {'body': {'type': AttrType.GRAPH, 'required': True}},
-                11: {'body': {'type': AttrType.GRAPH, 'required': True}},
-                13: {'body': {'type': AttrType.GRAPH, 'required': True}},
-                }
+        return {
+            1: {
+                'body': {'type': AttrType.GRAPH, 'required': True},
+                'default_max_count': {'type': AttrType.INT, 'required': True},
+            },
+            11: {
+                'body': {'type': AttrType.GRAPH, 'required': True},
+                'default_max_count': {'type': AttrType.INT, 'required': True},
+            },
+            13: {
+                'body': {'type': AttrType.GRAPH, 'required': True},
+                'default_max_count': {'type': AttrType.INT, 'required': True},
+            }
+        }
 
     def __init__(self, graph, attr_dict=None):
         super(LoopOp, self).__init__(graph, attr_dict)
@@ -97,7 +123,7 @@ class LoopOp(OpHasSubGraph, OnnxOp):
                 in_edges[0][2]['tensor'].value is not None and \
                 in_edges[1][2]['tensor'].is_const and \
                 in_edges[1][2]['tensor'].value is not None:
-            max_count, ori_cond_in = int(inputs[0]), bool(inputs[1])
+            max_count, ori_cond_in = min(int(inputs[0]), self.default_max_count), bool(inputs[1])
             count_cond_is_const = True
         else:
             if in_edges[1][2]['tensor'].is_const and \
@@ -107,12 +133,12 @@ class LoopOp(OpHasSubGraph, OnnxOp):
                 count_cond_is_const = True
             else:
                 WARN(f'[Parser]: Loop({self.name}) max_count/cond_in is non-const, the infer shape is unreliable.')
-                max_count, ori_cond_in = 2, True
+                max_count, ori_cond_in = self.default_max_count, True
                 count_cond_is_const = False
 
         cond_in = ori_cond_in
         body_inputs_num = len(self.body._attr['input_tensors'])  # 2+N
-        body_outputs_num = len(self.body._attr['output_names'])  # 1+N+K
+        body_outputs_num = len(self.body._attr['output_tensor_names'])  # 1+N+K
         N = body_inputs_num - 2
         K = body_outputs_num - 1 - N
         k_carried_away = [[] for i in range(K)]
@@ -122,20 +148,25 @@ class LoopOp(OpHasSubGraph, OnnxOp):
         loop_cnt = 0
         last_output_list = []
         last_output_const_list = []
+        last_output_dynamic_list = []
+        loop_output_const_list = []
+        loop_output_dynamic_list = []
         cond_out_root_inputs = self.body.nodes[self.body._attr['output_names'][0]]['object'].get_root_inputs()
         cond_out_root_input_const = {}
         for inp in cond_out_root_inputs:
             cond_out_root_input_const[inp] = False
         for i in range(max_count):
             if cond_in:
+                INFO(f'[Parser]: Loop Subgraph({self.body.name}) iter: {i} of Node: {self.name}')
                 output_list = []
                 output_const_list = []
+                output_dynamic_list = []
                 for n in sub_nodes:
                     sub_node_obj = self.body.nodes[n]['object']
                     if sub_node_obj is None:
                         ERROR(f'[Parser]: Get Node Obj Failed in Loop Infer of Node: {n}.')
                     try:
-                        if sub_node_obj.type == 'Input':
+                        if sub_node_obj.type in ('Input', 'ArmInput'):
                             inp_idx = list(self.body._attr['input_tensors'].keys()).index(n)
                             if inp_idx == 0:
                                 out_tensor = np.array(loop_cnt, np.int64)
@@ -156,12 +187,17 @@ class LoopOp(OpHasSubGraph, OnnxOp):
                             dummy_out_edges = target_g.sorted_out_edges(parent_node['object'].name, data=True)
                             if len(dummy_out_edges) == 0:
                                 ERROR(f'[Parser]: Get DummpyInput({n}) Out edges failed in Loop Node({self.name}).')
-                            out_tensor = dummy_out_edges[0][-1]['tensor'].value
+                            assert sub_node_obj.external_in_port >= 0, f'external_in_port of {n} is not set correctly.'
+                            out_tensor = inputs[sub_node_obj.external_in_port]
+                            is_const = \
+                                self._graph.sorted_in_edges(self.name, data=True)[sub_node_obj.external_in_port][2][
+                                    'tensor'].is_const
+                            sub_node_obj.is_const = is_const
                             if n in cond_out_root_input_const:
                                 cond_out_root_input_const[n] = dummy_out_edges[0][-1]['tensor'].is_const
-                            sub_node_obj.infer_shape(out_tensor, dummy_out_edges[0][-1]['tensor'].is_const)
+                            sub_node_obj.infer_shape(out_tensor)
                         else:
-                            if sub_node_obj.type == 'Constant' and n in cond_out_root_input_const:
+                            if sub_node_obj.type in ('Constant', 'ArmConstant') and n in cond_out_root_input_const:
                                 cond_out_root_input_const[n] = True
                             sub_node_obj.infer_shape()
                     except Exception as e:
@@ -169,16 +205,19 @@ class LoopOp(OpHasSubGraph, OnnxOp):
                             f'[Parser]: Infer of {sub_node_obj.type} Node({n}) in {self.name} meets issues: {str(e)}!')
                 loop_cnt += 1
                 # Loop body outputs: 1 + N + K
-                for out in self.body._attr['output_names']:
-                    is_const = self.body.nodes[out]['object'].is_all_inputs_const()
-                    for _, dst, out_attr in self.body.sorted_out_edges(out, data=True):
-                        if self.body.nodes[dst]['object'].type == 'Out':
-                            out_port = out_attr['src_out_port']
-                            out_tensor = self.body.nodes[out]['object'].get_output_tensors()[out_port]
-                            output_list.append(out_tensor)
-                            output_const_list.append(is_const)
+                for o_tensor in self.body._attr['output_tensor_names']:
+                    for out in self.body._attr['output_names']:
+                        for _, dst, out_attr in self.body.sorted_out_edges(out, data=True):
+                            if self.body.nodes[dst]['object'].type == 'Out' and out_attr['tensor'].name == o_tensor:
+                                is_const = self.body.nodes[out]['object'].is_all_inputs_const()
+                                out_tensor = out_attr['tensor'].value
+                                output_list.append(out_tensor)
+                                output_const_list.append(is_const)
+                                output_dynamic_list.append(out_attr['tensor'].is_dynamic)
+                                break
                 last_output_list = output_list.copy()
                 last_output_const_list = output_const_list.copy()
+                last_output_dynamic_list = output_dynamic_list.copy()
                 cond_in = np.all(output_list[0])
                 if K > 0:
                     for k in range(K):
@@ -191,13 +230,15 @@ class LoopOp(OpHasSubGraph, OnnxOp):
         if ori_cond_in:
             loop_output_list = last_output_list[1: 1 + N]
             loop_output_list.extend([np.vstack(x) for x in k_carried_away])
-            loop_output_const_list = last_output_const_list[1: 1 + N]
-            for i in range(K):
-                loop_output_const_list.append(last_output_const_list[1 + N + i])
+            for i in range(N + K):
+                loop_output_const_list.append(last_output_const_list[1 + i])
+                loop_output_dynamic_list.append(last_output_dynamic_list[1 + i] or self.real_loop_cnt is None)
         else:
             loop_output_list = inputs[2:]
             loop_output_const_list = [attr['tensor'].is_const for _, _, attr in in_edges[2:]]
-        while len(loop_output_list) < len(out_edges):
+            loop_output_dynamic_list = [attr['tensor'].is_dynamic for _, _, attr in in_edges[2:]]
+        while len(loop_output_list) < len(self.get_out_ports()):
             loop_output_list.append(np.array([]))
             loop_output_const_list.append(False)
-        self.set_out_tensor(loop_output_list, all(loop_output_const_list))
+            loop_output_dynamic_list.append(False)
+        self.set_out_tensor(loop_output_list, loop_output_const_list, loop_output_dynamic_list)

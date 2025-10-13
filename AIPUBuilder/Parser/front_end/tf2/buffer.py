@@ -1,11 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
-# Copyright © 2022-2024 Arm Technology (China) Co. Ltd.
+# Copyright © 2022-2025 Arm Technology (China) Co. Ltd.
 
 
 import copy
 import os
 
 import numpy as np
+import ml_dtypes
 import tensorflow as tf
 import tensorflow.compat.v1 as tfv1
 from collections import OrderedDict
