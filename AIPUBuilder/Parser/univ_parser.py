@@ -10,6 +10,8 @@ import ml_dtypes
 import glob
 from collections import OrderedDict
 
+from AIPUBuilder.Parser.front_end.onnx.passes.common_passes import fuse_const
+
 from .common.utils import is_file, is_dir, multi_string_to_list, list_string_to_list, get_dict_params, \
     version_to_tuple
 from .graph.graph import Graph
@@ -145,10 +147,10 @@ def univ_parser(params):
             else:
                 params['input_dtype'] = ['float32'] * input_num
                 INFO('[Parser]: Input dtype is not set; default to float32 for torch model!')
-            if params.get('force_cpu_parse', None) is not None:
-                params['force_cpu_parse'] = True if str(params['force_cpu_parse']).lower() == 'true' else False
+            if params.get('force_cpu', None) is not None:
+                params['force_cpu'] = True if str(params['force_cpu']).lower() == 'true' else False
             else:
-                params['force_cpu_parse'] = False
+                params['force_cpu'] = False
 
         input_shapes_cnt = len(params['input_shapes'])
         if len(params['input_names']) == input_shapes_cnt:
@@ -209,7 +211,8 @@ def univ_parser(params):
                 params['model_name'] = model_type + '_model'
             graph = Graph(name=params['model_name'],
                           model_type=model_type,
-                          enable_ds=params['enable_ds'])
+                          enable_ds=params['enable_ds'],
+                          global_symbols=dict())
 
             tmp_tensors_dir = '.%s_tmp_tensors' % params.get('model_name', '')
             tmp_tensors_path = os.path.join(output_dir, tmp_tensors_dir)
@@ -375,7 +378,7 @@ def process_graph(graph, params):
     from .front_end.onnx.passes.back_passes import back_passes
     from .front_end.onnx.passes.transform import transform_to_nhwc
     from .front_end.onnx.passes.common_passes import remove_useless_op, convert_64bit_const
-    from .graph.graph_algo import infer
+    from .graph.graph_algo import infer, infer_symbol
     from .preprocess import gamut_preprocess, preprocess
     from .misc import special_character_conversion
     '''Gives a 'may be time consuming' hint for huge models.'''
@@ -430,5 +433,8 @@ def process_graph(graph, params):
         convert_64bit_const(graph)
         infer(graph, final=True)
         remove_useless_op(graph, ['ArmCast'])
+        if graph._attr['enable_ds']:
+            fuse_const(graph, final=True)
+            infer_symbol(graph)
     except Exception as e:
         ERROR('[Parser]: Meets exception in last infer (%s)!' % str(e))

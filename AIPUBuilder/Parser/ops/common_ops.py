@@ -578,6 +578,11 @@ class InputOp(OpHasOneOutPort, InputLikeOp, CommonOp):
         else:
             self.set_out_tensor(out_tensor)
 
+    def infer_symbol(self, input_symbol=None):
+        super(InputOp, self).infer_symbol()
+        assert input_symbol is not None, 'input symbol is empty in InputOp.'
+        self.set_out_symbol(input_symbol)
+
 
 class InTopKOp(LayoutUnawareOp, OpHasOneOutPort, CommonOp):
     @classmethod
@@ -1124,12 +1129,13 @@ class SegmentReduceOp(OpHasMethod, OpHasOneOutPort, CommonOp):
         self.set_out_tensor(out_tensor)
 
 
-class SiluOp(LayoutUnawareOp, ActivationOnlyOp, CommonOp):
+class SiluOp(SameShapeOp, LayoutUnawareOp, ActivationOnlyOp, OpHasOneOutPort, CommonOp):
     def infer_shape(self):
         super(SiluOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor = (inputs[0]) * tf.sigmoid(inputs[0].astype(np.float32)).numpy()
-        self.set_out_tensor(out_tensor.astype(inputs[0].dtype))
+        out_symbol = self.cal_output_symbol()
+        self.set_out_tensor(out_tensor.astype(inputs[0].dtype), out_symbol)
 
 
 class SlotUpdateOp(OpHasOneOutPort, CommonOp):

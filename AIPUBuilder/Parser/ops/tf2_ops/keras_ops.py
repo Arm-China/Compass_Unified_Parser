@@ -955,7 +955,7 @@ class TfKerasMinimumOp(OpHasOneOutPort, KerasNeedBroadcast):
         return {'type': 'Min', 'version': 6}
 
 
-class TfKerasMultiplyOp(OpHasOneOutPort, KerasNeedBroadcast):
+class TfKerasMultiplyOp(OpHasOneOutPort):
     @classmethod
     def attributes(cls):
         return {2: {}}

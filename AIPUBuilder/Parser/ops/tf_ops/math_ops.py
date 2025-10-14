@@ -831,8 +831,8 @@ class TfLogicalOrOp(OpHasOneOutPort, TfOp):
 class TfMatMulOp(OpHasOneOutPort, TfOp):
     @classmethod
     def attributes(cls):
-        return {1: {'transpose_a': {'type': AttrType.INT, 'default': 0},
-                    'transpose_b': {'type': AttrType.INT, 'default': 0}
+        return {1: {'transpose_a': {'type': AttrType.BOOL, 'default': False},
+                    'transpose_b': {'type': AttrType.BOOL, 'default': False}
                     }
                 }
 

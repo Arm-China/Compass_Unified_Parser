@@ -8,6 +8,7 @@ import copy
 import networkx as nx
 from functools import reduce
 from collections import OrderedDict
+from sympy import symbols, Symbol
 from ....common.defs import Tensor, FLOAT_EQUAL, FLOAT64_EQUAL, TYPE_MAX, TYPE_MIN
 from ....graph.graph import SubGraph
 from ....logger import INFO, DEBUG, WARN, ERROR, FATAL
@@ -15,7 +16,8 @@ from ....common.utils import extend_lists, get_converted_dtype
 from ....graph.node_wrap import NodeWrap
 from ....graph.pattern_match import matched_patterns, single_node_matcher, two_nodes_matcher
 # from ....graph.pattern_generator import match_patterns_from_expression
-from ....graph.graph_algo import get_valid_node_name, clear_redundant_nodes, determined_sort, all_simple_paths, has_path
+from ....graph.graph_algo import get_valid_node_name, clear_redundant_nodes, determined_sort, all_simple_paths, \
+    has_path, infer_symbol, infer
 from ....ops.op import Op, BaseLinearOp, BaseConvOp, BaseDeconvOp, BaseOnnxPoolOp, OpHasOneOutPort, OpHasPaddingStrides, \
     OpHasAxis, \
     OnnxOp, CommonOp, OpNeedBroadcast, OpNeedUniBroadcast, OnnxReduceOp
@@ -1667,7 +1669,8 @@ def convert_special_matmul_to_fc(graph):
                                ],
                                edges=[
                                    ('w', 'matmul', {'src_out_port': 0, 'dst_in_port': 1}),
-                               ])
+                               ], topo_order=True)
+    last_input = None
     for m in matches:
         matmul, w = m['matmul'], m['w']
         matmul_obj = NodeWrap(graph, matmul)['object']
@@ -1708,14 +1711,42 @@ def convert_special_matmul_to_fc(graph):
                 biases = np.zeros([weights.shape[0]], w_obj.value.dtype)
                 matmul_attr.update({'weights': weights, 'biases': biases})
             NodeWrap(graph, matmul).replace_obj('FullyConnected', matmul_attr)
-            if len(input_shapes[0]) > 2:
+            inp_rank = len(input_shapes[0])
+            if inp_rank > 2:
                 src, _, in_attr = in_edges[0]
-                insert_reshape(graph, src, matmul, in_attr, [-1, input_shapes[0][-1]], quantize=matmul_obj.quantize)
+                if graph._attr['enable_ds']:
+                    infer_symbol(graph, src, last_input)
+                    src_obj = NodeWrap(graph, src)['object']
+                    src_out_symbol = src_obj.get_output_symbols()[0]
+                    pre_rs_sym0 = 1
+                    for i in range(inp_rank - 1):
+                        pre_rs_sym0 *= src_out_symbol[i]
+                    if not Op.is_all_global_symbols(src_out_symbol, graph._attr['global_symbols']):
+                        pre_rs_symbol = [pre_rs_sym0, Symbol(f's{inp_rank-1}')]
+                        post_rs_symbol = None
+                    else:
+                        pre_rs_symbol = [pre_rs_sym0, src_out_symbol[-1]]
+                        post_rs_symbol = src_out_symbol[:-1] + [Symbol('s1')]
+                    out_edges = graph.sorted_out_edges(matmul, keys=True, data=True)
+                    fc_out_symbol = [Symbol('s0'), weights.shape[0]]
+                    updated_edges = {}
+                    for _, dst, k, out_attr in out_edges:
+                        new_out_attr = copy.deepcopy(out_attr)
+                        new_out_attr['tensor'].symbol = fc_out_symbol
+                        updated_edges[(matmul, dst, k)] = new_out_attr
+                    nx.set_edge_attributes(graph, updated_edges)
+                else:
+                    pre_rs_symbol = None
+                    post_rs_symbol = None
+                pre_reshape = insert_reshape(graph, src, matmul, in_attr, [-1, input_shapes[0][-1]],
+                                             quantize=matmul_obj.quantize, symbol=pre_rs_symbol)
                 post_reshape = insert_reshape_after(graph,
                                                     matmul,
                                                     output_shapes[0],
                                                     old_dim=[int(np.prod(output_shapes[0][:-1])), output_shapes[0][-1]],
-                                                    quantize=matmul_obj.quantize)
+                                                    quantize=matmul_obj.quantize,
+                                                    symbol=post_rs_symbol)
+                last_input = post_reshape
                 if matmul in graph._attr['output_names']:
                     index = graph._attr['output_names'].index(matmul)
                     graph._attr['output_names'][index] = post_reshape
@@ -7412,7 +7443,6 @@ def convert_mha(graph):
         if mha_obj.quantize:
             continue
         mha_in_edges = graph.sorted_in_edges(mha, data=True)
-        mha_out_edges = graph.sorted_out_edges(mha, data=True)
         outports = mha_obj.get_out_ports()
         # TODO, support more cases of MHA
         if len(outports) > 1:
@@ -7420,105 +7450,49 @@ def convert_mha(graph):
                 '[Parser]: outputs > 1 of MultiHeadAttentionMs node(%s) not support yet!' % mha)
             continue
         input_shapes = mha_obj.get_input_shapes()
-        input_dtypes = mha_obj.get_input_dtypes()
         q_shape = input_shapes[0]
         if len(q_shape) != 3:
             ERROR(
                 '[Parser]: Only support 3-dims(batch_size, seq_len, hidden_size) of query in MHA node(%s)' % mha)
             continue
-        head_dim = q_shape[-1] // mha_obj.num_heads
-        bs, seq_len = q_shape[:2]
         query = mha_in_edges[0][0]
         key = mha_in_edges[1][0]
         value = mha_in_edges[2][0]
         attention_bias = mha_in_edges[5][0]
 
-        # split query
-        rs_q = insert_reshape(graph, query, mha, mha_in_edges[0][-1], [bs, seq_len, mha_obj.num_heads, head_dim])
-        rs_q_in_attr = copy.deepcopy(mha_in_edges[0][-1])
-        rs_q_in_attr['tensor'].shape = [bs, seq_len, mha_obj.num_heads, head_dim]
-        trans_q = insert_transpose(graph, rs_q, mha, rs_q_in_attr, perm=[0, 2, 1, 3])
+        assert NodeWrap(graph, mha_in_edges[3][0])['object'].type == 'Blank'
+        assert NodeWrap(graph, mha_in_edges[4][0])['object'].type == 'Blank'
+        # assert NodeWrap(graph, mha_in_edges[8][0])['object'].type == 'Blank'
+        # assert NodeWrap(graph, mha_in_edges[9][0])['object'].type == 'Blank'
 
-        # split key
-        rs_k = insert_reshape(graph, key, mha, mha_in_edges[1][-1], [bs, seq_len, mha_obj.num_heads, head_dim])
-        rs_k_in_attr = copy.deepcopy(mha_in_edges[1][-1])
-        rs_k_in_attr['tensor'].shape = [bs, seq_len, mha_obj.num_heads, head_dim]
-        trans_k = insert_transpose(graph, rs_k, mha, rs_k_in_attr, perm=[0, 2, 3, 1])
+        if NodeWrap(graph, query)['object'].type != 'Blank' and \
+                NodeWrap(graph, key)['object'].type != 'Blank' and \
+                NodeWrap(graph, value)['object'].type != 'Blank' and \
+                NodeWrap(graph, attention_bias)['object'].type != 'Blank':
+            graph.remove_edges_from(mha_in_edges[3:])
 
-        trans_q_out_shape = [rs_q_in_attr['tensor'].shape[axis] for axis in [0, 2, 1, 3]]
-        trans_k_out_shape = [rs_k_in_attr['tensor'].shape[axis] for axis in [0, 2, 3, 1]]
+            attn_mask_in_attr = mha_in_edges[5][-1]
+            attn_mask_in_attr['dst_in_port'] = 3
+            graph.add_edge(attention_bias, mha, **attn_mask_in_attr)
 
-        # split_q @ split_k
-        matmul = get_valid_node_name(graph, mha + '_matmul')
-        graph.add_node(matmul)
-        matmul_attr = {'name': matmul, 'opset_version': 13}
-        graph.add_edge(trans_q, matmul, **{'src_out_port': 0, 'dst_in_port': 0,
-                                           'tensor': Tensor(shape=tuple(trans_q_out_shape))})
-        graph.add_edge(trans_k, matmul, **{'src_out_port': 0, 'dst_in_port': 1,
-                                           'tensor': Tensor(shape=tuple(trans_k_out_shape))})
-        NodeWrap(graph, matmul).replace_obj('MatMul', matmul_attr)
+            if NodeWrap(graph, mha_in_edges[6][0])['object'].type != 'Blank':
+                past_k_in_attr = mha_in_edges[6][-1]
+                past_k_in_attr['dst_in_port'] = 4
+                graph.add_edge(mha_in_edges[6][0], mha, **past_k_in_attr)
 
-        matmul_out_shape = trans_q_out_shape[:-1] + trans_k_out_shape[-1:]
+            if NodeWrap(graph, mha_in_edges[7][0])['object'].type != 'Blank':
+                past_v_in_attr = mha_in_edges[7][-1]
+                past_v_in_attr['dst_in_port'] = 5
+                graph.add_edge(mha_in_edges[7][0], mha, **past_v_in_attr)
 
-        # scores
-        mul = get_valid_node_name(graph, mha + '_mul')
-        graph.add_node(mul)
-        mul_attr = {'name': mul, 'opset_version': 13}
-        graph.add_edge(matmul, mul, **{'src_out_port': 0, 'dst_in_port': 0,
-                                       'tensor': Tensor(shape=tuple(matmul_out_shape))})
-        insert_constant(graph, mha + '_scale', np.array(mha_obj.scale, dtype=input_dtypes[0]), mul, in_port=1)
-        NodeWrap(graph, mul).replace_obj('Mul', mul_attr)
-
-        add = get_valid_node_name(graph, mha + '_add')
-        graph.add_node(add)
-        add_attr = {'name': add, 'opset_version': 13}
-        graph.add_edge(mul, add, **{'src_out_port': 0, 'dst_in_port': 0,
-                                    'tensor': Tensor(shape=tuple(matmul_out_shape))})
-        graph.add_edge(attention_bias, add, **{'src_out_port': 0, 'dst_in_port': 1})
-        NodeWrap(graph, add).replace_obj('Add', add_attr)
-
-        # Softmax
-        softmax = get_valid_node_name(graph, mha + '_softmax')
-        graph.add_node(softmax)
-        softmax_attr = {'name': softmax, 'opset_version': 13, 'axis': -1}
-        graph.add_edge(add, softmax, **{'src_out_port': 0, 'dst_in_port': 0})
-        NodeWrap(graph, softmax).replace_obj('Softmax', softmax_attr)
-
-        # split value
-        rs_v = insert_reshape(graph, value, mha, mha_in_edges[2][-1], [bs, seq_len, mha_obj.num_heads, head_dim])
-        rs_v_in_attr = copy.deepcopy(mha_in_edges[2][-1])
-        rs_v_in_attr['tensor'].shape = [bs, seq_len, mha_obj.num_heads, head_dim]
-        trans_v = insert_transpose(graph, rs_v, mha, rs_v_in_attr, perm=[0, 2, 1, 3])
-
-        trans_v_out_shape = [rs_v_in_attr['tensor'].shape[axis] for axis in [0, 2, 1, 3]]
-
-        matmul_v = get_valid_node_name(graph, mha + '_matmul_v')
-        graph.add_node(matmul_v)
-        matmul_v_attr = {'name': matmul_v, 'opset_version': 13}
-        graph.add_edge(softmax, matmul_v, **{'src_out_port': 0, 'dst_in_port': 0,
-                                             'tensor': Tensor(shape=tuple(matmul_out_shape))})
-        graph.add_edge(trans_v, matmul_v, **{'src_out_port': 0, 'dst_in_port': 1,
-                                             'tensor': Tensor(shape=tuple(trans_v_out_shape))})
-        NodeWrap(graph, matmul_v).replace_obj('MatMul', matmul_v_attr)
-
-        matmul_v_out_shape = matmul_out_shape[:-1] + trans_v_out_shape[-1:]
-
-        # concat heads
-        trans_out_in_attr = copy.deepcopy(mha_in_edges[2][-1])
-        trans_out_in_attr['tensor'].shape = matmul_v_out_shape
-        trans_out = insert_transpose(graph, matmul_v, mha, trans_out_in_attr, perm=[0, 2, 1, 3])
-        rs_out_in_attr = copy.deepcopy(mha_in_edges[2][-1])
-        rs_out_in_attr['tensor'].shape = [matmul_v_out_shape[axis] for axis in [0, 2, 1, 3]]
-        rs_out = insert_reshape(graph, trans_out, mha, rs_out_in_attr, q_shape)
-        graph.remove_edges_from(mha_in_edges)
-        graph.remove_edges_from(mha_out_edges)
-
-        for _, dst, out_attr in mha_out_edges:
-            tmp_out_attr = copy.deepcopy(out_attr)
-            tmp_out_attr.update({'src_out_port': 0})
-            graph.add_edge(rs_out, dst, **tmp_out_attr)
-
-        clear_redundant_nodes(graph)
+            att_attr = mha_obj.copied_attr()
+            att_attr.update({'opset_version': 23,
+                             'q_num_heads': mha_obj.num_heads,
+                             'kv_num_heads': mha_obj.num_heads})
+            NodeWrap(graph, mha).replace_obj('Attention', att_attr)
+            clear_redundant_nodes(graph)
+        else:
+            ERROR(f'Not support this Op({mha}) yet!')
 
 
 def convert_matmulnbits(graph):
@@ -7622,8 +7596,10 @@ def convert_attention(graph):
             q_num_heads = att_obj.q_num_heads
             # split query
             q_head_size = q_hidden_size // q_num_heads
+            q_rs_symbol = [Symbol('s0'), Symbol('s1'), q_num_heads, Symbol('s2') / q_num_heads]
             query = insert_reshape(graph, query, att, att_in_edges[0][-1],
-                                   [bs, q_seq_len, q_num_heads, q_head_size])
+                                   [bs, q_seq_len, q_num_heads, q_head_size],
+                                   symbol=q_rs_symbol)
             rs_q_out_attr = graph.sorted_out_edges(query, data=True)[0][-1]
             query = insert_transpose(graph, query, att, rs_q_out_attr, perm=[0, 2, 1, 3])
             q_shape = [bs, q_num_heads, q_seq_len, q_head_size]
@@ -7634,7 +7610,10 @@ def convert_attention(graph):
             kv_num_heads = att_obj.kv_num_heads
             # split key
             k_head_size = k_hidden_size // kv_num_heads
-            key = insert_reshape(graph, key, att, att_in_edges[1][-1], [bs, kv_seq_len, kv_num_heads, k_head_size])
+            k_rs_symbol = [Symbol('s0'), Symbol('s1'), kv_num_heads, Symbol('s2') / kv_num_heads]
+            key = insert_reshape(graph, key, att, att_in_edges[1][-1],
+                                 [bs, kv_seq_len, kv_num_heads, k_head_size],
+                                 symbol=k_rs_symbol)
             key_out_attr = graph.sorted_out_edges(key, data=True)[0][-1]
             key = insert_transpose(graph, key, att, key_out_attr, perm=[0, 2, 1, 3])
             k_shape = [bs, kv_num_heads, kv_seq_len, k_head_size]
@@ -7643,7 +7622,10 @@ def convert_attention(graph):
             v_hidden_size = v_shape[2]
             v_head_size = v_hidden_size // kv_num_heads
             # split value
-            value = insert_reshape(graph, value, att, att_in_edges[2][-1], [bs, kv_seq_len, kv_num_heads, v_head_size])
+            v_rs_symbol = [Symbol('s0'), Symbol('s1'), kv_num_heads, Symbol('s2') / kv_num_heads]
+            value = insert_reshape(graph, value, att, att_in_edges[2][-1],
+                                   [bs, kv_seq_len, kv_num_heads, v_head_size],
+                                   symbol=v_rs_symbol)
             value_out_attr = graph.sorted_out_edges(value, data=True)[0][-1]
             value = insert_transpose(graph, value, att, value_out_attr, perm=[0, 2, 1, 3])
             v_shape = [bs, kv_num_heads, kv_seq_len, v_head_size]
@@ -11871,6 +11853,7 @@ def lift_single_add_sub_mul_div(graph):
                                 in_port=const_in_port, scale_zp=const_scale_zp, quantize=const_obj.quantize)
 
             math_scale_zp = math_out_edges[0][-1]['tensor'].scale_zp
+            rs_symbol = non_math_out_edges[0][-1]['tensor'].symbol
 
             math_in_attr = copy.deepcopy(non_math_in_edges[0][-1])
             math_in_attr['dst_in_port'] = non_math_out_edges[0][-1]['dst_in_port']
@@ -11883,6 +11866,7 @@ def lift_single_add_sub_mul_div(graph):
             for _, math_dst, math_out_attr in math_out_edges:
                 out_attr = copy.deepcopy(math_out_attr)
                 out_attr['tensor'].scale_zp = math_scale_zp
+                out_attr['tensor'].symbol = rs_symbol
                 graph.add_edge(non_math_op, math_dst, **out_attr)
             if math_op in graph._attr['output_names']:
                 index = graph._attr['output_names'].index(math_op)
@@ -14222,6 +14206,10 @@ def middle_passes(graph, params):
     merge_moments(graph)
     merge_normalized_moments(graph)
 
+    if graph._attr['enable_ds']:
+        # infer symbol before insert reshape before FC
+        infer(graph)
+        fuse_const(graph)
     convert_gemm_to_fc(graph)
     convert_special_matmul_to_fc(graph)
     fuse_mul_add_or_sub(graph)

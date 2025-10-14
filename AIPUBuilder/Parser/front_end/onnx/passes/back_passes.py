@@ -1601,12 +1601,26 @@ def merge_transpose_matmul_gemm(graph):
                             continue
 
                         matched = True
+                        enable_ds = graph._attr['enable_ds']
+                        if enable_ds:
+                            matmul_out_edges = graph.sorted_out_edges(matmul_gemm, data=True)
+                            matmul_symbol = matmul_out_edges[0][-1]['tensor'].symbol
+                            input_symbols = matmul_gemm_obj.get_input_symbols(local=True)
+                            updated_mm_symbol = matmul_symbol[:]
                         if trans_out_edges[0][-1]['dst_in_port'] == 0:
                             trans_a = matmul_gemm_obj.trans_a
                             matmul_gemm_obj.trans_a = not trans_a
+                            if enable_ds and matmul_symbol:
+                                updated_mm_symbol[-1] = input_symbols[0][-1]
                         else:
                             trans_b = matmul_gemm_obj.trans_b
                             matmul_gemm_obj.trans_b = not trans_b
+                            if enable_ds and matmul_symbol:
+                                updated_mm_symbol[-1] = input_symbols[1][-2]
+
+                        if enable_ds and matmul_symbol:
+                            for _, dst, out_attr in matmul_out_edges:
+                                out_attr['tensor'].symbol = updated_mm_symbol
 
                         graph.remove_edge(trans, matmul_gemm)
                         trans_in_edges = graph.sorted_in_edges(trans, data=True)
@@ -3066,11 +3080,6 @@ def rename_reshape(graph):
                 if len(out_shapes[0]) == len(dim) \
                         and all([(s == d or d == -1) for (s, d) in zip(out_shapes[0], dim)]):
                     dim = out_shapes[0][:]
-                    if -1 in reshape_obj.shape[:]:
-                        symbol = reshape_obj.infer_symbol()
-                        out_edges = graph.sorted_out_edges(reshape, data=True)
-                        for out_edge in out_edges:
-                            out_edge[2]['tensor'].symbol = symbol
                 else:
                     ERROR(
                         '[Parser]: Dim of Reshape (%s) does not equal to output shape!' % reshape)
@@ -4764,7 +4773,7 @@ def remove_special_transpose(graph):
                 '[Parser]: Meets invalid Transpose Op(%s) in remove_special_transpose!' % trans)
 
 
-def remove_const(graph):
+def rename_const(graph):
     removing_const = []
     for node_name in graph.nodes:
         node = NodeWrap(graph, node_name)
@@ -5205,7 +5214,7 @@ def sink_single_reshape(graph):
                 unaware_out_edges = graph.sorted_out_edges(unaware, data=True)
                 if len(unaware_out_edges) < 1:
                     continue
-                if unaware_obj.type in ['ArmQuantize', 'ArmDeQuantize'] \
+                if unaware_obj.type in ['ArmQuantize', 'ArmDeQuantize', 'ArmSoftmax'] \
                         and unaware_obj.axis is not None:
                     continue
                 reshape_in_edges = graph.sorted_in_edges(reshape, data=True)
@@ -5858,9 +5867,9 @@ def sink_transpose_through_special_reshape(graph):
 
             new_rs_shape = []
             perm_map = []
-            trans_in_symbol = trans_obj.get_input_symbols()[0]
+            trans_in_symbol = trans_obj.get_input_symbols(local=True)[0]
             new_rs_symbol = []
-            origin_rs_in_symbol = reshape_obj.get_input_symbols()[0]
+            origin_rs_in_symbol = reshape_obj.get_input_symbols(local=True)[0]
             origin_rs_out_symbol = reshape_obj.get_output_symbols()[0]
             # gen_new_reshape & perm
             for i in range(len(trans_in_shape)):
@@ -6547,7 +6556,7 @@ def back_passes(graph, params):
     remove_useless_op(graph, ['ArmReshape', 'ArmTranspose'])
 
     fuse_const(graph)
-    remove_const(graph)
+    rename_const(graph)
     fuse_quant_op(graph, ['ArmEltwise', 'ArmSlice'])
 
     if graph._attr['framework'] in (Framework.ONNX, Framework.CAFFE):

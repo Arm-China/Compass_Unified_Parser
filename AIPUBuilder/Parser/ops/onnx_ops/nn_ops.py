@@ -2237,4 +2237,19 @@ class SimplifiedLayerNormalizationOp(OpHasAxis, OpHasVariableOutPorts, OnnxOp):
         out_ports = self.get_out_ports()
         if 1 in out_ports:
             out_tensors.append(np.array(std_var, np.float32))
-        self.set_out_tensor(out_tensors)
+        output_symbol = self.cal_output_symbol()
+        self.set_out_tensor(out_tensors, output_symbol)
+
+    def cal_output_symbol(self):
+        if self._graph._attr['enable_ds']:
+            input_symbols = self.get_input_symbols(local=True)
+            out_ports = self.get_out_ports()
+            out_symbols = [input_symbols[0]]
+            if 1 in out_ports:
+                stdvar_symbol = input_symbols[0]
+                for axis in self.axes:
+                    stdvar_symbol[axis] = 1
+                out_symbols.append(stdvar_symbol)
+        else:
+            out_symbols = []
+        return out_symbols

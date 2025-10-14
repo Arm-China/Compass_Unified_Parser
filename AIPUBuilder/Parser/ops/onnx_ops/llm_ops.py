@@ -301,4 +301,5 @@ class RotaryEmbeddingOp(OpHasOneOutPort, OnnxOp):
             output = np.reshape(output, original_input_shape)
         else:
             output = np.transpose(output, (0, 2, 1, 3))
-        self.set_out_tensor(output)
+        out_symbol = self.get_input_symbols(local=True)[0]
+        self.set_out_tensor(output, out_symbol)

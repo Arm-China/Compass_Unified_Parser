@@ -6,6 +6,8 @@ import math
 import torch
 import tensorflow as tf
 import numpy as np
+from sympy import Max
+from functools import reduce
 from dataclasses import dataclass
 from ..op import *
 from ...common.defs import FLOAT_MIN, FLOAT_MAX, FLOAT_EQUAL, TYPE_MIN, TYPE_MAX
@@ -65,7 +67,7 @@ class AcoshOp(LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
         self.set_out_tensor(out_tensor)
 
 
-class AddOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
+class AddOp(MultidirectionalBroadcastOp, OpHasAxis, OpHasOneOutPort, OnnxOp):
     @classmethod
     def attributes(cls):
         return {1: {'axis': {'type': AttrType.INT},
@@ -80,6 +82,22 @@ class AddOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
         super(AddOp, self).__init__(graph, attr_dict)
         self.update_attributes(AddOp, attr_dict)
         assert self.check_required(), 'AddOp is missing a required parameter.'
+
+    def __getattr__(self, item):
+        ret = None
+        cur_ver = self.__dict__['_attr']['cur_version'].value
+        try:
+            if item == 'broadcast':
+                if cur_ver <= 6:
+                    ret = bool(self.__dict__['_attr'][item].value)
+                else:
+                    ERROR('[Parser]: Unsupported op version [%s] for %s!' %
+                          (cur_ver, type(self).__name__))
+        except:
+            ret = None
+        if ret is None:
+            ret = super(AddOp, self).__getattr__(item)
+        return ret
 
     def infer_shape(self):
         super(AddOp, self).infer_shape()
@@ -105,23 +123,48 @@ class AddOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
             out_tensor = np.add(inputs[0], second_input)
         else:
             out_tensor = np.add(*inputs)
-        self.set_out_tensor(out_tensor)
+        out_symbol = self.cal_output_symbol()
+        self.set_out_tensor(out_tensor, out_symbol)
 
-    def __getattr__(self, item):
-        ret = None
-        cur_ver = self.__dict__['_attr']['cur_version'].value
-        try:
-            if item == 'broadcast':
-                if cur_ver <= 6:
-                    ret = bool(self.__dict__['_attr'][item].value)
-                else:
-                    ERROR('[Parser]: Unsupported op version [%s] for %s!' %
-                          (cur_ver, type(self).__name__))
-        except:
-            ret = None
-        if ret is None:
-            ret = super(AddOp, self).__getattr__(item)
-        return ret
+    def infer_symbol(self):
+        inp_symbol = self.get_input_symbols()
+        if inp_symbol and None not in inp_symbol:
+            local_symbol = self.get_input_symbols(local=True)
+            out_local_symbol = self.get_output_symbols()[0]
+            if out_local_symbol is not None:
+                sym_mp = []
+                for i, inp_s in enumerate(inp_symbol):
+                    if not Op.is_all_global_symbols(inp_s, self._graph._attr['global_symbols']):
+                        continue
+                    sym_mp += list(zip(local_symbol[i], inp_s))
+                output_symbol = []
+                for i, s in enumerate(out_local_symbol):
+                    if isinstance(s, int):
+                        output_symbol.append(s)
+                    else:
+                        new_s = s.subs(sym_mp)
+                        if isinstance(new_s, Max):
+                            symbols_set = new_s.free_symbols
+                            has_global_symbol = False
+                            for _s in symbols_set:
+                                if _s in self._graph._attr['global_symbols']:
+                                    has_global_symbol = True
+                                    output_symbol.append(_s)
+                                    break
+                            if not has_global_symbol:
+                                output_symbol.append(new_s)
+                        else:
+                            if new_s not in self._graph._attr['global_symbols'] and \
+                                    len(inp_symbol[0]) == len(inp_symbol[1]):
+                                if inp_symbol[0][i] in self._graph._attr['global_symbols']:
+                                    output_symbol.append(inp_symbol[0][i])
+                                elif inp_symbol[1][i] in self._graph._attr['global_symbols']:
+                                    output_symbol.append(inp_symbol[1][i])
+                                else:
+                                    output_symbol.append(new_s)
+                            else:
+                                output_symbol.append(new_s)
+                self.set_out_symbol(output_symbol)
 
 
 class ArgMaxOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
@@ -471,7 +514,7 @@ class CumSumOp(OpHasOneOutPort, OpHasAxis, OnnxOp):
         self.set_out_tensor(out_tensor)
 
 
-class DivOp(OpHasDivisor, OpHasOneOutPort, OnnxOp):
+class DivOp(MultidirectionalBroadcastOp, OpHasDivisor, OpHasOneOutPort, OnnxOp):
     @classmethod
     def attributes(cls):
         return {1: {'axis': {'type': AttrType.INT},
@@ -513,7 +556,8 @@ class DivOp(OpHasDivisor, OpHasOneOutPort, OnnxOp):
                 out_tensor = inputs[0] // inputs[1]
             else:
                 out_tensor = np.true_divide(*inputs)
-        self.set_out_tensor(out_tensor)
+        out_symbol = self.cal_output_symbol()
+        self.set_out_tensor(out_tensor, out_symbol)
 
 
 class EinsumOp(OpHasOneOutPort, OnnxOp):
@@ -965,40 +1009,68 @@ class MatMulOp(OpHasOneOutPort, OnnxOp):
     def infer_shape(self):
         super(MatMulOp, self).infer_shape()
         inputs = self.get_input_tensors()
+        out_symbol = None
         if self.is_all_inputs_const():
             out_tensor = np.matmul(*inputs)
         else:
             a_shape = list(inputs[0].shape)
             b_shape = list(inputs[1].shape)
-            a_dim = len(a_shape)
-            b_dim = len(b_shape)
-            max_dim = max(a_dim, b_dim)
-            out_shape = []
-            if max_dim != 1:
-                if a_dim == 1:
-                    out_shape = b_shape[:]
-                    del out_shape[-2]
-                elif b_dim == 1:
-                    out_shape = a_shape[:-1]
+            out_symbol = self.cal_output_symbol()
+            out_shape = self.eval_symbol([a_shape, b_shape], [out_symbol])[0]
+            out_tensor = np.random.ranf(tuple(out_shape)).astype(inputs[0].dtype)
+        self.set_out_tensor(out_tensor, out_symbol)
+
+    def cal_output_symbol(self):
+        a_symbol, b_symbol = self.get_input_symbols(local=True)
+        a_dim = len(a_symbol)
+        b_dim = len(b_symbol)
+        max_dim = max(a_dim, b_dim)
+        out_symbol = []
+        if max_dim != 1:
+            if a_dim == 1:
+                out_symbol = b_symbol[:]
+                del out_symbol[-2]
+            elif b_dim == 1:
+                out_symbol = a_symbol[:-1]
+            else:
+                if b_dim == 2:
+                    out_symbol = a_symbol[:-1] + b_symbol[-1:]
                 else:
                     if a_dim < max_dim:
                         for i in range(max_dim - a_dim):
-                            a_shape.insert(0, 1)
+                            a_symbol.insert(0, 1)
                     if b_dim < max_dim:
                         for i in range(max_dim - b_dim):
-                            b_shape.insert(0, 1)
+                            b_symbol.insert(0, 1)
 
-                    assert a_shape[-1] == b_shape[-2], (f'MatMulOp({self.name}) shape error, '
-                                                        f'input shape is: {inputs[0].shape}, {inputs[1].shape}!')
                     for i in range(max_dim):
                         if i < max_dim - 2:
-                            out_shape.append(max(a_shape[i], b_shape[i]))
+                            if a_symbol[i] == 1:
+                                out_symbol.append(b_symbol[i])
+                            elif b_symbol[i] == 1:
+                                out_symbol.append(a_symbol[i])
+                            else:
+                                input_shapes = self.get_input_shapes()
+                                sym_shape_map = {}
+                                idx_add = 0
+                                for shape in input_shapes:
+                                    for idx, s in enumerate(shape):
+                                        sym_shape_map[idx + idx_add] = s
+                                    idx_add += len(shape)
+                                sym_idx = int(re.findall(r'\d+', str(a_symbol[i]))[0])
+                                if sym_shape_map[sym_idx] != 1:
+                                    out_symbol.append(a_symbol[i])
+                                else:
+                                    b_sym_idx = int(re.findall(r'\d+', str(b_symbol[i]))[0])
+                                    if sym_shape_map[b_sym_idx] == 1:
+                                        out_symbol.append(Max(a_symbol[i], b_symbol[i]))
+                                    else:
+                                        out_symbol.append(b_symbol[i])
                         elif i == max_dim - 2:
-                            out_shape.append(a_shape[i])
+                            out_symbol.append(a_symbol[i])
                         else:
-                            out_shape.append(b_shape[i])
-            out_tensor = np.random.ranf(tuple(out_shape)).astype(inputs[0].dtype)
-        self.set_out_tensor(out_tensor)
+                            out_symbol.append(b_symbol[i])
+        return out_symbol
 
 
 class MatMulIntegerOp(OpHasOneOutPort, OnnxOp):
@@ -1040,7 +1112,7 @@ class MatMulIntegerOp(OpHasOneOutPort, OnnxOp):
         self.set_out_tensor(out_tensor)
 
 
-class MaxOp(OpNeedBroadcast, LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
+class MaxOp(MultidirectionalBroadcastOp, OpNeedBroadcast, LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
     @classmethod
     def attributes(cls):
         return {1: {'consumed_inputs': {'type': AttrType.INTS}},
@@ -1058,10 +1130,11 @@ class MaxOp(OpNeedBroadcast, LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
         super(MaxOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor = reduce(lambda x, y: np.maximum(x, y), inputs)
-        self.set_out_tensor(out_tensor)
+        out_symbol = self.cal_output_symbol()
+        self.set_out_tensor(out_tensor, out_symbol)
 
 
-class MeanOp(OpNeedBroadcast, OpHasOneOutPort, OnnxOp):
+class MeanOp(MultidirectionalBroadcastOp, OpNeedBroadcast, OpHasOneOutPort, OnnxOp):
     @classmethod
     def attributes(cls):
         return {1: {'consumed_inputs': {'type': AttrType.INTS}},
@@ -1081,7 +1154,8 @@ class MeanOp(OpNeedBroadcast, OpHasOneOutPort, OnnxOp):
         stacked = np.stack(inputs, axis=0)
         out_tensor = np.squeeze(
             np.mean(stacked, axis=0, keepdims=True), axis=0)
-        self.set_out_tensor(out_tensor)
+        out_symbol = self.cal_output_symbol()
+        self.set_out_tensor(out_tensor, out_symbol)
 
 
 class MeanVarianceNormalizationOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
@@ -1110,7 +1184,7 @@ class MeanVarianceNormalizationOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
         self.set_out_tensor(out_tensor)
 
 
-class MinOp(OpNeedBroadcast, LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
+class MinOp(MultidirectionalBroadcastOp, OpNeedBroadcast, LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
     @classmethod
     def attributes(cls):
         return {1: {'consumed_inputs': {'type': AttrType.INTS}},
@@ -1128,7 +1202,8 @@ class MinOp(OpNeedBroadcast, LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
         super(MinOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor = reduce(lambda x, y: np.minimum(x, y), inputs)
-        self.set_out_tensor(out_tensor)
+        out_symbol = self.cal_output_symbol()
+        self.set_out_tensor(out_tensor, out_symbol)
 
 
 class MishOp(LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
@@ -1168,7 +1243,7 @@ class ModOp(OpNeedBroadcast, LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
         self.set_out_tensor(out_tensor)
 
 
-class MulOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
+class MulOp(MultidirectionalBroadcastOp, OpHasAxis, OpHasOneOutPort, OnnxOp):
     @classmethod
     def attributes(cls):
         return {1: {'consumed_inputs': {'type': AttrType.INTS},
@@ -1204,7 +1279,8 @@ class MulOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
             out_tensor = np.multiply(inputs[0], second_input)
         else:
             out_tensor = np.multiply(*inputs)
-        self.set_out_tensor(out_tensor)
+        out_symbol = self.cal_output_symbol()
+        self.set_out_tensor(out_tensor, out_symbol)
 
     def __getattr__(self, item):
         ret = None
@@ -1265,7 +1341,7 @@ class NonZeroOp(LayoutUnawareOp, DynamicShapeOp, OpHasOneOutPort, OnnxOp):
         self.set_out_tensor(out_tensor)
 
 
-class PowOp(OpNeedBroadcast, OpHasAxis, OpHasOneOutPort, OnnxOp):
+class PowOp(MultidirectionalBroadcastOp, OpNeedBroadcast, OpHasAxis, OpHasOneOutPort, OnnxOp):
     @classmethod
     def attributes(cls):
         return {1: {'axis': {'type': AttrType.INT},
@@ -1297,7 +1373,8 @@ class PowOp(OpNeedBroadcast, OpHasAxis, OpHasOneOutPort, OnnxOp):
         else:
             out_tensor = np.power(*inputs)
         out_tensor = out_tensor.astype(inputs[0].dtype)
-        self.set_out_tensor(out_tensor)
+        out_symbol = self.cal_output_symbol()
+        self.set_out_tensor(out_tensor, out_symbol)
 
     def __getattr__(self, item):
         ret = None
@@ -2520,7 +2597,7 @@ class SinhOp(LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
         self.set_out_tensor(out_tensor)
 
 
-class SoftmaxOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
+class SoftmaxOp(SameShapeOp, OpHasAxis, OpHasOneOutPort, OnnxOp):
     @classmethod
     def attributes(cls):
         return {1: {'axis': {'default': 1}},
@@ -2536,21 +2613,25 @@ class SoftmaxOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
     def infer_shape(self):
         super(SoftmaxOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        if self.cur_version < 13:
-            input_shape = inputs[0].shape
-            inner_dim = [-1, 1] \
-                if self.axis == 0 \
-                else [int(np.prod(input_shape[:self.axis])), int(np.prod(input_shape[self.axis:]))]
-            # torch softmax not implemented for 'Half'
-            inp = np.reshape(inputs[0], inner_dim).astype(np.float32)
-            out_tensor = torch.nn.functional.softmax(
-                torch.from_numpy(inp), dim=0 if self.axis == 0 else -1).numpy()
-            out_tensor = np.reshape(out_tensor, input_shape)
+        input_shape = inputs[0].shape
+        if self.is_all_inputs_const():
+            if self.cur_version < 13:
+                inner_dim = [-1, 1] \
+                    if self.axis == 0 \
+                    else [int(np.prod(input_shape[:self.axis])), int(np.prod(input_shape[self.axis:]))]
+                # torch softmax not implemented for 'Half'
+                inp = np.reshape(inputs[0], inner_dim).astype(np.float32)
+                out_tensor = torch.nn.functional.softmax(
+                    torch.from_numpy(inp), dim=0 if self.axis == 0 else -1).numpy()
+                out_tensor = np.reshape(out_tensor, input_shape)
+            else:
+                inp = np.array(inputs[0], dtype=np.float32)
+                out_tensor = torch.nn.functional.softmax(
+                    torch.from_numpy(inp), dim=self.axis).numpy()
         else:
-            inp = np.array(inputs[0], dtype=np.float32)
-            out_tensor = torch.nn.functional.softmax(
-                torch.from_numpy(inp), dim=self.axis).numpy()
-        self.set_out_tensor(out_tensor.astype(inputs[0].dtype))
+            out_tensor = np.random.ranf(tuple(input_shape)).astype(inputs[0].dtype)
+        out_symbol = self.cal_output_symbol()
+        self.set_out_tensor(out_tensor.astype(inputs[0].dtype), out_symbol)
 
     def convert_version(self):
         max_ver = type(self).max_ver()
@@ -2639,7 +2720,7 @@ class SqrtOp(LayoutUnawareOp, OpHasOneOutPort, OpHasNonZeroInput, OnnxOp):
         self.set_out_tensor(out_tensor.astype(inputs[0].dtype))
 
 
-class SubOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
+class SubOp(MultidirectionalBroadcastOp, OpHasAxis, OpHasOneOutPort, OnnxOp):
     @classmethod
     def attributes(cls):
         return {1: {'axis': {'type': AttrType.INT},
@@ -2673,7 +2754,8 @@ class SubOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
             out_tensor = np.subtract(inputs[0], second_input)
         else:
             out_tensor = np.subtract(*inputs)
-        self.set_out_tensor(out_tensor)
+        out_symbol = self.cal_output_symbol()
+        self.set_out_tensor(out_tensor, out_symbol)
 
     def __getattr__(self, item):
         ret = None

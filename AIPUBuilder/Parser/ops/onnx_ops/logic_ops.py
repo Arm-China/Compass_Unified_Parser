@@ -6,7 +6,7 @@ from ..op import *
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
-class AndOp(OpNeedBroadcast, OpHasOneOutPort, OnnxOp):
+class AndOp(MultidirectionalBroadcastOp, OpNeedBroadcast, OpHasOneOutPort, OnnxOp):
     @classmethod
     def attributes(cls):
         return {1: {'axis': {'type': AttrType.INT},
@@ -35,7 +35,8 @@ class AndOp(OpNeedBroadcast, OpHasOneOutPort, OnnxOp):
             out_tensor = np.logical_and(inputs[0], second_input)
         else:
             out_tensor = np.logical_and(*inputs)
-        self.set_out_tensor(out_tensor)
+        out_symbol = self.cal_output_symbol()
+        self.set_out_tensor(out_tensor, out_symbol)
 
     def __getattr__(self, item):
         ret = None
@@ -54,7 +55,7 @@ class AndOp(OpNeedBroadcast, OpHasOneOutPort, OnnxOp):
         return ret
 
 
-class EqualOp(OpNeedBroadcast, OpHasAxis, OpHasOneOutPort, OnnxOp):
+class EqualOp(MultidirectionalBroadcastOp, OpNeedBroadcast, OpHasAxis, OpHasOneOutPort, OnnxOp):
     @classmethod
     def attributes(cls):
         return {1: {'axis': {'type': AttrType.INT},
@@ -69,23 +70,6 @@ class EqualOp(OpNeedBroadcast, OpHasAxis, OpHasOneOutPort, OnnxOp):
         super(EqualOp, self).__init__(graph, attr_dict)
         self.update_attributes(EqualOp, attr_dict)
         assert self.check_required(), 'EqualOp is missing a required parameter.'
-
-    def infer_shape(self):
-        super(EqualOp, self).infer_shape()
-        inputs = self.get_input_tensors()
-        cur_ver = self.cur_version
-        if cur_ver == 1:
-            if self.broadcast:
-                second_input = OpHasAxis.broadcast_to(
-                    inputs[1], inputs[0].shape, int(self.axis))
-            else:
-                assert list(inputs[0].shape) == list(
-                    inputs[1].shape), 'The lengths of input0 and input1 are not the same in AndOp infer shape.'
-                second_input = inputs[1]
-            out_tensor = np.equal(inputs[0], second_input)
-        else:
-            out_tensor = np.equal(*inputs)
-        self.set_out_tensor(out_tensor)
 
     def __getattr__(self, item):
         ret = None
@@ -103,8 +87,49 @@ class EqualOp(OpNeedBroadcast, OpHasAxis, OpHasOneOutPort, OnnxOp):
             ret = super(EqualOp, self).__getattr__(item)
         return ret
 
+    def infer_shape(self):
+        super(EqualOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        cur_ver = self.cur_version
+        if cur_ver == 1:
+            if self.broadcast:
+                second_input = OpHasAxis.broadcast_to(
+                    inputs[1], inputs[0].shape, int(self.axis))
+            else:
+                assert list(inputs[0].shape) == list(
+                    inputs[1].shape), 'The lengths of input0 and input1 are not the same in AndOp infer shape.'
+                second_input = inputs[1]
+            out_tensor = np.equal(inputs[0], second_input)
+        else:
+            out_tensor = np.equal(*inputs)
+        out_symbol = self.cal_output_symbol()
+        self.set_out_tensor(out_tensor, out_symbol)
 
-class GreaterOp(OpNeedBroadcast, OpHasAxis, OpHasOneOutPort, OnnxOp):
+    def infer_symbol(self):
+        input_tensor_symbols = self.get_input_symbol_values()
+        invalid = False
+        for inp in input_tensor_symbols:
+            if inp is None:
+                invalid = True
+                break
+        const_info = self.sorted_in_consts()
+        if len(const_info) != 1:
+            invalid = True
+
+        if not invalid:
+            const_idx, const_value = const_info[0][1], const_info[0][2]
+            if np.all(const_value <= 0):
+                out_symbol_value = np.zeros_like(const_value, dtype=bool).tolist()
+            else:
+                out_symbol_value = None
+        else:
+            out_symbol_value = None
+
+        self.set_out_symbol_value(out_symbol_value)
+        super().infer_symbol()
+
+
+class GreaterOp(MultidirectionalBroadcastOp, OpNeedBroadcast, OpHasAxis, OpHasOneOutPort, OnnxOp):
     @classmethod
     def attributes(cls):
         return {1: {'axis': {'type': AttrType.INT},
@@ -135,7 +160,8 @@ class GreaterOp(OpNeedBroadcast, OpHasAxis, OpHasOneOutPort, OnnxOp):
             out_tensor = np.greater(inputs[0], second_input)
         else:
             out_tensor = np.greater(*inputs)
-        self.set_out_tensor(out_tensor)
+        out_symbol = self.cal_output_symbol()
+        self.set_out_tensor(out_tensor, out_symbol)
 
     def __getattr__(self, item):
         ret = None
@@ -173,7 +199,7 @@ class GreaterOrEqualOp(OpNeedBroadcast, OpHasOneOutPort, OnnxOp):
         self.set_out_tensor(out_tensor)
 
 
-class LessOp(OpNeedBroadcast, OpHasAxis, OpHasOneOutPort, OnnxOp):
+class LessOp(MultidirectionalBroadcastOp, OpNeedBroadcast, OpHasAxis, OpHasOneOutPort, OnnxOp):
     @classmethod
     def attributes(cls):
         return {1: {'axis': {'type': AttrType.INT},
@@ -204,7 +230,8 @@ class LessOp(OpNeedBroadcast, OpHasAxis, OpHasOneOutPort, OnnxOp):
             out_tensor = np.less(inputs[0], second_input)
         else:
             out_tensor = np.less(*inputs)
-        self.set_out_tensor(out_tensor)
+        out_symbol = self.cal_output_symbol()
+        self.set_out_tensor(out_tensor, out_symbol)
 
     def __getattr__(self, item):
         ret = None
@@ -259,7 +286,7 @@ class NotOp(OpHasOneOutPort, OnnxOp):
         self.set_out_tensor(out_tensor)
 
 
-class OrOp(OpNeedBroadcast, OpHasOneOutPort, OnnxOp):
+class OrOp(MultidirectionalBroadcastOp, OpNeedBroadcast, OpHasOneOutPort, OnnxOp):
     @classmethod
     def attributes(cls):
         return {1: {'axis': {'type': AttrType.INT},
@@ -288,7 +315,8 @@ class OrOp(OpNeedBroadcast, OpHasOneOutPort, OnnxOp):
             out_tensor = np.logical_or(inputs[0], second_input)
         else:
             out_tensor = np.logical_or(*inputs)
-        self.set_out_tensor(out_tensor)
+        out_symbol = self.cal_output_symbol()
+        self.set_out_tensor(out_tensor, out_symbol)
 
     def __getattr__(self, item):
         ret = None
@@ -307,7 +335,7 @@ class OrOp(OpNeedBroadcast, OpHasOneOutPort, OnnxOp):
         return ret
 
 
-class XorOp(OpNeedBroadcast, OpHasOneOutPort, OnnxOp):
+class XorOp(MultidirectionalBroadcastOp, OpNeedBroadcast, OpHasOneOutPort, OnnxOp):
     @classmethod
     def attributes(cls):
         return {1: {'axis': {'type': AttrType.INT},
@@ -351,4 +379,5 @@ class XorOp(OpNeedBroadcast, OpHasOneOutPort, OnnxOp):
             out_tensor = np.logical_xor(inputs[0], second_input)
         else:
             out_tensor = np.logical_xor(*inputs)
-        self.set_out_tensor(out_tensor)
+        out_symbol = self.cal_output_symbol()
+        self.set_out_tensor(out_tensor, out_symbol)
