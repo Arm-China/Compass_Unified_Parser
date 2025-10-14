@@ -59,7 +59,7 @@ class CastOp(OpHasOneOutPort, LayoutUnawareOp, SameShapeOp, OnnxOp):
         try:
             if item == 'to':
                 ret = self._attr[item].value
-                if isinstance(ret, int):
+                if not isinstance(ret, str):
                     ret = np.dtype(ONNX_NP_TENSOR_MAP[ret][1]).name
             elif item == 'saturate':
                 if cur_ver < 19:
