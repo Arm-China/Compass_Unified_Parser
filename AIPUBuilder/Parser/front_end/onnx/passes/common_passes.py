@@ -1320,8 +1320,7 @@ def insert_reshape(graph, src, dst, in_attr, dim,
                 out_tensor.shape = out_tensor.value.shape
             else:
                 out_tensor.shape = tuple(dim)
-            if symbol is not None:
-                out_tensor.symbol = symbol
+            out_tensor.symbol = symbol
         reshape_out_attr.update({'src_out_port': 0, 'tensor': out_tensor})
         graph.add_edge(reshape, dst, **reshape_out_attr)
         ret = reshape
@@ -1364,7 +1363,7 @@ def insert_reshape_after(graph, src, new_dim, old_dim=None, out_port=0, type='Re
                 graph.remove_edge(src, dst, key)
                 new_out_attr = copy.deepcopy(out_attr)
                 new_out_attr['src_out_port'] = 0
-                if symbol is not None and new_out_attr.get('tensor', None) is not None:
+                if new_out_attr.get('tensor', None) is not None:
                     new_out_attr['tensor'].symbol = symbol
                 graph.add_edge(reshape, dst, **new_out_attr)
                 if new_out_attr.get('tensor', None) is not None:
