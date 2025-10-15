@@ -96,6 +96,7 @@ def build_subgraph(current_node_name,
                    opset_ver):
     subgraph_name = f'{current_node_name}_{key}_subgraph'
     sub_graph = SubGraph(name=subgraph_name)
+    sub_graph._attr['enable_ds'] = root_graph._attr['enable_ds']
     sub_graph._attr['framework'] = root_graph._attr['framework']
     sub_graph._attr['parent_node'] = current_node_name
     sub_graph._attr['subgraph_node_remapping'] = {}

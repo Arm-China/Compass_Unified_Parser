@@ -163,14 +163,20 @@ def convert_1d_pooling(graph):
                         and len(pool_obj.pads) == 2 \
                         and len(pool_obj.get_out_ports()) == 1:
                     in_edges = graph.sorted_in_edges(pool, data=True)
-                    out_edges = graph.sorted_out_edges(pool, data=True)
                     in_shape, out_shape = in_shapes[0], out_shapes[0]
+                    in_symbol = pool_obj.get_input_symbols(local=True)[0]
+                    pre_reshape_symbol = in_symbol.copy()
+                    post_reshape_symbol = [Symbol(f's{idx}') for idx in range(len(in_shape) + 1)]
                     if pool_obj.data_format == 'NHWC':
                         pre_reshape_dim = [in_shape[0], 1] + in_shape[1:]
+                        pre_reshape_symbol.insert(1, 1)
                         post_old_dim = [out_shape[0], 1] + out_shape[1:]
+                        post_reshape_symbol.pop(1)
                     else:
                         pre_reshape_dim = in_shape[0:2] + [1, in_shape[-1]]
+                        pre_reshape_symbol.insert(2, 1)
                         post_old_dim = out_shape[0:2] + [1, out_shape[-1]]
+                        post_reshape_symbol.pop(-2)
                     post_reshape_dim = out_shape
                     quantize = pool_obj.quantize
                     # Get attributes firstly, then update their value because default value of attributes
@@ -189,9 +195,9 @@ def convert_1d_pooling(graph):
                     src, _, in_attr = in_edges[0]
                     insert_reshape(
                         graph, src, pool, in_attr, pre_reshape_dim, data_format=pool_obj.data_format,
-                        quantize=quantize)
+                        quantize=quantize, symbol=pre_reshape_symbol)
                     post_reshape = insert_reshape_after(graph, pool, post_reshape_dim, old_dim=post_old_dim,
-                                                        quantize=quantize)
+                                                        quantize=quantize, symbol=post_reshape_symbol)
                     if pool in graph._attr['output_names']:
                         index = graph._attr['output_names'].index(pool)
                         graph._attr['output_names'][index] = post_reshape

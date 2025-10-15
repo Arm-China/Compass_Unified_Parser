@@ -5188,8 +5188,8 @@ def insert_cast_if_must(graph):
 
 def sink_single_reshape(graph):
     unaware_types = set(ArmOp.get_concrete_subclass_names()).intersection(
-        SameShapeOp.get_concrete_subclass_names() + ['ArmQuantize', 'ArmDeQuantize'])
-    unaware_types = sorted(list(unaware_types))
+        SameShapeOp.get_concrete_subclass_names()) - set(OpHasAxis.get_concrete_subclass_names())
+    unaware_types = sorted(list(unaware_types) + ['ArmQuantize', 'ArmDeQuantize'])
     matches = matched_patterns(graph,
                                nodes=[('reshape', {'op': 'ArmReshape'}),
                                       ('unaware', {'op': unaware_types})
@@ -5214,7 +5214,7 @@ def sink_single_reshape(graph):
                 unaware_out_edges = graph.sorted_out_edges(unaware, data=True)
                 if len(unaware_out_edges) < 1:
                     continue
-                if unaware_obj.type in ['ArmQuantize', 'ArmDeQuantize', 'ArmSoftmax'] \
+                if unaware_obj.type in ['ArmQuantize', 'ArmDeQuantize'] \
                         and unaware_obj.axis is not None:
                     continue
                 reshape_in_edges = graph.sorted_in_edges(reshape, data=True)
@@ -5879,7 +5879,7 @@ def sink_transpose_through_special_reshape(graph):
                     inp_rs_in_axes = [trans_obj.perm[axis] for axis in rs_in_axes]
                     inp_rs_out_shape = [reshape_out_shape[axis] for axis in rs_out_axes]
                     inp_rs_out_symbol = []
-                    if origin_rs_out_symbol is not None:
+                    if origin_rs_out_symbol is not None and origin_rs_out_symbol:
                         sym_map = list(zip([origin_rs_in_symbol[axis] for axis in rs_in_axes],
                                            [trans_in_symbol[axis] for axis in inp_rs_in_axes]))
                         for axis in rs_out_axes:
