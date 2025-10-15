@@ -9,6 +9,7 @@ import copy
 
 from collections import OrderedDict, defaultdict
 from collections.abc import Iterable
+from functools import reduce
 from sympy import Symbol, Max, Number
 import itertools
 import numpy as np
