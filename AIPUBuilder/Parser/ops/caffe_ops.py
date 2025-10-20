@@ -432,11 +432,15 @@ class CaffeDATAOp(OpHasOneOutPort, InputLikeOp, CaffeOp):
     def attributes(cls):
         return {1: {}}
 
-    def infer_shape(self, input_tensor=None):
+    def infer_shape(self, input_tensor=None, input_symbol=None):
         super(CaffeDATAOp, self).infer_shape()
         assert input_tensor is not None, 'input_tensor is empty in CaffeDATAOp.'
         out_tensor = input_tensor.copy()
-        self.set_out_tensor(out_tensor)
+        if input_symbol is not None:
+            out_symbol = input_symbol.copy()
+            self.set_out_tensor(out_tensor, out_symbol)
+        else:
+            self.set_out_tensor(out_tensor)
 
     @property
     def correspond_onnx_op(self):
