@@ -28,9 +28,25 @@ __all__ = [
 ]
 
 
+class UniqueFilter(logging.Filter):
+    def __init__(self):
+        super().__init__()
+        self.logged = set()
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        key = (record.getMessage(), record.levelno, record.module)
+
+        if key not in self.logged:
+            self.logged.add(key)
+            return True
+        return False
+
+
 class CUPLogger():
     def __init__(self):
         self.logger = logging.getLogger(__name__)
+        unique_filter = UniqueFilter()
+        self.logger.addFilter(unique_filter)
         self.warning_count = 0
         self.err_count = 0
         self.header = '[Parser]: '

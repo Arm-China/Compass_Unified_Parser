@@ -1502,7 +1502,29 @@ class LayerNormalizationOp(OpHasAxis, OpHasVariableOutPorts, OnnxOp):
             out_tensors.append(np.array(mean, std_mean_dtype))
         if 2 in out_ports:
             out_tensors.append(np.array(ngamma, std_mean_dtype))
-        self.set_out_tensor(out_tensors)
+        out_symbols = self.cal_output_symbol()
+        self.set_out_tensor(out_tensors, out_symbols)
+
+    def cal_output_symbol(self):
+        out_symbols = []
+        out_ports = self.get_out_ports()
+        if not self._graph._attr['enable_ds']:
+            out_symbols.append(None)
+            if 1 in out_ports:
+                out_symbols.append(None)
+            if 2 in out_ports:
+                out_symbols.append(None)
+            return out_symbols
+        input_symbol = self.get_input_symbols(local=True)[0]
+        out_symbols.append(input_symbol)
+        mean_var_symbol = input_symbol.copy()
+        for axis in self.axes:
+            mean_var_symbol[axis] = 1
+        if 1 in out_ports:
+            out_symbols.append(mean_var_symbol)
+        if 2 in out_ports:
+            out_symbols.append(mean_var_symbol)
+        return out_symbols
 
     def convert_version(self):
         from ...front_end.onnx.passes.common_passes import insert_constant

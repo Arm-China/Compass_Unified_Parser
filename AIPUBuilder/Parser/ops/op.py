@@ -179,6 +179,8 @@ class Op(abc.ABC):
 
     @staticmethod
     def is_all_global_symbols(current_symbols, global_symbols):
+        if current_symbols is None or None in current_symbols:
+            return False
         for s in current_symbols:
             if not isinstance(s, (int, np.generic)):
                 if isinstance(s, Symbol):
@@ -633,20 +635,27 @@ class Op(abc.ABC):
     def is_all_inputs_const(self):
         '''Determine whether all inputs are constant nodes.'''
         if isinstance(self, ConstLikeOp):
+            from .op_factory import is_compass_supported_op
             if self.type in ('Constant', 'ArmConstant'):
                 return True
             else:
                 # ConstLike Ops
-                if self._graph._attr['enable_ds'] or self.is_inputs_dynamic():
-                    return False
-                else:
+                if not is_compass_supported_op(self.type):
+                    WARN(f'{self.type}Op({self.name}) still not support dynamic, we infer it as constant instead.')
                     return True
+                else:
+                    if self._graph._attr['enable_ds'] or self.is_inputs_dynamic():
+                        return False
+                    else:
+                        return True
         elif self.name in self._graph._attr['input_tensors'] \
                 and self._graph._attr['input_tensors'][self.name].is_const:
             return True
         else:
             is_const_list = [d['tensor'].is_const for _, _, _, d in self._graph.sorted_in_edges(
                 self.name, keys=True, data=True)]
+            # if self.type in ('Reshape', 'ArmReshape'):
+            #     return True if is_const_list and is_const_list[0] else False
             return True if (is_const_list and all(is_const_list)) else False
 
     def is_inputs_dynamic(self):
@@ -971,6 +980,8 @@ class OpHasOneOutPort(Op):
                                         break
                             if not has_global_symbol:
                                 output_symbol.append(new_s)
+                        elif new_s.is_Integer:
+                            output_symbol.append(int(new_s))
                         else:
                             output_symbol.append(new_s)
                 self.set_out_symbol(output_symbol)
@@ -1122,11 +1133,12 @@ class OpHasVariableOutPorts(Op):
                     for s in out_s:
                         if isinstance(s, int):
                             output_symbol.append(s)
+                        elif s.is_Integer:
+                            output_symbol.append(int(s))
                         else:
                             output_symbol.append(s.subs(sym_mp))
                     output_symbols.append(output_symbol)
                 self.set_out_symbol(output_symbols)
-                WARN(f'{self.name} output symbol is: {output_symbols}')
             else:
                 WARN(f'{self.type} not implement symbol yet, please support it first.')
 
@@ -3080,6 +3092,8 @@ class OnnxReduceOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
         '''An abstract method for shape inference.'''
         super(OnnxReduceOp, self).infer_shape()
         inputs = self.get_input_tensors()
+        input_symbol = self.get_input_symbols(local=True)[0]
+        out_symbol = input_symbol.copy()
         if self.axes is None and self.noop_with_empty_axes:
             out_tensor = inputs[0]
         else:
@@ -3090,7 +3104,12 @@ class OnnxReduceOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
             if self.type in ('ReduceL1', 'ReduceL2', 'ReduceLogSum', 'ReduceLogSumExp',
                              'ReduceMean', 'ReduceProd', 'ReduceSum', 'ReduceSumSquare'):
                 out_tensor = out_tensor.astype(inputs[0].dtype)
-        self.set_out_tensor(out_tensor)
+            for axis in self.axes:
+                out_symbol[axis] = 1 if self.keepdims else -1
+            if not self.keepdims:
+                while -1 in out_symbol:
+                    out_symbol.remove(-1)
+        self.set_out_tensor(out_tensor, out_symbol)
 
 
 class BaseOnnxPoolOp(OpHasPaddingStrides, OnnxOp):

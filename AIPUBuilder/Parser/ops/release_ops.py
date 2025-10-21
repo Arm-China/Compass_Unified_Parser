@@ -9,7 +9,7 @@ import tensorflow as tf
 import numpy as np
 from .op import *
 from ..common.defs import FLOAT_EQUAL, TYPE_MIN, TYPE_MAX
-from ..common.utils import list_list_to_string, get_random_array, get_target_graph
+from ..common.utils import list_list_to_string, get_random_array, get_target_graph, is_sympy_with_symbol
 from ..logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
@@ -3013,7 +3013,29 @@ class ArmLayerNormOp(OpHasAxis, OpHasBiases, OpHasWeights, OpHasVariableOutPorts
         if 1 in out_ports or 2 in out_ports:
             out_tensors.append(np.array(mean, std_mean_dtype))
             out_tensors.append(np.array(ngamma, std_mean_dtype))
-        self.set_out_tensor(out_tensors)
+        out_symbols = self.cal_output_symbol()
+        self.set_out_tensor(out_tensors, out_symbols)
+
+    def cal_output_symbol(self):
+        out_symbols = []
+        out_ports = self.get_out_ports()
+        if not self._graph._attr['enable_ds']:
+            out_symbols.append(None)
+            if 1 in out_ports:
+                out_symbols.append(None)
+            if 2 in out_ports:
+                out_symbols.append(None)
+            return out_symbols
+        input_symbol = self.get_input_symbols(local=True)[0]
+        out_symbols.append(input_symbol)
+        mean_var_symbol = input_symbol.copy()
+        for axis in self.axes:
+            mean_var_symbol[axis] = 1
+        if 1 in out_ports:
+            out_symbols.append(mean_var_symbol)
+        if 2 in out_ports:
+            out_symbols.append(mean_var_symbol)
+        return out_symbols
 
     def write_attrs(self, txt_file):
         ret = super(ArmLayerNormOp, self).write_attrs(txt_file)
@@ -4950,9 +4972,14 @@ class ArmSliceOp(OpHasVariableOutPorts, ArmOp):
 
     @classmethod
     def attributes(cls):
-        return {'starts': {'type': AttrType.INTS, 'required': False},
-                'ends': {'type': AttrType.INTS, 'required': False},
-                'steps': {'type': AttrType.INTS, 'required': False}}
+        return {
+            'starts': {'type': AttrType.INTS, 'required': False},
+            'ends': {'type': AttrType.INTS, 'required': False},
+            'steps': {'type': AttrType.INTS, 'required': False},
+            'ds_starts': {'type': AttrType.INTS, 'required': False},
+            'ds_ends': {'type': AttrType.INTS, 'required': False},
+            'ds_steps': {'type': AttrType.INTS, 'required': False}
+        }
 
     def __init__(self, graph, attr_dict=None):
         super(ArmSliceOp, self).__init__(graph, attr_dict)
@@ -4980,16 +5007,41 @@ class ArmSliceOp(OpHasVariableOutPorts, ArmOp):
 
     def infer_symbol(self):
         if not self.dynamic:
-            input_tensor_symbols = self.get_input_symbol_values()
-            if input_tensor_symbols[0] is None:
+            input_symbol_values = self.get_input_symbol_values()
+            invalid = False
+            for inp in input_symbol_values:
+                if inp is None:
+                    invalid = True
+                    break
+            if invalid:
                 out_symbol_value = None
             else:
-                inp_symbol_value = input_tensor_symbols[0]
-                assert len(self.starts) == len(self.ends) == len(self.steps) == 1
-                s = slice(self.starts[0], self.ends[0], self.steps[0])
-                out_symbol_value = [inp_symbol_value[s]]
-            self.set_out_symbol_value(out_symbol_value)
-            super().infer_symbol()
+                if len(input_symbol_values) == 1:
+                    assert len(
+                        np.array(input_symbol_values[0]).shape) == 1, 'Only support 1d list in symbol value infer now.'
+                    start = self.starts[0]
+                    end = self.ends[0]
+                    step = self.steps[0]
+                    out_symbol_value = input_symbol_values[0][start:end:step]
+                else:
+                    assert input_symbol_values[3] == [
+                        0], 'set infer symbol value still not support multi-dimensional tensors.'
+                    start = input_symbol_values[1][0]
+                    end = input_symbol_values[2][0]
+                    step = input_symbol_values[4][0]
+                    out_symbol_value = input_symbol_values[0][start:end:step]
+            self.set_out_symbol_value([out_symbol_value])
+            if self.ds_starts:
+                out_symbol = []
+                for i in range(len(self.ds_starts)):
+                    out = (self.ds_ends[i] - self.ds_starts[i]) / self.ds_steps[i]
+                    if is_sympy_with_symbol(out):
+                        out_symbol.append(out)
+                    else:
+                        out_symbol.append(int(out))
+                self.set_out_symbol([out_symbol])
+            else:
+                super().infer_symbol()
 
     def write_attrs(self, txt_file):
         ret = super(ArmSliceOp, self).write_attrs(txt_file)
@@ -4998,6 +5050,12 @@ class ArmSliceOp(OpHasVariableOutPorts, ArmOp):
                 txt_file.write('begin=[%s]\n' % list_list_to_string(self.starts))
                 txt_file.write('end=[%s]\n' % list_list_to_string(self.ends))
                 txt_file.write('strides=[%s]\n' % list_list_to_string(self.steps))
+                if self.ds_starts:
+                    txt_file.write('ds_begin=[%s]\n' % list_list_to_string(self.ds_starts))
+                if self.ds_ends:
+                    txt_file.write('ds_end=[%s]\n' % list_list_to_string(self.ds_ends))
+                if self.ds_steps:
+                    txt_file.write('ds_strides=[%s]\n' % list_list_to_string(self.ds_steps))
         return ret
 
 

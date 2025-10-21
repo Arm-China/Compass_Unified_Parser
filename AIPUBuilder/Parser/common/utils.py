@@ -22,6 +22,14 @@ def is_dir(dir_path):
     return True if (dir_path and os.path.isdir(dir_path)) else False
 
 
+def is_sympy_with_symbol(var):
+    from sympy.core.expr import Expr
+    if isinstance(var, Expr):
+        return len(var.free_symbols) > 0
+    else:
+        return False
+
+
 def get_absolute_path(file_path):
     file_path = os.path.expanduser(file_path)
     if not os.path.isabs(file_path):

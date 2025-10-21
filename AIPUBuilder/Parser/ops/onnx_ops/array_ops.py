@@ -441,7 +441,7 @@ class ExpandOp(OpHasOneOutPort, OnnxOp):
         input_symbol = self.get_input_symbols(local=True)[0]
         out_symbol = []
         for i in range(len(input_shape)):
-            if input_shape[i] == expanded_list[i]:
+            if input_shape[i] == expanded_list[i] or expanded_list[i] == 1:
                 out_symbol.append(input_symbol[i])
             else:
                 out_symbol.append(expanded_list[i])
@@ -995,18 +995,19 @@ class ReshapeOp(OpHasOneOutPort, OnnxOp):
             if inp is None:
                 invalid = True
                 break
+        if not invalid:
+            if any(not isinstance(x, int) for x in input_tensor_symbols[1]):
+                invalid = True
         if invalid:
             out_symbol_value = None
         else:
-            if input_tensor_symbols[1] == [1]:
-                out_symbol_value = [input_tensor_symbols[0]]
-            else:
-                ERROR('Not Implemented yet')
-                out_symbol_value = None
+            out_tensor = np.reshape(np.array(input_tensor_symbols[0]), input_tensor_symbols[-1])
+            out_symbol_value = out_tensor.tolist()
         self.set_out_symbol_value(out_symbol_value)
-        if input_tensor_symbols[1] is not None and \
+        if len(input_tensor_symbols) > 1 and input_tensor_symbols[1] is not None and \
                 not all(isinstance(x, int) for x in input_tensor_symbols[1]) and \
-                Op.is_all_global_symbols(input_tensor_symbols[1], self._graph._attr['global_symbols']):
+                Op.is_all_global_symbols(input_tensor_symbols[1], self._graph._attr['global_symbols']) and \
+                -1 not in input_tensor_symbols[1]:
             self.set_out_symbol(input_tensor_symbols[1])
         else:
             super().infer_symbol()
@@ -1430,7 +1431,7 @@ class SliceOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
                     self.axes, len(inputs[0].shape))
         else:
             assert 3 <= len(inputs) <= 5, \
-                ('[Parser]: Only support 3/4/5 inputs for Onnx Slice (%s) of ver %d!' %
+                ('[Parser]: Only support 3-5 inputs for Onnx Slice (%s) of ver %d!' %
                  (self.name, cur_ver))
             if self.axes is None:
                 self.axes = list(range(len(self.starts)))
@@ -1527,6 +1528,69 @@ class SliceOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
                 self._graph.remove_edge(src, self.name, key=k)
                 insert_constant(self._graph, self.name + '_steps',
                                 np.array(self.steps, np.int32), self.name, in_port=4)
+
+    def infer_symbol(self):
+        input_symbol_values = self.get_input_symbol_values()
+        invalid = False
+        for inp in input_symbol_values:
+            if inp is None:
+                invalid = True
+                break
+        if invalid:
+            out_symbol_value = None
+        else:
+            if len(input_symbol_values) == 1:
+                assert len(
+                    np.array(input_symbol_values[0]).shape) == 1, 'Only support 1d list in symbol value infer now.'
+                start = self.starts[0]
+                end = self.ends[0]
+                step = self.steps[0]
+                out_symbol_value = input_symbol_values[0][start:end:step]
+            else:
+                assert input_symbol_values[3] == [
+                    0], 'set infer symbol value still not support multi-dimensional tensors.'
+                start = input_symbol_values[1][0]
+                end = input_symbol_values[2][0]
+                step = input_symbol_values[4][0]
+                out_symbol_value = input_symbol_values[0][start:end:step]
+        self.set_out_symbol_value(out_symbol_value)
+
+        inp_symbol = self.get_input_symbols()[0]
+        if inp_symbol is not None and inp_symbol:
+            invalid = False
+            if len(input_symbol_values) > 1:
+                const_info = self.sorted_in_consts()
+                const_axes = [info[1] for info in const_info]
+                if 3 not in const_axes or 4 not in const_axes:
+                    invalid = True
+                for inp in input_symbol_values[1:]:
+                    if inp is None:
+                        invalid = True
+                        break
+            if invalid:
+                ERROR(f'Cannot infer symbol of slice op({self.name}) for unknown inputs.')
+            else:
+                inp_rank = len(inp_symbol)
+                if len(input_symbol_values) == 1:
+                    starts = self.starts
+                    ends = self.ends
+                    steps = self.steps
+                    axes = list(range(inp_rank))
+                else:
+                    starts = input_symbol_values[1]
+                    ends = input_symbol_values[2]
+                    axes = input_symbol_values[3] if len(input_symbol_values) > 3 else list(range(inp_rank))
+                    steps = input_symbol_values[4] if len(input_symbol_values) > 4 else [1] * inp_rank
+                    axes = [axis + inp_rank if axis < 0 else axis for axis in axes]
+                out_symbol = []
+                for i in range(inp_rank):
+                    if i not in axes:
+                        out_symbol.append(inp_symbol[i])
+                    else:
+                        idx = axes.index(i)
+                        out = (ends[idx] - starts[idx]) / steps[idx]
+                        out_symbol.append(out)
+                self.set_out_symbol(out_symbol)
 
 
 class SpaceToDepthOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
@@ -1944,7 +2008,7 @@ class UnsqueezeOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
             pass
         else:
             inp_symbol_value = input_tensor_symbols[0]
-            axes = input_tensor_symbols[1].tolist()
+            axes = input_tensor_symbols[1]
             for axis in axes:
                 out_symbol_value = [inp_symbol_value]
                 inp_symbol_value = out_symbol_value

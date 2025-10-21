@@ -668,6 +668,7 @@ def remove_redundant_reshape(graph, type='Reshape'):
                     for _, dst, out_attr in reshape_2_out_edges:
                         new_out_attr = copy.deepcopy(out_attr)
                         new_out_attr['src_out_port'] = in_attr['src_out_port']
+                        new_out_attr['tensor'].symbol = in_attr['tensor'].symbol
                         graph.add_edge(src, dst, **new_out_attr)
                     if reshape_2 in graph._attr['output_names']:
                         index = graph._attr['output_names'].index(reshape_2)

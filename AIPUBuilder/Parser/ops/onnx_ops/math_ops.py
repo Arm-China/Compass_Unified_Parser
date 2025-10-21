@@ -603,7 +603,7 @@ class EluOp(LayoutUnawareOp, BaseActivationOp, OnnxOp):
         self.set_out_tensor(out_tensor)
 
 
-class ErfOp(OpHasOneOutPort, OnnxOp):
+class ErfOp(SameShapeOp, OpHasOneOutPort, OnnxOp):
     @classmethod
     def attributes(cls):
         return {9: {}, 13: {}}
@@ -617,7 +617,8 @@ class ErfOp(OpHasOneOutPort, OnnxOp):
         super(ErfOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor = torch.erf(torch.from_numpy(np.array(inputs[0], dtype=np.float32))).numpy().astype(inputs[0].dtype)
-        self.set_out_tensor(out_tensor)
+        out_symbol = self.cal_output_symbol()
+        self.set_out_tensor(out_tensor, out_symbol)
 
 
 class ExpOp(OpHasOneOutPort, OnnxOp):
@@ -2701,7 +2702,7 @@ class SoftsignOp(LayoutUnawareOp, BaseActivationOp, OnnxOp):
         self.set_out_tensor(out_tensor.numpy())
 
 
-class SqrtOp(LayoutUnawareOp, OpHasOneOutPort, OpHasNonZeroInput, OnnxOp):
+class SqrtOp(LayoutUnawareOp, SameShapeOp, OpHasOneOutPort, OpHasNonZeroInput, OnnxOp):
     @classmethod
     def attributes(cls):
         return {1: {'consumed_inputs': {'type': AttrType.INTS}},
@@ -2717,7 +2718,8 @@ class SqrtOp(LayoutUnawareOp, OpHasOneOutPort, OpHasNonZeroInput, OnnxOp):
         super(SqrtOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor = np.sqrt(inputs[0])
-        self.set_out_tensor(out_tensor.astype(inputs[0].dtype))
+        out_symbol = self.cal_output_symbol()
+        self.set_out_tensor(out_tensor.astype(inputs[0].dtype), out_symbol)
 
 
 class SubOp(MultidirectionalBroadcastOp, OpHasAxis, OpHasOneOutPort, OnnxOp):

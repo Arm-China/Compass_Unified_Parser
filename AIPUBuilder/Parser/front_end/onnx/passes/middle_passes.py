@@ -7504,6 +7504,7 @@ def convert_mha(graph):
 def convert_matmulnbits(graph):
     matched = False
     matches = single_node_matcher(graph, 'MatMulNBitsMs')
+    last_input = None
     for m in matches:
         node = m['target']
         node_obj = NodeWrap(graph, node)['object']
@@ -7550,14 +7551,42 @@ def convert_matmulnbits(graph):
             if node_obj.bits == 4:
                 matmul_attr['weights_packed_dtype'] = 'aligned_int4'
             NodeWrap(graph, node).replace_obj('FullyConnected', matmul_attr)
-            if len(input_shapes[0]) > 2:
+            inp_rank = len(input_shapes[0])
+            if inp_rank > 2:
                 src, _, in_attr = node_in_edges[0]
-                insert_reshape(graph, src, node, in_attr, [-1, input_shapes[0][-1]], quantize=False)
+                if graph._attr['enable_ds']:
+                    infer_symbol(graph, src, last_input)
+                    src_obj = NodeWrap(graph, src)['object']
+                    src_out_symbol = src_obj.get_output_symbols()[0]
+                    pre_rs_sym0 = 1
+                    for i in range(inp_rank - 1):
+                        pre_rs_sym0 *= src_out_symbol[i]
+                    if not Op.is_all_global_symbols(src_out_symbol, graph._attr['global_symbols']):
+                        pre_rs_symbol = [pre_rs_sym0, Symbol(f's{inp_rank-1}')]
+                        post_rs_symbol = None
+                    else:
+                        pre_rs_symbol = [pre_rs_sym0, src_out_symbol[-1]]
+                        post_rs_symbol = src_out_symbol[:-1] + [Symbol('s1')]
+                    out_edges = graph.sorted_out_edges(node, keys=True, data=True)
+                    fc_out_symbol = [Symbol('s0'), quant_weights.shape[0]]
+                    updated_edges = {}
+                    for _, dst, k, out_attr in out_edges:
+                        new_out_attr = copy.deepcopy(out_attr)
+                        new_out_attr['tensor'].symbol = fc_out_symbol
+                        updated_edges[(node, dst, k)] = new_out_attr
+                    nx.set_edge_attributes(graph, updated_edges)
+                else:
+                    pre_rs_symbol = None
+                    post_rs_symbol = None
+                insert_reshape(graph, src, node, in_attr, [-1, input_shapes[0][-1]], quantize=False,
+                               symbol=pre_rs_symbol)
                 post_reshape = insert_reshape_after(graph,
                                                     node,
                                                     output_shapes[0],
                                                     old_dim=[int(np.prod(output_shapes[0][:-1])), output_shapes[0][-1]],
-                                                    quantize=False)
+                                                    quantize=False,
+                                                    symbol=post_rs_symbol)
+                last_input = post_reshape
                 if node in graph._attr['output_names']:
                     index = graph._attr['output_names'].index(node)
                     graph._attr['output_names'][index] = post_reshape
@@ -8455,6 +8484,8 @@ def multidirectional_broadcasting(graph):
     for op_type in op_type_list:
         matches = single_node_matcher(graph, op_type)
         for m in matches:
+            if graph._attr['enable_ds'] and op_type in ('Where', ):  # avoid shape info lost after tile inserted
+                continue
             broadcast = m['target']
             broadcast_obj = NodeWrap(graph, broadcast)['object']
             in_edges = graph.sorted_in_edges(broadcast, keys=True, data=True)

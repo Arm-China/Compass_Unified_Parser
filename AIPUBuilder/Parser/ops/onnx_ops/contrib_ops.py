@@ -91,7 +91,62 @@ class MatMulNBitsMsOp(OpHasOneOutPort, OnnxOp):
             out_shape = list(A.shape).copy()
             out_shape[-1] = self.N
             out_tensor = np.random.ranf(tuple(out_shape)).astype(A.dtype) + self.bias
-        self.set_out_tensor(out_tensor)
+        out_symbol = self.cal_output_symbol()
+        self.set_out_tensor(out_tensor, out_symbol)
+
+    def cal_output_symbol(self):
+        if not self._graph._attr['enable_ds']:
+            return None
+        a_symbol, b_symbol = self.get_input_symbols(local=True)[:2]
+        a_dim = len(a_symbol)
+        b_dim = len(b_symbol)
+        max_dim = max(a_dim, b_dim)
+        out_symbol = []
+        if max_dim != 1:
+            if a_dim == 1:
+                out_symbol = b_symbol[:]
+                del out_symbol[-2]
+            elif b_dim == 1:
+                out_symbol = a_symbol[:-1]
+            else:
+                if b_dim == 2:
+                    out_symbol = a_symbol[:-1] + b_symbol[-1:]
+                else:
+                    if a_dim < max_dim:
+                        for i in range(max_dim - a_dim):
+                            a_symbol.insert(0, 1)
+                    if b_dim < max_dim:
+                        for i in range(max_dim - b_dim):
+                            b_symbol.insert(0, 1)
+
+                    for i in range(max_dim):
+                        if i < max_dim - 2:
+                            if a_symbol[i] == 1:
+                                out_symbol.append(b_symbol[i])
+                            elif b_symbol[i] == 1:
+                                out_symbol.append(a_symbol[i])
+                            else:
+                                input_shapes = self.get_input_shapes()
+                                sym_shape_map = {}
+                                idx_add = 0
+                                for shape in input_shapes:
+                                    for idx, s in enumerate(shape):
+                                        sym_shape_map[idx + idx_add] = s
+                                    idx_add += len(shape)
+                                sym_idx = int(re.findall(r'\d+', str(a_symbol[i]))[0])
+                                if sym_shape_map[sym_idx] != 1:
+                                    out_symbol.append(a_symbol[i])
+                                else:
+                                    b_sym_idx = int(re.findall(r'\d+', str(b_symbol[i]))[0])
+                                    if sym_shape_map[b_sym_idx] == 1:
+                                        out_symbol.append(Max(a_symbol[i], b_symbol[i]))
+                                    else:
+                                        out_symbol.append(b_symbol[i])
+                        elif i == max_dim - 2:
+                            out_symbol.append(a_symbol[i])
+                        else:
+                            out_symbol.append(b_symbol[i])
+        return out_symbol
 
 
 class MultiHeadAttentionMsOp(OpHasVariableOutPorts, OnnxOp):

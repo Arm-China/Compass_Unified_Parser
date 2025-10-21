@@ -405,6 +405,7 @@ def process_graph(graph, params):
         ERROR('[Parser]: Meets exception in middle_passes (%s)!' % str(e))
 
     infer(graph)
+    infer_symbol(graph)
 
     try:
         transform_to_nhwc(graph, params)
