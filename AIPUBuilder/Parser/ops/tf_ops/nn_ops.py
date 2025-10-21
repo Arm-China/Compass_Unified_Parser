@@ -772,7 +772,7 @@ class TfMaxPool3DOp(TfHasPaddingStrides, OpHasOneOutPort):
 class TfMaxPoolWithArgmaxOp(TfHasPaddingStrides, OpHasMultipleOutPorts):
     @classmethod
     def attributes(cls):
-        return {1: {'include_batch_in_index': {'type': AttrType.INT, 'default': False},
+        return {1: {'include_batch_in_index': {'type': AttrType.BOOL, 'default': False},
                     }
                 }
 

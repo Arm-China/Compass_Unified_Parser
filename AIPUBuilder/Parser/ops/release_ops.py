@@ -3417,7 +3417,7 @@ class ArmMaxPoolingWithArgMaxOp(OpHasPaddingStrides, OpHasMultipleOutPorts, ArmO
     @classmethod
     def attributes(cls):
         return {'flatten_dim': {'type': AttrType.STRING, 'default': 'HWC', 'options': ['NHWC', 'HWC', 'HW', 'NCHW']},
-                'ceil_mode': {'type': AttrType.INT, 'default': 0},
+                'ceil_mode': {'type': AttrType.BOOL, 'default': False},
                 'storage_order': {'type': AttrType.INT, 'default': 0, 'options': [0, 1]}
                 }
 
@@ -3442,8 +3442,7 @@ class ArmMaxPoolingWithArgMaxOp(OpHasPaddingStrides, OpHasMultipleOutPorts, ArmO
                                                      dilation=(
                                                          self.dilations[0], self.dilations[1]),
                                                      return_indices=True,
-                                                     ceil_mode=bool(
-                                                         self.ceil_mode)
+                                                     ceil_mode=self.ceil_mode
                                                      )
         out_tensors = [t.numpy().astype(inputs[0].dtype) if i == 0 else t.numpy().astype(np.int32)
                        for i, t in enumerate(out_tensors)]
@@ -3454,7 +3453,7 @@ class ArmMaxPoolingWithArgMaxOp(OpHasPaddingStrides, OpHasMultipleOutPorts, ArmO
         ret = super(ArmMaxPoolingWithArgMaxOp, self).write_attrs(txt_file)
         if ret:
             txt_file.write('ceil_mode=%s\n' %
-                           str(bool(self.ceil_mode)).lower())
+                           str(self.ceil_mode).lower())
             txt_file.write('flatten_dim=%s\n' % self.flatten_dim)
             txt_file.write('storage_order=%d\n' % self.storage_order)
 
