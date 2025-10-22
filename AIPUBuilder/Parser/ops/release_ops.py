@@ -3014,7 +3014,7 @@ class ArmLayerNormOp(OpHasAxis, OpHasBiases, OpHasWeights, OpHasVariableOutPorts
             out_tensors.append(np.array(mean, std_mean_dtype))
             out_tensors.append(np.array(ngamma, std_mean_dtype))
         out_symbols = self.cal_output_symbol()
-        self.set_out_tensor(out_tensors, out_symbols)
+        self.set_out_tensor(out_tensors, out_symbols=out_symbols)
 
     def cal_output_symbol(self):
         out_symbols = []
