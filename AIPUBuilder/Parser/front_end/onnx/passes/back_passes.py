@@ -5906,12 +5906,19 @@ def sink_transpose_through_special_reshape(graph):
             if not sink_ok:
                 continue
 
+            ds_mode = graph._attr['enable_ds']
             new_rs_shape = []
             perm_map = []
-            trans_in_symbol = trans_obj.get_input_symbols(local=True)[0]
-            new_rs_symbol = []
-            origin_rs_in_symbol = reshape_obj.get_input_symbols(local=True)[0]
-            origin_rs_out_symbol = reshape_obj.get_output_symbols()[0]
+            if ds_mode:
+                trans_in_symbol = trans_obj.get_input_symbols(local=True)[0]
+                new_rs_symbol = []
+                origin_rs_in_symbol = reshape_obj.get_input_symbols(local=True)[0]
+                origin_rs_out_symbol = reshape_obj.get_output_symbols()[0]
+            else:
+                trans_in_symbol = []
+                new_rs_symbol = []
+                origin_rs_in_symbol = []
+                origin_rs_out_symbol = None
             # gen_new_reshape & perm
             for i in range(len(trans_in_shape)):
                 changed = False
@@ -5945,7 +5952,8 @@ def sink_transpose_through_special_reshape(graph):
                         continue
                 if not changed:
                     new_rs_shape.append(trans_in_shape[i])
-                    new_rs_symbol.append(trans_in_symbol[i])
+                    if trans_in_symbol:
+                        new_rs_symbol.append(trans_in_symbol[i])
 
             if not sink_ok:
                 continue
@@ -6008,7 +6016,8 @@ def sink_transpose_through_special_reshape(graph):
                     reshape_in_edges[0][2]['tensor'].value, reshape_obj.dim)
             else:
                 reshape_out_tensor.shape = reshape_obj.dim
-            reshape_out_tensor.symbol = new_rs_symbol
+            if ds_mode:
+                reshape_out_tensor.symbol = new_rs_symbol
             graph.add_edge(reshape, new_transpose, **{'tensor': reshape_out_tensor})
 
             new_transpose_attr = reshape_obj.copied_attr()
@@ -6029,10 +6038,9 @@ def sink_transpose_through_special_reshape(graph):
     if matched:
         clear_redundant_nodes(graph)
 
-# convert special reshape to transpose to facilitate fusion with other transpose
-
 
 def convert_special_reshape(graph):
+    '''convert special reshape to transpose to facilitate fusion with other transpose'''
     matches = single_node_matcher(graph, 'ArmReshape')
     for m in matches:
         rs = m['target']

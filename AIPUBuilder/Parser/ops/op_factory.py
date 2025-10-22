@@ -62,5 +62,8 @@ def op_factory(graph, op_type, node_attr=None):
 
 
 def is_compass_supported_op(op_type):
-    cls = globals().get(f'Arm{op_type}Op')
-    return isinstance(cls, type) and issubclass(cls, ArmOp)
+    if op_type != 'Blank':
+        cls = globals().get(f'Arm{op_type}Op')
+        return isinstance(cls, type) and issubclass(cls, ArmOp)
+    else:
+        return True
