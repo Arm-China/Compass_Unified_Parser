@@ -634,28 +634,24 @@ class Op(abc.ABC):
 
     def is_all_inputs_const(self):
         '''Determine whether all inputs are constant nodes.'''
-        if isinstance(self, ConstLikeOp):
+        if isinstance(self, ConstOp):
+            return True
+        elif isinstance(self, ConstLikeOp):
             from .op_factory import is_compass_supported_op
-            if self.type in ('Constant', 'ArmConstant'):
+            if not is_compass_supported_op(self.type):
+                WARN(f'{self.type}Op({self.name}) still not support dynamic, we infer it as constant instead.')
                 return True
             else:
-                # ConstLike Ops
-                if not is_compass_supported_op(self.type):
-                    WARN(f'{self.type}Op({self.name}) still not support dynamic, we infer it as constant instead.')
-                    return True
+                if self._graph._attr['enable_ds'] or self.is_inputs_dynamic():
+                    return False
                 else:
-                    if self._graph._attr['enable_ds'] or self.is_inputs_dynamic():
-                        return False
-                    else:
-                        return True
+                    return True
         elif self.name in self._graph._attr['input_tensors'] \
                 and self._graph._attr['input_tensors'][self.name].is_const:
             return True
         else:
             is_const_list = [d['tensor'].is_const for _, _, _, d in self._graph.sorted_in_edges(
                 self.name, keys=True, data=True)]
-            # if self.type in ('Reshape', 'ArmReshape'):
-            #     return True if is_const_list and is_const_list[0] else False
             return True if (is_const_list and all(is_const_list)) else False
 
     def is_inputs_dynamic(self):
@@ -675,8 +671,18 @@ class Op(abc.ABC):
 
     def is_all_outputs_const(self):
         '''Determine whether all outputs are constant nodes.'''
-        if isinstance(self, ConstLikeOp):
+        if isinstance(self, ConstOp):
             return True
+        elif isinstance(self, ConstLikeOp):
+            from .op_factory import is_compass_supported_op
+            if not is_compass_supported_op(self.type):
+                WARN(f'{self.type}Op({self.name}) still not support dynamic, we infer it as constant instead.')
+                return True
+            else:
+                if self._graph._attr['enable_ds'] or self.is_inputs_dynamic():
+                    return False
+                else:
+                    return True
         else:
             is_const_list = [d['tensor'].is_const for _, _, _, d in self._graph.sorted_out_edges(
                 self.name, keys=True, data=True)]
@@ -2748,6 +2754,14 @@ class OpHasSubGraph(OpHasVariableOutPorts):
                   (self.name, str(e)))
 
 
+class ConstOp(Op):
+    '''
+    Class ConstOp inherited from Op class.
+    Ops that are const must inherit ConstOp.
+    '''
+    pass
+
+
 class ConstLikeOp(Op):
     '''
     Class ConstLikeOp inherited from Op class.
@@ -2986,6 +3000,70 @@ class UnidirectionalBroadcastOp(Op):
             return None
         a_symbol, _ = self.get_input_symbols(local=True)
         return a_symbol
+
+
+class ArithmeticOp(MultidirectionalBroadcastOp, LayoutUnawareOp, OpHasOneOutPort, Op):
+    '''
+    Class ArithmetricOp inherited from OP, such as Add/Sub/Mul/Div....
+    '''
+
+    def infer_shape(self):
+        inputs = self.get_input_tensors()
+        input_dtypes = self.get_input_dtypes()
+        assert len(inputs) == 2 and len(input_dtypes) == 2, 'The number of inputs is invalid in ArithmeticOp.'
+        if 'Add' in self.type:
+            func = np.add
+        elif 'Sub' in self.type:
+            func = np.subtract
+        elif 'Mul' in self.type:
+            func = np.multiply
+        elif 'Div' in self.type:
+            func = np.true_divide
+        else:
+            raise NotImplementedError(f'{self.type} in ArithmeticOp is not supported yet.')
+        out_tensor = func(*inputs)
+        out_symbol = self.cal_output_symbol()
+        self.set_out_tensor(out_tensor, out_symbol)
+
+    def infer_symbol(self):
+        input_tensor_symbols = self.get_input_symbol_values()
+        invalid = any([inp is None for inp in input_tensor_symbols])
+        const_info = self.sorted_in_consts()
+        if len(const_info) != 1 or len(self.get_output_shapes()[0]) != 1:
+            invalid = True
+
+        if not invalid:
+            max_len = self.get_output_shapes()[0][0]
+            if isinstance(input_tensor_symbols[0], list):
+                if len(input_tensor_symbols[0]) < max_len:
+                    input_a = input_tensor_symbols[0] * (max_len // len(input_tensor_symbols[0]))
+                else:
+                    input_a = input_tensor_symbols[0]
+            else:
+                input_a = [input_tensor_symbols[0]] * max_len
+
+            if isinstance(input_tensor_symbols[1], list):
+                if len(input_tensor_symbols[1]) < max_len:
+                    input_b = input_tensor_symbols[1] * (max_len // len(input_tensor_symbols[1]))
+                else:
+                    input_b = input_tensor_symbols[1]
+            else:
+                input_b = [input_tensor_symbols[1]] * max_len
+
+            if 'Add' in self.type:
+                out_symbol_value = [a + b for a, b in zip(input_a, input_b)]
+            elif 'Sub' in self.type:
+                out_symbol_value = [a - b for a, b in zip(input_a, input_b)]
+            elif 'Mul' in self.type:
+                out_symbol_value = [a * b for a, b in zip(input_a, input_b)]
+            elif 'Div' in self.type:
+                out_symbol_value = [a / b for a, b in zip(input_a, input_b)]
+            else:
+                raise NotImplementedError(f'{self.type} in ArithmeticOp is not supported yet.')
+
+            self.set_out_symbol_value(out_symbol_value)
+
+        super().infer_symbol()
 
 
 class InputLikeOp(Op):

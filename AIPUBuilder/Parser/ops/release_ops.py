@@ -326,7 +326,7 @@ class ArmAdaptivePoolOp(OpHasMethod, OpHasOneOutPort, ArmOp):
         return ret
 
 
-class ArmAddOp(MultidirectionalBroadcastOp, BaseActivationOp, ArmOp):
+class ArmAddOp(ArithmeticOp, BaseActivationOp, ArmOp):
     @classmethod
     def num_in_ports(cls):
         return 2
@@ -337,9 +337,6 @@ class ArmAddOp(MultidirectionalBroadcastOp, BaseActivationOp, ArmOp):
         input_dtypes = self.get_input_dtypes()
         assert len(inputs) == 2 and len(input_dtypes) == 2, 'The number of inputs is invalid in AddOp.'
         assert input_dtypes[0] == input_dtypes[1], 'The dtype of inputs should be the same in AddOp.'
-        out_tensor = np.add(*inputs)
-        out_symbol = self.cal_output_symbol()
-        self.set_out_tensor(out_tensor, out_symbol)
 
 
 class ArmAffineGridOp(OpHasOneOutPort, ArmOp):
@@ -909,11 +906,7 @@ class ArmConcatOp(OpHasAxis, OpHasOneOutPort, ArmOp):
 
     def infer_symbol(self):
         input_tensor_symbols = self.get_input_symbol_values()
-        invalid = False
-        for inp in input_tensor_symbols:
-            if inp is None:
-                invalid = True
-                break
+        invalid = any([inp is None for inp in input_tensor_symbols])
         if invalid:
             out_symbol_value = None
         else:
@@ -933,7 +926,7 @@ class ArmCoshOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
         self.set_out_tensor(out_tensor)
 
 
-class ArmConstantOp(OpHasWeights, OpHasOneOutPort, ConstLikeOp, ArmOp):
+class ArmConstantOp(OpHasWeights, OpHasOneOutPort, ConstOp, ArmOp):
     @classmethod
     def num_in_ports(cls):
         return 0
@@ -1005,11 +998,7 @@ class ArmConstantOfShapeOp(LayoutUnawareOp, OpHasOneOutPort, DynamicShapeOp, Arm
 
     def infer_symbol(self):
         input_tensor_symbols = self.get_input_symbol_values()
-        invalid = False
-        for inp in input_tensor_symbols:
-            if inp is None:
-                invalid = True
-                break
+        invalid = any([inp is None for inp in input_tensor_symbols])
         out_symbol = None
         if not invalid:
             if input_tensor_symbols[0] is not None and \
@@ -1825,17 +1814,10 @@ class ArmDilationOp(OpHasPaddingStrides, OpHasWeights, OpHasOneOutPort, LayoutCo
         self.set_out_tensor(out_tensor)
 
 
-class ArmDivOp(MultidirectionalBroadcastOp, LayoutUnawareOp, OpHasDivisor, OpHasOneOutPort, ArmOp):
+class ArmDivOp(ArithmeticOp, OpHasDivisor, ArmOp):
     @classmethod
     def num_in_ports(cls):
         return 2
-
-    def infer_shape(self):
-        super(ArmDivOp, self).infer_shape()
-        inputs = self.get_input_tensors()
-        out_tensors = np.true_divide(*inputs)
-        out_symbol = self.cal_output_symbol()
-        self.set_out_tensor(out_tensors, out_symbol)
 
 
 class ArmDivModOp(LayoutUnawareOp, OpHasDivisor, OpHasMultipleOutPorts, ArmOp):
@@ -1934,11 +1916,7 @@ class ArmEltwiseOp(SameShapeOp, LayoutUnawareOp, OpHasMethod, BaseActivationOp, 
 
     def infer_symbol(self):
         input_tensor_symbols = self.get_input_symbol_values()
-        invalid = False
-        for inp in input_tensor_symbols:
-            if inp is None:
-                invalid = True
-                break
+        invalid = any([inp is None for inp in input_tensor_symbols])
         out_symbol_value = None
         if not invalid:
             from sympy import Max, Min
@@ -3107,11 +3085,7 @@ class ArmLogicalOp(SameShapeOp, LayoutUnawareOp, OpHasMethod, OpHasOneOutPort, A
 
     def infer_symbol(self):
         input_tensor_symbols = self.get_input_symbol_values()
-        invalid = False
-        for inp in input_tensor_symbols:
-            if inp is None:
-                invalid = True
-                break
+        invalid = any([inp is None for inp in input_tensor_symbols])
         const_info = self.sorted_in_consts()
         if len(const_info) == 0:
             invalid = True
@@ -3628,7 +3602,7 @@ class ArmMomentsOp(OpHasMultipleOutPorts, OpHasAxis, ArmOp):
         return ret
 
 
-class ArmMulOp(MultidirectionalBroadcastOp, BaseActivationOp, ArmOp):
+class ArmMulOp(ArithmeticOp, BaseActivationOp, ArmOp):
     @classmethod
     def num_in_ports(cls):
         return 2
@@ -3639,9 +3613,6 @@ class ArmMulOp(MultidirectionalBroadcastOp, BaseActivationOp, ArmOp):
         input_dtypes = self.get_input_dtypes()
         assert len(inputs) == 2 and len(input_dtypes) == 2, 'The number of inputs is invalid in MulOp.'
         assert input_dtypes[0] == input_dtypes[1], 'The dtype of inputs should be the same in MulOp.'
-        out_tensor = np.multiply(*inputs)
-        out_symbol = self.cal_output_symbol()
-        self.set_out_tensor(out_tensor, out_symbol)
 
 
 class ArmMVNOp(OpHasOneOutPort, OpHasAxis, ArmOp):
@@ -5008,11 +4979,7 @@ class ArmSliceOp(OpHasVariableOutPorts, ArmOp):
     def infer_symbol(self):
         if not self.dynamic:
             input_symbol_values = self.get_input_symbol_values()
-            invalid = False
-            for inp in input_symbol_values:
-                if inp is None:
-                    invalid = True
-                    break
+            invalid = any([inp is None for inp in input_symbol_values])
             if invalid:
                 out_symbol_value = None
             else:
@@ -5267,7 +5234,7 @@ class ArmSquaredDifferenceOp(OpNeedBroadcast, OpHasOneOutPort, LayoutUnawareOp, 
         self.set_out_tensor(out_tensor)
 
 
-class ArmSubOp(MultidirectionalBroadcastOp, BaseActivationOp, ArmOp):
+class ArmSubOp(ArithmeticOp, BaseActivationOp, ArmOp):
     @classmethod
     def num_in_ports(cls):
         return 2
@@ -5278,9 +5245,6 @@ class ArmSubOp(MultidirectionalBroadcastOp, BaseActivationOp, ArmOp):
         input_dtypes = self.get_input_dtypes()
         assert len(inputs) == 2 and len(input_dtypes) == 2, 'The number of inputs is invalid in SubOp.'
         assert input_dtypes[0] == input_dtypes[1], 'The dtype of inputs should be the same in SubOp.'
-        out_tensor = np.subtract(*inputs)
-        out_symbol = self.cal_output_symbol()
-        self.set_out_tensor(out_tensor, out_symbol)
 
 
 class ArmSufficientStatisticsOp(OpHasAxis, OpHasMultipleOutPorts, ArmOp):
@@ -5508,11 +5472,7 @@ class ArmWhereOp(MultidirectionalBroadcastOp, OpHasOneOutPort, ArmOp):
 
     def infer_symbol(self):
         input_tensor_symbols = self.get_input_symbol_values()
-        invalid = False
-        for inp in input_tensor_symbols:
-            if inp is None:
-                invalid = True
-                break
+        invalid = any([inp is None for inp in input_tensor_symbols])
         assert len(input_tensor_symbols) == 3
         if not invalid:
             cond = input_tensor_symbols[0]

@@ -14152,7 +14152,7 @@ def middle_passes(graph, params):
     split_negative_pads(graph)
     split_conv_transpose(graph)
     convert_to_const(graph, ['Concat', 'Mul', 'Shape',
-                             'Slice', 'Tile', 'Unsqueeze'])
+                             'Slice', 'Tile', 'Unsqueeze', 'Sub', 'Div'])
     convert_multi_outputs_to_const(graph, ['Split', 'Unique'])
     merge_gelu_1(graph)
     merge_gelu_2(graph)

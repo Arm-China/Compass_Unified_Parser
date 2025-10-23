@@ -92,7 +92,7 @@ class TfConcatV2Op(OpHasAxis, OpHasOneOutPort, TfHasN):
         return {'type': 'Concat', 'version': 4}
 
 
-class TfConstOp(OpHasOneOutPort, ConstLikeOp, TfOp):
+class TfConstOp(OpHasOneOutPort, ConstOp, TfOp):
     @classmethod
     def attributes(cls):
         return {1: {'value': {'type': AttrType.TENSOR, 'required': True, 'default': None},

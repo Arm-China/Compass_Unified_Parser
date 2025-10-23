@@ -10,6 +10,7 @@ from ..op import *
 from ...front_end.onnx.buffer import ONNX_NP_TENSOR_MAP
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 from ...common.defs import TYPE_MIN, TYPE_MAX, INT_MIN
+from ...common.utils import is_sympy_with_symbol
 
 
 class BitShiftOp(OpNeedBroadcast, OpHasOneOutPort, OnnxOp):
@@ -200,15 +201,11 @@ class ConcatOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
 
     def infer_symbol(self):
         input_tensor_symbols = self.get_input_symbol_values()
-        invalid = False
-        for inp in input_tensor_symbols:
-            if inp is None:
-                invalid = True
-                break
+        invalid = any([inp is None for inp in input_tensor_symbols])
         if invalid:
             out_symbol_value = None
         else:
-            assert self.axis == 0
+            assert self.axis == 0, 'concat symbol value infer only support axis 0.'
             out_symbol_value = []
             for inp in input_tensor_symbols:
                 out_symbol_value.extend(inp)
@@ -216,7 +213,7 @@ class ConcatOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
         super().infer_symbol()
 
 
-class ConstantOp(OpHasOneOutPort, ConstLikeOp, OnnxOp):
+class ConstantOp(OpHasOneOutPort, ConstOp, OnnxOp):
     @classmethod
     def attributes(cls):
         return {1: {'value': {'type': AttrType.TENSOR, 'required': True}},
@@ -317,13 +314,12 @@ class ConstantOfShapeOp(OpHasOneOutPort, ConstLikeOp, OnnxOp):
 
     def infer_symbol(self):
         input_tensor_symbols = self.get_input_symbol_values()
-        invalid = False
-        for inp in input_tensor_symbols:
-            if inp is None:
-                invalid = True
-                break
+        invalid = any([inp is None for inp in input_tensor_symbols])
         out_symbol = None
         if not invalid:
+            if len(input_tensor_symbols[0]) == 1 and not is_sympy_with_symbol(input_tensor_symbols[0][0]):
+                out_symbol_value = self.get_output_tensors()[0].tolist()
+                self.set_out_symbol_value(out_symbol_value)
             if input_tensor_symbols[0] is not None and \
                     Op.is_all_global_symbols(input_tensor_symbols[0], self._graph._attr['global_symbols']):
                 out_symbol = input_tensor_symbols[0]
@@ -990,11 +986,7 @@ class ReshapeOp(OpHasOneOutPort, OnnxOp):
 
     def infer_symbol(self):
         input_tensor_symbols = self.get_input_symbol_values()
-        invalid = False
-        for inp in input_tensor_symbols:
-            if inp is None:
-                invalid = True
-                break
+        invalid = any([inp is None for inp in input_tensor_symbols])
         if not invalid:
             if any(not isinstance(x, int) for x in input_tensor_symbols[1]):
                 invalid = True
@@ -1274,6 +1266,7 @@ class ShapeOp(OpHasOneOutPort, ConstLikeOp, OnnxOp):
         if inp_symbol and None not in inp_symbol:
             if Op.is_all_global_symbols(inp_symbol, self._graph._attr['global_symbols']):
                 self.set_out_symbol_value(inp_symbol)
+                self.set_out_symbol([len(inp_symbol)])
 
 
 class SizeOp(OpHasOneOutPort, ConstLikeOp, OnnxOp):
@@ -1531,11 +1524,7 @@ class SliceOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
 
     def infer_symbol(self):
         input_symbol_values = self.get_input_symbol_values()
-        invalid = False
-        for inp in input_symbol_values:
-            if inp is None:
-                invalid = True
-                break
+        invalid = any([inp is None for inp in input_symbol_values])
         if invalid:
             out_symbol_value = None
         else:
@@ -1589,7 +1578,10 @@ class SliceOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
                     else:
                         idx = axes.index(i)
                         out = (ends[idx] - starts[idx]) / steps[idx]
-                        out_symbol.append(out)
+                        if is_sympy_with_symbol(out):
+                            out_symbol.append(out)
+                        else:
+                            out_symbol.append(int(out))
                 self.set_out_symbol(out_symbol)
 
 
@@ -2039,11 +2031,7 @@ class WhereOp(MultidirectionalBroadcastOp, OpNeedBroadcast, OpHasOneOutPort, Onn
 
     def infer_symbol(self):
         input_tensor_symbols = self.get_input_symbol_values()
-        invalid = False
-        for inp in input_tensor_symbols:
-            if inp is None:
-                invalid = True
-                break
+        invalid = any([inp is None for inp in input_tensor_symbols])
         if len(input_tensor_symbols) != 3:
             invalid = True
         if not invalid:

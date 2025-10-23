@@ -67,7 +67,7 @@ class AcoshOp(LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
         self.set_out_tensor(out_tensor)
 
 
-class AddOp(MultidirectionalBroadcastOp, OpHasAxis, OpHasOneOutPort, OnnxOp):
+class AddOp(ArithmeticOp, OpHasAxis, OnnxOp):
     @classmethod
     def attributes(cls):
         return {1: {'axis': {'type': AttrType.INT},
@@ -102,69 +102,11 @@ class AddOp(MultidirectionalBroadcastOp, OpHasAxis, OpHasOneOutPort, OnnxOp):
     def infer_shape(self):
         super(AddOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        input_dtypes = self.get_input_dtypes()
-        assert len(inputs) == 2 and len(input_dtypes) == 2, 'The number of inputs is invalid in AddOp.'
-        if input_dtypes == ['int32', 'int64']:
-            inputs[0] = inputs[0].astype(np.int64)
-        if input_dtypes == ['int64', 'int32']:
-            inputs[1] = inputs[1].astype(np.int64)
-        # WA for subgraph
-        # assert inputs[0].dtype == inputs[1].dtype, \
-        #     f'The dtype of inputs should be the same in AddOp, but {inputs[0].dtype} and {inputs[1].dtype}.'
         cur_ver = self.cur_version
         if cur_ver <= 6:
-            if self.broadcast:
-                second_input = OpHasAxis.broadcast_to(
-                    inputs[1], inputs[0].shape, int(self.axis))
-            else:
+            if not self.broadcast:
                 assert list(inputs[0].shape) == list(
                     inputs[1].shape), 'The lengths of input0 and input1 are not the same in AddOp infer shape.'
-                second_input = inputs[1]
-            out_tensor = np.add(inputs[0], second_input)
-        else:
-            out_tensor = np.add(*inputs)
-        out_symbol = self.cal_output_symbol()
-        self.set_out_tensor(out_tensor, out_symbol)
-
-    def infer_symbol(self):
-        inp_symbol = self.get_input_symbols()
-        if inp_symbol and None not in inp_symbol:
-            local_symbol = self.get_input_symbols(local=True)
-            out_local_symbol = self.get_output_symbols()[0]
-            if out_local_symbol is not None:
-                sym_mp = []
-                for i, inp_s in enumerate(inp_symbol):
-                    if not Op.is_all_global_symbols(inp_s, self._graph._attr['global_symbols']):
-                        continue
-                    sym_mp += list(zip(local_symbol[i], inp_s))
-                output_symbol = []
-                for i, s in enumerate(out_local_symbol):
-                    if isinstance(s, int):
-                        output_symbol.append(s)
-                    else:
-                        new_s = s.subs(sym_mp)
-                        if isinstance(new_s, Max):
-                            symbols_set = new_s.free_symbols
-                            has_global_symbol = False
-                            for _s in symbols_set:
-                                if _s in self._graph._attr['global_symbols']:
-                                    has_global_symbol = True
-                                    output_symbol.append(_s)
-                                    break
-                            if not has_global_symbol:
-                                output_symbol.append(new_s)
-                        else:
-                            if new_s not in self._graph._attr['global_symbols'] and \
-                                    len(inp_symbol[0]) == len(inp_symbol[1]):
-                                if inp_symbol[0][i] in self._graph._attr['global_symbols']:
-                                    output_symbol.append(inp_symbol[0][i])
-                                elif inp_symbol[1][i] in self._graph._attr['global_symbols']:
-                                    output_symbol.append(inp_symbol[1][i])
-                                else:
-                                    output_symbol.append(new_s)
-                            else:
-                                output_symbol.append(new_s)
-                self.set_out_symbol(output_symbol)
 
 
 class ArgMaxOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
@@ -514,7 +456,7 @@ class CumSumOp(OpHasOneOutPort, OpHasAxis, OnnxOp):
         self.set_out_tensor(out_tensor)
 
 
-class DivOp(MultidirectionalBroadcastOp, OpHasDivisor, OpHasOneOutPort, OnnxOp):
+class DivOp(ArithmeticOp, OpHasDivisor, OnnxOp):
     @classmethod
     def attributes(cls):
         return {1: {'axis': {'type': AttrType.INT},
@@ -535,29 +477,11 @@ class DivOp(MultidirectionalBroadcastOp, OpHasDivisor, OpHasOneOutPort, OnnxOp):
     def infer_shape(self):
         super(DivOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        input_dtypes = self.get_input_dtypes()
-        assert len(inputs) == 2 and len(input_dtypes) == 2, 'The number of inputs is invalid in DivOp.'
-        # assert input_dtypes[0] == input_dtypes[1], 'The dtype of inputs should be the same in DivOp.'
         cur_ver = self.cur_version
         if cur_ver <= 6:
-            if self.broadcast:
-                second_input = OpHasAxis.broadcast_to(
-                    inputs[1], inputs[0].shape, int(self.axis))
-            else:
+            if not self.broadcast:
                 assert list(inputs[0].shape) == list(
                     inputs[1].shape), 'The lengths of input0 and input1 are not the same in DivOp infer shape.'
-                second_input = inputs[1]
-            if re.search(r'int', inputs[0].dtype.name) is not None and re.search(r'int', second_input.dtype.name) is not None:
-                out_tensor = inputs[0] // second_input
-            else:
-                out_tensor = np.true_divide(inputs[0], second_input)
-        else:
-            if all([re.search(r'int', na.dtype.name) for na in inputs]):
-                out_tensor = inputs[0] // inputs[1]
-            else:
-                out_tensor = np.true_divide(*inputs)
-        out_symbol = self.cal_output_symbol()
-        self.set_out_tensor(out_tensor, out_symbol)
 
 
 class EinsumOp(OpHasOneOutPort, OnnxOp):
@@ -1244,7 +1168,7 @@ class ModOp(OpNeedBroadcast, LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
         self.set_out_tensor(out_tensor)
 
 
-class MulOp(MultidirectionalBroadcastOp, OpHasAxis, OpHasOneOutPort, OnnxOp):
+class MulOp(ArithmeticOp, OpHasAxis, OnnxOp):
     @classmethod
     def attributes(cls):
         return {1: {'consumed_inputs': {'type': AttrType.INTS},
@@ -1265,23 +1189,11 @@ class MulOp(MultidirectionalBroadcastOp, OpHasAxis, OpHasOneOutPort, OnnxOp):
     def infer_shape(self):
         super(MulOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        input_dtypes = self.get_input_dtypes()
-        assert len(inputs) == 2 and len(input_dtypes) == 2, 'The number of inputs is invalid in MulOp.'
-        # assert input_dtypes[0] == input_dtypes[1], 'The dtype of inputs should be the same in MulOp.'
         cur_ver = self.cur_version
         if cur_ver <= 6:
-            if self.broadcast:
-                second_input = OpHasAxis.broadcast_to(
-                    inputs[1], inputs[0].shape, int(self.axis))
-            else:
+            if not self.broadcast:
                 assert list(inputs[0].shape) == list(
                     inputs[1].shape), 'The lengths of input0 and input1 are not the same in MulOp infer shape.'
-                second_input = inputs[1]
-            out_tensor = np.multiply(inputs[0], second_input)
-        else:
-            out_tensor = np.multiply(*inputs)
-        out_symbol = self.cal_output_symbol()
-        self.set_out_tensor(out_tensor, out_symbol)
 
     def __getattr__(self, item):
         ret = None
@@ -2722,7 +2634,7 @@ class SqrtOp(LayoutUnawareOp, SameShapeOp, OpHasOneOutPort, OpHasNonZeroInput, O
         self.set_out_tensor(out_tensor.astype(inputs[0].dtype), out_symbol)
 
 
-class SubOp(MultidirectionalBroadcastOp, OpHasAxis, OpHasOneOutPort, OnnxOp):
+class SubOp(ArithmeticOp, OpHasAxis, OnnxOp):
     @classmethod
     def attributes(cls):
         return {1: {'axis': {'type': AttrType.INT},
@@ -2741,23 +2653,11 @@ class SubOp(MultidirectionalBroadcastOp, OpHasAxis, OpHasOneOutPort, OnnxOp):
     def infer_shape(self):
         super(SubOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        input_dtypes = self.get_input_dtypes()
-        assert len(inputs) == 2 and len(input_dtypes) == 2, 'The number of inputs is invalid in SubOp.'
-        # assert input_dtypes[0] == input_dtypes[1], 'The dtype of inputs should be the same in SubOp.'
         cur_ver = self.cur_version
         if cur_ver <= 6:
-            if self.broadcast:
-                second_input = OpHasAxis.broadcast_to(
-                    inputs[1], inputs[0].shape, int(self.axis))
-            else:
+            if not self.broadcast:
                 assert list(inputs[0].shape) == list(
                     inputs[1].shape), 'The lengths of input0 and input1 are not the same in SubOp infer shape.'
-                second_input = inputs[1]
-            out_tensor = np.subtract(inputs[0], second_input)
-        else:
-            out_tensor = np.subtract(*inputs)
-        out_symbol = self.cal_output_symbol()
-        self.set_out_tensor(out_tensor, out_symbol)
 
     def __getattr__(self, item):
         ret = None

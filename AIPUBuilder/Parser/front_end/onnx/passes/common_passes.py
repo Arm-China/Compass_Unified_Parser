@@ -13,7 +13,7 @@ from ....common.defs import Tensor, Framework, FLOAT_EQUAL
 from ....logger import INFO, DEBUG, WARN, ERROR, FATAL
 from ....common.utils import extend_lists, get_converted_dtype
 from ....ops.op import Op, OpHasWeights, OpHasBiases, OpHasOneOutPort, ConstLikeOp, OnnxReduceOp, \
-    OpHasVariableOutPorts, OpHasMultipleOutPorts
+    OpHasVariableOutPorts, OpHasMultipleOutPorts, ConstOp
 from ....ops.onnx_ops.array_ops import CastOp
 from ....graph.graph import SubGraph
 from ....ops.release_ops import ArmCastOp, ArmTransposeOp
@@ -32,7 +32,7 @@ def fuse_const(graph, final=False):
                 ERROR(
                     '[Parser]: Meets invalid Node (%s) in fuse_const!' % node_name)
                 continue
-            if not isinstance(node_obj, ConstLikeOp) \
+            if not isinstance(node_obj, (ConstLikeOp, ConstOp)) \
                     and isinstance(node_obj, OpHasOneOutPort) \
                     and node_obj.is_all_inputs_const() \
                     and not node_obj.is_inputs_dynamic():
@@ -109,7 +109,7 @@ def convert_64bit_const(graph):
 
 
 def convert_to_const(graph, op_type_name_list):
-    from ....ops.op_factory import is_compass_supported_op
+    # from ....ops.op_factory import is_compass_supported_op
     if len(graph) and op_type_name_list:
         for node_name in graph.nodes:
             node = NodeWrap(graph, node_name)
@@ -118,19 +118,19 @@ def convert_to_const(graph, op_type_name_list):
                 ERROR('[Parser]: Meets invalid Node(%s) in convert_to_const!' % node_name)
                 continue
             if isinstance(node_obj, OpHasOneOutPort) and node_obj.type in op_type_name_list:
-                if graph._attr.get('enable_ds', False):
-                    if is_compass_supported_op(node_obj.type):
-                        continue
-                    else:
-                        WARN(
-                            f'{node_obj.type}({node_name}) not support dynamic now, we convert it as constant instead.')
-                else:
-                    if node_obj.is_inputs_dynamic() or node_obj.is_outputs_dynamic():
-                        if is_compass_supported_op(node_obj.type):
-                            continue
-                        else:
-                            WARN(
-                                f'{node_obj.type}({node_name}) not support dynamic now, we convert it as constant instead.')
+                # if graph._attr.get('enable_ds', False):
+                #     if is_compass_supported_op(node_obj.type):
+                #         continue
+                #     else:
+                #         WARN(
+                #             f'{node_obj.type}({node_name}) not support dynamic now, we convert it as constant instead.')
+                # else:
+                #     if node_obj.is_inputs_dynamic() or node_obj.is_outputs_dynamic():
+                #         if is_compass_supported_op(node_obj.type):
+                #             continue
+                #         else:
+                #             WARN(
+                #                 f'{node_obj.type}({node_name}) not support dynamic now, we convert it as constant instead.')
 
                 out_tensors = node_obj.get_output_tensors()
                 if len(out_tensors) >= 1 and out_tensors[0] is not None and node_obj.is_all_outputs_const():
@@ -143,6 +143,22 @@ def convert_to_const(graph, op_type_name_list):
                     for _, _, out_attr in out_edges:
                         out_attr['tensor'].is_dynamic = False
                         out_attr['tensor'].is_const = True
+                if node_obj.type in ('Sub', 'Div'):
+                    in_edges = graph.sorted_in_edges(node_name)
+                    if len(in_edges) >= 2 and in_edges[0][0] == in_edges[1][0]:
+                        output_shapes = node_obj.get_output_shapes()
+                        output_dtypes = node_obj.get_output_dtypes()
+                        const_value = np.zeros(output_shapes[0], dtype=output_dtypes[0]) if node_obj.type == 'Sub' else np.ones(
+                            output_shapes[0], dtype=output_dtypes[0])
+                        new_attr = node_obj.copied_attr()
+                        new_attr.update({'value': const_value})
+                        node.replace_obj('Constant', new_attr)
+
+                        graph.remove_edges_from(in_edges)
+                        out_edges = graph.sorted_out_edges(node_name, data=True)
+                        for _, _, out_attr in out_edges:
+                            out_attr['tensor'].is_dynamic = False
+                            out_attr['tensor'].is_const = True
         clear_redundant_nodes(graph)
     else:
         WARN('[Parser]: Invalid params for convert_to_const!')
