@@ -3139,7 +3139,11 @@ def fuse_mul_add_or_sub(graph):
             if weights is None or biases is None:
                 continue
 
-            if len(input_out_shape) > 2 and input_out_shape[1] == weights.size \
+            if weights.size == 1 and biases.size == 1:
+                data_format = input_obj.data_format
+                num_output = input_out_shape[1] if len(
+                    input_out_shape) > 2 and data_format == 'NCHW' else input_out_shape[-1]
+            elif len(input_out_shape) > 2 and input_out_shape[1] == weights.size \
                     and len(weights.shape) > 1 and weights.shape[-1] == 1:
                 num_output = input_out_shape[1]
                 data_format = 'NCHW'
