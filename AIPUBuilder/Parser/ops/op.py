@@ -3018,7 +3018,10 @@ class ArithmeticOp(MultidirectionalBroadcastOp, LayoutUnawareOp, OpHasOneOutPort
         elif 'Mul' in self.type:
             func = np.multiply
         elif 'Div' in self.type:
-            func = np.true_divide
+            if 'int' in input_dtypes[0] and 'int' in input_dtypes[1]:
+                func = np.floor_divide
+            else:
+                func = np.true_divide
         else:
             raise NotImplementedError(f'{self.type} in ArithmeticOp is not supported yet.')
         out_tensor = func(*inputs)
