@@ -2999,9 +2999,8 @@ class ArmLayerNormOp(OpHasAxis, OpHasBiases, OpHasWeights, OpHasVariableOutPorts
         out_ports = self.get_out_ports()
         if not self._graph._attr['enable_ds']:
             out_symbols.append(None)
-            if 1 in out_ports:
+            if 1 in out_ports or 2 in out_ports:
                 out_symbols.append(None)
-            if 2 in out_ports:
                 out_symbols.append(None)
             return out_symbols
         input_symbol = self.get_input_symbols(local=True)[0]
@@ -3009,9 +3008,8 @@ class ArmLayerNormOp(OpHasAxis, OpHasBiases, OpHasWeights, OpHasVariableOutPorts
         mean_var_symbol = input_symbol.copy()
         for axis in self.axes:
             mean_var_symbol[axis] = 1
-        if 1 in out_ports:
+        if 1 in out_ports or 2 in out_ports:
             out_symbols.append(mean_var_symbol)
-        if 2 in out_ports:
             out_symbols.append(mean_var_symbol)
         return out_symbols
 
