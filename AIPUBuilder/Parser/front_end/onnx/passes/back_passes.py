@@ -2356,7 +2356,7 @@ def rename_conv(graph):
         conv_attr = conv_obj.copied_attr()
         if conv_obj.type == 'Conv':
             if int(np.prod(conv_obj.weights.shape[0:2])) == conv_obj.group \
-                    and conv_obj.group > 1:
+                    and conv_obj.group > 1 and len(conv_obj.weights.shape) == 4:
                 multiplier = conv_obj.weights.shape[0] // conv_obj.group
                 new_weights = np.transpose(
                     conv_obj.weights, axes=ArmDepthwiseConvOp.perm_onnx_to_ir())
