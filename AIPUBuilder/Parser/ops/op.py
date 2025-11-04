@@ -3032,41 +3032,96 @@ class ArithmeticOp(MultidirectionalBroadcastOp, LayoutUnawareOp, OpHasOneOutPort
         input_tensor_symbols = self.get_input_symbol_values()
         invalid = any([inp is None for inp in input_tensor_symbols])
         const_info = self.sorted_in_consts()
-        if len(const_info) != 1 or len(self.get_output_shapes()[0]) != 1:
+        if len(const_info) != 1 or len(self.get_output_shapes()[0]) > 1:
             invalid = True
 
         if not invalid:
-            max_len = self.get_output_shapes()[0][0]
-            if isinstance(input_tensor_symbols[0], list):
-                if len(input_tensor_symbols[0]) < max_len:
-                    input_a = input_tensor_symbols[0] * (max_len // len(input_tensor_symbols[0]))
+            max_len = self.get_output_shapes()[0][0] if self.get_output_shapes()[0] else 0
+            if max_len == 0:
+                if 'Add' in self.type:
+                    out_symbol_value = input_tensor_symbols[0] + input_tensor_symbols[1]
+                elif 'Sub' in self.type:
+                    out_symbol_value = input_tensor_symbols[0] - input_tensor_symbols[1]
+                elif 'Mul' in self.type:
+                    out_symbol_value = input_tensor_symbols[0] * input_tensor_symbols[1]
+                elif 'Div' in self.type:
+                    out_symbol_value = input_tensor_symbols[0] / input_tensor_symbols[1]
                 else:
-                    input_a = input_tensor_symbols[0]
+                    raise NotImplementedError(f'{self.type} in ArithmeticOp is not supported yet.')
             else:
-                input_a = [input_tensor_symbols[0]] * max_len
-
-            if isinstance(input_tensor_symbols[1], list):
-                if len(input_tensor_symbols[1]) < max_len:
-                    input_b = input_tensor_symbols[1] * (max_len // len(input_tensor_symbols[1]))
+                if isinstance(input_tensor_symbols[0], list):
+                    if len(input_tensor_symbols[0]) < max_len:
+                        input_a = input_tensor_symbols[0] * (max_len // len(input_tensor_symbols[0]))
+                    else:
+                        input_a = input_tensor_symbols[0]
                 else:
-                    input_b = input_tensor_symbols[1]
-            else:
-                input_b = [input_tensor_symbols[1]] * max_len
+                    input_a = [input_tensor_symbols[0]] * max_len
 
-            if 'Add' in self.type:
-                out_symbol_value = [a + b for a, b in zip(input_a, input_b)]
-            elif 'Sub' in self.type:
-                out_symbol_value = [a - b for a, b in zip(input_a, input_b)]
-            elif 'Mul' in self.type:
-                out_symbol_value = [a * b for a, b in zip(input_a, input_b)]
-            elif 'Div' in self.type:
-                out_symbol_value = [a / b for a, b in zip(input_a, input_b)]
-            else:
-                raise NotImplementedError(f'{self.type} in ArithmeticOp is not supported yet.')
+                if isinstance(input_tensor_symbols[1], list):
+                    if len(input_tensor_symbols[1]) < max_len:
+                        input_b = input_tensor_symbols[1] * (max_len // len(input_tensor_symbols[1]))
+                    else:
+                        input_b = input_tensor_symbols[1]
+                else:
+                    input_b = [input_tensor_symbols[1]] * max_len
+
+                if 'Add' in self.type:
+                    out_symbol_value = [a + b for a, b in zip(input_a, input_b)]
+                elif 'Sub' in self.type:
+                    out_symbol_value = [a - b for a, b in zip(input_a, input_b)]
+                elif 'Mul' in self.type:
+                    out_symbol_value = [a * b for a, b in zip(input_a, input_b)]
+                elif 'Div' in self.type:
+                    out_symbol_value = [a / b for a, b in zip(input_a, input_b)]
+                else:
+                    raise NotImplementedError(f'{self.type} in ArithmeticOp is not supported yet.')
 
             self.set_out_symbol_value(out_symbol_value)
 
-        super().infer_symbol()
+        inp_symbol = self.get_input_symbols()
+        if inp_symbol:
+            local_symbol = self.get_input_symbols(local=True)
+            out_local_symbol = self.get_output_symbols()[0]
+            if out_local_symbol is not None:
+                max_len = len(out_local_symbol)
+                sym_mp = []
+                for i, inp_s in enumerate(inp_symbol):
+                    if inp_s is not None:
+                        sym_mp += list(zip(local_symbol[i], inp_s))
+                output_symbol = []
+                for i, s in enumerate(out_local_symbol):
+                    if isinstance(s, int):
+                        output_symbol.append(s)
+                    else:
+                        new_s = s.subs(sym_mp)
+                        symbols_set = new_s.free_symbols
+                        if Op.is_all_global_symbols(symbols_set, self._graph._attr['global_symbols']):
+                            output_symbol.append(new_s)
+                        else:
+                            if isinstance(new_s, Max):
+                                has_global_symbol = False
+                                for _s in symbols_set:
+                                    if _s in self._graph._attr['global_symbols']:
+                                        has_global_symbol = True
+                                        output_symbol.append(_s)
+                                        break
+                                if not has_global_symbol:
+                                    output_symbol.append(new_s)
+                            else:
+                                if inp_symbol[0] and inp_symbol[1]:
+                                    if len(inp_symbol[0]) == max_len and inp_symbol[0][i] in self._graph._attr['global_symbols']:
+                                        output_symbol.append(inp_symbol[0][i])
+                                    elif len(inp_symbol[1]) == max_len and inp_symbol[1][i] in self._graph._attr['global_symbols']:
+                                        output_symbol.append(inp_symbol[1][i])
+                                    else:
+                                        output_symbol.append(new_s)
+                                elif inp_symbol[0] and len(inp_symbol[0]) == max_len:
+                                    output_symbol.append(inp_symbol[0][i])
+                                elif inp_symbol[1] and len(inp_symbol[1]) == max_len:
+                                    output_symbol.append(inp_symbol[1][i])
+                                else:
+                                    output_symbol.append(new_s)
+                self.set_out_symbol(output_symbol)
 
 
 class InputLikeOp(Op):

@@ -13939,17 +13939,25 @@ def adjust_3d_to_4d(graph):
                         and len(out_edges) >= 1 \
                         and len(out_shapes) >= 1 \
                         and all([d is not None for shape in out_shapes for d in shape]):
+                    input_symbols = node_obj.get_input_symbols(local=True)
+                    insert_axis = None
                     for in_port, (src, _, k, in_attr) in enumerate(in_edges):
                         if node_obj.type in mixed_inputs_types and in_port > 0:
                             continue
+                        out_symbol = input_symbols[in_port][:]
                         if op_type in ('InstanceNormalization', 'LRN', 'Resize', 'ArmGroupNorm'):
                             reshape1_dim = in_shapes[in_port][0:-
                                                               1] + [1] + in_shapes[in_port][-1:]
+                            out_symbol.insert(-2, 1)
+                            insert_axis = -2
                         else:
-                            reshape1_dim = [1] + in_shapes[in_port]
+                            reshape1_dim = in_shapes[in_port].copy()
+                            reshape1_dim.insert(0, 1)
+                            out_symbol.insert(0, 1)
+                            insert_axis = 0
                         insert_reshape(graph, src, node_name,
                                        in_attr, reshape1_dim, key=k,
-                                       quantize=node_obj.quantize)
+                                       quantize=node_obj.quantize, symbol=out_symbol)
 
                     ports_shape = OrderedDict()
                     for _, _, out_attr in out_edges:
@@ -13960,12 +13968,16 @@ def adjust_3d_to_4d(graph):
                                 {out_attr['src_out_port']: list(out_shape)})
 
                     reshape2_nodes = []
+                    rs2_out_symbol = [Symbol(f's{i}') for i in range(4)]
+                    if insert_axis is not None:
+                        rs2_out_symbol.pop(insert_axis)
                     for out_port in node_obj.get_out_ports():
                         reshape = insert_reshape_after(graph,
                                                        node_name,
                                                        ports_shape[out_port],
                                                        out_port=out_port,
-                                                       quantize=node_obj.quantize)
+                                                       quantize=node_obj.quantize,
+                                                       symbol=rs2_out_symbol if insert_axis is not None else None)
                         reshape2_nodes.append(reshape)
 
                     if op_type == 'InstanceNormalization':
