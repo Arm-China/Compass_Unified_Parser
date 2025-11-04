@@ -1739,6 +1739,7 @@ class OpHasWeights(Op):
     def attributes(cls):
         '''return attributes of OpHasWeights class.'''
         return {'weights': {'type': AttrType.TENSOR, 'default': None},
+                'weights_packed_dtype': {'type': AttrType.STRING, 'default': None},
                 'weights_offset': {'type': AttrType.INT, 'default': -1},
                 'weights_range': {'type': AttrType.TENSOR, 'default': None},
                 'weights_range_offset': {'type': AttrType.INT, 'default': -1},
@@ -1802,7 +1803,10 @@ class OpHasWeights(Op):
         '''Write the required attr in IR.'''
         ret = super(OpHasWeights, self).write_attrs(txt_file)
         if ret and self.weights is not None:
-            txt_file.write('weights_type=%s\n' % str(self.weights.dtype))
+            if self.weights_packed_dtype is not None:
+                txt_file.write('weights_type=%s\n' % str(self.weights_packed_dtype))
+            else:
+                txt_file.write('weights_type=%s\n' % str(self.weights.dtype))
             txt_file.write('weights_offset=%d\n' % self.weights_offset)
             txt_file.write('weights_size=%d\n' %
                            (self.weights.size * self.weights.dtype.itemsize))
