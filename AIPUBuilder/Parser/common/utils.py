@@ -126,7 +126,10 @@ def list_string_to_list(list_string):
         for meta_item in items:
             inner_str = meta_item.lstrip('[').rstrip(']')
             if inner_str:
-                meta_list = [int(m) for m in inner_str.split(',')]
+                try:
+                    meta_list = [int(m) for m in inner_str.split(',')]
+                except (ValueError, TypeError):
+                    meta_list = [m for m in inner_str.split(',')]
             else:
                 meta_list = list()
             ret.append(meta_list)

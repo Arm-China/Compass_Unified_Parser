@@ -93,9 +93,20 @@ def univ_parser(params):
         if 'dynamic_axes' in params:
             da = params['dynamic_axes'].strip()
             if da[0] == '[' and da[-1] == ']':
-                params['dynamic_axes'] = list_string_to_list(da)
+                # [0,1] or [0:batch, 1:seq]
+                assert params['input_shapes'] != [], 'input_shape must be set if you set dynamic_axes!'
+                assert params['input_names'] != [], 'input_name must be set if you set dynamic_axes!'
+                da_list = list_string_to_list(da)
+                input_shapes = params['input_shapes']
+                da_dict = {}
+                for i, (_da, _is) in enumerate(zip(da_list, input_shapes)):
+                    da_dict[params['input_names'][i]] = _da
+                params['dynamic_axes'] = da_dict
             else:
                 params['dynamic_axes'] = multi_string_to_list(da)
+
+            if params['dynamic_axes']:
+                params['enable_ds'] = True
         else:
             params['dynamic_axes'] = []
 
@@ -156,16 +167,6 @@ def univ_parser(params):
         if len(params['input_names']) == input_shapes_cnt:
             params['input_shapes'] = {
                 params['input_names'][i]: v for i, v in enumerate(params['input_shapes'])}
-            if params['dynamic_axes']:
-                params['enable_ds'] = True
-                if isinstance(params['dynamic_axes'][0][0], int):
-                    if len(params['dynamic_axes']) == input_shapes_cnt:
-                        params['dynamic_axes'] = {
-                            params['input_names'][i]: v for i, v in enumerate(params['dynamic_axes'])}
-                    else:
-                        FATAL(
-                            '[Parser]: Length of input_names should be equal to length of dynamic_axes! '
-                            'Please check config file!')
         else:
             if input_shapes_cnt == 0:
                 params['input_shapes'] = {name: None for name in params['input_names']}

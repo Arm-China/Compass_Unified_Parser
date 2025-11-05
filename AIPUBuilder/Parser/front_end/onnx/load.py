@@ -53,17 +53,29 @@ def gen_input_tensor(name, shape, dtype, params, dynamic_shape=[]):
     if params['dynamic_axes']:
         if isinstance(params['dynamic_axes'], dict) and name in params['dynamic_axes']:
             dynamic_axes = params['dynamic_axes'][name]
+            ds_dict = {}
             shape_len = len(shape)
-            dynamic_axes = [axis if axis >= 0 else axis + shape_len for axis in dynamic_axes]
+
             idx_start = 0
             for n, s in params['input_shapes'].items():
                 if n != name:
                     idx_start += len(s)
                 else:
                     break
+
+            for axis in dynamic_axes:
+                if isinstance(axis, int):
+                    axis = axis if axis >= 0 else axis + shape_len
+                    ds_dict[axis] = f'd{axis + idx_start}'
+                else:
+                    # suppose a str like 0:batch
+                    assert isinstance(axis, str), 'axis must be int or str'
+                    kv = axis.split(':', 1)
+                    ds_dict[int(kv[0])] = str(kv[1])
+
             for i, s in enumerate(shape):
-                if i in dynamic_axes:
-                    global_s = Symbol(f'd{idx_start + i}')
+                if i in ds_dict:
+                    global_s = Symbol(ds_dict[i])
                     if global_s not in global_symbols:
                         global_symbols[global_s] = s
                     symbol.append(global_s)
@@ -80,7 +92,7 @@ def gen_input_tensor(name, shape, dtype, params, dynamic_shape=[]):
                 else:
                     symbol.append(shape[i])
         else:
-            raise NotImplementedError('Not support this dynamic_axes format yet.')
+            pass
 
     return Tensor(name=name, value=input_tensor, is_const=is_const, symbol=symbol), global_symbols
 

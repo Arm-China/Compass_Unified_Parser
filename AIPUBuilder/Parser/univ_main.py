@@ -124,7 +124,8 @@ optional arguments in Common section of <net.cfg>:
                         Accepted range is [-r, r-1] where r = rank(input)(default: None)
                         Example:
                             dynamic_axes=[],[0, 3] means two inputs in model, and axis 0 and axis 3 in 2nd input are 
-                            dynamic.
+                            dynamic, and you can specify the symbol like this: dynamic_axes=[],[0:batch, 3:seq_len].
+                            If you not specify the symbol, we will init it as d0, d1...
                             dynamic_axes=batch_size,sequence_length means batch_size and sequence_length axes named in 
                             model input shapes are dynamic.
     ''')
