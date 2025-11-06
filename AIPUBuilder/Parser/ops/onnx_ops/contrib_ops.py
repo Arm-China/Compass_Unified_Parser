@@ -3,7 +3,169 @@
 import torch
 
 from ..op import *
+from ...common.utils import unpack_4bit
 import numpy as np
+
+
+class GroupQueryAttentionMsOp(OpHasMultipleOutPorts, OnnxOp):
+    @classmethod
+    def attributes(cls):
+        return {
+            1: {
+                'do_rotary': {
+                    'type': AttrType.INT, 'default': 0
+                },
+                'kv_num_heads': {
+                    'type': AttrType.INT, 'required': True
+                },
+                'local_window_size': {
+                    'type': AttrType.INT, 'default': -1
+                },
+                'num_heads': {
+                    'type': AttrType.INT, 'required': True
+                },
+                'rotary_interleaved': {
+                    'type': AttrType.INT, 'default': 0
+                },
+                'scale': {
+                    'type': AttrType.FLOAT, 'default': None
+                },
+                'smooth_softmax': {
+                    'type': AttrType.INT, 'default': 0
+                },
+                'softcap': {
+                    'type': AttrType.INT, 'default': 0
+                },
+            }
+        }
+
+    def __init__(self, graph, attr_dict=None):
+        super(GroupQueryAttentionMsOp, self).__init__(graph, attr_dict)
+        self.update_attributes(GroupQueryAttentionMsOp, attr_dict)
+        assert self.check_required(), 'GroupQueryAttentionMsOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(GroupQueryAttentionMsOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        assert 3 <= len(inputs) <= 12, f'GroupQueryAttentionMsOp should have 3~12 inputs, but got {len(inputs)}'
+
+        def _softcap(inp, softcap):
+            if softcap > 0:
+                out = inp / softcap
+                out = np.tanh(out)
+                return out * softcap
+            else:
+                return inp
+
+        def _softmax(x: np.ndarray, axis: int = -1) -> np.ndarray:
+            x_max = np.max(x, axis=axis, keepdims=True)
+            tmp = np.exp(x - x_max)
+            s = np.sum(tmp, axis=axis, keepdims=True)
+            return tmp / s
+
+        # TODO
+        if self.do_rotary != 0 or self.local_window_size != -1 or self.smooth_softmax != 0:
+            raise NotImplementedError
+
+        query = inputs[0]
+        batch_size = query.shape[0]
+        if inputs[1] is None and inputs[2] is None:
+            # packed QKV
+            head_size = query.shape[-1] // (self.num_heads + 2 * self.kv_num_heads)
+            split_size = [self.num_heads * head_size, self.kv_num_heads * head_size, self.kv_num_heads * head_size]
+            query, key, value = np.split(inputs[0], split_size, axis=-1)
+            head_size_q = head_size_k = head_size_v = head_size
+        else:
+            key = inputs[1]
+            value = inputs[2]
+            head_size_q = query.shape[-1] // self.num_heads
+            head_size_k = key.shape[-1] // self.kv_num_heads
+            head_size_v = value.shape[-1] // self.kv_num_heads
+
+        new_shape_q = [batch_size, query.shape[1], self.num_heads, head_size_q]
+        query = np.reshape(query, new_shape_q)
+        query = query.transpose(0, 2, 1, 3)
+
+        new_shape_k = [batch_size, key.shape[1], self.kv_num_heads, head_size_k]
+        key = np.reshape(key, new_shape_k)
+        key = key.transpose(0, 2, 1, 3)
+
+        new_shape_v = [batch_size, value.shape[1], self.kv_num_heads, head_size_v]
+        value = np.reshape(value, new_shape_v)
+        value = value.transpose(0, 2, 1, 3)
+
+        # Calculate Scaling Factor if not provided
+        if self.scale is None:
+            scale = (1 / np.sqrt(head_size_q)).astype(query.dtype)
+        else:
+            scale = np.array(self.scale, dtype=query.dtype)
+
+        in_ports = self.get_in_ports()
+        # Update key and value cache
+        if 3 in in_ports and len(inputs) >= 4 and inputs[3] is not None:
+            past_key = inputs[3]
+            present_key = np.concatenate((past_key, key), axis=2)
+        else:
+            present_key = key
+        if 4 in in_ports and len(inputs) >= 5 and inputs[4] is not None:
+            past_value = inputs[4]
+            present_value = np.concatenate((past_value, value), axis=2)
+        else:
+            present_value = value
+        key = present_key
+        value = present_value
+
+        # Create attn_bias
+        if 10 in in_ports and len(inputs) >= 11 and inputs[10] is not None:
+            attn_bias = inputs[10]
+        else:
+            attn_bias = None
+
+        # Group Query Attention is applied if the following are satisfied
+        # 1) q_num_heads != kv_num_heads
+        # 2) q_num_heads % kv_num_heads == 0
+        # 3) kv_num_heads == k_num_heads == v_num_heads
+
+        if self.num_heads != self.kv_num_heads and self.num_heads % self.kv_num_heads == 0:
+            seq_reps = self.num_heads // self.kv_num_heads
+            reps = [1, seq_reps, 1, 1]
+            key = np.tile(key, reps)
+            value = np.tile(value, reps)
+
+        # The following pattern is applied
+        #      Q          K          V
+        #      |          |          |
+        #      |       Transpose     |
+        #      |          |          |
+        #      ---MatMul * scale---  |
+        #            |               |
+        # at_mask---Add              |
+        #            |               |
+        #  softcap (if provided)     |
+        #            |               |
+        #         Softmax            |
+        #            |               |
+        #            -----MatMul------
+        #                    |
+        #                    Y
+        k_transpose = np.transpose(key, (0, 1, 3, 2))
+        qk_matmul_output = np.matmul(query, k_transpose) * scale
+        if attn_bias is not None:
+            qk_with_bias = qk_matmul_output + attn_bias
+        else:
+            qk_with_bias = qk_matmul_output
+
+        # Apply softcap
+        if self.softcap != 0:
+            qk_with_bias = _softcap(qk_with_bias, self.softcap)
+
+        qk_softmax = _softmax(qk_with_bias)
+        output = np.matmul(qk_softmax, value).astype(query.dtype)
+
+        output = np.transpose(output, (0, 2, 1, 3))
+        output = np.reshape(output, (output.shape[0], output.shape[1], -1))
+        out_tensors = [output, present_key, present_value]
+        self.set_out_tensor(out_tensors)
 
 
 class MatMulNBitsMsOp(OpHasOneOutPort, OnnxOp):
@@ -44,6 +206,16 @@ class MatMulNBitsMsOp(OpHasOneOutPort, OnnxOp):
                         ret = inputs[item_idx]
                         if 'scale' in item:
                             ret = np.array(ret)
+                        if 'zero_points' in item:
+                            k_blocks = int(np.ceil(self.K / self.block_size))
+                            if ret.dtype == 'uint8':
+                                packed_shape = (self.N, int(np.ceil(k_blocks * self.bits / 8)))
+                                assert ret.shape == packed_shape
+                                ret = unpack_4bit(ret, [self.N, k_blocks]).astype(inputs[0].dtype)
+                            else:
+                                assert ret.dtype == inputs[0].dtype, 'Unpacked zp should be same dtype with input.'
+                                assert ret.shape == (self.N, k_blocks)
+                                ret = np.array(ret)
                         self.__dict__['_attr'][item] = Attribute(item, {'type': AttrType.TENSOR, 'value': ret})
                     if ret is None:
                         if item == 'zero_points':
@@ -71,10 +243,12 @@ class MatMulNBitsMsOp(OpHasOneOutPort, OnnxOp):
         A = inputs[0]
         B = inputs[1]
         if self.bits == 4:
-            # split N bits from quantized weights
-            high_nbits = (B >> self.bits) & 0x0F
-            low_nbits = B & 0x0F
-            quant_weights = np.concatenate([high_nbits, low_nbits], axis=-1).reshape(self.N, -1)
+            # unpack N bits from quantized weights
+            unpack_shape = [self.N, B.size * 2 // self.N]
+            # high_nbits = (B >> self.bits) & 0x0F
+            # low_nbits = B & 0x0F
+            # quant_weights = np.concatenate([high_nbits, low_nbits], axis=-1).reshape(self.N, -1)
+            quant_weights = unpack_4bit(B.flatten(), unpack_shape)
         else:
             quant_weights = B
 

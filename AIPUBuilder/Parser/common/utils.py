@@ -290,10 +290,10 @@ def unpack_4bit(data, dims):
         Returns:
             A numpy array of int8/uint8.
     '''
+    data = data.flatten()
     result = np.empty([data.size * 2], dtype=data.dtype)
-    array_low = data & np.uint8(0x0F)
-    array_high = data & np.uint8(0xF0)
-    array_high >>= np.uint8(4)
+    array_low = data & 0x0F
+    array_high = (data >> 4) & 0x0F
     result[0::2] = array_low
     result[1::2] = array_high
     if result.size == np.prod(dims) + 1:

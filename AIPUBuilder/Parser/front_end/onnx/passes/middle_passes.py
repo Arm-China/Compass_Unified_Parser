@@ -12,7 +12,7 @@ from sympy import symbols, Symbol
 from ....common.defs import Tensor, FLOAT_EQUAL, FLOAT64_EQUAL, TYPE_MAX, TYPE_MIN
 from ....graph.graph import SubGraph
 from ....logger import INFO, DEBUG, WARN, ERROR, FATAL
-from ....common.utils import extend_lists, get_converted_dtype
+from ....common.utils import extend_lists, get_converted_dtype, unpack_4bit
 from ....graph.node_wrap import NodeWrap
 from ....graph.pattern_match import matched_patterns, single_node_matcher, two_nodes_matcher
 # from ....graph.pattern_generator import match_patterns_from_expression
@@ -7505,6 +7505,95 @@ def convert_mha(graph):
             ERROR(f'Not support this Op({mha}) yet!')
 
 
+def convert_gqa(graph):
+    matches = single_node_matcher(graph, 'GroupQueryAttentionMs')
+    for m in matches:
+        gqa = m['target']
+        gqa_obj = NodeWrap(graph, gqa)['object']
+        if gqa_obj is None:
+            ERROR(
+                '[Parser]: Meets invalid GroupQueryAttentionMs node(%s) in convert_gqa!' % gqa)
+            continue
+        if gqa_obj.quantize:
+            continue
+        gqa_in_edges = graph.sorted_in_edges(gqa, data=True)
+
+        # TODO, support more cases of gqa
+        if gqa_obj.do_rotary != 0 or gqa_obj.local_window_size != -1 or gqa_obj.smooth_softmax != 0:
+            raise NotImplementedError
+
+        input_shapes = gqa_obj.get_input_shapes()
+        q_shape = input_shapes[0]
+        if len(q_shape) != 3:
+            ERROR(
+                '[Parser]: Only support 3-dims(batch_size, seq_len, hidden_size) of query in gqa node(%s)' % gqa)
+            continue
+
+        if NodeWrap(graph, gqa_in_edges[1][0])['object'].type == 'Blank':
+            assert NodeWrap(graph, gqa_in_edges[2][0])[
+                'object'].type == 'Blank', 'key or value should be Blank if use packed query'
+            graph.remove_edge(gqa_in_edges[:3])
+            # Add split node
+            split_n = get_valid_node_name(graph, gqa + '_split')
+            graph.add_node(split_n)
+
+            head_size = q_shape[-1] // (gqa_obj.num_heads + 2 * gqa_obj.kv_num_heads)
+            split_size = [gqa_obj.num_heads * head_size, gqa_obj.kv_num_heads *
+                          head_size, gqa_obj.kv_num_heads * head_size]
+
+            insert_constant(graph, split_n + '_split_size', np.array(split_size,
+                                                                     dtype='int64'), split_n, in_port=1)
+
+            split_n_attr = {'name': split_n, 'axis': 2, 'opset_version': 13}
+            graph.add_edge(gqa_in_edges[0][0], split_n, **{'src_out_port': 0, 'dst_in_port': 0,
+                                                           'tensor': Tensor(shape=tuple(q_shape))})
+            graph.add_edge(split_n, gqa, **{'src_out_port': 0, 'dst_in_port': 0,
+                                            'tensor': Tensor(shape=tuple(q_shape[:2] + [split_size[0]]))})
+            graph.add_edge(split_n, gqa, **{'src_out_port': 1, 'dst_in_port': 1,
+                                            'tensor': Tensor(shape=tuple(q_shape[:2] + [split_size[1]]))})
+            graph.add_edge(split_n, gqa, **{'src_out_port': 2, 'dst_in_port': 2,
+                                            'tensor': Tensor(shape=tuple(q_shape[:2] + [split_size[2]]))})
+            NodeWrap(graph, split_n).replace_obj('Split', split_n_attr)
+
+            gqa_in_edges = graph.sorted_in_edges(gqa, data=True)
+
+        graph.remove_edges_from(gqa_in_edges[3:])
+
+        if NodeWrap(graph, gqa_in_edges[3][0])['object'].type != 'Blank':
+            past_k_in_attr = gqa_in_edges[3][-1]
+            past_k_in_attr['dst_in_port'] = 4
+            graph.add_edge(gqa_in_edges[3][0], gqa, **past_k_in_attr)
+
+        if NodeWrap(graph, gqa_in_edges[4][0])['object'].type != 'Blank':
+            past_v_in_attr = gqa_in_edges[4][-1]
+            past_v_in_attr['dst_in_port'] = 5
+            graph.add_edge(gqa_in_edges[4][0], gqa, **past_v_in_attr)
+
+        if len(gqa_in_edges) < 11:
+            in_tensor_name = get_valid_node_name(
+                graph, 'no_name_const')
+
+            graph.add_node(in_tensor_name)
+            blank_node = NodeWrap(graph, in_tensor_name)
+            blank_attr = {'name': in_tensor_name}
+            blank_node.replace_obj('Blank', blank_attr)
+            edge_attr = {'src_out_port': 0, 'dst_in_port': 3, 'tensor': Tensor(
+                name=in_tensor_name, is_const=True)}
+            graph.add_edge(
+                in_tensor_name, gqa, **edge_attr)
+        elif NodeWrap(graph, gqa_in_edges[10][0])['object'].type != 'Blank':
+            attn_bias_in_attr = gqa_in_edges[10][-1]
+            attn_bias_in_attr['dst_in_port'] = 3
+            graph.add_edge(gqa_in_edges[10][0], gqa, **attn_bias_in_attr)
+
+        att_attr = gqa_obj.copied_attr()
+        att_attr.update({'opset_version': 23,
+                         'q_num_heads': gqa_obj.num_heads,
+                         'kv_num_heads': gqa_obj.kv_num_heads})
+        NodeWrap(graph, gqa).replace_obj('Attention', att_attr)
+        clear_redundant_nodes(graph)
+
+
 def convert_matmulnbits(graph):
     matched = False
     matches = single_node_matcher(graph, 'MatMulNBitsMs')
@@ -7541,9 +7630,8 @@ def convert_matmulnbits(graph):
             if node_obj.bits == 4:
                 # split N bits from quantized weights
                 B = node_in_edges[1][-1]['tensor'].value
-                high_nbits = (B >> 4) & 0x0F
-                low_nbits = B & 0x0F
-                quant_weights = np.concatenate([high_nbits, low_nbits], axis=-1).reshape(node_obj.N, -1)
+                unpack_shape = [node_obj.N, B.size * 2 // node_obj.N]
+                quant_weights = unpack_4bit(B, unpack_shape)
             else:
                 quant_weights = node_in_edges[1]['tensor'].value
             matmul_attr = node_obj.copied_attr()
@@ -14125,6 +14213,7 @@ def middle_passes(graph, params):
     convert_simplified_layernorm(graph)
     convert_rotary_embedding_ms(graph)
     convert_mha(graph)
+    convert_gqa(graph)
     convert_matmulnbits(graph)
     convert_skip_simplified_layernorm(graph)
     convert_attention(graph)
