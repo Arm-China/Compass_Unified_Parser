@@ -2781,7 +2781,7 @@ class OpNeedBroadcast(Op):
     '''
     @staticmethod
     def cal_reshape_and_tile(input_shapes, match_from_left=False):
-        '''We implement brocast by adding reshape and tile, and this function calculates the parameters of reshape and tile.'''
+        '''We implement broadcast by adding reshape and tile, and this function calculates the parameters of reshape and tile.'''
         ret = []
         assert len(input_shapes) >= 2 and all(s is not None for shape in input_shapes for s in shape)
 

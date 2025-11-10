@@ -148,10 +148,9 @@ class AttentionOp(OpHasVariableOutPorts, OnnxOp):
                 and (q_num_heads % k_num_heads == 0)
                 and (k_num_heads == v_num_heads)
         ):
-            seq_reps = int(q_num_heads / k_num_heads)
-            reps = [1, seq_reps, 1, 1]
-            K = np.tile(K, reps)
-            V = np.tile(V, reps)
+            seq_reps = q_num_heads // k_num_heads
+            K = np.repeat(K, seq_reps, axis=1)
+            V = np.repeat(V, seq_reps, axis=1)
 
         # The following pattern is applied
         #      Q          K          V

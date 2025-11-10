@@ -128,9 +128,8 @@ class GroupQueryAttentionMsOp(OpHasMultipleOutPorts, OnnxOp):
 
         if self.num_heads != self.kv_num_heads and self.num_heads % self.kv_num_heads == 0:
             seq_reps = self.num_heads // self.kv_num_heads
-            reps = [1, seq_reps, 1, 1]
-            key = np.tile(key, reps)
-            value = np.tile(value, reps)
+            key = key.repeat(seq_reps, axis=1)
+            value = value.repeat(seq_reps, axis=1)
 
         # The following pattern is applied
         #      Q          K          V

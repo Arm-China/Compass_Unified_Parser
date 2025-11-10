@@ -7811,20 +7811,20 @@ def convert_attention(graph):
 
         if q_num_heads > kv_num_heads and q_num_heads % kv_num_heads == 0:  # GQA
             seq_reps = q_num_heads // kv_num_heads
-            reps = [1, seq_reps, 1, 1]
-            # tile K, V
+            reps = [seq_reps] * kv_num_heads
+            # repeat K, V
             key_out_attr = graph.sorted_out_edges(key, data=True)[0][-1]
             value_out_attr = graph.sorted_out_edges(value, data=True)[0][-1]
-            tiled_k = insert_tile(graph, key, att, key_out_attr, reps)
-            tiled_v = insert_tile(graph, value, att, value_out_attr, reps)
+            expanded_k = insert_repeat(graph, key, att, key_out_attr, reps, axis=1)
+            expanded_v = insert_repeat(graph, value, att, value_out_attr, reps, axis=1)
             k_shape[1] = k_shape[1] * seq_reps
             v_shape[1] = v_shape[1] * seq_reps
         else:
-            tiled_k = key
-            tiled_v = value
+            expanded_k = key
+            expanded_v = value
 
-        key_out_attr = graph.sorted_out_edges(tiled_k, data=True)[0][-1]
-        trans_k = insert_transpose(graph, tiled_k, att, key_out_attr, perm=[0, 1, 3, 2])
+        key_out_attr = graph.sorted_out_edges(expanded_k, data=True)[0][-1]
+        trans_k = insert_transpose(graph, expanded_k, att, key_out_attr, perm=[0, 1, 3, 2])
         trans_k_out_shape = [k_shape[axis] for axis in [0, 1, 3, 2]]
 
         # split_q @ split_k
@@ -8001,11 +8001,11 @@ def convert_attention(graph):
             matmul_v_attr = {'name': matmul_v, 'opset_version': 13}
             graph.add_edge(softmax, matmul_v, **{'src_out_port': 0, 'dst_in_port': 0,
                                                  'tensor': Tensor(shape=tuple(matmul_out_shape))})
-            graph.add_edge(tiled_v, matmul_v, **{'src_out_port': 0, 'dst_in_port': 1,
-                                                 'tensor': Tensor(shape=tuple(v_shape))})
+            graph.add_edge(expanded_v, matmul_v, **{'src_out_port': 0, 'dst_in_port': 1,
+                                                    'tensor': Tensor(shape=tuple(v_shape))})
             NodeWrap(graph, matmul_v).replace_obj('MatMul', matmul_v_attr)
 
-            graph.remove_edge(tiled_v, att)
+            graph.remove_edge(expanded_v, att)
 
             matmul_v_out_shape = matmul_out_shape[:-1] + v_shape[-1:]
 

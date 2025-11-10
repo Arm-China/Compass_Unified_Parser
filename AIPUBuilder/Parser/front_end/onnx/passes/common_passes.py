@@ -1284,7 +1284,14 @@ def insert_repeat(graph, src, dst, in_attr, reps, axis=None, key=None, type='Rep
         if dst_in_attr['tensor'] is not None:
             if dst_in_attr['tensor'].value is not None:
                 tensor = Tensor(min_max=in_attr['tensor'].min_max,
-                                value=np.repeat(dst_in_attr['tensor'].value, reps.tolist()))
+                                value=np.repeat(dst_in_attr['tensor'].value, reps.tolist(), axis=axis))
+            else:
+                in_shape = list(dst_in_attr['tensor'].shape)
+                if axis is not None:
+                    in_shape[axis] = int(reps.sum())
+                else:
+                    in_shape[0] = int(reps.sum())
+                tensor = Tensor(shape=tuple(in_shape))
             if dst_in_attr['tensor'].dtype is not None:
                 tensor.dtype = dst_in_attr['tensor'].dtype
                 tensor.scale_zp = dst_in_attr['tensor'].scale_zp

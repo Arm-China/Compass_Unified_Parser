@@ -228,7 +228,7 @@ def univ_parser(params):
             if is_dir(model_path):
                 if model_type != 'tf':
                     WARN(f'[Parser]: the model type in cfg is: {model_type}, but the model path is directory: {model_path}. '
-                         f'Do you set the wrong model path or model type?')
+                         f'Do you set the correct model path or model type?')
             else:
                 model_type_suffix_mapping = {
                     'tf': ['pb', 'h5', 'hdf5', 'keras'],
@@ -241,7 +241,7 @@ def univ_parser(params):
                 if suffix not in model_type_suffix_mapping[model_type]:
                     WARN(
                         f'[Parser]: the model type in cfg is: {model_type}, but the model suffix is: {suffix}. '
-                        f'Do you set the wrong model path or model type?')
+                        f'Do you set the correct model path or model type?')
 
             try:
                 # Convert torch model to onnx before processing
