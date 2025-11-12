@@ -333,46 +333,51 @@ class ConvOp(BaseConvOp, OnnxOp):
                 self.biases = np.zeros(self.num_output, np.float32)
 
         if self.data_format == 'NHWC':
-            # from ..release_ops import ArmDepthwiseConvOp
-            # inp = tf.pad(inputs[0], self.tf_pads) if self.auto_pad == 'NOTSET' else inputs[0]
-            # if self.group == 1:
-            #     conv_func = tf.nn.conv2d if is_2d else tf.nn.conv1d
-            #     conv = conv_func(inp,
-            #                      np.transpose(self.weights, axes=type(self).perm_onnx_to_tf(is_2d)),
-            #                      [1] + self.strides + [1],
-            #                      padding='VALID' if self.auto_pad in ('NOTSET', 'VALID') else 'SAME',
-            #                      dilations=[1] + self.dilations + [1])
-            # else:
-            #     if self.weights.shape[0] == self.group:
-            #         conv = tf.nn.depthwise_conv2d(inp,
-            #                                       np.transpose(self.weights, axes=ArmDepthwiseConvOp.perm_onnx_to_tf()),
-            #                                       strides=[1] + self.strides + [1],
-            #                                       padding='VALID' if self.auto_pad in ('NOTSET', 'VALID') else 'SAME',
-            #                                       data_format=self.data_format,
-            #                                       rate=self.dilations)
-            #     else:
-            #         input_split = tf.split(inp, self.group, axis=3)
-            #         weights_split = np.split(self.weights, self.group, axis=0)
-            #         meta_conv_list = []
-            #         for i in range(self.group):
-            #             meta_conv = tf.nn.conv2d(input_split[i],
-            #                                      np.transpose(weights_split[i], axes=ConvOp.perm_onnx_to_tf()),
-            #                                      self.strides,
-            #                                      padding='VALID' if self.auto_pad in ('NOTSET', 'VALID') else 'SAME',
-            #                                      data_format='NHWC')
-            #             meta_conv_list.append(meta_conv)
-            #         conv = tf.concat(meta_conv_list, axis=3)
-            # out_tensor = tf.nn.bias_add(conv, self.biases, data_format=self.data_format).numpy()
-
-            out_shape = BaseConvOp.cal_out_shape(inputs[0].shape[1:-1],
-                                                 self.pads,
-                                                 self.strides,
-                                                 self.kernel_shape,
-                                                 self.auto_pad,
-                                                 dilations=self.dilations,
-                                                 data_format='NHWC')
-            out_shape = [inputs[0].shape[0]] + out_shape + [self.num_output]
-            out_tensor = np.random.ranf(size=out_shape).astype(input_dtype)
+            if self.is_all_inputs_const():
+                from ..release_ops import ArmDepthwiseConvOp
+                inp = tf.pad(inputs[0], self.tf_pads) if self.auto_pad == 'NOTSET' else inputs[0]
+                is_2d = len(inp.shape) == 4
+                if self.group == 1:
+                    conv_func = tf.nn.conv2d if is_2d else tf.nn.conv1d
+                    conv = conv_func(inp,
+                                     np.transpose(self.weights, axes=type(self).perm_onnx_to_tf(is_2d)),
+                                     [1] + self.strides + [1],
+                                     padding='VALID' if self.auto_pad in ('NOTSET', 'VALID') else 'SAME',
+                                     dilations=[1] + self.dilations + [1])
+                else:
+                    if self.weights.shape[0] == self.group:
+                        conv = tf.nn.depthwise_conv2d(inp,
+                                                      np.transpose(
+                                                          self.weights, axes=ArmDepthwiseConvOp.perm_onnx_to_tf()),
+                                                      strides=[1] + self.strides + [1],
+                                                      padding='VALID' if self.auto_pad in (
+                                                          'NOTSET', 'VALID') else 'SAME',
+                                                      data_format=self.data_format,
+                                                      rate=self.dilations)
+                    else:
+                        input_split = tf.split(inp, self.group, axis=3)
+                        weights_split = np.split(self.weights, self.group, axis=0)
+                        meta_conv_list = []
+                        for i in range(self.group):
+                            meta_conv = tf.nn.conv2d(input_split[i],
+                                                     np.transpose(weights_split[i], axes=ConvOp.perm_onnx_to_tf()),
+                                                     self.strides,
+                                                     padding='VALID' if self.auto_pad in (
+                                                         'NOTSET', 'VALID') else 'SAME',
+                                                     data_format='NHWC')
+                            meta_conv_list.append(meta_conv)
+                        conv = tf.concat(meta_conv_list, axis=3)
+                out_tensor = tf.nn.bias_add(conv, self.biases, data_format=self.data_format).numpy()
+            else:
+                out_shape = BaseConvOp.cal_out_shape(inputs[0].shape[1:-1],
+                                                     self.pads,
+                                                     self.strides,
+                                                     self.kernel_shape,
+                                                     self.auto_pad,
+                                                     dilations=self.dilations,
+                                                     data_format='NHWC')
+                out_shape = [inputs[0].shape[0]] + out_shape + [self.num_output]
+                out_tensor = np.random.ranf(size=out_shape).astype(input_dtype)
 
         else:
             out_shape = BaseConvOp.cal_out_shape(inputs[0].shape[2:],
@@ -383,21 +388,43 @@ class ConvOp(BaseConvOp, OnnxOp):
                                                  dilations=self.dilations,
                                                  data_format='NCHW')
             out_shape = [inputs[0].shape[0], self.num_output] + out_shape
-            out_tensor = np.random.ranf(size=out_shape).astype(input_dtype)
 
-        if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
-            self.pads, _ = OpHasPaddingStrides.cal_pads(
-                inputs[0].shape[1:-
-                                1] if self.data_format == 'NHWC' else inputs[0].shape[2:],
-                out_tensor.shape[1:-
-                                 1] if self.data_format == 'NHWC' else out_tensor.shape[2:],
-                self.strides,
-                self.kernel_shape,
-                self.auto_pad,
-                dilations=self.dilations,
-                is_transpose=False,
-            )
-            self.auto_pad = 'NOTSET'
+            if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
+                self.pads, _ = OpHasPaddingStrides.cal_pads(
+                    inputs[0].shape[1:-
+                                    1] if self.data_format == 'NHWC' else inputs[0].shape[2:],
+                    out_shape[1:-
+                              1] if self.data_format == 'NHWC' else out_shape[2:],
+                    self.strides,
+                    self.kernel_shape,
+                    self.auto_pad,
+                    dilations=self.dilations,
+                    is_transpose=False,
+                )
+                self.auto_pad = 'NOTSET'
+
+            if self.is_all_inputs_const():
+                if len(inputs[0].shape) == 3:
+                    conv_func = torch.nn.functional.conv1d
+                elif len(inputs[0].shape) == 4:
+                    conv_func = torch.nn.functional.conv2d
+                elif len(inputs[0].shape) == 5:
+                    conv_func = torch.nn.functional.conv3d
+                else:
+                    raise NotImplementedError('Still not supported this Conv yet')
+
+                inp = torch.nn.functional.pad(torch.tensor(inputs[0]), ConvOp.onnx_to_torch(self.pads), value=0)
+                out = conv_func(inp,
+                                torch.tensor(self.weights),
+                                torch.tensor(self.biases),
+                                stride=self.strides,
+                                padding=0,
+                                dilation=self.dilations,
+                                groups=self.group)
+                out_tensor = out.cpu().numpy()
+            else:
+                out_tensor = np.random.ranf(size=out_shape).astype(input_dtype)
+
         self.set_out_tensor(out_tensor)
 
 

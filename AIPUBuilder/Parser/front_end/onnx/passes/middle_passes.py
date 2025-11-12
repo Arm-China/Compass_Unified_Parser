@@ -12707,20 +12707,22 @@ def remove_sub_add_mul_div_pair(graph):
             continue
         inp = sub_div if add_mul in graph.children(sub_div) else add_mul
         out = add_mul if inp == sub_div else sub_div
-        inp_out_edges = graph.sorted_out_edges(inp)
+        inp_out_edges = graph.sorted_out_edges(inp, data=True)
         const_1_node = NodeWrap(graph, const_1)
         if len(inp_out_edges) == 1 \
                 and const_1_node['object'].value is not None:
+            inp_main_port = 1 if NodeWrap(graph, inp)['object'].sorted_in_consts()[0][1] == 0 else 0
+            out_main_port = 1 if NodeWrap(graph, out)['object'].sorted_in_consts()[0][1] == 0 else 0
             if const_2 is not None:
                 const_2_node = NodeWrap(graph, const_2)
                 if const_2_node['object'].value is not None \
                         and const_1_node['object'].value.shape == const_2_node['object'].value.shape \
                         and np.all(const_1_node['object'].value == const_2_node['object'].value):
-                    remove_node_safely(graph, out)
-                    remove_node_safely(graph, inp)
+                    remove_node_safely(graph, out, out_main_port)
+                    remove_node_safely(graph, inp, inp_main_port)
             else:
-                remove_node_safely(graph, out)
-                remove_node_safely(graph, inp)
+                remove_node_safely(graph, out, out_main_port)
+                remove_node_safely(graph, inp, inp_main_port)
 
 
 def remove_special_gather(graph):

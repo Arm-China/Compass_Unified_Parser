@@ -5056,7 +5056,8 @@ class ArmSoftmaxOp(SameShapeOp, OpHasAxis, OpHasOneOutPort, ArmOp):
     def infer_shape(self, input_tensor: np.ndarray = None):
         super(ArmSoftmaxOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        out_tensor = tf.nn.softmax(inputs[0].astype(np.float32), axis=self.axis).numpy()
+        out_tensor = torch.nn.functional.softmax(torch.tensor(
+            inputs[0].astype(np.float32)), dim=self.axis).cpu().numpy()
         out_symbol = self.cal_output_symbol()
         self.set_out_tensor(out_tensor.astype(inputs[0].dtype), out_symbol)
 
