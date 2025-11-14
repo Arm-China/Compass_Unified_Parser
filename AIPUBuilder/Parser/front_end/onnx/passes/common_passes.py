@@ -641,6 +641,7 @@ def remove_redundant_slice(graph, max_try=2):
 
 
 def remove_redundant_reshape(graph, type='Reshape'):
+    matched = False
     matches = matched_patterns(graph,
                                nodes=[
                                    ('reshape_1', {'op': type}), ('reshape_2', {'op': type})],
@@ -672,6 +673,7 @@ def remove_redundant_reshape(graph, type='Reshape'):
                     else:
                         new_rs_out_symbol.append(s.subs(sym_map, simultaneous=True))
             if len(reshape_1_out_edges) == 1:
+                matched = True
                 remove_node_safely(graph, reshape_1)
                 if type == 'Reshape' and len(reshape_2_edges) == 2:
                     graph.remove_edges_from(reshape_2_edges[1:])
@@ -710,6 +712,7 @@ def remove_redundant_reshape(graph, type='Reshape'):
                     for n_obj in reshape_1_out_node_objs:
                         all_reshape_2_out_shapes.append(n_obj.get_output_shapes())
                     if all([reshape_1_in_shapes[0] == out_shapes[0] for out_shapes in all_reshape_2_out_shapes]):
+                        matched = True
                         src, _, in_attr = reshape_1_edges[0]
                         graph.remove_edges_from(reshape_1_edges)
                         for _, dst1, out_attr1 in reshape_1_out_edges:
@@ -723,6 +726,7 @@ def remove_redundant_reshape(graph, type='Reshape'):
                                 index = graph._attr['output_names'].index(dst1)
                                 graph._attr['output_names'][index] = src
                         clear_redundant_nodes(graph)
+    return matched
 
 
 def remove_redundant_transpose(graph):
@@ -754,8 +758,10 @@ def remove_redundant_transpose(graph):
         else:
             ERROR('[Parser]: Meets invalid Transpose (%s or %s) in remove_redundant_transpose!'
                   % (trans1, trans2))
+            return False
     if matched:
         clear_redundant_nodes(graph)
+    return matched
 
 
 def remove_redundant_transpose2(graph):
@@ -830,6 +836,7 @@ def remove_redundant_transpose2(graph):
             graph._attr['output_names'][index] = new_reshape
     if matched:
         clear_redundant_nodes(graph)
+    return matched
 
 
 def remove_redundant_transpose_unaware(graph):
@@ -1106,7 +1113,7 @@ def insert_mul_add_cast_after_for_dequant(graph, src, to_dtype, scale, zero_poin
     return ret
 
 
-def insert_constant(graph, name, value, dst, in_port=0, data_format='NCHW', const_ver=9, scale_zp=None, quantize=False):
+def insert_constant(graph, name, value, dst, in_port=0, data_format='NCHW', const_ver=9, scale_zp=None, quantize=False, op_type='Constant'):
     if graph.has_node(dst) and value is not None and isinstance(value, np.ndarray):
         const_name = get_valid_node_name(graph, name)
         graph.add_node(const_name)
@@ -1115,7 +1122,11 @@ def insert_constant(graph, name, value, dst, in_port=0, data_format='NCHW', cons
                       'data_format': data_format,
                       'opset_version': const_ver,
                       'quantize': quantize}
-        NodeWrap(graph, const_name).replace_obj('Constant', const_attr)
+        if op_type == 'ArmConstant':
+            const_attr.update({'weights': value})
+            if quantize and scale_zp:
+                const_attr.update({'weights_scale_zp': list(scale_zp)})
+        NodeWrap(graph, const_name).replace_obj(op_type, const_attr)
         edge_attr = {'src_out_port': 0, 'dst_in_port': in_port,
                      'tensor': Tensor(value=value, is_const=True)}
         if isinstance(scale_zp, (tuple, list)) \

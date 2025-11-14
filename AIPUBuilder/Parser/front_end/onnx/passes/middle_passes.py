@@ -2315,7 +2315,7 @@ def convert_multi_scatternd_to_concat(graph):
         clear_redundant_nodes(graph)
 
 
-def convert_special_transpose(graph):
+def convert_special_6d_transpose(graph):
     matches = single_node_matcher(graph, 'Transpose')
     for m in matches:
         transpose = m['target']
@@ -2351,7 +2351,7 @@ def convert_special_transpose(graph):
 
         else:
             ERROR(
-                '[Parser]: Meets invalid Transpose Op(%s) in convert_special_transpose!' % transpose)
+                '[Parser]: Meets invalid Transpose Op(%s) in convert_special_6d_transpose!' % transpose)
 
 
 def _decompose_const_if(graph, params):
@@ -12707,7 +12707,7 @@ def remove_sub_add_mul_div_pair(graph):
             continue
         inp = sub_div if add_mul in graph.children(sub_div) else add_mul
         out = add_mul if inp == sub_div else sub_div
-        inp_out_edges = graph.sorted_out_edges(inp, data=True)
+        inp_out_edges = graph.sorted_out_edges(inp)
         const_1_node = NodeWrap(graph, const_1)
         if len(inp_out_edges) == 1 \
                 and const_1_node['object'].value is not None:
@@ -14386,7 +14386,7 @@ def middle_passes(graph, params):
     fuse_special_fc_reshape_transpose_div(graph)
     rearrange_linear_reshape_relu(graph)
     rearrange_linear_concat_relu(graph)
-    convert_special_transpose(graph)
+    convert_special_6d_transpose(graph)
     merge_meshgrid(graph)
 
     convert_einsum(graph)

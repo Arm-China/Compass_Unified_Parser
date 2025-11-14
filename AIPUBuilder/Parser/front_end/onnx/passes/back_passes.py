@@ -5347,8 +5347,17 @@ def sink_single_transpose(graph):
         unaware_obj = NodeWrap(graph, unaware)['object']
         if transpose_obj is not None and unaware_obj is not None:
             trans_out_edges = graph.sorted_out_edges(transpose, data=True)
-            if len(trans_out_edges) == 1 and unaware_obj.num_in_ports() == 1 and len(unaware_obj.get_out_ports()) == 1:
-                unaware_input_shape = unaware_obj.get_input_shapes()[0]
+            if len(trans_out_edges) == 1 and len(unaware_obj.get_out_ports()) == 1:
+                unaware_in_edges = graph.sorted_in_edges(unaware, True)
+                if unaware_obj.num_in_ports() > 1:
+                    all_const = True
+                    for in_name, _, _ in unaware_in_edges:
+                        if in_name != transpose and NodeWrap(graph, in_name)['object'].type != 'ArmConstant':
+                            all_const = False
+                            break
+                    if not all_const:
+                        continue
+                unaware_input_shape = unaware_obj.get_input_shapes()[trans_out_edges[0][2]['dst_in_port']]
                 if unaware_input_shape is None \
                         or any([s is None for s in unaware_input_shape]):
                     ERROR(
@@ -5360,6 +5369,27 @@ def sink_single_transpose(graph):
                 if unaware_obj.type in ['ArmQuantize', 'ArmDeQuantize'] \
                         and unaware_obj.axis is not None:
                     continue
+                for src, _, in_attr in unaware_in_edges:
+                    if src != transpose:
+                        # process constant
+                        const_obj = NodeWrap(graph, src)['object']
+                        const_value = const_obj.weights
+                        if const_value.size > 1:
+                            perm = transpose_obj.perm
+                            if len(const_value.shape) > len(unaware_input_shape):
+                                diff_size = len(const_value.shape) - len(unaware_input_shape)
+                                new_perm = Op.cal_inverse_perm(list(range(diff_size)) + [p + diff_size for p in perm])
+                                new_const_value = const_value.transpose(new_perm)
+                            elif len(const_value.shape) < len(unaware_input_shape):
+                                diff_size = len(unaware_input_shape) - len(const_value.shape)
+                                new_const_shape = [1] * diff_size + list(const_value.shape)
+                                new_perm = Op.cal_inverse_perm(perm)
+                                new_const_value = const_value.reshape(new_const_shape).transpose(new_perm)
+                            else:
+                                new_const_value = const_value.transpose(Op.cal_inverse_perm(perm))
+                            graph.remove_edge(src, unaware)
+                            insert_constant(graph, src + '_new', new_const_value, unaware,
+                                            in_attr['dst_in_port'], op_type='ArmConstant')
                 trans_in_edges = graph.sorted_in_edges(transpose, data=True)
                 src, _, trans_in_attr = trans_in_edges[0]
                 _, _, trans_out_attr = trans_out_edges[0]
@@ -5751,7 +5781,7 @@ def sink_transpose_through_concat(graph):
         in_trans_objs = {}
         for src, _, _ in concat_in_edges:
             src_obj = NodeWrap(graph, src)['object']
-            if src_obj is None or src_obj.type != 'ArmTranspose':
+            if src_obj is None or src_obj.type not in ('ArmTranspose', 'ArmConstant'):
                 all_src_are_trans = False
                 break
             in_trans_names.append(src)
@@ -5763,12 +5793,30 @@ def sink_transpose_through_concat(graph):
                 '[Parser]: Meets invalid name that does not exist in graph in sink_transpose_through_concat!')
             continue
 
-        if any([in_trans_objs[in_trans_names[0]].perm != in_trans_objs[name].perm for name in in_trans_names]):
+        first_perm = None
+        same_perm = True
+        for name in in_trans_names:
+            if NodeWrap(graph, name)['object'].type == 'ArmTranspose':
+                if first_perm is None:
+                    first_perm = NodeWrap(graph, name)['object'].perm
+                else:
+                    if first_perm != NodeWrap(graph, name)['object'].perm:
+                        same_perm = False
+                        break
+
+        if not same_perm:
             continue
-        perm = in_trans_objs[in_trans_names[0]].perm
+        perm = first_perm
         inverse_perm = Op.cal_inverse_perm(perm)
         for i, (trans, _, concat_in_attr) in enumerate(concat_in_edges):
-            insert_transpose(graph, trans, concat, concat_in_attr, inverse_perm, type='ArmTranspose')
+            if NodeWrap(graph, trans)['object'].type == 'ArmTranspose':
+                insert_transpose(graph, trans, concat, concat_in_attr, inverse_perm, type='ArmTranspose')
+            else:
+                origin_value = NodeWrap(graph, trans)['object'].weights
+                new_value = origin_value.transpose(inverse_perm)
+                graph.remove_edge(trans, concat)
+                insert_constant(graph, concat + '_new_const', new_value, concat,
+                                concat_in_attr['dst_in_port'], op_type='ArmConstant')
         post_trans = get_valid_node_name(graph, concat + '_post_transpose')
         for _, dst, out_attr in concat_out_edges:
             graph.remove_edge(concat, dst)
@@ -6098,6 +6146,43 @@ def convert_special_reshape(graph):
                     {'name': rs, 'perm': new_perm})
                 NodeWrap(graph, rs).replace_obj(
                     'ArmTranspose', new_transpose_attr)
+
+
+def convert_special_transpose(graph):
+    '''convert special transpose to reshape'''
+    matches = single_node_matcher(graph, 'ArmTranspose')
+    for m in matches:
+        trans = m['target']
+        trans_obj = NodeWrap(graph, trans)['object']
+        if trans_obj is None:
+            ERROR(
+                '[Parser]: Meets invalid ArmTranspose Node(%s) in convert_special_transpose!' % trans)
+            continue
+        trans_in_shape = trans_obj.get_input_shapes()[0]
+        if trans_in_shape is None or any([s is None for s in trans_in_shape]):
+            continue
+        shape_one_axes = []
+        # FIXME, check symbol
+        for i, s in enumerate(trans_in_shape):
+            if s == 1:
+                shape_one_axes.append(i)
+        if not shape_one_axes:
+            continue
+
+        perm = trans_obj.perm.copy()
+        for axis in shape_one_axes:
+            perm.remove(axis)
+
+        # check new perm if increasing
+        if not all(perm[i] < perm[i + 1] for i in range(len(perm) - 1)):
+            continue
+
+        trans_out_shape = [trans_in_shape[axis] for axis in trans_obj.perm]
+        rs_attr = trans_obj.copied_attr()
+        rs_attr.update(
+            {'dim': trans_out_shape})
+        NodeWrap(graph, trans).replace_obj(
+            'ArmReshape', rs_attr)
 
 
 def sink_transpose_through_split(graph):
@@ -6593,15 +6678,21 @@ def back_passes(graph, params):
     remove_useless_op(graph, ['ArmReduce', 'ArmTile', 'ArmCast'])
     remove_redundant_bn(graph)
     remove_redundant_slice(graph)
+    convert_special_transpose(graph)
     remove_special_transpose(graph)
     sink_transpose_through_special_reshape(graph)
     convert_special_reshape(graph)
     sink_quantize_through_concat(graph)
     sink_single_reshape(graph)
     remove_redundant_reshape_transpose(graph)
-    remove_redundant_reshape(graph, 'ArmReshape')
-    remove_redundant_transpose(graph)
-    remove_redundant_transpose2(graph)
+
+    while remove_redundant_reshape(graph, 'ArmReshape'):
+        pass
+    while remove_redundant_transpose(graph):
+        pass
+    while remove_redundant_transpose2(graph):
+        pass
+
     remove_useless_op(graph, ['ArmReshape', 'ArmTranspose'])
 
     fuse_const(graph)
