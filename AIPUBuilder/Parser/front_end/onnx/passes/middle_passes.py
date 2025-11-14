@@ -4588,9 +4588,16 @@ def merge_channel_shuffle(graph):
                         if transpose_obj.data_format == 'NHWC' \
                         else [0, 2, 1] + list(range(3, perm_dim))
                     if transpose_obj.perm == ref_perm:
-                        matched = True
                         group = reshape1_out_shape[-2] if transpose_obj.data_format == 'NHWC' else reshape1_out_shape[1]
                         splits = 1
+                        if transpose_obj.data_format == 'NHWC':
+                            channel_shape = reshape2_out_shape[-1] if need_insert_front_reshape else reshape1_in_shape[-1]
+                        else:
+                            channel_shape = reshape2_out_shape[1] if need_insert_front_reshape else reshape1_in_shape[1]
+
+                        if channel_shape % group != 0:
+                            continue
+                        matched = True
                         in_edges = graph.sorted_in_edges(reshape1, data=True)
                         src, _, in_attr = in_edges[0]
                         if need_insert_front_reshape:
