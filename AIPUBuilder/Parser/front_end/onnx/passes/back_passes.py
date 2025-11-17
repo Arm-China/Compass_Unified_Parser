@@ -5348,7 +5348,7 @@ def sink_single_transpose(graph):
         if transpose_obj is not None and unaware_obj is not None:
             trans_out_edges = graph.sorted_out_edges(transpose, data=True)
             if len(trans_out_edges) == 1 and len(unaware_obj.get_out_ports()) == 1:
-                unaware_in_edges = graph.sorted_in_edges(unaware, True)
+                unaware_in_edges = graph.sorted_in_edges(unaware, data=True)
                 if unaware_obj.num_in_ports() > 1:
                     all_const = True
                     for in_name, _, _ in unaware_in_edges:
@@ -5425,6 +5425,7 @@ def sink_single_transpose(graph):
                         unaware_obj.negative_slope, slope_perm)
                 if unaware_obj.type == 'ArmQuantize':
                     transpose_obj.quantize = True
+                clear_redundant_nodes(graph)
         else:
             ERROR('[Parser]: Meets invalid Node(%s) or Node(%s) in sink_single_transpose!' % (
                 transpose, unaware))

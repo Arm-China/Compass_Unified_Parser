@@ -639,7 +639,8 @@ class Op(abc.ABC):
         elif isinstance(self, ConstLikeOp):
             from .op_factory import is_compass_supported_op
             if not is_compass_supported_op(self.type):
-                WARN(f'{self.type}Op({self.name}) still not support dynamic, we infer it as constant instead.')
+                if self._graph._attr['enable_ds'] or self.is_inputs_dynamic():
+                    WARN(f'{self.type}Op({self.name}) still not support dynamic, we infer it as constant instead.')
                 return True
             else:
                 if self._graph._attr['enable_ds'] or self.is_inputs_dynamic():
@@ -676,7 +677,8 @@ class Op(abc.ABC):
         elif isinstance(self, ConstLikeOp):
             from .op_factory import is_compass_supported_op
             if not is_compass_supported_op(self.type):
-                WARN(f'{self.type}Op({self.name}) still not support dynamic, we infer it as constant instead.')
+                if self._graph._attr['enable_ds'] or self.is_inputs_dynamic():
+                    WARN(f'{self.type}Op({self.name}) still not support dynamic, we infer it as constant instead.')
                 return True
             else:
                 if self._graph._attr['enable_ds'] or self.is_inputs_dynamic():
