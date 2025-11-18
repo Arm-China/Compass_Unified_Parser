@@ -8078,13 +8078,13 @@ def convert_attention(graph):
             if att in graph._attr['output_names']:
                 idx = graph._attr['output_names'].index(att)
                 if 1 in out_ports:
-                    graph._attr['output_names'].insert(idx, key)
+                    graph._attr['output_names'].insert(idx + 1, key)
                     idx += 1
                 if 2 in out_ports:
-                    graph._attr['output_names'].insert(idx, value)
+                    graph._attr['output_names'].insert(idx + 1, value)
                     idx += 1
                 if 3 in out_ports:
-                    graph._attr['output_names'].insert(idx, qk_matmul_node)
+                    graph._attr['output_names'].insert(idx + 1, qk_matmul_node)
 
         clear_redundant_nodes(graph)
 

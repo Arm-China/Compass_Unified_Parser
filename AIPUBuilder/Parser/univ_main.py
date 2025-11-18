@@ -121,13 +121,14 @@ optional arguments in Common section of <net.cfg>:
     loop_max_count      Loop max count for Loop op infer shape. (default: 100)
     dynamic_axes        [Experiment]Specific which axis is dynamic in input shapes. List corresponding to input_shape 
                         or string of input_shape(onnx only).
-                        Accepted range is [-r, r-1] where r = rank(input)(default: None)
-                        Example:
-                            dynamic_axes=[],[0, 3] means two inputs in model, and axis 0 and axis 3 in 2nd input are 
-                            dynamic, and you can specify the symbol like this: dynamic_axes=[],[0:batch, 3:seq_len].
-                            If you not specify the symbol, we will init it as d0, d1...
-                            dynamic_axes=batch_size,sequence_length means batch_size and sequence_length axes named in 
-                            model input shapes are dynamic.
+                        Axis accepted range is [-r, r-1] where r = rank(input)(default: None)
+                        There are 3 config methods as below:
+                        a:  dynamic_axes=[],[0, 3] means two inputs in model, and axis 0 and axis 3 in 2nd input are 
+                            dynamic, we will init symbol as default like: d0, d1...
+                        b:  dynamic_axes=[],[0:batch, 3:seq_len] means two inputs in model, and axis 0 and axis 3 in 
+                            2nd input are dynamic, and we init symbol as you set in cfg: batch, seq_len.
+                        c:  dynamic_axes=batch_size,sequence_length means batch_size and sequence_length axes named in 
+                            model input shapes are dynamic. These named axes MUST be defined in onnx model.
     ''')
     args.add_argument('-c', '--cfg', metavar='<net.cfg>',
                       type=str, required=True,
