@@ -63,8 +63,7 @@ class GroupQueryAttentionMsOp(OpHasMultipleOutPorts, OnnxOp):
             s = np.sum(tmp, axis=axis, keepdims=True)
             return tmp / s
 
-        # TODO
-        if self.do_rotary != 0 or self.local_window_size != -1 or self.smooth_softmax != 0:
+        if self.local_window_size != -1 or self.smooth_softmax != 0:
             raise NotImplementedError
 
         query = inputs[0]
@@ -81,6 +80,15 @@ class GroupQueryAttentionMsOp(OpHasMultipleOutPorts, OnnxOp):
             head_size_q = query.shape[-1] // self.num_heads
             head_size_k = key.shape[-1] // self.kv_num_heads
             head_size_v = value.shape[-1] // self.kv_num_heads
+
+        if self.do_rotary != 0:
+            assert len(inputs) >= 10 and inputs[7] is not None and inputs[8] is not None and inputs[
+                9] is not None, 'cos_cache & sin_cache & position ids must be provided if do_rotary is True.'
+            from .llm_ops import RotaryEmbeddingOp
+            q_list = [query, inputs[7], inputs[8], inputs[9]]
+            query = RotaryEmbeddingOp.rope_infer(q_list, self.num_heads, self.rotary_interleaved)
+            k_list = [key, inputs[7], inputs[8], inputs[9]]
+            key = RotaryEmbeddingOp.rope_infer(k_list, self.num_heads, self.rotary_interleaved)
 
         new_shape_q = [batch_size, query.shape[1], self.num_heads, head_size_q]
         query = np.reshape(query, new_shape_q)

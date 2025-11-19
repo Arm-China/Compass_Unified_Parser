@@ -7525,8 +7525,7 @@ def convert_gqa(graph):
             continue
         gqa_in_edges = graph.sorted_in_edges(gqa, data=True)
 
-        # TODO, support more cases of gqa
-        if gqa_obj.do_rotary != 0 or gqa_obj.local_window_size != -1 or gqa_obj.smooth_softmax != 0:
+        if gqa_obj.local_window_size != -1 or gqa_obj.smooth_softmax != 0:
             raise NotImplementedError
 
         input_shapes = gqa_obj.get_input_shapes()
@@ -7554,13 +7553,68 @@ def convert_gqa(graph):
             split_n_attr = {'name': split_n, 'axis': 2, 'opset_version': 13}
             graph.add_edge(gqa_in_edges[0][0], split_n, **{'src_out_port': 0, 'dst_in_port': 0,
                                                            'tensor': Tensor(shape=tuple(q_shape))})
+
+            q_shape = tuple(q_shape[:2] + [split_size[0]])
+            k_shape = tuple(q_shape[:2] + [split_size[1]])
+            v_shape = tuple(q_shape[:2] + [split_size[2]])
+
             graph.add_edge(split_n, gqa, **{'src_out_port': 0, 'dst_in_port': 0,
-                                            'tensor': Tensor(shape=tuple(q_shape[:2] + [split_size[0]]))})
+                                            'tensor': Tensor(shape=q_shape)})
             graph.add_edge(split_n, gqa, **{'src_out_port': 1, 'dst_in_port': 1,
-                                            'tensor': Tensor(shape=tuple(q_shape[:2] + [split_size[1]]))})
+                                            'tensor': Tensor(shape=k_shape)})
             graph.add_edge(split_n, gqa, **{'src_out_port': 2, 'dst_in_port': 2,
-                                            'tensor': Tensor(shape=tuple(q_shape[:2] + [split_size[2]]))})
+                                            'tensor': Tensor(shape=v_shape)})
             NodeWrap(graph, split_n).replace_obj('Split', split_n_attr)
+
+            gqa_in_edges = graph.sorted_in_edges(gqa, data=True)
+
+        if gqa_obj.do_rotary != 0:
+            assert len(gqa_in_edges) >= 10
+
+            graph.remove_edges_from(gqa_in_edges[:2])
+
+            # Add RoPE node before Q & K
+            rope_q = get_valid_node_name(graph, gqa + '_rope_q')
+            rope_q_attr = {
+                'name': rope_q,
+                'interleaved': gqa_obj.rotary_interleaved,
+                'num_heads': gqa_obj.num_heads,
+                'opset_version': 23}
+            graph.add_node(rope_q)
+
+            graph.add_edge(gqa_in_edges[0][0], rope_q, **{'src_out_port': 0, 'dst_in_port': 0,
+                                                          'tensor': gqa_in_edges[0][2]['tensor']})
+            graph.add_edge(gqa_in_edges[7][0], rope_q, **{'src_out_port': 0, 'dst_in_port': 1,
+                                                          'tensor': gqa_in_edges[7][2]['tensor']})
+            graph.add_edge(gqa_in_edges[8][0], rope_q, **{'src_out_port': 0, 'dst_in_port': 2,
+                                                          'tensor': gqa_in_edges[8][2]['tensor']})
+            graph.add_edge(gqa_in_edges[9][0], rope_q, **{'src_out_port': 0, 'dst_in_port': 3,
+                                                          'tensor': gqa_in_edges[9][2]['tensor']})
+            graph.add_edge(rope_q, gqa, **{'src_out_port': 0, 'dst_in_port': 0,
+                                           'tensor': copy.deepcopy(gqa_in_edges[0][2]['tensor'])})
+
+            NodeWrap(graph, rope_q).replace_obj('RotaryEmbedding', rope_q_attr)
+
+            rope_k = get_valid_node_name(graph, gqa + '_rope_k')
+            rope_k_attr = {
+                'name': rope_k,
+                'interleaved': gqa_obj.rotary_interleaved,
+                'num_heads': gqa_obj.num_heads,
+                'opset_version': 23}
+            graph.add_node(rope_k)
+
+            graph.add_edge(gqa_in_edges[1][0], rope_k, **{'src_out_port': 0, 'dst_in_port': 0,
+                                                          'tensor': gqa_in_edges[1][2]['tensor']})
+            graph.add_edge(gqa_in_edges[7][0], rope_k, **{'src_out_port': 0, 'dst_in_port': 1,
+                                                          'tensor': gqa_in_edges[7][2]['tensor']})
+            graph.add_edge(gqa_in_edges[8][0], rope_k, **{'src_out_port': 0, 'dst_in_port': 2,
+                                                          'tensor': gqa_in_edges[8][2]['tensor']})
+            graph.add_edge(gqa_in_edges[9][0], rope_k, **{'src_out_port': 0, 'dst_in_port': 3,
+                                                          'tensor': gqa_in_edges[9][2]['tensor']})
+            graph.add_edge(rope_k, gqa, **{'src_out_port': 0, 'dst_in_port': 1,
+                                           'tensor': copy.deepcopy(gqa_in_edges[1][2]['tensor'])})
+
+            NodeWrap(graph, rope_k).replace_obj('RotaryEmbedding', rope_k_attr)
 
             gqa_in_edges = graph.sorted_in_edges(gqa, data=True)
 
@@ -7913,7 +7967,17 @@ def convert_attention(graph):
                     graph.add_edge(last_node, add, **{'src_out_port': 0, 'dst_in_port': 0,
                                                       'tensor': Tensor(shape=tuple(matmul_out_shape))})
                     NodeWrap(graph, add).replace_obj('Add', add_attr)
-                    attn_bias_node = add
+
+                    add_bias = get_valid_node_name(graph, att + '_add_bias')
+                    graph.add_node(add_bias)
+                    add_bias_attr = {'name': add_bias, 'opset_version': 13}
+
+                    graph.add_edge(add, add_bias, **{'src_out_port': 0, 'dst_in_port': 0,
+                                                     'tensor': Tensor(shape=tuple(matmul_out_shape))})
+                    graph.add_edge(mul_scale, add_bias, **{'src_out_port': 0, 'dst_in_port': 1,
+                                                           'tensor': Tensor(shape=tuple(matmul_out_shape))})
+                    NodeWrap(graph, add_bias).replace_obj('Add', add_bias_attr)
+                    attn_bias_node = add_bias
             else:
                 attn_bias = np.zeros((q_seq_len, kv_seq_len), dtype=input_dtypes[0])
                 temp_mask = np.ones_like(attn_bias, dtype=bool)
