@@ -7596,7 +7596,8 @@ def convert_gqa(graph):
         att_attr = gqa_obj.copied_attr()
         att_attr.update({'opset_version': 23,
                          'q_num_heads': gqa_obj.num_heads,
-                         'kv_num_heads': gqa_obj.kv_num_heads})
+                         'kv_num_heads': gqa_obj.kv_num_heads,
+                         'is_causal': 1})
         NodeWrap(graph, gqa).replace_obj('Attention', att_attr)
         clear_redundant_nodes(graph)
 
