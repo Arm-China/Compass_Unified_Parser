@@ -6679,7 +6679,6 @@ def back_passes(graph, params):
     remove_useless_op(graph, ['ArmReduce', 'ArmTile', 'ArmCast'])
     remove_redundant_bn(graph)
     remove_redundant_slice(graph)
-    convert_special_transpose(graph)
     remove_special_transpose(graph)
     sink_transpose_through_special_reshape(graph)
     convert_special_reshape(graph)
@@ -6738,6 +6737,10 @@ def back_passes(graph, params):
                     '[Parser]: Meets exception (%s) in remove redundant Transpose! But will proceed!', str(e))
                 infer(graph)
 
+    # After transpose sinked/merged, try to convert special transpose
+    convert_special_transpose(graph)
+    while remove_redundant_reshape(graph, 'ArmReshape'):
+        pass
     merge_transpose_matmul_gemm(graph)
     insert_cast_if_must(graph)
     remove_redundant_cast(graph)
