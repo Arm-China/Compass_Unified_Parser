@@ -179,7 +179,7 @@ class Op(abc.ABC):
 
     @staticmethod
     def is_all_global_symbols(current_symbols, global_symbols):
-        if current_symbols is None or None in current_symbols:
+        if current_symbols is None or None in current_symbols or not current_symbols:
             return False
         for s in current_symbols:
             if not isinstance(s, (int, np.generic)):
@@ -2986,10 +2986,13 @@ class MultidirectionalBroadcastOp(Op):
                             max_symbol = sym
                             break
                     if max_symbol is None:
-                        max_symbol = non_one_list[-1]
+                        max_symbol = Max(*non_one_list)
                     output_symbol.append(max_symbol)
                 else:
-                    output_symbol.append(non_one_list[0])
+                    if non_one_list:
+                        output_symbol.append(non_one_list[0])
+                    else:
+                        output_symbol.append(1)
         else:
             output_symbol = None
         return output_symbol
@@ -3101,32 +3104,35 @@ class ArithmeticOp(MultidirectionalBroadcastOp, LayoutUnawareOp, OpHasOneOutPort
                     else:
                         new_s = s.subs(sym_mp)
                         symbols_set = new_s.free_symbols
-                        if Op.is_all_global_symbols(symbols_set, self._graph._attr['global_symbols']):
+                        if new_s.is_Integer:
+                            output_symbol.append(int(new_s))
+                        elif isinstance(new_s, Max):
+                            has_global_symbol = False
+                            for _s in symbols_set:
+                                if _s in self._graph._attr['global_symbols']:
+                                    has_global_symbol = True
+                                    output_symbol.append(_s)
+                                    break
+                            if not has_global_symbol:
+                                output_symbol.append(new_s)
+                        elif Op.is_all_global_symbols(symbols_set, self._graph._attr['global_symbols']):
                             output_symbol.append(new_s)
                         else:
-                            if isinstance(new_s, Max):
-                                has_global_symbol = False
-                                for _s in symbols_set:
-                                    if _s in self._graph._attr['global_symbols']:
-                                        has_global_symbol = True
-                                        output_symbol.append(_s)
-                                        break
-                                if not has_global_symbol:
-                                    output_symbol.append(new_s)
-                            else:
-                                if inp_symbol[0] and inp_symbol[1]:
-                                    if len(inp_symbol[0]) == max_len and inp_symbol[0][i] in self._graph._attr['global_symbols']:
-                                        output_symbol.append(inp_symbol[0][i])
-                                    elif len(inp_symbol[1]) == max_len and inp_symbol[1][i] in self._graph._attr['global_symbols']:
-                                        output_symbol.append(inp_symbol[1][i])
-                                    else:
-                                        output_symbol.append(new_s)
-                                elif inp_symbol[0] and len(inp_symbol[0]) == max_len:
+                            if inp_symbol[0] and inp_symbol[1]:
+                                if len(inp_symbol[0]) == max_len and inp_symbol[0][i] in self._graph._attr[
+                                        'global_symbols']:
                                     output_symbol.append(inp_symbol[0][i])
-                                elif inp_symbol[1] and len(inp_symbol[1]) == max_len:
+                                elif len(inp_symbol[1]) == max_len and inp_symbol[1][i] in self._graph._attr[
+                                        'global_symbols']:
                                     output_symbol.append(inp_symbol[1][i])
                                 else:
                                     output_symbol.append(new_s)
+                            elif inp_symbol[0] and len(inp_symbol[0]) == max_len:
+                                output_symbol.append(inp_symbol[0][i])
+                            elif inp_symbol[1] and len(inp_symbol[1]) == max_len:
+                                output_symbol.append(inp_symbol[1][i])
+                            else:
+                                output_symbol.append(new_s)
                 self.set_out_symbol(output_symbol)
 
 

@@ -437,6 +437,6 @@ def process_graph(graph, params):
         remove_useless_op(graph, ['ArmCast'])
         if graph._attr['enable_ds']:
             fuse_const(graph, final=True)
-            infer_symbol(graph)
+        infer_symbol(graph)
     except Exception as e:
         ERROR('[Parser]: Meets exception in last infer (%s)!' % str(e))

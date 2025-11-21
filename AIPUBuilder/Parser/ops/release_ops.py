@@ -3335,8 +3335,6 @@ class ArmMatMulOp(OpHasOneOutPort, ArmOp):
     def infer_shape(self):
         super(ArmMatMulOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        if len(inputs[0].shape) != 4 or len(inputs[1].shape) != 4:
-            ERROR('[Parser]: Currently only 4 dim input are supported in ArmMatMulOp.!')
         A = inputs[0]
         B = inputs[1]
         #out_tensor = np.matmul(A, B)
@@ -3349,11 +3347,14 @@ class ArmMatMulOp(OpHasOneOutPort, ArmOp):
 
     def cal_output_symbol(self):
         a_symbol, b_symbol = self.get_input_symbols(local=True)
+        assert len(a_symbol) == len(b_symbol), 'MatMul should have same length inputs.'
+        max_dim = len(a_symbol)
+        trans_perm = list(range(max_dim))
+        trans_perm[-2], trans_perm[-1] = trans_perm[-1], trans_perm[-2]
         if bool(self.trans_a):
-            a_symbol = [a_symbol[idx] for idx in (0, 1, 3, 2)]
+            a_symbol = [a_symbol[idx] for idx in trans_perm]
         if bool(self.trans_b):
-            b_symbol = [b_symbol[idx] for idx in (0, 1, 3, 2)]
-        max_dim = 4
+            b_symbol = [b_symbol[idx] for idx in trans_perm]
         out_symbol = []
 
         for i in range(max_dim):

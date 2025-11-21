@@ -14081,7 +14081,7 @@ def adjust_2d_to_4d(graph):
 
 
 def adjust_3d_to_4d(graph):
-    pure_inputs_types = ['InstanceNormalization', 'LRN', 'MatMul', 'Moments', 'ArmGroupNorm']
+    pure_inputs_types = ['InstanceNormalization', 'LRN', 'Moments', 'ArmGroupNorm']
     mixed_inputs_types = ['Resize']
     for op_type in pure_inputs_types + mixed_inputs_types:
         matches = single_node_matcher(graph, op_type)
@@ -14468,5 +14468,5 @@ def middle_passes(graph, params):
     adjust_1d_matmul(graph)
     adjust_scalar_to_1d(graph)
     adjust_1d_to_4d(graph)
-    adjust_2d_to_4d(graph)
+    # adjust_2d_to_4d(graph)
     adjust_3d_to_4d(graph)
