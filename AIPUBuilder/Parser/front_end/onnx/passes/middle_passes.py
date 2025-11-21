@@ -7529,6 +7529,7 @@ def convert_gqa(graph):
             raise NotImplementedError
 
         input_shapes = gqa_obj.get_input_shapes()
+        input_dtypes = gqa_obj.get_input_dtypes()
         q_shape = input_shapes[0]
         if len(q_shape) != 3:
             ERROR(
@@ -7538,7 +7539,7 @@ def convert_gqa(graph):
         if NodeWrap(graph, gqa_in_edges[1][0])['object'].type == 'Blank':
             assert NodeWrap(graph, gqa_in_edges[2][0])[
                 'object'].type == 'Blank', 'key or value should be Blank if use packed query'
-            graph.remove_edge(gqa_in_edges[:3])
+            graph.remove_edges_from(gqa_in_edges[:3])
             # Add split node
             split_n = get_valid_node_name(graph, gqa + '_split')
             graph.add_node(split_n)
@@ -7554,16 +7555,16 @@ def convert_gqa(graph):
             graph.add_edge(gqa_in_edges[0][0], split_n, **{'src_out_port': 0, 'dst_in_port': 0,
                                                            'tensor': Tensor(shape=tuple(q_shape))})
 
-            q_shape = tuple(q_shape[:2] + [split_size[0]])
-            k_shape = tuple(q_shape[:2] + [split_size[1]])
-            v_shape = tuple(q_shape[:2] + [split_size[2]])
+            q_shape = tuple(input_shapes[0][:2] + [split_size[0]])
+            k_shape = tuple(input_shapes[0][:2] + [split_size[1]])
+            v_shape = tuple(input_shapes[0][:2] + [split_size[2]])
 
             graph.add_edge(split_n, gqa, **{'src_out_port': 0, 'dst_in_port': 0,
-                                            'tensor': Tensor(shape=q_shape)})
+                                            'tensor': Tensor(shape=q_shape, dtype=input_dtypes[0])})
             graph.add_edge(split_n, gqa, **{'src_out_port': 1, 'dst_in_port': 1,
-                                            'tensor': Tensor(shape=k_shape)})
+                                            'tensor': Tensor(shape=k_shape, dtype=input_dtypes[0])})
             graph.add_edge(split_n, gqa, **{'src_out_port': 2, 'dst_in_port': 2,
-                                            'tensor': Tensor(shape=v_shape)})
+                                            'tensor': Tensor(shape=v_shape, dtype=input_dtypes[0])})
             NodeWrap(graph, split_n).replace_obj('Split', split_n_attr)
 
             gqa_in_edges = graph.sorted_in_edges(gqa, data=True)
@@ -7642,7 +7643,7 @@ def convert_gqa(graph):
                 name=in_tensor_name, is_const=True)}
             graph.add_edge(
                 in_tensor_name, gqa, **edge_attr)
-        elif NodeWrap(graph, gqa_in_edges[10][0])['object'].type != 'Blank':
+        else:
             attn_bias_in_attr = gqa_in_edges[10][-1]
             attn_bias_in_attr['dst_in_port'] = 3
             graph.add_edge(gqa_in_edges[10][0], gqa, **attn_bias_in_attr)

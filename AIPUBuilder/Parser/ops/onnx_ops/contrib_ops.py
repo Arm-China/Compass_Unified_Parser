@@ -71,7 +71,10 @@ class GroupQueryAttentionMsOp(OpHasMultipleOutPorts, OnnxOp):
         if inputs[1] is None and inputs[2] is None:
             # packed QKV
             head_size = query.shape[-1] // (self.num_heads + 2 * self.kv_num_heads)
-            split_size = [self.num_heads * head_size, self.kv_num_heads * head_size, self.kv_num_heads * head_size]
+            split_size = [
+                self.num_heads * head_size,
+                self.num_heads * head_size + self.kv_num_heads * head_size,
+            ]
             query, key, value = np.split(inputs[0], split_size, axis=-1)
             head_size_q = head_size_k = head_size_v = head_size
         else:
