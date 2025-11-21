@@ -2781,7 +2781,7 @@ class TopKOp(OpHasAxis, OpHasMultipleOutPorts, OnnxOp):
             k = self.k
         else:
             in_consts = self.sorted_in_consts()
-            k = int(in_consts[0][2]) if in_consts else -1
+            k = int(in_consts[-1][2]) if in_consts else -1
         if k > 0:
             largest = bool(self.largest) if cur_ver >= 11 else True
             need_sorted = bool(self.sorted) if cur_ver >= 11 else True
