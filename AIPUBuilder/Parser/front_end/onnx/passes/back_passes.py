@@ -2965,6 +2965,8 @@ def rename_pad(graph):
                 if any(pad > max_pad for pad, max_pad in zip(pads_value, max_pads_value)):
                     WARN('[Parser]: Meets unsupported pads of Pad Node(%s) in rename_pad; '
                          'pads can not be larger than input shape!' % pad)
+            if pad_obj.mode == 'edge' and all([v <= 1 for v in pads_value]):  # lib have good perf in symmetric mode
+                pad_obj.mode = 'symmetric'
             pad_attr = pad_obj.copied_attr()
             pad_attr.update({'pads': pads_value})
             pad_attr.update({'constant_value': float(pad_obj.value)})
