@@ -212,7 +212,7 @@ class MatMulNBitsMsOp(OpHasOneOutPort, OnnxOp):
                 if item in input_names:
                     item_idx = input_names.index(item) + 2
                     inputs = self.get_input_tensors()
-                    if len(inputs) > item_idx:
+                    if len(inputs) > item_idx and inputs[item_idx] is not None:
                         ret = inputs[item_idx]
                         if 'scale' in item:
                             ret = np.array(ret)
