@@ -280,6 +280,16 @@ def get_dict_params(params):
     return ret
 
 
+def print_debug_info(e):
+    import inspect
+    frame = inspect.trace()[-1]
+    err_func = frame[3]
+    WARN(f"error func name：{err_func}")
+    WARN(f"error file：{frame[1]}，line {frame[2]}")
+    WARN(f"error type：{type(e).__name__}")
+    WARN(f"error info：{str(e)}")
+
+
 def unpack_4bit(data, dims):
     '''Convert a packed uint4 array to unpacked uint4 array represented as uint8.
 

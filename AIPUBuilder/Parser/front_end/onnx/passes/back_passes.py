@@ -11,7 +11,7 @@ from ....common.defs import Tensor, FLOAT_EQUAL, Framework
 from ....graph.graph import SubGraph
 from ....logger import INFO, DEBUG, WARN, ERROR, FATAL
 from ....common.utils import extend_lists, list_string_to_list, float_string_to_list, get_converted_dtype, \
-    get_closest_dtype, is_continuous_num
+    get_closest_dtype, is_continuous_num, print_debug_info
 from ....graph.node_wrap import NodeWrap
 from ....graph.graph_algo import determined_sort, get_valid_node_name, clear_redundant_nodes, has_path, infer
 from ....graph.pattern_match import matched_patterns, single_node_matcher, two_nodes_matcher
@@ -6218,7 +6218,7 @@ def sink_transpose_through_special_ops(graph):
                     else:
                         tr_in_shape = unaware_out_tensor.get_shape()
                         if tr_in_shape is not None and None not in tr_in_shape:
-                            new_shape = tr_in_shape[:]
+                            new_shape = list(tr_in_shape)[:]
                             new_shape[unaware_obj.axis] = 1
                             unaware_out_tensor.shape = tuple(new_shape)
                 elif unaware_obj.type == 'ArmNormalization':
@@ -6754,9 +6754,8 @@ def back_passes(graph, params):
                     nodes_num_list.pop(0)
                     nodes_num_list.append(len(graph.nodes))
             except Exception as e:
-                WARN(
-                    '[Parser]: Meets exception (%s) in remove redundant Transpose! But will proceed!', str(e))
-                infer(graph)
+                print_debug_info(e)
+                FATAL('[Parser]: Meets exception in remove redundant Transpose!')
 
     # After transpose sinked/merged, try to convert special transpose
     convert_special_transpose(graph)
