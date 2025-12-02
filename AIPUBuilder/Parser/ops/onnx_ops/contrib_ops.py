@@ -221,7 +221,8 @@ class MatMulNBitsMsOp(OpHasOneOutPort, OnnxOp):
                             if ret.dtype == 'uint8':
                                 packed_shape = (self.N, int(np.ceil(k_blocks * self.bits / 8)))
                                 assert ret.shape == packed_shape
-                                ret = unpack_4bit(ret, [self.N, k_blocks]).astype(inputs[0].dtype)
+                                ret = (unpack_4bit(ret, [self.N, k_blocks]) - 2 **
+                                       (self.bits - 1)).astype(inputs[0].dtype)
                             else:
                                 assert ret.dtype == inputs[0].dtype, 'Unpacked zp should be same dtype with input.'
                                 assert ret.shape == (self.N, k_blocks)
@@ -229,7 +230,7 @@ class MatMulNBitsMsOp(OpHasOneOutPort, OnnxOp):
                         self.__dict__['_attr'][item] = Attribute(item, {'type': AttrType.TENSOR, 'value': ret})
                     if ret is None:
                         if item == 'zero_points':
-                            fill_value = 2**(self.bits - 1)
+                            fill_value = 0          # unsigned saved default, - 2**(self.bits - 1) if signed
                             ret = np.full(self.scales.shape, fill_value, dtype=inputs[0].dtype)
                         if item == 'bias':
                             ret = np.zeros([self.N], dtype=inputs[0].dtype)
@@ -258,7 +259,7 @@ class MatMulNBitsMsOp(OpHasOneOutPort, OnnxOp):
             # high_nbits = (B >> self.bits) & 0x0F
             # low_nbits = B & 0x0F
             # quant_weights = np.concatenate([high_nbits, low_nbits], axis=-1).reshape(self.N, -1)
-            quant_weights = unpack_4bit(B.flatten(), unpack_shape)
+            quant_weights = unpack_4bit(B.flatten(), unpack_shape) - 2**(self.bits - 1)
         else:
             quant_weights = B
 

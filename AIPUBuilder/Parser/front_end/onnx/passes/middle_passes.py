@@ -7694,7 +7694,7 @@ def convert_matmulnbits(graph):
                 # split N bits from quantized weights
                 B = node_in_edges[1][-1]['tensor'].value
                 unpack_shape = [node_obj.N, B.size * 2 // node_obj.N]
-                quant_weights = unpack_4bit(B, unpack_shape)
+                quant_weights = unpack_4bit(B, unpack_shape) - 2**(node_obj.bits - 1)
             else:
                 quant_weights = node_in_edges[1]['tensor'].value
             matmul_attr = node_obj.copied_attr()
