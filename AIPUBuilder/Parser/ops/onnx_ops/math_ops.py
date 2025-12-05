@@ -527,7 +527,7 @@ class EluOp(LayoutUnawareOp, BaseActivationOp, OnnxOp):
         self.set_out_tensor(out_tensor)
 
 
-class ErfOp(SameShapeOp, OpHasOneOutPort, OnnxOp):
+class ErfOp(SameShapeOp, OnnxOp):
     @classmethod
     def attributes(cls):
         return {9: {}, 13: {}}
@@ -2510,7 +2510,7 @@ class SinhOp(LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
         self.set_out_tensor(out_tensor)
 
 
-class SoftmaxOp(SameShapeOp, OpHasAxis, OpHasOneOutPort, OnnxOp):
+class SoftmaxOp(SameShapeOp, OpHasAxis, OnnxOp):
     @classmethod
     def attributes(cls):
         return {1: {'axis': {'default': 1}},
@@ -2614,7 +2614,7 @@ class SoftsignOp(LayoutUnawareOp, BaseActivationOp, OnnxOp):
         self.set_out_tensor(out_tensor.numpy())
 
 
-class SqrtOp(LayoutUnawareOp, SameShapeOp, OpHasOneOutPort, OpHasNonZeroInput, OnnxOp):
+class SqrtOp(LayoutUnawareOp, SameShapeOp, OpHasNonZeroInput, OnnxOp):
     @classmethod
     def attributes(cls):
         return {1: {'consumed_inputs': {'type': AttrType.INTS}},

@@ -6,6 +6,7 @@ import numpy as np
 import torch
 import tensorflow as tf
 import sys
+import sympy as sp
 from ..op import *
 from ...front_end.onnx.buffer import ONNX_NP_TENSOR_MAP
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
@@ -39,7 +40,7 @@ class BitShiftOp(OpNeedBroadcast, OpHasOneOutPort, OnnxOp):
         self.set_out_tensor(out_tensor)
 
 
-class CastOp(OpHasOneOutPort, LayoutUnawareOp, SameShapeOp, OnnxOp):
+class CastOp(LayoutUnawareOp, SameShapeOp, OnnxOp):
     @classmethod
     def attributes(cls):
         return {1: {'to': {'type': AttrType.STRING, 'required': True}},
@@ -247,7 +248,7 @@ class ConstantOp(OpHasOneOutPort, ConstOp, OnnxOp):
 
     def infer_shape(self):
         super(ConstantOp, self).infer_shape()
-        self.set_out_tensor(self.value, list(self.value.shape))
+        self.set_out_tensor(self.value, symbol=list(self.value.shape))
 
     def __getattr__(self, item):
         ret = None
@@ -821,14 +822,6 @@ class RangeOp(OpHasOneOutPort, ConstLikeOp, OnnxOp):
         self.update_attributes(RangeOp, attr_dict)
         assert self.check_required(), 'RangeOp is missing a required parameter.'
 
-    def infer_shape(self):
-        super(RangeOp, self).infer_shape()
-        if any(val is None for val in [self.start, self.limit, self.delta]):
-            out_tensor = None
-        else:
-            out_tensor = np.arange(self.start, self.limit, self.delta).astype(self.start.dtype)
-        self.set_out_tensor(out_tensor)
-
     def __getattr__(self, item):
         ret = None
         try:
@@ -846,6 +839,25 @@ class RangeOp(OpHasOneOutPort, ConstLikeOp, OnnxOp):
         if ret is None:
             ret = super(RangeOp, self).__getattr__(item)
         return ret
+
+    def infer_shape(self):
+        super(RangeOp, self).infer_shape()
+        if any(val is None for val in [self.start, self.limit, self.delta]):
+            out_tensor = None
+        else:
+            out_tensor = np.arange(self.start, self.limit, self.delta).astype(self.start.dtype)
+        self.set_out_tensor(out_tensor)
+
+    def infer_symbol(self):
+        input_tensor_symbols = self.get_input_symbol_values()
+        invalid = any([inp is None for inp in input_tensor_symbols])
+        if not invalid:
+            assert len(input_tensor_symbols) == 3
+            if isinstance(input_tensor_symbols[2], int) and input_tensor_symbols[2] == 1:
+                out_symbol = input_tensor_symbols[1] - input_tensor_symbols[0]
+            else:
+                out_symbol = sp.ceiling((input_tensor_symbols[1] - input_tensor_symbols[0]) / input_tensor_symbols[2])
+            self.set_out_symbol([out_symbol])
 
 
 class ReshapeOp(OpHasOneOutPort, OnnxOp):
@@ -1267,6 +1279,8 @@ class ShapeOp(OpHasOneOutPort, ConstLikeOp, OnnxOp):
             if Op.is_all_global_symbols(inp_symbol, self._graph._attr['global_symbols']):
                 self.set_out_symbol_value(inp_symbol)
                 self.set_out_symbol([len(inp_symbol)])
+            if all([isinstance(s, int) for s in inp_symbol]) and not self.is_inputs_dynamic():
+                self.set_out_const()
 
 
 class SizeOp(OpHasOneOutPort, ConstLikeOp, OnnxOp):
@@ -1541,7 +1555,10 @@ class SliceOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
                 start = input_symbol_values[1][0]
                 end = input_symbol_values[2][0]
                 step = input_symbol_values[4][0]
-                out_symbol_value = input_symbol_values[0][start:end:step]
+                if isinstance(start, int) and isinstance(end, int) and isinstance(step, int):
+                    out_symbol_value = input_symbol_values[0][start:end:step]
+                else:
+                    out_symbol_value = None
         self.set_out_symbol_value(out_symbol_value)
 
         inp_symbol = self.get_input_symbols()[0]
@@ -1754,6 +1771,18 @@ class SqueezeOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
         else:
             out_symbol = None
         return out_symbol
+
+    def infer_symbol(self):
+        input_symbol_values = self.get_input_symbol_values()
+        invalid = any([inp is None for inp in input_symbol_values])
+        if invalid:
+            out_symbol_value = None
+        else:
+            assert input_symbol_values[1] == [0], 'infer symbol value only support 1D.'
+            out_symbol_value = input_symbol_values[0][0]
+        self.set_out_symbol_value(out_symbol_value)
+
+        super().infer_symbol()
 
 
 class TileOp(OpHasOneOutPort, OnnxOp):

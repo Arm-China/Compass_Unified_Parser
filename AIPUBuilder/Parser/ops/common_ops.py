@@ -1129,7 +1129,7 @@ class SegmentReduceOp(OpHasMethod, OpHasOneOutPort, CommonOp):
         self.set_out_tensor(out_tensor)
 
 
-class SiluOp(SameShapeOp, LayoutUnawareOp, ActivationOnlyOp, OpHasOneOutPort, CommonOp):
+class SiluOp(SameShapeOp, LayoutUnawareOp, ActivationOnlyOp, CommonOp):
     def infer_shape(self):
         super(SiluOp, self).infer_shape()
         inputs = self.get_input_tensors()

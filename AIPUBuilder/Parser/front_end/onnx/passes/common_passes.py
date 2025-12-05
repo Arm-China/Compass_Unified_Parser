@@ -35,7 +35,7 @@ def fuse_const(graph, final=False):
             if not isinstance(node_obj, (ConstLikeOp, ConstOp)) \
                     and isinstance(node_obj, OpHasOneOutPort) \
                     and node_obj.is_all_inputs_const() \
-                    and not node_obj.is_inputs_dynamic():
+                    and not node_obj.is_outputs_dynamic():
                 out_edge = graph.sorted_out_edges(node_name, data=True)
                 if len(out_edge) >= 1 and out_edge[0][2]['tensor'] is not None and out_edge[0][2]['tensor'].value is not None:
                     if final:
@@ -109,7 +109,6 @@ def convert_64bit_const(graph):
 
 
 def convert_to_const(graph, op_type_name_list):
-    # from ....ops.op_factory import is_compass_supported_op
     if len(graph) and op_type_name_list:
         for node_name in graph.nodes:
             node = NodeWrap(graph, node_name)
@@ -118,20 +117,6 @@ def convert_to_const(graph, op_type_name_list):
                 ERROR('[Parser]: Meets invalid Node(%s) in convert_to_const!' % node_name)
                 continue
             if isinstance(node_obj, OpHasOneOutPort) and node_obj.type in op_type_name_list:
-                # if graph._attr.get('enable_ds', False):
-                #     if is_compass_supported_op(node_obj.type):
-                #         continue
-                #     else:
-                #         WARN(
-                #             f'{node_obj.type}({node_name}) not support dynamic now, we convert it as constant instead.')
-                # else:
-                #     if node_obj.is_inputs_dynamic() or node_obj.is_outputs_dynamic():
-                #         if is_compass_supported_op(node_obj.type):
-                #             continue
-                #         else:
-                #             WARN(
-                #                 f'{node_obj.type}({node_name}) not support dynamic now, we convert it as constant instead.')
-
                 out_tensors = node_obj.get_output_tensors()
                 if len(out_tensors) >= 1 and out_tensors[0] is not None and node_obj.is_all_outputs_const():
                     new_attr = node_obj.copied_attr()
@@ -1536,7 +1521,8 @@ def insert_slice_after(graph, src, begin, size, slice_before_shape, out_port=0, 
     return ret
 
 
-def insert_tile(graph, src, dst, in_attr, reps, key=None, type='Tile', data_format='NHWC', quantize=False):
+def insert_tile(graph, src, dst, in_attr, reps, key=None, type='Tile', data_format='NHWC',
+                quantize=False, symbol=None):
     ret = None
     if graph.has_node(src) \
             and graph.has_node(dst) \
@@ -1562,14 +1548,9 @@ def insert_tile(graph, src, dst, in_attr, reps, key=None, type='Tile', data_form
             tensor_shape = tensor.get_shape()
             if tensor_shape is not None and None not in tensor_shape:
                 tensor.shape = tuple([int(shape * rep) for shape, rep in zip(tensor_shape, reps)])
-        if graph._attr['enable_ds']:
-            out_symbol = []
-            for i, r in enumerate(reps):
-                if r == 1:
-                    out_symbol.append(Symbol(f's{i}'))
-                else:
-                    out_symbol.append(Symbol(f's{i}*{r}'))
-            tensor.symbol = out_symbol
+        tensor.symbol = symbol
+        if symbol is not None:
+            tensor.is_dynamic = True
         dst_in_attr.update({'src_out_port': 0, 'tensor': tensor})
         graph.add_edge(tile, dst, **dst_in_attr)
 

@@ -400,19 +400,22 @@ def process_graph(graph, params):
         ERROR(
             '[Parser]: Meets exception in convert_onnx_version (%s)!' % str(e))
 
+    infer_symbol(graph)
+
     try:
         middle_passes(graph, params)
     except Exception as e:
         ERROR('[Parser]: Meets exception in middle_passes (%s)!' % str(e))
 
     infer(graph)
-    infer_symbol(graph)
 
     try:
         transform_to_nhwc(graph, params)
     except Exception as e:
         ERROR(
             '[Parser]: Meets exception in transform_to_nhwc (%s)!' % str(e))
+
+    infer_symbol(graph)
 
     try:
         back_passes(graph, params)

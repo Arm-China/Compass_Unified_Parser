@@ -681,7 +681,11 @@ class Op(abc.ABC):
                     WARN(f'{self.type}Op({self.name}) still not support dynamic, we infer it as constant instead.')
                 return True
             else:
-                if self._graph._attr['enable_ds'] or self.is_inputs_dynamic():
+                is_const_list = [d['tensor'].is_const for _, _, _, d in self._graph.sorted_out_edges(
+                    self.name, keys=True, data=True)]
+                if is_const_list and all(is_const_list):
+                    return True
+                elif self._graph._attr['enable_ds'] or self.is_inputs_dynamic():
                     return False
                 else:
                     return True
@@ -1004,6 +1008,9 @@ class OpHasOneOutPort(Op):
                 is_dynamic = False
             else:
                 is_dynamic = self.is_inputs_dynamic() or isinstance(self, DynamicShapeOp)
+            if isinstance(self, ArmOp):
+                # Some ops(inputs fused into attr) may have dynamic outputs. e.g. Tile/Slice...
+                is_dynamic = self.is_outputs_dynamic() or isinstance(self, DynamicShapeOp)
             for _, _, d in self._graph.sorted_out_edges(self.name, data=True):
                 if d.get('tensor', None) is not None:
                     d['tensor'].value = tensor_data
@@ -1025,6 +1032,25 @@ class OpHasOneOutPort(Op):
                   (self.name, str(e)))
         except Exception as e:
             ERROR('[Parser]: Node(%s) meets exception in set_out_tensor (%s)!' %
+                  (self.name, str(e)))
+
+    def set_out_const(self):
+        '''set the out tensor is const of this op.'''
+        try:
+            for _, _, d in self._graph.sorted_out_edges(self.name, data=True):
+                if d.get('tensor', None) is not None:
+                    d['tensor'].is_const = True
+                    d['tensor'].is_dynamic = False
+                else:
+                    d['tensor'] = Tensor(is_const=True, is_dynamic=False)
+
+            self.clear_unused_tensor(True)
+
+        except KeyError as e:
+            ERROR('[Parser]: Node(%s) meets key error in set_out_const (%s)!' %
+                  (self.name, str(e)))
+        except Exception as e:
+            ERROR('[Parser]: Node(%s) meets exception in set_out_const (%s)!' %
                   (self.name, str(e)))
 
     def set_out_symbol(self, symbol):
@@ -1155,7 +1181,7 @@ class OpHasVariableOutPorts(Op):
         try:
             from ..graph.node_wrap import NodeWrap
             from ..graph.graph_algo import get_valid_node_name
-            is_const = self.is_all_inputs_const()
+            is_const = self.is_all_inputs_const() and not is_dynamic
             is_dynamic = self.is_inputs_dynamic() or is_dynamic
             if len(tensor_data_list) > 1:
                 out_ports = self.get_out_ports()
@@ -1509,7 +1535,7 @@ class LayoutUnawareOp(Op):
     pass
 
 
-class SameShapeOp(Op):
+class SameShapeOp(OpHasOneOutPort, Op):
     '''
     Class SameShapeOp inherited from OP.
     The OP's output shape is same with input shape, such as math ops, must inherit from this class.
@@ -1520,6 +1546,16 @@ class SameShapeOp(Op):
             return None
         input_symbol = self.get_input_symbols(local=True)[0]
         return input_symbol
+
+    def infer_symbol(self):
+        input_symbol_values = self.get_input_symbol_values()
+        invalid = any([inp is None for inp in input_symbol_values])
+        if invalid:
+            out_symbol_value = None
+        else:
+            out_symbol_value = input_symbol_values[0]
+        self.set_out_symbol_value(out_symbol_value)
+        super().infer_symbol()
 
 
 class OpHasPaddingStrides(LayoutConcernedOp):
@@ -1823,8 +1859,7 @@ class OpHasWeights(Op):
                     self.weights_range.size * self.weights_range.dtype.itemsize))
                 txt_file.write('weights_range_shape=[%s]\n' % num_list_to_string(
                     list(self.weights_range.shape)))
-            if self._graph._attr.get('quantize', False) \
-                    and np.issubdtype(self.weights.dtype, np.integer):
+            if self.quantize and np.issubdtype(self.weights.dtype, np.integer):
                 if len(self.weights_scale_zp_list) == 2:
                     txt_file.write('weights_scale=%s\n' % str(self.weights_scale_zp_list[0]))
                     txt_file.write('weights_zp=%s\n' % str(self.weights_scale_zp_list[1]))
@@ -1851,7 +1886,7 @@ class OpHasWeights(Op):
                 Op.numpy_to_bin(bin_file, self.weights, self.weights_offset, self.name)
                 if self.weights_range is not None and self.weights_range_offset >= 0:
                     Op.numpy_to_bin(bin_file, self.weights_range, self.weights_range_offset, self.name)
-                if self._graph._attr.get('quantize', False) \
+                if self.quantize \
                         and np.issubdtype(self.weights.dtype, np.integer) \
                         and len(self.weights_scale_zp) == 2:
                     if self.weights_scale_offset >= 0:
@@ -1909,7 +1944,7 @@ class OpHasBiases(Op):
                     self.biases_range.size * self.biases_range.dtype.itemsize))
                 txt_file.write('biases_range_shape=[%s]\n' % num_list_to_string(
                     list(self.biases_range.shape)))
-            if self._graph._attr.get('quantize', False) \
+            if self.quantize \
                     and np.issubdtype(self.biases.dtype, np.integer):
                 if len(self.biases_scale_zp_list) == 2:
                     txt_file.write('biases_scale=%s\n' % str(self.biases_scale_zp_list[0]))
@@ -1937,7 +1972,7 @@ class OpHasBiases(Op):
                 Op.numpy_to_bin(bin_file, self.biases, self.biases_offset, self.name)
                 if self.biases_range is not None and self.biases_range_offset >= 0:
                     Op.numpy_to_bin(bin_file, self.biases_range, self.biases_range_offset, self.name)
-                if self._graph._attr.get('quantize', False) \
+                if self.quantize \
                         and np.issubdtype(self.biases.dtype, np.integer) \
                         and len(self.biases_scale_zp) == 2:
                     if self.biases_scale_offset >= 0:

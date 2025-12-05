@@ -147,7 +147,6 @@ def get_output_tensor_names(graph):
 def serialize(graph, params):
     '''Serialize graph and write to IR txt and IR bin.
     Return True/False for serializing status and also txt path and bin path.'''
-    ret = True
     txt_path, bin_path = '', ''
     model_name = params['model_name'] \
         if params.get('model_name') \

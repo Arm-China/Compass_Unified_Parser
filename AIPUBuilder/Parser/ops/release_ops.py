@@ -13,7 +13,7 @@ from ..common.utils import list_list_to_string, get_random_array, get_target_gra
 from ..logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
-class ArmAbsOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
+class ArmAbsOp(SameShapeOp, LayoutUnawareOp, ArmOp):
 
     def __init__(self, graph, attr_dict=None):
         super(ArmAbsOp, self).__init__(graph, attr_dict)
@@ -46,7 +46,7 @@ class ArmAccidentalHitsOp(OpHasMultipleOutPorts, ArmOp):
         self.set_out_tensor([output_indices, output_ids, output_effective_len])
 
 
-class ArmAcosOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
+class ArmAcosOp(SameShapeOp, LayoutUnawareOp, ArmOp):
     def infer_shape(self):
         super(ArmAcosOp, self).infer_shape()
         inputs = self.get_input_tensors()
@@ -54,7 +54,7 @@ class ArmAcosOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
         self.set_out_tensor(out_tensor)
 
 
-class ArmAcoshOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
+class ArmAcoshOp(SameShapeOp, LayoutUnawareOp, ArmOp):
     def infer_shape(self):
         super(ArmAcoshOp, self).infer_shape()
         inputs = self.get_input_tensors()
@@ -62,7 +62,7 @@ class ArmAcoshOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
         self.set_out_tensor(out_tensor)
 
 
-class ArmActivationOp(SameShapeOp, LayoutUnawareOp, OpHasMethod, OpHasOneOutPort, ArmOp):
+class ArmActivationOp(SameShapeOp, LayoutUnawareOp, OpHasMethod, ArmOp):
     @classmethod
     def attributes(cls):
         return {'method': {'options': ['CELU', 'CLIP', 'ELU', 'GELU', 'HARDSIGMOID', 'HARDSWISH', 'LEAKYRELU', 'MISH', 'PRELU', 'RELU', 'RELU6', 'SELU', 'SHRINK', 'SIGMOID', 'SILU', 'SOFTPLUS', 'SOFTSIGN', 'SWISH', 'TANH', 'TANH_ABS', 'THRESHOLDEDRELU']},
@@ -418,7 +418,7 @@ class ArmArgMinMaxOp(OpHasMethod, OpHasAxis, OpHasOneOutPort, ArmOp):
         return ret
 
 
-class ArmAsinOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
+class ArmAsinOp(SameShapeOp, LayoutUnawareOp, ArmOp):
     def infer_shape(self):
         super(ArmAsinOp, self).infer_shape()
         inputs = self.get_input_tensors()
@@ -426,7 +426,7 @@ class ArmAsinOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
         self.set_out_tensor(out_tensor)
 
 
-class ArmAsinhOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
+class ArmAsinhOp(SameShapeOp, LayoutUnawareOp, ArmOp):
     def infer_shape(self):
         super(ArmAsinhOp, self).infer_shape()
         inputs = self.get_input_tensors()
@@ -434,7 +434,7 @@ class ArmAsinhOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
         self.set_out_tensor(out_tensor)
 
 
-class ArmAtanOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
+class ArmAtanOp(SameShapeOp, LayoutUnawareOp, ArmOp):
     def infer_shape(self):
         super(ArmAtanOp, self).infer_shape()
         inputs = self.get_input_tensors()
@@ -442,7 +442,7 @@ class ArmAtanOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
         self.set_out_tensor(out_tensor)
 
 
-class ArmAtanhOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
+class ArmAtanhOp(SameShapeOp, LayoutUnawareOp, ArmOp):
     def infer_shape(self):
         super(ArmAtanhOp, self).infer_shape()
         inputs = self.get_input_tensors()
@@ -710,7 +710,7 @@ class ArmBitwiseOp(OpHasOneOutPort, OpHasMethod, ArmOp):
         self.set_out_tensor(out_tensor)
 
 
-class ArmBNLLOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
+class ArmBNLLOp(SameShapeOp, LayoutUnawareOp, ArmOp):
     def infer_shape(self):
         super(ArmBNLLOp, self).infer_shape()
         inputs = self.get_input_tensors()
@@ -747,7 +747,7 @@ class ArmBoundingBoxOp(OpHasOneOutPort, ArmOp):
         return ret
 
 
-class ArmCastOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
+class ArmCastOp(SameShapeOp, LayoutUnawareOp, ArmOp):
     @classmethod
     def attributes(cls):
         return {'to_dtype': {'type': AttrType.STRING,
@@ -780,7 +780,7 @@ class ArmCastOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
         return ret
 
 
-class ArmCeilOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
+class ArmCeilOp(SameShapeOp, LayoutUnawareOp, ArmOp):
     def infer_shape(self):
         super(ArmCeilOp, self).infer_shape()
         inputs = self.get_input_tensors()
@@ -918,7 +918,7 @@ class ArmConcatOp(OpHasAxis, OpHasOneOutPort, ArmOp):
         super().infer_symbol()
 
 
-class ArmCoshOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
+class ArmCoshOp(SameShapeOp, LayoutUnawareOp, ArmOp):
     def infer_shape(self):
         super(ArmCoshOp, self).infer_shape()
         inputs = self.get_input_tensors()
@@ -1200,7 +1200,7 @@ class ArmConvTranspose3DOp(BaseActivationOp, BaseConvOp, ArmOp):
         self.set_out_tensor(out_tensor)
 
 
-class ArmCosineOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
+class ArmCosineOp(SameShapeOp, LayoutUnawareOp, ArmOp):
     def infer_shape(self):
         super(ArmCosineOp, self).infer_shape()
         inputs = self.get_input_tensors()
@@ -2000,7 +2000,7 @@ class ArmEmbeddingLookupSparseOp(OpHasOneOutPort, ArmOp):
         return ret
 
 
-class ArmErfOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
+class ArmErfOp(SameShapeOp, LayoutUnawareOp, ArmOp):
     def infer_shape(self):
         super(ArmErfOp, self).infer_shape()
         inputs = self.get_input_tensors()
@@ -2034,7 +2034,7 @@ class ArmErosionOp(OpHasPaddingStrides, OpHasWeights, OpHasOneOutPort, ArmOp):
         self.set_out_tensor(out_tensor)
 
 
-class ArmExpOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
+class ArmExpOp(SameShapeOp, LayoutUnawareOp, ArmOp):
     def infer_shape(self):
         super(ArmExpOp, self).infer_shape()
         inputs = self.get_input_tensors()
@@ -2172,7 +2172,7 @@ class ArmFilterBoxesOp(OpHasMultipleOutPorts, ArmOp):
         return ret
 
 
-class ArmFloorOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
+class ArmFloorOp(SameShapeOp, LayoutUnawareOp, ArmOp):
     def __init__(self, graph, attr_dict=None):
         super(ArmFloorOp, self).__init__(graph, attr_dict)
         self.update_attributes(ArmFloorOp, attr_dict)
@@ -2185,7 +2185,7 @@ class ArmFloorOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
         self.set_out_tensor(out_tensor)
 
 
-class ArmTruncOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
+class ArmTruncOp(SameShapeOp, LayoutUnawareOp, ArmOp):
     def __init__(self, graph, attr_dict=None):
         super(ArmTruncOp, self).__init__(graph, attr_dict)
         self.update_attributes(ArmTruncOp, attr_dict)
@@ -2900,7 +2900,7 @@ class ArmInTopKOp(OpHasOneOutPort, ArmOp):
         return ret
 
 
-class ArmIsInfOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
+class ArmIsInfOp(SameShapeOp, LayoutUnawareOp, ArmOp):
     @classmethod
     def num_in_ports(cls):
         return 1
@@ -2943,7 +2943,7 @@ class ArmIsInfOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
         return ret
 
 
-class ArmIsNaNOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
+class ArmIsNaNOp(SameShapeOp, LayoutUnawareOp, ArmOp):
     @classmethod
     def num_in_ports(cls):
         return 1
@@ -3020,7 +3020,7 @@ class ArmLayerNormOp(OpHasAxis, OpHasBiases, OpHasWeights, OpHasVariableOutPorts
         return ret
 
 
-class ArmLogOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
+class ArmLogOp(SameShapeOp, LayoutUnawareOp, ArmOp):
     def infer_shape(self):
         super(ArmLogOp, self).infer_shape()
         inputs = self.get_input_tensors()
@@ -3693,7 +3693,7 @@ class ArmNormalizedMomentsOp(OpHasMultipleOutPorts, ArmOp):
         return ret
 
 
-class ArmNegativeOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
+class ArmNegativeOp(SameShapeOp, LayoutUnawareOp, ArmOp):
     def infer_shape(self):
         super(ArmNegativeOp, self).infer_shape()
         inputs = self.get_input_tensors()
@@ -4313,7 +4313,7 @@ class ArmReduceOp(OpHasMethod, OpHasAxis, OpHasOneOutPort, ArmOp):
         self.set_out_tensor(out_tensor)
 
 
-class ArmReciprocalOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
+class ArmReciprocalOp(SameShapeOp, LayoutUnawareOp, ArmOp):
     def infer_shape(self):
         super(ArmReciprocalOp, self).infer_shape()
         inputs = self.get_input_tensors()
@@ -4664,7 +4664,7 @@ class ArmReverseSequenceOp(OpHasOneOutPort, ArmOp):
         return ret
 
 
-class ArmRMSNormOp(SameShapeOp, OpHasAxis, OpHasWeights, OpHasOneOutPort, ArmOp):
+class ArmRMSNormOp(SameShapeOp, OpHasAxis, OpHasWeights, ArmOp):
     @classmethod
     def attributes(cls):
         return {'epsilon': {'type': AttrType.FLOAT, 'required': True, 'default': 1e-5}
@@ -4743,7 +4743,7 @@ class ArmRoiAlignOp(OpHasMethod, OpHasOneOutPort, ArmOp):
         return ret
 
 
-class ArmRoundOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
+class ArmRoundOp(SameShapeOp, LayoutUnawareOp, ArmOp):
     def infer_shape(self):
         super(ArmRoundOp, self).infer_shape()
         inputs = self.get_input_tensors()
@@ -4751,7 +4751,7 @@ class ArmRoundOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
         self.set_out_tensor(out_tensor)
 
 
-class ArmRsqrtOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
+class ArmRsqrtOp(SameShapeOp, LayoutUnawareOp, ArmOp):
     def infer_shape(self):
         super(ArmRsqrtOp, self).infer_shape()
         inputs = self.get_input_tensors()
@@ -4911,7 +4911,7 @@ class ArmShapeOp(OpHasOneOutPort, DynamicShapeOp, ArmOp):
         return ret
 
 
-class ArmSignOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
+class ArmSignOp(SameShapeOp, LayoutUnawareOp, ArmOp):
     def infer_shape(self):
         super(ArmSignOp, self).infer_shape()
         inputs = self.get_input_tensors()
@@ -4919,7 +4919,7 @@ class ArmSignOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
         self.set_out_tensor(out_tensor)
 
 
-class ArmSineOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
+class ArmSineOp(SameShapeOp, LayoutUnawareOp, ArmOp):
     def infer_shape(self):
         super(ArmSineOp, self).infer_shape()
         inputs = self.get_input_tensors()
@@ -4927,7 +4927,7 @@ class ArmSineOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
         self.set_out_tensor(out_tensor)
 
 
-class ArmSinhOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
+class ArmSinhOp(SameShapeOp, LayoutUnawareOp, ArmOp):
     def infer_shape(self):
         super(ArmSinhOp, self).infer_shape()
         inputs = self.get_input_tensors()
@@ -4970,13 +4970,16 @@ class ArmSliceOp(OpHasVariableOutPorts, ArmOp):
             out_tensor = [output, output_shape]
         else:
             self.dynamic = False
+            if self.ds_starts and self.ds_ends and self.ds_steps:
+                self.dynamic = True
             obj = tuple(slice(s, None if (p < 0 and e < 0) else e, p)
                         for s, e, p in zip(self.starts, self.ends, self.steps))
             out_tensor = [inputs[0][obj]]
         self.set_out_tensor(out_tensor, is_dynamic=self.dynamic)
 
     def infer_symbol(self):
-        if not self.dynamic:
+        inputs = self.get_input_tensors()
+        if len(inputs) == 1:
             input_symbol_values = self.get_input_symbol_values()
             invalid = any([inp is None for inp in input_symbol_values])
             if invalid:
@@ -5012,16 +5015,18 @@ class ArmSliceOp(OpHasVariableOutPorts, ArmOp):
     def write_attrs(self, txt_file):
         ret = super(ArmSliceOp, self).write_attrs(txt_file)
         if ret:
-            if not self.dynamic:
+            if self.starts:
                 txt_file.write('begin=[%s]\n' % list_list_to_string(self.starts))
+            if self.ends:
                 txt_file.write('end=[%s]\n' % list_list_to_string(self.ends))
+            if self.steps:
                 txt_file.write('strides=[%s]\n' % list_list_to_string(self.steps))
-                if self.ds_starts:
-                    txt_file.write('ds_begin=[%s]\n' % list_list_to_string(self.ds_starts))
-                if self.ds_ends:
-                    txt_file.write('ds_end=[%s]\n' % list_list_to_string(self.ds_ends))
-                if self.ds_steps:
-                    txt_file.write('ds_strides=[%s]\n' % list_list_to_string(self.ds_steps))
+            if self.ds_starts:
+                txt_file.write('ds_begin=[%s]\n' % list_list_to_string(self.ds_starts))
+            if self.ds_ends:
+                txt_file.write('ds_end=[%s]\n' % list_list_to_string(self.ds_ends))
+            if self.ds_steps:
+                txt_file.write('ds_strides=[%s]\n' % list_list_to_string(self.ds_steps))
         return ret
 
 
@@ -5044,7 +5049,7 @@ class ArmSlotUpdateOp(OpHasOneOutPort, ArmOp):
         self.set_out_tensor(out_tensor)
 
 
-class ArmSoftmaxOp(SameShapeOp, OpHasAxis, OpHasOneOutPort, ArmOp):
+class ArmSoftmaxOp(SameShapeOp, OpHasAxis, ArmOp):
     @classmethod
     def attributes(cls):
         return {'axis': {'default': -1}}
@@ -5206,7 +5211,7 @@ class ArmSplitOp(OpHasAxis, OpHasMultipleOutPorts, ArmOp):
         return ret
 
 
-class ArmSqrtOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
+class ArmSqrtOp(SameShapeOp, LayoutUnawareOp, ArmOp):
     def infer_shape(self):
         super(ArmSqrtOp, self).infer_shape()
         inputs = self.get_input_tensors()
@@ -5214,7 +5219,7 @@ class ArmSqrtOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
         self.set_out_tensor(out_tensors)
 
 
-class ArmSquareOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
+class ArmSquareOp(SameShapeOp, LayoutUnawareOp, ArmOp):
     def infer_shape(self):
         super(ArmSquareOp, self).infer_shape()
         inputs = self.get_input_tensors()
@@ -5266,7 +5271,7 @@ class ArmSufficientStatisticsOp(OpHasAxis, OpHasMultipleOutPorts, ArmOp):
         self.set_out_tensor(out_tensor_list)
 
 
-class ArmTanOp(SameShapeOp, LayoutUnawareOp, OpHasOneOutPort, ArmOp):
+class ArmTanOp(SameShapeOp, LayoutUnawareOp, ArmOp):
     def infer_shape(self):
         super(ArmTanOp, self).infer_shape()
         inputs = self.get_input_tensors()

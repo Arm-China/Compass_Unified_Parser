@@ -985,6 +985,74 @@ def convert_scatterele_to_scatternd(graph):
                 NodeWrap(graph, node_name).replace_obj('ScatterND', scnd_attr)
 
 
+def convert_range_to_const_slice(graph):
+    matches = single_node_matcher(graph, 'Range')
+    for m in matches:
+        node_name = m['target']
+        node_obj = NodeWrap(graph, node_name)['object']
+        if node_obj is not None:
+            out_tensors = node_obj.get_output_tensors()
+            if len(out_tensors) >= 1 and out_tensors[0] is not None and node_obj.is_all_outputs_const():
+                new_attr = node_obj.copied_attr()
+                new_attr.update({'value': out_tensors[0].copy()})
+                NodeWrap(graph, node_name).replace_obj('Constant', new_attr)
+                const_in_edges = graph.sorted_in_edges(node_name, data=True)
+                graph.remove_edges_from(const_in_edges)
+                out_edges = graph.sorted_out_edges(node_name, data=True)
+                for _, _, out_attr in out_edges:
+                    out_attr['tensor'].is_dynamic = False
+                    out_attr['tensor'].is_const = True
+
+                if graph._attr['enable_ds'] and out_edges:
+                    slice_name = get_valid_node_name(graph, node_name + '_post_slice')
+                    graph.add_node(slice_name)
+                    slice_attr = {'name': slice_name}
+
+                    axes = np.array([0], np.int32)
+
+                    slice_attr.update({'opset_version': 10})
+
+                    graph.remove_edges_from(out_edges)
+
+                    const_out_attr = copy.deepcopy(out_edges[0][-1])
+                    const_out_attr['dst_in_port'] = 0
+                    const_out_attr['src_out_port'] = 0
+                    graph.add_edge(node_name, slice_name, **const_out_attr)
+
+                    start_node, start_attr = const_in_edges[0][0], const_in_edges[0][-1]
+                    end_node, end_attr = const_in_edges[1][0], const_in_edges[1][-1]
+                    step_node, step_attr = const_in_edges[2][0], const_in_edges[2][-1]
+
+                    start_in_attr = copy.deepcopy(start_attr)
+                    start_in_attr['dst_in_port'] = 1
+                    graph.add_edge(start_node, slice_name, **start_in_attr)
+
+                    end_in_attr = copy.deepcopy(end_attr)
+                    end_in_attr['dst_in_port'] = 2
+                    graph.add_edge(end_node, slice_name, **end_in_attr)
+
+                    step_in_attr = copy.deepcopy(step_attr)
+                    step_in_attr['dst_in_port'] = 4
+                    graph.add_edge(step_node, slice_name, **step_in_attr)
+
+                    insert_constant(graph, slice_name + '_axes', axes,
+                                    slice_name, in_port=3)
+                    NodeWrap(graph, slice_name).replace_obj('Slice', slice_attr)
+
+                    insert_reshape(graph, start_node, slice_name, start_in_attr, [1], symbol=[1])
+                    insert_reshape(graph, end_node, slice_name, end_in_attr, [1], symbol=[1])
+                    insert_reshape(graph, step_node, slice_name, step_in_attr, [1], symbol=[1])
+
+                    for _, dst, out_attr in out_edges:
+                        new_out_attr = copy.deepcopy(out_attr)
+                        new_out_attr['src_out_port'] = 0
+                        graph.add_edge(slice_name, dst, **new_out_attr)
+                        new_out_attr['tensor'].is_dynamic = True
+                        new_out_attr['tensor'].is_const = False
+
+                    clear_redundant_nodes(graph)
+
+
 def convert_gemm_to_fc(graph):
     matches = single_node_matcher(graph, 'Gemm')
     for m in matches:
@@ -1821,7 +1889,7 @@ def convert_special_cast(graph):
         graph.add_edge(src, equal_node, **in_attr)
         input_shape = in_attr['tensor'].get_shape()
         input_dtype = in_attr['tensor'].get_dtype()
-        const_zeros_value = np.zeros(input_shape, dtype=np.dtype(input_dtype))
+        const_zeros_value = np.zeros([1] * len(input_shape), dtype=np.dtype(input_dtype))
         insert_constant(graph, equal_node + '_zeros', const_zeros_value, equal_node, in_port=1)
         equal_out_attr = {'tensor': Tensor(shape=input_shape, dtype=input_dtype)}
         graph.add_edge(equal_node, cast, **equal_out_attr)
@@ -8673,18 +8741,25 @@ def multidirectional_broadcasting(graph):
                     dims_and_reps = OpNeedBroadcast.cal_reshape_and_tile([s for s in in_shapes])
                 except:
                     dims_and_reps = []
+                input_symbols = broadcast_obj.get_input_symbols()
+                out_symbols = broadcast_obj.get_output_symbols()
                 if len(dims_and_reps) == len(in_edges):
                     for i, dr in enumerate(dims_and_reps):
                         if dr['reshape'] is not None:
                             src, _, k, in_attr = in_edges[i]
+                            inp_symbol = input_symbols[i]
+                            if inp_symbol is not None and None not in inp_symbol:
+                                rs_symbol = [1] * (len(dr['reshape']) - len(in_shapes[i])) + inp_symbol
+                            else:
+                                rs_symbol = None
                             insert_reshape(graph, src, broadcast,
-                                           in_attr, dr['reshape'], key=k, quantize=quantize)
+                                           in_attr, dr['reshape'], key=k, quantize=quantize, symbol=rs_symbol)
                             in_edges = graph.sorted_in_edges(
                                 broadcast, keys=True, data=True)
                         if dr['tile'] is not None:
                             src, _, k, in_attr = in_edges[i]
                             insert_tile(graph, src, broadcast,
-                                        in_attr, dr['tile'], key=k, quantize=quantize)
+                                        in_attr, dr['tile'], key=k, quantize=quantize, symbol=out_symbols[0])
                             in_edges = graph.sorted_in_edges(
                                 broadcast, keys=True, data=True)
                 else:
@@ -14275,8 +14350,9 @@ def middle_passes(graph, params):
 
     decompose_const_if_loop(graph, params)
     convert_loop_cond_out(graph)
+    convert_range_to_const_slice(graph)
     convert_to_const(graph, ['Shape', 'ConstantOfShape',
-                             'Range', 'NonZero', 'EyeLike'])
+                             'NonZero', 'EyeLike'])
 
     fuse_const(graph)
     merge_same_op_at_out_port(graph, ['Cast'])
@@ -14318,7 +14394,7 @@ def middle_passes(graph, params):
     remove_redundant_transpose(graph)
     merge_dilated_conv_group(graph)
     merge_dilated_conv(graph)
-    remove_useless_op(graph, ['Concat', 'Pad', 'Pow', 'Sum',
+    remove_useless_op(graph, ['Concat', 'Pad', 'Pow', 'Sum', 'Cast',
                               'Dropout', 'Expand', 'Reshape', 'Slice', 'Transpose', 'Roll']
                       + OnnxReduceOp.get_concrete_subclass_names())
     remove_redundant_transpose(graph)
