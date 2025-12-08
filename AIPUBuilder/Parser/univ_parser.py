@@ -258,6 +258,7 @@ def univ_parser(params):
                     from .front_end.lite.process import process_tflite
                     graph = process_tflite(graph, model_path, params)
                 elif model_type == 'caffe':
+                    FATAL('Caffe model parsing is no longer supported!')
                     from .front_end.caffe.process import process_caffe
                     graph = process_caffe(graph, model_path, params)
                 elif model_type == 'tf':
