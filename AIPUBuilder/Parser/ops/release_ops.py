@@ -4955,6 +4955,7 @@ class ArmSliceOp(OpHasVariableOutPorts, ArmOp):
         super(ArmSliceOp, self).__init__(graph, attr_dict)
         self.update_attributes(ArmSliceOp, attr_dict)
         self.dynamic = False
+        self.multi_inputs = False
         assert self.check_required(), 'ArmSliceOp is missing a required parameter.'
 
     def infer_shape(self):
@@ -4962,6 +4963,7 @@ class ArmSliceOp(OpHasVariableOutPorts, ArmOp):
         inputs = self.get_input_tensors()
         if len(inputs) > 1:
             self.dynamic = True
+            self.multi_inputs = True
             assert len(inputs) == 5, 'Dynamic Slice should have 5 inputs.'
             for inp in inputs[1:]:
                 assert len(inp.shape) == 1, f'Slice other inputs should be 1D, but {len(inp.shape)}D.'
@@ -5014,7 +5016,7 @@ class ArmSliceOp(OpHasVariableOutPorts, ArmOp):
 
     def write_attrs(self, txt_file):
         ret = super(ArmSliceOp, self).write_attrs(txt_file)
-        if ret:
+        if ret and not self.multi_inputs:
             if self.starts:
                 txt_file.write('begin=[%s]\n' % list_list_to_string(self.starts))
             if self.ends:
