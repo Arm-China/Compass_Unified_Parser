@@ -221,12 +221,12 @@ class MatMulNBitsMsOp(OpHasOneOutPort, OnnxOp):
                             if ret.dtype == 'uint8':
                                 packed_shape = (self.N, int(np.ceil(k_blocks * self.bits / 8)))
                                 assert ret.shape == packed_shape
-                                ret = (unpack_4bit(ret, [self.N, k_blocks]) - 2 **
+                                ret = (unpack_4bit(ret, [self.N, k_blocks]).astype(np.int32) - 2 **
                                        (self.bits - 1)).astype(inputs[0].dtype)
                             else:
                                 assert ret.dtype == inputs[0].dtype, 'Unpacked zp should be same dtype with input.'
                                 assert ret.shape == (self.N, k_blocks)
-                                ret = np.array(ret)
+                                ret = (np.array(ret) - 2 ** (self.bits - 1)).astype(inputs[0].dtype)
                         self.__dict__['_attr'][item] = Attribute(item, {'type': AttrType.TENSOR, 'value': ret})
                     if ret is None:
                         if item == 'zero_points':
