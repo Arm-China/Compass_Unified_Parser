@@ -12655,10 +12655,15 @@ def rename_single_mul_or_add_or_sub(graph):
                 graph.remove_edge(src, n, key=k)
                 remove_node_safely(graph, n)
             else:
-                parent_node_type = NodeWrap(graph, in_edges[main_input_port][0])['object'].type
+                parent_node_name = in_edges[main_input_port][0]
+                parent_node_type = NodeWrap(graph, parent_node_name)['object'].type
                 linear_op_list = list(set(BaseLinearOp.get_concrete_subclass_names()).intersection(
                     OnnxOp.get_concrete_subclass_names())) + ['FullyConnected']
                 if in_shapes[0] != in_shapes[1] and parent_node_type not in linear_op_list:
+                    continue
+
+                if parent_node_type in linear_op_list and len(graph.sorted_out_edges(parent_node_name)) > 1:
+                    # BaseLinear op has multi out edges, BN cannot be fused, skip
                     continue
 
                 output_shapes = n_obj.get_output_shapes()

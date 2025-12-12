@@ -6000,6 +6000,90 @@ def sink_transpose_through_special_reshape(graph):
         clear_redundant_nodes(graph)
 
 
+def sink_transpose_through_special_pattern(graph):
+    matches0 = [matched_patterns(graph,
+                                 nodes=[('trans', {'op': 'ArmTranspose'}),
+                                        ('unware', {'op': op}),
+                                        ('const', {'op': 'Constant'}),
+                                        ('act', {'op': 'ArmActivation'}),
+                                        ('eltwise', {'op': 'ArmEltwise'})],
+                                 edges=[('trans', 'unware'),
+                                        ('const', 'unware'),
+                                        ('unware', 'act'),
+                                        ('act', 'eltwise'),
+                                        ('trans', 'eltwise')]) for op in ['ArmAdd', 'ArmMul']]
+    matches1 = [matched_patterns(graph,
+                                 nodes=[('trans', {'op': 'ArmTranspose'}),
+                                        ('unware', {'op': op}),
+                                        ('const', {'op': 'Constant'}),
+                                        ('act', {'op': 'ArmActivation'}),
+                                        ('eltwise', {'op': 'ArmEltwise'})],
+                                 edges=[('trans', 'unware'),
+                                        ('const', 'unware', {'src_out_port': 0, 'dst_in_port': 1}),
+                                        ('unware', 'act'),
+                                        ('act', 'eltwise'),
+                                        ('trans', 'eltwise')]) for op in ['ArmSub', 'ArmDiv']]
+    matched = False
+    matches = extend_lists(matches0) + extend_lists(matches1)
+    for m in matches:
+        trans_op, unware_op, const_op, act_op, elt_op = m['trans'], m['unware'], m['const'], m['act'], m['eltwise']
+        all_ops = [trans_op, unware_op, const_op, act_op, elt_op]
+        if any([op in graph._attr['output_names'] for op in all_ops]):
+            continue
+        trans_obj = NodeWrap(graph, trans_op)['object']
+        unware_obj = NodeWrap(graph, unware_op)['object']
+        const_obj = NodeWrap(graph, const_op)['object']
+        act_obj = NodeWrap(graph, act_op)['object']
+        elt_obj = NodeWrap(graph, elt_op)['object']
+        if trans_obj is None or unware_obj is None or const_obj is None or act_obj is None or elt_obj is None:
+            ERROR(
+                '[Parser]: Meets invalid Node in sink_transpose_through_special_pattern!')
+            continue
+        trans_in_edges = graph.sorted_in_edges(trans_op, data=True)
+        trans_out_edges = graph.sorted_out_edges(trans_op, data=True)
+        unware_out_edges = graph.sorted_out_edges(unware_op, data=True)
+        act_out_edges = graph.sorted_out_edges(act_op, data=True)
+        if len(trans_out_edges) != 2 or len(unware_out_edges) != 1 or len(act_out_edges) != 1:
+            continue
+        if act_obj.method == 'PRELU':
+            continue
+
+        input_shape = trans_obj.get_input_shapes()[0]
+        const_v = const_obj.value
+        if len(const_v.shape) > len(input_shape):
+            continue
+
+        matched = True
+
+        if const_v.size > 1:
+            inverse_perm = Op.cal_inverse_perm(trans_obj.perm)
+            unware_in_edges = graph.sorted_in_edges(unware_op, data=True)
+            if unware_in_edges[0][0] == const_op:
+                in_port = unware_in_edges[0][2]['dst_in_port']
+                scale_zp = unware_in_edges[0][2]['tensor'].scale_zp
+            else:
+                in_port = unware_in_edges[1][2]['dst_in_port']
+                scale_zp = unware_in_edges[1][2]['tensor'].scale_zp
+            new_shape = [1] * (len(input_shape) - (len(const_v.shape))) + list(const_v.shape)
+            new_const_v = const_v.reshape(new_shape).transpose(inverse_perm)
+            graph.remove_edge(const_op, unware_op)
+            insert_constant(graph, const_op + '_new_const', new_const_v, in_port=in_port,
+                            scale_zp=scale_zp, quantize=const_obj.quantize)
+
+        graph.remove_edges_from(trans_in_edges)
+        graph.remove_edges_from(trans_out_edges)
+
+        for _, dst, out_attr in trans_out_edges:
+            edge_attr = copy.deepcopy(trans_in_edges[0][2])
+            edge_attr['dst_in_port'] = out_attr['dst_in_port']
+            graph.add_edge(trans_in_edges[0][0], dst, **edge_attr)
+
+        insert_transpose_after(graph, elt_op, trans_obj.perm, type='ArmTranspose', quantize=elt_obj.quantize)
+
+    if matched:
+        clear_redundant_nodes(graph)
+
+
 def convert_special_reshape(graph):
     '''convert special reshape to transpose to facilitate fusion with other transpose'''
     matches = single_node_matcher(graph, 'ArmReshape')
@@ -6683,9 +6767,11 @@ def back_passes(graph, params):
     for op in simple_rename_list:
         simple_rename(graph, op)
 
-    common_subexpression_elimination(graph)
     fuse_relu(graph)
     rename_activations(graph)
+    sink_transpose_through_special_pattern(graph)
+
+    common_subexpression_elimination(graph)
 
     merge_group_conv(graph)
 
