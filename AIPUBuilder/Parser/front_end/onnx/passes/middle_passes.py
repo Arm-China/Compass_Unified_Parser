@@ -10981,7 +10981,9 @@ def merge_gn(graph):
 
         input_shapes = obj_dict['reshape_1'].get_input_shapes()
         group = expand_shape[channels_axis]
-        if input_shapes[0] and input_shapes[0][channels_axis] % group != 0:
+        if group == 1:
+            continue
+        if input_shapes[0] and (input_shapes[0][channels_axis] % group != 0 or input_shapes[0] != origin_shape):
             continue
 
         matched = True
@@ -14191,7 +14193,7 @@ def adjust_3d_to_4d(graph):
                         if op_type in ('InstanceNormalization', 'LRN', 'Resize', 'ArmGroupNorm'):
                             reshape1_dim = in_shapes[in_port][0:-
                                                               1] + [1] + in_shapes[in_port][-1:]
-                            out_symbol.insert(-2, 1)
+                            out_symbol.insert(-1, 1)
                             insert_axis = -2
                         else:
                             reshape1_dim = in_shapes[in_port].copy()
