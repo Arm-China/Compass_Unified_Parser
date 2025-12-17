@@ -5266,35 +5266,38 @@ def sink_single_reshape(graph):
                         or any([s is None for s in reshape_in_shape]):
                     continue
                 need_clear_graph = False
-                if unaware_obj.type == 'ArmEltwise':
-                    unaware_in_edges = graph.sorted_in_edges(unaware, data=True)
-                    another_src_edge = unaware_in_edges[0] if unaware_in_edges[1][0] == reshape else unaware_in_edges[1]
-                    another_src = another_src_edge[0]
-                    another_src_obj = NodeWrap(graph, another_src)['object']
-                    if another_src_obj is not None and another_src_obj.type in ('ArmReshape', 'Constant'):
-                        need_clear_graph = True
-                        if another_src_obj.type == 'ArmReshape':
-                            rs2_in_shape = another_src_obj.get_input_shapes()[0]
-                            if rs2_in_shape is None \
-                                    or any([s is None for s in rs2_in_shape]):
-                                continue
-                            another_src_out_edges = graph.sorted_out_edges(another_src, data=True)
-                            if reshape_in_shape != rs2_in_shape or len(another_src_out_edges) != 1:
-                                continue
-                            another_src_in_edges = graph.sorted_in_edges(another_src, data=True)
-                            another_src_src, _, another_src_in_attr = another_src_in_edges[0]
-                            graph.remove_edge(another_src_src, another_src)
-                            graph.remove_edges_from(another_src_out_edges)
-                            new_in_attr = copy.deepcopy(another_src_in_attr)
-                            new_in_attr['dst_in_port'] = another_src_edge[-1]['dst_in_port']
-                            graph.add_edge(another_src_src, unaware, **new_in_attr)
+                if len(unaware_obj.get_in_ports()) > 1:
+                    if unaware_obj.type == 'ArmEltwise':
+                        unaware_in_edges = graph.sorted_in_edges(unaware, data=True)
+                        another_src_edge = unaware_in_edges[0] if unaware_in_edges[1][0] == reshape else unaware_in_edges[1]
+                        another_src = another_src_edge[0]
+                        another_src_obj = NodeWrap(graph, another_src)['object']
+                        if another_src_obj is not None and another_src_obj.type in ('ArmReshape', 'Constant'):
+                            need_clear_graph = True
+                            if another_src_obj.type == 'ArmReshape':
+                                rs2_in_shape = another_src_obj.get_input_shapes()[0]
+                                if rs2_in_shape is None \
+                                        or any([s is None for s in rs2_in_shape]):
+                                    continue
+                                another_src_out_edges = graph.sorted_out_edges(another_src, data=True)
+                                if reshape_in_shape != rs2_in_shape or len(another_src_out_edges) != 1:
+                                    continue
+                                another_src_in_edges = graph.sorted_in_edges(another_src, data=True)
+                                another_src_src, _, another_src_in_attr = another_src_in_edges[0]
+                                graph.remove_edge(another_src_src, another_src)
+                                graph.remove_edges_from(another_src_out_edges)
+                                new_in_attr = copy.deepcopy(another_src_in_attr)
+                                new_in_attr['dst_in_port'] = another_src_edge[-1]['dst_in_port']
+                                graph.add_edge(another_src_src, unaware, **new_in_attr)
+                            else:
+                                const_v = another_src_obj.value
+                                new_const = np.reshape(const_v, reshape_in_shape)
+                                graph.remove_edge(another_src, unaware)
+                                const_in_port = another_src_edge[-1]['dst_in_port']
+                                insert_constant(graph, unaware + '_new_const', new_const, unaware,
+                                                in_port=const_in_port)
                         else:
-                            const_v = another_src_obj.value
-                            new_const = np.reshape(const_v, reshape_in_shape)
-                            graph.remove_edge(another_src, unaware)
-                            const_in_port = another_src_edge[-1]['dst_in_port']
-                            insert_constant(graph, unaware + '_new_const', new_const, unaware,
-                                            in_port=const_in_port)
+                            continue
                     else:
                         continue
                 src, _, reshape_in_attr = reshape_in_edges[0]

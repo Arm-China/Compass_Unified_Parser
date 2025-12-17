@@ -406,7 +406,7 @@ class MultiHeadAttentionMsOp(OpHasVariableOutPorts, OnnxOp):
         #     out_tensors.append(np.array(std_var, np.float32))
         # if 2 in out_ports:
         #     out_tensors.append(np.array(std_var, np.float32))
-        self.set_out_tensor(out_tensors, out_symbols=out_symbols)
+        self.set_out_tensor(out_tensors, symbols=out_symbols)
 
 
 class QGemmMsOp(OpHasOneOutPort, OnnxOp):
@@ -958,7 +958,7 @@ class SkipSimplifiedLayerNormalizationMsOp(OpHasVariableOutPorts, OnnxOp):
         if 3 in out_ports:
             output_tensors.append(inp_skip_bias_sum.astype(input.dtype))
         out_symbols = self.cal_output_symbol()
-        self.set_out_tensor(output_tensors, out_symbols)
+        self.set_out_tensor(output_tensors, symbols=out_symbols)
 
     def cal_output_symbol(self):
         if self._graph._attr['enable_ds']:

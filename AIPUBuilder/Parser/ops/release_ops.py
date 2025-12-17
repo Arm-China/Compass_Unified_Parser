@@ -2992,7 +2992,7 @@ class ArmLayerNormOp(OpHasAxis, OpHasBiases, OpHasWeights, OpHasVariableOutPorts
             out_tensors.append(np.array(mean, std_mean_dtype))
             out_tensors.append(np.array(ngamma, std_mean_dtype))
         out_symbols = self.cal_output_symbol()
-        self.set_out_tensor(out_tensors, out_symbols=out_symbols)
+        self.set_out_tensor(out_tensors, symbols=out_symbols)
 
     def cal_output_symbol(self):
         out_symbols = []
@@ -4556,6 +4556,10 @@ class ArmReshapeOp(OpHasOneOutPort, ArmOp):
         ret = super(ArmReshapeOp, self).write_attrs(txt_file)
         if ret:
             txt_file.write('shape=[%s]\n' % num_list_to_string(self.dim))
+            if self._graph._attr['enable_ds']:
+                out_symbol = self.get_output_symbols()
+                if out_symbol:
+                    txt_file.write('ds_shape=[%s]\n' % num_list_to_string(out_symbol[0]))
         return ret
 
 

@@ -234,7 +234,9 @@ class BatchNormalizationOp(LayoutConcernedOp, OpHasVariableOutPorts, OnnxOp):
                 out_tensor = inputs[0] * weights + biases
                 out_tensor_list = [out_tensor]
             out_tensor_list[0] = out_tensor_list[0].astype(input_dtype)
-        self.set_out_tensor(out_tensor_list)
+        input_symbol = self.get_input_symbols(True)[0]
+        out_symbols = [input_symbol] * len(out_tensor_list)
+        self.set_out_tensor(out_tensor_list, symbols=out_symbols)
 
 
 class CeluOp(LayoutUnawareOp, BaseActivationOp, OnnxOp):
@@ -332,6 +334,9 @@ class ConvOp(BaseConvOp, OnnxOp):
             else:
                 self.biases = np.zeros(self.num_output, np.float32)
 
+        inp_symbol = self.get_input_symbols(True)[0]
+        symbol_map = dict(zip(inp_symbol, list(inputs[0].shape)))
+
         if self.data_format == 'NHWC':
             if self.is_all_inputs_const():
                 from ..release_ops import ArmDepthwiseConvOp
@@ -368,26 +373,29 @@ class ConvOp(BaseConvOp, OnnxOp):
                             meta_conv_list.append(meta_conv)
                         conv = tf.concat(meta_conv_list, axis=3)
                 out_tensor = tf.nn.bias_add(conv, self.biases, data_format=self.data_format).numpy()
+                out_symbol = None
             else:
-                out_shape = BaseConvOp.cal_out_shape(inputs[0].shape[1:-1],
-                                                     self.pads,
-                                                     self.strides,
-                                                     self.kernel_shape,
-                                                     self.auto_pad,
-                                                     dilations=self.dilations,
-                                                     data_format='NHWC')
-                out_shape = [inputs[0].shape[0]] + out_shape + [self.num_output]
+                out_symbol = BaseConvOp.cal_out_shape(inp_symbol[1:-1],
+                                                      self.pads,
+                                                      self.strides,
+                                                      self.kernel_shape,
+                                                      self.auto_pad,
+                                                      dilations=self.dilations,
+                                                      data_format='NHWC')
+                out_symbol = [inp_symbol[0]] + out_symbol + [self.num_output]
+                out_shape = [s.subs(symbol_map) if not isinstance(s, int) else s for s in out_symbol]
                 out_tensor = np.random.ranf(size=out_shape).astype(input_dtype)
 
         else:
-            out_shape = BaseConvOp.cal_out_shape(inputs[0].shape[2:],
-                                                 self.pads,
-                                                 self.strides,
-                                                 self.kernel_shape,
-                                                 self.auto_pad,
-                                                 dilations=self.dilations,
-                                                 data_format='NCHW')
-            out_shape = [inputs[0].shape[0], self.num_output] + out_shape
+            out_symbol = BaseConvOp.cal_out_shape(inp_symbol[2:],
+                                                  self.pads,
+                                                  self.strides,
+                                                  self.kernel_shape,
+                                                  self.auto_pad,
+                                                  dilations=self.dilations,
+                                                  data_format='NCHW')
+            out_symbol = [inp_symbol[0], self.num_output] + out_symbol
+            out_shape = [s.subs(symbol_map) if not isinstance(s, int) else s for s in out_symbol]
 
             if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
                 self.pads, _ = OpHasPaddingStrides.cal_pads(
@@ -425,7 +433,7 @@ class ConvOp(BaseConvOp, OnnxOp):
             else:
                 out_tensor = np.random.ranf(size=out_shape).astype(input_dtype)
 
-        self.set_out_tensor(out_tensor)
+        self.set_out_tensor(out_tensor, symbol=out_symbol)
 
 
 class ConvIntegerOp(BaseConvOp, OnnxOp):
@@ -1530,7 +1538,7 @@ class LayerNormalizationOp(OpHasAxis, OpHasVariableOutPorts, OnnxOp):
         if 2 in out_ports:
             out_tensors.append(np.array(ngamma, std_mean_dtype))
         out_symbols = self.cal_output_symbol()
-        self.set_out_tensor(out_tensors, out_symbols=out_symbols)
+        self.set_out_tensor(out_tensors, symbols=out_symbols)
 
     def cal_output_symbol(self):
         out_symbols = []
@@ -2007,11 +2015,17 @@ class MaxPoolOp(BaseOnnxPoolOp, OpHasVariableOutPorts):
         inputs = self.get_input_tensors()
         in_shape = inputs[0].shape[1:-
                                    1] if self.data_format == 'NHWC' else inputs[0].shape[2:]
-        out_shape = BaseOnnxPoolOp.cal_out_shape(
-            in_shape, self.pads, self.strides, self.kernel_shape, self.auto_pad, dilations=self.dilations, ceil_mode=self.ceil_mode)
-        out_tensor_shape = list(inputs[0].shape[0:1]) + out_shape + list(inputs[0].shape[-1:]) \
+        input_symbol = self.get_input_symbols(True)[0]
+        symbol_map = dict(zip(input_symbol, list(inputs[0].shape)))
+        in_symbol = input_symbol[1:-
+                                 1] if self.data_format == 'NHWC' else input_symbol[2:]
+        out_symbol = BaseOnnxPoolOp.cal_out_shape(
+            in_symbol, self.pads, self.strides, self.kernel_shape, self.auto_pad, dilations=self.dilations, ceil_mode=self.ceil_mode)
+        output_symbol = input_symbol[:1] + out_symbol + input_symbol[-1:] \
             if self.data_format == 'NHWC' \
-            else list(inputs[0].shape[0:2]) + out_shape
+            else input_symbol[:2] + out_symbol
+        out_tensor_shape = [s.subs(symbol_map) if not isinstance(s, int) else s for s in output_symbol]
+        out_shape = out_tensor_shape[1:-1] if self.data_format == 'NHWC' else out_tensor_shape[2:]
         out_tensor = np.random.ranf(out_tensor_shape).astype(inputs[0].dtype)
         if self.auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
             # re-calculate pads
@@ -2026,10 +2040,12 @@ class MaxPoolOp(BaseOnnxPoolOp, OpHasVariableOutPorts):
             )
             self.auto_pad = 'NOTSET'
         out_tensors = [out_tensor]
+        output_symbols = [output_symbol]
         if len(self.get_out_ports()) == 2:
             out_tensors.append(np.random.randint(
                 0, 1, out_tensor.shape, np.int32))
-        self.set_out_tensor(out_tensors)
+            output_symbols.append(output_symbol)
+        self.set_out_tensor(out_tensors, symbols=output_symbols)
 
 
 class MaxRoiPoolOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
@@ -2178,7 +2194,8 @@ class ReluOp(BaseReluOp, OnnxOp):
         super(ReluOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor = self.cal_activation(inputs[0])
-        self.set_out_tensor(out_tensor)
+        out_symbol = self.get_input_symbols(True)[0]
+        self.set_out_tensor(out_tensor, symbol=out_symbol)
 
 
 class RMSNormalizationOp(OpHasAxis, OpHasOneOutPort, OnnxOp):

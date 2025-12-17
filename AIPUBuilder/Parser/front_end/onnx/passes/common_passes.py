@@ -441,12 +441,15 @@ def remove_useless_op(graph, op_type_list):
                 in_shapes = node_obj.get_input_shapes()
                 in_tensors = node_obj.get_input_tensors()
                 if node_obj.cur_version == 10:
-                    if len(in_tensors) == 2 and node_obj.cur_version == 10 and in_tensors[1].size > 0 and np.all(in_tensors[1] == 1):
+                    if len(in_tensors) == 2 and node_obj.cur_version == 10 \
+                            and in_tensors[1] is not None and in_tensors[1].size > 0 and np.all(in_tensors[1] == 1):
                         removing_nodes.append(node_name)
                 else:
-                    if len(in_tensors) >= 3 and in_tensors[2].size > 0 and np.all(in_tensors[2] == 1):
+                    if len(in_tensors) >= 3 and in_tensors[2] is not None \
+                            and in_tensors[2].size > 0 and np.all(in_tensors[2] == 1):
                         removing_nodes.append(node_name)
-                    elif len(in_tensors) == 4 and in_tensors[3].size > 0 and in_shapes[0] == in_tensors[3].tolist():
+                    elif len(in_tensors) == 4 and in_tensors[3] is not None \
+                            and in_tensors[3].size > 0 and in_shapes[0] == in_tensors[3].tolist():
                         removing_nodes.append(node_name)
             elif op_type == 'Roll':
                 axis_value = node_obj.axes[0] if len(

@@ -10,6 +10,8 @@ import copy
 from collections import OrderedDict, defaultdict
 from collections.abc import Iterable
 from functools import reduce
+
+import sympy
 from sympy import Symbol, Max, Number
 import itertools
 import numpy as np
@@ -1037,6 +1039,7 @@ class OpHasOneOutPort(Op):
     def set_out_const(self):
         '''set the out tensor is const of this op.'''
         try:
+            self.infer_shape()
             for _, _, d in self._graph.sorted_out_edges(self.name, data=True):
                 if d.get('tensor', None) is not None:
                     d['tensor'].is_const = True
@@ -1176,7 +1179,7 @@ class OpHasVariableOutPorts(Op):
             else:
                 WARN(f'{self.type} not implement symbol yet, please support it first.')
 
-    def set_out_tensor(self, tensor_data_list, is_dynamic=False, out_symbols=[]):
+    def set_out_tensor(self, tensor_data_list, is_dynamic=False, symbols=[]):
         '''set the out tensor of this op.'''
         try:
             from ..graph.node_wrap import NodeWrap
@@ -1199,8 +1202,8 @@ class OpHasVariableOutPorts(Op):
                     if d.get('tensor', None) is not None:
                         d['tensor'].value = tensor_data_list[out_ports.index(
                             d['src_out_port'])]
-                        if out_symbols:
-                            d['tensor'].symbol = out_symbols[out_ports.index(
+                        if symbols:
+                            d['tensor'].symbol = symbols[out_ports.index(
                                 d['src_out_port'])]
                         d['tensor'].shape = d['tensor'].value.shape
                         d['tensor'].is_const = is_const
@@ -1214,8 +1217,8 @@ class OpHasVariableOutPorts(Op):
                 for _, _, d in self._graph.sorted_out_edges(self.name, data=True):
                     if d.get('tensor', None) is not None:
                         d['tensor'].value = tensor_data_list[0]
-                        if out_symbols:
-                            d['tensor'].symbol = out_symbols[0]
+                        if symbols:
+                            d['tensor'].symbol = symbols[0]
                         d['tensor'].shape = d['tensor'].value.shape
                         d['tensor'].is_const = is_const
                         d['tensor'].is_dynamic = is_dynamic
@@ -2187,31 +2190,29 @@ class BaseConvOp(OpHasPaddingStrides, BaseLinearOp, LayoutConcernedOp):
             dilations = [1] * len(kernel_shape)
         if pads is None:
             pads = [0] * len(in_shape)
-        params = [in_shape, strides, kernel_shape, dilations]
-        in_shape, strides, kernel_shape, dilations = [
-            np.array(p, np.int64) for p in params]
+        in_shape = list(in_shape)
         if len(pads) in (2, 4, 6):
             padding = np.reshape(np.array(pads, np.int64), (2, -1))
-            padding = np.sum(padding, axis=0, keepdims=False)
+            padding = np.sum(padding, axis=0, keepdims=False).tolist()
             if data_format == 'NHWC':
                 if auto_pad == 'NOTSET':
-                    in_shape += padding
+                    in_shape = [a + b for a, b in zip(in_shape, padding)]
                 if auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
-                    out_shape = np.ceil(in_shape / strides).astype(np.int64)
+                    out_shape = [sympy.ceiling(a / b) if b != 1 else a for a, b in zip(in_shape, strides)]
                 else:
-                    out_shape = np.ceil(
-                        (in_shape - (kernel_shape - 1) * dilations) / strides).astype(np.int64)
+                    out_shape = [sympy.ceiling((in_shape[i] - (kernel_shape[i] - 1) * dilations[i]) / strides[i]) if strides[i]
+                                 != 1 else in_shape[i] - (kernel_shape[i] - 1) * dilations[i] for i in range(len(in_shape))]
             else:
                 if auto_pad == 'NOTSET':
-                    in_shape += padding
-                    out_shape = np.floor(
-                        (in_shape - dilations * (kernel_shape - 1) - 1) / strides + 1).astype(np.int64)
+                    in_shape = [a + b for a, b in zip(in_shape, padding)]
+                    out_shape = [sympy.floor((in_shape[i] - (kernel_shape[i] - 1) * dilations[i] - 1) / strides[i]) + 1 if strides[i]
+                                 != 1 else in_shape[i] - (kernel_shape[i] - 1) * dilations[i] for i in range(len(in_shape))]
                 elif auto_pad in ('SAME_UPPER', 'SAME_LOWER'):
-                    out_shape = np.ceil(in_shape / strides).astype(np.int64)
+                    out_shape = [sympy.ceiling(a / b) for a, b in zip(in_shape, strides)]
                 else:
-                    out_shape = np.floor(
-                        (in_shape - dilations * (kernel_shape - 1) - 1) / strides + 1).astype(np.int64)
-            ret = out_shape.tolist()
+                    out_shape = [sympy.floor((in_shape[i] - (kernel_shape[i] - 1) * dilations[i] - 1) / strides[i]) + 1 if strides[i]
+                                 != 1 else in_shape[i] - (kernel_shape[i] - 1) * dilations[i] for i in range(len(in_shape))]
+            ret = [sympy.simplify(s) for s in out_shape]
         else:
             ERROR('[Parser]: Invalid pads len %s in cal_out_shape!' % (str(pads)))
             ret = []
@@ -2340,7 +2341,7 @@ class BaseDeconvOp(BaseConvOp):
 class BaseActivationOp(OpHasOneOutPort):
     '''
     Class BaseActivationOp inherited from OpHasOneOutPort class.
-    All OPs of type activation must inherit BaseConvOp..
+    All OPs of type activation must inherit BaseActivationOp..
     '''
     @classmethod
     def attributes(cls):
@@ -3307,25 +3308,26 @@ class BaseOnnxPoolOp(OpHasPaddingStrides, OnnxOp):
                             'SAME_LOWER'), 'The value of auto_pad is invalid in BaseOnnxPoolOp.'
         if dilations is None:
             dilations = [1] * len(kernel_shape)
-        params = [in_shape, strides, kernel_shape, dilations]
-        in_shape, strides, kernel_shape, dilations = [
-            np.array(p, np.int64) for p in params]
-        effective_kernel_shape = (kernel_shape - 1) * dilations + 1
+        in_shape = list(in_shape)
+        kernel_shape = np.array(kernel_shape, np.int64)
+        dilations = np.array(dilations, np.int64)
+        effective_kernel_shape = ((kernel_shape - 1) * dilations + 1).tolist()
         padding = np.reshape(np.array(pads, np.int64), (2, -1))
-        padding = np.sum(padding, axis=0, keepdims=False)
+        padding = np.sum(padding, axis=0, keepdims=False).tolist()
         if auto_pad == 'NOTSET':
             if ceil_mode:
-                out_shape = np.ceil(
-                    (in_shape + padding - effective_kernel_shape) / strides + 1)
+                out_shape = [sympy.ceiling((in_shape[i] + padding[i] - effective_kernel_shape[i]) / strides[i] + 1) if strides[i]
+                             != 1 else in_shape[i] + padding[i] - effective_kernel_shape[i] + 1 for i in range(len(in_shape))]
             else:
-                out_shape = np.floor(
-                    (in_shape + padding - effective_kernel_shape) / strides + 1)
+                out_shape = [sympy.floor((in_shape[i] + padding[i] - effective_kernel_shape[i]) / strides[i] + 1) if strides[i]
+                             != 1 else in_shape[i] + padding[i] - effective_kernel_shape[i] + 1 for i in range(len(in_shape))]
         elif auto_pad == 'VALID':
-            out_shape = np.ceil(
-                (in_shape - effective_kernel_shape + 1) / strides)
+            out_shape = [sympy.ceiling((in_shape[i] - effective_kernel_shape[i] + 1) / strides[i]) if strides[i]
+                         != 1 else in_shape[i] - effective_kernel_shape[i] + 1 for i in range(len(in_shape))]
         else:
-            out_shape = np.ceil(in_shape / strides)
-        return out_shape.astype(np.int64).tolist()
+            out_shape = [sympy.ceiling(a / b) if b != 1 else a for a, b in zip(in_shape, strides)]
+        out_shape = [s if isinstance(s, int) else sympy.simplify(s) for s in out_shape]
+        return out_shape
 
     @staticmethod
     def pool(padded_input, in_shape, kernel_shape, strides, out_shape, pooling_method,

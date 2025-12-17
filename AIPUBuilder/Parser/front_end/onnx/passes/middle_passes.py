@@ -14359,7 +14359,7 @@ def middle_passes(graph, params):
     convert_loop_cond_out(graph)
     convert_range_to_const_slice(graph)
     convert_to_const(graph, ['Shape', 'ConstantOfShape',
-                             'NonZero', 'EyeLike'])
+                             'NonZero', 'EyeLike', 'Gather', 'Slice'])
 
     fuse_const(graph)
     merge_same_op_at_out_port(graph, ['Cast'])

@@ -554,8 +554,11 @@ class GatherOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
             inp_symbol_value = input_tensor_symbols[0]
             idx = input_tensor_symbols[1]
             assert self.axis == 0
-            out_symbol_value = inp_symbol_value[idx]
+            out_symbol_value = inp_symbol_value[idx] if not isinstance(
+                idx, list) else [inp_symbol_value[i] for i in idx]
         self.set_out_symbol_value(out_symbol_value)
+        if out_symbol_value is not None and not is_sympy_with_symbol(out_symbol_value):
+            self.set_out_const()
         super().infer_symbol()
 
 
@@ -1559,6 +1562,8 @@ class SliceOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
                     out_symbol_value = input_symbol_values[0][start:end:step]
                 else:
                     out_symbol_value = None
+        if out_symbol_value is not None and not is_sympy_with_symbol(out_symbol_value):
+            self.set_out_const()
         self.set_out_symbol_value(out_symbol_value)
 
         inp_symbol = self.get_input_symbols()[0]
@@ -2025,14 +2030,20 @@ class UnsqueezeOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
     def infer_symbol(self):
         input_tensor_symbols = self.get_input_symbol_values()
         out_symbol_value = None
-        if input_tensor_symbols[0] is None or input_tensor_symbols[1] is None:
+        if input_tensor_symbols[0] is None:
             pass
         else:
             inp_symbol_value = input_tensor_symbols[0]
-            axes = input_tensor_symbols[1]
-            for axis in axes:
-                out_symbol_value = [inp_symbol_value]
-                inp_symbol_value = out_symbol_value
+            axes = None
+            if self.cur_version > 11:
+                if input_tensor_symbols[1] is not None:
+                    axes = input_tensor_symbols[1]
+            else:
+                axes = self.axes
+            if axes is not None:
+                for axis in axes:
+                    out_symbol_value = [inp_symbol_value]
+                    inp_symbol_value = out_symbol_value
         self.set_out_symbol_value(out_symbol_value)
         super().infer_symbol()
 

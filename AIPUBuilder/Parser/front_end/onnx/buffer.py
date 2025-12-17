@@ -148,7 +148,7 @@ def get_tensor_shape_content(tensor_shape_proto, params={}):
                 found_in_params = False
                 dim_param = getattr(d, 'dim_param', '')
                 if isinstance(dim_param, str):
-                    dim_strings = re.findall(re.compile(r'[a-zA-Z_]*'), dim_param)
+                    dim_strings = re.findall(re.compile(r'\w*'), dim_param)
                     if len(dim_strings) > 0:
                         dim_str = dim_strings[0]
                         ds.append(dim_str)

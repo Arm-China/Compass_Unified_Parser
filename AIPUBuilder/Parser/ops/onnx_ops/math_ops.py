@@ -562,7 +562,7 @@ class ExpOp(OpHasOneOutPort, OnnxOp):
         self.set_out_tensor(out_tensor)
 
 
-class FloorOp(LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
+class FloorOp(LayoutUnawareOp, SameShapeOp, OnnxOp):
     @classmethod
     def attributes(cls):
         return {1: {}, 6: {}, 13: {}}
@@ -576,7 +576,8 @@ class FloorOp(LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
         super(FloorOp, self).infer_shape()
         inputs = self.get_input_tensors()
         out_tensor = np.floor(inputs[0])
-        self.set_out_tensor(out_tensor)
+        out_symbol = self.cal_output_symbol()
+        self.set_out_tensor(out_tensor, symbol=out_symbol)
 
 
 class GemmOp(OpHasOneOutPort, OnnxOp):
@@ -2849,7 +2850,17 @@ class UpsampleOp(OpHasOneOutPort, OnnxOp):
                     out_tensor = ResizeOp.upsample_linear(inputs[0], out_spatial_shape, spatial_scales)
                 else:
                     out_tensor = ResizeOp.upsample_nearest(inputs[0], out_spatial_shape, spatial_scales)
-        self.set_out_tensor(out_tensor)
+        out_symbol = None
+        if self._graph._attr['enable_ds']:
+            inp_symbol = self.get_input_symbols(True)[0]
+            out_symbol = []
+            for a, b in zip(inp_symbol, self.scales):
+                decimal_part, integer_part = math.modf(b)
+                if math.isclose(decimal_part, 0.0):
+                    out_symbol.append(a * int(b))
+                else:
+                    out_symbol.append(sympy.floor(a * b))
+        self.set_out_tensor(out_tensor, symbol=out_symbol)
 
     def convert_version(self):
         from ...front_end.onnx.passes.common_passes import insert_constant
