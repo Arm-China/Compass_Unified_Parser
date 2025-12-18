@@ -3206,8 +3206,9 @@ class OnnxOp(Op):
             ver_list = [k for k in cls.attributes().keys()]
             mask = np.where(np.array(ver_list, np.int64) <= opset_version)[0]
             if mask.size == 0:
-                ERROR('[Parser]: All history versions is greater than opset version for %s!' % (
-                    type(cls).__name__))
+                WARN(f'[Parser]: All history versions is greater than opset:{opset_version} for {cls.__name__}, '
+                     f'use opset:{ver_list[0]} instead but some undefined errors may occur!')
+                return ver_list[0]
             else:
                 return ver_list[mask[-1]]
 
