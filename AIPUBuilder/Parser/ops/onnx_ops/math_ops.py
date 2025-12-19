@@ -2226,12 +2226,22 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
             else:
                 self.scales = np.array(self.sizes, np.float32) / input_dim_np
 
+        inp_symbol = self.get_input_symbols(True)[0]
+
         if self.cur_version == 10:
             out_shape = np.floor(
                 input_dim_np * self.scales).astype(np.int64).tolist()
+            out_symbol = []
+            for i in range(len(inp_symbol)):
+                decimal_part, integer_part = math.modf(self.scales[i])
+                if math.isclose(decimal_part, 0.0):
+                    out_symbol.append(int(self.scales[i]) * inp_symbol[i])
+                else:
+                    out_symbol.append(sympy.floor(self.scales[i] * inp_symbol[i]))
         else:
             if self.sizes is not None and self.sizes.size > 0:
                 out_shape = self.sizes.tolist()
+                out_symbol = self.sizes.tolist()
             else:
                 base_shape = input_dim_np * self.scales
                 if self.coordinate_transformation_mode == 'tf_crop_and_resize':
@@ -2241,6 +2251,13 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
                             (np.reshape(self.roi, (2, -1))
                              [1, :] - np.reshape(self.roi, (2, -1))[0, :])
                 out_shape = np.floor(base_shape).astype(np.int64).tolist()
+                out_symbol = []
+                for i in range(len(inp_symbol)):
+                    decimal_part, integer_part = math.modf(self.scales[i])
+                    if math.isclose(decimal_part, 0.0):
+                        out_symbol.append(int(self.scales[i]) * inp_symbol[i])
+                    else:
+                        out_symbol.append(sympy.floor(self.scales[i] * inp_symbol[i]))
 
         if self.is_all_inputs_const():
             if FLOAT_EQUAL(inputs[0], 0):
@@ -2301,7 +2318,7 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
         else:
             # Still use random output here to speedup parsing if inputs are non-const
             out_tensor = np.random.ranf(out_shape).astype(inputs[0].dtype)
-        self.set_out_tensor(out_tensor)
+        self.set_out_tensor(out_tensor, symbol=out_symbol)
 
     def convert_version(self):
         from ...front_end.onnx.passes.common_passes import insert_constant
