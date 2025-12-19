@@ -867,7 +867,7 @@ def convert_onnx_to_graph(graph, model_path, params):
                             node_type = node_type + 'Ms'
                     quantize = False
                     if not force_not_quantize:
-                        if node['type'] in ('QuantizeLinear', 'QGemm', 'MatMulNBits') or node['type'].startswith('QLinear'):
+                        if node['type'] in ('QuantizeLinear', 'QGemm', 'MatMulNBits', 'MatMulBnb4') or node['type'].startswith('QLinear'):
                             quantize = True
                             graph_is_quantized = True
                         elif node['type'] == 'DequantizeLinear':

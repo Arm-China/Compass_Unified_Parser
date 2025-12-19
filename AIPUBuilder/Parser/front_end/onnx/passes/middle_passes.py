@@ -12,7 +12,7 @@ from sympy import symbols, Symbol
 from ....common.defs import Tensor, FLOAT_EQUAL, FLOAT64_EQUAL, TYPE_MAX, TYPE_MIN
 from ....graph.graph import SubGraph
 from ....logger import INFO, DEBUG, WARN, ERROR, FATAL
-from ....common.utils import extend_lists, get_converted_dtype, unpack_4bit
+from ....common.utils import extend_lists, get_converted_dtype, unpack_u8_to_4bit
 from ....graph.node_wrap import NodeWrap
 from ....graph.pattern_match import matched_patterns, single_node_matcher, two_nodes_matcher
 # from ....graph.pattern_generator import match_patterns_from_expression
@@ -7762,7 +7762,7 @@ def convert_matmulnbits(graph):
                 # split N bits from quantized weights
                 B = node_in_edges[1][-1]['tensor'].value
                 unpack_shape = [node_obj.N, B.size * 2 // node_obj.N]
-                quant_weights = unpack_4bit(B, unpack_shape) - 2**(node_obj.bits - 1)
+                quant_weights = unpack_u8_to_4bit(B, unpack_shape, 'int4')
             else:
                 quant_weights = node_in_edges[1]['tensor'].value
             matmul_attr = node_obj.copied_attr()
@@ -7773,6 +7773,103 @@ def convert_matmulnbits(graph):
                                 'quantize': True})
             if node_obj.bits == 4:
                 matmul_attr['weights_packed_dtype'] = 'aligned_int4'
+            NodeWrap(graph, node).replace_obj('FullyConnected', matmul_attr)
+            inp_rank = len(input_shapes[0])
+            if inp_rank > 2:
+                src, _, in_attr = node_in_edges[0]
+                if graph._attr['enable_ds']:
+                    infer_symbol(graph, src, last_input)
+                    src_obj = NodeWrap(graph, src)['object']
+                    src_out_symbol = src_obj.get_output_symbols()[0]
+                    pre_rs_sym0 = 1
+                    for i in range(inp_rank - 1):
+                        pre_rs_sym0 *= src_out_symbol[i]
+                    if not Op.is_all_global_symbols(src_out_symbol, graph._attr['global_symbols']):
+                        pre_rs_symbol = [pre_rs_sym0, Symbol(f's{inp_rank-1}')]
+                        post_rs_symbol = None
+                    else:
+                        pre_rs_symbol = [pre_rs_sym0, src_out_symbol[-1]]
+                        post_rs_symbol = src_out_symbol[:-1] + [Symbol('s1')]
+                    out_edges = graph.sorted_out_edges(node, keys=True, data=True)
+                    fc_out_symbol = [Symbol('s0'), quant_weights.shape[0]]
+                    updated_edges = {}
+                    for _, dst, k, out_attr in out_edges:
+                        new_out_attr = copy.deepcopy(out_attr)
+                        new_out_attr['tensor'].symbol = fc_out_symbol
+                        updated_edges[(node, dst, k)] = new_out_attr
+                    nx.set_edge_attributes(graph, updated_edges)
+                else:
+                    pre_rs_symbol = None
+                    post_rs_symbol = None
+                insert_reshape(graph, src, node, in_attr, [-1, input_shapes[0][-1]], quantize=False,
+                               symbol=pre_rs_symbol)
+                post_reshape = insert_reshape_after(graph,
+                                                    node,
+                                                    output_shapes[0],
+                                                    old_dim=[int(np.prod(output_shapes[0][:-1])), output_shapes[0][-1]],
+                                                    quantize=False,
+                                                    symbol=post_rs_symbol)
+                last_input = post_reshape
+                if node in graph._attr['output_names']:
+                    index = graph._attr['output_names'].index(node)
+                    graph._attr['output_names'][index] = post_reshape
+
+    if matched:
+        clear_redundant_nodes(graph)
+
+
+def convert_matmulbnb4(graph):
+    matched = False
+    matches = single_node_matcher(graph, 'MatMulBnb4Ms')
+    last_input = None
+    for m in matches:
+        node = m['target']
+        node_obj = NodeWrap(graph, node)['object']
+        if node_obj is None:
+            ERROR(
+                '[Parser]: Meets invalid MatMulNBitsMs node(%s) in convert_matmulbnb4!' % node)
+            continue
+        if node_obj.quant_type != 0:
+            ERROR(
+                f'[Parser]: Meets unsupported quant type(NF4) in MatMulBnb4 node({node}) in convert_matmulbnb4!')
+            continue
+        node_in_edges = graph.sorted_in_edges(node, data=True)
+        has_non_const_inputs = False
+        for src, _, in_attr in node_in_edges[1:]:
+            if not in_attr['tensor'].is_const:
+                has_non_const_inputs = True
+                break
+
+        if has_non_const_inputs:
+            ERROR(
+                '[Parser]: Meets non_const weights/scale in MatMulBnb4 node(%s) in convert_matmulbnb4!' % node)
+            continue
+
+        input_shapes = node_obj.get_input_shapes()
+        output_shapes = node_obj.get_output_shapes()
+        if len(input_shapes[0]) >= 2:
+            matched = True
+            graph.remove_edges_from(node_in_edges[1:])
+
+            if node_obj.quant_type == 0:
+                # split N bits from quantized weights
+                B = node_in_edges[1][-1]['tensor'].value
+                unpack_shape = [node_obj.N, node_obj.K] if node_obj.transB == 1 else [node_obj.K, node_obj.N]
+                quant_weights = unpack_u8_to_4bit(B, unpack_shape, 'uint4')
+                if node_obj.transB == 0:
+                    quant_weights = quant_weights.transpose()
+            else:
+                # TODO, support NF4
+                WARN('Need support NF4 dtype.')
+                continue
+            matmul_attr = node_obj.copied_attr()
+            weight_scale_zp = [node_obj.scales, node_obj.zero_points]
+            matmul_attr.update({'weights': quant_weights,
+                                'weights_scale_zp': weight_scale_zp,
+                                'biases': node_obj.bias,
+                                'quantize': True})
+            if node_obj.quant_type == 0:
+                matmul_attr['weights_packed_dtype'] = 'float4_e2m1fn'
             NodeWrap(graph, node).replace_obj('FullyConnected', matmul_attr)
             inp_rank = len(input_shapes[0])
             if inp_rank > 2:
@@ -14373,6 +14470,7 @@ def middle_passes(graph, params):
     convert_mha(graph)
     convert_gqa(graph)
     convert_matmulnbits(graph)
+    convert_matmulbnb4(graph)
     convert_skip_simplified_layernorm(graph)
     convert_attention(graph)
 

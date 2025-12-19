@@ -290,15 +290,15 @@ def print_debug_info(e):
     WARN(f"error info：{str(e)}")
 
 
-def unpack_4bit(data, dims):
-    '''Convert a packed uint4 array to unpacked uint4 array represented as uint8.
+def unpack_u8_to_4bit(data, dims, dst_dtype):
+    '''Convert a packed int4 array to unpacked int4 array represented as uint8.
 
         Args:
             data: A numpy array.
             dims: The dimensions are used to reshape the unpacked buffer.
 
         Returns:
-            A numpy array of int8/uint8.
+            A numpy array of int8/uint8/fp32.
     '''
     data = data.flatten()
     result = np.empty([data.size * 2], dtype=data.dtype)
@@ -309,6 +309,17 @@ def unpack_4bit(data, dims):
     if result.size == np.prod(dims) + 1:
         # handle single-element padding due to odd number of elements
         result = result[:-1]
+    if dst_dtype.lower() == 'int4':
+        result = (result.astype(np.int32) - 2**3).astype(np.int8)
+    elif dst_dtype.lower() in ('uint4', 'uint8'):
+        pass
+    elif dst_dtype.lower() == 'float4e2m1':
+        fp4_table = np.array([0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0, -0.0, -0.5, -
+                             1.0, -1.5, -2.0, -3.0, -4.0, -6.0], dtype=np.float32)
+        fp4_value = fp4_table[result]
+        result = fp4_value
+    else:
+        raise NotImplementedError(f'{dst_dtype} still not implemented yet!')
     result.resize(dims, refcheck=False)
     return result
 

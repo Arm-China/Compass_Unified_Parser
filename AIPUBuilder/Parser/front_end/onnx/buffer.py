@@ -11,7 +11,7 @@ from ml_dtypes import bfloat16, float8_e5m2, float8_e4m3fn, float8_e4m3fnuz, flo
     float4_e2m1fn, uint4, int4, float8_e8m0fnu
 
 from ...common.defs import TensorType
-from ...common.utils import unpack_4bit
+from ...common.utils import unpack_u8_to_4bit
 
 
 # TenserProto
@@ -95,7 +95,7 @@ def onnx_tensor_decoder(pb, data_dir=''):
                 assert data_type_name not in ['STRING', 'UNDEFINED']
                 if data_type_name in ['INT4', 'UINT4', 'FLOAT4E2M1']:
                     data = np.frombuffer(pb.raw_data, dtype=np.uint8)
-                    ret = unpack_4bit(data, pb.dims)
+                    ret = unpack_u8_to_4bit(data, pb.dims, data_type_name)
                 else:
                     ret = np.frombuffer(pb.raw_data, dtype=np_type)
             else:
@@ -118,7 +118,7 @@ def onnx_tensor_decoder(pb, data_dir=''):
                     ret = np.frombuffer(np.array(pb.int32_data, dtype=np.uint8).tobytes(), dtype=np_type)
                 elif data_type_name in ['INT4', 'UINT4', 'FLOAT4E2M1']:
                     data = np.array(pb.int32_data, dtype=np.int32).view(np.uint32).astype(np.uint8)
-                    ret = unpack_4bit(data, pb.dims).view(np_type)
+                    ret = unpack_u8_to_4bit(data, pb.dims, data_type_name).view(np_type)
                 elif data_type_name in ['DOUBLE', 'COMPLEX128']:
                     ret = np.array(pb.double_data, dtype=np_type)
                 else:
