@@ -4637,28 +4637,34 @@ def merge_channel_shuffle(graph):
                     need_insert_after_reshape = False
                     if reshape1_in_shape != reshape2_out_shape:
                         need_insert_after_reshape = True
+                    cs_data_format = 'NHWC'
                     if (len(reshape1_in_shape) == len(reshape1_out_shape) or len(reshape1_in_shape) + 1 == len(
-                            reshape1_out_shape)) \
-                            and (int(np.prod(reshape1_out_shape[-2:])) == reshape1_in_shape[-1]
-                                 if transpose_obj.data_format == 'NHWC'
-                                 else int(np.prod(reshape1_out_shape[1:3])) == reshape1_in_shape[1]):
-                        pass
-                    elif len(reshape1_in_shape) == len(reshape1_out_shape) + 1 \
-                            and (reshape1_out_shape[-2:] == reshape1_in_shape[-2:]
-                                 if transpose_obj.data_format == 'NHWC'
-                                 else reshape1_out_shape[1:3] == reshape1_in_shape[1:3]):
+                            reshape1_out_shape)):
+                        if int(np.prod(reshape1_out_shape[-2:])) == reshape1_in_shape[-1]:
+                            cs_data_format = 'NHWC'
+                        elif int(np.prod(reshape1_out_shape[1:3])) == reshape1_in_shape[1]:
+                            cs_data_format = 'NCHW'
+                        else:
+                            continue
+                    elif len(reshape1_in_shape) == len(reshape1_out_shape) + 1:
                         need_insert_front_reshape = True
+                        if reshape1_out_shape[-2:] == reshape1_in_shape[-2:]:
+                            cs_data_format = 'NCHW'
+                        elif reshape1_out_shape[1:3] == reshape1_in_shape[1:3]:
+                            cs_data_format = 'NHWC'
+                        else:
+                            continue
                     else:
                         continue
 
                     perm_dim = len(transpose_obj.perm)
                     ref_perm = list(range(perm_dim - 2)) + [perm_dim - 1, perm_dim - 2] \
-                        if transpose_obj.data_format == 'NHWC' \
+                        if cs_data_format == 'NHWC' \
                         else [0, 2, 1] + list(range(3, perm_dim))
                     if transpose_obj.perm == ref_perm:
-                        group = reshape1_out_shape[-2] if transpose_obj.data_format == 'NHWC' else reshape1_out_shape[1]
+                        group = reshape1_out_shape[-2] if cs_data_format == 'NHWC' else reshape1_out_shape[1]
                         splits = 1
-                        if transpose_obj.data_format == 'NHWC':
+                        if cs_data_format == 'NHWC':
                             channel_shape = reshape2_out_shape[-1] if need_insert_front_reshape else reshape1_in_shape[-1]
                         else:
                             channel_shape = reshape2_out_shape[1] if need_insert_front_reshape else reshape1_in_shape[1]
@@ -4681,7 +4687,7 @@ def merge_channel_shuffle(graph):
                         graph.remove_edges_from(in_edges + reshape2_in_edges)
                         graph.add_edge(src, reshape2, **in_attr)
                         cs_attr = reshape2_obj.copied_attr()
-                        cs_attr.update({'group': group, 'splits': splits})
+                        cs_attr.update({'group': group, 'splits': splits, 'data_format': cs_data_format})
                         NodeWrap(graph, reshape2).replace_obj(
                             'ChannelShuffle', cs_attr)
 
