@@ -7861,7 +7861,7 @@ def convert_matmulbnb4(graph):
                 # split N bits from quantized weights
                 B = node_in_edges[1][-1]['tensor'].value
                 unpack_shape = [node_obj.N, node_obj.K] if node_obj.transB == 1 else [node_obj.K, node_obj.N]
-                quant_weights = unpack_u8_to_4bit(B, unpack_shape, 'uint4')
+                quant_weights = unpack_u8_to_4bit(B, unpack_shape, 'uint4', high_first=True)
                 if node_obj.transB == 0:
                     quant_weights = quant_weights.transpose()
             else:
@@ -7875,7 +7875,7 @@ def convert_matmulbnb4(graph):
                                 'biases': node_obj.bias,
                                 'quantize': True})
             if node_obj.quant_type == 0:
-                matmul_attr['weights_packed_dtype'] = 'float4_e2m1fn'
+                matmul_attr['weights_packed_dtype'] = 'float4_e2m1fn_bnb'
             NodeWrap(graph, node).replace_obj('FullyConnected', matmul_attr)
             inp_rank = len(input_shapes[0])
             if inp_rank > 2:

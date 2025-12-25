@@ -319,7 +319,7 @@ class MatMulBnb4MsOp(OpHasOneOutPort, OnnxOp):
                 inputs = self.get_input_tensors()
                 if item == 'scales':
                     ret = inputs[2]
-                    q_max = 6.0 if self.quant_type == 0 else 1.0
+                    q_max = 12.0 if self.quant_type == 0 else 1.0
                     ret = np.array(ret / q_max)
                     self.__dict__['_attr'][item] = Attribute(item, {'type': AttrType.TENSOR, 'value': ret})
                 if ret is None:
@@ -351,7 +351,7 @@ class MatMulBnb4MsOp(OpHasOneOutPort, OnnxOp):
         if self.quant_type == 0:
             # unpack N bits from quantized weights
             unpack_shape = [self.N, self.K] if self.transB == 1 else [self.K, self.N]
-            quant_weights = unpack_u8_to_4bit(B.flatten(), unpack_shape, 'float4e2m1')
+            quant_weights = unpack_u8_to_4bit(B.flatten(), unpack_shape, 'float4e2m1_bnb', high_first=True)
         else:
             WARN('NF4 not implemented.')
 
