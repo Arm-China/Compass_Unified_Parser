@@ -9,7 +9,8 @@ import tensorflow as tf
 import numpy as np
 from .op import *
 from ..common.defs import FLOAT_EQUAL, TYPE_MIN, TYPE_MAX
-from ..common.utils import list_list_to_string, get_random_array, get_target_graph, is_sympy_with_symbol
+from ..common.utils import (list_list_to_string, get_random_array, get_target_graph, is_sympy_with_symbol,
+                            expr_list_to_string)
 from ..logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
@@ -4559,7 +4560,7 @@ class ArmReshapeOp(OpHasOneOutPort, ArmOp):
             if self._graph._attr['enable_ds']:
                 out_symbol = self.get_output_symbols()
                 if out_symbol:
-                    txt_file.write('ds_shape=[%s]\n' % num_list_to_string(out_symbol[0]))
+                    txt_file.write('ds_shape=[%s]\n' % expr_list_to_string(out_symbol[0]))
         return ret
 
 
@@ -5028,11 +5029,11 @@ class ArmSliceOp(OpHasVariableOutPorts, ArmOp):
             if self.steps:
                 txt_file.write('strides=[%s]\n' % list_list_to_string(self.steps))
             if self.ds_starts:
-                txt_file.write('ds_begin=[%s]\n' % list_list_to_string(self.ds_starts))
+                txt_file.write('ds_begin=[%s]\n' % expr_list_to_string(self.ds_starts))
             if self.ds_ends:
-                txt_file.write('ds_end=[%s]\n' % list_list_to_string(self.ds_ends))
+                txt_file.write('ds_end=[%s]\n' % expr_list_to_string(self.ds_ends))
             if self.ds_steps:
-                txt_file.write('ds_strides=[%s]\n' % list_list_to_string(self.ds_steps))
+                txt_file.write('ds_strides=[%s]\n' % expr_list_to_string(self.ds_steps))
         return ret
 
 

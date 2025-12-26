@@ -140,6 +140,13 @@ def list_string_to_list(list_string):
 def string_list_to_string(string_list):
     return reduce(lambda x, y: (str(x) + ',' + str(y)), string_list) if string_list else ''
 
+# [a+b, a*b] to 'a+b,a*b'
+
+
+def expr_list_to_string(expr_list):
+    from .symbol_printer import compass_str_expr
+    return reduce(lambda x, y: (compass_str_expr(x) + ',' + compass_str_expr(y)), expr_list) if expr_list else ''
+
 
 # 'AA,BB' to ['AA','BB']
 def multi_string_to_list(multi_string):

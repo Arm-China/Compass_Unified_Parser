@@ -20,6 +20,7 @@ import tensorflow as tf
 from ..common.defs import TensorType, Tensor, AttrType, Attribute, Framework, FLOAT_EQUAL
 from ..logger import INFO, DEBUG, WARN, ERROR, FATAL, WARN_EXCEPTION
 from ..common.utils import num_list_to_string, string_list_to_string, extend_lists
+from ..common.symbol_printer import compass_str_expr
 from ..graph.graph import SubGraph
 
 
@@ -503,7 +504,7 @@ class Op(abc.ABC):
                 top_info[1] if len(top_info) >= 3 else []))
             # TODO: experimental feature
             if len(top_info) >= 4 and 'symbol' in top_info[3][0] and self._graph._attr['enable_ds']:
-                out_symbols = [str(od['symbol']).replace(' ', '') for od in top_info[3] if 'symbol' in od]
+                out_symbols = [compass_str_expr(od['symbol']).replace(' ', '') for od in top_info[3] if 'symbol' in od]
                 txt_file.write('ds_output_shape=[%s]\n' % string_list_to_string(out_symbols))
 
             if self._graph._attr.get('quantize', False) \

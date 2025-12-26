@@ -14622,7 +14622,7 @@ def middle_passes(graph, params):
     merge_gather_slice(graph)
     remove_special_gather(graph)
     fuse_gather_const_mul(graph)
-    if not params.get('ds_compat', False):
+    if not params.get('ds_compat', False) and not graph._attr['enable_ds']:
         convert_gather_to_slice(graph)
     while lift_single_add_sub_mul_div(graph):
         pass
