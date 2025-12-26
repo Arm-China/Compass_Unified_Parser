@@ -4657,6 +4657,15 @@ def merge_channel_shuffle(graph):
                     else:
                         continue
 
+                    if transpose_obj.data_format == 'NHWC' and cs_data_format == 'NCHW':
+                        # different data format will insert transpose, if rs1 src is transpose, it will be fused else not
+                        reshape1_src = graph.sorted_in_edges(reshape1)[0][0]
+                        reshape1_src_obj = NodeWrap(graph, reshape1_src)['object']
+                        if reshape1_src_obj.type == 'Transpose' and len(graph.sorted_out_edges(reshape1_src)) == 1:
+                            pass
+                        else:
+                            continue
+
                     perm_dim = len(transpose_obj.perm)
                     ref_perm = list(range(perm_dim - 2)) + [perm_dim - 1, perm_dim - 2] \
                         if cs_data_format == 'NHWC' \
