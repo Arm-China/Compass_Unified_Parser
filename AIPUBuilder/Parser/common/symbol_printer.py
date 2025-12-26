@@ -14,6 +14,10 @@ class CompassPrinter(StrPrinter):
         expr_str = str(expr.args[0]).replace("/", "//")
         return f'({expr_str})'
 
+    def _print_ceiling(self, expr):
+        expr_str = str(expr.args[0])
+        return f'ceil({expr_str})'
+
     def _print_Add(self, expr):
         terms = [self._print(term) for term in expr.args]
         return '(' + '+'.join(terms) + ')'
