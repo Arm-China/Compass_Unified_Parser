@@ -750,7 +750,26 @@ class RepeatOp(OpHasAxis, OpHasOneOutPort, CommonOp):
                 zeros_shape[self.axis] = self.max_dim - out_shape[self.axis]
                 zeros = np.zeros(zeros_shape, inputs[0].dtype)
                 out_tensor = np.concatenate([out_tensor, zeros], axis=self.axis)
-        self.set_out_tensor(out_tensor)
+        out_symbol = self.cal_output_symbol()
+        self.set_out_tensor(out_tensor, symbol=out_symbol)
+
+    def cal_output_symbol(self):
+        if self._graph._attr['enable_ds']:
+            const_info = self.sorted_in_consts()
+            if const_info and const_info[-1][1] == 1:
+                inp_symbol = self.get_input_symbols(local=True)[0]
+                reps = const_info[-1][2].tolist()
+                if self.axis is None:
+                    out_symbol = [int(np.sum(reps))]
+                else:
+                    out_symbol = inp_symbol.copy()
+                    out_symbol[self.axis] = int(np.sum(reps))
+                return out_symbol
+            else:
+                ERROR('Repeat Op only support const reps in symbol infer..')
+                return None
+        else:
+            return None
 
 
 class PluginOp(OpHasVariableOutPorts, CommonOp):

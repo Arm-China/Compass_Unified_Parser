@@ -2454,7 +2454,7 @@ class ShrinkOp(LayoutUnawareOp, BaseActivationOp, OnnxOp):
         self.set_out_tensor(out_tensor)
 
 
-class SigmoidOp(LayoutUnawareOp, BaseActivationOp, OnnxOp):
+class SigmoidOp(SameShapeOp, LayoutUnawareOp, BaseActivationOp, OnnxOp):
     @classmethod
     def attributes(cls):
         return {1: {'consumed_inputs': {'type': AttrType.INTS}},
@@ -2474,7 +2474,8 @@ class SigmoidOp(LayoutUnawareOp, BaseActivationOp, OnnxOp):
         out_tensor = tf.sigmoid(inp).numpy()
         if input_dtype != 'float32':
             out_tensor = out_tensor.astype(input_dtype)
-        self.set_out_tensor(out_tensor)
+        out_symbol = self.cal_output_symbol()
+        self.set_out_tensor(out_tensor, symbol=out_symbol)
 
 
 class SignOp(LayoutUnawareOp, OpHasOneOutPort, OnnxOp):

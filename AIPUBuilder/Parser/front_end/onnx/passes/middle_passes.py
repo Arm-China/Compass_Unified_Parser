@@ -7796,23 +7796,24 @@ def convert_matmulnbits(graph):
                     infer_symbol(graph, src, last_input)
                     src_obj = NodeWrap(graph, src)['object']
                     src_out_symbol = src_obj.get_output_symbols()[0]
-                    pre_rs_sym0 = 1
-                    for i in range(inp_rank - 1):
-                        pre_rs_sym0 *= src_out_symbol[i]
-                    if not Op.is_all_global_symbols(src_out_symbol, graph._attr['global_symbols']):
-                        pre_rs_symbol = [pre_rs_sym0, Symbol(f's{inp_rank-1}')]
-                        post_rs_symbol = None
-                    else:
-                        pre_rs_symbol = [pre_rs_sym0, src_out_symbol[-1]]
-                        post_rs_symbol = src_out_symbol[:-1] + [Symbol('s1')]
-                    out_edges = graph.sorted_out_edges(node, keys=True, data=True)
-                    fc_out_symbol = [Symbol('s0'), quant_weights.shape[0]]
-                    updated_edges = {}
-                    for _, dst, k, out_attr in out_edges:
-                        new_out_attr = copy.deepcopy(out_attr)
-                        new_out_attr['tensor'].symbol = fc_out_symbol
-                        updated_edges[(node, dst, k)] = new_out_attr
-                    nx.set_edge_attributes(graph, updated_edges)
+                    if src_out_symbol is not None:
+                        pre_rs_sym0 = 1
+                        for i in range(inp_rank - 1):
+                            pre_rs_sym0 *= src_out_symbol[i]
+                        if not Op.is_all_global_symbols(src_out_symbol, graph._attr['global_symbols']):
+                            pre_rs_symbol = [pre_rs_sym0, Symbol(f's{inp_rank-1}')]
+                            post_rs_symbol = None
+                        else:
+                            pre_rs_symbol = [pre_rs_sym0, src_out_symbol[-1]]
+                            post_rs_symbol = src_out_symbol[:-1] + [Symbol('s1')]
+                        out_edges = graph.sorted_out_edges(node, keys=True, data=True)
+                        fc_out_symbol = [Symbol('s0'), quant_weights.shape[0]]
+                        updated_edges = {}
+                        for _, dst, k, out_attr in out_edges:
+                            new_out_attr = copy.deepcopy(out_attr)
+                            new_out_attr['tensor'].symbol = fc_out_symbol
+                            updated_edges[(node, dst, k)] = new_out_attr
+                        nx.set_edge_attributes(graph, updated_edges)
                 else:
                     pre_rs_symbol = None
                     post_rs_symbol = None

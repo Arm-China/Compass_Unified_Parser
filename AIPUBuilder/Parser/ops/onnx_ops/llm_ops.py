@@ -201,7 +201,36 @@ class AttentionOp(OpHasVariableOutPorts, OnnxOp):
             out_tensors.append(present_value)
         if 3 in out_ports:
             out_tensors.append(qk_matmul_output)
-        self.set_out_tensor(out_tensors)
+        out_symbols = self.cal_output_symbol()
+        self.set_out_tensor(out_tensors, symbols=out_symbols)
+
+    def cal_output_symbol(self):
+        if self._graph._attr['enable_ds']:
+            input_symbols = self.get_input_symbols(local=True)
+            batch = input_symbols[0][0]
+            kv_seq_len = input_symbols[1][-2]
+            if len(input_symbols[0]) == 3:
+                head_size = input_symbols[0][-1] / self.q_num_heads
+                v_head_size = input_symbols[2][-1] / self.kv_num_heads
+                y_symbol = input_symbols[0][:2] + [v_head_size * self.q_num_heads]
+            else:
+                head_size = input_symbols[0][-1]
+                v_head_size = input_symbols[2][-1]
+                y_symbol = input_symbols[0][:3] + [v_head_size]
+            out_ports = self.get_out_ports()
+            out_symbols = [y_symbol]
+            if 1 in out_ports:
+                total_len = kv_seq_len + input_symbols[4][-2]
+                out_symbols.append([batch, self.kv_num_heads, total_len, head_size])
+            if 2 in out_ports:
+                total_len = kv_seq_len + input_symbols[4][-2]
+                out_symbols.append([batch, self.kv_num_heads, total_len, v_head_size])
+            if 3 in out_ports:
+                total_len = kv_seq_len + input_symbols[4][-2]
+                out_symbols.append([batch, self.q_num_heads, input_symbols[0][-2], total_len])
+        else:
+            out_symbols = []
+        return out_symbols
 
     def convert_version(self):
         # from ...front_end.onnx.passes.common_passes import insert_constant
@@ -233,7 +262,7 @@ class RotaryEmbeddingOp(OpHasOneOutPort, OnnxOp):
         inputs = self.get_input_tensors()
         output = RotaryEmbeddingOp.rope_infer(inputs, self.num_heads, self.interleaved, self.rotary_embedding_dim)
         out_symbol = self.get_input_symbols(local=True)[0]
-        self.set_out_tensor(output, out_symbol)
+        self.set_out_tensor(output, symbol=out_symbol)
 
     @staticmethod
     def rope_infer(inputs, num_heads, interleaved=0, rotary_embedding_dim=0):

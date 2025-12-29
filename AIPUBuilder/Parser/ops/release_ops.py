@@ -4557,10 +4557,10 @@ class ArmReshapeOp(OpHasOneOutPort, ArmOp):
         ret = super(ArmReshapeOp, self).write_attrs(txt_file)
         if ret:
             txt_file.write('shape=[%s]\n' % num_list_to_string(self.dim))
-            if self._graph._attr['enable_ds']:
-                out_symbol = self.get_output_symbols()
-                if out_symbol:
-                    txt_file.write('ds_shape=[%s]\n' % expr_list_to_string(out_symbol[0]))
+            # if self._graph._attr['enable_ds']:
+            #     out_symbol = self.get_output_symbols()
+            #     if out_symbol:
+            #         txt_file.write('ds_shape=[%s]\n' % expr_list_to_string(out_symbol[0]))
         return ret
 
 
@@ -5660,7 +5660,8 @@ class ArmRotaryEmbeddingOp(OpHasOneOutPort, ArmOp):
             output = np.reshape(output, original_input_shape)
         else:
             output = np.transpose(output, (0, 2, 1, 3))
-        self.set_out_tensor(output)
+        out_symbol = self.get_input_symbols(local=True)[0]
+        self.set_out_tensor(output, symbol=out_symbol)
 
     def write_attrs(self, txt_file):
         ret = super(ArmRotaryEmbeddingOp, self).write_attrs(txt_file)

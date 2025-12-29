@@ -932,7 +932,7 @@ class ReshapeOp(OpHasOneOutPort, OnnxOp):
         inputs = self.get_input_tensors()
         out_tensor = np.reshape(inputs[0], self.shape)
         out_symbol = self.cal_output_symbol()
-        self.set_out_tensor(out_tensor, out_symbol)
+        self.set_out_tensor(out_tensor, symbol=out_symbol)
 
     def cal_output_symbol(self):
         if not self._graph._attr['enable_ds']:
@@ -946,49 +946,67 @@ class ReshapeOp(OpHasOneOutPort, OnnxOp):
         input_symbol = self.get_input_symbols(local=True)[0]
         output_shape = self.shape if self.origin_shape is None else self.origin_shape
         output_symbol = [None] * len(output_shape)
-        axes_map = Op.cal_reshape_changed_axis_map(input_shape, output_shape)
-        if axes_map:
-            inp_unchanged_axis = 0
-            for i in range(len(output_shape)):
-                changed_axis = False
-                skip_axis = False
-                for am in axes_map:
-                    if i in am[1]:
-                        if i == am[1][0]:
-                            changed_axis = True
-                            break
-                        else:
-                            skip_axis = True
-                if skip_axis:
-                    continue
-                if not changed_axis:
-                    output_symbol[i] = Symbol(f's{inp_unchanged_axis}')
-                    inp_unchanged_axis += 1
-                else:
-                    for in_axes, out_axes in axes_map:
-                        if out_axes[0] == i:
-                            if len(out_axes) == 1:
-                                out_axis = out_axes[0]
-                                _symbol = 1
-                                for axis in in_axes:
-                                    _symbol *= input_symbol[axis]
-                                    inp_unchanged_axis += 1
-                                output_symbol[out_axis] = _symbol
-                            else:
-                                _symbol = 1
-                                for axis in in_axes:
-                                    _symbol *= input_symbol[axis]
-                                    inp_unchanged_axis += 1
-                                out_prod = 1
-                                for axis in out_axes:
-                                    if axis == out_axes[-1]:
-                                        output_symbol[axis] = _symbol / out_prod
-                                    else:
-                                        output_symbol[axis] = output_shape[axis]
-                                        out_prod *= output_shape[axis]
-                            break
+        const_info = self.sorted_in_consts()
+        if const_info and const_info[-1][1] == 1 and not self._attr.get('from_parser', False):
+            out_shape = const_info[-1][2].tolist()
+            output_symbol = out_shape.copy()
+            for i, s in enumerate(output_symbol):
+                if s == 0:
+                    output_symbol[i] = input_symbol[i]
+            if -1 in output_symbol:
+                idx = output_symbol.index(-1)
+                inp_prod = 1
+                for inp_s in input_symbol:
+                    inp_prod *= inp_s
+                out_prod = -1
+                for out_s in output_symbol:
+                    out_prod *= out_s
+                output_symbol[idx] = inp_prod / out_prod
+            return output_symbol
         else:
-            output_symbol = input_symbol.copy()
+            axes_map = Op.cal_reshape_changed_axis_map(input_shape, output_shape)
+            if axes_map:
+                inp_unchanged_axis = 0
+                for i in range(len(output_shape)):
+                    changed_axis = False
+                    skip_axis = False
+                    for am in axes_map:
+                        if i in am[1]:
+                            if i == am[1][0]:
+                                changed_axis = True
+                                break
+                            else:
+                                skip_axis = True
+                    if skip_axis:
+                        continue
+                    if not changed_axis:
+                        output_symbol[i] = Symbol(f's{inp_unchanged_axis}')
+                        inp_unchanged_axis += 1
+                    else:
+                        for in_axes, out_axes in axes_map:
+                            if out_axes[0] == i:
+                                if len(out_axes) == 1:
+                                    out_axis = out_axes[0]
+                                    _symbol = 1
+                                    for axis in in_axes:
+                                        _symbol *= input_symbol[axis]
+                                        inp_unchanged_axis += 1
+                                    output_symbol[out_axis] = _symbol
+                                else:
+                                    _symbol = 1
+                                    for axis in in_axes:
+                                        _symbol *= input_symbol[axis]
+                                        inp_unchanged_axis += 1
+                                    out_prod = 1
+                                    for axis in out_axes:
+                                        if axis == out_axes[-1]:
+                                            output_symbol[axis] = _symbol / out_prod
+                                        else:
+                                            output_symbol[axis] = output_shape[axis]
+                                            out_prod *= output_shape[axis]
+                                break
+            else:
+                output_symbol = input_symbol.copy()
 
         if 0 in output_shape:
             # or -1 in output_shape:

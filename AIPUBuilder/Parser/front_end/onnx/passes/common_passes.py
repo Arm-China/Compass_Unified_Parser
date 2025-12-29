@@ -1317,7 +1317,7 @@ def insert_reshape(graph, src, dst, in_attr, dim,
             graph.remove_edge(src, dst, key=key)
         reshape = get_valid_node_name(graph, src + '_post_reshape')
         graph.add_node(reshape)
-        reshape_attr = {'name': reshape, 'opset_version': 5, 'quantize': quantize}
+        reshape_attr = {'name': reshape, 'opset_version': 5, 'quantize': quantize, 'from_parser': True}
         if type == 'Reshape':
             reshape_dim = np.array(dim, np.int32)
             const = get_valid_node_name(graph, reshape + '_shape')
@@ -1366,7 +1366,7 @@ def insert_reshape_after(graph, src, new_dim, old_dim=None, out_port=0, type='Re
             reshape_name = src + '_post_reshape_' + str(out_port)
         reshape = get_valid_node_name(graph, reshape_name)
         graph.add_node(reshape)
-        reshape_attr = {'name': reshape, 'opset_version': 5, 'quantize': quantize}
+        reshape_attr = {'name': reshape, 'opset_version': 5, 'quantize': quantize, 'from_parser': True}
         if type == 'Reshape':
             reshape_dim = np.array(new_dim, np.int64)
             const = get_valid_node_name(graph, reshape + '_shape')
