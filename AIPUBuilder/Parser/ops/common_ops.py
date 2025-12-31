@@ -574,14 +574,9 @@ class InputOp(OpHasOneOutPort, InputLikeOp, CommonOp):
         out_tensor = input_tensor.copy()
         if input_symbol is not None:
             out_symbol = input_symbol.copy()
-            self.set_out_tensor(out_tensor, out_symbol)
+            self.set_out_tensor(out_tensor, shape_symbol=out_symbol)
         else:
             self.set_out_tensor(out_tensor)
-
-    def infer_symbol(self, input_symbol=None):
-        super(InputOp, self).infer_symbol()
-        assert input_symbol is not None, 'input symbol is empty in InputOp.'
-        self.set_out_symbol(input_symbol)
 
 
 class InTopKOp(LayoutUnawareOp, OpHasOneOutPort, CommonOp):
@@ -751,13 +746,13 @@ class RepeatOp(OpHasAxis, OpHasOneOutPort, CommonOp):
                 zeros = np.zeros(zeros_shape, inputs[0].dtype)
                 out_tensor = np.concatenate([out_tensor, zeros], axis=self.axis)
         out_symbol = self.cal_output_symbol()
-        self.set_out_tensor(out_tensor, symbol=out_symbol)
+        self.set_out_tensor(out_tensor, shape_symbol=out_symbol)
 
     def cal_output_symbol(self):
-        if self._graph._attr['enable_ds']:
+        if self.ds_mode:
             const_info = self.sorted_in_consts()
             if const_info and const_info[-1][1] == 1:
-                inp_symbol = self.get_input_symbols(local=True)[0]
+                inp_symbol = self.get_input_symbols()[0]
                 reps = const_info[-1][2].tolist()
                 if self.axis is None:
                     out_symbol = [int(np.sum(reps))]

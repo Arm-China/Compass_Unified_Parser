@@ -202,11 +202,11 @@ class AttentionOp(OpHasVariableOutPorts, OnnxOp):
         if 3 in out_ports:
             out_tensors.append(qk_matmul_output)
         out_symbols = self.cal_output_symbol()
-        self.set_out_tensor(out_tensors, symbols=out_symbols)
+        self.set_out_tensor(out_tensors, shape_symbols=out_symbols)
 
     def cal_output_symbol(self):
-        if self._graph._attr['enable_ds']:
-            input_symbols = self.get_input_symbols(local=True)
+        if self.ds_mode:
+            input_symbols = self.get_input_symbols()
             batch = input_symbols[0][0]
             kv_seq_len = input_symbols[1][-2]
             if len(input_symbols[0]) == 3:
@@ -261,8 +261,8 @@ class RotaryEmbeddingOp(OpHasOneOutPort, OnnxOp):
         super(RotaryEmbeddingOp, self).infer_shape()
         inputs = self.get_input_tensors()
         output = RotaryEmbeddingOp.rope_infer(inputs, self.num_heads, self.interleaved, self.rotary_embedding_dim)
-        out_symbol = self.get_input_symbols(local=True)[0]
-        self.set_out_tensor(output, symbol=out_symbol)
+        out_symbol = self.get_input_symbols()[0]
+        self.set_out_tensor(output, shape_symbol=out_symbol)
 
     @staticmethod
     def rope_infer(inputs, num_heads, interleaved=0, rotary_embedding_dim=0):

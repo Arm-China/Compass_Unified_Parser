@@ -542,7 +542,7 @@ class ErfOp(SameShapeOp, OnnxOp):
         inputs = self.get_input_tensors()
         out_tensor = torch.erf(torch.from_numpy(np.array(inputs[0], dtype=np.float32))).numpy().astype(inputs[0].dtype)
         out_symbol = self.cal_output_symbol()
-        self.set_out_tensor(out_tensor, out_symbol)
+        self.set_out_tensor(out_tensor, shape_symbol=out_symbol)
 
 
 class ExpOp(OpHasOneOutPort, OnnxOp):
@@ -577,7 +577,7 @@ class FloorOp(LayoutUnawareOp, SameShapeOp, OnnxOp):
         inputs = self.get_input_tensors()
         out_tensor = np.floor(inputs[0])
         out_symbol = self.cal_output_symbol()
-        self.set_out_tensor(out_tensor, symbol=out_symbol)
+        self.set_out_tensor(out_tensor, shape_symbol=out_symbol)
 
 
 class GemmOp(OpHasOneOutPort, OnnxOp):
@@ -944,10 +944,10 @@ class MatMulOp(OpHasOneOutPort, OnnxOp):
             out_symbol = self.cal_output_symbol()
             out_shape = self.eval_symbol([a_shape, b_shape], [out_symbol])[0]
             out_tensor = np.random.ranf(tuple(out_shape)).astype(inputs[0].dtype)
-        self.set_out_tensor(out_tensor, out_symbol)
+        self.set_out_tensor(out_tensor, shape_symbol=out_symbol if self.ds_mode else None)
 
     def cal_output_symbol(self):
-        a_symbol, b_symbol = self.get_input_symbols(local=True)
+        a_symbol, b_symbol = self.get_input_symbols(local=False if self.ds_mode else True)
         a_dim = len(a_symbol)
         b_dim = len(b_symbol)
         max_dim = max(a_dim, b_dim)
@@ -976,22 +976,8 @@ class MatMulOp(OpHasOneOutPort, OnnxOp):
                             elif b_symbol[i] == 1:
                                 out_symbol.append(a_symbol[i])
                             else:
-                                input_shapes = self.get_input_shapes()
-                                sym_shape_map = {}
-                                idx_add = 0
-                                for shape in input_shapes:
-                                    for idx, s in enumerate(shape):
-                                        sym_shape_map[idx + idx_add] = s
-                                    idx_add += len(shape)
-                                sym_idx = int(re.findall(r'\d+', str(a_symbol[i]))[0])
-                                if sym_shape_map[sym_idx] != 1:
-                                    out_symbol.append(a_symbol[i])
-                                else:
-                                    b_sym_idx = int(re.findall(r'\d+', str(b_symbol[i]))[0])
-                                    if sym_shape_map[b_sym_idx] == 1:
-                                        out_symbol.append(Max(a_symbol[i], b_symbol[i]))
-                                    else:
-                                        out_symbol.append(b_symbol[i])
+                                # assert a_symbol[i] == b_symbol[i], 'shape should be same or broadcastable in matmul.'
+                                out_symbol.append(a_symbol[i])
                         elif i == max_dim - 2:
                             out_symbol.append(a_symbol[i])
                         else:
@@ -1057,7 +1043,7 @@ class MaxOp(MultidirectionalBroadcastOp, OpNeedBroadcast, LayoutUnawareOp, OpHas
         inputs = self.get_input_tensors()
         out_tensor = reduce(lambda x, y: np.maximum(x, y), inputs)
         out_symbol = self.cal_output_symbol()
-        self.set_out_tensor(out_tensor, out_symbol)
+        self.set_out_tensor(out_tensor, shape_symbol=out_symbol)
 
 
 class MeanOp(MultidirectionalBroadcastOp, OpNeedBroadcast, OpHasOneOutPort, OnnxOp):
@@ -1288,7 +1274,7 @@ class PowOp(MultidirectionalBroadcastOp, OpNeedBroadcast, OpHasAxis, OpHasOneOut
             out_tensor = np.power(*inputs)
         out_tensor = out_tensor.astype(inputs[0].dtype)
         out_symbol = self.cal_output_symbol()
-        self.set_out_tensor(out_tensor, out_symbol)
+        self.set_out_tensor(out_tensor, shape_symbol=out_symbol)
 
     def __getattr__(self, item):
         ret = None
@@ -2226,22 +2212,24 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
             else:
                 self.scales = np.array(self.sizes, np.float32) / input_dim_np
 
-        inp_symbol = self.get_input_symbols(True)[0]
+        inp_symbol = self.get_input_symbols(local=False if self.ds_mode else True)[0]
+        out_symbol = []
 
         if self.cur_version == 10:
             out_shape = np.floor(
                 input_dim_np * self.scales).astype(np.int64).tolist()
-            out_symbol = []
-            for i in range(len(inp_symbol)):
-                decimal_part, integer_part = math.modf(self.scales[i])
-                if math.isclose(decimal_part, 0.0):
-                    out_symbol.append(int(self.scales[i]) * inp_symbol[i])
-                else:
-                    out_symbol.append(sympy.floor(self.scales[i] * inp_symbol[i]))
+            if self.ds_mode:
+                for i in range(len(inp_symbol)):
+                    decimal_part, integer_part = math.modf(self.scales[i])
+                    if math.isclose(decimal_part, 0.0):
+                        out_symbol.append(int(self.scales[i]) * inp_symbol[i])
+                    else:
+                        out_symbol.append(sympy.floor(self.scales[i] * inp_symbol[i]))
         else:
             if self.sizes is not None and self.sizes.size > 0:
                 out_shape = self.sizes.tolist()
-                out_symbol = self.sizes.tolist()
+                if self.ds_mode:
+                    out_symbol = self.sizes.tolist()
             else:
                 base_shape = input_dim_np * self.scales
                 if self.coordinate_transformation_mode == 'tf_crop_and_resize':
@@ -2251,13 +2239,13 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
                             (np.reshape(self.roi, (2, -1))
                              [1, :] - np.reshape(self.roi, (2, -1))[0, :])
                 out_shape = np.floor(base_shape).astype(np.int64).tolist()
-                out_symbol = []
-                for i in range(len(inp_symbol)):
-                    decimal_part, integer_part = math.modf(self.scales[i])
-                    if math.isclose(decimal_part, 0.0):
-                        out_symbol.append(int(self.scales[i]) * inp_symbol[i])
-                    else:
-                        out_symbol.append(sympy.floor(self.scales[i] * inp_symbol[i]))
+                if self.ds_mode:
+                    for i in range(len(inp_symbol)):
+                        decimal_part, integer_part = math.modf(self.scales[i])
+                        if math.isclose(decimal_part, 0.0):
+                            out_symbol.append(int(self.scales[i]) * inp_symbol[i])
+                        else:
+                            out_symbol.append(sympy.floor(self.scales[i] * inp_symbol[i]))
 
         if self.is_all_inputs_const():
             if FLOAT_EQUAL(inputs[0], 0):
@@ -2318,7 +2306,7 @@ class ResizeOp(LayoutConcernedOp, OpHasOneOutPort, OnnxOp):
         else:
             # Still use random output here to speedup parsing if inputs are non-const
             out_tensor = np.random.ranf(out_shape).astype(inputs[0].dtype)
-        self.set_out_tensor(out_tensor, symbol=out_symbol)
+        self.set_out_tensor(out_tensor, shape_symbol=out_symbol if self.ds_mode else None)
 
     def convert_version(self):
         from ...front_end.onnx.passes.common_passes import insert_constant
@@ -2475,7 +2463,7 @@ class SigmoidOp(SameShapeOp, LayoutUnawareOp, BaseActivationOp, OnnxOp):
         if input_dtype != 'float32':
             out_tensor = out_tensor.astype(input_dtype)
         out_symbol = self.cal_output_symbol()
-        self.set_out_tensor(out_tensor, symbol=out_symbol)
+        self.set_out_tensor(out_tensor, shape_symbol=out_symbol)
 
 
 class SignOp(LayoutUnawareOp, OpHasOneOutPort, OnnxOp):
@@ -2563,7 +2551,7 @@ class SoftmaxOp(SameShapeOp, OpHasAxis, OnnxOp):
         else:
             out_tensor = np.random.ranf(tuple(input_shape)).astype(inputs[0].dtype)
         out_symbol = self.cal_output_symbol()
-        self.set_out_tensor(out_tensor.astype(inputs[0].dtype), out_symbol)
+        self.set_out_tensor(out_tensor.astype(inputs[0].dtype), shape_symbol=out_symbol)
 
     def convert_version(self):
         max_ver = type(self).max_ver()
@@ -2650,7 +2638,7 @@ class SqrtOp(LayoutUnawareOp, SameShapeOp, OpHasNonZeroInput, OnnxOp):
         inputs = self.get_input_tensors()
         out_tensor = np.sqrt(inputs[0])
         out_symbol = self.cal_output_symbol()
-        self.set_out_tensor(out_tensor.astype(inputs[0].dtype), out_symbol)
+        self.set_out_tensor(out_tensor.astype(inputs[0].dtype), shape_symbol=out_symbol)
 
 
 class SubOp(ArithmeticOp, OpHasAxis, OnnxOp):
@@ -2869,8 +2857,8 @@ class UpsampleOp(OpHasOneOutPort, OnnxOp):
                 else:
                     out_tensor = ResizeOp.upsample_nearest(inputs[0], out_spatial_shape, spatial_scales)
         out_symbol = None
-        if self._graph._attr['enable_ds']:
-            inp_symbol = self.get_input_symbols(True)[0]
+        if self.ds_mode:
+            inp_symbol = self.get_input_symbols()[0]
             out_symbol = []
             for a, b in zip(inp_symbol, self.scales):
                 decimal_part, integer_part = math.modf(b)
@@ -2878,7 +2866,7 @@ class UpsampleOp(OpHasOneOutPort, OnnxOp):
                     out_symbol.append(a * int(b))
                 else:
                     out_symbol.append(sympy.floor(a * b))
-        self.set_out_tensor(out_tensor, symbol=out_symbol)
+        self.set_out_tensor(out_tensor, shape_symbol=out_symbol)
 
     def convert_version(self):
         from ...front_end.onnx.passes.common_passes import insert_constant

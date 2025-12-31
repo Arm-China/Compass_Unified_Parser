@@ -19,7 +19,7 @@ import torch
 import tensorflow as tf
 from ..common.defs import TensorType, Tensor, AttrType, Attribute, Framework, FLOAT_EQUAL
 from ..logger import INFO, DEBUG, WARN, ERROR, FATAL, WARN_EXCEPTION
-from ..common.utils import num_list_to_string, string_list_to_string, extend_lists
+from ..common.utils import num_list_to_string, string_list_to_string, extend_lists, expr_has_symbols
 from ..common.symbol_printer import compass_str_expr
 from ..graph.graph import SubGraph
 
@@ -272,10 +272,11 @@ class Op(abc.ABC):
         return {}
 
     def __init__(self, graph, attr_dict=None):
-        '''Inits SampleClass.'''
+        '''Inits OpClass.'''
         self._graph = graph
         self._type = re.sub(r'Op$', '', type(self).__name__, count=1)
         self._attr = {}
+        self.ds_mode = graph._attr['ds_mode']
         self.update_attributes(Op, attr_dict)
 
     def __getattr__(self, item):
@@ -442,7 +443,7 @@ class Op(abc.ABC):
         shape_idx = 0
         for shape in input_shapes:
             for i, s in enumerate(shape):
-                sub_list.append((Symbol(f's{i + shape_idx}'), s))
+                sub_list.append((Symbol(f's{i + shape_idx}', integer=True), s))
             shape_idx += len(shape)
         if self._graph._attr['global_symbols']:
             for k, v in self._graph._attr['global_symbols'].items():
@@ -503,7 +504,7 @@ class Op(abc.ABC):
             txt_file.write('layer_top_shape=[%s]\n' % string_list_to_string(
                 top_info[1] if len(top_info) >= 3 else []))
             # TODO: experimental feature
-            if len(top_info) >= 4 and 'symbol' in top_info[3][0] and self._graph._attr['enable_ds']:
+            if len(top_info) >= 4 and 'symbol' in top_info[3][0] and self.ds_mode:
                 out_symbols = [compass_str_expr(od['symbol']).replace(' ', '') for od in top_info[3] if 'symbol' in od]
                 txt_file.write('ds_output_shape=[%s]\n' % string_list_to_string(out_symbols))
 
@@ -642,11 +643,11 @@ class Op(abc.ABC):
         elif isinstance(self, ConstLikeOp):
             from .op_factory import is_compass_supported_op
             if not is_compass_supported_op(self.type):
-                if self._graph._attr['enable_ds'] or self.is_inputs_dynamic():
+                if self.ds_mode or self.is_inputs_dynamic():
                     WARN(f'{self.type}Op({self.name}) still not support dynamic, we infer it as constant instead.')
                 return True
             else:
-                if self._graph._attr['enable_ds'] or self.is_inputs_dynamic():
+                if self.ds_mode or self.is_inputs_dynamic():
                     return False
                 else:
                     return True
@@ -680,7 +681,7 @@ class Op(abc.ABC):
         elif isinstance(self, ConstLikeOp):
             from .op_factory import is_compass_supported_op
             if not is_compass_supported_op(self.type):
-                if self._graph._attr['enable_ds'] or self.is_inputs_dynamic():
+                if self.ds_mode or self.is_inputs_dynamic():
                     WARN(f'{self.type}Op({self.name}) still not support dynamic, we infer it as constant instead.')
                 return True
             else:
@@ -688,7 +689,7 @@ class Op(abc.ABC):
                     self.name, keys=True, data=True)]
                 if is_const_list and all(is_const_list):
                     return True
-                elif self._graph._attr['enable_ds'] or self.is_inputs_dynamic():
+                elif self.ds_mode or self.is_inputs_dynamic():
                     return False
                 else:
                     return True
@@ -737,15 +738,15 @@ class Op(abc.ABC):
                 try:
                     if local:
                         shape = list(d['tensor'].get_shape())
-                        ret.append([symbols(f's{i + idx}') for i in range(len(shape))])
+                        ret.append([symbols(f's{i + idx}', integer=True) for i in range(len(shape))])
                         idx += len(shape)
                     else:
                         from ..graph.node_wrap import NodeWrap
-                        if d['tensor'].symbol is None and \
+                        if d['tensor'].shape_symbol is None and \
                                 NodeWrap(self._graph, src)['object'].type in ('Constant', 'ArmConstant'):
                             ret.append(list(d['tensor'].get_shape()))
                         else:
-                            ret.append(list(d['tensor'].symbol))
+                            ret.append(list(d['tensor'].shape_symbol))
                 except:
                     ret.append(None)
             return ret
@@ -759,7 +760,7 @@ class Op(abc.ABC):
             ret = []
             for _, _, _, d in self._graph.sorted_out_edges(self.name, keys=True, data=True):
                 try:
-                    ret.append(list(d['tensor'].symbol))
+                    ret.append(list(d['tensor'].shape_symbol))
                 except:
                     ret.append(None)
             return ret
@@ -768,15 +769,15 @@ class Op(abc.ABC):
                   (self.name, str(e)))
             return []
 
-    def get_input_symbol_values(self):
-        '''Get input symbol value of the node. Generally used for Shape symbol information transmission.'''
+    def get_input_value_symbols(self):
+        '''Get input value symbol of the node. Generally used for Shape symbol information transmission.'''
         try:
             ret = []
             for _, _, d in self._graph.sorted_in_edges(self.name, data=True):
                 try:
-                    symbol_value = d['tensor'].symbol_value
-                    if symbol_value is not None:
-                        ret.append(symbol_value)
+                    value_symbol = d['tensor'].value_symbol
+                    if value_symbol is not None:
+                        ret.append(value_symbol)
                     else:
                         if d['tensor'].is_const:
                             if len(d['tensor'].shape) > 1:
@@ -793,7 +794,35 @@ class Op(abc.ABC):
                     ret.append(None)
             return ret
         except Exception as e:
-            ERROR('[Parser]: An exception occurred with get_input_symbol_values. Node(%s) %s' % (
+            ERROR('[Parser]: An exception occurred with get_input_value_symbols. Node(%s) %s' % (
+                self.name, str(e)))
+
+    def get_output_value_symbols(self):
+        '''Get output value symbol of the node. Generally used for Shape symbol information transmission.'''
+        try:
+            ret = []
+            for _, _, d in self._graph.sorted_out_edges(self.name, data=True):
+                try:
+                    value_symbol = d['tensor'].value_symbol
+                    if value_symbol is not None:
+                        ret.append(value_symbol)
+                    else:
+                        if d['tensor'].is_const:
+                            if len(d['tensor'].shape) > 1:
+                                # suppose shape calculation is 1D
+                                # ret.append(d['tensor'].value.tolist())   # tolist() is too slow
+                                ret.append(None)
+                            elif len(d['tensor'].shape) == 1:
+                                ret.append(list(d['tensor'].value.astype(object)))
+                            else:
+                                ret.append(d['tensor'].value.item())
+                        else:
+                            ret.append(None)
+                except:
+                    ret.append(None)
+            return ret
+        except Exception as e:
+            ERROR('[Parser]: An exception occurred with get_output_value_symbols. Node(%s) %s' % (
                 self.name, str(e)))
 
     def get_input_dtypes(self):
@@ -930,8 +959,8 @@ class Op(abc.ABC):
             if len(d['tensor'].min_max) == 2:
                 min_max = np.array(d['tensor'].min_max, dtype=np.float32)
                 info_value[2].update({'min_max': min_max})
-            if d['tensor'].symbol is not None and None not in d['tensor'].symbol:
-                info_value[2].update({'symbol': d['tensor'].symbol})
+            if d['tensor'].shape_symbol is not None and None not in d['tensor'].shape_symbol:
+                info_value[2].update({'symbol': d['tensor'].shape_symbol})
             if quantize:
                 if d['tensor'].dtype is not None:
                     info_value[2].update({'dtype': str(d['tensor'].dtype)})
@@ -960,53 +989,11 @@ class OpHasOneOutPort(Op):
         '''An abstract method for shape inference.'''
         super(OpHasOneOutPort, self).infer_shape()
 
-    def infer_symbol(self):
-        inp_symbol = self.get_input_symbols()
-        if inp_symbol and None not in inp_symbol:
-            local_symbol = self.get_input_symbols(local=True)
-            out_local_symbol = self.get_output_symbols()[0]
-            if out_local_symbol is not None:
-                sym_mp = []
-                for i, inp_s in enumerate(inp_symbol):
-                    # if not Op.is_all_global_symbols(inp_s, self._graph._attr['global_symbols']):
-                    #     continue
-                    sym_mp += list(zip(local_symbol[i], inp_s))
-                output_symbol = []
-                for s in out_local_symbol:
-                    if isinstance(s, int):
-                        output_symbol.append(s)
-                    else:
-                        new_s = s.subs(sym_mp)
-                        if isinstance(new_s, Max):
-                            symbols_set = new_s.atoms(Symbol)
-                            numbers = new_s.atoms(Number)
-                            numbers_and_symbols = numbers.union(symbols_set)
-                            has_global_symbol = False
-                            for _s in numbers_and_symbols:
-                                if isinstance(_s, Symbol):
-                                    if _s in self._graph._attr['global_symbols']:
-                                        has_global_symbol = True
-                                        output_symbol.append(_s)
-                                        break
-                                else:
-                                    if _s != 1:
-                                        has_global_symbol = True
-                                        output_symbol.append(_s)
-                                        break
-                            if not has_global_symbol:
-                                output_symbol.append(new_s)
-                        elif new_s.is_Integer:
-                            output_symbol.append(int(new_s))
-                        else:
-                            output_symbol.append(new_s)
-                self.set_out_symbol(output_symbol)
-            else:
-                WARN(f'{self.type}({self.name}) not implement symbol yet, please support it first.')
-
-    def set_out_tensor(self, tensor_data, symbol=None):
+    def set_out_tensor(self, tensor_data, is_const=None, is_dynamic=None, shape_symbol=None):
         '''set the out tensor of this op.'''
         try:
-            is_const = self.is_all_inputs_const()
+            if is_const is None:
+                is_const = self.is_all_inputs_const()
             if is_const:
                 is_dynamic = False
             else:
@@ -1017,8 +1004,8 @@ class OpHasOneOutPort(Op):
             for _, _, d in self._graph.sorted_out_edges(self.name, data=True):
                 if d.get('tensor', None) is not None:
                     d['tensor'].value = tensor_data
-                    if symbol is not None:
-                        d['tensor'].symbol = symbol
+                    if shape_symbol is not None:
+                        d['tensor'].shape_symbol = shape_symbol
                     if tensor_data is not None:
                         d['tensor'].shape = d['tensor'].value.shape
                         d['tensor'].is_const = is_const
@@ -1057,27 +1044,47 @@ class OpHasOneOutPort(Op):
             ERROR('[Parser]: Node(%s) meets exception in set_out_const (%s)!' %
                   (self.name, str(e)))
 
+    def set_out_dynamic(self):
+        '''set the out tensor is dynamic of this op.'''
+        try:
+            self.infer_shape()
+            for _, _, d in self._graph.sorted_out_edges(self.name, data=True):
+                if d.get('tensor', None) is not None:
+                    d['tensor'].is_const = False
+                    d['tensor'].is_dynamic = True
+                else:
+                    d['tensor'] = Tensor(is_const=False, is_dynamic=True)
+
+            self.clear_unused_tensor(False)
+
+        except KeyError as e:
+            ERROR('[Parser]: Node(%s) meets key error in set_out_dynamic (%s)!' %
+                  (self.name, str(e)))
+        except Exception as e:
+            ERROR('[Parser]: Node(%s) meets exception in set_out_dynamic (%s)!' %
+                  (self.name, str(e)))
+
     def set_out_symbol(self, symbol):
         try:
             for _, _, d in self._graph.sorted_out_edges(self.name, data=True):
                 if d.get('tensor', None) is not None:
-                    d['tensor'].symbol = symbol
+                    d['tensor'].shape_symbol = symbol
                 else:
-                    d['tensor'] = Tensor(symbol=symbol)
+                    d['tensor'] = Tensor(shape_symbol=symbol)
 
         except Exception as e:
             ERROR('[Parser]: Node(%s) meets exception in set_out_symbol (%s)!' %
                   (self.name, str(e)))
 
-    def set_out_symbol_value(self, symbol_value):
+    def set_out_value_symbol(self, value_symbol):
         try:
             for _, _, d in self._graph.sorted_out_edges(self.name, data=True):
                 if d.get('tensor', None) is not None:
-                    d['tensor'].symbol_value = symbol_value
+                    d['tensor'].value_symbol = value_symbol
                 else:
-                    d['tensor'] = Tensor(symbol_value=symbol_value)
+                    d['tensor'] = Tensor(value_symbol=value_symbol)
         except Exception as e:
-            ERROR('[Parser]: Node(%s) meets exception in set_out_symbol_value (%s)!' %
+            ERROR('[Parser]: Node(%s) meets exception in set_out_value_symbol (%s)!' %
                   (self.name, str(e)))
 
 
@@ -1091,10 +1098,7 @@ class OpHasMultipleOutPorts(Op):
         '''An abstract method for shape inference.'''
         super(OpHasMultipleOutPorts, self).infer_shape()
 
-    def infer_symbol(self):
-        pass
-
-    def set_out_tensor(self, tensor_data_list, is_dynamic=False):
+    def set_out_tensor(self, tensor_data_list, is_dynamic=False, shape_symbols=None):
         '''set the out tensor of this op.'''
         try:
             from ..graph.node_wrap import NodeWrap
@@ -1121,6 +1125,8 @@ class OpHasMultipleOutPorts(Op):
                     for _, _, d in cur_port_edges:
                         if d.get('tensor', None) is not None:
                             d['tensor'].value = t
+                            if shape_symbols:
+                                d['tensor'].shape_symbol = shape_symbols[i]
                             if t is not None:
                                 d['tensor'].shape = d['tensor'].value.shape
                                 d['tensor'].is_const = is_const
@@ -1154,33 +1160,7 @@ class OpHasVariableOutPorts(Op):
         '''An abstract method for shape inference.'''
         super(OpHasVariableOutPorts, self).infer_shape()
 
-    def infer_symbol(self):
-        inp_symbol = self.get_input_symbols()
-        if inp_symbol and None not in inp_symbol:
-            local_symbol = self.get_input_symbols(local=True)
-            out_local_symbol = self.get_output_symbols()
-            if out_local_symbol and None not in out_local_symbol:
-                sym_mp = []
-                for i, inp_s in enumerate(inp_symbol):
-                    if not Op.is_all_global_symbols(inp_s, self._graph._attr['global_symbols']):
-                        continue
-                    sym_mp += list(zip(local_symbol[i], inp_s))
-                output_symbols = []
-                for out_s in out_local_symbol:
-                    output_symbol = []
-                    for s in out_s:
-                        if isinstance(s, int):
-                            output_symbol.append(s)
-                        elif s.is_Integer:
-                            output_symbol.append(int(s))
-                        else:
-                            output_symbol.append(s.subs(sym_mp))
-                    output_symbols.append(output_symbol)
-                self.set_out_symbol(output_symbols)
-            else:
-                WARN(f'{self.type} not implement symbol yet, please support it first.')
-
-    def set_out_tensor(self, tensor_data_list, is_dynamic=False, symbols=[]):
+    def set_out_tensor(self, tensor_data_list, is_dynamic=False, shape_symbols=None):
         '''set the out tensor of this op.'''
         try:
             from ..graph.node_wrap import NodeWrap
@@ -1203,8 +1183,8 @@ class OpHasVariableOutPorts(Op):
                     if d.get('tensor', None) is not None:
                         d['tensor'].value = tensor_data_list[out_ports.index(
                             d['src_out_port'])]
-                        if symbols:
-                            d['tensor'].symbol = symbols[out_ports.index(
+                        if shape_symbols:
+                            d['tensor'].shape_symbol = shape_symbols[out_ports.index(
                                 d['src_out_port'])]
                         d['tensor'].shape = d['tensor'].value.shape
                         d['tensor'].is_const = is_const
@@ -1218,8 +1198,8 @@ class OpHasVariableOutPorts(Op):
                 for _, _, d in self._graph.sorted_out_edges(self.name, data=True):
                     if d.get('tensor', None) is not None:
                         d['tensor'].value = tensor_data_list[0]
-                        if symbols:
-                            d['tensor'].symbol = symbols[0]
+                        if shape_symbols:
+                            d['tensor'].shape_symbol = shape_symbols[0]
                         d['tensor'].shape = d['tensor'].value.shape
                         d['tensor'].is_const = is_const
                         d['tensor'].is_dynamic = is_dynamic
@@ -1246,22 +1226,22 @@ class OpHasVariableOutPorts(Op):
                 out_ports = self.get_out_ports()
                 for _, _, d in self._graph.sorted_out_edges(self.name, data=True):
                     if d.get('tensor', None) is not None:
-                        d['tensor'].symbol = out_symbol_list[out_ports.index(
+                        d['tensor'].shape_symbol = out_symbol_list[out_ports.index(
                             d['src_out_port'])]
                     else:
                         d['tensor'] = Tensor(
-                            symbol=out_symbol_list[out_ports.index(d['src_out_port'])])
+                            shape_symbol=out_symbol_list[out_ports.index(d['src_out_port'])])
             else:
                 for _, _, d in self._graph.sorted_out_edges(self.name, data=True):
                     if d.get('tensor', None) is not None:
-                        d['tensor'].symbol = out_symbol_list[0]
+                        d['tensor'].shape_symbol = out_symbol_list[0]
                     else:
-                        d['tensor'] = Tensor(symbol=out_symbol_list[0])
+                        d['tensor'] = Tensor(shape_symbol=out_symbol_list[0])
         except Exception as e:
             ERROR('[Parser]: Node(%s) meets exception in set_out_symbol (%s)!' %
                   (self.name, str(e)))
 
-    def set_out_symbol_value(self, symbol_value_list):
+    def set_out_value_symbol(self, symbol_value_list):
         try:
             if len(symbol_value_list) > 1:
                 out_ports = self.get_out_ports()
@@ -1279,7 +1259,7 @@ class OpHasVariableOutPorts(Op):
                     else:
                         d['tensor'] = Tensor(symbol_value=symbol_value_list[0])
         except Exception as e:
-            ERROR('[Parser]: Node(%s) meets exception in set_out_symbol_value (%s)!' %
+            ERROR('[Parser]: Node(%s) meets exception in set_out_value_symbol (%s)!' %
                   (self.name, str(e)))
 
 
@@ -1546,19 +1526,19 @@ class SameShapeOp(OpHasOneOutPort, Op):
     '''
 
     def cal_output_symbol(self):
-        if not self._graph._attr['enable_ds']:
+        if not self.ds_mode:
             return None
-        input_symbol = self.get_input_symbols(local=True)[0]
+        input_symbol = self.get_input_symbols()[0]
         return input_symbol
 
     def infer_symbol(self):
-        input_symbol_values = self.get_input_symbol_values()
+        input_symbol_values = self.get_input_value_symbols()
         invalid = any([inp is None for inp in input_symbol_values])
         if invalid:
             out_symbol_value = None
         else:
             out_symbol_value = input_symbol_values[0]
-        self.set_out_symbol_value(out_symbol_value)
+        self.set_out_value_symbol(out_symbol_value)
         super().infer_symbol()
 
 
@@ -2988,8 +2968,8 @@ class MultidirectionalBroadcastOp(Op):
     '''
 
     def cal_output_symbol(self):
-        if self._graph._attr['enable_ds']:
-            input_symbols = self.get_input_symbols(local=True)
+        if self.ds_mode:
+            input_symbols = self.get_input_symbols()
             max_dim = max([len(inp_s) for inp_s in input_symbols])
             output_symbol = []
             updated_input_symbols = []
@@ -3001,35 +2981,16 @@ class MultidirectionalBroadcastOp(Op):
                 updated_input_symbols.append(tmp_s)
 
             for i in range(max_dim):
-                non_one_list = []
-                for inp_s in updated_input_symbols:
-                    if inp_s[i] != 1:
-                        non_one_list.append(inp_s[i])
-                if len(non_one_list) > 1:
-                    # output_symbol.append(Max(*non_one_list))
-                    input_shapes = self.get_input_shapes()
-                    sym_shape_map = {}
-                    idx_add = 0
-                    for shape in input_shapes:
-                        for i, s in enumerate(shape):
-                            sym_shape_map[i + idx_add] = s
-                        idx_add += len(shape)
-                    max_symbol = None
-                    for sym in non_one_list:
-                        sym_idx = int(re.findall(r'\d+', str(sym))[0])
-                        if sym_shape_map[sym_idx] == 1:
-                            continue
-                        else:
-                            max_symbol = sym
-                            break
-                    if max_symbol is None:
-                        max_symbol = Max(*non_one_list)
-                    output_symbol.append(max_symbol)
-                else:
-                    if non_one_list:
-                        output_symbol.append(non_one_list[0])
+                shapes = [s[i] for s in updated_input_symbols]
+                max_shape = None
+                for _s in shapes:
+                    if _s == 1:
+                        continue
                     else:
-                        output_symbol.append(1)
+                        max_shape = _s
+                        break
+                max_shape = 1 if max_shape is None else max_shape
+                output_symbol.append(max_shape)
         else:
             output_symbol = None
         return output_symbol
@@ -3042,9 +3003,9 @@ class UnidirectionalBroadcastOp(Op):
     '''
 
     def cal_output_symbol(self):
-        if not self._graph._attr['enable_ds']:
+        if not self.ds_mode:
             return None
-        a_symbol, _ = self.get_input_symbols(local=True)
+        a_symbol, _ = self.get_input_symbols()
         return a_symbol
 
 
@@ -3072,17 +3033,20 @@ class ArithmeticOp(MultidirectionalBroadcastOp, LayoutUnawareOp, OpHasOneOutPort
             raise NotImplementedError(f'{self.type} in ArithmeticOp is not supported yet.')
         out_tensor = func(*inputs)
         out_symbol = self.cal_output_symbol()
-        self.set_out_tensor(out_tensor, out_symbol)
+        self.infer_symbol()
+        self.set_out_tensor(out_tensor, shape_symbol=out_symbol)
 
     def infer_symbol(self):
-        input_tensor_symbols = self.get_input_symbol_values()
+        if not self.ds_mode:
+            return
+        input_tensor_symbols = self.get_input_value_symbols()
         invalid = any([inp is None for inp in input_tensor_symbols])
-        const_info = self.sorted_in_consts()
-        if len(const_info) != 1 or len(self.get_output_shapes()[0]) > 1:
-            invalid = True
+        # const_info = self.sorted_in_consts()
+        # if len(const_info) != 1 or len(self.get_output_shapes()[0]) > 1:
+        #     invalid = True
 
         if not invalid:
-            max_len = self.get_output_shapes()[0][0] if self.get_output_shapes()[0] else 0
+            max_len = max(len(value_s) if isinstance(value_s, list) else 0 for value_s in input_tensor_symbols)
             if max_len == 0:
                 if 'Add' in self.type:
                     out_symbol_value = input_tensor_symbols[0] + input_tensor_symbols[1]
@@ -3122,55 +3086,7 @@ class ArithmeticOp(MultidirectionalBroadcastOp, LayoutUnawareOp, OpHasOneOutPort
                 else:
                     raise NotImplementedError(f'{self.type} in ArithmeticOp is not supported yet.')
 
-            self.set_out_symbol_value(out_symbol_value)
-
-        inp_symbol = self.get_input_symbols()
-        if inp_symbol:
-            local_symbol = self.get_input_symbols(local=True)
-            out_local_symbol = self.get_output_symbols()[0]
-            if out_local_symbol is not None:
-                max_len = len(out_local_symbol)
-                sym_mp = []
-                for i, inp_s in enumerate(inp_symbol):
-                    if inp_s is not None:
-                        sym_mp += list(zip(local_symbol[i], inp_s))
-                output_symbol = []
-                for i, s in enumerate(out_local_symbol):
-                    if isinstance(s, int):
-                        output_symbol.append(s)
-                    else:
-                        new_s = s.subs(sym_mp)
-                        symbols_set = new_s.free_symbols
-                        if new_s.is_Integer:
-                            output_symbol.append(int(new_s))
-                        elif isinstance(new_s, Max):
-                            has_global_symbol = False
-                            for _s in symbols_set:
-                                if _s in self._graph._attr['global_symbols']:
-                                    has_global_symbol = True
-                                    output_symbol.append(_s)
-                                    break
-                            if not has_global_symbol:
-                                output_symbol.append(new_s)
-                        elif Op.is_all_global_symbols(symbols_set, self._graph._attr['global_symbols']):
-                            output_symbol.append(new_s)
-                        else:
-                            if inp_symbol[0] and inp_symbol[1]:
-                                if len(inp_symbol[0]) == max_len and inp_symbol[0][i] in self._graph._attr[
-                                        'global_symbols']:
-                                    output_symbol.append(inp_symbol[0][i])
-                                elif len(inp_symbol[1]) == max_len and inp_symbol[1][i] in self._graph._attr[
-                                        'global_symbols']:
-                                    output_symbol.append(inp_symbol[1][i])
-                                else:
-                                    output_symbol.append(new_s)
-                            elif inp_symbol[0] and len(inp_symbol[0]) == max_len:
-                                output_symbol.append(inp_symbol[0][i])
-                            elif inp_symbol[1] and len(inp_symbol[1]) == max_len:
-                                output_symbol.append(inp_symbol[1][i])
-                            else:
-                                output_symbol.append(new_s)
-                self.set_out_symbol(output_symbol)
+            self.set_out_value_symbol(out_symbol_value)
 
 
 class InputLikeOp(Op):
@@ -3278,8 +3194,9 @@ class OnnxReduceOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
         '''An abstract method for shape inference.'''
         super(OnnxReduceOp, self).infer_shape()
         inputs = self.get_input_tensors()
-        input_symbol = self.get_input_symbols(local=True)[0]
-        out_symbol = input_symbol.copy()
+        if self.ds_mode:
+            input_symbol = self.get_input_symbols()[0]
+            out_symbol = input_symbol.copy()
         if self.axes is None and self.noop_with_empty_axes:
             out_tensor = inputs[0]
         else:
@@ -3290,12 +3207,13 @@ class OnnxReduceOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
             if self.type in ('ReduceL1', 'ReduceL2', 'ReduceLogSum', 'ReduceLogSumExp',
                              'ReduceMean', 'ReduceProd', 'ReduceSum', 'ReduceSumSquare'):
                 out_tensor = out_tensor.astype(inputs[0].dtype)
-            for axis in self.axes:
-                out_symbol[axis] = 1 if self.keepdims else -1
-            if not self.keepdims:
-                while -1 in out_symbol:
-                    out_symbol.remove(-1)
-        self.set_out_tensor(out_tensor, out_symbol)
+            if self.ds_mode:
+                for axis in self.axes:
+                    out_symbol[axis] = 1 if self.keepdims else -1
+                if not self.keepdims:
+                    while -1 in out_symbol:
+                        out_symbol.remove(-1)
+        self.set_out_tensor(out_tensor, shape_symbol=out_symbol if self.ds_mode else None)
 
 
 class BaseOnnxPoolOp(OpHasPaddingStrides, OnnxOp):

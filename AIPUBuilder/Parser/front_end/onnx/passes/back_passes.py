@@ -1601,26 +1601,25 @@ def merge_transpose_matmul_gemm(graph):
                             continue
 
                         matched = True
-                        enable_ds = graph._attr['enable_ds']
-                        if enable_ds:
+                        if matmul_gemm_obj.ds_mode:
                             matmul_out_edges = graph.sorted_out_edges(matmul_gemm, data=True)
-                            matmul_symbol = matmul_out_edges[0][-1]['tensor'].symbol
-                            input_symbols = matmul_gemm_obj.get_input_symbols(local=True)
+                            matmul_symbol = matmul_out_edges[0][-1]['tensor'].shape_symbol
+                            input_symbols = matmul_gemm_obj.get_input_symbols()
                             updated_mm_symbol = matmul_symbol[:]
                         if trans_out_edges[0][-1]['dst_in_port'] == 0:
                             trans_a = matmul_gemm_obj.trans_a
                             matmul_gemm_obj.trans_a = not trans_a
-                            if enable_ds and matmul_symbol:
+                            if matmul_gemm_obj.ds_mode and matmul_symbol:
                                 updated_mm_symbol[-1] = input_symbols[0][-1]
                         else:
                             trans_b = matmul_gemm_obj.trans_b
                             matmul_gemm_obj.trans_b = not trans_b
-                            if enable_ds and matmul_symbol:
+                            if matmul_gemm_obj.ds_mode and matmul_symbol:
                                 updated_mm_symbol[-1] = input_symbols[1][-2]
 
-                        if enable_ds and matmul_symbol:
+                        if matmul_gemm_obj.ds_mode and matmul_symbol:
                             for _, dst, out_attr in matmul_out_edges:
-                                out_attr['tensor'].symbol = updated_mm_symbol
+                                out_attr['tensor'].shape_symbol = updated_mm_symbol
 
                         graph.remove_edge(trans, matmul_gemm)
                         trans_in_edges = graph.sorted_in_edges(trans, data=True)
@@ -3361,7 +3360,7 @@ def rename_slice(graph):
             if len(in_edges) > 1 and any(not in_attr['tensor'].is_const for _, _, in_attr in in_edges[1:]):
                 out_symbol = slice_obj.get_output_symbols()[0]
                 if Op.is_all_global_symbols(out_symbol, graph._attr['global_symbols']):
-                    input_tensor_symbols = slice_obj.get_input_symbol_values()
+                    input_tensor_symbols = slice_obj.get_input_value_symbols()
                     input_shape = input_shapes[0]
                     inp_rank = len(input_shape)
                     starts = input_tensor_symbols[1]
@@ -5870,13 +5869,12 @@ def sink_transpose_through_special_reshape(graph):
             if not sink_ok:
                 continue
 
-            ds_mode = graph._attr['enable_ds']
             new_rs_shape = []
             perm_map = []
-            if ds_mode:
-                trans_in_symbol = trans_obj.get_input_symbols(local=True)[0]
+            if trans_obj.ds_mode:
+                trans_in_symbol = trans_obj.get_input_symbols()[0]
                 new_rs_symbol = []
-                origin_rs_in_symbol = reshape_obj.get_input_symbols(local=True)[0]
+                origin_rs_in_symbol = reshape_obj.get_input_symbols()[0]
                 origin_rs_out_symbol = reshape_obj.get_output_symbols()[0]
             else:
                 trans_in_symbol = []
@@ -5980,7 +5978,7 @@ def sink_transpose_through_special_reshape(graph):
                     reshape_in_edges[0][2]['tensor'].value, reshape_obj.dim)
             else:
                 reshape_out_tensor.shape = reshape_obj.dim
-            if ds_mode:
+            if trans_obj.ds_mode:
                 reshape_out_tensor.symbol = new_rs_symbol
             graph.add_edge(reshape, new_transpose, **{'tensor': reshape_out_tensor})
 
@@ -6136,10 +6134,6 @@ def convert_special_reshape(graph):
                 new_perm = list(range(len(rs_in_shape)))
                 new_perm[rs_out_non_one_dims[0]] = rs_in_non_one_dims[0]
                 new_perm[rs_in_non_one_dims[0]] = rs_out_non_one_dims[0]
-
-                out_symbol = [Symbol(f's{axis}') for axis in new_perm]
-                for _, dst, out_attr in rs_out_edges:
-                    out_attr['tensor'].symbol = out_symbol
 
                 new_transpose_attr = rs_obj.copied_attr()
                 new_transpose_attr.update(

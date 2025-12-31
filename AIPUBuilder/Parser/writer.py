@@ -174,7 +174,7 @@ def serialize(graph, params):
         net_attr['precision'] = 'int8' if graph._attr.get('quantize', False) else 'float32'
         net_attr['compat_quantized_model'] = 'true' if graph._attr.get('quantize', False) else 'false'
         net_attr['model_bin'] = './' + os.path.basename(bin_path)
-        if graph._attr['enable_ds'] and graph._attr.get('global_symbols', {}):
+        if graph._attr['ds_mode'] and graph._attr.get('global_symbols', {}):
             net_attr['dynamic_symbols'] = string_list_to_string(list(graph._attr['global_symbols'].keys()))
 
         input_names = params['input_names']

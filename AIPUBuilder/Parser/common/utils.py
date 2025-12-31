@@ -22,9 +22,17 @@ def is_dir(dir_path):
     return True if (dir_path and os.path.isdir(dir_path)) else False
 
 
-def is_sympy_with_symbol(var):
+def expr_has_symbols(var):
     from sympy.core.expr import Expr
-    if isinstance(var, Expr):
+    if isinstance(var, (list, tuple)):
+        ret_list = []
+        for expr in var:
+            if isinstance(expr, Expr):
+                ret_list.append(len(expr.free_symbols) > 0)
+            else:
+                ret_list.append(False)
+        return any(ret_list)
+    elif isinstance(var, Expr):
         return len(var.free_symbols) > 0
     else:
         return False

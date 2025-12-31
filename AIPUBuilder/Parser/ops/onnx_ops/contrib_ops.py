@@ -175,7 +175,42 @@ class GroupQueryAttentionMsOp(OpHasMultipleOutPorts, OnnxOp):
         output = np.transpose(output, (0, 2, 1, 3))
         output = np.reshape(output, (output.shape[0], output.shape[1], -1))
         out_tensors = [output, present_key, present_value]
-        self.set_out_tensor(out_tensors)
+        out_symbols = self.cal_output_symbol()
+        self.set_out_tensor(out_tensors, shape_symbols=out_symbols)
+
+    def cal_output_symbol(self):
+        if not self.ds_mode:
+            return None
+        input_symbols = self.get_input_symbols()
+        output_symbols = []
+        if len(input_symbols[0]) == 2:
+            head_size = input_symbols[0][-1] // (self.num_heads + 2 * self.kv_num_heads)
+            hidden_size = head_size * self.num_heads
+            kv_seq = input_symbols[0][1]
+            kv_head_size = head_size
+            output_symbols.append(input_symbols[0][:-1] + [hidden_size])
+        else:
+            kv_seq = input_symbols[1][1]
+            kv_head_size = input_symbols[1][-1] // self.kv_num_heads
+            output_symbols.append(input_symbols[0])
+
+        if len(input_symbols) >= 5:
+            # BNSH format
+            past_k = input_symbols[3]
+            past_v = input_symbols[4]
+
+            if past_k is not None and past_v is not None:
+                total_kv_seq_len = past_k[-2] + kv_seq
+                present_k = past_k.copy()
+                present_v = past_v.copy()
+                present_k[-2] = total_kv_seq_len
+                present_v[-2] = total_kv_seq_len
+            else:
+                present_k = [input_symbols[0][0], self.kv_num_heads, kv_seq, kv_head_size]
+                present_v = [input_symbols[0][0], self.kv_num_heads, kv_seq, kv_head_size]
+            output_symbols.append(present_k)
+            output_symbols.append(present_v)
+        return output_symbols
 
 
 class MatMulNBitsMsOp(OpHasOneOutPort, OnnxOp):
@@ -273,12 +308,12 @@ class MatMulNBitsMsOp(OpHasOneOutPort, OnnxOp):
             out_shape[-1] = self.N
             out_tensor = np.random.ranf(tuple(out_shape)).astype(A.dtype) + self.bias
         out_symbol = self.cal_output_symbol()
-        self.set_out_tensor(out_tensor, out_symbol)
+        self.set_out_tensor(out_tensor, shape_symbol=out_symbol)
 
     def cal_output_symbol(self):
-        if not self._graph._attr['enable_ds']:
+        if not self.ds_mode:
             return None
-        a_symbol, b_symbol = self.get_input_symbols(local=True)[:2]
+        a_symbol, b_symbol = self.get_input_symbols()[:2]
         out_symbol = a_symbol[:-1] + [int(self.N)]
         return out_symbol
 
@@ -372,12 +407,12 @@ class MatMulBnb4MsOp(OpHasOneOutPort, OnnxOp):
             out_shape[-1] = self.N
             out_tensor = np.random.ranf(tuple(out_shape)).astype(A.dtype)
         out_symbol = self.cal_output_symbol()
-        self.set_out_tensor(out_tensor, out_symbol)
+        self.set_out_tensor(out_tensor, shape_symbol=out_symbol)
 
     def cal_output_symbol(self):
-        if not self._graph._attr['enable_ds']:
+        if not self.ds_mode:
             return None
-        a_symbol = self.get_input_symbols(local=True)[0]
+        a_symbol = self.get_input_symbols()[0]
         out_symbol = a_symbol[:-1] + [int(self.N)]
         return out_symbol
 
@@ -448,13 +483,13 @@ class MultiHeadAttentionMsOp(OpHasVariableOutPorts, OnnxOp):
         else:
             out_tensor = np.random.ranf((bs, seq_len, self.num_heads * self.head_dim)).astype(inputs[0].dtype)
             out_tensors = [out_tensor]
-        out_symbols = [self.get_input_symbols(local=True)[0]]
+        out_symbols = [self.get_input_symbols()[0]]
         out_ports = self.get_out_ports()
         # if 1 in out_ports:
         #     out_tensors.append(np.array(std_var, np.float32))
         # if 2 in out_ports:
         #     out_tensors.append(np.array(std_var, np.float32))
-        self.set_out_tensor(out_tensors, symbols=out_symbols)
+        self.set_out_tensor(out_tensors, shape_symbols=out_symbols)
 
 
 class QGemmMsOp(OpHasOneOutPort, OnnxOp):
@@ -954,8 +989,8 @@ class RotaryEmbeddingMsOp(OpHasOneOutPort, OnnxOp):
         sin_emb = np.expand_dims(np.take(sin_cache, np.array(postion_ids, np.int32), axis=0), axis=2)
         sin_mul = rotate_input * np.tile(sin_emb, reps=(1, 1, int(input.shape[2]), 1))
         out_tensor = np.reshape((cos_mul + sin_mul), (bs, seq_len, -1)).astype(input.dtype)
-        out_symbol = self.get_input_symbols(local=True)[0]
-        self.set_out_tensor(out_tensor, out_symbol)
+        out_symbol = self.get_input_symbols()[0]
+        self.set_out_tensor(out_tensor, shape_symbol=out_symbol)
 
 
 class SkipSimplifiedLayerNormalizationMsOp(OpHasVariableOutPorts, OnnxOp):
@@ -1006,11 +1041,11 @@ class SkipSimplifiedLayerNormalizationMsOp(OpHasVariableOutPorts, OnnxOp):
         if 3 in out_ports:
             output_tensors.append(inp_skip_bias_sum.astype(input.dtype))
         out_symbols = self.cal_output_symbol()
-        self.set_out_tensor(output_tensors, symbols=out_symbols)
+        self.set_out_tensor(output_tensors, shape_symbols=out_symbols)
 
     def cal_output_symbol(self):
-        if self._graph._attr['enable_ds']:
-            input_symbols = self.get_input_symbols(local=True)
+        if self.ds_mode:
+            input_symbols = self.get_input_symbols()
             out_ports = self.get_out_ports()
             out_symbols = [input_symbols[0]]
             mean_var_symbol = input_symbols[0]

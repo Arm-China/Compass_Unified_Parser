@@ -75,7 +75,7 @@ def gen_input_tensor(name, shape, dtype, params, dynamic_shape=[]):
 
             for i, s in enumerate(shape):
                 if i in ds_dict:
-                    global_s = Symbol(ds_dict[i])
+                    global_s = Symbol(ds_dict[i], integer=True)
                     if global_s not in global_symbols:
                         global_symbols[global_s] = s
                     symbol.append(global_s)
@@ -85,7 +85,7 @@ def gen_input_tensor(name, shape, dtype, params, dynamic_shape=[]):
             assert len(dynamic_shape) == len(shape)
             for i, ds in enumerate(dynamic_shape):
                 if ds in params['dynamic_axes']:
-                    global_s = Symbol(ds)
+                    global_s = Symbol(ds, integer=True)
                     symbol.append(global_s)
                     if global_s not in global_symbols:
                         global_symbols[global_s] = shape[i]
@@ -94,7 +94,10 @@ def gen_input_tensor(name, shape, dtype, params, dynamic_shape=[]):
         else:
             pass
 
-    return Tensor(name=name, value=input_tensor, is_const=is_const, symbol=symbol), global_symbols
+    return Tensor(name=name,
+                  value=input_tensor,
+                  is_const=is_const,
+                  shape_symbol=symbol if symbol else None), global_symbols
 
 
 def build_subgraph(current_node_name,
@@ -108,7 +111,7 @@ def build_subgraph(current_node_name,
                    opset_ver):
     subgraph_name = f'{current_node_name}_{key}_subgraph'
     sub_graph = SubGraph(name=subgraph_name)
-    sub_graph._attr['enable_ds'] = root_graph._attr['enable_ds']
+    sub_graph._attr['ds_mode'] = root_graph._attr['ds_mode']
     sub_graph._attr['framework'] = root_graph._attr['framework']
     sub_graph._attr['parent_node'] = current_node_name
     sub_graph._attr['subgraph_node_remapping'] = {}
@@ -675,7 +678,7 @@ def convert_onnx_to_graph(graph, model_path, params):
         else False
 
     graph._attr['force_not_quantize'] = force_not_quantize
-    graph._attr['enable_ds'] = params['enable_ds']
+    graph._attr['ds_mode'] = params['ds_mode']
     graph._attr['subgraphs'] = OrderedDict()
     graph._attr['node_in_subgraphs'] = OrderedDict()
     graph._attr['subgraph_depends'] = OrderedDict()

@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright © 2022-2025 Arm Technology (China) Co. Ltd.
 
-
 from ..op import *
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 
@@ -36,7 +35,7 @@ class AndOp(MultidirectionalBroadcastOp, OpNeedBroadcast, OpHasOneOutPort, OnnxO
         else:
             out_tensor = np.logical_and(*inputs)
         out_symbol = self.cal_output_symbol()
-        self.set_out_tensor(out_tensor, out_symbol)
+        self.set_out_tensor(out_tensor, shape_symbol=out_symbol)
 
     def __getattr__(self, item):
         ret = None
@@ -103,30 +102,39 @@ class EqualOp(MultidirectionalBroadcastOp, OpNeedBroadcast, OpHasAxis, OpHasOneO
         else:
             out_tensor = np.equal(*inputs)
         out_symbol = self.cal_output_symbol()
-        self.set_out_tensor(out_tensor, out_symbol)
+        is_const, is_dynamic = self.infer_symbol()
+        self.set_out_tensor(out_tensor, is_const=is_const,
+                            is_dynamic=is_dynamic,
+                            shape_symbol=out_symbol)
 
     def infer_symbol(self):
-        input_tensor_symbols = self.get_input_symbol_values()
+        if not self.ds_mode:
+            return None, None
+        is_const = None
+        is_dynamic = None
+        input_tensor_symbols = self.get_input_value_symbols()
         invalid = False
         for inp in input_tensor_symbols:
             if inp is None:
                 invalid = True
                 break
-        const_info = self.sorted_in_consts()
-        if len(const_info) != 1:
-            invalid = True
 
         if not invalid:
-            const_idx, const_value = const_info[0][1], const_info[0][2]
-            if np.all(const_value <= 0):
+            const_value = None
+            if not expr_has_symbols(input_tensor_symbols[0]):
+                const_value = np.array(input_tensor_symbols[0])
+            if not expr_has_symbols(input_tensor_symbols[1]):
+                const_value = np.array(input_tensor_symbols[1])
+            if const_value is not None and np.all(const_value <= 0):
                 out_symbol_value = np.zeros_like(const_value, dtype=bool).tolist()
+                is_dynamic = False
+                is_const = True
             else:
                 out_symbol_value = None
         else:
             out_symbol_value = None
-
-        self.set_out_symbol_value(out_symbol_value)
-        super().infer_symbol()
+        self.set_out_value_symbol(out_symbol_value)
+        return is_const, is_dynamic
 
 
 class GreaterOp(MultidirectionalBroadcastOp, OpNeedBroadcast, OpHasAxis, OpHasOneOutPort, OnnxOp):
@@ -161,7 +169,7 @@ class GreaterOp(MultidirectionalBroadcastOp, OpNeedBroadcast, OpHasAxis, OpHasOn
         else:
             out_tensor = np.greater(*inputs)
         out_symbol = self.cal_output_symbol()
-        self.set_out_tensor(out_tensor, out_symbol)
+        self.set_out_tensor(out_tensor, shape_symbol=out_symbol)
 
     def __getattr__(self, item):
         ret = None
@@ -231,7 +239,7 @@ class LessOp(MultidirectionalBroadcastOp, OpNeedBroadcast, OpHasAxis, OpHasOneOu
         else:
             out_tensor = np.less(*inputs)
         out_symbol = self.cal_output_symbol()
-        self.set_out_tensor(out_tensor, out_symbol)
+        self.set_out_tensor(out_tensor, shape_symbol=out_symbol)
 
     def __getattr__(self, item):
         ret = None
@@ -316,7 +324,7 @@ class OrOp(MultidirectionalBroadcastOp, OpNeedBroadcast, OpHasOneOutPort, OnnxOp
         else:
             out_tensor = np.logical_or(*inputs)
         out_symbol = self.cal_output_symbol()
-        self.set_out_tensor(out_tensor, out_symbol)
+        self.set_out_tensor(out_tensor, shape_symbol=out_symbol)
 
     def __getattr__(self, item):
         ret = None
@@ -380,4 +388,4 @@ class XorOp(MultidirectionalBroadcastOp, OpNeedBroadcast, OpHasOneOutPort, OnnxO
         else:
             out_tensor = np.logical_xor(*inputs)
         out_symbol = self.cal_output_symbol()
-        self.set_out_tensor(out_tensor, out_symbol)
+        self.set_out_tensor(out_tensor, shape_symbol=out_symbol)
