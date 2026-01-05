@@ -4284,7 +4284,21 @@ class ArmReduceOp(OpHasMethod, OpHasAxis, OpHasOneOutPort, ArmOp):
             out_tensor = out_tensor.astype(np.uint8)
         else:
             out_tensor = out_tensor.astype(inputs[0].dtype)
-        self.set_out_tensor(out_tensor)
+        out_symbol = self.cal_output_symbol()
+        self.set_out_tensor(out_tensor, shape_symbol=out_symbol)
+
+    def cal_output_symbol(self):
+        if self.ds_mode:
+            input_symbol = self.get_input_symbols()[0]
+            out_symbol = input_symbol.copy()
+            for axis in self.axes:
+                out_symbol[axis] = 1 if self.keepdims else -1
+            if not self.keepdims:
+                while -1 in out_symbol:
+                    out_symbol.remove(-1)
+            return out_symbol
+        else:
+            return None
 
 
 class ArmReciprocalOp(SameShapeOp, LayoutUnawareOp, ArmOp):

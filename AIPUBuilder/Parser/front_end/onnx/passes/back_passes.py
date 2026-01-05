@@ -3045,17 +3045,6 @@ def rename_reduce(graph):
                 reshape = insert_reshape_after(
                     graph, reduce, out_shape, type='Reshape',
                     quantize=reduce_obj.quantize)
-                in_shape = input_shapes[0]
-                axes = reduce_obj.axes
-                out_symbol = []
-                if out_shape and in_shape:
-                    tmp_symbol = [f's{i}' for i in range(len(in_shape))]
-                    for i in range(len(in_shape)):
-                        if i not in axes:
-                            out_symbol.append(tmp_symbol[i])
-                reshape_out_edges = graph.sorted_out_edges(reshape, data=True)
-                for out_edge in reshape_out_edges:
-                    out_edge[2]['tensor'].symbol = out_symbol
                 reshape_obj = NodeWrap(graph, reshape)['object']
                 if reduce_obj.in_subgraph:
                     reshape_obj.in_subgraph = reduce_obj.in_subgraph
@@ -5600,7 +5589,7 @@ def sink_reshape_through_cast(graph):
             ERROR('[Parser]: Meets invalid Node object in sink_reshape_through_cast!')
             continue
         reshape_out_edges = graph.sorted_out_edges(reshape, data=True)
-        reshape_symbol = reshape_out_edges[0][-1]['tensor'].symbol
+        reshape_symbol = reshape_out_edges[0][-1]['tensor'].shape_symbol
         if len(reshape_out_edges) != 1:
             continue
         graph.remove_edges_from(reshape_in_edges + cast_out_edges)
@@ -5620,7 +5609,7 @@ def sink_reshape_through_cast(graph):
         graph.add_edge(cast, reshape, **reshape_in_attr)
         for _, dst, out_attr in cast_out_edges:
             new_out_attr = copy.deepcopy(out_attr)
-            new_out_attr['tensor'].symbol = reshape_symbol
+            new_out_attr['tensor'].shape_symbol = reshape_symbol
             graph.add_edge(reshape, dst, **new_out_attr)
 
 
@@ -5979,7 +5968,7 @@ def sink_transpose_through_special_reshape(graph):
             else:
                 reshape_out_tensor.shape = reshape_obj.dim
             if trans_obj.ds_mode:
-                reshape_out_tensor.symbol = new_rs_symbol
+                reshape_out_tensor.shape_symbol = new_rs_symbol
             graph.add_edge(reshape, new_transpose, **{'tensor': reshape_out_tensor})
 
             new_transpose_attr = reshape_obj.copied_attr()
