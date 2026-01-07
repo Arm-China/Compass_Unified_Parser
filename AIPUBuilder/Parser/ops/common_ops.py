@@ -1149,7 +1149,7 @@ class SiluOp(SameShapeOp, LayoutUnawareOp, ActivationOnlyOp, CommonOp):
         inputs = self.get_input_tensors()
         out_tensor = (inputs[0]) * tf.sigmoid(inputs[0].astype(np.float32)).numpy()
         out_symbol = self.cal_output_symbol()
-        self.set_out_tensor(out_tensor.astype(inputs[0].dtype), out_symbol)
+        self.set_out_tensor(out_tensor.astype(inputs[0].dtype), shape_symbol=out_symbol)
 
 
 class SlotUpdateOp(OpHasOneOutPort, CommonOp):

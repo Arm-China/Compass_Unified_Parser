@@ -1531,16 +1531,6 @@ class SameShapeOp(OpHasOneOutPort, Op):
         input_symbol = self.get_input_symbols()[0]
         return input_symbol
 
-    def infer_symbol(self):
-        input_symbol_values = self.get_input_value_symbols()
-        invalid = any([inp is None for inp in input_symbol_values])
-        if invalid:
-            out_symbol_value = None
-        else:
-            out_symbol_value = input_symbol_values[0]
-        self.set_out_value_symbol(out_symbol_value)
-        super().infer_symbol()
-
 
 class OpHasPaddingStrides(LayoutConcernedOp):
     """
