@@ -208,20 +208,20 @@ def convert_lstm(graph):
             w = lstm_obj.weights_list[0]
             w_stack = np.stack(np.split(w, 4, axis=0))
             reordered_w = w_stack[np.array([0, 2, 1, 3])]
-            reordered_w = np.reshape(reordered_w, newshape=(1, -1, input_size))
+            reordered_w = np.reshape(reordered_w, (1, -1, input_size))
 
             r = lstm_obj.weights_list[2]
             r_stack = np.stack(np.split(r, 4, axis=0))
             reordered_r = r_stack[np.array([0, 2, 1, 3])]
             reordered_r = np.reshape(
-                reordered_r, newshape=(1, -1, hidden_size))
+                reordered_r, (1, -1, hidden_size))
 
             wb = lstm_obj.weights_list[1]
             wb_stack = np.stack(np.split(wb, 4, axis=0))
             reordered_wb = wb_stack[np.array([0, 2, 1, 3])]
             rb = np.zeros_like(reordered_wb)
             reordered_b = np.concatenate([reordered_wb, rb], axis=0)
-            reordered_b = np.reshape(reordered_b, newshape=(1, -1))
+            reordered_b = np.reshape(reordered_b, (1, -1))
 
             insert_constant(graph, lstm + '_W', reordered_w,
                             lstm, in_port=1, data_format='NHWC')

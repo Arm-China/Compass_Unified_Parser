@@ -430,7 +430,7 @@ def remove_useless_op(graph, op_type_list):
                         and len(graph.sorted_out_edges(src_name)) == 1:
                     new_shape = node_obj.shape if op_type == 'Reshape' else node_obj.dim
                     src_node_obj.value = np.reshape(
-                        src_node_obj.value, newshape=new_shape)
+                        src_node_obj.value, new_shape)
                     removing_nodes.append(node_name)
                 elif len(in_shapes) >= 1 \
                         and in_shapes[0] is not None \
@@ -1341,8 +1341,7 @@ def insert_reshape(graph, src, dst, in_attr, dim,
         if in_attr.get('tensor', None) is not None:
             out_tensor = copy.deepcopy(in_attr['tensor'])
             if in_attr['tensor'].value is not None:
-                out_tensor.value = np.reshape(
-                    in_attr['tensor'].value, newshape=dim)
+                out_tensor.value = np.reshape(in_attr['tensor'].value, dim)
                 out_tensor.shape = out_tensor.value.shape
             else:
                 out_tensor.shape = tuple(dim)
@@ -1397,8 +1396,7 @@ def insert_reshape_after(graph, src, new_dim, old_dim=None, out_port=0, type='Re
                     new_out_tensor_value = new_out_attr['tensor'].value
                     if old_dim:
                         if new_out_tensor_value is not None:
-                            new_src_out_tensor = np.reshape(
-                                new_out_attr['tensor'].value, newshape=old_dim)
+                            new_src_out_tensor = np.reshape(new_out_attr['tensor'].value, old_dim)
                             src_out_attr.update(
                                 {'tensor': Tensor(value=new_src_out_tensor)})
                         else:
@@ -1406,7 +1404,7 @@ def insert_reshape_after(graph, src, new_dim, old_dim=None, out_port=0, type='Re
                     elif new_dim and new_out_tensor_shape is not None and new_dim != list(new_out_tensor_shape):
                         if new_out_tensor_value is not None:
                             new_src_out_tensor = np.reshape(
-                                new_out_attr['tensor'].value, newshape=new_dim)
+                                new_out_attr['tensor'].value, new_dim)
                             src_out_attr.update(
                                 {'tensor': Tensor(value=new_src_out_tensor)})
                         else:

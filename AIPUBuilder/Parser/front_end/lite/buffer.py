@@ -357,9 +357,9 @@ def dequantize_tensor_data(tensor_info, quantized):
                     expand_dims = len(tensor_data.shape) - len(quant_info['Scale'].shape)
                     new_scale_zp_shape = list(quant_info['Scale'].shape) + [1] * expand_dims
                     scale = np.reshape(
-                        quant_info['Scale'], newshape=new_scale_zp_shape)
+                        quant_info['Scale'], new_scale_zp_shape)
                     zp = np.reshape(
-                        quant_info['ZeroPoint'], newshape=new_scale_zp_shape)
+                        quant_info['ZeroPoint'], new_scale_zp_shape)
                 tensor_data = (tensor_data - zp) * scale
         else:
             tensor_data = (tensor_data - quant_info['ZeroPoint']) * quant_info['Scale']

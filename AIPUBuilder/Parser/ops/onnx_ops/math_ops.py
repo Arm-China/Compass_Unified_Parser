@@ -976,8 +976,10 @@ class MatMulOp(OpHasOneOutPort, OnnxOp):
                             elif b_symbol[i] == 1:
                                 out_symbol.append(a_symbol[i])
                             else:
-                                # assert a_symbol[i] == b_symbol[i], 'shape should be same or broadcastable in matmul.'
-                                out_symbol.append(a_symbol[i])
+                                if a_symbol[i] == b_symbol[i]:
+                                    out_symbol.append(a_symbol[i])
+                                else:
+                                    out_symbol.append(Max(a_symbol[i], b_symbol[i]))
                         elif i == max_dim - 2:
                             out_symbol.append(a_symbol[i])
                         else:

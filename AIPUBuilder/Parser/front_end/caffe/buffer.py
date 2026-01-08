@@ -39,10 +39,10 @@ def replace_caffe_pb(file_path):
 def trim_blob(blob):
     ret = None
     if 'data' in blob and 'shape' in blob:
-        ret = np.reshape(blob['data'], newshape=blob['shape']['dim'].tolist())
+        ret = np.reshape(blob['data'], blob['shape']['dim'].tolist())
     elif all([item in blob.keys() for item in ['num', 'channels', 'height', 'width', 'data']]):
         shape = [blob[item] for item in ['num', 'channels', 'height', 'width']]
-        ret = np.reshape(blob['data'], newshape=shape)
+        ret = np.reshape(blob['data'], shape)
     elif 'data' in blob and ('shape' not in blob or ('shape' in blob and 'dim' not in blob['shape'])):
         ret = np.squeeze(blob['data'])
     else:

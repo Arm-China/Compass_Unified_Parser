@@ -1375,7 +1375,7 @@ class OpHasAxis(Op):
             ndims_need_expand = len(ref_shape) - int(axis) - len(tensor.shape)
             if ndims_need_expand > 0:
                 new_shape = tensor.shape + [1] * ndims_need_expand
-                ret = np.reshape(tensor, newshape=new_shape)
+                ret = np.reshape(tensor, new_shape)
             else:
                 ret = tensor
         else:
@@ -1621,7 +1621,7 @@ class OpHasPaddingStrides(LayoutConcernedOp):
         '''Convert the pad parameter under the onnx framework to the pad under the torch framework.'''
         paddings = np.array(pads, np.int64)
         dims = paddings.size // 2
-        paddings = np.reshape(paddings, newshape=(2, dims))
+        paddings = np.reshape(paddings, (2, dims))
         ret = [paddings[:, d].tolist()
                for d in sorted(range(dims), reverse=True)]
         return extend_lists(ret)
@@ -3683,7 +3683,7 @@ class TfOp(Op):
         input_dims = len(input_data.shape)
         if data_format == 'NCHW_VECT_C':
             if input_dims != 4 or input_data.shape[-1] % 4 != 0:
-                ERROR('[Parser]: Meet invalid shape %s of input_data in convert_from_nhwc of TfOp!' % str(input_shape))
+                ERROR('[Parser]: Meet invalid shape %s of input_data in convert_from_nhwc of TfOp!' % str(input_data.shape))
                 return ret
             post_perm = TfOp.perm_nhwc_to_nchw_vect_c()
             out_shape = list(input_data.shape)

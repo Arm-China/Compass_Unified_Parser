@@ -502,12 +502,12 @@ class FlattenOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
             self.axis, len(inputs[0].shape)))
         if np.ndim(inputs[0]) in (0, 1):
             inp = np.expand_dims(inputs[0], axis=0)
-            inp = np.reshape(inp, newshape=(1, inp.size))
+            inp = np.reshape(inp, (1, inp.size))
         else:
             inp = inputs[0]
         new_shape = (int(np.prod(inp.shape[0:self.axis])),
                      int(np.prod(inp.shape[self.axis:])))
-        out_tensor = np.reshape(inp, newshape=new_shape)
+        out_tensor = np.reshape(inp, new_shape)
         self.set_out_tensor(out_tensor)
 
 

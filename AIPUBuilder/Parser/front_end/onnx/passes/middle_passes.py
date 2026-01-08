@@ -3315,9 +3315,8 @@ def fuse_pad(graph):
                     op_has_padding_obj = NodeWrap(
                         graph, op_has_padding)['object']
                     init_pads = op_has_padding_obj.pads
-                    fused_pads = np.reshape(np.array(init_pads, np.int64), newshape=(2, -1)) \
-                        + np.reshape(np.array(space_pads, np.int64),
-                                     newshape=(2, -1))
+                    fused_pads = np.reshape(np.array(init_pads, np.int64), (2, -1)) \
+                        + np.reshape(np.array(space_pads, np.int64), (2, -1))
                     new_pads = fused_pads.flatten().tolist()
                     if op_has_padding_obj.type == 'AveragePool':
                         if any(pad != 0 for pad in new_pads) and not op_has_padding_obj.count_include_pad:
@@ -5761,17 +5760,16 @@ def merge_dilated_conv_group(graph):
             matched = True
             block_size = s2d_obj.blocksize
             pad_pads = np.reshape(
-                np.array(pad_obj.space_pads(), np.int64), newshape=(2, -1))
+                np.array(pad_obj.space_pads(), np.int64), (2, -1))
 
             sliced_pads_1 = type(slice_1_obj).cal_sliced(
                 slice_1_obj.starts if len(slice_1_obj.starts) == 2 else slice_1_obj.starts[1:3],
                 slice_1_obj.ends if len(
                     slice_1_obj.ends) == 2 else slice_1_obj.ends[1:3],
                 slice_1_obj.get_input_shapes()[0][1:3])
-            fused_pads1 = np.reshape(np.array(conv_1_obj.pads, np.int64), newshape=(2, -1)) \
+            fused_pads1 = np.reshape(np.array(conv_1_obj.pads, np.int64), (2, -1)) \
                 + pad_pads \
-                - np.reshape(np.array(sliced_pads_1, np.int64),
-                             newshape=(2, -1))
+                - np.reshape(np.array(sliced_pads_1, np.int64), (2, -1))
             if isinstance(conv_1_obj, BaseDeconvOp):
                 conv_1_obj.pads_updated = False
                 pad_in_shape = pad_obj.get_input_shapes()[0]
@@ -5789,10 +5787,9 @@ def merge_dilated_conv_group(graph):
                 slice_2_obj.ends if len(
                     slice_2_obj.ends) == 2 else slice_2_obj.ends[1:3],
                 slice_2_obj.get_input_shapes()[0][1:3])
-            fused_pads2 = np.reshape(np.array(conv_2_obj.pads, np.int64), newshape=(2, -1)) \
+            fused_pads2 = np.reshape(np.array(conv_2_obj.pads, np.int64), (2, -1)) \
                 + pad_pads \
-                - np.reshape(np.array(sliced_pads_2, np.int64),
-                             newshape=(2, -1))
+                - np.reshape(np.array(sliced_pads_2, np.int64), (2, -1))
             if isinstance(conv_2_obj, BaseDeconvOp):
                 conv_2_obj.pads_updated = False
                 pad_in_shape = pad_obj.get_input_shapes()[0]
