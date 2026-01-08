@@ -485,7 +485,15 @@ def remove_useless_op(graph, op_type_list):
                         and input_shapes[0] == output_shapes[0] \
                         and all(d == 0 for d in node_obj.starts) \
                         and all(input_shapes[0][axis] == node_obj.ends[idx] for idx, axis in enumerate(node_obj.axes)):
-                    removing_nodes.append(node_name)
+                    if node_obj.ds_mode:
+                        input_symbols = node_obj.get_input_symbols()
+                        output_symbols = node_obj.get_output_symbols()
+                        if input_symbols[0] is not None and None not in input_symbols[0] and \
+                                output_symbols[0] is not None and None not in output_symbols[0] and \
+                                input_symbols[0] == output_symbols[0]:
+                            removing_nodes.append(node_name)
+                    else:
+                        removing_nodes.append(node_name)
             elif op_type == 'Split':
                 input_shapes = node_obj.get_input_shapes()
                 if len(input_shapes) >= 1 and len(node_obj.split) == 1 and \
@@ -1101,7 +1109,8 @@ def insert_mul_add_cast_after_for_dequant(graph, src, to_dtype, scale, zero_poin
     return ret
 
 
-def insert_constant(graph, name, value, dst, in_port=0, data_format='NCHW', const_ver=9, scale_zp=None, quantize=False, op_type='Constant'):
+def insert_constant(graph, name, value, dst, in_port=0, data_format='NCHW', const_ver=9, scale_zp=None,
+                    quantize=False, op_type='Constant', value_symbol=None):
     if graph.has_node(dst) and value is not None and isinstance(value, np.ndarray):
         const_name = get_valid_node_name(graph, name)
         graph.add_node(const_name)
@@ -1117,13 +1126,18 @@ def insert_constant(graph, name, value, dst, in_port=0, data_format='NCHW', cons
         NodeWrap(graph, const_name).replace_obj(op_type, const_attr)
         edge_attr = {'src_out_port': 0, 'dst_in_port': in_port,
                      'tensor': Tensor(value=value, is_const=True)}
+        if value_symbol is not None:
+            edge_attr['tensor'].is_const = False
+            edge_attr['tensor'].value_symbol = value_symbol
         if isinstance(scale_zp, (tuple, list)) \
                 and len(scale_zp) == 2:
             edge_attr['tensor'].scale_zp = tuple(scale_zp)
             edge_attr['tensor'].dtype = str(value.dtype)
         graph.add_edge(const_name, dst, **edge_attr)
+        return const_name
     else:
         ERROR('[Parser]: Invalid params for insert_constant (%s)!' % name)
+        return None
 
 
 def insert_dummy(graph, src, dst, in_attr, dummpy_type='Dummy', quantize=False):
@@ -1439,7 +1453,8 @@ def place_reshape(graph, reshape, dim, data_format='NHWC'):
                     data_format=data_format)
 
 
-def insert_slice(graph, src, dst, in_attr, begin, size, key=None, type='Slice', data_format='NHWC', quantize=False):
+def insert_slice(graph, src, dst, in_attr, begin, size, ds_begin=None, ds_size=None,
+                 key=None, type='Slice', data_format='NHWC', quantize=False):
     ret = None
     if graph.has_node(src) and graph.has_node(dst) and begin and size and type in ('Slice', 'ArmSlice'):
         if has_path(graph, src, dst):
@@ -1447,6 +1462,12 @@ def insert_slice(graph, src, dst, in_attr, begin, size, key=None, type='Slice', 
         slice = get_valid_node_name(graph, src + '_post_slice')
         graph.add_node(slice)
         slice_attr = {'name': slice, 'quantize': quantize}
+        ds_end = None
+        if ds_begin is not None and ds_size is not None:
+            slice_attr['ds_starts'] = ds_begin
+            ds_end = [a + b for a, b in zip(ds_begin, ds_size)]
+            slice_attr['ds_ends'] = ds_end
+            slice_attr['ds_steps'] = [1] * len(ds_begin)
 
         starts = np.array(begin, np.int32)
         size = np.array(size, np.int32)
@@ -1455,9 +1476,9 @@ def insert_slice(graph, src, dst, in_attr, begin, size, key=None, type='Slice', 
         if type == 'Slice':
             slice_attr.update({'opset_version': 10})
             insert_constant(graph, slice + '_starts', starts,
-                            slice, in_port=1, data_format=data_format)
+                            slice, in_port=1, data_format=data_format, value_symbol=ds_begin)
             insert_constant(graph, slice + '_ends', ends, slice,
-                            in_port=2, data_format=data_format)
+                            in_port=2, data_format=data_format, value_symbol=ds_end)
         else:
             slice_attr.update({'starts': starts.tolist(),
                                'ends': ends.tolist(),
@@ -1471,6 +1492,12 @@ def insert_slice(graph, src, dst, in_attr, begin, size, key=None, type='Slice', 
 
         slice_out_attr = copy.deepcopy(in_attr)
         slice_out_attr.update({'src_out_port': 0})
+
+        if ds_begin is not None and ds_size is not None:
+            slice_out_attr['tensor'].shape_symbol = ds_size
+            slice_out_attr['tensor'].is_const = False
+            slice_out_attr['tensor'].is_dynamic = True
+
         graph.add_edge(slice, dst, **slice_out_attr)
         ret = slice
     else:

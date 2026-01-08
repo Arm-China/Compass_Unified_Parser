@@ -8097,9 +8097,16 @@ def convert_attention(graph):
                     add_attr = {'name': add, 'opset_version': 13}
                     graph.add_edge(mul_scale, add, **{'src_out_port': 0, 'dst_in_port': 0,
                                                       'tensor': Tensor(shape=tuple(matmul_out_shape))})
-                    insert_constant(graph, att + '_atten_bias', np.array(attn_bias,
-                                    dtype=input_dtypes[0]), add, in_port=1)
+                    const_node = insert_constant(graph, att + '_atten_bias', np.array(attn_bias,
+                                                                                      dtype=input_dtypes[0]), add, in_port=1)
                     NodeWrap(graph, add).replace_obj('Add', add_attr)
+
+                    if graph._attr['ds_mode']:
+                        in_attr = {'src_out_port': 0, 'dst_in_port': 1,
+                                   'tensor': Tensor(value=np.array(attn_bias, dtype=input_dtypes[0]), is_const=True)}
+                        out_symbol = [inp_symbols[0][-2], inp_symbols[1][-2]]
+                        insert_slice(graph, const_node, add, in_attr, [0, 0], [q_seq_len, kv_seq_len],
+                                     ds_begin=[0, 0], ds_size=out_symbol)
                     attn_bias_node = add
                 else:
                     last_node = attn_mask
@@ -8130,11 +8137,18 @@ def convert_attention(graph):
                     add = get_valid_node_name(graph, att + '_add')
                     graph.add_node(add)
                     add_attr = {'name': add, 'opset_version': 13}
-                    insert_constant(graph, att + '_temp_mask', np.array(temp_mask, dtype=input_dtypes[0]),
-                                    add, in_port=1)
+                    temp_mask_const = insert_constant(graph, att + '_temp_mask', np.array(temp_mask, dtype=input_dtypes[0]),
+                                                      add, in_port=1)
                     graph.add_edge(last_node, add, **{'src_out_port': 0, 'dst_in_port': 0,
                                                       'tensor': Tensor(shape=tuple(matmul_out_shape))})
                     NodeWrap(graph, add).replace_obj('Add', add_attr)
+
+                    if graph._attr['ds_mode']:
+                        in_attr = {'src_out_port': 0, 'dst_in_port': 1,
+                                   'tensor': Tensor(value=np.array(temp_mask, dtype=input_dtypes[0]), is_const=True)}
+                        out_symbol = [inp_symbols[0][-2], inp_symbols[1][-2]]
+                        insert_slice(graph, temp_mask_const, add, in_attr, [0, 0], [q_seq_len, kv_seq_len],
+                                     ds_begin=[0, 0], ds_size=out_symbol)
 
                     add_bias = get_valid_node_name(graph, att + '_add_bias')
                     graph.add_node(add_bias)

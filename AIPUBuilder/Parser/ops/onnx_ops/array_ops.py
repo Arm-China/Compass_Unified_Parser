@@ -1699,6 +1699,9 @@ class SliceOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
                         else:
                             out_symbol.append(int(out))
                 self.set_out_symbol(out_symbol)
+                if expr_has_symbols(out_symbol):
+                    is_const = False
+                    is_dynamic = True
         return is_const, is_dynamic
 
 

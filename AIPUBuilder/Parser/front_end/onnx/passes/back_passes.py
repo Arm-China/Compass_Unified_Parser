@@ -11,7 +11,7 @@ from ....common.defs import Tensor, FLOAT_EQUAL, Framework
 from ....graph.graph import SubGraph
 from ....logger import INFO, DEBUG, WARN, ERROR, FATAL
 from ....common.utils import extend_lists, list_string_to_list, float_string_to_list, get_converted_dtype, \
-    get_closest_dtype, is_continuous_num, print_debug_info
+    get_closest_dtype, is_continuous_num, print_debug_info, expr_has_symbols
 from ....graph.node_wrap import NodeWrap
 from ....graph.graph_algo import determined_sort, get_valid_node_name, clear_redundant_nodes, has_path, infer
 from ....graph.pattern_match import matched_patterns, single_node_matcher, two_nodes_matcher
@@ -3346,7 +3346,7 @@ def rename_slice(graph):
         if slice_obj is not None \
                 and ((slice_obj.cur_version == 1 and len(in_edges) == 1) or (slice_obj.cur_version > 1 and 3 <= len(in_edges) <= 5)):
             input_shapes = slice_obj.get_input_shapes()
-            if len(in_edges) > 1 and any(not in_attr['tensor'].is_const for _, _, in_attr in in_edges[1:]):
+            if len(in_edges) > 1 and slice_obj.ds_mode:
                 out_symbol = slice_obj.get_output_symbols()[0]
                 if Op.is_all_global_symbols(out_symbol, graph._attr['global_symbols']):
                     input_tensor_symbols = slice_obj.get_input_value_symbols()
@@ -3381,9 +3381,10 @@ def rename_slice(graph):
                             shape = input_shape[i]
                             ends[i] = max(min(shape - 1, tmp_end), - shape - 1)
                     slice_attr.update({'ends': ends.tolist()})
-                    slice_attr.update({'ds_starts': ds_starts})
-                    slice_attr.update({'ds_ends': ds_ends})
-                    slice_attr.update({'ds_steps': ds_steps})
+                    if expr_has_symbols(ds_starts) or expr_has_symbols(ds_ends) or expr_has_symbols(ds_steps):
+                        slice_attr.update({'ds_starts': ds_starts})
+                        slice_attr.update({'ds_ends': ds_ends})
+                        slice_attr.update({'ds_steps': ds_steps})
                     if 'steps' not in slice_attr:
                         slice_attr.update({'steps': slice_obj.steps})
                     NodeWrap(graph, slice).replace_obj('ArmSlice', slice_attr)
@@ -3401,6 +3402,8 @@ def rename_slice(graph):
                     slice_attr = slice_obj.copied_attr()
                     NodeWrap(graph, slice).replace_obj('ArmSlice', slice_attr)
             else:
+                assert all(in_attr['tensor'].is_const for _, _, in_attr in in_edges[1:]
+                           ), 'SliceOp only support const starts/ends/steps in static graph mode.'
                 graph.remove_edges_from(in_edges[1:])
                 slice_attr = slice_obj.copied_attr()
                 ends = np.array(slice_obj.ends, np.int64)
