@@ -3,6 +3,7 @@
 
 
 import copy
+import networkx as nx
 from networkx.algorithms import isomorphism
 from itertools import product, permutations, combinations
 from .graph import Graph
@@ -57,7 +58,7 @@ def edge_feasibility(g1_edge, g2_edge):
         return found_match
 
 
-def matched_patterns(graph, nodes, edges):
+def matched_patterns(graph, nodes, edges, topo_order=False):
     ret = []
     if len(graph) and len(graph) >= len(nodes):
         for i, n in enumerate(nodes):
@@ -84,10 +85,21 @@ def matched_patterns(graph, nodes, edges):
         pattern.add_edges_from(edges)
         matcher = isomorphism.MultiDiGraphMatcher(graph, pattern, node_feasibility, edge_feasibility)
         # matches = [{v: k for k, v in m.items()} for m in matcher.subgraph_monomorphisms_iter()]
-        matches = [{v: k for k, v in m.items()} for m in matcher.subgraph_isomorphisms_iter()]
-        if len(matches) > 1:
-            keys = list(matches[0].keys())
-            matches = sorted(matches, key=lambda x: tuple(x[k] for k in keys))
+        # matches = [{v: k for k, v in m.items()} for m in matcher.subgraph_isomorphisms_iter()]
+        all_matches = list(matcher.subgraph_isomorphisms_iter())
+        if len(all_matches) > 1:
+            if topo_order:
+                topo_index = {k: i for i, k in enumerate(list(nx.topological_sort(graph)))}
+
+                def match_key(match):
+                    return tuple(topo_index[k] for k in match.keys() if k in topo_index)
+
+                all_matches = sorted(all_matches, key=match_key)
+            else:
+                all_matches = sorted(all_matches, key=lambda x: tuple(x.keys()))
+
+        matches = [{v: k for k, v in m.items()} for m in all_matches]
+
         if matches and any(n[1]['unique'] for n in nodes):
             for m in matches:
                 current_found_names = set([v for meta_ret in ret for v in meta_ret.values()])

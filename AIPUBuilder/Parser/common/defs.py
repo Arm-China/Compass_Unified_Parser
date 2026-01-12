@@ -156,6 +156,7 @@ class Tensor(object):
                 'is_const': False,
                 'is_dynamic': False,
                 'symbol': None,
+                'symbol_value': None,
                 'min_max': tuple(),
                 'scale_zp': tuple(),
                 'activation_quantization_axis': None,

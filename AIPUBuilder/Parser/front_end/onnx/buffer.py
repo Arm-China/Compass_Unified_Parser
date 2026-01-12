@@ -7,9 +7,11 @@ import re
 from functools import partial
 import numpy as np
 from onnx.onnx_pb import TensorProto
-from ml_dtypes import bfloat16, float8_e5m2, float8_e4m3fn, float8_e4m3fnuz
+from ml_dtypes import bfloat16, float8_e5m2, float8_e4m3fn, float8_e4m3fnuz, float8_e5m2fnuz, \
+    float4_e2m1fn, uint4, int4, float8_e8m0fnu
 
 from ...common.defs import TensorType
+from ...common.utils import unpack_4bit
 
 
 # TenserProto
@@ -59,6 +61,11 @@ ONNX_NP_TENSOR_MAP = {
     17: ('FLOAT8E4M3FN', float8_e4m3fn),
     18: ('FLOAT8E4M3FNUZ', float8_e4m3fnuz),
     19: ('FLOAT8E5M2', float8_e5m2),
+    20: ('FLOAT8E5M2FNUZ', float8_e5m2fnuz),
+    21: ('UINT4', uint4),
+    22: ('INT4', int4),
+    23: ('FLOAT4E2M1', float4_e2m1fn),
+    24: ('FLOAT8E8M0', float8_e8m0fnu),
 }
 
 
@@ -86,7 +93,11 @@ def onnx_tensor_decoder(pb, data_dir=''):
         else:
             if len(pb.raw_data) > 0:
                 assert data_type_name not in ['STRING', 'UNDEFINED']
-                ret = np.frombuffer(pb.raw_data, dtype=np_type)
+                if data_type_name in ['INT4', 'UINT4', 'FLOAT4E2M1']:
+                    data = np.frombuffer(pb.raw_data, dtype=np.uint8)
+                    ret = unpack_4bit(data, pb.dims)
+                else:
+                    ret = np.frombuffer(pb.raw_data, dtype=np_type)
             else:
                 if data_type_name in ['INT32', 'INT16', 'INT8', 'UINT16', 'UINT8', 'BOOL']:
                     ret = np.array(pb.int32_data, dtype=np_type)
@@ -103,8 +114,11 @@ def onnx_tensor_decoder(pb, data_dir=''):
                     # data is stored in uint16:
                     # vals = (np.array(vals).astype(np_dtype).view(dtype=np.uint16).flatten().tolist())
                     ret = np.frombuffer(np.array(pb.int32_data, dtype=np.uint16).tobytes(), dtype=np_type)
-                elif data_type_name in ['FLOAT8E4M3FN', 'FLOAT8E4M3FNUZ', 'FLOAT8E5M2']:
+                elif data_type_name in ['FLOAT8E4M3FN', 'FLOAT8E4M3FNUZ', 'FLOAT8E5M2', 'FLOAT8E5M2FNUZ', 'FLOAT8E8M0']:
                     ret = np.frombuffer(np.array(pb.int32_data, dtype=np.uint8).tobytes(), dtype=np_type)
+                elif data_type_name in ['INT4', 'UINT4', 'FLOAT4E2M1']:
+                    data = np.array(pb.int32_data, dtype=np.int32).view(np.uint32).astype(np.uint8)
+                    ret = unpack_4bit(data, pb.dims).view(np_type)
                 elif data_type_name in ['DOUBLE', 'COMPLEX128']:
                     ret = np.array(pb.double_data, dtype=np_type)
                 else:
@@ -126,6 +140,7 @@ def parse_proto_name(proto_name):
 
 def get_tensor_shape_content(tensor_shape_proto, params={}):
     shape_list = []
+    ds = []
     for d in tensor_shape_proto.dim:
         dim_value = d.dim_value
         if dim_value == 0:
@@ -136,6 +151,7 @@ def get_tensor_shape_content(tensor_shape_proto, params={}):
                     dim_strings = re.findall(re.compile(r'[a-zA-Z_]*'), dim_param)
                     if len(dim_strings) > 0:
                         dim_str = dim_strings[0]
+                        ds.append(dim_str)
                         if dim_str in params.get('input_dimensions', {}):
                             dim_param = re.sub(dim_str, str(params['input_dimensions'][dim_str]), dim_param)
                             dim_value = eval(dim_param)
@@ -147,8 +163,10 @@ def get_tensor_shape_content(tensor_shape_proto, params={}):
                         dim_value = int(dim_param)
             except:
                 pass
+        else:
+            ds.append(dim_value)
         shape_list.append(dim_value)
-    return np.array([dim for dim in shape_list], dtype=np.int64)
+    return np.array([dim for dim in shape_list], dtype=np.int64), ds
 
 
 def get_tensor_message(tensor_message, params={}):
@@ -159,7 +177,8 @@ def get_tensor_message(tensor_message, params={}):
         if field_name == 'elem_type':
             field_value = ONNX_NP_TENSOR_MAP[field_value][1].__name__
         elif field_name == 'shape':
-            field_value = get_tensor_shape_content(field[1], params=params)
+            field_value, ds = get_tensor_shape_content(field[1], params=params)
+            ret.update({'dynamic_shape': ds})
         else:
             continue
         ret.update({field_name: field_value})

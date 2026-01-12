@@ -97,7 +97,7 @@ class Tfconvert_to_tensorOp(OpHasOneOutPort, Tf2Op):
             return {'type': 'Cast', 'version': 1}
 
 
-class TfconstantOp(OpHasOneOutPort, ConstLikeOp, Tf2Op):
+class TfconstantOp(OpHasOneOutPort, ConstOp, Tf2Op):
     @classmethod
     def attributes(cls):
         return {2: {'value': {'type': AttrType.TENSOR, 'required': True, 'default': None},

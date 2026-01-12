@@ -7,6 +7,7 @@ from collections import defaultdict, OrderedDict
 import itertools
 import numpy as np
 import onnx
+from sympy import Symbol
 from ...graph.graph import Graph, SubGraph
 from .buffer import get_model_content, parse_proto, get_tensor_content, get_value_content, get_node_content, \
     get_graph_content
@@ -26,7 +27,7 @@ onnx_source_map = {
 }
 
 
-def gen_input_tensor(name, shape, dtype, params):
+def gen_input_tensor(name, shape, dtype, params, dynamic_shape=[]):
     if 0 in shape and name not in params.get('input_shapes', {}):
         WARN('[Parser]: Shape 0 found in Input node(%s), please check config file!' %
              name)
@@ -47,7 +48,53 @@ def gen_input_tensor(name, shape, dtype, params):
             input_tensor = np.random.ranf(
                 size=shape).astype(input_type)
         is_const = False
-    return Tensor(name=name, value=input_tensor, is_const=is_const)
+    symbol = []
+    global_symbols = {}
+    if params['dynamic_axes']:
+        if isinstance(params['dynamic_axes'], dict) and name in params['dynamic_axes']:
+            dynamic_axes = params['dynamic_axes'][name]
+            ds_dict = {}
+            shape_len = len(shape)
+
+            idx_start = 0
+            for n, s in params['input_shapes'].items():
+                if n != name:
+                    idx_start += len(s)
+                else:
+                    break
+
+            for axis in dynamic_axes:
+                if isinstance(axis, int):
+                    axis = axis if axis >= 0 else axis + shape_len
+                    ds_dict[axis] = f'd{axis + idx_start}'
+                else:
+                    # suppose a str like 0:batch
+                    assert isinstance(axis, str), 'axis must be int or str'
+                    kv = axis.split(':', 1)
+                    ds_dict[int(kv[0])] = str(kv[1])
+
+            for i, s in enumerate(shape):
+                if i in ds_dict:
+                    global_s = Symbol(ds_dict[i])
+                    if global_s not in global_symbols:
+                        global_symbols[global_s] = s
+                    symbol.append(global_s)
+                else:
+                    symbol.append(s)
+        elif isinstance(params['dynamic_axes'], list) and dynamic_shape:
+            assert len(dynamic_shape) == len(shape)
+            for i, ds in enumerate(dynamic_shape):
+                if ds in params['dynamic_axes']:
+                    global_s = Symbol(ds)
+                    symbol.append(global_s)
+                    if global_s not in global_symbols:
+                        global_symbols[global_s] = shape[i]
+                else:
+                    symbol.append(shape[i])
+        else:
+            pass
+
+    return Tensor(name=name, value=input_tensor, is_const=is_const, symbol=symbol), global_symbols
 
 
 def build_subgraph(current_node_name,
@@ -61,6 +108,7 @@ def build_subgraph(current_node_name,
                    opset_ver):
     subgraph_name = f'{current_node_name}_{key}_subgraph'
     sub_graph = SubGraph(name=subgraph_name)
+    sub_graph._attr['enable_ds'] = root_graph._attr['enable_ds']
     sub_graph._attr['framework'] = root_graph._attr['framework']
     sub_graph._attr['parent_node'] = current_node_name
     sub_graph._attr['subgraph_node_remapping'] = {}
@@ -733,6 +781,7 @@ def convert_onnx_to_graph(graph, model_path, params):
                             del custom_input_infos[single_input['name']]
 
                         input_shape = single_input['type']['tensor_type']['shape'].tolist()
+                        ds = single_input['type']['tensor_type']['dynamic_shape']
                         if 'input_shapes' in params and len(input_shape) >= 1:
                             name = single_input['name']
                             if name not in params['input_shapes']:
@@ -746,8 +795,10 @@ def convert_onnx_to_graph(graph, model_path, params):
                                     and len(input_shape) == len(params['input_shapes'][name]):
                                 input_shape[:] = params['input_shapes'][name][:]
 
-                        inp_tensor = gen_input_tensor(single_input['name'], input_shape,
-                                                      single_input['type']['tensor_type']['elem_type'], params)
+                        inp_tensor, global_symbols = gen_input_tensor(single_input['name'], input_shape,
+                                                                      single_input['type']['tensor_type']['elem_type'], params, ds)
+                        if global_symbols:
+                            graph._attr['global_symbols'].update(global_symbols)
 
                         graph._attr['input_tensors'].update({
                             single_input['name']: inp_tensor
@@ -816,7 +867,7 @@ def convert_onnx_to_graph(graph, model_path, params):
                             node_type = node_type + 'Ms'
                     quantize = False
                     if not force_not_quantize:
-                        if node['type'] in ('QuantizeLinear', 'QGemm') or node['type'].startswith('QLinear'):
+                        if node['type'] in ('QuantizeLinear', 'QGemm', 'MatMulNBits') or node['type'].startswith('QLinear'):
                             quantize = True
                             graph_is_quantized = True
                         elif node['type'] == 'DequantizeLinear':
@@ -1177,9 +1228,9 @@ def convert_onnx_to_graph(graph, model_path, params):
                                         graph._attr['input_tensors'].update({in_node_name: out_edges[0][2]['tensor']})
                                     else:
                                         try:
-                                            inp_tensor = gen_input_tensor(in_node_name,
-                                                                          custom_input_infos[in_name]['shape'],
-                                                                          custom_input_infos[in_name]['dtype'], params)
+                                            inp_tensor, global_symbols = gen_input_tensor(in_node_name,
+                                                                                          custom_input_infos[in_name]['shape'],
+                                                                                          custom_input_infos[in_name]['dtype'], params)
                                         except:
                                             ERROR(
                                                 '[Parser]: Shape of Input(%s) is unknown! Please provide input_shape in cfg file!' % in_name)

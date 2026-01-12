@@ -771,7 +771,7 @@ class TfKerasInputLayerOp(OpHasOneOutPort, InputLikeOp, KerasOp):
         self.update_attributes(TfKerasInputLayerOp, attr_dict)
         assert self.check_required(), 'TfKerasInputLayerOp is missing a required parameter.'
 
-    def infer_shape(self, input_tensor=None):
+    def infer_shape(self, input_tensor=None, input_symbol=None):
         super(TfKerasInputLayerOp, self).infer_shape()
         out_tensor = input_tensor
         if out_tensor is None:
@@ -784,7 +784,11 @@ class TfKerasInputLayerOp(OpHasOneOutPort, InputLikeOp, KerasOp):
                                   * 100).astype(np.dtype(self.dtype))
             except:
                 out_tensor = None
-        self.set_out_tensor(out_tensor)
+        if input_symbol is not None:
+            out_symbol = input_symbol.copy()
+            self.set_out_tensor(out_tensor, out_symbol)
+        else:
+            self.set_out_tensor(out_tensor)
 
     @property
     def correspond_onnx_op(self):
@@ -951,7 +955,7 @@ class TfKerasMinimumOp(OpHasOneOutPort, KerasNeedBroadcast):
         return {'type': 'Min', 'version': 6}
 
 
-class TfKerasMultiplyOp(OpHasOneOutPort, KerasNeedBroadcast):
+class TfKerasMultiplyOp(OpHasOneOutPort):
     @classmethod
     def attributes(cls):
         return {2: {}}

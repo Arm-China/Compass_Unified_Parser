@@ -51,10 +51,19 @@ def op_factory(graph, op_type, node_attr=None):
             node_attr.update({'type': tmp_type})
             ret = PluginOp(graph, node_attr)
         else:
-            ret = eval(op_type + 'Op(graph, node_attr)')
+            cls = globals().get(op_type + 'Op')
+            ret = cls(graph, node_attr)
     except Exception as e:
         WARN('[Parser]: Creating operator on Node(%s) failed (%s)!' %
              (node_attr.get('name', ''), str(e)))
         node_attr.update({'type': op_type})
         ret = eval('Undefined' + 'Op(graph, node_attr)')
     return ret
+
+
+def is_compass_supported_op(op_type):
+    if op_type != 'Blank':
+        cls = globals().get(f'Arm{op_type}Op')
+        return isinstance(cls, type) and issubclass(cls, ArmOp)
+    else:
+        return True

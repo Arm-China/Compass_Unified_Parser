@@ -148,10 +148,9 @@ class AttentionOp(OpHasVariableOutPorts, OnnxOp):
                 and (q_num_heads % k_num_heads == 0)
                 and (k_num_heads == v_num_heads)
         ):
-            seq_reps = int(q_num_heads / k_num_heads)
-            reps = [1, seq_reps, 1, 1]
-            K = np.tile(K, reps)
-            V = np.tile(V, reps)
+            seq_reps = q_num_heads // k_num_heads
+            K = np.repeat(K, seq_reps, axis=1)
+            V = np.repeat(V, seq_reps, axis=1)
 
         # The following pattern is applied
         #      Q          K          V
@@ -232,6 +231,12 @@ class RotaryEmbeddingOp(OpHasOneOutPort, OnnxOp):
     def infer_shape(self):
         super(RotaryEmbeddingOp, self).infer_shape()
         inputs = self.get_input_tensors()
+        output = RotaryEmbeddingOp.rope_infer(inputs, self.num_heads, self.interleaved, self.rotary_embedding_dim)
+        out_symbol = self.get_input_symbols(local=True)[0]
+        self.set_out_tensor(output, out_symbol)
+
+    @staticmethod
+    def rope_infer(inputs, num_heads, interleaved=0, rotary_embedding_dim=0):
         assert len(inputs) >= 3, 'At least 3 inputs are needed in RotaryEmbeddingOp.'
         original_input_shape = inputs[0].shape
         # First ensure input to be processed has shape [batch_size, seq_len, num_heads, head_size]
@@ -243,27 +248,31 @@ class RotaryEmbeddingOp(OpHasOneOutPort, OnnxOp):
         sequence_length = input.shape[1]
         if len(input.shape) == 3:
             hidden_size = input.shape[2]
-            assert self.num_heads != 0
-            head_size = int(hidden_size / self.num_heads)
-            new_shape = [batch_size, sequence_length, self.num_heads, head_size]
+            assert num_heads != 0
+            head_size = hidden_size // num_heads
+            new_shape = [batch_size, sequence_length, num_heads, head_size]
             input = np.reshape(input, new_shape)
         assert len(input.shape) == 4
         head_size = input.shape[3]
 
         # Fully or partially perform rotation on input based on rotary_embedding_dim attribute
-        if self.rotary_embedding_dim is None or self.rotary_embedding_dim == 0:
+        if rotary_embedding_dim is None or rotary_embedding_dim == 0:
             # If rotary_embedding_dim not provided, perform full rotation by using head_size
             rotary_embedding_dim = head_size
-        else:
-            rotary_embedding_dim = self.rotary_embedding_dim
+
         x_rotate = input[:, :, :, :rotary_embedding_dim]
         x_not_rotate = input[:, :, :, rotary_embedding_dim:]
         rotary_embedding_dim_half = rotary_embedding_dim // 2
 
         cos_cache = inputs[1]
         sin_cache = inputs[2]
+
+        if len(cos_cache.shape) == 2:
+            assert len(
+                inputs) > 3 and inputs[3] is not None, 'position id must be provided if cos_cache/sin_cache is 2D.'
+
         # Retrieve sin and cos caches using position ids
-        if len(inputs) > 3:
+        if len(inputs) > 3 and inputs[3] is not None:
             position_ids = inputs[3]
             cos = cos_cache[position_ids]  # Shape: [batch_size, sequence_length, head_size/2]
             sin = sin_cache[position_ids]  # Shape: [batch_size, sequence_length, head_size/2]
@@ -276,7 +285,7 @@ class RotaryEmbeddingOp(OpHasOneOutPort, OnnxOp):
         sin = np.expand_dims(sin, axis=2)  # Shape: [batch_size, sequence_length, 1, rotary_embedding_dim/2]
 
         # Either divide the input in halves or interleave (based on interleaved attribute)
-        if self.interleaved:
+        if interleaved != 0:
             x1 = x_rotate[:, :, :, 0::2]
             x2 = x_rotate[:, :, :, 1::2]
         else:
@@ -287,7 +296,7 @@ class RotaryEmbeddingOp(OpHasOneOutPort, OnnxOp):
         imag = (sin * x1) + (cos * x2)
 
         # Inserted rotated embeddings back to the original input
-        if self.interleaved:
+        if interleaved != 0:
             # x_rotate[:, :, :, 0::2] = real
             # x_rotate[:, :, :, 1::2] = imag
             real = np.expand_dims(real, axis=-1)
@@ -301,4 +310,5 @@ class RotaryEmbeddingOp(OpHasOneOutPort, OnnxOp):
             output = np.reshape(output, original_input_shape)
         else:
             output = np.transpose(output, (0, 2, 1, 3))
-        self.set_out_tensor(output)
+
+        return output

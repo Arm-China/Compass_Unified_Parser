@@ -10,6 +10,8 @@ import ml_dtypes
 import glob
 from collections import OrderedDict
 
+from AIPUBuilder.Parser.front_end.onnx.passes.common_passes import fuse_const
+
 from .common.utils import is_file, is_dir, multi_string_to_list, list_string_to_list, get_dict_params, \
     version_to_tuple
 from .graph.graph import Graph
@@ -25,7 +27,7 @@ def univ_parser(params):
         if model_pathes:
             model_path = model_pathes[0]
         else:
-            ERROR('Model path in cfg is incorrect, please check!')
+            FATAL('Model path in cfg is incorrect, please check!')
             ret = False
         output_dir = params.get('output_dir', './')
         model_type = params.get('model_type', '')
@@ -87,6 +89,26 @@ def univ_parser(params):
             params['enable_ds'] = enable_ds
         else:
             params['enable_ds'] = False
+
+        if 'dynamic_axes' in params:
+            da = params['dynamic_axes'].strip()
+            if da[0] == '[' and da[-1] == ']':
+                # [0,1] or [0:batch, 1:seq]
+                assert params['input_shapes'] != [], 'input_shape must be set if you set dynamic_axes!'
+                assert params['input_names'] != [], 'input_name must be set if you set dynamic_axes!'
+                da_list = list_string_to_list(da)
+                input_shapes = params['input_shapes']
+                da_dict = {}
+                for i, (_da, _is) in enumerate(zip(da_list, input_shapes)):
+                    da_dict[params['input_names'][i]] = _da
+                params['dynamic_axes'] = da_dict
+            else:
+                params['dynamic_axes'] = multi_string_to_list(da)
+
+            if params['dynamic_axes']:
+                params['enable_ds'] = True
+        else:
+            params['dynamic_axes'] = []
 
         params['input_layouts'] = multi_string_to_list(params['input_layout']) if 'input_layout' in params else []
 
@@ -190,7 +212,8 @@ def univ_parser(params):
                 params['model_name'] = model_type + '_model'
             graph = Graph(name=params['model_name'],
                           model_type=model_type,
-                          enable_ds=params['enable_ds'])
+                          enable_ds=params['enable_ds'],
+                          global_symbols=dict())
 
             tmp_tensors_dir = '.%s_tmp_tensors' % params.get('model_name', '')
             tmp_tensors_path = os.path.join(output_dir, tmp_tensors_dir)
@@ -205,7 +228,7 @@ def univ_parser(params):
             if is_dir(model_path):
                 if model_type != 'tf':
                     WARN(f'[Parser]: the model type in cfg is: {model_type}, but the model path is directory: {model_path}. '
-                         f'Do you set the wrong model path or model type?')
+                         f'Do you set the correct model path or model type?')
             else:
                 model_type_suffix_mapping = {
                     'tf': ['pb', 'h5', 'hdf5', 'keras'],
@@ -218,7 +241,7 @@ def univ_parser(params):
                 if suffix not in model_type_suffix_mapping[model_type]:
                     WARN(
                         f'[Parser]: the model type in cfg is: {model_type}, but the model suffix is: {suffix}. '
-                        f'Do you set the wrong model path or model type?')
+                        f'Do you set the correct model path or model type?')
 
             try:
                 # Convert torch model to onnx before processing
@@ -235,6 +258,7 @@ def univ_parser(params):
                     from .front_end.lite.process import process_tflite
                     graph = process_tflite(graph, model_path, params)
                 elif model_type == 'caffe':
+                    FATAL('Caffe model parsing is no longer supported!')
                     from .front_end.caffe.process import process_caffe
                     graph = process_caffe(graph, model_path, params)
                 elif model_type == 'tf':
@@ -356,7 +380,7 @@ def process_graph(graph, params):
     from .front_end.onnx.passes.back_passes import back_passes
     from .front_end.onnx.passes.transform import transform_to_nhwc
     from .front_end.onnx.passes.common_passes import remove_useless_op, convert_64bit_const
-    from .graph.graph_algo import infer
+    from .graph.graph_algo import infer, infer_symbol
     from .preprocess import gamut_preprocess, preprocess
     from .misc import special_character_conversion
     '''Gives a 'may be time consuming' hint for huge models.'''
@@ -377,6 +401,8 @@ def process_graph(graph, params):
         ERROR(
             '[Parser]: Meets exception in convert_onnx_version (%s)!' % str(e))
 
+    infer_symbol(graph)
+
     try:
         middle_passes(graph, params)
     except Exception as e:
@@ -389,6 +415,8 @@ def process_graph(graph, params):
     except Exception as e:
         ERROR(
             '[Parser]: Meets exception in transform_to_nhwc (%s)!' % str(e))
+
+    infer_symbol(graph)
 
     try:
         back_passes(graph, params)
@@ -411,5 +439,8 @@ def process_graph(graph, params):
         convert_64bit_const(graph)
         infer(graph, final=True)
         remove_useless_op(graph, ['ArmCast'])
+        if graph._attr['enable_ds']:
+            fuse_const(graph, final=True)
+        infer_symbol(graph)
     except Exception as e:
         ERROR('[Parser]: Meets exception in last infer (%s)!' % str(e))

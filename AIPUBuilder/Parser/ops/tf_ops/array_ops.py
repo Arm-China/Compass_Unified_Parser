@@ -92,7 +92,7 @@ class TfConcatV2Op(OpHasAxis, OpHasOneOutPort, TfHasN):
         return {'type': 'Concat', 'version': 4}
 
 
-class TfConstOp(OpHasOneOutPort, ConstLikeOp, TfOp):
+class TfConstOp(OpHasOneOutPort, ConstOp, TfOp):
     @classmethod
     def attributes(cls):
         return {1: {'value': {'type': AttrType.TENSOR, 'required': True, 'default': None},
@@ -525,7 +525,7 @@ class TfPlaceholderOp(OpHasOneOutPort, InputLikeOp, TfOp):
         self.update_attributes(TfPlaceholderOp, attr_dict)
         assert self.check_required(), 'TfPlaceholderOp is missing a required parameter.'
 
-    def infer_shape(self, input_tensor=None):
+    def infer_shape(self, input_tensor=None, input_symbol=None):
         super(TfPlaceholderOp, self).infer_shape()
         try:
             out_tensor = self._graph._attr['input_tensors'][self.name].value
@@ -537,7 +537,11 @@ class TfPlaceholderOp(OpHasOneOutPort, InputLikeOp, TfOp):
                               * 100).astype(np.dtype(self.dtype))
             except:
                 out_tensor = None
-        self.set_out_tensor(out_tensor)
+        if input_symbol is not None:
+            out_symbol = input_symbol.copy()
+            self.set_out_tensor(out_tensor, out_symbol)
+        else:
+            self.set_out_tensor(out_tensor)
 
     @property
     def correspond_onnx_op(self):

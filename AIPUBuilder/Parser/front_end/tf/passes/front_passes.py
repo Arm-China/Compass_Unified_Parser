@@ -4528,7 +4528,10 @@ def convert_to_onnx(graph, params):
                             insert_reshape(graph, src, node_name,
                                            in_attr, reshape_dim)
                 elif pure_type == 'Cast':
-                    new_node_attr.update({'to': new_node_attr['DstT'], 'saturate': False})
+                    from onnx.onnx_pb import TensorProto
+                    onnx_dtype = new_node_attr['DstT'].upper()
+                    onnx_dtype = 'FLOAT' if onnx_dtype == 'FLOAT32' else onnx_dtype
+                    new_node_attr.update({'to': getattr(TensorProto, onnx_dtype), 'saturate': False})
                 elif pure_type == 'ComputeAccidentalHits':
                     output_shapes = node_obj.get_output_shapes()
                     if len(output_shapes) < 3 and output_shapes[0] is None:

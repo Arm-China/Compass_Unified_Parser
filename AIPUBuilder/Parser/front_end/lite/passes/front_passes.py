@@ -2191,13 +2191,13 @@ def merge_quantized_lstm_cell(graph):
 
         # Connect W, R, B and sequence_lens with lstm
         insert_constant(graph, lstm + '_W', W_value, lstm,
-                        in_port=1, data_format='NHWC')
+                        in_port=1, data_format='NHWC', quantize=True)
         insert_constant(graph, lstm + '_R', R_value, lstm,
-                        in_port=2, data_format='NHWC')
+                        in_port=2, data_format='NHWC', quantize=True)
         insert_constant(graph, lstm + '_B', B_value, lstm,
-                        in_port=3, data_format='NHWC')
+                        in_port=3, data_format='NHWC', quantize=True)
         insert_constant(graph, lstm + '_seq_length', seq_length, lstm,
-                        in_port=4, data_format='NHWC')
+                        in_port=4, data_format='NHWC', quantize=True)
 
         # Connect initial_h with lstm
         initial_h, _, initial_h_in_attr = fc_after_hstate_in_edge
@@ -2370,17 +2370,17 @@ def merge_quantized_lstm_cell2(graph):
 
         # Connect W, R, B and sequence_lens with lstm
         insert_constant(graph, lstm + '_W', W_value, lstm,
-                        in_port=1, data_format='NHWC')
+                        in_port=1, data_format='NHWC', quantize=quant)
         insert_constant(graph, lstm + '_R', R_value, lstm,
-                        in_port=2, data_format='NHWC')
+                        in_port=2, data_format='NHWC', quantize=quant)
         insert_constant(graph, lstm + '_B', B_value, lstm,
-                        in_port=3, data_format='NHWC')
+                        in_port=3, data_format='NHWC', quantize=quant)
         insert_constant(graph, lstm + '_seq_length', seq_length, lstm,
-                        in_port=4, data_format='NHWC')
+                        in_port=4, data_format='NHWC', quantize=quant)
 
         # Create initial_h with lstm
         insert_constant(graph, lstm + '_initial_h', initial_h_value, lstm,
-                        in_port=5, data_format='NHWC')
+                        in_port=5, data_format='NHWC', quantize=quant)
 
         # Connect initial_c with lstm
         mul_sp1_in_edges = graph.sorted_in_edges(m['mul_sp1'], data=True)

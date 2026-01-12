@@ -107,7 +107,8 @@ class TfcumprodOp(OpHasOneOutPort, OpHasAxis, Tf2Op):
                 idx, self.name, inputs[idx].size)
         self.axis = inputs[1].item()
         self.exclusive, self.reverse = [int(inp.item()) for inp in inputs[2:4]]
-        out_tensor = tf.math.cumprod(*inputs).numpy()
+        out_tensor = tf.math.cumprod(inputs[0], axis=self.axis, exclusive=bool(
+            self.exclusive), reverse=bool(self.reverse)).numpy()
         self.set_out_tensor(out_tensor)
 
     @property
@@ -124,7 +125,8 @@ class TfcumsumOp(OpHasOneOutPort, OpHasAxis, Tf2Op):
                 idx, self.name, inputs[idx].size)
         self.axis = inputs[1].item()
         self.exclusive, self.reverse = [int(inp.item()) for inp in inputs[2:4]]
-        out_tensor = tf.math.cumsum(*inputs).numpy()
+        out_tensor = tf.math.cumsum(inputs[0], axis=self.axis, exclusive=bool(
+            self.exclusive), reverse=bool(self.reverse)).numpy()
         self.set_out_tensor(out_tensor)
 
     @property

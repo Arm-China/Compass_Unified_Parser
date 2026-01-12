@@ -22,6 +22,14 @@ def is_dir(dir_path):
     return True if (dir_path and os.path.isdir(dir_path)) else False
 
 
+def is_sympy_with_symbol(var):
+    from sympy.core.expr import Expr
+    if isinstance(var, Expr):
+        return len(var.free_symbols) > 0
+    else:
+        return False
+
+
 def get_absolute_path(file_path):
     file_path = os.path.expanduser(file_path)
     if not os.path.isabs(file_path):
@@ -118,7 +126,10 @@ def list_string_to_list(list_string):
         for meta_item in items:
             inner_str = meta_item.lstrip('[').rstrip(']')
             if inner_str:
-                meta_list = [int(m) for m in inner_str.split(',')]
+                try:
+                    meta_list = [int(m) for m in inner_str.split(',')]
+                except (ValueError, TypeError):
+                    meta_list = [m for m in inner_str.split(',')]
             else:
                 meta_list = list()
             ret.append(meta_list)
@@ -267,3 +278,52 @@ def get_dict_params(params):
                 value = value.lstrip(' ').rstrip(' ').rstrip(',')
                 ret.update({key: int(value)})
     return ret
+
+
+def print_debug_info(e):
+    import inspect
+    frame = inspect.trace()[-1]
+    err_func = frame[3]
+    WARN(f"error func name：{err_func}")
+    WARN(f"error file：{frame[1]}，line {frame[2]}")
+    WARN(f"error type：{type(e).__name__}")
+    WARN(f"error info：{str(e)}")
+
+
+def unpack_4bit(data, dims):
+    '''Convert a packed uint4 array to unpacked uint4 array represented as uint8.
+
+        Args:
+            data: A numpy array.
+            dims: The dimensions are used to reshape the unpacked buffer.
+
+        Returns:
+            A numpy array of int8/uint8.
+    '''
+    data = data.flatten()
+    result = np.empty([data.size * 2], dtype=data.dtype)
+    array_low = data & 0x0F
+    array_high = (data >> 4) & 0x0F
+    result[0::2] = array_low
+    result[1::2] = array_high
+    if result.size == np.prod(dims) + 1:
+        # handle single-element padding due to odd number of elements
+        result = result[:-1]
+    result.resize(dims, refcheck=False)
+    return result
+
+
+def pack_4bit(data):
+    '''
+    Convert a numpy array to flatten, packed int4/uint4. 
+    Elements must be in the correct range.
+    '''
+    # Create a 1D copy
+    array_flat = data.ravel().view(np.uint8).copy()
+    size = data.size
+    odd_sized = size % 2 == 1
+    if odd_sized:
+        array_flat.resize([size + 1], refcheck=False)
+    array_flat &= 0x0F
+    array_flat[1::2] <<= 4
+    return array_flat[0::2] | array_flat[1::2]

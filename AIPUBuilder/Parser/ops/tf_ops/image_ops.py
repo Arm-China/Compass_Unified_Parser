@@ -188,8 +188,8 @@ class TfNonMaxSuppressionV5Op(OpHasMultipleOutPorts, TfOp):
 class TfResizeBilinearOp(OpHasOneOutPort, TfOp):
     @classmethod
     def attributes(cls):
-        return {1: {'align_corners': {'type': AttrType.INT, 'required': False, 'default': 0},
-                    'half_pixel_centers': {'type': AttrType.INT, 'required': False, 'default': 0},
+        return {1: {'align_corners': {'type': AttrType.BOOL, 'required': False, 'default': False},
+                    'half_pixel_centers': {'type': AttrType.BOOL, 'required': False, 'default': False},
                     },
                 }
 
@@ -209,8 +209,8 @@ class TfResizeBilinearOp(OpHasOneOutPort, TfOp):
 class TfResizeNearestNeighborOp(OpHasOneOutPort, TfOp):
     @classmethod
     def attributes(cls):
-        return {1: {'align_corners': {'type': AttrType.INT, 'required': False, 'default': 0},
-                    'half_pixel_centers': {'type': AttrType.INT, 'required': False, 'default': 0},
+        return {1: {'align_corners': {'type': AttrType.BOOL, 'required': False, 'default': False},
+                    'half_pixel_centers': {'type': AttrType.BOOL, 'required': False, 'default': False},
                     },
                 }
 

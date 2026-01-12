@@ -552,7 +552,7 @@ class TfFusedBatchNormOp(LayoutConcernedOp, OpHasVariableOutPorts, TfOp):
     @classmethod
     def attributes(cls):
         return {1: {'epsilon': {'type': AttrType.FLOAT, 'default': 1e-4},
-                    'is_training': {'type': AttrType.INT, 'default': 1},
+                    'is_training': {'type': AttrType.BOOL, 'default': True},
                     'exponential_avg_factor': {'type': AttrType.FLOAT, 'default': 1}
                     }
                 }
@@ -772,7 +772,7 @@ class TfMaxPool3DOp(TfHasPaddingStrides, OpHasOneOutPort):
 class TfMaxPoolWithArgmaxOp(TfHasPaddingStrides, OpHasMultipleOutPorts):
     @classmethod
     def attributes(cls):
-        return {1: {'include_batch_in_index': {'type': AttrType.INT, 'default': False},
+        return {1: {'include_batch_in_index': {'type': AttrType.BOOL, 'default': False},
                     }
                 }
 

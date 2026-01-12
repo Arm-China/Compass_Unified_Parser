@@ -53,7 +53,7 @@ def get_valid_node_name(graph, base_name, nodes_name=None):
     return ret
 
 
-def determined_sort(g, outputs, sort_input=False):
+def determined_sort(g, outputs, inputs=None, sort_input=False):
     '''Get all the sorted nodes according to the outputs node of the graph.'''
     op_order = []
     if outputs:
@@ -61,11 +61,13 @@ def determined_sort(g, outputs, sort_input=False):
         pred = g.predecessor
         visited = set()
         while len(stack) != 0:
-            node_name = stack[0]
-            stack.pop(0)
+            node_name = stack.pop(0)
             visited.add(node_name)
             has_child = False
-            in_names = [name for name in pred[node_name]]
+            if inputs is not None and node_name in inputs:
+                in_names = []
+            else:
+                in_names = [name for name in pred[node_name]]
             for in_node_name in in_names:
                 if in_node_name not in visited:
                     stack.insert(0, node_name)
@@ -181,6 +183,7 @@ def infer(graph, partial=False, chosen_list=None, final=False):
                                         np.dtype(casted_type))
                         if node_name in graph._attr['input_tensors']:
                             infer_data = graph._attr['input_tensors'][node_name].value
+                            inp_symbol = graph._attr['input_tensors'][node_name].symbol
                         else:
                             if node_obj.type == 'DummyInput' and isinstance(graph, SubGraph):
                                 from ..common.utils import get_target_graph
@@ -202,7 +205,7 @@ def infer(graph, partial=False, chosen_list=None, final=False):
                             else:
                                 log_func('[Parser]: Meet unsupported op type %s in Node(%s)!' %
                                          (node_obj.type, node_name))
-                        node_obj.infer_shape(infer_data)
+                        node_obj.infer_shape(infer_data, inp_symbol)
                     elif isinstance(node_obj, UndefinedOp):
                         log_func('[Parser]: Meet unsupported op type %s in Node(%s)!' % (node_obj.type, node_name))
                     elif isinstance(node_obj, PluginOp):
@@ -237,3 +240,51 @@ def infer(graph, partial=False, chosen_list=None, final=False):
     else:
         ERROR('[Parser]: Meets empty graph when inferring!')
     return ret
+
+
+def infer_symbol(graph, output_node=None, input_node=None):
+    if not graph._attr['enable_ds']:
+        return None
+    if len(graph) > 0:
+        if output_node is None:
+            nodes_list = determined_sort(graph, graph._attr['output_names'], input_node)
+        else:
+            if isinstance(output_node, str):
+                output_nodes = [output_node]
+            else:
+                output_nodes = output_node
+            nodes_list = determined_sort(graph, output_nodes, input_node)
+
+        for node_name in nodes_list:
+            node_obj = NodeWrap(graph, node_name)['object']
+            if node_obj is not None:
+                if node_obj.in_subgraph:
+                    DEBUG('[Parser]: Subgraph Node(%s) is in infer, result is not guaranteed!' % node_name)
+
+                try:
+                    if isinstance(node_obj, InputLikeOp):
+                        inp_symbol = None
+                        if node_name in graph._attr['input_tensors']:
+                            inp_symbol = graph._attr['input_tensors'][node_name].symbol
+                        else:
+                            if node_obj.type == 'DummyInput' and isinstance(graph, SubGraph):
+                                # TODO
+                                pass
+                            else:
+                                ERROR('[Parser]: Meet unsupported op type %s in Node(%s)!' %
+                                      (node_obj.type, node_name))
+                        node_obj.infer_symbol(inp_symbol)
+                    elif isinstance(node_obj, UndefinedOp):
+                        ERROR('[Parser]: Meet unsupported op type %s in Node(%s)!' % (node_obj.type, node_name))
+                    elif isinstance(node_obj, PluginOp):
+                        node_obj.infer_symbol()
+                    else:
+                        node_obj.infer_symbol()
+                except Exception as e:
+                    ERROR('[Parser]: Infer symbol of %s Node(%s) meets issues: %s!' %
+                          (node_obj.type, node_name, str(e)))
+            else:
+                ERROR('[Parser]: Meets invalid Node (%s) in infer symbol!' % node_name)
+
+    else:
+        ERROR('[Parser]: Meets empty graph when inferring symbol!')

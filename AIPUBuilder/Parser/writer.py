@@ -18,7 +18,7 @@ def write_net_attrs(txt_file, attr):
     ret = True
     if not txt_file.closed and txt_file.mode == 'a':
         for k, v in attr.items():
-            if k in ['input_tensors', 'output_tensors']:
+            if k in ['input_tensors', 'output_tensors', 'dynamic_symbols']:
                 txt_file.write('%s=[%s]\n' % (k, v))
             else:
                 txt_file.write('%s=%s\n' % (k, v))
@@ -147,7 +147,6 @@ def get_output_tensor_names(graph):
 def serialize(graph, params):
     '''Serialize graph and write to IR txt and IR bin.
     Return True/False for serializing status and also txt path and bin path.'''
-    ret = True
     txt_path, bin_path = '', ''
     model_name = params['model_name'] \
         if params.get('model_name') \
@@ -175,6 +174,8 @@ def serialize(graph, params):
         net_attr['precision'] = 'int8' if graph._attr.get('quantize', False) else 'float32'
         net_attr['compat_quantized_model'] = 'true' if graph._attr.get('quantize', False) else 'false'
         net_attr['model_bin'] = './' + os.path.basename(bin_path)
+        if graph._attr['enable_ds'] and graph._attr.get('global_symbols', {}):
+            net_attr['dynamic_symbols'] = string_list_to_string(list(graph._attr['global_symbols'].keys()))
 
         input_names = params['input_names']
         if any([i not in graph.nodes or graph.nodes[i]['op'] != 'ArmInput' for i in input_names]) or len(input_names) == 0:

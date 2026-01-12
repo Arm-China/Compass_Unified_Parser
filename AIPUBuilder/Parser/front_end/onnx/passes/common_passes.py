@@ -6,13 +6,14 @@ import numpy as np
 import copy
 import itertools
 from collections import OrderedDict
+from sympy import Symbol
 from ....plugin_loader import PARSER_OP_DICT
 
 from ....common.defs import Tensor, Framework, FLOAT_EQUAL
 from ....logger import INFO, DEBUG, WARN, ERROR, FATAL
 from ....common.utils import extend_lists, get_converted_dtype
 from ....ops.op import Op, OpHasWeights, OpHasBiases, OpHasOneOutPort, ConstLikeOp, OnnxReduceOp, \
-    OpHasVariableOutPorts, OpHasMultipleOutPorts
+    OpHasVariableOutPorts, OpHasMultipleOutPorts, ConstOp
 from ....ops.onnx_ops.array_ops import CastOp
 from ....graph.graph import SubGraph
 from ....ops.release_ops import ArmCastOp, ArmTransposeOp
@@ -21,7 +22,7 @@ from ....graph.graph_algo import has_path, get_valid_node_name, all_simple_paths
 from ....graph.pattern_match import matched_patterns, single_node_matcher, two_nodes_matcher
 
 
-def fuse_const(graph):
+def fuse_const(graph, final=False):
     matches = single_node_matcher(graph, '')
     for m in matches:
         node_name = m['target']
@@ -31,19 +32,30 @@ def fuse_const(graph):
                 ERROR(
                     '[Parser]: Meets invalid Node (%s) in fuse_const!' % node_name)
                 continue
-            if not isinstance(node_obj, ConstLikeOp) \
+            if not isinstance(node_obj, (ConstLikeOp, ConstOp)) \
                     and isinstance(node_obj, OpHasOneOutPort) \
                     and node_obj.is_all_inputs_const() \
-                    and not node_obj.is_inputs_dynamic():
+                    and not node_obj.is_outputs_dynamic():
                 out_edge = graph.sorted_out_edges(node_name, data=True)
                 if len(out_edge) >= 1 and out_edge[0][2]['tensor'] is not None and out_edge[0][2]['tensor'].value is not None:
-                    const_value = out_edge[0][2]['tensor'].value
-                    const_attr = {'name': node_name,
-                                  'value': const_value,
-                                  'data_format': node_obj.data_format,
-                                  'opset_version': 9}
-                    NodeWrap(graph, node_name).replace_obj(
-                        'Constant', const_attr)
+                    if final:
+                        const_attr = node_obj.copied_attr()
+                        const_attr.update({'weights': out_edge[0][2]['tensor'].value})
+                        if node_obj.quantize and out_edge[0][2]['tensor'].scale_zp:
+                            const_attr.update({'weights_scale_zp': list(out_edge[0][2]['tensor'].scale_zp)})
+                        NodeWrap(graph, node_name).replace_obj(
+                            'ArmConstant', const_attr)
+                    else:
+                        const_value = out_edge[0][2]['tensor'].value
+                        const_attr = {'name': node_name,
+                                      'value': const_value,
+                                      'data_format': node_obj.data_format,
+                                      'opset_version': 9}
+                        NodeWrap(graph, node_name).replace_obj(
+                            'Constant', const_attr)
+                    if graph._attr['enable_ds']:
+                        for _, _, out_attr in out_edge:
+                            out_attr['tensor'].symbol = list(out_edge[0][2]['tensor'].value.shape)
                     in_edges = graph.sorted_in_edges(node_name)
                     if isinstance(graph, SubGraph):
                         for src, _ in in_edges:
@@ -104,10 +116,7 @@ def convert_to_const(graph, op_type_name_list):
             if node_obj is None:
                 ERROR('[Parser]: Meets invalid Node(%s) in convert_to_const!' % node_name)
                 continue
-            if isinstance(node_obj, OpHasOneOutPort) and node_obj.type in op_type_name_list and \
-                    not node_obj.is_inputs_dynamic() and not node_obj.is_outputs_dynamic():
-                if node_obj.type in ('Shape', 'ConstantOfShape') and graph._attr.get('enable_ds', False):
-                    continue
+            if isinstance(node_obj, OpHasOneOutPort) and node_obj.type in op_type_name_list:
                 out_tensors = node_obj.get_output_tensors()
                 if len(out_tensors) >= 1 and out_tensors[0] is not None and node_obj.is_all_outputs_const():
                     new_attr = node_obj.copied_attr()
@@ -115,6 +124,26 @@ def convert_to_const(graph, op_type_name_list):
                     node.replace_obj('Constant', new_attr)
                     const_in_edges = graph.sorted_in_edges(node_name)
                     graph.remove_edges_from(const_in_edges)
+                    out_edges = graph.sorted_out_edges(node_name, data=True)
+                    for _, _, out_attr in out_edges:
+                        out_attr['tensor'].is_dynamic = False
+                        out_attr['tensor'].is_const = True
+                if node_obj.type in ('Sub', 'Div'):
+                    in_edges = graph.sorted_in_edges(node_name)
+                    if len(in_edges) >= 2 and in_edges[0][0] == in_edges[1][0]:
+                        output_shapes = node_obj.get_output_shapes()
+                        output_dtypes = node_obj.get_output_dtypes()
+                        const_value = np.zeros(output_shapes[0], dtype=output_dtypes[0]) if node_obj.type == 'Sub' else np.ones(
+                            output_shapes[0], dtype=output_dtypes[0])
+                        new_attr = node_obj.copied_attr()
+                        new_attr.update({'value': const_value})
+                        node.replace_obj('Constant', new_attr)
+
+                        graph.remove_edges_from(in_edges)
+                        out_edges = graph.sorted_out_edges(node_name, data=True)
+                        for _, _, out_attr in out_edges:
+                            out_attr['tensor'].is_dynamic = False
+                            out_attr['tensor'].is_const = True
         clear_redundant_nodes(graph)
     else:
         WARN('[Parser]: Invalid params for convert_to_const!')
@@ -597,6 +626,7 @@ def remove_redundant_slice(graph, max_try=2):
 
 
 def remove_redundant_reshape(graph, type='Reshape'):
+    matched = False
     matches = matched_patterns(graph,
                                nodes=[
                                    ('reshape_1', {'op': type}), ('reshape_2', {'op': type})],
@@ -615,7 +645,20 @@ def remove_redundant_reshape(graph, type='Reshape'):
         if len(reshape_1_in_shapes) >= 1 \
                 and len(reshape_2_out_shapes) >= 1 \
                 and reshape_1 not in graph._attr['output_names']:
+            rs1_out_symbol = reshape_1_obj.get_output_symbols()[0]
+            rs2_out_symbol = reshape_2_obj.get_output_symbols()[0]
+            new_rs_out_symbol = []
+            if rs1_out_symbol is not None and None not in rs1_out_symbol \
+                    and rs2_out_symbol is not None and None not in rs2_out_symbol:
+                rs2_in_symbol = reshape_2_obj.get_input_symbols(local=True)[0]
+                sym_map = list(zip(rs2_in_symbol, rs1_out_symbol))
+                for s in rs2_out_symbol:
+                    if isinstance(s, int):
+                        new_rs_out_symbol.append(s)
+                    else:
+                        new_rs_out_symbol.append(s.subs(sym_map, simultaneous=True))
             if len(reshape_1_out_edges) == 1:
+                matched = True
                 remove_node_safely(graph, reshape_1)
                 if type == 'Reshape' and len(reshape_2_edges) == 2:
                     graph.remove_edges_from(reshape_2_edges[1:])
@@ -628,10 +671,18 @@ def remove_redundant_reshape(graph, type='Reshape'):
                     for _, dst, out_attr in reshape_2_out_edges:
                         new_out_attr = copy.deepcopy(out_attr)
                         new_out_attr['src_out_port'] = in_attr['src_out_port']
+                        if new_rs_out_symbol:
+                            new_out_attr['tensor'].symbol = new_rs_out_symbol
+                        else:
+                            new_out_attr['tensor'].symbol = in_attr['tensor'].symbol
                         graph.add_edge(src, dst, **new_out_attr)
                     if reshape_2 in graph._attr['output_names']:
                         index = graph._attr['output_names'].index(reshape_2)
                         graph._attr['output_names'][index] = src
+                else:
+                    if new_rs_out_symbol:
+                        for _, dst, out_attr in reshape_2_out_edges:
+                            out_attr['tensor'].symbol = new_rs_out_symbol
                 clear_redundant_nodes(graph)
             elif len(reshape_1_out_edges) > 1:
                 reshape_1_out_node_objs = []
@@ -646,6 +697,7 @@ def remove_redundant_reshape(graph, type='Reshape'):
                     for n_obj in reshape_1_out_node_objs:
                         all_reshape_2_out_shapes.append(n_obj.get_output_shapes())
                     if all([reshape_1_in_shapes[0] == out_shapes[0] for out_shapes in all_reshape_2_out_shapes]):
+                        matched = True
                         src, _, in_attr = reshape_1_edges[0]
                         graph.remove_edges_from(reshape_1_edges)
                         for _, dst1, out_attr1 in reshape_1_out_edges:
@@ -659,6 +711,7 @@ def remove_redundant_reshape(graph, type='Reshape'):
                                 index = graph._attr['output_names'].index(dst1)
                                 graph._attr['output_names'][index] = src
                         clear_redundant_nodes(graph)
+    return matched
 
 
 def remove_redundant_transpose(graph):
@@ -690,8 +743,10 @@ def remove_redundant_transpose(graph):
         else:
             ERROR('[Parser]: Meets invalid Transpose (%s or %s) in remove_redundant_transpose!'
                   % (trans1, trans2))
+            return False
     if matched:
         clear_redundant_nodes(graph)
+    return matched
 
 
 def remove_redundant_transpose2(graph):
@@ -766,6 +821,7 @@ def remove_redundant_transpose2(graph):
             graph._attr['output_names'][index] = new_reshape
     if matched:
         clear_redundant_nodes(graph)
+    return matched
 
 
 def remove_redundant_transpose_unaware(graph):
@@ -1046,7 +1102,7 @@ def insert_mul_add_cast_after_for_dequant(graph, src, to_dtype, scale, zero_poin
     return ret
 
 
-def insert_constant(graph, name, value, dst, in_port=0, data_format='NCHW', const_ver=9, scale_zp=None, quantize=False):
+def insert_constant(graph, name, value, dst, in_port=0, data_format='NCHW', const_ver=9, scale_zp=None, quantize=False, op_type='Constant'):
     if graph.has_node(dst) and value is not None and isinstance(value, np.ndarray):
         const_name = get_valid_node_name(graph, name)
         graph.add_node(const_name)
@@ -1055,7 +1111,11 @@ def insert_constant(graph, name, value, dst, in_port=0, data_format='NCHW', cons
                       'data_format': data_format,
                       'opset_version': const_ver,
                       'quantize': quantize}
-        NodeWrap(graph, const_name).replace_obj('Constant', const_attr)
+        if op_type == 'ArmConstant':
+            const_attr.update({'weights': value})
+            if quantize and scale_zp:
+                const_attr.update({'weights_scale_zp': list(scale_zp)})
+        NodeWrap(graph, const_name).replace_obj(op_type, const_attr)
         edge_attr = {'src_out_port': 0, 'dst_in_port': in_port,
                      'tensor': Tensor(value=value, is_const=True)}
         if isinstance(scale_zp, (tuple, list)) \
@@ -1224,7 +1284,14 @@ def insert_repeat(graph, src, dst, in_attr, reps, axis=None, key=None, type='Rep
         if dst_in_attr['tensor'] is not None:
             if dst_in_attr['tensor'].value is not None:
                 tensor = Tensor(min_max=in_attr['tensor'].min_max,
-                                value=np.repeat(dst_in_attr['tensor'].value, reps.tolist()))
+                                value=np.repeat(dst_in_attr['tensor'].value, reps.tolist(), axis=axis))
+            else:
+                in_shape = list(dst_in_attr['tensor'].shape)
+                if axis is not None:
+                    in_shape[axis] = int(reps.sum())
+                else:
+                    in_shape[0] = int(reps.sum())
+                tensor = Tensor(shape=tuple(in_shape))
             if dst_in_attr['tensor'].dtype is not None:
                 tensor.dtype = dst_in_attr['tensor'].dtype
                 tensor.scale_zp = dst_in_attr['tensor'].scale_zp
@@ -1243,7 +1310,8 @@ def insert_repeat(graph, src, dst, in_attr, reps, axis=None, key=None, type='Rep
     return ret
 
 
-def insert_reshape(graph, src, dst, in_attr, dim, key=None, type='Reshape', data_format='NHWC', quantize=False):
+def insert_reshape(graph, src, dst, in_attr, dim,
+                   key=None, type='Reshape', data_format='NHWC', quantize=False, symbol=None):
     ret = None
     if graph.has_node(src) and graph.has_node(dst):
         if has_path(graph, src, dst):
@@ -1279,6 +1347,7 @@ def insert_reshape(graph, src, dst, in_attr, dim, key=None, type='Reshape', data
                 out_tensor.shape = out_tensor.value.shape
             else:
                 out_tensor.shape = tuple(dim)
+            out_tensor.symbol = symbol
         reshape_out_attr.update({'src_out_port': 0, 'tensor': out_tensor})
         graph.add_edge(reshape, dst, **reshape_out_attr)
         ret = reshape
@@ -1287,7 +1356,7 @@ def insert_reshape(graph, src, dst, in_attr, dim, key=None, type='Reshape', data
     return ret
 
 
-def insert_reshape_after(graph, src, new_dim, old_dim=None, out_port=0, type='Reshape', quantize=False):
+def insert_reshape_after(graph, src, new_dim, old_dim=None, out_port=0, type='Reshape', quantize=False, symbol=None):
     ret = None
     if old_dim is None:
         old_dim = list()
@@ -1321,6 +1390,8 @@ def insert_reshape_after(graph, src, new_dim, old_dim=None, out_port=0, type='Re
                 graph.remove_edge(src, dst, key)
                 new_out_attr = copy.deepcopy(out_attr)
                 new_out_attr['src_out_port'] = 0
+                if new_out_attr.get('tensor', None) is not None:
+                    new_out_attr['tensor'].symbol = symbol
                 graph.add_edge(reshape, dst, **new_out_attr)
                 if new_out_attr.get('tensor', None) is not None:
                     new_out_tensor_shape = new_out_attr['tensor'].get_shape()
@@ -1348,6 +1419,7 @@ def insert_reshape_after(graph, src, new_dim, old_dim=None, out_port=0, type='Re
                             src_out_attr.update({'tensor': Tensor()})
                         src_out_attr['tensor'].dtype = new_out_attr['tensor'].dtype
                         src_out_attr['tensor'].scale_zp = new_out_attr['tensor'].scale_zp
+        src_out_attr['tensor'].symbol = out_edges[0][-1]['tensor'].symbol
         graph.add_edge(src, reshape, **src_out_attr)
         ret = reshape
     else:
@@ -1453,7 +1525,8 @@ def insert_slice_after(graph, src, begin, size, slice_before_shape, out_port=0, 
     return ret
 
 
-def insert_tile(graph, src, dst, in_attr, reps, key=None, type='Tile', data_format='NHWC', quantize=False):
+def insert_tile(graph, src, dst, in_attr, reps, key=None, type='Tile', data_format='NHWC',
+                quantize=False, symbol=None):
     ret = None
     if graph.has_node(src) \
             and graph.has_node(dst) \
@@ -1479,6 +1552,9 @@ def insert_tile(graph, src, dst, in_attr, reps, key=None, type='Tile', data_form
             tensor_shape = tensor.get_shape()
             if tensor_shape is not None and None not in tensor_shape:
                 tensor.shape = tuple([int(shape * rep) for shape, rep in zip(tensor_shape, reps)])
+        tensor.symbol = symbol
+        if symbol is not None:
+            tensor.is_dynamic = True
         dst_in_attr.update({'src_out_port': 0, 'tensor': tensor})
         graph.add_edge(tile, dst, **dst_in_attr)
 
@@ -1538,6 +1614,8 @@ def insert_transpose(graph, src, dst, in_attr, perm, key=None, type='Transpose',
                 out_tensor.shape = out_tensor.value.shape
             elif out_tensor.shape is not None and len(out_tensor.shape) == len(perm):
                 out_tensor.shape = tuple(out_tensor.shape[idx] for idx in perm)
+        if graph._attr['enable_ds']:
+            out_tensor.symbol = [Symbol(f's{idx}') for idx in perm]
         transpose_out_attr.update({'src_out_port': 0, 'tensor': out_tensor})
         graph.add_edge(transpose, dst, **transpose_out_attr)
         ret = transpose
@@ -1567,6 +1645,8 @@ def insert_transpose_after(graph, src, perm, port=0, type='Transpose', quantize=
                 new_out_attr = copy.deepcopy(out_attr)
                 new_out_attr['src_out_port'] = 0
                 graph.remove_edge(src, dst, key=k)
+                if graph._attr['enable_ds']:
+                    new_out_attr['tensor'].symbol = [Symbol(f's{idx}') for idx in perm]
                 graph.add_edge(transpose, dst, **new_out_attr)
                 if out_tensor is None:
                     out_tensor = copy.deepcopy(new_out_attr['tensor'])
