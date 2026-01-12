@@ -13,7 +13,7 @@ from ....common.defs import Tensor, Framework, FLOAT_EQUAL
 from ....logger import INFO, DEBUG, WARN, ERROR, FATAL
 from ....common.utils import extend_lists, get_converted_dtype
 from ....ops.op import Op, OpHasWeights, OpHasBiases, OpHasOneOutPort, ConstLikeOp, OnnxReduceOp, \
-    OpHasVariableOutPorts, OpHasMultipleOutPorts, ConstOp
+    OpHasVariableOutPorts, OpHasMultipleOutPorts, ConstOp, InputLikeOp
 from ....ops.onnx_ops.array_ops import CastOp
 from ....graph.graph import SubGraph
 from ....ops.release_ops import ArmCastOp, ArmTransposeOp
@@ -32,7 +32,7 @@ def fuse_const(graph, final=False):
                 ERROR(
                     '[Parser]: Meets invalid Node (%s) in fuse_const!' % node_name)
                 continue
-            if not isinstance(node_obj, (ConstLikeOp, ConstOp)) \
+            if not isinstance(node_obj, (ConstLikeOp, ConstOp, InputLikeOp)) \
                     and isinstance(node_obj, OpHasOneOutPort) \
                     and node_obj.is_all_outputs_const() \
                     and not node_obj.is_outputs_dynamic():
@@ -404,7 +404,7 @@ def remove_useless_op(graph, op_type_list):
                 if len(input_shapes) > 0 \
                         and input_shapes[0] is not None \
                         and None not in input_shapes[0] \
-                        and np.product(np.array(input_shapes[0])[np.array(node_obj.axes, np.int32)]) == 1:
+                        and np.prod(np.array(input_shapes[0])[np.array(node_obj.axes, np.int32)]) == 1:
                     in_edges = graph.sorted_in_edges(node_name)
                     removing_nodes.append(node_name)
                     if node_name in graph._attr['output_names']:

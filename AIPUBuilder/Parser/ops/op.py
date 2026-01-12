@@ -276,7 +276,10 @@ class Op(abc.ABC):
         self._graph = graph
         self._type = re.sub(r'Op$', '', type(self).__name__, count=1)
         self._attr = {}
-        self.ds_mode = graph._attr['ds_mode']
+        if 'ds_mode' in attr_dict:
+            self.ds_mode = attr_dict['ds_mode']
+        else:
+            self.ds_mode = graph._attr['ds_mode']
         self.update_attributes(Op, attr_dict)
 
     def __getattr__(self, item):
@@ -994,13 +997,11 @@ class OpHasOneOutPort(Op):
         try:
             if is_const is None:
                 is_const = self.is_all_inputs_const()
-            if is_const:
-                is_dynamic = False
-            else:
-                is_dynamic = self.is_inputs_dynamic() or isinstance(self, DynamicShapeOp)
-            if isinstance(self, ArmOp):
-                # Some ops(inputs fused into attr) may have dynamic outputs. e.g. Tile/Slice...
-                is_dynamic = self.is_outputs_dynamic() or isinstance(self, DynamicShapeOp)
+            if is_dynamic is None:
+                if is_const:
+                    is_dynamic = False
+                else:
+                    is_dynamic = self.is_inputs_dynamic() or isinstance(self, DynamicShapeOp)
             for _, _, d in self._graph.sorted_out_edges(self.name, data=True):
                 if d.get('tensor', None) is not None:
                     d['tensor'].value = tensor_data
@@ -1160,13 +1161,15 @@ class OpHasVariableOutPorts(Op):
         '''An abstract method for shape inference.'''
         super(OpHasVariableOutPorts, self).infer_shape()
 
-    def set_out_tensor(self, tensor_data_list, is_dynamic=False, shape_symbols=None):
+    def set_out_tensor(self, tensor_data_list, is_const=None, is_dynamic=None, shape_symbols=None):
         '''set the out tensor of this op.'''
         try:
             from ..graph.node_wrap import NodeWrap
             from ..graph.graph_algo import get_valid_node_name
-            is_const = self.is_all_inputs_const() and not is_dynamic
-            is_dynamic = self.is_inputs_dynamic() or is_dynamic
+            if is_const is None:
+                is_const = self.is_all_inputs_const()
+            if is_dynamic is None:
+                is_dynamic = self.is_inputs_dynamic()
             if len(tensor_data_list) > 1:
                 out_ports = self.get_out_ports()
                 if len(tensor_data_list) > len(out_ports):

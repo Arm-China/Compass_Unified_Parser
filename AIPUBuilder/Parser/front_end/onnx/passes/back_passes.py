@@ -3345,66 +3345,81 @@ def rename_slice(graph):
         in_edges = graph.sorted_in_edges(slice, data=True)
         if slice_obj is not None \
                 and ((slice_obj.cur_version == 1 and len(in_edges) == 1) or (slice_obj.cur_version > 1 and 3 <= len(in_edges) <= 5)):
+            out_edges = graph.sorted_out_edges(slice)
+            if not out_edges:
+                continue
             input_shapes = slice_obj.get_input_shapes()
-            if len(in_edges) > 1 and slice_obj.ds_mode:
-                out_symbol = slice_obj.get_output_symbols()[0]
-                if Op.is_all_global_symbols(out_symbol, graph._attr['global_symbols']):
-                    input_tensor_symbols = slice_obj.get_input_value_symbols()
-                    input_shape = input_shapes[0]
-                    inp_rank = len(input_shape)
-                    starts = input_tensor_symbols[1]
-                    ends = input_tensor_symbols[2]
-                    axes = input_tensor_symbols[3] if len(input_tensor_symbols) > 3 else list(range(inp_rank))
-                    steps = input_tensor_symbols[4] if len(input_tensor_symbols) > 4 else [1] * inp_rank
-                    axes = [axis + inp_rank if axis < 0 else axis for axis in axes]
-
-                    ds_starts = []
-                    ds_ends = []
-                    ds_steps = []
-                    for i in range(len(input_shape)):
-                        if i in axes:
-                            idx = axes.index(i)
-                            ds_starts.append(starts[idx])
-                            ds_ends.append(ends[idx])
-                            ds_steps.append(steps[idx])
-                        else:
-                            ds_starts.append(0)
-                            ds_ends.append(input_shape[i])
-                            ds_steps.append(1)
-
+            if len(in_edges) > 1:
+                if all(in_attr['tensor'].is_const for _, _, in_attr in in_edges[1:]):
                     graph.remove_edges_from(in_edges[1:])
                     slice_attr = slice_obj.copied_attr()
                     ends = np.array(slice_obj.ends, np.int64)
                     for i, s in enumerate(slice_obj.steps):
                         if s < 0:
                             tmp_end = ends[i]
-                            shape = input_shape[i]
+                            shape = input_shapes[0][i]
                             ends[i] = max(min(shape - 1, tmp_end), - shape - 1)
                     slice_attr.update({'ends': ends.tolist()})
-                    if expr_has_symbols(ds_starts) or expr_has_symbols(ds_ends) or expr_has_symbols(ds_steps):
-                        slice_attr.update({'ds_starts': ds_starts})
-                        slice_attr.update({'ds_ends': ds_ends})
-                        slice_attr.update({'ds_steps': ds_steps})
                     if 'steps' not in slice_attr:
                         slice_attr.update({'steps': slice_obj.steps})
                     NodeWrap(graph, slice).replace_obj('ArmSlice', slice_attr)
                 else:
-                    WARN(f'[Parser]: Dynamic Slice({slice}) in this graph.')
-                    if len(in_edges) < 5:
-                        in_ports = slice_obj.get_in_ports()
-                        add_in_port = [x for x in range(5) if x not in in_ports]
-                        if 3 in add_in_port:
-                            axes = np.array(list(range(input_shapes[1][0])), np.int32)
-                            insert_constant(graph, slice + '_axes', axes, slice, in_port=3, data_format='NHWC')
-                        if 4 in add_in_port:
-                            steps = np.ones(input_shapes[1], np.int32)
-                            insert_constant(graph, slice + '_steps', steps, slice, in_port=4, data_format='NHWC')
-                    slice_attr = slice_obj.copied_attr()
-                    NodeWrap(graph, slice).replace_obj('ArmSlice', slice_attr)
+                    out_symbols = slice_obj.get_output_symbols()
+                    if out_symbols and Op.is_all_global_symbols(out_symbols[0], graph._attr['global_symbols']):
+                        input_tensor_symbols = slice_obj.get_input_value_symbols()
+                        input_shape = input_shapes[0]
+                        inp_rank = len(input_shape)
+                        starts = input_tensor_symbols[1]
+                        ends = input_tensor_symbols[2]
+                        axes = input_tensor_symbols[3] if len(input_tensor_symbols) > 3 else list(range(inp_rank))
+                        steps = input_tensor_symbols[4] if len(input_tensor_symbols) > 4 else [1] * inp_rank
+                        axes = [axis + inp_rank if axis < 0 else axis for axis in axes]
+
+                        ds_starts = []
+                        ds_ends = []
+                        ds_steps = []
+                        for i in range(len(input_shape)):
+                            if i in axes:
+                                idx = axes.index(i)
+                                ds_starts.append(starts[idx])
+                                ds_ends.append(ends[idx])
+                                ds_steps.append(steps[idx])
+                            else:
+                                ds_starts.append(0)
+                                ds_ends.append(input_shape[i])
+                                ds_steps.append(1)
+
+                        graph.remove_edges_from(in_edges[1:])
+                        slice_attr = slice_obj.copied_attr()
+                        ends = np.array(slice_obj.ends, np.int64)
+                        for i, s in enumerate(slice_obj.steps):
+                            if s < 0:
+                                tmp_end = ends[i]
+                                shape = input_shape[i]
+                                ends[i] = max(min(shape - 1, tmp_end), - shape - 1)
+                        slice_attr.update({'ends': ends.tolist()})
+                        if expr_has_symbols(ds_starts) or expr_has_symbols(ds_ends) or expr_has_symbols(ds_steps):
+                            slice_attr.update({'ds_starts': ds_starts})
+                            slice_attr.update({'ds_ends': ds_ends})
+                            slice_attr.update({'ds_steps': ds_steps})
+                        if 'steps' not in slice_attr:
+                            slice_attr.update({'steps': slice_obj.steps})
+                        NodeWrap(graph, slice).replace_obj('ArmSlice', slice_attr)
+                    else:
+                        WARN(f'[Parser]: Dynamic Slice({slice}) in this graph.')
+                        slice_obj.ds_mode = True
+                        if len(in_edges) < 5:
+                            in_ports = slice_obj.get_in_ports()
+                            add_in_port = [x for x in range(5) if x not in in_ports]
+                            if 3 in add_in_port:
+                                axes = np.array(list(range(input_shapes[1][0])), np.int32)
+                                insert_constant(graph, slice + '_axes', axes, slice, in_port=3, data_format='NHWC')
+                            if 4 in add_in_port:
+                                steps = np.ones(input_shapes[1], np.int32)
+                                insert_constant(graph, slice + '_steps', steps, slice, in_port=4, data_format='NHWC')
+                        slice_attr = slice_obj.copied_attr()
+                        NodeWrap(graph, slice).replace_obj('ArmSlice', slice_attr)
             else:
-                assert all(in_attr['tensor'].is_const for _, _, in_attr in in_edges[1:]
-                           ), 'SliceOp only support const starts/ends/steps in static graph mode.'
-                graph.remove_edges_from(in_edges[1:])
                 slice_attr = slice_obj.copied_attr()
                 ends = np.array(slice_obj.ends, np.int64)
                 for i, s in enumerate(slice_obj.steps):

@@ -994,9 +994,10 @@ def convert_range_to_const_slice(graph):
     for m in matches:
         node_name = m['target']
         node_obj = NodeWrap(graph, node_name)['object']
-        if node_obj is not None:
+        if node_obj is not None and node_obj.ds_mode:
             out_tensors = node_obj.get_output_tensors()
-            if len(out_tensors) >= 1 and out_tensors[0] is not None and node_obj.is_all_outputs_const():
+            out_edges = graph.sorted_out_edges(node_name, data=True)
+            if len(out_tensors) >= 1 and out_tensors[0] is not None and out_edges:
                 new_attr = node_obj.copied_attr()
                 new_attr.update({'value': out_tensors[0].copy()})
                 NodeWrap(graph, node_name).replace_obj('Constant', new_attr)
@@ -1007,54 +1008,53 @@ def convert_range_to_const_slice(graph):
                     out_attr['tensor'].is_dynamic = False
                     out_attr['tensor'].is_const = True
 
-                if graph._attr['ds_mode'] and out_edges:
-                    slice_name = get_valid_node_name(graph, node_name + '_post_slice')
-                    graph.add_node(slice_name)
-                    slice_attr = {'name': slice_name}
+                slice_name = get_valid_node_name(graph, node_name + '_post_slice')
+                graph.add_node(slice_name)
+                slice_attr = {'name': slice_name}
 
-                    axes = np.array([0], np.int32)
+                axes = np.array([0], np.int32)
 
-                    slice_attr.update({'opset_version': 10})
+                slice_attr.update({'opset_version': 10})
 
-                    graph.remove_edges_from(out_edges)
+                graph.remove_edges_from(out_edges)
 
-                    const_out_attr = copy.deepcopy(out_edges[0][-1])
-                    const_out_attr['dst_in_port'] = 0
-                    const_out_attr['src_out_port'] = 0
-                    graph.add_edge(node_name, slice_name, **const_out_attr)
+                const_out_attr = copy.deepcopy(out_edges[0][-1])
+                const_out_attr['dst_in_port'] = 0
+                const_out_attr['src_out_port'] = 0
+                graph.add_edge(node_name, slice_name, **const_out_attr)
 
-                    start_node, start_attr = const_in_edges[0][0], const_in_edges[0][-1]
-                    end_node, end_attr = const_in_edges[1][0], const_in_edges[1][-1]
-                    step_node, step_attr = const_in_edges[2][0], const_in_edges[2][-1]
+                start_node, start_attr = const_in_edges[0][0], const_in_edges[0][-1]
+                end_node, end_attr = const_in_edges[1][0], const_in_edges[1][-1]
+                step_node, step_attr = const_in_edges[2][0], const_in_edges[2][-1]
 
-                    start_in_attr = copy.deepcopy(start_attr)
-                    start_in_attr['dst_in_port'] = 1
-                    graph.add_edge(start_node, slice_name, **start_in_attr)
+                start_in_attr = copy.deepcopy(start_attr)
+                start_in_attr['dst_in_port'] = 1
+                graph.add_edge(start_node, slice_name, **start_in_attr)
 
-                    end_in_attr = copy.deepcopy(end_attr)
-                    end_in_attr['dst_in_port'] = 2
-                    graph.add_edge(end_node, slice_name, **end_in_attr)
+                end_in_attr = copy.deepcopy(end_attr)
+                end_in_attr['dst_in_port'] = 2
+                graph.add_edge(end_node, slice_name, **end_in_attr)
 
-                    step_in_attr = copy.deepcopy(step_attr)
-                    step_in_attr['dst_in_port'] = 4
-                    graph.add_edge(step_node, slice_name, **step_in_attr)
+                step_in_attr = copy.deepcopy(step_attr)
+                step_in_attr['dst_in_port'] = 4
+                graph.add_edge(step_node, slice_name, **step_in_attr)
 
-                    insert_constant(graph, slice_name + '_axes', axes,
-                                    slice_name, in_port=3)
-                    NodeWrap(graph, slice_name).replace_obj('Slice', slice_attr)
+                insert_constant(graph, slice_name + '_axes', axes,
+                                slice_name, in_port=3)
+                NodeWrap(graph, slice_name).replace_obj('Slice', slice_attr)
 
-                    insert_reshape(graph, start_node, slice_name, start_in_attr, [1], symbol=[1])
-                    insert_reshape(graph, end_node, slice_name, end_in_attr, [1], symbol=[1])
-                    insert_reshape(graph, step_node, slice_name, step_in_attr, [1], symbol=[1])
+                insert_reshape(graph, start_node, slice_name, start_in_attr, [1], symbol=[1])
+                insert_reshape(graph, end_node, slice_name, end_in_attr, [1], symbol=[1])
+                insert_reshape(graph, step_node, slice_name, step_in_attr, [1], symbol=[1])
 
-                    for _, dst, out_attr in out_edges:
-                        new_out_attr = copy.deepcopy(out_attr)
-                        new_out_attr['src_out_port'] = 0
-                        graph.add_edge(slice_name, dst, **new_out_attr)
-                        new_out_attr['tensor'].is_dynamic = True
-                        new_out_attr['tensor'].is_const = False
+                for _, dst, out_attr in out_edges:
+                    new_out_attr = copy.deepcopy(out_attr)
+                    new_out_attr['src_out_port'] = 0
+                    graph.add_edge(slice_name, dst, **new_out_attr)
+                    new_out_attr['tensor'].is_dynamic = True
+                    new_out_attr['tensor'].is_const = False
 
-                    clear_redundant_nodes(graph)
+                clear_redundant_nodes(graph)
 
 
 def convert_gemm_to_fc(graph):
@@ -14475,7 +14475,7 @@ def middle_passes(graph, params):
     decompose_const_if_loop(graph, params)
     convert_loop_cond_out(graph)
     convert_range_to_const_slice(graph)
-    convert_to_const(graph, ['Shape', 'ConstantOfShape',
+    convert_to_const(graph, ['Shape', 'ConstantOfShape', 'Range',
                              'NonZero', 'EyeLike', 'Gather', 'Slice', 'Equal'])
 
     fuse_const(graph)

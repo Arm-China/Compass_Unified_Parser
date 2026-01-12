@@ -4945,16 +4945,12 @@ class ArmSliceOp(OpHasVariableOutPorts, ArmOp):
     def __init__(self, graph, attr_dict=None):
         super(ArmSliceOp, self).__init__(graph, attr_dict)
         self.update_attributes(ArmSliceOp, attr_dict)
-        self.dynamic = False
-        self.multi_inputs = False
         assert self.check_required(), 'ArmSliceOp is missing a required parameter.'
 
     def infer_shape(self):
         super(ArmSliceOp, self).infer_shape()
         inputs = self.get_input_tensors()
         if len(inputs) > 1:
-            self.dynamic = True
-            self.multi_inputs = True
             assert len(inputs) == 5, 'Dynamic Slice should have 5 inputs.'
             for inp in inputs[1:]:
                 assert len(inp.shape) == 1, f'Slice other inputs should be 1D, but {len(inp.shape)}D.'
@@ -4962,18 +4958,15 @@ class ArmSliceOp(OpHasVariableOutPorts, ArmOp):
             output_shape = np.array(list(inputs[0].shape), np.int32)
             out_tensor = [output, output_shape]
         else:
-            self.dynamic = False
-            if self.ds_starts and self.ds_ends and self.ds_steps:
-                self.dynamic = True
             obj = tuple(slice(s, None if (p < 0 and e < 0) else e, p)
                         for s, e, p in zip(self.starts, self.ends, self.steps))
             out_tensor = [inputs[0][obj]]
-        self.infer_symbol()
-        self.set_out_tensor(out_tensor, is_dynamic=self.dynamic)
+        is_const, is_dynamic = self.infer_symbol()
+        self.set_out_tensor(out_tensor, is_const=is_const, is_dynamic=is_dynamic)
 
     def infer_symbol(self):
         if not self.ds_mode:
-            return
+            return None, None
         inputs = self.get_input_tensors()
         if len(inputs) == 1:
             input_symbol_values = self.get_input_value_symbols()
@@ -5005,10 +4998,13 @@ class ArmSliceOp(OpHasVariableOutPorts, ArmOp):
                     else:
                         out_symbol.append(int(out))
                 self.set_out_symbol([out_symbol])
+            return False, True
+        else:
+            return False, True
 
     def write_attrs(self, txt_file):
         ret = super(ArmSliceOp, self).write_attrs(txt_file)
-        if ret and not self.multi_inputs:
+        if ret and len(self.get_input_tensors()) == 1:
             if self.starts:
                 txt_file.write('begin=[%s]\n' % list_list_to_string(self.starts))
             if self.ends:

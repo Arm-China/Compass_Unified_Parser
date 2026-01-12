@@ -1702,6 +1702,9 @@ class SliceOp(OpHasAxis, OpHasOneOutPort, OnnxOp):
                 if expr_has_symbols(out_symbol):
                     is_const = False
                     is_dynamic = True
+        else:
+            is_const = False
+            is_dynamic = True
         return is_const, is_dynamic
 
 
