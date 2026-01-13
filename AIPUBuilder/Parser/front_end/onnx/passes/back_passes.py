@@ -3873,7 +3873,7 @@ def lift_special_slice(graph):
             unware_in_edges = graph.sorted_in_edges(unware, data=True)
             slice_in_edges = graph.sorted_in_edges(slice, data=True)
 
-            if len(slice_in_edges) != 1 or slice_obj.dynamic:
+            if len(slice_in_edges) != 1 or slice_obj.ds_mode:
                 continue
 
             starts, ends, steps = slice_obj.starts, slice_obj.ends, slice_obj.steps
