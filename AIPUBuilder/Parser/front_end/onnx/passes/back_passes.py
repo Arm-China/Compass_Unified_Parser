@@ -1587,13 +1587,12 @@ def merge_transpose_matmul_gemm(graph):
         matmul_gemm = m['matmul_gemm']
         matmul_gemm_obj = NodeWrap(graph, matmul_gemm)['object']
         if matmul_gemm_obj is not None:
-            matmul_gemm_in_edges = graph.sorted_in_edges(matmul_gemm)
+            matmul_gemm_in_edges = graph.sorted_in_edges(matmul_gemm, data=True)
             for matmul_gemm_in_edge in matmul_gemm_in_edges[:2]:
                 in_edge_obj = NodeWrap(graph, matmul_gemm_in_edge[0])['object']
                 if in_edge_obj is not None:
                     if in_edge_obj.type == 'ArmTranspose':
                         trans = in_edge_obj.name
-                        trans_out_edges = graph.sorted_out_edges(trans, data=True)
                         trans_perm = in_edge_obj.perm
                         inp_rank = len(trans_perm)
                         exp_perm = list(range(inp_rank - 2)) + [inp_rank - 1, inp_rank - 2]
@@ -1606,7 +1605,7 @@ def merge_transpose_matmul_gemm(graph):
                             matmul_symbol = matmul_out_edges[0][-1]['tensor'].shape_symbol
                             input_symbols = matmul_gemm_obj.get_input_symbols()
                             updated_mm_symbol = matmul_symbol[:]
-                        if trans_out_edges[0][-1]['dst_in_port'] == 0:
+                        if matmul_gemm_in_edge[-1]['dst_in_port'] == 0:
                             trans_a = matmul_gemm_obj.trans_a
                             matmul_gemm_obj.trans_a = not trans_a
                             if matmul_gemm_obj.ds_mode and matmul_symbol:
@@ -1625,7 +1624,7 @@ def merge_transpose_matmul_gemm(graph):
                         trans_in_edges = graph.sorted_in_edges(trans, data=True)
                         src, _, in_attr = trans_in_edges[0]
                         in_attr_copy = copy.deepcopy(in_attr)
-                        in_attr_copy['dst_in_port'] = trans_out_edges[0][-1]['dst_in_port']
+                        in_attr_copy['dst_in_port'] = matmul_gemm_in_edge[-1]['dst_in_port']
                         graph.add_edge(src, matmul_gemm, **in_attr_copy)
                 else:
                     ERROR(f'[Parser]: Meets invalid Node: {matmul_gemm_in_edge[0]} in merge_transpose_matmul_gemm!')
@@ -5800,7 +5799,7 @@ def sink_transpose_through_concat(graph):
             concat_shape = concat_output.shape
         else:
             concat_output = None
-            concat_dim = np.sum(s[axis] for s in concat_in_shapes)
+            concat_dim = sum(s[axis] for s in concat_in_shapes)
             concat_shape = tuple(concat_dim if i == axis else d
                                  for i, d in enumerate(concat_in_shapes[0]))
             concat_shape = tuple(np.array(concat_shape)[inverse_perm].tolist())

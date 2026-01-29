@@ -1912,7 +1912,7 @@ def convert_torch_to_onnx(model_path, params):
                 os.remove(onnx_model_path)
                 onnx.save(sim_model, onnx_model_path)
             except:
-                WARN('[Parser]: Skip simplify onnx because error during onnxsim!')
+                DEBUG('[Parser]: Skip simplify onnx because error during onnxsim!')
         return
 
     def _flatten_type(torch_type):
