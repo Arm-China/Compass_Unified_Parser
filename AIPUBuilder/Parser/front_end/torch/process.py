@@ -11,7 +11,10 @@ import onnx
 import torch
 import torch.nn as nn
 import torch.onnx.symbolic_helper as helper
-from torch.onnx import _type_utils
+try:
+    from torch.onnx import _type_utils
+except ImportError:
+    from torch.onnx._internal.torchscript_exporter import _type_utils
 from torch.onnx import symbolic_opset9 as opset9
 from multiprocessing import Process
 from .utils import get_tuple_from_tensor_type, quantized_args, quantize_helper, quantize_helper_multi, \
@@ -1892,6 +1895,13 @@ def convert_torch_to_onnx(model_path, params):
                 custom_opsets.update({'opset_18': 18, 'opset_19': 19, 'opset_20': 20})
             elif onnx_opset_version == 18:
                 custom_opsets.update({'opset_19': 19, 'opset_20': 20})
+
+        # Torch 2.9 stop support ScriptModule, very bad compatibility for qat model
+        torch_version = version_to_tuple(torch.onnx.producer_version)
+        if torch_version >= version_to_tuple('2.9.0'):
+            from torch._export.converter import TS2EPConverter
+            converter = TS2EPConverter(model, input_tensors)
+            model = converter.convert()
         # Note: Use operator_export_type=torch.onnx.OperatorExportTypes.ONNX_ATEN_FALLBACK
         # or torch.onnx.OperatorExportTypes.ONNX_ATEN for debug if export fails.
         # The failure could be caused by unexpected input shapes.
