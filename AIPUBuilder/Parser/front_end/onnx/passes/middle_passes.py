@@ -1665,8 +1665,8 @@ def convert_einsum(graph):
                 if len(equ_list[0]) == len(equ_list[1]) and set(equ_list[0]) == set(equ_list[1]):
                     # convert to transpose
                     perm = []
-                    for v in equ_list[0]:
-                        perm.append(equ_list[1].index(v))
+                    for v in equ_list[1]:
+                        perm.append(equ_list[0].index(v))
                     trans_attr = einsum_obj.copied_attr()
                     trans_attr.update({'opset_version': 13, 'perm': perm})
                     NodeWrap(graph, einsum).replace_obj('Transpose', trans_attr)
