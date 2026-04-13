@@ -574,14 +574,9 @@ class InputOp(OpHasOneOutPort, InputLikeOp, CommonOp):
         out_tensor = input_tensor.copy()
         if input_symbol is not None:
             out_symbol = input_symbol.copy()
-            self.set_out_tensor(out_tensor, out_symbol)
+            self.set_out_tensor(out_tensor, shape_symbol=out_symbol)
         else:
             self.set_out_tensor(out_tensor)
-
-    def infer_symbol(self, input_symbol=None):
-        super(InputOp, self).infer_symbol()
-        assert input_symbol is not None, 'input symbol is empty in InputOp.'
-        self.set_out_symbol(input_symbol)
 
 
 class InTopKOp(LayoutUnawareOp, OpHasOneOutPort, CommonOp):
@@ -750,7 +745,26 @@ class RepeatOp(OpHasAxis, OpHasOneOutPort, CommonOp):
                 zeros_shape[self.axis] = self.max_dim - out_shape[self.axis]
                 zeros = np.zeros(zeros_shape, inputs[0].dtype)
                 out_tensor = np.concatenate([out_tensor, zeros], axis=self.axis)
-        self.set_out_tensor(out_tensor)
+        out_symbol = self.cal_output_symbol()
+        self.set_out_tensor(out_tensor, shape_symbol=out_symbol)
+
+    def cal_output_symbol(self):
+        if self.ds_mode:
+            const_info = self.sorted_in_consts()
+            if const_info and const_info[-1][1] == 1:
+                inp_symbol = self.get_input_symbols()[0]
+                reps = const_info[-1][2].tolist()
+                if self.axis is None:
+                    out_symbol = [int(np.sum(reps))]
+                else:
+                    out_symbol = inp_symbol.copy()
+                    out_symbol[self.axis] = int(np.sum(reps))
+                return out_symbol
+            else:
+                ERROR('Repeat Op only support const reps in symbol infer..')
+                return None
+        else:
+            return None
 
 
 class PluginOp(OpHasVariableOutPorts, CommonOp):
@@ -1135,7 +1149,7 @@ class SiluOp(SameShapeOp, LayoutUnawareOp, ActivationOnlyOp, CommonOp):
         inputs = self.get_input_tensors()
         out_tensor = (inputs[0]) * tf.sigmoid(inputs[0].astype(np.float32)).numpy()
         out_symbol = self.cal_output_symbol()
-        self.set_out_tensor(out_tensor.astype(inputs[0].dtype), out_symbol)
+        self.set_out_tensor(out_tensor.astype(inputs[0].dtype), shape_symbol=out_symbol)
 
 
 class SlotUpdateOp(OpHasOneOutPort, CommonOp):

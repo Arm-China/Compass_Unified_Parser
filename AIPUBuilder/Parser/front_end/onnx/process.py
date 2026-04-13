@@ -2,7 +2,7 @@
 # Copyright © 2022-2025 Arm Technology (China) Co. Ltd.
 
 from .load import convert_onnx_to_graph
-from ...graph.graph_algo import infer, infer_symbol
+from ...graph.graph_algo import infer
 from .passes.front_passes import fuse_weights_const, convert_special_prelu, merge_qconv, merge_qmatmul, \
     merge_q_multiple, merge_q_unary, convert_special_sequence_construct, merge_sequence_construct_and_at, \
     merge_sequence_construct_and_concat, merge_rcnn, convert_mmcv_deform_conv, \

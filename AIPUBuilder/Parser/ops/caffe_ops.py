@@ -48,7 +48,7 @@ class CaffeARGMAXOp(OpHasAxis, OpHasOneOutPort, CaffeOp):
         super(CaffeARGMAXOp, self).infer_shape()
         inputs = self.get_input_tensors()
         inp = inputs[0] if self.axis is not None else np.reshape(
-            inputs[0], newshape=(inputs[0].shape[0], -1, 1))
+            inputs[0], (inputs[0].shape[0], -1, 1))
         if self.axis is not None:
             self.axis = OpHasAxis.make_axes_non_negative(
                 self.axis, len(inputs[0].shape))
@@ -706,7 +706,7 @@ class CaffeFLATTENOp(OpHasAxis, OpHasOneOutPort, CaffeOp):
         self.end_axis = int(OpHasAxis.make_axes_non_negative(
             self.end_axis, len(inputs[0].shape)))
         dim = type(self).cal_dim(inputs[0].shape, self.axis, self.end_axis)
-        out_tensor = np.reshape(inputs[0], newshape=dim)
+        out_tensor = np.reshape(inputs[0], dim)
         self.set_out_tensor(out_tensor)
 
     @property
@@ -744,7 +744,7 @@ class CaffeINNER_PRODUCTOp(OpHasAxis, BaseLinearOp, CaffeHasBiasTerm):
         self.axis = OpHasAxis.make_axes_non_negative(
             self.axis, len(inputs[0].shape))
         new_shape = list(inputs[0].shape[:self.axis]) + [-1]
-        inp = np.reshape(inputs[0], newshape=new_shape)
+        inp = np.reshape(inputs[0], new_shape)
         out_tensor = np.matmul(inp, np.transpose(self.weights))
         self.set_out_tensor(out_tensor)
 
@@ -1484,7 +1484,7 @@ class CaffeRESHAPEOp(OpHasOneOutPort, CaffeOp):
             inferred_dim = int(np.prod(in_shape)) // explicit_count
             top_shape[start_axis + self.inferred_axis] = inferred_dim
         self.shape = top_shape
-        out_tensor = np.reshape(inputs[0], newshape=self.shape)
+        out_tensor = np.reshape(inputs[0], shape=self.shape)
         self.set_out_tensor(out_tensor)
 
     @property
@@ -1522,7 +1522,7 @@ class CaffeRNNOp(OpHasVariableOutPorts, OpHasWeights, CaffeOp):
                     np.abs(int(np.prod(in_shape)) // int(np.prod(base_dim))))
                 break
         self.shape = base_dim
-        out_tensor = np.reshape(inputs[0], newshape=self.shape)
+        out_tensor = np.reshape(inputs[0], shape=self.shape)
         self.set_out_tensor(out_tensor)
         '''
 
@@ -1640,9 +1640,9 @@ class CaffeSHUFFLECHANNELOp(OpHasOneOutPort, CaffeOp):
         inputs = self.get_input_tensors()
         new_shape = [inputs[0].shape[0], self.group,
                      inputs[0].shape[1] // self.group] + list(inputs[0].shape[2:])
-        reshape1 = np.reshape(inputs[0], newshape=new_shape)
+        reshape1 = np.reshape(inputs[0], shape=new_shape)
         transpose = np.transpose(reshape1, axes=(0, 2, 1, 3, 4))
-        out_tensor = np.reshape(transpose, newshape=inputs[0].shape)
+        out_tensor = np.reshape(transpose, shape=inputs[0].shape)
         self.set_out_tensor(out_tensor)
 
 

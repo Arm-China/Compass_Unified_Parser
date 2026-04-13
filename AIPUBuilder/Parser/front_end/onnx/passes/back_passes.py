@@ -11,7 +11,7 @@ from ....common.defs import Tensor, FLOAT_EQUAL, Framework
 from ....graph.graph import SubGraph
 from ....logger import INFO, DEBUG, WARN, ERROR, FATAL
 from ....common.utils import extend_lists, list_string_to_list, float_string_to_list, get_converted_dtype, \
-    get_closest_dtype, is_continuous_num, print_debug_info
+    get_closest_dtype, is_continuous_num, print_debug_info, expr_has_symbols
 from ....graph.node_wrap import NodeWrap
 from ....graph.graph_algo import determined_sort, get_valid_node_name, clear_redundant_nodes, has_path, infer
 from ....graph.pattern_match import matched_patterns, single_node_matcher, two_nodes_matcher
@@ -1587,13 +1587,12 @@ def merge_transpose_matmul_gemm(graph):
         matmul_gemm = m['matmul_gemm']
         matmul_gemm_obj = NodeWrap(graph, matmul_gemm)['object']
         if matmul_gemm_obj is not None:
-            matmul_gemm_in_edges = graph.sorted_in_edges(matmul_gemm)
+            matmul_gemm_in_edges = graph.sorted_in_edges(matmul_gemm, data=True)
             for matmul_gemm_in_edge in matmul_gemm_in_edges[:2]:
                 in_edge_obj = NodeWrap(graph, matmul_gemm_in_edge[0])['object']
                 if in_edge_obj is not None:
                     if in_edge_obj.type == 'ArmTranspose':
                         trans = in_edge_obj.name
-                        trans_out_edges = graph.sorted_out_edges(trans, data=True)
                         trans_perm = in_edge_obj.perm
                         inp_rank = len(trans_perm)
                         exp_perm = list(range(inp_rank - 2)) + [inp_rank - 1, inp_rank - 2]
@@ -1601,32 +1600,31 @@ def merge_transpose_matmul_gemm(graph):
                             continue
 
                         matched = True
-                        enable_ds = graph._attr['enable_ds']
-                        if enable_ds:
+                        if matmul_gemm_obj.ds_mode:
                             matmul_out_edges = graph.sorted_out_edges(matmul_gemm, data=True)
-                            matmul_symbol = matmul_out_edges[0][-1]['tensor'].symbol
-                            input_symbols = matmul_gemm_obj.get_input_symbols(local=True)
+                            matmul_symbol = matmul_out_edges[0][-1]['tensor'].shape_symbol
+                            input_symbols = matmul_gemm_obj.get_input_symbols()
                             updated_mm_symbol = matmul_symbol[:]
-                        if trans_out_edges[0][-1]['dst_in_port'] == 0:
+                        if matmul_gemm_in_edge[-1]['dst_in_port'] == 0:
                             trans_a = matmul_gemm_obj.trans_a
                             matmul_gemm_obj.trans_a = not trans_a
-                            if enable_ds and matmul_symbol:
+                            if matmul_gemm_obj.ds_mode and matmul_symbol:
                                 updated_mm_symbol[-1] = input_symbols[0][-1]
                         else:
                             trans_b = matmul_gemm_obj.trans_b
                             matmul_gemm_obj.trans_b = not trans_b
-                            if enable_ds and matmul_symbol:
+                            if matmul_gemm_obj.ds_mode and matmul_symbol:
                                 updated_mm_symbol[-1] = input_symbols[1][-2]
 
-                        if enable_ds and matmul_symbol:
+                        if matmul_gemm_obj.ds_mode and matmul_symbol:
                             for _, dst, out_attr in matmul_out_edges:
-                                out_attr['tensor'].symbol = updated_mm_symbol
+                                out_attr['tensor'].shape_symbol = updated_mm_symbol
 
                         graph.remove_edge(trans, matmul_gemm)
                         trans_in_edges = graph.sorted_in_edges(trans, data=True)
                         src, _, in_attr = trans_in_edges[0]
                         in_attr_copy = copy.deepcopy(in_attr)
-                        in_attr_copy['dst_in_port'] = trans_out_edges[0][-1]['dst_in_port']
+                        in_attr_copy['dst_in_port'] = matmul_gemm_in_edge[-1]['dst_in_port']
                         graph.add_edge(src, matmul_gemm, **in_attr_copy)
                 else:
                     ERROR(f'[Parser]: Meets invalid Node: {matmul_gemm_in_edge[0]} in merge_transpose_matmul_gemm!')
@@ -3046,17 +3044,6 @@ def rename_reduce(graph):
                 reshape = insert_reshape_after(
                     graph, reduce, out_shape, type='Reshape',
                     quantize=reduce_obj.quantize)
-                in_shape = input_shapes[0]
-                axes = reduce_obj.axes
-                out_symbol = []
-                if out_shape and in_shape:
-                    tmp_symbol = [f's{i}' for i in range(len(in_shape))]
-                    for i in range(len(in_shape)):
-                        if i not in axes:
-                            out_symbol.append(tmp_symbol[i])
-                reshape_out_edges = graph.sorted_out_edges(reshape, data=True)
-                for out_edge in reshape_out_edges:
-                    out_edge[2]['tensor'].symbol = out_symbol
                 reshape_obj = NodeWrap(graph, reshape)['object']
                 if reduce_obj.in_subgraph:
                     reshape_obj.in_subgraph = reduce_obj.in_subgraph
@@ -3357,63 +3344,81 @@ def rename_slice(graph):
         in_edges = graph.sorted_in_edges(slice, data=True)
         if slice_obj is not None \
                 and ((slice_obj.cur_version == 1 and len(in_edges) == 1) or (slice_obj.cur_version > 1 and 3 <= len(in_edges) <= 5)):
+            out_edges = graph.sorted_out_edges(slice)
+            if not out_edges:
+                continue
             input_shapes = slice_obj.get_input_shapes()
-            if len(in_edges) > 1 and any(not in_attr['tensor'].is_const for _, _, in_attr in in_edges[1:]):
-                out_symbol = slice_obj.get_output_symbols()[0]
-                if Op.is_all_global_symbols(out_symbol, graph._attr['global_symbols']):
-                    input_tensor_symbols = slice_obj.get_input_symbol_values()
-                    input_shape = input_shapes[0]
-                    inp_rank = len(input_shape)
-                    starts = input_tensor_symbols[1]
-                    ends = input_tensor_symbols[2]
-                    axes = input_tensor_symbols[3] if len(input_tensor_symbols) > 3 else list(range(inp_rank))
-                    steps = input_tensor_symbols[4] if len(input_tensor_symbols) > 4 else [1] * inp_rank
-                    axes = [axis + inp_rank if axis < 0 else axis for axis in axes]
-
-                    ds_starts = []
-                    ds_ends = []
-                    ds_steps = []
-                    for i in range(len(input_shape)):
-                        if i in axes:
-                            idx = axes.index(i)
-                            ds_starts.append(starts[idx])
-                            ds_ends.append(ends[idx])
-                            ds_steps.append(steps[idx])
-                        else:
-                            ds_starts.append(0)
-                            ds_ends.append(input_shape[i])
-                            ds_steps.append(1)
-
+            if len(in_edges) > 1:
+                if all(in_attr['tensor'].is_const for _, _, in_attr in in_edges[1:]):
                     graph.remove_edges_from(in_edges[1:])
                     slice_attr = slice_obj.copied_attr()
                     ends = np.array(slice_obj.ends, np.int64)
                     for i, s in enumerate(slice_obj.steps):
                         if s < 0:
                             tmp_end = ends[i]
-                            shape = input_shape[i]
+                            shape = input_shapes[0][i]
                             ends[i] = max(min(shape - 1, tmp_end), - shape - 1)
                     slice_attr.update({'ends': ends.tolist()})
-                    slice_attr.update({'ds_starts': ds_starts})
-                    slice_attr.update({'ds_ends': ds_ends})
-                    slice_attr.update({'ds_steps': ds_steps})
                     if 'steps' not in slice_attr:
                         slice_attr.update({'steps': slice_obj.steps})
                     NodeWrap(graph, slice).replace_obj('ArmSlice', slice_attr)
                 else:
-                    WARN(f'[Parser]: Dynamic Slice({slice}) in this graph.')
-                    if len(in_edges) < 5:
-                        in_ports = slice_obj.get_in_ports()
-                        add_in_port = [x for x in range(5) if x not in in_ports]
-                        if 3 in add_in_port:
-                            axes = np.array(list(range(input_shapes[1][0])), np.int32)
-                            insert_constant(graph, slice + '_axes', axes, slice, in_port=3, data_format='NHWC')
-                        if 4 in add_in_port:
-                            steps = np.ones(input_shapes[1], np.int32)
-                            insert_constant(graph, slice + '_steps', steps, slice, in_port=4, data_format='NHWC')
-                    slice_attr = slice_obj.copied_attr()
-                    NodeWrap(graph, slice).replace_obj('ArmSlice', slice_attr)
+                    out_symbols = slice_obj.get_output_symbols()
+                    if out_symbols and Op.is_all_global_symbols(out_symbols[0], graph._attr['global_symbols']):
+                        input_tensor_symbols = slice_obj.get_input_value_symbols()
+                        input_shape = input_shapes[0]
+                        inp_rank = len(input_shape)
+                        starts = input_tensor_symbols[1]
+                        ends = input_tensor_symbols[2]
+                        axes = input_tensor_symbols[3] if len(input_tensor_symbols) > 3 else list(range(inp_rank))
+                        steps = input_tensor_symbols[4] if len(input_tensor_symbols) > 4 else [1] * inp_rank
+                        axes = [axis + inp_rank if axis < 0 else axis for axis in axes]
+
+                        ds_starts = []
+                        ds_ends = []
+                        ds_steps = []
+                        for i in range(len(input_shape)):
+                            if i in axes:
+                                idx = axes.index(i)
+                                ds_starts.append(starts[idx])
+                                ds_ends.append(ends[idx])
+                                ds_steps.append(steps[idx])
+                            else:
+                                ds_starts.append(0)
+                                ds_ends.append(input_shape[i])
+                                ds_steps.append(1)
+
+                        graph.remove_edges_from(in_edges[1:])
+                        slice_attr = slice_obj.copied_attr()
+                        ends = np.array(slice_obj.ends, np.int64)
+                        for i, s in enumerate(slice_obj.steps):
+                            if s < 0:
+                                tmp_end = ends[i]
+                                shape = input_shape[i]
+                                ends[i] = max(min(shape - 1, tmp_end), - shape - 1)
+                        slice_attr.update({'ends': ends.tolist()})
+                        if expr_has_symbols(ds_starts) or expr_has_symbols(ds_ends) or expr_has_symbols(ds_steps):
+                            slice_attr.update({'ds_starts': ds_starts})
+                            slice_attr.update({'ds_ends': ds_ends})
+                            slice_attr.update({'ds_steps': ds_steps})
+                        if 'steps' not in slice_attr:
+                            slice_attr.update({'steps': slice_obj.steps})
+                        NodeWrap(graph, slice).replace_obj('ArmSlice', slice_attr)
+                    else:
+                        WARN(f'[Parser]: Dynamic Slice({slice}) in this graph.')
+                        slice_obj.ds_mode = True
+                        if len(in_edges) < 5:
+                            in_ports = slice_obj.get_in_ports()
+                            add_in_port = [x for x in range(5) if x not in in_ports]
+                            if 3 in add_in_port:
+                                axes = np.array(list(range(input_shapes[1][0])), np.int32)
+                                insert_constant(graph, slice + '_axes', axes, slice, in_port=3, data_format='NHWC')
+                            if 4 in add_in_port:
+                                steps = np.ones(input_shapes[1], np.int32)
+                                insert_constant(graph, slice + '_steps', steps, slice, in_port=4, data_format='NHWC')
+                        slice_attr = slice_obj.copied_attr()
+                        NodeWrap(graph, slice).replace_obj('ArmSlice', slice_attr)
             else:
-                graph.remove_edges_from(in_edges[1:])
                 slice_attr = slice_obj.copied_attr()
                 ends = np.array(slice_obj.ends, np.int64)
                 for i, s in enumerate(slice_obj.steps):
@@ -3867,7 +3872,7 @@ def lift_special_slice(graph):
             unware_in_edges = graph.sorted_in_edges(unware, data=True)
             slice_in_edges = graph.sorted_in_edges(slice, data=True)
 
-            if len(slice_in_edges) != 1 or slice_obj.dynamic:
+            if len(slice_in_edges) != 1 or slice_obj.ds_mode:
                 continue
 
             starts, ends, steps = slice_obj.starts, slice_obj.ends, slice_obj.steps
@@ -5266,35 +5271,38 @@ def sink_single_reshape(graph):
                         or any([s is None for s in reshape_in_shape]):
                     continue
                 need_clear_graph = False
-                if unaware_obj.type == 'ArmEltwise':
-                    unaware_in_edges = graph.sorted_in_edges(unaware, data=True)
-                    another_src_edge = unaware_in_edges[0] if unaware_in_edges[1][0] == reshape else unaware_in_edges[1]
-                    another_src = another_src_edge[0]
-                    another_src_obj = NodeWrap(graph, another_src)['object']
-                    if another_src_obj is not None and another_src_obj.type in ('ArmReshape', 'Constant'):
-                        need_clear_graph = True
-                        if another_src_obj.type == 'ArmReshape':
-                            rs2_in_shape = another_src_obj.get_input_shapes()[0]
-                            if rs2_in_shape is None \
-                                    or any([s is None for s in rs2_in_shape]):
-                                continue
-                            another_src_out_edges = graph.sorted_out_edges(another_src, data=True)
-                            if reshape_in_shape != rs2_in_shape or len(another_src_out_edges) != 1:
-                                continue
-                            another_src_in_edges = graph.sorted_in_edges(another_src, data=True)
-                            another_src_src, _, another_src_in_attr = another_src_in_edges[0]
-                            graph.remove_edge(another_src_src, another_src)
-                            graph.remove_edges_from(another_src_out_edges)
-                            new_in_attr = copy.deepcopy(another_src_in_attr)
-                            new_in_attr['dst_in_port'] = another_src_edge[-1]['dst_in_port']
-                            graph.add_edge(another_src_src, unaware, **new_in_attr)
+                if len(unaware_obj.get_in_ports()) > 1:
+                    if unaware_obj.type == 'ArmEltwise':
+                        unaware_in_edges = graph.sorted_in_edges(unaware, data=True)
+                        another_src_edge = unaware_in_edges[0] if unaware_in_edges[1][0] == reshape else unaware_in_edges[1]
+                        another_src = another_src_edge[0]
+                        another_src_obj = NodeWrap(graph, another_src)['object']
+                        if another_src_obj is not None and another_src_obj.type in ('ArmReshape', 'Constant'):
+                            need_clear_graph = True
+                            if another_src_obj.type == 'ArmReshape':
+                                rs2_in_shape = another_src_obj.get_input_shapes()[0]
+                                if rs2_in_shape is None \
+                                        or any([s is None for s in rs2_in_shape]):
+                                    continue
+                                another_src_out_edges = graph.sorted_out_edges(another_src, data=True)
+                                if reshape_in_shape != rs2_in_shape or len(another_src_out_edges) != 1:
+                                    continue
+                                another_src_in_edges = graph.sorted_in_edges(another_src, data=True)
+                                another_src_src, _, another_src_in_attr = another_src_in_edges[0]
+                                graph.remove_edge(another_src_src, another_src)
+                                graph.remove_edges_from(another_src_out_edges)
+                                new_in_attr = copy.deepcopy(another_src_in_attr)
+                                new_in_attr['dst_in_port'] = another_src_edge[-1]['dst_in_port']
+                                graph.add_edge(another_src_src, unaware, **new_in_attr)
+                            else:
+                                const_v = another_src_obj.value
+                                new_const = np.reshape(const_v, reshape_in_shape)
+                                graph.remove_edge(another_src, unaware)
+                                const_in_port = another_src_edge[-1]['dst_in_port']
+                                insert_constant(graph, unaware + '_new_const', new_const, unaware,
+                                                in_port=const_in_port)
                         else:
-                            const_v = another_src_obj.value
-                            new_const = np.reshape(const_v, reshape_in_shape)
-                            graph.remove_edge(another_src, unaware)
-                            const_in_port = another_src_edge[-1]['dst_in_port']
-                            insert_constant(graph, unaware + '_new_const', new_const, unaware,
-                                            in_port=const_in_port)
+                            continue
                     else:
                         continue
                 src, _, reshape_in_attr = reshape_in_edges[0]
@@ -5598,7 +5606,7 @@ def sink_reshape_through_cast(graph):
             ERROR('[Parser]: Meets invalid Node object in sink_reshape_through_cast!')
             continue
         reshape_out_edges = graph.sorted_out_edges(reshape, data=True)
-        reshape_symbol = reshape_out_edges[0][-1]['tensor'].symbol
+        reshape_symbol = reshape_out_edges[0][-1]['tensor'].shape_symbol
         if len(reshape_out_edges) != 1:
             continue
         graph.remove_edges_from(reshape_in_edges + cast_out_edges)
@@ -5618,7 +5626,7 @@ def sink_reshape_through_cast(graph):
         graph.add_edge(cast, reshape, **reshape_in_attr)
         for _, dst, out_attr in cast_out_edges:
             new_out_attr = copy.deepcopy(out_attr)
-            new_out_attr['tensor'].symbol = reshape_symbol
+            new_out_attr['tensor'].shape_symbol = reshape_symbol
             graph.add_edge(reshape, dst, **new_out_attr)
 
 
@@ -5791,7 +5799,7 @@ def sink_transpose_through_concat(graph):
             concat_shape = concat_output.shape
         else:
             concat_output = None
-            concat_dim = np.sum(s[axis] for s in concat_in_shapes)
+            concat_dim = sum(s[axis] for s in concat_in_shapes)
             concat_shape = tuple(concat_dim if i == axis else d
                                  for i, d in enumerate(concat_in_shapes[0]))
             concat_shape = tuple(np.array(concat_shape)[inverse_perm].tolist())
@@ -5867,13 +5875,12 @@ def sink_transpose_through_special_reshape(graph):
             if not sink_ok:
                 continue
 
-            ds_mode = graph._attr['enable_ds']
             new_rs_shape = []
             perm_map = []
-            if ds_mode:
-                trans_in_symbol = trans_obj.get_input_symbols(local=True)[0]
+            if trans_obj.ds_mode:
+                trans_in_symbol = trans_obj.get_input_symbols()[0]
                 new_rs_symbol = []
-                origin_rs_in_symbol = reshape_obj.get_input_symbols(local=True)[0]
+                origin_rs_in_symbol = reshape_obj.get_input_symbols()[0]
                 origin_rs_out_symbol = reshape_obj.get_output_symbols()[0]
             else:
                 trans_in_symbol = []
@@ -5977,8 +5984,8 @@ def sink_transpose_through_special_reshape(graph):
                     reshape_in_edges[0][2]['tensor'].value, reshape_obj.dim)
             else:
                 reshape_out_tensor.shape = reshape_obj.dim
-            if ds_mode:
-                reshape_out_tensor.symbol = new_rs_symbol
+            if trans_obj.ds_mode:
+                reshape_out_tensor.shape_symbol = new_rs_symbol
             graph.add_edge(reshape, new_transpose, **{'tensor': reshape_out_tensor})
 
             new_transpose_attr = reshape_obj.copied_attr()
@@ -6133,10 +6140,6 @@ def convert_special_reshape(graph):
                 new_perm = list(range(len(rs_in_shape)))
                 new_perm[rs_out_non_one_dims[0]] = rs_in_non_one_dims[0]
                 new_perm[rs_in_non_one_dims[0]] = rs_out_non_one_dims[0]
-
-                out_symbol = [Symbol(f's{axis}') for axis in new_perm]
-                for _, dst, out_attr in rs_out_edges:
-                    out_attr['tensor'].symbol = out_symbol
 
                 new_transpose_attr = rs_obj.copied_attr()
                 new_transpose_attr.update(

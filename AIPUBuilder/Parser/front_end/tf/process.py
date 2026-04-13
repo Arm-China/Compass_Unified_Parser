@@ -15,7 +15,8 @@ from .passes.front_passes import merge_gru, merge_gru2, merge_lstm, merge_zero_f
     convert_matmul, convert_invert_permutation, convert_reverse, convert_d2s_or_s2d, convert_onehot, \
     remove_isfinite_select, merge_fasterrcnn, merge_keras_maskrcnn, merge_lstm2, \
     merge_embedding_lookup_sparse, merge_embedding_lookup_sparse_with_weights, merge_overlap_and_add, \
-    convert_floordiv, merge_sufficient_statistics, merge_sufficient_statistics2, convert_topk, convert_unique
+    convert_floordiv, merge_sufficient_statistics, merge_sufficient_statistics2, convert_topk, convert_unique, \
+    merge_divmod
 from ...logger import INFO, DEBUG, WARN, ERROR, FATAL
 
 
@@ -55,6 +56,7 @@ def front_process_tf(graph, params):
         merge_overlap_and_add(graph)
         merge_sufficient_statistics(graph)
         merge_sufficient_statistics2(graph)
+        merge_divmod(graph)
 
         merge_zero_fraction(graph)
         convert_d2s_or_s2d(graph)

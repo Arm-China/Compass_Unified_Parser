@@ -4235,6 +4235,70 @@ def merge_overlap_and_add(graph):
         clear_redundant_nodes(graph)
 
 
+def merge_divmod(graph):
+    matched = False
+    matches = matched_patterns(graph,
+                               nodes=[
+                                   ('inp', {}),
+                                   ('div', {
+                                       'op': ['TfFloorDiv', 'Tffloor_div', 'LiteFLOOR_DIV']}),
+                                   ('mod', {
+                                       'op': ['TfFloorMod', 'Tffloor_mod', 'LiteFLOOR_MOD']}),
+                               ],
+                               edges=[
+                                   ('inp', 'div'),
+                                   ('inp', 'mod'),
+                               ]
+                               )
+    for m in matches:
+        inp, div, mod = m['inp'], m['div'], m['mod']
+        inp_obj = NodeWrap(graph, inp)['object']
+        div_obj = NodeWrap(graph, div)['object']
+        mod_obj = NodeWrap(graph, mod)['object']
+        if inp_obj is None or div_obj is None or mod_obj is None:
+            ERROR('[Parser]: Meets invalid Op in merge_divmod!')
+            continue
+
+        div_in_edges = graph.sorted_in_edges(div, data=True)
+        mod_in_edges = graph.sorted_in_edges(mod)
+        div_inp_dtypes = div_obj.get_input_dtypes()
+        if len(div_in_edges) == 2 and len(mod_in_edges) == 2 and all(['int' in d for d in div_inp_dtypes]):
+            if div_in_edges[0][0] == mod_in_edges[0][0] and div_in_edges[1][0] == mod_in_edges[1][0]:
+                pass
+            elif div_in_edges[0][0] == mod_in_edges[0][0] and div_in_edges[1][0] != mod_in_edges[1][0]:
+                if NodeWrap(graph, div_in_edges[1][0])['object'].type == 'Constant' \
+                        and NodeWrap(graph, mod_in_edges[1][0])['object'].type == 'Constant' \
+                        and NodeWrap(graph, div_in_edges[1][0])['object'].value == NodeWrap(graph, mod_in_edges[1][0])['object'].value:
+                    pass
+                else:
+                    continue
+            elif div_in_edges[0][0] != mod_in_edges[0][0] and div_in_edges[1][0] == mod_in_edges[1][0]:
+                if NodeWrap(graph, div_in_edges[0][0])['object'].type == 'Constant' \
+                        and NodeWrap(graph, mod_in_edges[0][0])['object'].type == 'Constant' \
+                        and NodeWrap(graph, div_in_edges[0][0])['object'].value == NodeWrap(graph, mod_in_edges[0][0])['object'].value:
+                    pass
+                else:
+                    continue
+            else:
+                continue
+            matched = True
+
+            mod_out_edges = graph.sorted_out_edges(mod, data=True)
+            graph.remove_edges_from(mod_in_edges)
+            graph.remove_edges_from(mod_out_edges)
+
+            add_attr = div_obj.copied_attr()
+            add_attr.update({'mod': 'FLOOR'})
+            NodeWrap(graph, div).replace_obj('DivMod', add_attr)
+
+            for _, dst, out_attr in mod_out_edges:
+                new_out_attr = copy.deepcopy(out_attr)
+                new_out_attr['src_out_port'] = 1
+                graph.add_edge(div, dst, **new_out_attr)
+    if matched:
+        clear_redundant_nodes(graph)
+
+
 def merge_embedding_lookup_sparse(graph):
     matched = False
     matches = matched_patterns(graph,

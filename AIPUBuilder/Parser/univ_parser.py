@@ -84,11 +84,11 @@ def univ_parser(params):
         else:
             params['use_onnxsim'] = True
 
-        if 'enable_ds' in params:
-            enable_ds = str(params['enable_ds']).lower() == 'true'
-            params['enable_ds'] = enable_ds
+        if 'ds_mode' in params:
+            ds_mode = str(params['ds_mode']).lower() == 'true'
+            params['ds_mode'] = ds_mode
         else:
-            params['enable_ds'] = False
+            params['ds_mode'] = False
 
         if 'dynamic_axes' in params:
             da = params['dynamic_axes'].strip()
@@ -106,7 +106,7 @@ def univ_parser(params):
                 params['dynamic_axes'] = multi_string_to_list(da)
 
             if params['dynamic_axes']:
-                params['enable_ds'] = True
+                params['ds_mode'] = True
         else:
             params['dynamic_axes'] = []
 
@@ -212,7 +212,7 @@ def univ_parser(params):
                 params['model_name'] = model_type + '_model'
             graph = Graph(name=params['model_name'],
                           model_type=model_type,
-                          enable_ds=params['enable_ds'],
+                          ds_mode=params['ds_mode'],
                           global_symbols=dict())
 
             tmp_tensors_dir = '.%s_tmp_tensors' % params.get('model_name', '')
@@ -380,7 +380,7 @@ def process_graph(graph, params):
     from .front_end.onnx.passes.back_passes import back_passes
     from .front_end.onnx.passes.transform import transform_to_nhwc
     from .front_end.onnx.passes.common_passes import remove_useless_op, convert_64bit_const
-    from .graph.graph_algo import infer, infer_symbol
+    from .graph.graph_algo import infer
     from .preprocess import gamut_preprocess, preprocess
     from .misc import special_character_conversion
     '''Gives a 'may be time consuming' hint for huge models.'''
@@ -401,8 +401,6 @@ def process_graph(graph, params):
         ERROR(
             '[Parser]: Meets exception in convert_onnx_version (%s)!' % str(e))
 
-    infer_symbol(graph)
-
     try:
         middle_passes(graph, params)
     except Exception as e:
@@ -415,8 +413,6 @@ def process_graph(graph, params):
     except Exception as e:
         ERROR(
             '[Parser]: Meets exception in transform_to_nhwc (%s)!' % str(e))
-
-    infer_symbol(graph)
 
     try:
         back_passes(graph, params)
@@ -439,8 +435,5 @@ def process_graph(graph, params):
         convert_64bit_const(graph)
         infer(graph, final=True)
         remove_useless_op(graph, ['ArmCast'])
-        if graph._attr['enable_ds']:
-            fuse_const(graph, final=True)
-        infer_symbol(graph)
     except Exception as e:
         ERROR('[Parser]: Meets exception in last infer (%s)!' % str(e))

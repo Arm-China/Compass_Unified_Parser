@@ -22,9 +22,17 @@ def is_dir(dir_path):
     return True if (dir_path and os.path.isdir(dir_path)) else False
 
 
-def is_sympy_with_symbol(var):
+def expr_has_symbols(var):
     from sympy.core.expr import Expr
-    if isinstance(var, Expr):
+    if isinstance(var, (list, tuple)):
+        ret_list = []
+        for expr in var:
+            if isinstance(expr, Expr):
+                ret_list.append(len(expr.free_symbols) > 0)
+            else:
+                ret_list.append(False)
+        return any(ret_list)
+    elif isinstance(var, Expr):
         return len(var.free_symbols) > 0
     else:
         return False
@@ -139,6 +147,13 @@ def list_string_to_list(list_string):
 # ['aa', 'bb'] to 'aa,bb'
 def string_list_to_string(string_list):
     return reduce(lambda x, y: (str(x) + ',' + str(y)), string_list) if string_list else ''
+
+# [a+b, a*b] to 'a+b,a*b'
+
+
+def expr_list_to_string(expr_list):
+    from .symbol_printer import compass_str_expr
+    return reduce(lambda x, y: (compass_str_expr(x) + ',' + compass_str_expr(y)), expr_list) if expr_list else ''
 
 
 # 'AA,BB' to ['AA','BB']
@@ -290,25 +305,46 @@ def print_debug_info(e):
     WARN(f"error info：{str(e)}")
 
 
-def unpack_4bit(data, dims):
-    '''Convert a packed uint4 array to unpacked uint4 array represented as uint8.
+def unpack_u8_to_4bit(data, dims, dst_dtype, high_first=False):
+    '''Convert a packed int4 array to unpacked int4 array represented as uint8.
 
         Args:
             data: A numpy array.
             dims: The dimensions are used to reshape the unpacked buffer.
+            high_first: first if is from high 4 bits, default is False
 
         Returns:
-            A numpy array of int8/uint8.
+            A numpy array of int8/uint8/fp32.
     '''
     data = data.flatten()
     result = np.empty([data.size * 2], dtype=data.dtype)
     array_low = data & 0x0F
     array_high = (data >> 4) & 0x0F
-    result[0::2] = array_low
-    result[1::2] = array_high
+    if high_first:
+        result[0::2] = array_high
+        result[1::2] = array_low
+    else:
+        result[0::2] = array_low
+        result[1::2] = array_high
     if result.size == np.prod(dims) + 1:
         # handle single-element padding due to odd number of elements
         result = result[:-1]
+    if dst_dtype.lower() == 'int4':
+        result = (result.astype(np.int32) - 2**3).astype(np.int8)
+    elif dst_dtype.lower() in ('uint4', 'uint8'):
+        pass
+    elif dst_dtype.lower() == 'float4e2m1':     # NVFP4
+        fp4_table = np.array([0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0, -0.0, -0.5, -
+                             1.0, -1.5, -2.0, -3.0, -4.0, -6.0], dtype=np.float32)
+        fp4_value = fp4_table[result]
+        result = fp4_value
+    elif dst_dtype.lower() == 'float4e2m1_bnb':     # BitAndBytes FP4
+        fp4_table = np.array([0.0, 0.0625, 8.0, 12.0, 4.0, 6.0, 2.0, 3.0,
+                              -0.0, -0.0625, -8.0, -12.0, -4.0, -6.0, -2.0, -3.0, ], dtype=np.float32)
+        fp4_value = fp4_table[result]
+        result = fp4_value
+    else:
+        raise NotImplementedError(f'{dst_dtype} still not implemented yet!')
     result.resize(dims, refcheck=False)
     return result
 

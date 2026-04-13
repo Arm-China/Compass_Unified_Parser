@@ -25,8 +25,9 @@ def front_process_tf2(graph, params):
 
         from ..tf.passes.front_passes import split_b2s, convert_d2s_or_s2d, convert_onehot, \
             convert_matmul, convert_maxpoolwithargmax, convert_nms, split_special_floormod, \
-            split_s2b, convert_floordiv, convert_topk, convert_unique
+            split_s2b, convert_floordiv, convert_topk, convert_unique, merge_divmod
         split_b2s(graph, op_type='Tfbatch_to_space_nd')
+        merge_divmod(graph)
 
         from ..lite.passes.front_passes import split_not_equal, split_rsqrt, convert_square, \
             convert_square_diff

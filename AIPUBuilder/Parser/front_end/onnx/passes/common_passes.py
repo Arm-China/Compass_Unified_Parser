@@ -13,7 +13,7 @@ from ....common.defs import Tensor, Framework, FLOAT_EQUAL
 from ....logger import INFO, DEBUG, WARN, ERROR, FATAL
 from ....common.utils import extend_lists, get_converted_dtype
 from ....ops.op import Op, OpHasWeights, OpHasBiases, OpHasOneOutPort, ConstLikeOp, OnnxReduceOp, \
-    OpHasVariableOutPorts, OpHasMultipleOutPorts, ConstOp
+    OpHasVariableOutPorts, OpHasMultipleOutPorts, ConstOp, InputLikeOp
 from ....ops.onnx_ops.array_ops import CastOp
 from ....graph.graph import SubGraph
 from ....ops.release_ops import ArmCastOp, ArmTransposeOp
@@ -32,9 +32,9 @@ def fuse_const(graph, final=False):
                 ERROR(
                     '[Parser]: Meets invalid Node (%s) in fuse_const!' % node_name)
                 continue
-            if not isinstance(node_obj, (ConstLikeOp, ConstOp)) \
+            if not isinstance(node_obj, (ConstLikeOp, ConstOp, InputLikeOp)) \
                     and isinstance(node_obj, OpHasOneOutPort) \
-                    and node_obj.is_all_inputs_const() \
+                    and node_obj.is_all_outputs_const() \
                     and not node_obj.is_outputs_dynamic():
                 out_edge = graph.sorted_out_edges(node_name, data=True)
                 if len(out_edge) >= 1 and out_edge[0][2]['tensor'] is not None and out_edge[0][2]['tensor'].value is not None:
@@ -53,9 +53,9 @@ def fuse_const(graph, final=False):
                                       'opset_version': 9}
                         NodeWrap(graph, node_name).replace_obj(
                             'Constant', const_attr)
-                    if graph._attr['enable_ds']:
+                    if node_obj.ds_mode:
                         for _, _, out_attr in out_edge:
-                            out_attr['tensor'].symbol = list(out_edge[0][2]['tensor'].value.shape)
+                            out_attr['tensor'].shape_symbol = list(out_edge[0][2]['tensor'].value.shape)
                     in_edges = graph.sorted_in_edges(node_name)
                     if isinstance(graph, SubGraph):
                         for src, _ in in_edges:
@@ -404,7 +404,7 @@ def remove_useless_op(graph, op_type_list):
                 if len(input_shapes) > 0 \
                         and input_shapes[0] is not None \
                         and None not in input_shapes[0] \
-                        and np.product(np.array(input_shapes[0])[np.array(node_obj.axes, np.int32)]) == 1:
+                        and np.prod(np.array(input_shapes[0])[np.array(node_obj.axes, np.int32)]) == 1:
                     in_edges = graph.sorted_in_edges(node_name)
                     removing_nodes.append(node_name)
                     if node_name in graph._attr['output_names']:
@@ -430,7 +430,7 @@ def remove_useless_op(graph, op_type_list):
                         and len(graph.sorted_out_edges(src_name)) == 1:
                     new_shape = node_obj.shape if op_type == 'Reshape' else node_obj.dim
                     src_node_obj.value = np.reshape(
-                        src_node_obj.value, newshape=new_shape)
+                        src_node_obj.value, new_shape)
                     removing_nodes.append(node_name)
                 elif len(in_shapes) >= 1 \
                         and in_shapes[0] is not None \
@@ -441,12 +441,15 @@ def remove_useless_op(graph, op_type_list):
                 in_shapes = node_obj.get_input_shapes()
                 in_tensors = node_obj.get_input_tensors()
                 if node_obj.cur_version == 10:
-                    if len(in_tensors) == 2 and node_obj.cur_version == 10 and in_tensors[1].size > 0 and np.all(in_tensors[1] == 1):
+                    if len(in_tensors) == 2 and node_obj.cur_version == 10 \
+                            and in_tensors[1] is not None and in_tensors[1].size > 0 and np.all(in_tensors[1] == 1):
                         removing_nodes.append(node_name)
                 else:
-                    if len(in_tensors) >= 3 and in_tensors[2].size > 0 and np.all(in_tensors[2] == 1):
+                    if len(in_tensors) >= 3 and in_tensors[2] is not None \
+                            and in_tensors[2].size > 0 and np.all(in_tensors[2] == 1):
                         removing_nodes.append(node_name)
-                    elif len(in_tensors) == 4 and in_tensors[3].size > 0 and in_shapes[0] == in_tensors[3].tolist():
+                    elif len(in_tensors) == 4 and in_tensors[3] is not None \
+                            and in_tensors[3].size > 0 and in_shapes[0] == in_tensors[3].tolist():
                         removing_nodes.append(node_name)
             elif op_type == 'Roll':
                 axis_value = node_obj.axes[0] if len(
@@ -482,7 +485,15 @@ def remove_useless_op(graph, op_type_list):
                         and input_shapes[0] == output_shapes[0] \
                         and all(d == 0 for d in node_obj.starts) \
                         and all(input_shapes[0][axis] == node_obj.ends[idx] for idx, axis in enumerate(node_obj.axes)):
-                    removing_nodes.append(node_name)
+                    if node_obj.ds_mode:
+                        input_symbols = node_obj.get_input_symbols()
+                        output_symbols = node_obj.get_output_symbols()
+                        if input_symbols[0] is not None and None not in input_symbols[0] and \
+                                output_symbols[0] is not None and None not in output_symbols[0] and \
+                                input_symbols[0] == output_symbols[0]:
+                            removing_nodes.append(node_name)
+                    else:
+                        removing_nodes.append(node_name)
             elif op_type == 'Split':
                 input_shapes = node_obj.get_input_shapes()
                 if len(input_shapes) >= 1 and len(node_obj.split) == 1 and \
@@ -650,7 +661,7 @@ def remove_redundant_reshape(graph, type='Reshape'):
             new_rs_out_symbol = []
             if rs1_out_symbol is not None and None not in rs1_out_symbol \
                     and rs2_out_symbol is not None and None not in rs2_out_symbol:
-                rs2_in_symbol = reshape_2_obj.get_input_symbols(local=True)[0]
+                rs2_in_symbol = reshape_2_obj.get_input_symbols()[0]
                 sym_map = list(zip(rs2_in_symbol, rs1_out_symbol))
                 for s in rs2_out_symbol:
                     if isinstance(s, int):
@@ -672,9 +683,9 @@ def remove_redundant_reshape(graph, type='Reshape'):
                         new_out_attr = copy.deepcopy(out_attr)
                         new_out_attr['src_out_port'] = in_attr['src_out_port']
                         if new_rs_out_symbol:
-                            new_out_attr['tensor'].symbol = new_rs_out_symbol
+                            new_out_attr['tensor'].shape_symbol = new_rs_out_symbol
                         else:
-                            new_out_attr['tensor'].symbol = in_attr['tensor'].symbol
+                            new_out_attr['tensor'].shape_symbol = in_attr['tensor'].shape_symbol
                         graph.add_edge(src, dst, **new_out_attr)
                     if reshape_2 in graph._attr['output_names']:
                         index = graph._attr['output_names'].index(reshape_2)
@@ -682,7 +693,7 @@ def remove_redundant_reshape(graph, type='Reshape'):
                 else:
                     if new_rs_out_symbol:
                         for _, dst, out_attr in reshape_2_out_edges:
-                            out_attr['tensor'].symbol = new_rs_out_symbol
+                            out_attr['tensor'].shape_symbol = new_rs_out_symbol
                 clear_redundant_nodes(graph)
             elif len(reshape_1_out_edges) > 1:
                 reshape_1_out_node_objs = []
@@ -1102,7 +1113,8 @@ def insert_mul_add_cast_after_for_dequant(graph, src, to_dtype, scale, zero_poin
     return ret
 
 
-def insert_constant(graph, name, value, dst, in_port=0, data_format='NCHW', const_ver=9, scale_zp=None, quantize=False, op_type='Constant'):
+def insert_constant(graph, name, value, dst, in_port=0, data_format='NCHW', const_ver=9, scale_zp=None,
+                    quantize=False, op_type='Constant', value_symbol=None):
     if graph.has_node(dst) and value is not None and isinstance(value, np.ndarray):
         const_name = get_valid_node_name(graph, name)
         graph.add_node(const_name)
@@ -1118,13 +1130,18 @@ def insert_constant(graph, name, value, dst, in_port=0, data_format='NCHW', cons
         NodeWrap(graph, const_name).replace_obj(op_type, const_attr)
         edge_attr = {'src_out_port': 0, 'dst_in_port': in_port,
                      'tensor': Tensor(value=value, is_const=True)}
+        if value_symbol is not None:
+            edge_attr['tensor'].is_const = False
+            edge_attr['tensor'].value_symbol = value_symbol
         if isinstance(scale_zp, (tuple, list)) \
                 and len(scale_zp) == 2:
             edge_attr['tensor'].scale_zp = tuple(scale_zp)
             edge_attr['tensor'].dtype = str(value.dtype)
         graph.add_edge(const_name, dst, **edge_attr)
+        return const_name
     else:
         ERROR('[Parser]: Invalid params for insert_constant (%s)!' % name)
+        return None
 
 
 def insert_dummy(graph, src, dst, in_attr, dummpy_type='Dummy', quantize=False):
@@ -1318,7 +1335,7 @@ def insert_reshape(graph, src, dst, in_attr, dim,
             graph.remove_edge(src, dst, key=key)
         reshape = get_valid_node_name(graph, src + '_post_reshape')
         graph.add_node(reshape)
-        reshape_attr = {'name': reshape, 'opset_version': 5, 'quantize': quantize}
+        reshape_attr = {'name': reshape, 'opset_version': 5, 'quantize': quantize, 'from_parser': True}
         if type == 'Reshape':
             reshape_dim = np.array(dim, np.int32)
             const = get_valid_node_name(graph, reshape + '_shape')
@@ -1342,12 +1359,11 @@ def insert_reshape(graph, src, dst, in_attr, dim,
         if in_attr.get('tensor', None) is not None:
             out_tensor = copy.deepcopy(in_attr['tensor'])
             if in_attr['tensor'].value is not None:
-                out_tensor.value = np.reshape(
-                    in_attr['tensor'].value, newshape=dim)
+                out_tensor.value = np.reshape(in_attr['tensor'].value, dim)
                 out_tensor.shape = out_tensor.value.shape
             else:
                 out_tensor.shape = tuple(dim)
-            out_tensor.symbol = symbol
+            out_tensor.shape_symbol = symbol
         reshape_out_attr.update({'src_out_port': 0, 'tensor': out_tensor})
         graph.add_edge(reshape, dst, **reshape_out_attr)
         ret = reshape
@@ -1367,7 +1383,7 @@ def insert_reshape_after(graph, src, new_dim, old_dim=None, out_port=0, type='Re
             reshape_name = src + '_post_reshape_' + str(out_port)
         reshape = get_valid_node_name(graph, reshape_name)
         graph.add_node(reshape)
-        reshape_attr = {'name': reshape, 'opset_version': 5, 'quantize': quantize}
+        reshape_attr = {'name': reshape, 'opset_version': 5, 'quantize': quantize, 'from_parser': True}
         if type == 'Reshape':
             reshape_dim = np.array(new_dim, np.int64)
             const = get_valid_node_name(graph, reshape + '_shape')
@@ -1391,15 +1407,14 @@ def insert_reshape_after(graph, src, new_dim, old_dim=None, out_port=0, type='Re
                 new_out_attr = copy.deepcopy(out_attr)
                 new_out_attr['src_out_port'] = 0
                 if new_out_attr.get('tensor', None) is not None:
-                    new_out_attr['tensor'].symbol = symbol
+                    new_out_attr['tensor'].shape_symbol = symbol
                 graph.add_edge(reshape, dst, **new_out_attr)
                 if new_out_attr.get('tensor', None) is not None:
                     new_out_tensor_shape = new_out_attr['tensor'].get_shape()
                     new_out_tensor_value = new_out_attr['tensor'].value
                     if old_dim:
                         if new_out_tensor_value is not None:
-                            new_src_out_tensor = np.reshape(
-                                new_out_attr['tensor'].value, newshape=old_dim)
+                            new_src_out_tensor = np.reshape(new_out_attr['tensor'].value, old_dim)
                             src_out_attr.update(
                                 {'tensor': Tensor(value=new_src_out_tensor)})
                         else:
@@ -1407,7 +1422,7 @@ def insert_reshape_after(graph, src, new_dim, old_dim=None, out_port=0, type='Re
                     elif new_dim and new_out_tensor_shape is not None and new_dim != list(new_out_tensor_shape):
                         if new_out_tensor_value is not None:
                             new_src_out_tensor = np.reshape(
-                                new_out_attr['tensor'].value, newshape=new_dim)
+                                new_out_attr['tensor'].value, new_dim)
                             src_out_attr.update(
                                 {'tensor': Tensor(value=new_src_out_tensor)})
                         else:
@@ -1419,7 +1434,7 @@ def insert_reshape_after(graph, src, new_dim, old_dim=None, out_port=0, type='Re
                             src_out_attr.update({'tensor': Tensor()})
                         src_out_attr['tensor'].dtype = new_out_attr['tensor'].dtype
                         src_out_attr['tensor'].scale_zp = new_out_attr['tensor'].scale_zp
-        src_out_attr['tensor'].symbol = out_edges[0][-1]['tensor'].symbol
+        src_out_attr['tensor'].shape_symbol = out_edges[0][-1]['tensor'].shape_symbol
         graph.add_edge(src, reshape, **src_out_attr)
         ret = reshape
     else:
@@ -1442,7 +1457,8 @@ def place_reshape(graph, reshape, dim, data_format='NHWC'):
                     data_format=data_format)
 
 
-def insert_slice(graph, src, dst, in_attr, begin, size, key=None, type='Slice', data_format='NHWC', quantize=False):
+def insert_slice(graph, src, dst, in_attr, begin, size, ds_begin=None, ds_size=None,
+                 key=None, type='Slice', data_format='NHWC', quantize=False):
     ret = None
     if graph.has_node(src) and graph.has_node(dst) and begin and size and type in ('Slice', 'ArmSlice'):
         if has_path(graph, src, dst):
@@ -1450,6 +1466,12 @@ def insert_slice(graph, src, dst, in_attr, begin, size, key=None, type='Slice', 
         slice = get_valid_node_name(graph, src + '_post_slice')
         graph.add_node(slice)
         slice_attr = {'name': slice, 'quantize': quantize}
+        ds_end = None
+        if ds_begin is not None and ds_size is not None:
+            slice_attr['ds_starts'] = ds_begin
+            ds_end = [a + b for a, b in zip(ds_begin, ds_size)]
+            slice_attr['ds_ends'] = ds_end
+            slice_attr['ds_steps'] = [1] * len(ds_begin)
 
         starts = np.array(begin, np.int32)
         size = np.array(size, np.int32)
@@ -1458,9 +1480,9 @@ def insert_slice(graph, src, dst, in_attr, begin, size, key=None, type='Slice', 
         if type == 'Slice':
             slice_attr.update({'opset_version': 10})
             insert_constant(graph, slice + '_starts', starts,
-                            slice, in_port=1, data_format=data_format)
+                            slice, in_port=1, data_format=data_format, value_symbol=ds_begin)
             insert_constant(graph, slice + '_ends', ends, slice,
-                            in_port=2, data_format=data_format)
+                            in_port=2, data_format=data_format, value_symbol=ds_end)
         else:
             slice_attr.update({'starts': starts.tolist(),
                                'ends': ends.tolist(),
@@ -1474,6 +1496,12 @@ def insert_slice(graph, src, dst, in_attr, begin, size, key=None, type='Slice', 
 
         slice_out_attr = copy.deepcopy(in_attr)
         slice_out_attr.update({'src_out_port': 0})
+
+        if ds_begin is not None and ds_size is not None:
+            slice_out_attr['tensor'].shape_symbol = ds_size
+            slice_out_attr['tensor'].is_const = False
+            slice_out_attr['tensor'].is_dynamic = True
+
         graph.add_edge(slice, dst, **slice_out_attr)
         ret = slice
     else:
@@ -1552,7 +1580,7 @@ def insert_tile(graph, src, dst, in_attr, reps, key=None, type='Tile', data_form
             tensor_shape = tensor.get_shape()
             if tensor_shape is not None and None not in tensor_shape:
                 tensor.shape = tuple([int(shape * rep) for shape, rep in zip(tensor_shape, reps)])
-        tensor.symbol = symbol
+        tensor.shape_symbol = symbol
         if symbol is not None:
             tensor.is_dynamic = True
         dst_in_attr.update({'src_out_port': 0, 'tensor': tensor})
@@ -1614,8 +1642,6 @@ def insert_transpose(graph, src, dst, in_attr, perm, key=None, type='Transpose',
                 out_tensor.shape = out_tensor.value.shape
             elif out_tensor.shape is not None and len(out_tensor.shape) == len(perm):
                 out_tensor.shape = tuple(out_tensor.shape[idx] for idx in perm)
-        if graph._attr['enable_ds']:
-            out_tensor.symbol = [Symbol(f's{idx}') for idx in perm]
         transpose_out_attr.update({'src_out_port': 0, 'tensor': out_tensor})
         graph.add_edge(transpose, dst, **transpose_out_attr)
         ret = transpose
@@ -1645,8 +1671,6 @@ def insert_transpose_after(graph, src, perm, port=0, type='Transpose', quantize=
                 new_out_attr = copy.deepcopy(out_attr)
                 new_out_attr['src_out_port'] = 0
                 graph.remove_edge(src, dst, key=k)
-                if graph._attr['enable_ds']:
-                    new_out_attr['tensor'].symbol = [Symbol(f's{idx}') for idx in perm]
                 graph.add_edge(transpose, dst, **new_out_attr)
                 if out_tensor is None:
                     out_tensor = copy.deepcopy(new_out_attr['tensor'])

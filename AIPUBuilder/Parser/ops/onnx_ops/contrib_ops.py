@@ -3,7 +3,7 @@
 import torch
 
 from ..op import *
-from ...common.utils import unpack_4bit
+from ...common.utils import unpack_u8_to_4bit
 import numpy as np
 
 
@@ -175,7 +175,42 @@ class GroupQueryAttentionMsOp(OpHasMultipleOutPorts, OnnxOp):
         output = np.transpose(output, (0, 2, 1, 3))
         output = np.reshape(output, (output.shape[0], output.shape[1], -1))
         out_tensors = [output, present_key, present_value]
-        self.set_out_tensor(out_tensors)
+        out_symbols = self.cal_output_symbol()
+        self.set_out_tensor(out_tensors, shape_symbols=out_symbols)
+
+    def cal_output_symbol(self):
+        if not self.ds_mode:
+            return None
+        input_symbols = self.get_input_symbols()
+        output_symbols = []
+        if len(input_symbols[0]) == 2:
+            head_size = input_symbols[0][-1] // (self.num_heads + 2 * self.kv_num_heads)
+            hidden_size = head_size * self.num_heads
+            kv_seq = input_symbols[0][1]
+            kv_head_size = head_size
+            output_symbols.append(input_symbols[0][:-1] + [hidden_size])
+        else:
+            kv_seq = input_symbols[1][1]
+            kv_head_size = input_symbols[1][-1] // self.kv_num_heads
+            output_symbols.append(input_symbols[0])
+
+        if len(input_symbols) >= 5:
+            # BNSH format
+            past_k = input_symbols[3]
+            past_v = input_symbols[4]
+
+            if past_k is not None and past_v is not None:
+                total_kv_seq_len = past_k[-2] + kv_seq
+                present_k = past_k.copy()
+                present_v = past_v.copy()
+                present_k[-2] = total_kv_seq_len
+                present_v[-2] = total_kv_seq_len
+            else:
+                present_k = [input_symbols[0][0], self.kv_num_heads, kv_seq, kv_head_size]
+                present_v = [input_symbols[0][0], self.kv_num_heads, kv_seq, kv_head_size]
+            output_symbols.append(present_k)
+            output_symbols.append(present_v)
+        return output_symbols
 
 
 class MatMulNBitsMsOp(OpHasOneOutPort, OnnxOp):
@@ -221,8 +256,7 @@ class MatMulNBitsMsOp(OpHasOneOutPort, OnnxOp):
                             if ret.dtype == 'uint8':
                                 packed_shape = (self.N, int(np.ceil(k_blocks * self.bits / 8)))
                                 assert ret.shape == packed_shape
-                                ret = (unpack_4bit(ret, [self.N, k_blocks]).astype(np.int32) - 2 **
-                                       (self.bits - 1)).astype(inputs[0].dtype)
+                                ret = unpack_u8_to_4bit(ret, [self.N, k_blocks], 'int4').astype(inputs[0].dtype)
                             else:
                                 assert ret.dtype == inputs[0].dtype, 'Unpacked zp should be same dtype with input.'
                                 assert ret.shape == (self.N, k_blocks)
@@ -256,10 +290,7 @@ class MatMulNBitsMsOp(OpHasOneOutPort, OnnxOp):
         if self.bits == 4:
             # unpack N bits from quantized weights
             unpack_shape = [self.N, B.size * 2 // self.N]
-            # high_nbits = (B >> self.bits) & 0x0F
-            # low_nbits = B & 0x0F
-            # quant_weights = np.concatenate([high_nbits, low_nbits], axis=-1).reshape(self.N, -1)
-            quant_weights = unpack_4bit(B.flatten(), unpack_shape) - 2**(self.bits - 1)
+            quant_weights = unpack_u8_to_4bit(B.flatten(), unpack_shape, 'int4')
         else:
             quant_weights = B
 
@@ -277,60 +308,112 @@ class MatMulNBitsMsOp(OpHasOneOutPort, OnnxOp):
             out_shape[-1] = self.N
             out_tensor = np.random.ranf(tuple(out_shape)).astype(A.dtype) + self.bias
         out_symbol = self.cal_output_symbol()
-        self.set_out_tensor(out_tensor, out_symbol)
+        self.set_out_tensor(out_tensor, shape_symbol=out_symbol)
 
     def cal_output_symbol(self):
-        if not self._graph._attr['enable_ds']:
+        if not self.ds_mode:
             return None
-        a_symbol, b_symbol = self.get_input_symbols(local=True)[:2]
-        a_dim = len(a_symbol)
-        b_dim = len(b_symbol)
-        max_dim = max(a_dim, b_dim)
-        out_symbol = []
-        if max_dim != 1:
-            if a_dim == 1:
-                out_symbol = b_symbol[:]
-                del out_symbol[-2]
-            elif b_dim == 1:
-                out_symbol = a_symbol[:-1]
-            else:
-                if b_dim == 2:
-                    out_symbol = a_symbol[:-1] + b_symbol[-1:]
-                else:
-                    if a_dim < max_dim:
-                        for i in range(max_dim - a_dim):
-                            a_symbol.insert(0, 1)
-                    if b_dim < max_dim:
-                        for i in range(max_dim - b_dim):
-                            b_symbol.insert(0, 1)
+        a_symbol, b_symbol = self.get_input_symbols()[:2]
+        out_symbol = a_symbol[:-1] + [int(self.N)]
+        return out_symbol
 
-                    for i in range(max_dim):
-                        if i < max_dim - 2:
-                            if a_symbol[i] == 1:
-                                out_symbol.append(b_symbol[i])
-                            elif b_symbol[i] == 1:
-                                out_symbol.append(a_symbol[i])
-                            else:
-                                input_shapes = self.get_input_shapes()
-                                sym_shape_map = {}
-                                idx_add = 0
-                                for shape in input_shapes:
-                                    for idx, s in enumerate(shape):
-                                        sym_shape_map[idx + idx_add] = s
-                                    idx_add += len(shape)
-                                sym_idx = int(re.findall(r'\d+', str(a_symbol[i]))[0])
-                                if sym_shape_map[sym_idx] != 1:
-                                    out_symbol.append(a_symbol[i])
-                                else:
-                                    b_sym_idx = int(re.findall(r'\d+', str(b_symbol[i]))[0])
-                                    if sym_shape_map[b_sym_idx] == 1:
-                                        out_symbol.append(Max(a_symbol[i], b_symbol[i]))
-                                    else:
-                                        out_symbol.append(b_symbol[i])
-                        elif i == max_dim - 2:
-                            out_symbol.append(a_symbol[i])
-                        else:
-                            out_symbol.append(b_symbol[i])
+
+class MatMulBnb4MsOp(OpHasOneOutPort, OnnxOp):
+    @classmethod
+    def attributes(cls):
+        return {
+            1: {
+                'K': {
+                    'type': AttrType.INT, 'required': True
+                },
+                'N': {
+                    'type': AttrType.INT, 'required': True
+                },
+                'quant_type': {
+                    'type': AttrType.INT, 'required': True
+                },
+                'training_mode': {
+                    'type': AttrType.INT, 'default': 0
+                },
+                'block_size': {
+                    'type': AttrType.INT, 'required': True
+                },
+                'transB': {
+                    'type': AttrType.INT, 'default': 1
+                },
+            }
+        }
+
+    def __getattr__(self, item):
+        try:
+            ret = self.__dict__['_attr'][item].value
+        except:
+            ret = None
+        try:
+            if ret is None:
+                inputs = self.get_input_tensors()
+                if item == 'scales':
+                    ret = inputs[2]
+                    q_max = 12.0 if self.quant_type == 0 else 1.0
+                    ret = np.array(ret / q_max)
+                    self.__dict__['_attr'][item] = Attribute(item, {'type': AttrType.TENSOR, 'value': ret})
+                if ret is None:
+                    if item == 'zero_points':
+                        fill_value = 0
+                        ret = np.full(self.scales.shape, fill_value, dtype=inputs[0].dtype)
+                    if item == 'bias':
+                        ret = np.zeros([self.N], dtype=inputs[0].dtype)
+                    self.__dict__['_attr'][item] = Attribute(item, {'type': AttrType.TENSOR, 'value': ret})
+        except:
+            ret = None
+        if ret is None:
+            ret = super(MatMulBnb4MsOp, self).__getattr__(item)
+        return ret
+
+    def __init__(self, graph, attr_dict=None):
+        super(MatMulBnb4MsOp, self).__init__(graph, attr_dict)
+        self.update_attributes(MatMulBnb4MsOp, attr_dict)
+        assert self.check_required(), 'MatMulBnb4MsOp is missing a required parameter.'
+
+    def infer_shape(self):
+        super(MatMulBnb4MsOp, self).infer_shape()
+        inputs = self.get_input_tensors()
+        assert len(inputs) == 3, f'MatMulBnb4MsOp should have 3 inputs, but got {len(inputs)}'
+        assert self.quant_type == 0, f'MatMulBnb4MsOp only support FP4, but got NF4'
+        A = inputs[0]
+        B = inputs[1]
+        quant_weights = None
+        if self.quant_type == 0:
+            # unpack N bits from quantized weights
+            unpack_shape = [self.N, self.K] if self.transB == 1 else [self.K, self.N]
+            quant_weights = unpack_u8_to_4bit(B.flatten(), unpack_shape, 'float4e2m1_bnb', high_first=True)
+        else:
+            WARN('NF4 not implemented.')
+
+        if self.block_size < 16 or (self.block_size & (self.block_size - 1) != 0):
+            ERROR(f'Node({self.name}) block_size must be a power of 2, and >= 16. Got {self.block_size}.')
+
+        scale = np.repeat(self.scales.reshape(self.N, -1), self.block_size, axis=-1)
+        zp = np.repeat(self.zero_points.reshape(self.N, -1), self.block_size, axis=-1)
+        if self.is_all_inputs_const():
+            # dequantize B tensor according scale
+            if self.transB:
+                deq_B = ((quant_weights - zp) * scale).transpose()
+            else:
+                deq_B = ((quant_weights - zp) * scale)
+            out_tensor = np.matmul(A, deq_B).astype(A.dtype)
+        else:
+            out_shape = list(A.shape).copy()
+            out_shape[-1] = self.N
+            out_tensor = np.random.ranf(tuple(out_shape)).astype(A.dtype)
+        out_symbol = self.cal_output_symbol()
+        self.set_out_tensor(out_tensor, shape_symbol=out_symbol)
+
+    def cal_output_symbol(self):
+        if not self.ds_mode:
+            return None
+        a_symbol = self.get_input_symbols()[0]
+        out_symbol = a_symbol[:-1] + [int(self.N)]
         return out_symbol
 
 
@@ -400,13 +483,13 @@ class MultiHeadAttentionMsOp(OpHasVariableOutPorts, OnnxOp):
         else:
             out_tensor = np.random.ranf((bs, seq_len, self.num_heads * self.head_dim)).astype(inputs[0].dtype)
             out_tensors = [out_tensor]
-        out_symbols = [self.get_input_symbols(local=True)[0]]
+        out_symbols = [self.get_input_symbols()[0]]
         out_ports = self.get_out_ports()
         # if 1 in out_ports:
         #     out_tensors.append(np.array(std_var, np.float32))
         # if 2 in out_ports:
         #     out_tensors.append(np.array(std_var, np.float32))
-        self.set_out_tensor(out_tensors, out_symbols=out_symbols)
+        self.set_out_tensor(out_tensors, shape_symbols=out_symbols)
 
 
 class QGemmMsOp(OpHasOneOutPort, OnnxOp):
@@ -906,8 +989,8 @@ class RotaryEmbeddingMsOp(OpHasOneOutPort, OnnxOp):
         sin_emb = np.expand_dims(np.take(sin_cache, np.array(postion_ids, np.int32), axis=0), axis=2)
         sin_mul = rotate_input * np.tile(sin_emb, reps=(1, 1, int(input.shape[2]), 1))
         out_tensor = np.reshape((cos_mul + sin_mul), (bs, seq_len, -1)).astype(input.dtype)
-        out_symbol = self.get_input_symbols(local=True)[0]
-        self.set_out_tensor(out_tensor, out_symbol)
+        out_symbol = self.get_input_symbols()[0]
+        self.set_out_tensor(out_tensor, shape_symbol=out_symbol)
 
 
 class SkipSimplifiedLayerNormalizationMsOp(OpHasVariableOutPorts, OnnxOp):
@@ -958,11 +1041,11 @@ class SkipSimplifiedLayerNormalizationMsOp(OpHasVariableOutPorts, OnnxOp):
         if 3 in out_ports:
             output_tensors.append(inp_skip_bias_sum.astype(input.dtype))
         out_symbols = self.cal_output_symbol()
-        self.set_out_tensor(output_tensors, out_symbols)
+        self.set_out_tensor(output_tensors, shape_symbols=out_symbols)
 
     def cal_output_symbol(self):
-        if self._graph._attr['enable_ds']:
-            input_symbols = self.get_input_symbols(local=True)
+        if self.ds_mode:
+            input_symbols = self.get_input_symbols()
             out_ports = self.get_out_ports()
             out_symbols = [input_symbols[0]]
             mean_var_symbol = input_symbols[0]

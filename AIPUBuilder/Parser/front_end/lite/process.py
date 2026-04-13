@@ -60,7 +60,7 @@ def front_process_tflite(graph, params):
         split_rsqrt(graph)
 
         from ..tf.passes.front_passes import split_special_floormod, convert_reverse, merge_overlap_and_add, \
-            merge_sufficient_statistics, merge_sufficient_statistics2
+            merge_sufficient_statistics, merge_sufficient_statistics2, merge_divmod
         split_special_floormod(graph, 'LiteFLOOR_MOD')
 
         remove_detection_postprocess(graph, params)
@@ -74,6 +74,7 @@ def front_process_tflite(graph, params):
         convert_reverse(graph, op_type='LiteREVERSE_V2')
         convert_sparse_to_dense(graph, 'LiteSPARSE_TO_DENSE')
         merge_overlap_and_add(graph)
+        merge_divmod(graph)
 
         convert_reverse_sequence(graph, 'LiteREVERSE_SEQUENCE')
         convert_unpack(graph)
